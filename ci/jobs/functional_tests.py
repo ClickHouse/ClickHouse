@@ -9,6 +9,7 @@ import zlib
 from collections.abc import Mapping
 from pathlib import Path
 
+from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.bugfix_validation import (
     bugfix_build_types,
     download_master_builds,
@@ -35,7 +36,6 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
 # job name. Sanitizer builds get the tighter server memory cap (see the
 # `set_memory_ratio` logic in `main`).
-SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 # Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
 # server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and

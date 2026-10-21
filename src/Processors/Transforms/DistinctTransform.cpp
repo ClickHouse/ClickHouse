@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <Columns/ColumnsCommon.h>
+#include <Interpreters/Squashing.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -78,6 +79,8 @@ DistinctTransform::DistinctTransform(
     bool allow_abandoning_,
     bool skip_null_keys_,
     const UInt64 max_bytes_before_pass_through_,
+    DistinctSetMemoryTracker::SharedCounter shared_set_bytes_,
+    UInt64 coalesce_rows_,
     bool allow_spilling_,
     bool is_pre_distinct_,
     UInt64 set_limit_for_enabling_bloom_filter_,
@@ -86,6 +89,7 @@ DistinctTransform::DistinctTransform(
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     size_t max_threads_)
     : ISimpleTransform(header_, header_, true)
+    , set_memory(shared_set_bytes_)
     , limit_hint(limit_hint_)
     , is_pre_distinct(is_pre_distinct_)
     , set_limit_for_enabling_bloom_filter(set_limit_for_enabling_bloom_filter_)
@@ -94,13 +98,18 @@ DistinctTransform::DistinctTransform(
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
+    , coalesce_rows(coalesce_rows_)
     , allow_spilling(allow_spilling_)
 {
+    chassert(!shared_set_bytes_ || (!allow_abandoning_ && !set_size_limits_.hasLimits() && max_bytes_before_pass_through == 0));
+    /// Coalescing would delay the memory snapshots attached to the output chunks.
+    chassert(!shared_set_bytes_ || coalesce_rows == 0);
     if (allow_abandoning_)
         abandon_controller.emplace();
 
-    /// The bloom-filter and parallel paths do not implement the `NULL`-key skipping of `DistinctSetFilter`.
-    if (!skip_null_keys_)
+    /// The bloom-filter and parallel paths do not implement the `NULL`-key skipping of `DistinctSetFilter`,
+    /// nor the reporting of the retained set memory for the global limits across disjoint streams.
+    if (!skip_null_keys_ && !shared_set_bytes_)
     {
         if (is_pre_distinct_)
         {
@@ -644,6 +653,52 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
     }
 }
 
+IProcessor::Status DistinctTransform::prepare()
+{
+    /// Emit the held back rows once the input is exhausted.
+    if (!pending_chunks.empty() && !has_input && !has_output && input.isFinished())
+    {
+        output_data.chunk = flushPendingChunks();
+        has_output = true;
+    }
+
+    return ISimpleTransform::prepare();
+}
+
+Chunk DistinctTransform::flushPendingChunks()
+{
+    pending_rows = 0;
+    pending_input_rows = 0;
+    auto chunks = std::exchange(pending_chunks, {});
+    if (chunks.size() == 1)
+        return std::move(chunks.front());
+    return Squashing::squashWithoutChunkInfo(std::move(chunks));
+}
+
+void DistinctTransform::transform(Chunk & input_chunk, Chunk & output_chunk)
+{
+    /// A `ChunkInfo` can carry metadata for the consumer (e.g. the watermarks of a streaming read, also in
+    /// rowless marker chunks), which squashing would lose. Such a chunk is not coalesced: the held back rows
+    /// are emitted first (keeping the input for the next call), then the chunk is processed on its own.
+    if (coalesce_rows && !input_chunk.getChunkInfos().empty())
+    {
+        if (!pending_chunks.empty())
+        {
+            output_chunk = flushPendingChunks();
+            forward_input_after_flush = true;
+            return;
+        }
+
+        forward_input_after_flush = false;
+        deduplicate(input_chunk);
+        output_chunk.swap(input_chunk);
+        return;
+    }
+
+    transform(input_chunk);
+    output_chunk.swap(input_chunk);
+}
+
 ProcessorMemoryStats DistinctTransform::getMemoryStats() const
 {
     ProcessorMemoryStats res;
@@ -680,6 +735,31 @@ size_t DistinctTransform::spill(size_t /*at_least_bytes*/)
 
 void DistinctTransform::transform(Chunk & chunk)
 {
+    if (!coalesce_rows)
+    {
+        deduplicate(chunk);
+        return;
+    }
+
+    pending_input_rows += chunk.getNumRows();
+    deduplicate(chunk);
+    if (chunk.hasRows())
+    {
+        pending_rows += chunk.getNumRows();
+        pending_chunks.push_back(std::move(chunk));
+    }
+    chunk = {};
+
+    /// Also flush when the input is stopped or deduplication is released: the following chunks pass through.
+    const bool deduplicating = use_own_set ? !own_set_released : distinct_set.has_value();
+    if (!pending_chunks.empty()
+        && (pending_rows >= coalesce_rows || pending_input_rows / COALESCE_INPUT_BLOCKS >= coalesce_rows || no_more_data_needed
+            || !deduplicating))
+        chunk = flushPendingChunks();
+}
+
+void DistinctTransform::deduplicate(Chunk & chunk)
+{
     if (unlikely(!chunk.hasRows()))
         return;
 
@@ -713,6 +793,7 @@ void DistinctTransform::transform(Chunk & chunk)
             column = column->cut(0, 1);
 
         chunk.setColumns(std::move(columns), 1);
+        set_memory.report(chunk, getOutputPort().getHeader(), 0);
         stopReading();
         return;
     }
@@ -750,6 +831,8 @@ void DistinctTransform::transform(Chunk & chunk)
 
     const size_t num_rows = chunk.getNumRows();
     chunk = distinct_set->filter(std::move(chunk));
+
+    set_memory.report(chunk, getOutputPort().getHeader(), distinct_set->getTotalByteCount());
 
     /// Return the current chunk and stop before releasing the set if a size limit or the hint is reached.
     if (distinct_set->isLimitReached() || (limit_hint && distinct_set->getTotalRowCount() >= limit_hint))
