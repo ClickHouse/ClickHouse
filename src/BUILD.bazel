@@ -4169,6 +4169,8 @@ cc_library(
         ".",
     ],
     deps = [
+        "//src/Access/Common:headers",
+        "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_abseil_cpp//:absl_function_ref",
         "//base:pcg_random",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",

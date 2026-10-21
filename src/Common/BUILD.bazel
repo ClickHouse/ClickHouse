@@ -604,7 +604,6 @@ ch_cc_library(
     ),
     clickhouse_code = True,
     implementation_deps = [
-        "//src/Access/Common:headers",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_aws//:_aws",
         "@clickhouse_zstd//:_zstd",
@@ -622,7 +621,6 @@ ch_cc_library(
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
-        "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_rapidjson//:rapidjson",
         "//base/poco/Util:_poco_util",
         "//base/poco/XML:_poco_xml",
