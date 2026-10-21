@@ -50,6 +50,10 @@ namespace FailPoints
 LazyPipeFDs TraceSender::pipe;
 std::atomic<bool> TraceSender::shutdown{true};
 std::atomic<int> TraceSender::in_flight{0};
+std::mutex TraceSender::flush_mutex;
+std::condition_variable TraceSender::flush_cv;
+UInt64 TraceSender::flush_requested = 0;
+UInt64 TraceSender::flush_completed = 0;
 
 static thread_local bool inside_send = false;
 void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept
@@ -165,7 +169,7 @@ TraceSender::ProfileTracesFlushResult TraceSender::flushProfileTraces(
     /// Keep the marker in one atomic write, just like a sampled stack. The ordinary sender
     /// drops samples on a full pipe, but a final drain needs a delivered ordering marker.
     char buffer[1 + sizeof(subscription_id)];
-    buffer[0] = 2;
+    buffer[0] = 3; /// `PROFILE_TRACES_FLUSH_MARKER` in `TraceCollector::run`.
     memcpy(buffer + 1, &subscription_id, sizeof(subscription_id));
     fiu_do_on(FailPoints::profile_traces_flush_write_timeout, { deadline = std::chrono::steady_clock::now(); });
     while (true)

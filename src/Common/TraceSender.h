@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 #include <Common/PipeFDs.h>
 #include <Common/ProfileEvents.h>
@@ -64,14 +66,19 @@ public:
     static ProfileTracesFlushResult flushProfileTraces(UInt64 subscription_id, std::chrono::steady_clock::time_point deadline);
 
     /// True when a `TraceCollector` is running, i.e. when `send` can deliver rather than discard.
-    static bool isCollecting()
-    {
-        return pipe.fds_rw[1] >= 0 && !shutdown.load();
-    }
+    /// `shutdown` is checked first, so inside an `in_flight` section the fd is not read while the destructor resets it.
+    static bool isCollecting() { return !shutdown.load() && pipe.fds_rw[1] >= 0; }
 
 private:
     friend class TraceCollector;
     static LazyPipeFDs pipe;
+
+    /// `TraceCollector::flush` numbers the markers it writes to the pipe, the collector counts the ones it has read.
+    /// Static like `pipe`, because `SYSTEM FLUSH LOGS` can run while `Context::shutdown` destroys the collector.
+    static std::mutex flush_mutex;
+    static std::condition_variable flush_cv;
+    static UInt64 flush_requested;
+    static UInt64 flush_completed;
 
     /// Coordinate shutdown with concurrent `send()` callers (which may run from
     /// profiler signal handlers on any thread). `TraceCollector::~TraceCollector`
