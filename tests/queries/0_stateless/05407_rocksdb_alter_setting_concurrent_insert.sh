@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: use-rocksdb
+# Tags: use-rocksdb, no-random-detach
+# no-random-detach: concurrent `INSERT`s and `ALTER`s run on the same table, so a random DETACH/ATTACH before one of them makes the others fail with `UNKNOWN_TABLE`
 
 # `ALTER TABLE ... MODIFY SETTING` on an `EmbeddedRocksDB` table runs concurrently with `INSERT`s, which read the settings
 # (`optimize_for_bulk_insert`, `bulk_insert_block_size`). `getSettings` used to return a reference into a snapshot it
