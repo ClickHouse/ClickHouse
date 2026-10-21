@@ -38,3 +38,6 @@ SELECT round(areaSpherical(readWKTPolygon('POLYGON((179 0,-179 0,-179 1,179 1,17
 
 -- Non-area geometries keep their zero result.
 SELECT areaCartesian(readWKTPoint('POINT(0 0)')), areaCartesian(readWKTLineString('LINESTRING(0 0,1 1)'));
+
+-- GeoParquet regression: the same negatively wound polygon has positive area as Polygon and Geometry.
+SELECT areaCartesian(readWKTPolygon('POLYGON((-111 45,-111 49,-104 49,-104 45,-111 45))')), areaCartesian(readWKTPolygon('POLYGON((-111 45,-111 49,-104 49,-104 45,-111 45))')::Geometry);

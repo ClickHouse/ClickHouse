@@ -95,6 +95,8 @@ struct AlterCommand
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
+    /// The expression of an `EPHEMERAL` column was not written by the user, so it is not formatted back.
+    bool ephemeral_default = false;
 
     /// For COMMENT column or table
     std::optional<String> comment;
