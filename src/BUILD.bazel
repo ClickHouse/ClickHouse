@@ -1849,6 +1849,7 @@ _DBMS_LOCAL_DEFINES = [
 ch_cc_library(
     name = "dbms__compile_0",
     srcs = [
+        "//bazel:gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
         "//src/Dictionaries:DictionaryFactory.cpp",
         "//src/Dictionaries:DictionarySourceFactory.cpp",
         "//src/Dictionaries:DictionaryStructure.cpp",
