@@ -10,7 +10,6 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <filesystem>
 
@@ -30,11 +29,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int EXPECTED_END_OF_FILE;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsFloat primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
 }
 
 String getPrimaryIndexFileName(const IDataPartStorage & data_part_storage)
@@ -76,9 +70,8 @@ Columns loadPrimaryIndexFromStorage(
     const IDataPartStorage & data_part_storage,
     const KeyDescription & primary_key,
     size_t marks_count,
-    const MergeTreeSettings & storage_settings,
     const ReadSettings & read_settings,
-    bool keep_all_columns)
+    const std::function<void(MutableColumns &)> & optimize_columns)
 {
     const size_t key_size = primary_key.column_names.size();
     if (!key_size)
@@ -109,11 +102,7 @@ Columns loadPrimaryIndexFromStorage(
             key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
     }
 
-    if (!keep_all_columns)
-        dropPrimaryIndexSuffixColumns(
-            marks_count,
-            loaded_index,
-            static_cast<Float64>(storage_settings[MergeTreeSetting::primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns]));
+    optimize_columns(loaded_index);
 
     size_t total_bytes = 0;
     for (const auto & column : loaded_index)

@@ -964,6 +964,7 @@ private:
     std::shared_ptr<Index> loadIndex() const;
 
     /// Optimize index. Drop useless columns from suffix of primary key.
+    template <typename Columns>
     void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
