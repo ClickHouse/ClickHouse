@@ -1,4 +1,6 @@
 #include <Access/ContextAccess.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
@@ -7,6 +9,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -337,7 +340,7 @@ using CapturedValues = std::unordered_map<std::string, ASTPtr>;
 /// so references to them inside the body are inlined instead of being emitted as bare, unresolvable identifiers.
 ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const CapturedValues & captured = {});
 
-ASTPtr convertConstantToAST(const IColumn & column, const IDataType & type);
+ASTPtr convertConstantToAST(const ColumnPtr & column, const DataTypePtr & type);
 
 /// Reconstructs a lambda (e.g. the `x -> f(x)` inside arrayMap) as `lambda(tuple(args), body)`.
 /// `captured_values` are the values supplied for the capture, aligned with capture.captured_names.
@@ -389,7 +392,7 @@ ASTPtr convertFunctionColumnToAST(const IColumn & column)
     ASTs captured_values;
     for (const auto & captured_column : column_function->getCapturedColumns())
     {
-        auto captured_value = convertConstantToAST(*captured_column.column, *captured_column.type);
+        auto captured_value = convertConstantToAST(captured_column.column, captured_column.type);
         if (!captured_value)
             return nullptr;
 
@@ -399,16 +402,48 @@ ASTPtr convertFunctionColumnToAST(const IColumn & column)
     return convertLambdaToAST(function_expression->getCapture(), function_expression->getAcionsDAG(), std::move(captured_values));
 }
 
-ASTPtr convertConstantToAST(const IColumn & column, const IDataType & type)
+/// Whether a literal of `value` has the type `type`, so it needs no cast.
+/// Compares the names, because `equals` does not tell `Bool` from `UInt8`.
+bool literalHasType(const Field & value, const IDataType & type)
+{
+    try
+    {
+        return applyVisitor(FieldToDataType(), value)->getName() == type.getName();
+    }
+    catch (const Exception &)
+    {
+        /// `FieldToDataType` throws for values without a common type, such as an array of a number and a string.
+        return false;
+    }
+}
+
+ASTPtr convertConstantToAST(const ColumnPtr & column, const DataTypePtr & type)
 {
     /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
     if (WhichDataType(type).isSet())
-        return convertSetColumnToAST(column);
+        return convertSetColumnToAST(*column);
 
     if (WhichDataType(type).isFunction())
-        return convertFunctionColumnToAST(column);
+        return convertFunctionColumnToAST(*column);
 
-    return make_intrusive<ASTLiteral>(column[0]);
+    /// A literal that already has the type stays bare: the analyzer does not fold a cast whose result takes 1 MiB or
+    /// more, and the needles of `hasAnyTokens` must stay a constant.
+    Field value = (*column)[0];
+    if (literalHasType(value, *type))
+        return make_intrusive<ASTLiteral>(std::move(value));
+
+    /// Otherwise a bare literal takes the type of its `Field`, so a `Date` would become a number. Convert the constant
+    /// the way the analyzer does, which casts the literal to the constant's type where needed.
+    const auto * column_const = typeid_cast<const ColumnConst *>(column.get());
+    auto value_column = column_const ? column_const->getDataColumnPtr() : column->cut(0, 1);
+    auto ast = ConstantNode(ColumnConst::create(std::move(value_column), 1), type).toAST();
+
+    /// The analyzer casts a literal only if the kind of its type differs, so a `Map(String, Date)` value would stay
+    /// a literal of `Map(String, UInt16)`.
+    if (const auto * literal = ast->as<ASTLiteral>(); literal && !literalHasType(literal->value, *type))
+        return makeCastToTypeNameAST(std::move(ast), type->getName());
+
+    return ast;
 }
 
 ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const CapturedValues & captured)
@@ -425,7 +460,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const CapturedValues & ca
             if (!node.column)
                 return nullptr;
 
-            return convertConstantToAST(*node.column, *node.result_type);
+            return convertConstantToAST(node.column, node.result_type);
         }
 
         case ActionsDAG::ActionType::ALIAS:
