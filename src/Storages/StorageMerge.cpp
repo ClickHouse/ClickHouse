@@ -725,8 +725,15 @@ void StorageMerge::updateExternalDynamicMetadataIfExists(ContextPtr query_contex
         traverseTablesUntilImpl(query_context, this, database_name_or_regexp, [&](const StoragePtr & table)
         {
             const auto id = table->getStorageID();
-            if (access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
-                resolveStorageProxyLoading(table)->updateExternalDynamicMetadataIfExists(query_context);
+            if (!access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+                return false;
+
+            auto child = resolveStorageProxyLoading(table);
+            /// A dangling `Alias` reports empty metadata, so it must not fail `DESCRIBE`; a `SELECT` still throws.
+            if (const auto * alias = child->as<StorageAlias>(); alias && alias->hasMissingTarget())
+                return false;
+
+            child->updateExternalDynamicMetadataIfExists(query_context);
             return false;
         });
     }

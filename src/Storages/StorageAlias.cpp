@@ -82,6 +82,25 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
+bool StorageAlias::hasMissingTarget() const
+{
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    const StorageAlias * alias = this;
+    StoragePtr alias_holder;
+
+    /// A cyclic chain has no final table either.
+    while (visited.emplace(alias->target_database, alias->target_table).second)
+    {
+        alias_holder = resolveStorageProxyLoading(alias->tryGetTargetTable());
+        if (!alias_holder)
+            return true;
+        alias = alias_holder->as<StorageAlias>();
+        if (!alias)
+            return false;
+    }
+    return true;
+}
+
 bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     if (!query_context)

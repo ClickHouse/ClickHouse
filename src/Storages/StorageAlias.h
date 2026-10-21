@@ -53,6 +53,9 @@ public:
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
 
+    /// Whether the chain of aliases starting here ends at a missing table.
+    bool hasMissingTarget() const;
+
     /// Returns whether the current user has the specified access to every table this alias resolves
     /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
     /// An empty `column_name` represents table-level access.
