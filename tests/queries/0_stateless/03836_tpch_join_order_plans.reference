@@ -472,22 +472,22 @@ Expression (Project names)
                 ReadFromMergeTree (ReplicatedRead default.nation)
           Expression ((Create the result of IN for the matched rows + (Project names + (Projection + WHERE))))
             ShuffleExchange
-              JoinLogical (Shuffle HashJoin )
+              JoinLogical (Broadcast HashJoin )
                 Filter (WHERE)
                   JoinLogical (Shuffle HashJoin  swapped)
                     Expression (Change column names to column identifiers)
                       ShuffleExchange
                         ReadFromMergeTree (ParallelRead default.partsupp)
                     Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
-                      Aggregating
-                        Expression (Before GROUP BY)
-                          Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-                            ShuffleExchange
-                              ReadFromMergeTree (ParallelRead default.lineitem)
+                      MergingAggregated
+                        ShuffleExchange
+                          Aggregating
+                            Expression (Before GROUP BY)
+                              Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                                ReadFromMergeTree (ParallelRead default.lineitem)
                 Expression ((Create the result of IN for the matched rows + (Project names + Projection)))
                   Expression ((WHERE + Change column names to column identifiers))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.part)
+                    ReadFromMergeTree (ReplicatedRead default.part)
 -- Q21
 Expression (Project names)
   Limit (preliminary LIMIT)
