@@ -2181,7 +2181,6 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
     const auto & variant_types = from_variant.getVariants();
     ElementWrappers variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
-    /// Errors of the variants that cannot be converted, thrown only for a column with values of these variants.
     VectorWithMemoryTracking<std::shared_ptr<const Exception>> variant_errors(variant_types.size());
 
     /// Create conversion wrapper for each variant.
@@ -2218,7 +2217,6 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         variant_wrappers.push_back(wrapper);
     }
 
-    /// None of the variants can be converted.
     if (std::ranges::all_of(variant_errors, [](const auto & error) { return error != nullptr; }))
         throwDeferredError(*variant_errors.front());
 
