@@ -68,6 +68,33 @@ CREATE TABLE tab_array_path_split_by_string
 ENGINE = MergeTree
 ORDER BY id;
 
+CREATE TABLE tab_array_path_separator
+(
+  id UInt32,
+  data JSON(key Array(String)),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByString([' ']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_array_path_postprocessor
+(
+  id UInt32,
+  data JSON(key Array(String)),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(JSONAllValues(data)))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_preprocessor
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByString([' ']), preprocessor = lower(JSONAllValues(data)))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
 INSERT INTO tab_split_by_string VALUES (1, '{"key": "the quick brown fox"}'), (2, '{"key": "lazy dog"}'), (3, '{"key": "brown quick"}');
 INSERT INTO tab_split_by_non_alpha SELECT * FROM tab_split_by_string;
 INSERT INTO tab_array SELECT * FROM tab_split_by_string;
@@ -75,6 +102,9 @@ INSERT INTO tab_ngrams SELECT * FROM tab_split_by_string;
 INSERT INTO tab_typed SELECT * FROM tab_split_by_string;
 INSERT INTO tab_array_path_array VALUES (1, '{"key": ["the quick brown fox", "cat"]}'), (2, '{"key": ["lazy", "dog"]}');
 INSERT INTO tab_array_path_split_by_string SELECT * FROM tab_array_path_array;
+INSERT INTO tab_array_path_separator VALUES (1, '{"key": ["the quick()brown fox"]}'), (2, '{"key": ["lazy dog"]}');
+INSERT INTO tab_preprocessor VALUES (1, '{"key": "QUICK BROWN fox"}'), (2, '{"key": "lazy dog"}');
+INSERT INTO tab_array_path_postprocessor VALUES (1, '{"key": ["CAT"]}'), (2, '{"key": ["dog"]}');
 
 SELECT 'splitByString';
 SELECT groupArray(id) FROM (SELECT id FROM tab_split_by_string WHERE hasPhrase(data.key::String, ['quick', 'brown']) ORDER BY id);
@@ -119,8 +149,8 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasPhrase(
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasPhrase(data.key, 'dog', 'array') ORDER BY id) SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, ['dog', 'bird']) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, ['dog', 'bird']) ORDER BY id) SETTINGS use_skip_indexes = 0;
-SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAllTokens(data.key, ['fox', 'cat']) ORDER BY id);
-SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAllTokens(data.key, ['fox', 'cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAllTokens(data.key, ['the quick brown fox', 'cat']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAllTokens(data.key, ['the quick brown fox', 'cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, 'dog') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, 'dog') ORDER BY id) SETTINGS use_skip_indexes = 0;
 
@@ -136,6 +166,34 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE 
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAllTokens(data.key, 'quick cat') ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAllTokens(data.key, 'quick cat') ORDER BY id) SETTINGS use_skip_indexes = 0;
 
+SELECT 'array-valued path, index tokenizer is applied';
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_separator WHERE hasAnyTokens(data.key, ['quick()brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_separator WHERE hasAnyTokens(data.key, ['quick()brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_separator WHERE hasAllTokens(data.key, ['quick()brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_separator WHERE hasAllTokens(data.key, ['quick()brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_separator WHERE hasPhrase(data.key, ['quick()brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_separator WHERE hasPhrase(data.key, ['quick()brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(r) FROM (SELECT hasPhrase(data.key, ['quick()brown']) AS r FROM tab_array_path_separator ORDER BY id);
+
+SELECT 'array-valued path, index postprocessor is applied';
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_postprocessor WHERE hasAnyTokens(data.key, ['cat']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_postprocessor WHERE hasAnyTokens(data.key, ['cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_postprocessor WHERE hasAllTokens(data.key, ['cat']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_postprocessor WHERE hasAllTokens(data.key, ['cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_postprocessor WHERE hasPhrase(data.key, ['cat']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_postprocessor WHERE hasPhrase(data.key, ['cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(r) FROM (SELECT hasAnyTokens(data.key, ['cat']) AS r FROM tab_array_path_postprocessor ORDER BY id);
+
+SELECT 'preprocessor, array needles';
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasPhrase(data.key, ['QUICK', 'BROWN']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasPhrase(data.key, ['QUICK', 'BROWN']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasAnyTokens(data.key, ['QUICK']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasAnyTokens(data.key, ['QUICK']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasAllTokens(data.key, ['QUICK', 'BROWN']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasAllTokens(data.key, ['QUICK', 'BROWN']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasPhrase(data.key, 'QUICK BROWN') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_preprocessor WHERE hasPhrase(data.key, 'QUICK BROWN') ORDER BY id) SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_split_by_string;
 DROP TABLE tab_split_by_non_alpha;
 DROP TABLE tab_array;
@@ -143,3 +201,6 @@ DROP TABLE tab_ngrams;
 DROP TABLE tab_typed;
 DROP TABLE tab_array_path_array;
 DROP TABLE tab_array_path_split_by_string;
+DROP TABLE tab_array_path_separator;
+DROP TABLE tab_array_path_postprocessor;
+DROP TABLE tab_preprocessor;
