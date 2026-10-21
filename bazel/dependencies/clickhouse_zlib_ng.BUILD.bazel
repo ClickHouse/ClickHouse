@@ -91,12 +91,23 @@ ch_cc_library(
         "gzlib.c",
         ":config/contrib/zlib-ng-cmake/gzread.c",
         "gzwrite.c",
-    ],
+    ] + glob([
+        "*.h",
+        "arch/generic/**/*.h",
+    ]) + select({
+        "@platforms//cpu:x86_64": glob([
+            "arch/x86/*avx2*.h",
+            "arch/x86/*ssse3*.h",
+            "arch/x86/*_pclmulqdq*.h",
+            "arch/x86/x86_*.h",
+        ]),
+        "@platforms//cpu:aarch64": glob(["arch/arm/**/*.h"]),
+    }),
     hdrs = [
         ":config/contrib/zlib-ng-cmake/zconf.h",
         ":config/contrib/zlib-ng-cmake/zlib.h",
         ":config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
-    ] + glob(["**/*.h"]),
+    ],
     copts = [
         "-w",
         "-std=gnu11",

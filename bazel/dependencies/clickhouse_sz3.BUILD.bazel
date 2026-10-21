@@ -15,5 +15,6 @@ cc_library(
     ],
     deps = [
         "@clickhouse//contrib/sz3-cmake:headers",
+        "@clickhouse_zstd//:_zstd",
     ],
 )
