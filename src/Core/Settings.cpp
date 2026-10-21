@@ -1423,7 +1423,7 @@ Allow `CREATE ROW POLICY` and `ALTER ROW POLICY` for a `SummingMergeTree`, `Aggr
 
 A merge on these engines produces one row out of all the rows with the same sorting key, taking column values from all of them. A row policy cannot hide a row from that merge, only from its result, which by then holds the values of the hidden rows as well - so the policy is not a security boundary. Define the policy on the table which stores the raw rows instead.
 )", 0, \
-        {"26.10", true, false, "New setting that rejects a row policy on a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table, because a merge puts the values of the hidden rows into the row the policy shows. previous_value=true so `compatibility` with versions before 26.10 keeps the old behavior."}) \
+        {"26.11", true, false, "New setting that rejects a row policy on a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table, because a merge puts the values of the hidden rows into the row the policy shows. previous_value=true so `compatibility` with versions before 26.11 keeps the old behavior."}) \
     DECLARE(Bool, allow_suspicious_variant_types, false, R"(
 In CREATE TABLE statement allows specifying Variant type with similar variant types (for example, with different numeric or date types). Enabling this setting may introduce some ambiguity when working with values with similar types.
 )", 0, \
