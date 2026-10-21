@@ -205,7 +205,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "//contrib/lz4-cmake:_lz4",
-        "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_openldap//:_ldap",
         "@clickhouse_silk//:_silk_fibers",
