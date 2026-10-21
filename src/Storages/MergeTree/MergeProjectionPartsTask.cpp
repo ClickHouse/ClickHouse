@@ -116,7 +116,8 @@ bool MergeProjectionPartsTask::executeStep()
             NO_TRANSACTION_PTR,
             &projection,
             new_data_part.get(),
-            ".tmp_proj");
+            ".tmp_proj",
+            /* force_sync */ need_sync);
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
