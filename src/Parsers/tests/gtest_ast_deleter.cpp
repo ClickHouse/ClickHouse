@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <Parsers/IAST.h>
 #include <Common/StackTrace.h>
+#include <base/defines.h>
 
 struct StackDecrementer
 {
@@ -21,6 +22,43 @@ struct ASTCounting : public StackDecrementer, public DB::IAST
     String getID(char) const override { return ""; }
     DB::ASTPtr clone() const override { return nullptr; }
 };
+
+namespace
+{
+
+const void * NO_INLINE getCompleteObjectAddress(const DB::IAST * ast)
+{
+    return dynamic_cast<const void *>(ast);
+}
+
+struct NonIASTBase
+{
+    virtual ~NonIASTBase() = default;
+};
+
+struct ASTObservedDuringDestruction : public DB::IAST
+{
+    explicit ASTObservedDuringDestruction(const void *& observed_address_) : observed_address(observed_address_) {}
+
+    ~ASTObservedDuringDestruction() override
+    {
+        /// Force the compiler to expose this base's dynamic type in its destructor. This ensures that a later
+        /// `dynamic_cast<void *>` through `IAST` cannot accidentally use the stale most-derived vptr.
+        observed_address = getCompleteObjectAddress(this);
+    }
+
+    String getID(char) const override { return ""; }
+    DB::ASTPtr clone() const override { return nullptr; }
+
+    const void *& observed_address;
+};
+
+struct ASTWithNonPrimaryIAST : public NonIASTBase, public ASTObservedDuringDestruction
+{
+    explicit ASTWithNonPrimaryIAST(const void *& observed_address_) : ASTObservedDuringDestruction(observed_address_) {}
+};
+
+}
 
 class ASTWithMembers : public ASTCounting
 {
@@ -66,6 +104,24 @@ TEST(ASTDeleter, SimpleChain)
         for (size_t i = 0; i < chain_length; ++i)
             ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
     }
+}
+
+TEST(ASTDeleter, CompleteObjectAddressIsTakenBeforeDestruction)
+{
+    const void * observed_address = nullptr;
+    const void * child_observed_address = nullptr;
+
+    {
+        auto ast = DB::make_intrusive<ASTWithNonPrimaryIAST>(observed_address);
+        ast->children.emplace_back(DB::make_intrusive<ASTObservedDuringDestruction>(child_observed_address));
+
+        const DB::IAST * iast = ast.get();
+        ASSERT_NE(static_cast<const void *>(ast.get()), static_cast<const void *>(iast));
+        ASSERT_EQ(static_cast<const void *>(ast.get()), dynamic_cast<const void *>(iast));
+    }
+
+    EXPECT_NE(observed_address, nullptr);
+    EXPECT_NE(child_observed_address, nullptr);
 }
 
 TEST(ASTDeleter, SimpleChainLong)
