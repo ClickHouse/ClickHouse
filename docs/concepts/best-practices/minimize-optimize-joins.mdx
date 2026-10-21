@@ -26,7 +26,11 @@ For a full guide on denormalizing data in ClickHouse see [here](/guides/clickhou
 
 ## When JOINs are required {#when-joins-are-required}
 
-**Use ClickHouse 26.8 or later.** Multi-table JOIN reordering and optimizer use of available statistics are enabled by default since 25.12. [Column statistics](/reference/settings/session-settings/allow-statistics#allow_statistics) became generally available and enabled by default in 26.3. Since 26.8, eligible tables [materialize column statistics on insert](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) by default, improving estimates for cost-based JOIN optimization.
+<Tip>
+**Use ClickHouse 26.8 or later.**
+
+Multi-table JOIN reordering and optimizer use of available statistics are enabled by default since 25.12. [Column statistics](/reference/settings/session-settings/allow-statistics#allow_statistics) became generally available and enabled by default in 26.3. Since 26.8, eligible tables [materialize column statistics on insert](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) by default, improving estimates for cost-based JOIN optimization.
+</Tip>
 
 Follow these best practices to improve JOIN performance:
 
