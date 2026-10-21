@@ -205,6 +205,7 @@ CMake hash recorded below.
 | `f05573ccb` (verification snapshot) | Give SASL its two public API headers and eight private Linux headers | [b600961e](https://app.buildbuddy.io/invocation/b600961e-221a-442d-9e7e-440deab28b33) | [fe01e4e0](https://app.buildbuddy.io/invocation/fe01e4e0-0061-4d3f-b172-1701a9714641) |
 | `2cb60420e` (verification snapshot) | Give libxml2 and jemalloc their configured public headers; remove unused private, C++ runtime and disabled zlib inputs | [c6e27cc7](https://app.buildbuddy.io/invocation/c6e27cc7-329a-4937-a305-01903f32574f) | [171dfda4](https://app.buildbuddy.io/invocation/171dfda4-247b-416f-9be2-f0cf93e01788) |
 | `826781f96` (verification snapshot) | Remove unused direct NuRaft dependencies from Compression and ZooKeeper; retain the required ZooKeeper base dependency | [e2cb9c03](https://app.buildbuddy.io/invocation/e2cb9c03-d73a-4759-bd37-5669ed9be2b8) | [1493e7ca](https://app.buildbuddy.io/invocation/1493e7ca-b75b-4118-b902-3cbdfd0abef9) |
+| `125dea6d8` (verification snapshot) | Remove 722 copied dependency entries from TableFunctions, TimeSeries and GatherUtils; add their direct private C++ imports | [1d0669af](https://app.buildbuddy.io/invocation/1d0669af-6566-4ba5-a1e7-23a9d4d1e093) | [4c01c0ca](https://app.buildbuddy.io/invocation/4c01c0ca-e55e-47c9-a80e-0620663695bf) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
