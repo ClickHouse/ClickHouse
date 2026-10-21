@@ -5,6 +5,9 @@
         <max_threads>1</max_threads>
         <!-- Isolate the propagation from the runtime-filter pass -->
         <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <!-- Keep the written orientation, the right table is the build side -->
+        <query_plan_optimize_join_order_limit>0</query_plan_optimize_join_order_limit>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
     </settings>
 
     <!-- `k` is deliberately not in the primary key, so the copied predicate cannot prune granules -->
