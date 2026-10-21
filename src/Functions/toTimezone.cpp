@@ -5,11 +5,19 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
+#include <Interpreters/Context.h>
+
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_nonconst_timezone_arguments;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -26,16 +34,28 @@ public:
 
     String getName() const override { return "toTimezone"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         if (arguments.size() > 1)
         {
-        /// The result type has a single time zone, therefore a non-constant time zone
-        /// argument cannot be honored: silently returning wrong values is not allowed.
-        /// (Complements the resolution-time check in `ToTimeZoneOverloadResolver::getReturnTypeImpl`,
-        /// which must always reject; this guards the execution path itself.)
-        const auto & tz_column = arguments[1].column;
+            /// The result type has a single time zone, therefore a non-constant time zone
+            /// argument cannot be honored: silently returning wrong values is not allowed.
+            const auto & tz_column = arguments[1].column;
             if (!tz_column || !isColumnConst(*tz_column))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of time zone argument of function {}, must be a constant string",
+                    arguments[1].name, getName());
+
+            /// During type resolution a non-constant time zone argument is not visible as a
+            /// constant column, so the resolved result type may have fallen back to the time
+            /// zone of the first argument. The analyzer can replace this function with a folded
+            /// constant afterwards (e.g. when the arguments come from a single-row subquery),
+            /// and such a folded constant would silently show values in the wrong time zone.
+            /// Reject the mismatched result type at execution for the same reason.
+            const auto tz_name = extractTimeZoneNameFromColumn(tz_column.get(), arguments[1].name);
+            const auto * timezone_mixin = dynamic_cast<const TimezoneMixin *>(result_type.get());
+            if (timezone_mixin && !tz_name.empty()
+                && (!timezone_mixin->hasExplicitTimeZone() || timezone_mixin->getTimeZone().getTimeZone() != tz_name))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of time zone argument of function {}, must be a constant string",
                     arguments[1].name, getName());
@@ -98,8 +118,15 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<ToTimeZoneOverloadResolver>(); }
-    explicit ToTimeZoneOverloadResolver() = default;
+    static FunctionOverloadResolverPtr create(ContextPtr context)
+    {
+        /// The setting is read at creation time, from the context of the query that uses
+        /// the function - the same behavior as in the other functions with time zone arguments.
+        return std::make_unique<ToTimeZoneOverloadResolver>(context);
+    }
+    explicit ToTimeZoneOverloadResolver(ContextPtr context)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
+    {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -113,12 +140,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                 "Should be DateTime or DateTime64", arguments[0].type->getName(), getName());
 
-        /// The time zone argument must be a constant string, and the setting is
-        /// deliberately not taken into account: a non-constant time zone cannot be
-        /// honored per-row, because the result type carries a single time zone
-        /// (see the check in `ExecutableFunctionToTimeZone::executeImpl` for the
-        /// same reason at execution time).
-        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, /*allow_nonconst_timezone_arguments=*/false);
+        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
 
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
@@ -139,6 +161,8 @@ public:
 
         return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, data_types, result_type);
     }
+private:
+    bool allow_nonconst_timezone_arguments = false;
 };
 
 }
