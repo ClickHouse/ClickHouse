@@ -661,17 +661,19 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (configuration->shouldReloadSchemaForConsistency(query_context))
     {
         if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
-        {
             new_metadata = *metadata_snapshot;
-            new_metadata.settings_changes = current_metadata->settings_changes;
-        }
     }
 
-    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    auto metadata_with_virtuals = new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         new_metadata.columns,
         query_context,
         format_settings,
-        configuration->partition_strategy_type)));
+        configuration->partition_strategy_type));
+
+    std::lock_guard lock(settings_changes_mutex);
+    auto latest_metadata = getInMemoryMetadataPtr(query_context, false);
+    metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
+    setInMemoryMetadata(metadata_with_virtuals);
 }
 
 
@@ -1271,7 +1273,7 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
     try
     {
         auto previous_settings = configuration->getDataLakeSettings();
-        configuration->setDataLakeSettings(object_storage, global_context, std::move(new_settings));
+        configuration->setDataLakeSettings(global_context, std::move(new_settings));
         try
         {
             DatabaseCatalog::instance()
@@ -1281,9 +1283,10 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
         catch (...)
         {
             /// The definition of the table is not changed, so the table keeps the previous settings.
-            configuration->setDataLakeSettings(object_storage, global_context, std::move(previous_settings));
+            configuration->setDataLakeSettings(global_context, std::move(previous_settings));
             throw;
         }
+        std::lock_guard lock(settings_changes_mutex);
         setInMemoryMetadata(new_metadata);
     }
     catch (...)

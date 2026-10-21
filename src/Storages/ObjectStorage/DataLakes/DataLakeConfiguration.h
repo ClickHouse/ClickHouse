@@ -112,7 +112,7 @@ public:
         return settings;
     }
 
-    void setDataLakeSettings(ObjectStoragePtr object_storage, ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
+    void setDataLakeSettings(ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
     {
         DataLakeStorageSettingsPtr previous_settings;
         {
@@ -120,10 +120,14 @@ public:
             previous_settings = std::exchange(settings, std::move(new_settings));
         }
 
+        auto metadata = tryGetMetadata();
+        if (!metadata)
+            return;
+
         std::shared_ptr<IDataLakeMetadata> fresh;
         try
         {
-            fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+            fresh = metadata->cloneWithNewSettings(this->shared_from_this(), local_context);
         }
         catch (...)
         {

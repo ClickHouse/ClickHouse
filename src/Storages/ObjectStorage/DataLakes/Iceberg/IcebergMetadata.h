@@ -202,6 +202,8 @@ public:
 
     void drop(ContextPtr context) override;
 
+    DataLakeMetadataPtr cloneWithNewSettings(StorageObjectStorageConfigurationPtr configuration, ContextPtr context) const override;
+
     static DataLakeMetadataPtr createWithDeserialization(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,

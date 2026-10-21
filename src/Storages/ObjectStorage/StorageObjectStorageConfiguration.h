@@ -301,7 +301,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void setDataLakeSettings(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
+    virtual void setDataLakeSettings(ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }

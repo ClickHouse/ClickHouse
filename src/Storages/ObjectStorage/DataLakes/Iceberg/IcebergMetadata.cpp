@@ -1186,6 +1186,15 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
+DataLakeMetadataPtr IcebergMetadata::cloneWithNewSettings(StorageObjectStorageConfigurationPtr configuration, ContextPtr context) const
+{
+    auto metadata = std::make_unique<IcebergMetadata>(
+        object_storage, std::move(configuration), Iceberg::PersistentTableComponents(persistent_components), std::move(context));
+    if (auto path = explicit_metadata_file_path.get())
+        metadata->explicit_metadata_file_path.set(std::make_unique<const String>(*path));
+    return metadata;
+}
+
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
