@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <string_view>
 
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -17,7 +16,7 @@ namespace DB
 {
 
 /// `constexpr` so that including this header costs no static initializer.
-constexpr std::array<std::string_view, 31> four_letter_word_commands
+constexpr std::array<const char *, 31> four_letter_word_commands
     {
         "ruok", "mntr", "srvr", "stat", "srst", "conf",
         "cons", "crst", "envi", "dirs", "isro", "wchs",
