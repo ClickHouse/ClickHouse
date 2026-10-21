@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,6 +13,7 @@ ch_cc_library(
     srcs = ["ZooKeeperImpl.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        ":clickhouse_common_zookeeper_base",
         ":headers",
         "//base:common",
         "//base/poco/Net:_poco_net",
@@ -214,14 +214,15 @@ ch_cc_library(
         "ZooKeeperPathUtils.cpp",
         "ZooKeeperWithFaultInjection.cpp",
     ]) + glob(["KeeperClientCLI/*.cpp"]),
-    hdrs = ["ZooKeeperNodeCache.h"],
+    hdrs = [
+        "KeeperOverDispatcher.h",
+        "ZooKeeperImpl.h",
+        "ZooKeeperNodeCache.h",
+        "ZooKeeperRetries.h",
+    ],
     clickhouse_code = True,
     implementation_deps = [
-        "//base/poco/Foundation:_poco_foundation",
-        "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",
-        "//bazel:clickhouse_config_headers",
-        "//src/Common",
         "//src/Parsers:clickhouse_parsers",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
@@ -255,6 +256,11 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         ":headers",
+        "//base/poco/Foundation:_poco_foundation",
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Net:_poco_net",
+        "//src:headers",
+        "//src/Common",
         "//base:common",
         "//base/glibc-compatibility",
         "//contrib/lz4-cmake:_lz4",
@@ -279,6 +285,7 @@ ch_cc_library(
     srcs = ["ZooKeeperImpl.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        ":clickhouse_common_zookeeper_base",
         ":headers",
         "//base:common",
         "//base/poco/Net:_poco_net",
@@ -332,10 +339,31 @@ ch_cc_library(
     ],
 )
 
-cc_library(
+ch_cc_library(
     name = "headers",
     hdrs = glob(
         ["**/*.h"],
-        exclude = ["ZooKeeperNodeCache.h"],
+        exclude = [
+            "KeeperOverDispatcher.h",
+            "ZooKeeperImpl.h",
+            "ZooKeeperNodeCache.h",
+            "ZooKeeperRetries.h",
+        ],
     ),
+    clickhouse_code = True,
+    source_headers = False,
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base:pcg_random",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//bazel:clickhouse_config_headers",
+        "//src:core_types",
+        "//src:headers",
+        "//src/Common",
+        "//src/Parsers:headers",
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_fmtlib//:_fmt",
+    ],
 )

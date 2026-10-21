@@ -290,6 +290,7 @@ ch_cc_library(
         "@clickhouse_jemalloc//:_jemalloc",
         "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Compression:clickhouse_compression",
         "//src/Dictionaries:headers",
         "//src/Functions:headers",

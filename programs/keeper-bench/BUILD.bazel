@@ -23,6 +23,7 @@ ch_cc_library(
         "//src/Common",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Common/ZooKeeper:headers",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
     ],
     link_runtime = True,
     local_defines = [
