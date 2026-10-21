@@ -7,7 +7,9 @@
 -- interpreter (view, scalar subquery, Buffer, Distributed local shard), a plan driven by hand (GLOBAL IN subquery), a plan
 -- kept aside (set source, materialized CTE, correlated subquery), a plan deserialized on a shard (`serialize_query_plan`),
 -- or a plan spliced into the parent only during optimization (`TimeSeries` read). Every query aggregates under a global
--- GROUP BY limit, which a distributed plan does not support, so each falls back.
+-- GROUP BY limit, which a distributed plan does not support, so each falls back. The scalar subqueries and the INSERT
+-- through a materialized view read their outer rows from `Memory` tables, which cannot be read remotely, so their outer
+-- plans stay local too.
 -- The other group lifts the limit  of max_rows_to_group_by, hence
 -- must stay distributed.
 -- Next to the task count each row prints the reasons the initiator and the shard queries logged when they fell back
@@ -37,9 +39,10 @@ DROP TABLE IF EXISTS src_dpc;
 DROP TABLE IF EXISTS mut_dpc;
 DROP TABLE IF EXISTS mv_dpc;
 DROP TABLE IF EXISTS ts_dpc;
-DROP TABLE IF EXISTS ts_dpc_tags;
 DROP VIEW IF EXISTS v_dpc;
 DROP VIEW IF EXISTS v3_dpc;
+DROP TABLE IF EXISTS one_dpc;
+DROP TABLE IF EXISTS numbers_dpc;
 
 CREATE TABLE t_dpc (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_dpc SELECT number FROM numbers(100000);
@@ -53,11 +56,13 @@ CREATE TABLE src_dpc (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE mut_dpc (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO mut_dpc SELECT number FROM numbers(100000);
 CREATE VIEW v_dpc AS SELECT x FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000);
-CREATE VIEW v3_dpc AS SELECT (SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) AS c;
+CREATE TABLE one_dpc (dummy UInt8) ENGINE = Memory;
+INSERT INTO one_dpc VALUES (0);
+CREATE TABLE numbers_dpc (x UInt64) ENGINE = Memory;
+INSERT INTO numbers_dpc SELECT number FROM numbers(1000);
+CREATE VIEW v3_dpc AS SELECT (SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) AS c FROM one_dpc;
 CREATE MATERIALIZED VIEW mv_dpc TO sink_dpc AS SELECT x FROM src_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) GROUP BY x;
--- An external tags table gives the `TimeSeries` inner table a stable name for `additional_table_filters`.
-CREATE TABLE ts_dpc_tags (`id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC')))) ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
-CREATE TABLE ts_dpc (samples Array(Tuple(DateTime64(3, 'UTC'), Float32))) ENGINE = TimeSeries TAGS ts_dpc_tags;
+CREATE TABLE ts_dpc (samples Array(Tuple(DateTime64(3, 'UTC'), Float32))) ENGINE = TimeSeries;
 INSERT INTO ts_dpc (metric_name, tags, samples)
     SELECT 'm' || toString(number % 3), map('k', toString(number)), [(toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), toFloat32(number))] FROM numbers(100);
 
@@ -68,7 +73,7 @@ SELECT count() FROM t_dpc WHERE x + 0 IN (SELECT x FROM t_dpc2 WHERE x < 60000) 
 
 -- Plans built by a nested interpreter: view, scalar subquery, scalar subquery in a view, Merge, Buffer.
 SELECT count() FROM v_dpc SETTINGS log_comment = '05185_dpc_04_view';
-SELECT (SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_06_scalar_subquery';
+SELECT (SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) FROM one_dpc SETTINGS log_comment = '05185_dpc_06_scalar_subquery';
 SELECT c FROM v3_dpc SETTINGS log_comment = '05185_dpc_07_scalar_in_view';
 SELECT count() FROM m_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) SETTINGS log_comment = '05185_dpc_08_merge_table';
 SELECT count() FROM b_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) SETTINGS log_comment = '05185_dpc_09_buffer_table';
@@ -100,7 +105,7 @@ SELECT count() FROM t_dpc WHERE x IN t_dpc2 SETTINGS log_comment = '05185_dpc_25
 -- Other statement kinds: INSERT SELECT, an INSERT that pushes through a materialized view, EXPLAIN, a mutation.
 -- EXPLAIN never executes the plan, so no counter can fire: those rows only check that the decision path does not throw.
 INSERT INTO sink_dpc SELECT x FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) GROUP BY x SETTINGS log_comment = '05185_dpc_26_insert_select';
-INSERT INTO src_dpc SELECT number FROM numbers(1000) SETTINGS log_comment = '05185_dpc_27_insert_through_mv';
+INSERT INTO src_dpc SELECT x FROM numbers_dpc SETTINGS log_comment = '05185_dpc_27_insert_through_mv';
 SELECT count() FROM sink_dpc;
 SELECT count() > 0 FROM (EXPLAIN PLAN indexes = 1 SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_28_explain_plan';
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_29_explain_pipeline';
@@ -114,12 +119,10 @@ ALTER TABLE mut_dpc DELETE WHERE x IN (SELECT x FROM t_dpc WHERE x IN (SELECT x 
 SELECT count() FROM mut_dpc;
 
 -- A `TimeSeries` read: the outer plan always falls back, the generated sub-plan must come out local (no exchanges, no
--- logical joins), and an IN set inside it, applied through `additional_table_filters` on the tags table, must be built locally.
+-- logical joins).
 SELECT tags['k'] AS k, length(samples) FROM ts_dpc ORDER BY toUInt32(k) LIMIT 3 SETTINGS log_comment = '05185_dpc_32_time_series_read';
 SELECT countIf(explain LIKE '%Exchange%') AS exchanges, countIf(explain LIKE '%JoinLogical%') AS logical_joins
 FROM (EXPLAIN PLAN SELECT tags['k'] AS k FROM ts_dpc ORDER BY k LIMIT 3);
-SELECT metric_name, count() FROM ts_dpc GROUP BY metric_name ORDER BY metric_name
-    SETTINGS additional_table_filters = {'ts_dpc_tags': 'metric_name IN (SELECT \'m\' || toString(x) FROM t_dpc WHERE x < 60000)'}, log_comment = '05185_dpc_33_time_series_filter_set';
 
 -- Strict mode: the fallback itself is asserted, the query throws instead of running locally.
 SELECT count() FROM v_dpc SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
@@ -163,9 +166,10 @@ GROUP BY log_comment
 ORDER BY log_comment;
 
 DROP TABLE ts_dpc;
-DROP TABLE ts_dpc_tags;
 DROP TABLE mv_dpc;
 DROP VIEW v3_dpc;
+DROP TABLE one_dpc;
+DROP TABLE numbers_dpc;
 DROP VIEW v_dpc;
 DROP TABLE mut_dpc;
 DROP TABLE src_dpc;

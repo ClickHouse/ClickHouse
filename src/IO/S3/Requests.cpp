@@ -33,6 +33,14 @@ namespace DB::S3RequestSetting
 namespace DB::S3
 {
 
+Model::StorageClass getStorageClassForName(const std::string & name)
+{
+    /// An unknown name is sent as is, so it must not break the header line.
+    if (name.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting storage_class has invalid value: it contains CR or LF");
+    return Model::StorageClassMapper::GetStorageClassForName(name);
+}
+
 RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
 {
     /// An explicit setting always wins.

@@ -2,6 +2,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Core/Field.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
@@ -95,6 +96,11 @@ struct ExplainPlanOptions
     /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
     /// Gives access to more elaborative time metrics, affects the performance of a query
     bool time = false;
+    /// When set, each step is annotated with the hash of the plan node it belongs to. Nothing in a
+    /// plan carries these - they come from `calculateHashTableCacheKeys` - so a caller holding them
+    /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
+    /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
+    const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -267,6 +273,8 @@ private:
         /// See `serializeForDistributedTask`.
         bool sets_must_be_ready = false;
         SizeLimits sets_transfer_limits = {};
+        /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
+        size_t subquery_nesting_depth = 0;
     };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
@@ -349,9 +357,21 @@ struct ExchangeDescription
     };
 
     String name;
+    /// Id of the producer stage: the N of `exchange_N`, or the id of the `main` stage for `final_result`.
+    /// Not sent to workers.
+    UInt32 id = 0;
     Kind kind = Kind::Persisted;
     size_t source_bucket_count = 0;
     size_t destination_bucket_count = 0;
+
+    /// Name of the logical exchange step this exchange was cut from (`ShuffleExchange`, `ScatterExchange`,
+    /// `BroadcastExchange`, `GatherExchange`). Kept for `EXPLAIN`; not sent to workers. Empty for `final_result`,
+    /// which is not cut from a logical exchange step.
+    String exchange_step_name = {};
+    /// Hash keys of a shuffle or scatter exchange; empty for `any` distribution, broadcast and gather.
+    Names keys = {};
+    /// Sort order a gather exchange maintains when merging, if any.
+    std::optional<SortDescription> sort_description = {};
 };
 
 using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
@@ -389,6 +409,9 @@ struct DistributedQueryTask
 /// Tasks can be executed in parallel on different partitions of data
 struct DistributedQueryStage
 {
+    /// Number of the stage: the N of `stage_N` for worker stages, the next number for `main`, so that
+    /// ids ascend from the leaves to `main`. Not sent to workers.
+    UInt32 id = 0;
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
 
