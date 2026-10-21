@@ -329,21 +329,25 @@ void IcebergIterator::ensureDeletesReady()
 
         lock.lock();
         --delete_manifests_in_progress;
-        if (error)
+        if (!error)
         {
-            if (!deletes_exception)
-                deletes_exception = error;
-        }
-        else
-        {
-            for (auto & delete_file : delete_files)
+            try
             {
-                if (delete_file->parsed_entry->equality_ids.has_value())
-                    equality_deletes_files.emplace_back(std::move(delete_file));
-                else
-                    position_deletes_files.emplace_back(std::move(delete_file));
+                for (auto & delete_file : delete_files)
+                {
+                    if (delete_file->parsed_entry->equality_ids.has_value())
+                        equality_deletes_files.emplace_back(std::move(delete_file));
+                    else
+                        position_deletes_files.emplace_back(std::move(delete_file));
+                }
+            }
+            catch (...)
+            {
+                error = std::current_exception();
             }
         }
+        if (error && !deletes_exception)
+            deletes_exception = error;
         delete_manifest_parsed.notify_all();
     }
 }
@@ -427,18 +431,22 @@ Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
 
         lock.lock();
         --data_manifests_in_use;
-        if (error)
+        if (!error && entry)
         {
-            if (!data_files_exception)
-                data_files_exception = error;
+            try
+            {
+                idle_data_manifests.push_back(std::move(manifest));
+            }
+            catch (...)
+            {
+                error = std::current_exception();
+            }
         }
-        else if (entry)
-        {
-            idle_data_manifests.push_back(std::move(manifest));
-        }
+        if (error && !data_files_exception)
+            data_files_exception = error;
         data_manifest_released.notify_all();
 
-        if (entry)
+        if (!error && entry)
             return entry;
     }
 }
