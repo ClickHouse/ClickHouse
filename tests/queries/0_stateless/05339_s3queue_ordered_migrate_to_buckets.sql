@@ -17,6 +17,10 @@
 -- `processing_threads_num = 1` is pinned everywhere, because an unset `buckets` falls back to
 -- it and the migration only runs while the queue still has a single bucket.
 
+-- Keep this file's DDL out of the AST fuzzer: a replayed `CREATE` is a second queue on the same `keeper_path`,
+-- whose definition keeps no `buckets` after the migration below, so the next server start rejects it.
+SET ast_fuzzer_any_query = 0;
+
 -- 1. The old node exists: it is removed and recreated under both new buckets.
 
 CREATE TABLE q_unset (x UInt64)
