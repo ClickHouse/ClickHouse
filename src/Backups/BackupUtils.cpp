@@ -86,6 +86,17 @@ bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Element
     return std::ranges::any_of(elements, wildcardElementCoversSystemNamedCollections);
 }
 
+bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
+{
+    return std::ranges::any_of(
+        elements,
+        [](const ASTBackupQuery::Element & element)
+        {
+            return (element.type == ASTBackupQuery::TABLE) && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+                && (element.table_name == "named_collections");
+        });
+}
+
 /// Returns access required to execute BACKUP query.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections)
 {

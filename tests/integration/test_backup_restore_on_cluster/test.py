@@ -1196,6 +1196,15 @@ def test_system_named_collections_implicit_selection_on_cluster():
             with open(os.path.join(dir_path, file_name), "rb") as f:
                 assert b"nc_secret_value" not in f.read(), file_name
 
+    # An element explicitly naming the table keeps its hard requirement even when a wildcard
+    # element selects the table too: the backup must fail rather than silently omit the
+    # explicitly requested entries.
+    expected_error = "necessary to have the grant SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON *"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections, DATABASE system ON CLUSTER 'cluster' TO {new_backup_name()}",
+        user="u1",
+    )
+
     # The same backup by a user holding the rights exports the collections.
     backup_name = new_backup_name()
     node1.query(f"BACKUP DATABASE system ON CLUSTER 'cluster' TO {backup_name}")

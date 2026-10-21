@@ -528,10 +528,31 @@ struct BackupsWorker::BackupStarter
             if (!backup_settings.backup_named_collections.has_value()
                 && BackupUtils::wildcardSelectionCoversSystemNamedCollections(backup_query->elements))
             {
-                auto access = query_context->getAccess();
-                if (!access->isGranted(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS})
-                    || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
-                    backup_settings.backup_named_collections = false;
+                /// An element explicitly naming the table keeps its hard access requirement (see
+                /// `getRequiredAccessToBackup`): resolving the setting to `false` for the wildcard element
+                /// would erase that requirement and silently drop the explicitly requested entries instead.
+                /// The element may be written unqualified, so it is checked against the effective database
+                /// of every selected address, the same way the access check resolves it.
+                bool explicitly_selected = false;
+                for (const auto * address : cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num))
+                {
+                    auto elements = backup_query->elements;
+                    ASTBackupQuery::setCurrentDatabase(
+                        elements, address->default_database.empty() ? backup_context->getCurrentDatabase() : address->default_database);
+                    if (BackupUtils::explicitSelectionCoversSystemNamedCollections(elements))
+                    {
+                        explicitly_selected = true;
+                        break;
+                    }
+                }
+
+                if (!explicitly_selected)
+                {
+                    auto access = query_context->getAccess();
+                    if (!access->isGranted(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS})
+                        || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+                        backup_settings.backup_named_collections = false;
+                }
             }
         }
 

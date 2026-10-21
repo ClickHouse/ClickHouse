@@ -22,6 +22,9 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements);
 /// Whether a DATABASE or ALL element of the query selects the `system.named_collections` table.
 bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements);
 
+/// Whether a TABLE element of the query names the `system.named_collections` table.
+bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements);
+
 /// Returns access required to execute BACKUP query. `backup_named_collections` is the value of the
 /// backup setting of the same name; it decides whether selecting the `system.named_collections`
 /// table requires the rights to read the collections' values (see `BackupSettings`).
