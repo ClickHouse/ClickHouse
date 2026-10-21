@@ -270,6 +270,13 @@ SELECT '--- sleepEachRow in the argument of an aggregate function';
 SELECT k, sum(sleepEachRow(0.001)) FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0
     SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
         function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
+-- The same for an aggregate function in `LIMIT BY` or `QUALIFY`.
+SELECT k FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0 LIMIT 1 BY sum(sleepEachRow(0.001))
+    SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
+        function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
+SELECT k, row_number() OVER () FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0 QUALIFY sum(sleepEachRow(0.001)) = 0
+    SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
+        function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
 DROP TABLE t_sleep_dist_04402;
 DROP TABLE t_sleep_local_04402;
 
@@ -309,6 +316,28 @@ FROM (
 );
 DROP TABLE t_tz_dist_04402;
 DROP TABLE t_tz_local_04402;
+
+-- A value of type `Dynamic` may hold a `DateTime` without a time zone at runtime, so its conjunct stays in `HAVING`,
+-- while the conjunct on the key is moved.
+SELECT '--- HAVING with a Dynamic value';
+DROP TABLE IF EXISTS t_dyn_local_04402;
+DROP TABLE IF EXISTS t_dyn_dist_04402;
+CREATE TABLE t_dyn_local_04402 (k UInt64, d Dynamic, x UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_dyn_dist_04402 AS t_dyn_local_04402
+    ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 't_dyn_local_04402');
+INSERT INTO t_dyn_local_04402 SELECT number, CAST(toDateTime(number % 10), 'Dynamic'), 1 FROM numbers(100);
+SELECT count() FROM (
+    SELECT k, sum(x) FROM t_dyn_dist_04402 GROUP BY k, d HAVING toString(d) LIKE '1970-01-01 00:%' AND k < 10
+    SETTINGS allow_suspicious_types_in_group_by = 1);
+SELECT
+    countIf(explain ILIKE '%filter column: less(__table1.k, 10_UInt8) (removed)%') > 0 AS shard_filters_only_key
+FROM (
+    EXPLAIN actions = 1, distributed = 1
+    SELECT k, sum(x) FROM t_dyn_dist_04402 GROUP BY k, d HAVING toString(d) LIKE '1970-01-01 00:%' AND k < 10
+    SETTINGS allow_suspicious_types_in_group_by = 1
+);
+DROP TABLE t_dyn_dist_04402;
+DROP TABLE t_dyn_local_04402;
 
 -- A number converted as a Unix timestamp to a `Date`, `Date32` or a string also depends on the time zone of the server,
 -- without any `DateTime` value in between. The conjunct on the key itself is moved.
@@ -395,6 +424,15 @@ SELECT k, sum(rowNumberInAllBlocks()) FROM t_stateful_dist_04402 GROUP BY k HAVI
     SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
 SELECT k, sum(rowNumberInAllBlocks()) FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0
     SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100, query_plan_enable_optimizations = 0;
+-- The same for an aggregate function in `QUALIFY` or `LIMIT BY`.
+SELECT k, row_number() OVER () FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0
+    QUALIFY sum(rowNumberInAllBlocks()) > 100
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
+SELECT k FROM t_stateful_dist_04402 GROUP BY k HAVING k IN (0, 5) ORDER BY k LIMIT 1 BY sum(rowNumberInAllBlocks()) > 950
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
+-- A function that is not deterministic in the scope of the query, like `blockSize`, also depends on the rows it sees.
+SELECT k, sum(blockSize()) FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
 DROP TABLE t_stateful_dist_04402;
 DROP TABLE t_stateful_local_04402;
 

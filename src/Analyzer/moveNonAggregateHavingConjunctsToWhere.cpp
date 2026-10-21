@@ -27,10 +27,13 @@ namespace DB
 namespace
 {
 
-/// Whether the type is or contains a `DateTime` or `DateTime64` without an explicit time zone.
+/// Whether the type is or may contain a `DateTime` or `DateTime64` without an explicit time zone.
 /// Such values are converted from and to their calendar representation in the time zone of the executing server.
+/// `Dynamic` and `JSON` may hold such a value at runtime, so they are treated as having one.
 bool hasImplicitTimeZone(const DataTypePtr & type)
 {
+    if (isDynamic(type) || isObject(type))
+        return true;
     if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get()))
         return !date_time->hasExplicitTimeZone();
     if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
@@ -114,9 +117,10 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         && arguments.size() < 3;
 }
 
-/// Whether the subtree contains a stateful function, like `rowNumberInAllBlocks` or `runningDifference`,
-/// or a function with observable side effects, like `sleepEachRow`.
-bool hasStatefulOrSideEffectFunction(const QueryTreeNodePtr & node)
+/// Whether the subtree contains a function whose result or effect depends on the rows it is evaluated on:
+/// a stateful function, like `rowNumberInAllBlocks` or `runningDifference`, a function that is not deterministic
+/// in the scope of the query, like `blockSize`, or a function with observable side effects, like `sleepEachRow`.
+bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
 {
     QueryTreeNodes nodes_to_visit{node};
     while (!nodes_to_visit.empty())
@@ -127,7 +131,9 @@ bool hasStatefulOrSideEffectFunction(const QueryTreeNodePtr & node)
         if (const auto * function_node = current->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
         {
             auto function_base = function_node->getFunction();
-            if (function_base && (function_base->isStateful() || function_base->hasObservableSideEffects()))
+            if (function_base
+                && (function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery()
+                    || function_base->hasObservableSideEffects()))
                 return true;
         }
 
@@ -142,9 +148,10 @@ bool hasStatefulOrSideEffectFunction(const QueryTreeNodePtr & node)
   *
   * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
   * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
-  * - any function with observable side effects (like `sleepEachRow`) -> `AbortRewrite` (stricter than legacy,
-  *   which moved them): it must be evaluated once per group, and a sibling conjunct moved to `WHERE` would remove groups
-  *   before it is evaluated;
+  * - with `abort_on_side_effects`, any function with observable side effects (like `sleepEachRow`) -> `AbortRewrite`
+  *   (stricter than legacy, which moved them): it must be evaluated once per group, and a sibling conjunct moved to `WHERE`
+  *   would remove groups before it is evaluated. The compatibility rewrite of the analyzer must move the conjuncts with
+  *   the columns that are not grouped, so it does not check it;
   * - else any aggregate function -> `KeepInHaving`;
   * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
   *   `validateAggregates` rejects `grouping` in `WHERE`);
@@ -158,8 +165,8 @@ bool hasStatefulOrSideEffectFunction(const QueryTreeNodePtr & node)
   * are taken into account: aggregate, window and `grouping` functions there belong to the scope of the subquery.
   * A non-deterministic subquery, or one with a stateful function, keeps the conjunct in `HAVING`, because in `WHERE`
   * a correlated subquery would be evaluated per source row instead of per group. The same holds for a subquery reading
-  * a non-deterministic table function, like `generateRandom`. A subquery with a function with observable side effects
-  * (like `timeSeriesStoreTags`) cancels the rewrite, as at the top level.
+  * a non-deterministic table function, like `generateRandom`. With `abort_on_side_effects`, a subquery with a function
+  * with observable side effects (like `timeSeriesStoreTags`) cancels the rewrite, as at the top level.
   *
   * With `keep_server_dependent_conjuncts`, a conjunct also stays in `HAVING` if its result may differ between
   * servers: if it contains a function that is not deterministic at all (like `shardNum`, `hostName` or `dictGet`),
@@ -181,7 +188,10 @@ enum class HavingConjunctMoveAction
 };
 
 HavingConjunctMoveAction classifyHavingConjunctForMove(
-    const QueryTreeNodePtr & node, bool keep_server_dependent_conjuncts, bool keep_index_hint_conjuncts)
+    const QueryTreeNodePtr & node,
+    bool keep_server_dependent_conjuncts,
+    bool keep_index_hint_conjuncts,
+    bool abort_on_side_effects)
 {
     HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
 
@@ -250,7 +260,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                 if (function_node->isOrdinaryFunction())
                 {
                     auto function_base = function_node->getFunction();
-                    if (function_base && function_base->hasObservableSideEffects())
+                    if (abort_on_side_effects && function_base && function_base->hasObservableSideEffects())
                         return HavingConjunctMoveAction::AbortRewrite;
                     if (function_base
                         && (function_base->isStateful()
@@ -270,7 +280,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                     {
                         /// Functions like `sleepEachRow` must be evaluated once per group, not per source row,
                         /// and a sibling conjunct moved to `WHERE` must not change the number of groups they see.
-                        if (function_base->isStateful() || function_base->hasObservableSideEffects())
+                        if (function_base->isStateful() || (abort_on_side_effects && function_base->hasObservableSideEffects()))
                             return HavingConjunctMoveAction::AbortRewrite;
 
                         if (!function_base->isDeterministicInScopeOfQuery()
@@ -331,14 +341,17 @@ void moveNonAggregateHavingConjunctsToWhere(
 
     /// A conjunct moved to `WHERE` removes rows before the expressions computed before aggregation, like the arguments of
     /// aggregate functions and the grouping keys. A stateful function there, like `sum(rowNumberInAllBlocks())`,
-    /// would see fewer rows and change the result even for the groups that pass the filter, and a function with
-    /// observable side effects, like `sum(sleepEachRow(0.001))`, would be evaluated fewer times.
+    /// or a function depending on the block, like `sum(blockSize())`, would see fewer rows and change the result even
+    /// for the groups that pass the filter, and a function with observable side effects, like `sum(sleepEachRow(0.001))`,
+    /// would be evaluated fewer times. Aggregate functions may appear in every section after `GROUP BY`,
+    /// like `QUALIFY` and `LIMIT BY`, so all of them are checked.
     if (keep_pre_aggregation_expressions)
     {
-        for (const auto & node : {query_node.getProjectionNode(), query_node.getGroupByNode(), query_node.getOrderByNode(),
-                 query_node.getPrewhere(), query_node.getWhere()})
+        for (const auto & node : {query_node.getProjectionNode(), query_node.getPrewhere(), query_node.getWhere(),
+                 query_node.getGroupByNode(), query_node.getWindowNode(), query_node.getQualify(), query_node.getOrderByNode(),
+                 query_node.getInterpolate(), query_node.getLimitByNode()})
         {
-            if (node && hasStatefulOrSideEffectFunction(node))
+            if (node && hasRowSensitiveFunction(node))
                 return;
         }
     }
@@ -377,7 +390,9 @@ void moveNonAggregateHavingConjunctsToWhere(
     classifications.reserve(conjuncts.size());
     for (const auto & conjunct : conjuncts)
     {
-        auto action = classifyHavingConjunctForMove(conjunct, keep_server_dependent_conjuncts, keep_index_hint_conjuncts);
+        auto action = classifyHavingConjunctForMove(
+            conjunct, keep_server_dependent_conjuncts, keep_index_hint_conjuncts,
+            /*abort_on_side_effects=*/ keep_pre_aggregation_expressions);
         if (action == HavingConjunctMoveAction::AbortRewrite)
             return;
         classifications.push_back(action);
