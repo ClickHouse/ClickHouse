@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT -q "${QUERY} SETTINGS ${SETTINGS}, use_columns_cache = 1"
 $CLICKHOUSE_CLIENT -q "
     SELECT column, count(), sum(rows), min(rows), max(rows), min(row_begin), max(row_end)
     FROM system.columns_cache
-    WHERE endsWith(part, '/${FILE}')
+    WHERE database = '' AND endsWith(part, '/${FILE}')
     GROUP BY column ORDER BY column"
 
 echo "--- the second read is served from the cache, in blocks of the chunks"

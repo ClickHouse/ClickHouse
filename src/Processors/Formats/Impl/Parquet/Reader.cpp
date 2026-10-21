@@ -2877,9 +2877,9 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     ///  `filter` to keep only the rows covered by ranges.)
     for (const auto [start, end] : row_ranges)
     {
-        for (size_t substart = start, subend = start; substart < end; substart = subend)
+        for (size_t substart = start; substart < end;)
         {
-            subend = std::min(end, substart + rows_per_subgroup);
+            size_t subend = std::min(end, substart + rows_per_subgroup);
             if (aligned_with_columns_cache)
                 subend = std::min(subend, (substart / COLUMNS_CACHE_CHUNK_ROWS + 1) * COLUMNS_CACHE_CHUNK_ROWS);
 
@@ -2925,6 +2925,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             }
             if (options.format.defaults_for_omitted_fields)
                 row_subgroup.block_missing_values.init(sample_block->columns());
+
+            substart = subend;
         }
     }
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
