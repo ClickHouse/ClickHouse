@@ -41,7 +41,7 @@
         {
           "group": "Proyecciones",
           "pages": [
-            "es/concepts/features/projections/projections",
+            "concepts/features/projections/projections",
             "es/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
@@ -191,7 +191,7 @@
                 },
                 "es/concepts/features/security/external-authenticators/http",
                 "es/concepts/features/security/external-authenticators/kerberos",
-                "es/concepts/features/security/external-authenticators/jwt"
+                "concepts/features/security/external-authenticators/jwt"
               ]
             }
           ]
@@ -219,7 +219,7 @@
               "group": "Controladores e interfaces",
               "pages": [
                 "es/concepts/features/interfaces/overview",
-                "es/concepts/features/interfaces/http",
+                "concepts/features/interfaces/http",
                 "es/concepts/features/interfaces/framing-formats",
                 "es/concepts/features/interfaces/tcp",
                 "es/concepts/features/interfaces/adbc",
