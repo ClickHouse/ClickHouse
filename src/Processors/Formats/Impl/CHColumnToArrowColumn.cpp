@@ -188,6 +188,18 @@ namespace DB
         return bitmap;
     }
 
+    /// Arrow's `Utf8`/`Binary` builders take an int32 length and their `Append` skips the copy when it is
+    /// negative, so a narrowed size would store an empty value instead of failing.
+    static void checkStringSizeFitsArrowOffsets(size_t size, const String & column_name, const String & format_name)
+    {
+        if (size > MAX_ARROW_BUFFER_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot write a value of {} bytes of column {} to {}: `Utf8`/`Binary` offsets are 32-bit, so a single "
+                "value cannot be larger than {} bytes",
+                size, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+    }
+
     /// Writes a column whose type has no first-class Arrow mapping as one serialized value per row.
     /// This goes through `ISerialization` rather than `IColumn::getDataAt`: `getDataAt` exposes a column's
     /// contiguous in-memory bytes, which most of the types reaching this path do not have - `ColumnObject`,
@@ -231,9 +243,16 @@ namespace DB
                     serialization->serializeBinary(*write_column, value_i, value, settings.format_settings);
 
                 if constexpr (target_is_utf8)
-                    status = builder.Append(makeValidUTF8View(value.stringView(), valid_utf8_scratch));
+                {
+                    const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
+                    checkStringSizeFitsArrowOffsets(valid.size(), write_column->getName(), format_name);
+                    status = builder.Append(valid);
+                }
                 else
+                {
+                    checkStringSizeFitsArrowOffsets(value.stringView().size(), write_column->getName(), format_name);
                     status = builder.Append(value.stringView());
+                }
             }
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -1107,18 +1126,6 @@ namespace DB
 #undef DISPATCH
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array {} with {} data", value_type->name(), column_type->getName());
-    }
-
-    /// Arrow's `Utf8`/`Binary` builders take an int32 length and their `Append` skips the copy when it is
-    /// negative, so a narrowed size would store an empty value instead of failing.
-    static void checkStringSizeFitsArrowOffsets(size_t size, const String & column_name, const String & format_name)
-    {
-        if (size > MAX_ARROW_BUFFER_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Cannot write a value of {} bytes of column {} to {}: `Utf8`/`Binary` offsets are 32-bit, so a single "
-                "value cannot be larger than {} bytes",
-                size, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
     }
 
     template <typename ColumnType, typename ArrowBuilder>
@@ -2045,7 +2052,8 @@ namespace DB
                             column_types[column_i],
                             offset,
                             offset + rows,
-                            settings.output_fixed_string_as_fixed_byte_array));
+                            settings.output_fixed_string_as_fixed_byte_array,
+                            settings.output_max_record_batch_bytes));
                 }
                 /// A row that does not fit on its own cannot be represented at all; the leaf encoders reject it.
                 rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
