@@ -13,7 +13,7 @@
 #include <Common/StringUtils.h>
 
 #include <base/arithmeticOverflow.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 
 #include <Poco/String.h>
 

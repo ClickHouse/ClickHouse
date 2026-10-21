@@ -200,9 +200,6 @@ class QuantileTDigest
     }
 
 public:
-    /// The memory allocated for the centroids. It counts the memory inside the object when there are few centroids.
-    size_t allocatedBytes() const { return centroids.allocated_bytes(); }
-
     /** Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.

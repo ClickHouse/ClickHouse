@@ -8,7 +8,6 @@ import struct
 import time
 import xml.etree.ElementTree as ET
 
-import psycopg2
 import pymysql
 import pytest
 
@@ -33,7 +32,7 @@ MYSQL_USERS = {
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["config/mysql.xml", "config/postgresql.xml"],
+    main_configs=["config/mysql.xml"],
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
@@ -374,47 +373,6 @@ def test_mysql_protocol_user_altered_during_authentication(started_cluster):
             assert b"Authentication failed" in result
     finally:
         node.query(f"DROP USER IF EXISTS {user}")
-
-
-def test_postgresql_protocol_requires_totp(started_cluster):
-    """The PostgreSQL protocol must enforce TOTP. A SCRAM proof is derived from the password
-    alone and cannot carry a one-time password, so the server refuses the SCRAM exchange for
-    a `scram_sha256_password` user with TOTP. For cleartext password authentication the client
-    appends the TOTP to the password."""
-
-    def connect(user, password):
-        return psycopg2.connect(
-            host=node.ip_address,
-            port=9005,
-            user=user,
-            password=password,
-            dbname="default",
-        )
-
-    # A SCRAM user with TOTP must be refused: the exchange cannot verify the second factor.
-    scram_user = "totuser_postgresql_scram"
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, "abacaba")
-
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, f"abacaba+{get_otp(scram_user)}")
-
-    # Cleartext password authentication enforces the second factor.
-    # The message is intentionally generic and does not reveal the reason.
-    user = "totuser_postgresql_plaintext"
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb")
-
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb+000000000")
-
-    conn = connect(user, f"aa+bb+{get_otp(user)}")
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT currentUser()")
-        assert cursor.fetchall() == [(user,)]
-    finally:
-        conn.close()
 
 
 def test_one_time_only_no_password(started_cluster):

@@ -63,46 +63,12 @@ Use these settings to start using on-demand compute:
 | `make_distributed_plan` | Yes | Enables the experimental distributed query plan. Required for On-Demand Compute. |
 | `distributed_plan_workers_num` | Yes | Number of workers to lease for this query. If this is `0` (the default), the query runs on your service, not on the worker pool. |
 | `enable_parallel_replicas` | Yes (set to `0`) | Parallel replicas are incompatible with the distributed plan. |
-| `distributed_plan_fallback_to_local_execution` | No (default to `0`) | Setting to fall back to local execution when a plan cannot be distributed (only takes effect under `make_distributed_plan`) |
 
 <Tip>
-During the preview, set the settings at the query level, or create a separate user with different settings. That makes it obvious which statements use On-Demand Compute.
+During the preview, set the settings at the query level, or create a separate user with different settings. That makes it obvious which statements use On-Demand Compute, and it avoids inheriting Cloud default profiles that enable parallel replicas.
 </Tip>
 
 ### Example {#example}
-
-Some queries cannot be distributed to workers:
-
-```sql
-SELECT count()
-FROM nyctaxi.trips
-SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
-
-Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
-
-
-Elapsed: 0.992 sec.
-
-Received exception from server (version 26.9.1):
-Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
-```
-
-To make sure queries fallback to local execution you can use the following setting `distributed_plan_fallback_to_local_execution`:
-
-```sql
-SELECT count()
-FROM nyctaxi.trips
-SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
-
-Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
-
-   ┌─count()─┐
-1. │   21932 │
-   └─────────┘
-
-1 row in set. Elapsed: 0.896 sec.
-```
-
 
 ```sql
 SELECT

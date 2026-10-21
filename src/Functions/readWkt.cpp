@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_PARSE_TEXT;
 }
 
@@ -91,9 +92,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String) -> " + DataTypeName{}.getName();
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
+
+        return DataTypeFactory::instance().get(DataTypeName().getName());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -150,7 +156,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(String) -> Geometry"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+        }
+
+        return DataTypeFactory::instance().get("Geometry");
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {

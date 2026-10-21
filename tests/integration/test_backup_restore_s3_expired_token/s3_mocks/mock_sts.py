@@ -33,7 +33,7 @@ def set_credentials():
 
 @route("/", method="POST")
 def assume_role():
-    assert request.forms.get("RoleArn") == "arn::role"
+    assert request.query.get("RoleArn") == "arn::role"
     if credential_sets is None:
         response.status = 503
         return "Credentials are not configured"

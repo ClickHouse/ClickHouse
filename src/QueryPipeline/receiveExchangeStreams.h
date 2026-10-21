@@ -16,14 +16,12 @@ struct BuildQueryPipelineSettings;
 /// `spread_over_max_threads` the packets are first spread over `max_threads` streams, so the
 /// deserialization and the steps after it run on all threads. A receive whose consumer depends on
 /// the streams of the sources, on their order or on their one-to-one mapping, passes false and gets
-/// one stream per source. Every source gets `advisory` (see `IExchangeLookup::createSource`); only a
-/// runtime filter receive passes true.
+/// one stream per source.
 QueryPipelineBuilder receiveExchangeStreams(
     const SharedHeader & output_header,
     const String & exchange_id,
     const VectorWithMemoryTracking<ExchangeStreamId> & stream_ids,
     const BuildQueryPipelineSettings & settings,
-    bool spread_over_max_threads,
-    bool advisory);
+    bool spread_over_max_threads);
 
 }

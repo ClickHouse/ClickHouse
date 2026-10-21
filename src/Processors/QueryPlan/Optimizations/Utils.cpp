@@ -4,13 +4,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <utility>
 
@@ -201,12 +199,7 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
-        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
-        if (!input->result_type->isDefaultInsertTrivial())
-            continue;
-
-        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
+        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
@@ -251,33 +244,5 @@ FilterResult filterResultForNotMatchedRows(
 
     return FilterResult::UNKNOWN;
 }
-
-bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
-{
-    /// A STREAM read selects its parts and ranges during execution, so the range set captured
-    /// here is not the one that will be read.
-    if (reading->getQueryInfo().isStream())
-        return false;
-
-    /// Allow FINAL only for ReplacingMergeTree.
-    if (reading->isQueryWithFinal()
-        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
-
-    if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->getMutationsSnapshot()->hasPatchParts())
-        return false;
-
-    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
-    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
-    const auto & columns = reading->getStorageMetadata()->getColumns();
-    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
-        return false;
-
-    return true;
-}
-
 }
 }

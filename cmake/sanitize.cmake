@@ -102,8 +102,8 @@ if (SANITIZE)
         endif ()
 
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
-        # Work around this with position-independent builds (-fPIE), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIE ${MSAN_X86_VZEROUPPER_FLAGS}")
+        # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIC -fpie ${MSAN_X86_VZEROUPPER_FLAGS}")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 

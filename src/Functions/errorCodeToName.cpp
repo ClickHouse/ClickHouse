@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 /** errorCodeToName() - returns the variable name for the error code.
   */
 class FunctionErrorCodeToName final : public IFunction
@@ -24,9 +29,12 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        return "(Number) -> LowCardinality(String)";
+        if (!isNumber(types.at(0)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+
+        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count) const override
