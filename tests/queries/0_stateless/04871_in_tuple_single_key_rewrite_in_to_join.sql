@@ -33,7 +33,8 @@ SELECT CAST((1, number), 'Nullable(Tuple(UInt8, UInt64))') IN (SELECT CAST((1, 0
 -- the rewrite must report the very same error.
 SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Dynamic') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM numbers(1) WHERE CAST('{"a":1}', 'JSON') IN (SELECT CAST('{"a":1}', 'JSON')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError TYPE_MISMATCH }
+-- A plain `Variant` keeps a tuple value as one key, so it fails in the set-key cast like a plain tuple.
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- A multi-column right side of the same arity is unpacked element-wise by regular IN, so the
 -- rewrite still applies there and must keep working.
