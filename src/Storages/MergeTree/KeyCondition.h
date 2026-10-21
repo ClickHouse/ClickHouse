@@ -785,6 +785,7 @@ private:
     std::vector<KeyWrappingChain> collectKeyWrappingChainsFromKeyExpr(
         ContextPtr context,
         const ExpressionActions & key_expr,
+        bool is_alternative_key_expr,
         const String & expr_name,
         bool first_match_only,
         const std::function<bool(const IFunctionBase &, const IDataType &)> & allow_key_function) const;
@@ -845,6 +846,7 @@ private:
     /// or the alternative one).
     std::vector<DeterministicKeyDag> collectKeyWrappingDagsFromKeyExpr(
         const ExpressionActions & key_expr,
+        bool is_alternative_key_expr,
         const String & expr_name,
         bool first_match_only) const;
 
@@ -1032,6 +1034,11 @@ private:
     /// The name a name found in `key_columns` has in the original key expression's sample block:
     /// an alternative name maps to the original key column name, any other name is returned unchanged.
     const String & originalKeyColumnName(const String & name) const;
+
+    /// The position of the key column the node of the given key expression (the original one or the
+    /// alternative one) computes, or nullptr if the node does not compute a key column.
+    const size_t * findKeyColumnComputedByNode(
+        const ExpressionActions & key_expr, bool is_alternative_key_expr, const ActionsDAG::Node & node) const;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType

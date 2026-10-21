@@ -1569,14 +1569,14 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
         {
             /// A curve is only usable here through its key column position, so a curve that is
             /// an intermediate value of the key expression rather than a key column is skipped.
-            auto it = key_columns.find(action.node->result_name);
-            if (it == key_columns.end())
+            const size_t * key_column_pos = findKeyColumnComputedByNode(*info.key_expr, /*is_alternative_key_expr=*/ false, *action.node);
+            if (!key_column_pos)
                 continue;
 
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
             curve.type = space_filling_curve_name_to_type.at(curve.function_name);
-            curve.key_column_pos = it->second;
+            curve.key_column_pos = *key_column_pos;
             for (const auto & child : action.node->children)
             {
                 /// All arguments should be regular input columns.
@@ -2508,17 +2508,19 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
     const BuildInfo & info,
     bool first_match_only) const
 {
-    std::vector<DeterministicKeyDag> result = collectKeyWrappingDagsFromKeyExpr(*info.key_expr, expr_name, first_match_only);
+    std::vector<DeterministicKeyDag> result
+        = collectKeyWrappingDagsFromKeyExpr(*info.key_expr, /*is_alternative_key_expr=*/ false, expr_name, first_match_only);
 
     /// The filter expression can be in the analyzer-rewritten form: search the alternative key expression too.
     if (result.empty() && info.alternative_key_expr)
-        result = collectKeyWrappingDagsFromKeyExpr(*info.alternative_key_expr, expr_name, first_match_only);
+        result = collectKeyWrappingDagsFromKeyExpr(*info.alternative_key_expr, /*is_alternative_key_expr=*/ true, expr_name, first_match_only);
 
     return result;
 }
 
 std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingDagsFromKeyExpr(
     const ExpressionActions & key_expr,
+    bool is_alternative_key_expr,
     const String & expr_name,
     bool first_match_only) const
 {
@@ -2596,8 +2598,8 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
         if (key_node.type == ActionsDAG::ActionType::INPUT && !expr_set.contains(&key_node))
             continue;
 
-        auto it = key_columns.find(key_node.result_name);
-        if (it == key_columns.end())
+        const size_t * key_column_num = findKeyColumnComputedByNode(key_expr, is_alternative_key_expr, key_node);
+        if (!key_column_num)
             continue;
 
         if (!can_fold_from_expr_only(&key_node))
@@ -2619,7 +2621,7 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
         transform_dag.input_name = required.front().name;
 
         result.push_back(DeterministicKeyDag{
-            .key_column_num = it->second,
+            .key_column_num = *key_column_num,
             .key_column_type = sample_block.getByName(key_node.result_name).type,
             .dag = std::move(transform_dag)});
 
@@ -4435,6 +4437,32 @@ const String & KeyCondition::originalKeyColumnName(const String & name) const
     return it != alternative_to_original_key_column_name.end() ? it->second : name;
 }
 
+const size_t * KeyCondition::findKeyColumnComputedByNode(
+    const ExpressionActions & key_expr, bool is_alternative_key_expr, const ActionsDAG::Node & node) const
+{
+    auto it = key_columns.find(node.result_name);
+    if (it == key_columns.end())
+        return nullptr;
+
+    if (is_alternative_key_expr)
+    {
+        /// Only an output of the alternative key expression computes a key column: an intermediate
+        /// node can be named like a key column of the original expression without being one.
+        const auto & outputs = key_expr.getActionsDAG().getOutputs();
+        if (std::find(outputs.begin(), outputs.end(), &node) == outputs.end())
+            return nullptr;
+    }
+    else if (alternative_to_original_key_column_name.contains(it->first))
+    {
+        /// An alternative name is the name of an output of the alternative key expression. In the
+        /// original key expression the node of that name is not a key column (e.g. the analyzer folds
+        /// `if(1 = 1, a, b)` to `a`, and `a` is an input of the original expression).
+        return nullptr;
+    }
+
+    return &it->second;
+}
+
 bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -4586,12 +4614,12 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
     std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
 {
     std::vector<KeyWrappingChain> result = collectKeyWrappingChainsFromKeyExpr(
-        context, *info.key_expr, expr_name, first_match_only, allow_key_function);
+        context, *info.key_expr, /*is_alternative_key_expr=*/ false, expr_name, first_match_only, allow_key_function);
 
     /// The filter expression can be in the analyzer-rewritten form: search the alternative key expression too.
     if (result.empty() && info.alternative_key_expr)
         result = collectKeyWrappingChainsFromKeyExpr(
-            context, *info.alternative_key_expr, expr_name, first_match_only, allow_key_function);
+            context, *info.alternative_key_expr, /*is_alternative_key_expr=*/ true, expr_name, first_match_only, allow_key_function);
 
     return result;
 }
@@ -4599,6 +4627,7 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
 std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChainsFromKeyExpr(
     ContextPtr context,
     const ExpressionActions & key_expr,
+    bool is_alternative_key_expr,
     const String & expr_name,
     bool first_match_only,
     const std::function<bool(const IFunctionBase &, const IDataType &)> & allow_key_function) const
@@ -4609,8 +4638,8 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
 
     for (const auto & node : key_expr.getNodes())
     {
-        auto it = key_columns.find(node.result_name);
-        if (it != key_columns.end())
+        const size_t * key_column_num = findKeyColumnComputedByNode(key_expr, is_alternative_key_expr, node);
+        if (key_column_num)
         {
             std::stack<const ActionsDAG::Node *> chain;
 
@@ -4657,8 +4686,8 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
             if (is_valid_chain && cur_node->result_name == expr_name)
             {
                 KeyWrappingChain candidate;
-                candidate.key_column_num = it->second;
-                candidate.key_column_type = sample_block.getByName(it->first).type;
+                candidate.key_column_num = *key_column_num;
+                candidate.key_column_type = sample_block.getByName(node.result_name).type;
 
                 bool candidate_valid = true;
                 bool chain_is_positive = true;

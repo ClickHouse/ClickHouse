@@ -29,7 +29,13 @@ class MergeTreeIndexMinMax;
   * and the index is not used (issue #103128).
   *
   * The rewrites of the query analyzer (the query tree passes) are reproduced with the settings of
-  * the given query context.
+  * the given query context, against a table on which the source columns are key columns, as they are
+  * in the real table (some passes do not rewrite functions of key columns).
+  *
+  * The rewritten form is used only when it is another name of the stored key, not a different
+  * expression: every constant the analyzer folds with the query's settings must have the same value
+  * as the subexpression of the same name in the stored key expression, and every rewritten key column
+  * must have the same type and read the same storage columns as the original one.
   *
   * Returns nullptr when not applicable: the index is on plain columns, no name differs after the
   * rewrites, or the index expression cannot be analyzed (best effort). Otherwise the result's

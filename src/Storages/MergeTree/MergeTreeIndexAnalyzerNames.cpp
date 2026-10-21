@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -20,6 +21,8 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Columns/ColumnConst.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -29,14 +32,62 @@ namespace DB
 namespace
 {
 
+/// The analyzer folds constant subexpressions with the settings of the query, which can give them a
+/// different value than the stored key has (e.g. `least_greatest_legacy_null_behavior` changes the
+/// value of `greatest(NULL, 1)`), and the rewrite passes then build on that value (e.g. an `if` with
+/// a constant condition collapses to one of its branches). Then the rewritten expression is not
+/// another name of the stored key, but a different expression. Check that every folded constant has
+/// the same value as the subexpression of the same name in the stored key expression, which was folded
+/// when the key was built. A constant that cannot be found there is not proven equal either.
+bool foldedConstantsMatchKeyExpression(const QueryTreeNodePtr & node, const ActionsDAG & key_dag)
+{
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+    {
+        const String name = constant_node->getSourceExpression()->toAST()->getColumnName();
+        const ActionsDAG::Node * key_node = nullptr;
+        for (const auto & candidate : key_dag.getNodes())
+        {
+            if (candidate.result_name == name)
+            {
+                key_node = &candidate;
+                break;
+            }
+        }
+
+        if (!key_node || !key_node->column || !isColumnConst(*key_node->column)
+            || !key_node->result_type->equals(*constant_node->getResultType())
+            || (*key_node->column)[0] != constant_node->getValue())
+            return false;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && !foldedConstantsMatchKeyExpression(child, key_dag))
+            return false;
+
+    return true;
+}
+
 /// Reproduce the rewrites of the query analyzer (the query tree passes) on the key expressions.
-ActionsDAG buildRewrittenExpressionWithAnalyzer(
-    const ASTPtr & expression_list_ast, const ExpressionActionsPtr & expression, const ContextMutablePtr & context)
+/// Returns nullopt if the rewritten expressions are not proven to compute the stored key.
+std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
+    const ASTPtr & expression_list_ast,
+    const ExpressionActionsPtr & expression,
+    const std::function<void(StorageInMemoryMetadata &)> & register_key,
+    const ContextMutablePtr & context)
 {
     /// Resolve the key expressions against a dummy storage with the key's source columns,
     /// running the same query tree passes (with the same settings) the query itself goes through.
     auto source_columns = expression->getRequiredColumnsWithTypes();
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, ColumnsDescription(source_columns));
+
+    /// The passes treat the columns of the table's keys and indexes specially (e.g.
+    /// `FunctionToSubcolumnsPass` does not rewrite most functions of such columns), and every source
+    /// column of the key is a column of this very key in the real table.
+    auto dummy_metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    StorageInMemoryMetadata metadata = *dummy_metadata;
+    register_key(metadata);
+    storage->setInMemoryMetadata(metadata);
+
     auto table_expression = std::make_shared<TableNode>(storage, context);
 
     auto query_node = std::make_shared<QueryNode>(context);
@@ -48,7 +99,16 @@ ActionsDAG buildRewrittenExpressionWithAnalyzer(
     QueryTreeNodePtr query_tree = query_node;
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
-    query_tree_pass_manager.run(query_tree);
+
+    /// Check the folded constants after every pass: a pass can remove a folded constant
+    /// (e.g. the condition of an `if`) after building on its value.
+    const auto & key_dag = expression->getActionsDAG();
+    for (const auto & pass : query_tree_pass_manager.getPasses())
+    {
+        pass->run(query_tree, context);
+        if (!foldedConstantsMatchKeyExpression(query_tree->as<QueryNode &>().getProjectionNode(), key_dag))
+            return std::nullopt;
+    }
 
     auto projection_node = query_tree->as<QueryNode &>().getProjectionNode();
 
@@ -69,12 +129,46 @@ ActionsDAG buildRewrittenExpressionWithAnalyzer(
     return std::move(dag);
 }
 
+/// The storage columns an output of a key expression reads: a subcolumn read (e.g. `m.key_k` after
+/// `FunctionToSubcolumnsPass`) reads its storage column.
+NameSet getRequiredStorageColumns(const ActionsDAG::Node * output, const NameSet & storage_columns)
+{
+    NameSet result;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{output};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            String name = node->result_name;
+            while (!storage_columns.contains(name))
+            {
+                auto pos = name.rfind('.');
+                if (pos == String::npos)
+                    break;
+                name.resize(pos);
+            }
+            result.insert(storage_columns.contains(name) ? name : node->result_name);
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return result;
+}
+
 /// The generic computation of the alternative (rewritten) form of a list of key expressions: it is
 /// the same for a skip index, a primary key and a partition key.
 AlternativeKeyExpressionPtr getAlternativeExpression(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
     const Names & column_names,
+    const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const String & description_for_log,
     const ContextPtr & context)
 {
@@ -100,11 +194,31 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     {
         auto execution_context = Context::createCopy(context);
 
-        auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, execution_context);
+        auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, register_key, execution_context);
+        if (!dag)
+            return nullptr;
 
-        const auto & outputs = dag.getOutputs();
+        const auto & outputs = dag->getOutputs();
         if (outputs.size() != column_names.size())
             return nullptr;
+
+        /// A rewrite renames an expression, it does not change what it computes: the rewritten form
+        /// of every key column must have the same type and read the same storage columns. This
+        /// rejects the forms that the checks of the folded constants cannot see.
+        NameSet storage_columns;
+        for (const auto & column : expression->getRequiredColumns())
+            storage_columns.insert(column);
+
+        for (size_t i = 0; i < outputs.size(); ++i)
+        {
+            /// The key expression can have more outputs than the key columns (e.g. the sorting key
+            /// keeps its source columns), so look the key column up by name.
+            const auto * original_output = expression->getActionsDAG().tryFindInOutputs(column_names[i]);
+            if (!original_output
+                || !outputs[i]->result_type->equals(*original_output->result_type)
+                || getRequiredStorageColumns(outputs[i], storage_columns) != getRequiredStorageColumns(original_output, storage_columns))
+                return nullptr;
+        }
 
         /// Re-clone the rewritten DAG with the same canonicalization index analysis (RPNBuilder over
         /// `ActionsDAGWithInversionPushDown`) applies to the query filter expressions (e.g. of constant
@@ -145,12 +259,28 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription & index, const ContextPtr & context)
 {
     return getAlternativeExpression(
-        index.expression_list_ast, index.expression, index.column_names, fmt::format("the expression of index {}", index.name), context);
+        index.expression_list_ast,
+        index.expression,
+        index.column_names,
+        [&](StorageInMemoryMetadata & metadata)
+        {
+            IndicesDescription indices;
+            indices.push_back(index);
+            metadata.setSecondaryIndices(std::move(indices));
+        },
+        fmt::format("the expression of index {}", index.name),
+        context);
 }
 
 AlternativeKeyExpressionPtr getAlternativeKeyExpression(const KeyDescription & key, const ContextPtr & context)
 {
-    return getAlternativeExpression(key.expression_list_ast, key.expression, key.column_names, "the key expression", context);
+    return getAlternativeExpression(
+        key.expression_list_ast,
+        key.expression,
+        key.column_names,
+        [&](StorageInMemoryMetadata & metadata) { metadata.primary_key = key; },
+        "the key expression",
+        context);
 }
 
 AlternativeKeyExpressionPtr LazyAlternativeKeyExpression::get(const KeyDescription & key, const ContextPtr & context) const
