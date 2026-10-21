@@ -29,7 +29,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <base/EnumReflection.h>
-#include <base/arithmeticOverflow.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/QueryScope.h>
@@ -1732,18 +1731,14 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
     }
 }
 
-/// Bounds for the retry arithmetic below, named in their own units: the retry instant is widened by
-/// x1000 three times over (seconds -> milliseconds -> microseconds -> nanoseconds), so a value has
-/// to be bounded in each unit before the conversion that widens it.
+/// The retry instant is widened s -> ms -> us -> ns, so it must fit every unit. 9e11 s (year ~30489)
+/// also keeps CalendarTimeInterval::floor within std::chrono::year, which holds a short.
 static constexpr std::chrono::seconds::rep max_last_attempt_seconds = 900'000'000'000;
 static constexpr std::chrono::milliseconds::rep max_delay_ms = 3'000'000'000'000;
 static constexpr std::chrono::milliseconds::rep max_when_ms = max_last_attempt_seconds * 1000 + max_delay_ms;
 static_assert(max_when_ms <= std::numeric_limits<std::chrono::milliseconds::rep>::max() / 1000);
 static_assert(max_when_ms * 1000 <= std::numeric_limits<std::chrono::system_clock::rep>::max());
 static_assert(max_delay_ms * 1'000'000 <= std::numeric_limits<std::chrono::nanoseconds::rep>::max());
-/// max_last_attempt_seconds must also be calendar-valid: CalendarTimeInterval::floor builds a
-/// std::chrono::year_month_day from it, and std::chrono::year holds a short, so a year outside
-/// [year::min(), year::max()] wraps silently with ok() still true. 9e11 s is year ~30489.
 
 bool RefreshTask::retriesExhausted(const CoordinationZnode & znode) const
 {
@@ -1760,8 +1755,7 @@ static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings 
         delay_ms = refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] * multiplier;
     else
         delay_ms = refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms];
-    /// The check above bounds only the product, so both branches can still yield an arbitrary
-    /// setting value. Clamp while unsigned: milliseconds(UInt64 above INT64_MAX) is negative.
+    /// Either branch can return an arbitrary setting value; clamp while it is still unsigned.
     return std::chrono::milliseconds(std::min(delay_ms, UInt64(max_delay_ms)));
 }
 
@@ -1770,9 +1764,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
-    /// last_attempt_time comes from Keeper unvalidated. Clamp it here, where it enters the
-    /// function, so every consumer below is covered: the retry addition promotes seconds to
-    /// milliseconds, and CalendarTimeInterval::floor adds an epoch offset to it.
+    /// last_attempt_time comes from Keeper unvalidated.
     znode.last_attempt_time = std::chrono::sys_seconds(std::chrono::seconds(std::clamp(
         znode.last_attempt_time.time_since_epoch().count(), -max_last_attempt_seconds, max_last_attempt_seconds)));
     if (retriesExhausted(znode))
@@ -1787,17 +1779,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     if (znode.attempt_number != 0)
     {
         /// Retrying refresh. Ignore schedule and dependencies.
-        /// sys_seconds + milliseconds is evaluated in milliseconds, so do that addition explicitly
-        /// with overflow detection. Both operands are bounded above, so this cannot trip, but the
-        /// check keeps the property local instead of resting on the bounds alone.
-        const std::chrono::milliseconds::rep last_attempt_ms
-            = std::chrono::milliseconds(znode.last_attempt_time.time_since_epoch()).count();
-        const std::chrono::milliseconds::rep delay_ms = backoff(znode.attempt_number - 1, refresh_settings).count();
-        std::chrono::milliseconds::rep when_ms = 0;
-        if (common::addOverflow(last_attempt_ms, delay_ms, when_ms))
-            when_ms = max_when_ms;
-        when = std::chrono::system_clock::time_point(
-            std::chrono::milliseconds(std::clamp(when_ms, -max_when_ms, max_when_ms)));
+        when = znode.last_attempt_time + backoff(znode.attempt_number - 1, refresh_settings);
     }
     else if (dependencies.tables.empty())
     {
