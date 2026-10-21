@@ -48,7 +48,9 @@ namespace DB
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
         /// The filter without the conjuncts on hive partition and virtual columns (except row lineage ones if `keep_row_lineage_columns`):
-        /// they are added after the format, and a column of the data file with the same name holds other values.
+        /// they are added after the format, and a column of the data file with the same name holds other values. Also without
+        /// the conjuncts on columns with a `DEFAULT` expression: `AddingDefaultsTransform` rewrites the values the format
+        /// reports as missing (e.g. `NULL`s read into a non-`Nullable` column) after the format pruned by the filter.
         std::shared_ptr<const ActionsDAG> getFormatFilter(
             const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns = false) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source
