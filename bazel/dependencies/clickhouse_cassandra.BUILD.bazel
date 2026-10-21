@@ -163,6 +163,9 @@ ch_cc_library(
         ":_http-parser",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
+        "@clickhouse_libuv//:_uv",
+        "@clickhouse_minizip_ng//:_minizip",
+        "@clickhouse_sparsehash_c11//:sparsehash_c11",
     ],
     includes = [
         "include",
@@ -225,11 +228,6 @@ ch_cc_library(
         "src/third_party/rapidjson/rapidjson",
         "src",
     ],
-    deps = [
-        "@clickhouse_libuv//:_uv",
-        "@clickhouse_minizip_ng//:_minizip",
-        "@clickhouse_sparsehash_c11//:sparsehash_c11",
-    ],
 )
 
 _GENERATED_LOCAL_DEFINES_0 = [
@@ -283,9 +281,9 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = ["src/third_party/http-parser"],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     alwayslink = True,

@@ -86,7 +86,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_zlib_ng//:_zlib","@clickhouse_zstd//:_zstd","@clickhouse_openssl//:ssl","@clickhouse//contrib/minizip-ng-cmake:headers"],
+    deps = ["@clickhouse_zlib_ng//:_zlib","@clickhouse_zstd//:_zstd","@clickhouse//contrib/minizip-ng-cmake:headers"],
     includes = [".", "compat"],
     libcxx_headers = False,
 )
