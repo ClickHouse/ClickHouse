@@ -762,10 +762,13 @@ public:
     {
         if (fail)
             return {};
+        if (error_document)
+            return R"({"Code": "AssumeRoleUnauthorizedAccess", "Message": "EC2 cannot assume the role", "LastUpdated": "2026-10-20T00:00:00Z"})";
         return R"({"Code": "Success", "AccessKeyId": "IMDSKEY", "SecretAccessKey": "IMDSSECRET", "Token": "token"})";
     }
 
     std::atomic<bool> fail = false;
+    std::atomic<bool> error_document = false;
 };
 
 class TestInstanceProfileCredentialsProvider : public DB::S3::AWSInstanceProfileCredentialsProvider
@@ -843,6 +846,14 @@ TEST(IOTestAwsS3Client, InstanceProfileProfileEvents)
     ASSERT_EQ(provider.GetAWSCredentials().GetAWSAccessKeyId(), "IMDSKEY");
     EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSRequests), requests + 2);
     EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSErrors), errors + 1);
+
+    /// An error document is parsed successfully, but contains no credentials.
+    metadata_client->fail = false;
+    metadata_client->error_document = true;
+    provider.Reload();
+    ASSERT_TRUE(provider.GetAWSCredentials().GetAWSAccessKeyId().empty());
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSRequests), requests + 3);
+    EXPECT_EQ(get(ProfileEvents::S3CredentialsIMDSErrors), errors + 2);
 }
 
 TEST(IOTestAwsS3Client, CredentialsProviderChainProfileEvents)

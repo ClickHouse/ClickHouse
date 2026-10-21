@@ -684,11 +684,12 @@ void AWSInstanceProfileCredentialsProvider::Reload()
     }
     AWSCredentialsProvider::Reload();
 
-    /// A failed load keeps the previous profile, so check the result of the load, not the credentials.
-    if (!loaded)
-        ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSErrors);
-
     auto new_credentials = GetAWSCredentialsImpl();
+
+    /// A failed load keeps the previous profile, and a successful one may store empty credentials from an
+    /// IMDS error document (e.g. `AssumeRoleUnauthorizedAccess`), so check both.
+    if (!loaded || new_credentials.GetAWSAccessKeyId().empty() || new_credentials.GetAWSSecretKey().empty())
+        ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSErrors);
     if (new_credentials.IsEmpty())
     {
         /// Normal outside of EC2, so not a warning.
