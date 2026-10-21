@@ -47,11 +47,31 @@ void DeviceFixedColumnBuffer::dropFront(size_t num_rows)
         return;
     }
 
+    /// In place, so that a column holds no second buffer as large as itself: by copies no longer than what is dropped,
+    /// whose source and destination do not overlap, in the order of the stream. Through a second buffer only when the
+    /// tail is so much longer than what is dropped that it would take too many copies.
+    constexpr size_t max_copies = 16;
+    if (tail <= bytes * max_copies)
+    {
+        char * front = values.data();
+        for (size_t moved = 0; moved < tail; moved += bytes)
+        {
+            const size_t chunk = std::min(bytes, tail - moved);
+            checkCuda(
+                cudaMemcpyAsync(front + moved, front + bytes + moved, chunk, cudaMemcpyDeviceToDevice, stream.get()),
+                "Cannot move bytes to the front of a device column");
+        }
+        values.clear();
+        values.grow(tail);
+        return;
+    }
+
     spare.clear();
     checkCuda(
         cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, stream.get()),
         "Cannot move bytes to the front of a device column");
     std::swap(values, spare);
+    spare = DeviceBuffer(stream);
 }
 
 DeviceVariableColumnBuffer::DeviceVariableColumnBuffer(cuda::stream_ref stream_)
@@ -202,7 +222,7 @@ ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_)
 }
 
 ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, cuda::stream_ref stream_)
-    : column_type(columnTypeOrThrow(type))
+    : column_type(uploadTypeOrThrow(type))
     , stage_bytes(stage_bytes_)
     , stream(stream_)
     , device(deviceColumnFor(column_type, stream))
