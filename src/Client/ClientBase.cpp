@@ -1134,7 +1134,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                        std::make_shared<WriteBufferToStdout>(stdout_fd, stdout_is_broken)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.

@@ -27,4 +27,20 @@ check "local, without parallel formatting" $CLICKHOUSE_LOCAL --output_format_par
 check "client, ignore error" $CLICKHOUSE_CLIENT --ignore-error -q "SELECT * FROM numbers(1000000); SELECT throwIf(1)"
 check "local, ignore error" $CLICKHOUSE_LOCAL --ignore-error -q "SELECT * FROM numbers(1000000); SELECT throwIf(1)"
 
-rm -f "$stderr_file"
+# INTO OUTFILE ... AND STDOUT uses a ForkWriteBuffer with a separate stdout writer.
+# EPIPE on that writer must also be handled quietly.
+out_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.outfile.tsv"
+next_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.next.tsv"
+
+rm -f "$out_file" "$next_file"
+check "local, into outfile and stdout" $CLICKHOUSE_LOCAL -q "SELECT * FROM numbers(1000000) INTO OUTFILE '$out_file' AND STDOUT"
+
+rm -f "$out_file" "$next_file"
+check "local, into outfile and stdout, ignore error" $CLICKHOUSE_LOCAL --ignore-error -q "SELECT * FROM numbers(1000000) INTO OUTFILE '$out_file' AND STDOUT; SELECT 42 INTO OUTFILE '$next_file'"
+if [ -f "$next_file" ]; then
+    echo "FAIL: next query ran after broken stdout"
+else
+    echo "OK: next query was skipped"
+fi
+
+rm -f "$stderr_file" "$out_file"
