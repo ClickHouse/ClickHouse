@@ -12,6 +12,8 @@ SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
 SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
+-- The plan-based implementation decides on the optimized plan, where the sorting is already removed, and shows other steps in `EXPLAIN`.
+SET parallel_replicas_plan_based = 0;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET query_plan_enable_optimizations = 1;
 SET query_plan_remove_redundant_sorting = 1;
