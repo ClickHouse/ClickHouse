@@ -30,6 +30,11 @@ void StatisticsTDigest::merge(const StatisticsPtr & other_stats)
     t_digest.merge(other->t_digest);
 }
 
+size_t StatisticsTDigest::allocatedBytes() const
+{
+    return sizeof(*this) + t_digest.allocatedBytes();
+}
+
 void StatisticsTDigest::serialize(WriteBuffer & buf)
 {
     t_digest.serialize(buf);
