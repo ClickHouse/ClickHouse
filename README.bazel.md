@@ -121,6 +121,20 @@ The compile failures in Config and DoubleConverter were fixed in the binary
 verification snapshot below. These checks do not establish repository-wide
 DWYU cleanliness.
 
+The `ce9d63d1b` gRPC/Google Cloud checks compared native builds and actual
+DWYU CPP reports before/after on
+[x86-64 before](https://app.buildbuddy.io/invocation/9c7e9923-af9e-4c04-bbd6-d0192e934c4f),
+[x86-64 after](https://app.buildbuddy.io/invocation/b8dcef6a-a6da-4f4b-bfa8-3e5f5427f665),
+[ARM64 before](https://app.buildbuddy.io/invocation/a523061d-4891-4df1-9e45-adb1ae826863)
+and [ARM64 after](https://app.buildbuddy.io/invocation/0980fdcc-ff90-4cea-a30b-3513c7e3207a).
+Exactly ten unused findings disappeared in eight compiled owners; all other
+findings, unverified link inputs and direct owned link symbols were unchanged.
+All 2,040 measured ordinary compilations per CPU had no new inputs; 85 lost
+the expected generated proto headers. Both ClickHouse and unit-test links and
+ELFs stayed equal. Twelve of these 15 CPP reports pass. Address sorting,
+gRPC++, and the ClickHouse gRPC proto report retain unverified link inputs.
+The check does not cover the whole repository or score source-free wrappers.
+
 ### Audit the configured C++ owners
 
 On a Linux host configured for BuildBuddy, run from the workspace root:
@@ -331,6 +345,7 @@ before and after on both CPUs.
 | `5b5482f77` (verification snapshot) | Remove duplicate OpenLDAP compiler inputs and restrict simdjson compiler inputs to included implementation fragments for the current CPU. Consumer compile inputs are unchanged. OpenLDAP and LZ4 have actual zero-finding DWYU reports on both CPUs; four positive and four negative controls pass. Existing simdjson wrong-CPU preprocessing errors and unchanged Compression, Config, and DBMS unverified-link reports remain unscored. ClickHouse and DBMS binaries and ordered links match the current parent; normalized native CMake hashes match | [7562738d](https://app.buildbuddy.io/invocation/7562738d-5500-47e2-8f50-2e8276ed5c00) | [5741eee4](https://app.buildbuddy.io/invocation/5741eee4-093f-4949-bf5b-e4eb9ac46793) |
 | `c50d1da3e` (verification snapshot) | Restrict public headers for zmij, libbcrypt, MariaDB and NATS. Their four public preprocessing failures are fixed on both CPUs. MariaDB and NATS pass current DWYU; zmij and libbcrypt remain link-unverified for clang_rt_builtins. Their old preprocessing failures supplied no link evidence. All eight reported fields for three callers match before/after; those callers remain held. Simdjson .cpp inputs do not propagate into the seven native compile targets. Five controls, full ClickHouse/DBMS links and executables, and recorded CMake hashes match | [33c4f89c](https://app.buildbuddy.io/invocation/33c4f89c-0a58-459c-a9f4-de691955464d) | [1c5400e9](https://app.buildbuddy.io/invocation/1c5400e9-d722-4dba-b035-29043d0bacdf) |
 | `67cf44fc5` (verification snapshot) | Remove unused OpenSSL, Vectorscan and MariaDB compiler inputs and empty aws-c-http and LLVM attributes. Retain Vectorscan's compiled and included impl.cpp. On each CPU, seven of eleven C/C++ owners and callers pass DWYU; OpenSSL crypto, Functions and mysqlxx remain link-unverified, and Vectorscan compile_1 retains its finding. All reported fields and the five controls match before/after. Only the selected owning compiler inputs were removed; caller inputs, ordered ClickHouse/unit links and full ELF bytes match. Both normalized native CMake hashes match | [473db04b](https://app.buildbuddy.io/invocation/473db04b-6a21-4465-a9c7-1342829cb927) | [bf17441a](https://app.buildbuddy.io/invocation/bf17441a-e7b3-4647-a03f-be1a6c3dae66) |
+| `ce9d63d1b` (verification snapshot) | Remove ten CPP-verified unused dependencies in gpr and seven Google Cloud proto libraries. Fresh native and CPP checks cover 15 compiled owners per CPU; three reports remain held for pre-existing unverified link inputs. | [4e81f431](https://app.buildbuddy.io/invocation/4e81f431-b995-4135-9db8-f2770cbe9b79) | [3d9be540](https://app.buildbuddy.io/invocation/3d9be540-9460-4e30-8324-46fdd906b923) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

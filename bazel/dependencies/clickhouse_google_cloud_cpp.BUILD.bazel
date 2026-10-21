@@ -81,9 +81,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_annotations_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_http_protos",
-    ],
 )
 
 ch_grpc_cc_library(
@@ -91,9 +88,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_auth_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_annotations_protos",
-    ],
 )
 
 ch_grpc_cc_library(
@@ -108,10 +102,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_billing_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_annotations_protos",
-        ":google_cloud_cpp_api_metric_protos",
-    ],
 )
 
 ch_grpc_cc_library(
@@ -119,9 +109,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_client_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_launch_stage_protos",
-    ],
 )
 
 ch_grpc_cc_library(
@@ -150,9 +137,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_control_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_policy_protos",
-    ],
 )
 
 ch_grpc_cc_library(
@@ -160,9 +144,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_distribution_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_annotations_protos",
-    ],
 )
 
 ch_grpc_cc_library(
@@ -177,9 +158,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_api_endpoint_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":google_cloud_cpp_api_annotations_protos",
-    ],
 )
 
 ch_grpc_cc_library(
