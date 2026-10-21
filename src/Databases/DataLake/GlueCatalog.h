@@ -88,7 +88,7 @@ public:
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
-    bool supportsDropTable() const override { return true; }
+    bool keepsFilesOnDrop() const override { return true; }
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call

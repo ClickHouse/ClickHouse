@@ -1881,8 +1881,9 @@ def test_drop_table_delete_data_retry_after_failure(started_cluster):
     for suffix, settings in (("tbl", {}), ("parallel_replicas", no_cache_parallel_replicas)):
         table_name = f"{namespace}_{suffix}"
         create_table_with_data(started_cluster, node, namespace, table_name)
+        files = table_files(started_cluster, table_name)
 
-        # Fail the catalog entry removal: the table and its metadata files must survive for a retry.
+        # The catalog purges the files, so a failed catalog entry removal deletes none of them.
         node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_catalog_remove_fail")
         try:
             error = node.query_and_get_error(
@@ -1893,33 +1894,11 @@ def test_drop_table_delete_data_retry_after_failure(started_cluster):
             node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_catalog_remove_fail")
         assert "FAULT_INJECTED" in error
         assert len(catalog.list_tables(namespace)) == 1
-        # The data files are already deleted, only the metadata directory is left.
-        files = table_files(started_cluster, table_name)
-        assert all(f.startswith("metadata/") for f in files)
-        assert any(f.endswith(".metadata.json") for f in files)
-        assert any(f.endswith(".avro") for f in files)
+        assert sorted(table_files(started_cluster, table_name)) == sorted(files)
 
         drop_table_delete_data(node, namespace, table_name, settings)
         assert len(catalog.list_tables(namespace)) == 0
         assert len(table_files(started_cluster, table_name)) == 0
-
-
-def test_drop_table_delete_data_metadata_delete_failure(started_cluster):
-    node = started_cluster.instances["node1"]
-    catalog = load_catalog_impl(started_cluster)
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    namespace = f"test_drop_delete_data_metadata_failure_{uuid.uuid4()}"
-    table_name = f"{namespace}_tbl"
-    create_table_with_data(started_cluster, node, namespace, table_name)
-
-    # The catalog entry is already removed when the metadata files are deleted, so their failure does not fail the DROP.
-    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
-    try:
-        drop_table_delete_data(node, namespace, table_name)
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_metadata_anchor_fail")
-    assert len(catalog.list_tables(namespace)) == 0
-    assert node.contains_in_log(f"Best-effort Iceberg drop: ignoring failure to delete metadata file {table_name}/metadata/")
 
 
 def test_table_with_slash(started_cluster):

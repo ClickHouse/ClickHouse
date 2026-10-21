@@ -1053,7 +1053,7 @@ void StorageObjectStorage::dropImpl(
     const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
 
     /// The catalog purges the files itself, or cannot drop the table and must throw before any file is deleted.
-    if (catalog && (catalog->managesTableLocation() || !catalog->supportsDropTable()))
+    if (catalog && !catalog->keepsFilesOnDrop())
     {
         IDataLakeMetadata::dropFromCatalog(drop_context, catalog, storage_id);
         return;
