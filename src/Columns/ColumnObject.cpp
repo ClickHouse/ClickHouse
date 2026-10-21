@@ -1765,6 +1765,17 @@ size_t ColumnObject::allocatedBytes() const
     for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->allocatedBytes();
     size += shared_data->allocatedBytes();
+
+    /// Each `std::unordered_map` node also stores a next pointer and may cache the hash.
+    constexpr size_t map_node_overhead = sizeof(void *) + sizeof(size_t);
+    size += insert_from_mappings.bucket_count() * sizeof(void *);
+    size += insert_from_mappings.size() * (sizeof(decltype(insert_from_mappings)::value_type) + map_node_overhead);
+    for (const auto & [_, mapping] : insert_from_mappings)
+    {
+        size += mapping.dynamic_paths.capacity() * sizeof(decltype(mapping.dynamic_paths)::value_type);
+        size += mapping.src_dynamic_paths_for_shared_data.capacity() * sizeof(decltype(mapping.src_dynamic_paths_for_shared_data)::value_type);
+        size += mapping.dynamic_paths_missing_in_src.capacity() * sizeof(decltype(mapping.dynamic_paths_missing_in_src)::value_type);
+    }
     return size;
 }
 

@@ -420,6 +420,61 @@ TEST(ColumnObject, rollback)
     ASSERT_EQ((*dynamic_paths.at("a.c"))[1], Field{"ccc"});
 }
 
+TEST(ColumnObject, InsertFromMappingAllocatedBytes)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=24)");
+    auto column = type->createColumn();
+    auto & destination = assert_cast<ColumnObject &>(*column);
+
+    VectorWithMemoryTracking<String> destination_paths;
+    Object source_row;
+    for (size_t i = 0; i < 16; ++i)
+    {
+        auto path = "common" + std::to_string(i);
+        destination_paths.push_back(path);
+        source_row.emplace(path, Field{UInt64(i)});
+    }
+    for (size_t i = 0; i < 8; ++i)
+    {
+        destination_paths.push_back("missing" + std::to_string(i));
+        source_row.emplace("shared" + std::to_string(i), Field{UInt64(i)});
+    }
+    destination.setDynamicPaths(destination_paths);
+
+    constexpr size_t num_sources = 64;
+    for (size_t i = 0; i < num_sources; ++i)
+    {
+        auto source = type->createColumn();
+        source->insert(source_row);
+        destination.insertFrom(*source, 0);
+    }
+
+    /// A copy shares the same subcolumns but does not copy the mappings, even after all sources have been destroyed.
+    auto without_mappings = destination.clone();
+    constexpr size_t minimum_mapping_bytes = num_sources
+        * (24 * sizeof(std::pair<const ColumnDynamic *, ColumnDynamic *>)
+           + 8 * sizeof(std::pair<std::string_view, const ColumnDynamic *>)
+           + 8 * sizeof(ColumnDynamic *));
+    ASSERT_GE(destination.allocatedBytes(), without_mappings->allocatedBytes() + minimum_mapping_bytes);
+}
+
+TEST(ColumnObject, InsertFromMappingAllocatedBytesWithoutPaths)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto destination = type->createColumn();
+    constexpr size_t num_sources = 64;
+    for (size_t i = 0; i < num_sources; ++i)
+    {
+        auto source = type->createColumn();
+        source->insert(Object{});
+        destination->insertFrom(*source, 0);
+    }
+
+    /// Empty mappings still retain the map nodes and buckets.
+    auto without_mappings = destination->clone();
+    ASSERT_GE(destination->allocatedBytes(), without_mappings->allocatedBytes() + num_sources * sizeof(UInt64));
+}
+
 TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
 {
     auto type_with_dynamic_paths = DataTypeFactory::instance().get("JSON");
