@@ -6,7 +6,8 @@
 #
 # The directories of all `FileLog` tables are watched by one shared thread, so creating many tables must not
 # create a thread per table, and dropping them while their directories change must not hang or break the server.
-# They also share one inotify instance, so the number of tables is above the default `fs.inotify.max_user_instances` of 128.
+# They also share a fixed pool of inotify instances, so the number of tables is above the default
+# `fs.inotify.max_user_instances` of 128.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

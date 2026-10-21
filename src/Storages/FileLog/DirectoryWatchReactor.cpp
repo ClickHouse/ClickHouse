@@ -9,6 +9,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <unistd.h>
 #if defined(OS_LINUX)
+#include <random>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #elif defined(OS_DARWIN)
@@ -191,25 +193,29 @@ DirectoryWatchReactor::DirectoryWatchReactor()
     , buffer(buffer_size, '\0')
 {
     control_pipe.setNonBlockingReadWrite();
-
-    inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    if (inotify_fd == -1)
-        throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify for the directory watch reactor");
+    inotify_fds.fill(-1);
 
     try
     {
         /// The epoll data comes back with every event of the descriptor, so that the loop knows what the event is for:
-        /// the control pipe is registered with `this`, it is a wake-up for a command, the inotify descriptor is
-        /// registered with its own address.
+        /// the control pipe is registered with `this`, it is a wake-up for a command, each inotify descriptor is
+        /// registered with its own address in `inotify_fds`.
         epoll.add(control_pipe.fds_rw[0], this);
-        epoll.add(inotify_fd, &inotify_fd);
+        for (int & inotify_fd : inotify_fds)
+        {
+            inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+            if (inotify_fd == -1)
+                throw ErrnoException(
+                    ErrorCodes::IO_SETUP_ERROR,
+                    "Cannot initialize inotify for the directory watch reactor, see `fs.inotify.max_user_instances`");
+            epoll.add(inotify_fd, &inotify_fd);
+        }
 
         thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
     }
     catch (...)
     {
-        int err = ::close(inotify_fd);
-        chassert(!err || errno == EINTR);
+        closeInotifyDescriptors();
         throw;
     }
 }
@@ -219,8 +225,18 @@ DirectoryWatchReactor::~DirectoryWatchReactor()
     stop();
 
     chassert(registrations_by_wd.empty());
-    int err = ::close(inotify_fd);
-    chassert(!err || errno == EINTR);
+    closeInotifyDescriptors();
+}
+
+void DirectoryWatchReactor::closeInotifyDescriptors()
+{
+    for (int inotify_fd : inotify_fds)
+    {
+        if (inotify_fd == -1)
+            continue;
+        int err = ::close(inotify_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 void DirectoryWatchReactor::runLoop()
@@ -247,17 +263,13 @@ void DirectoryWatchReactor::runLoop()
 
         /// The commands go after the watchers: a command can remove a watcher that has an event in this very batch.
         bool has_commands = false;
-        bool has_events = false;
         for (size_t i = 0; i < ready; ++i)
         {
             if (events[i].data.ptr == this)
                 has_commands = true;
             else
-                has_events = true;
+                dispatchEvents(*static_cast<const int *>(events[i].data.ptr));
         }
-
-        if (has_events)
-            dispatchEvents();
 
         if (has_commands)
             processCommands();
@@ -274,10 +286,14 @@ void DirectoryWatchReactor::runLoop()
 
 void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration)
 {
-    /// The kernel shares one watch per directory, so the queue can hold events from before this watcher's baseline.
-    /// Hand them to the other watchers first, before adding the watch; otherwise events between the two would reach
-    /// the other watchers only, and this watcher would lose events that happened after its baseline.
-    dispatchQueuedEvents();
+    //select one inotify fd at random from the pool
+    const int inotify_fd = inotify_fds[std::uniform_int_distribution<size_t>(0, inotify_instances - 1)(thread_local_rng)];
+    registration->inotify_fd = inotify_fd;
+
+    /// The kernel shares one watch per directory in an inotify instance, so the queue can hold events from before this
+    /// watcher's baseline. Hand them to the other watchers first, before adding the watch; otherwise events between the
+    /// two would reach the other watchers only, and this watcher would lose events that happened after its baseline.
+    dispatchQueuedEvents(inotify_fd);
 
     /// Moved into `registrations` before its address is stored in `registrations_by_wd`. If `emplace` throws, the
     /// registration is destroyed, and no pointer to it is left behind for `dispatchEvent` to read.
@@ -298,10 +314,11 @@ void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::u
             ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, watcher.path, "Watch directory {} failed", watcher.path);
         }
 
-        const bool is_new_watch = !registrations_by_wd.contains(wd);
+        const std::pair<int, int> key{inotify_fd, wd};
+        const bool is_new_watch = !registrations_by_wd.contains(key);
         try
         {
-            registrations_by_wd[wd].push_back(&new_registration);
+            registrations_by_wd[key].push_back(&new_registration);
         }
         catch (...)
         {
@@ -309,7 +326,7 @@ void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::u
             /// harmless, as each watcher filters the events by its own mask.
             if (is_new_watch)
             {
-                registrations_by_wd.erase(wd);
+                registrations_by_wd.erase(key);
                 inotify_rm_watch(inotify_fd, wd);
             }
             throw;
@@ -331,7 +348,7 @@ void DirectoryWatchReactor::detachWatcher(WatcherRegistration & registration)
     if (registration.wd == -1)
         return;
 
-    auto it = registrations_by_wd.find(registration.wd);
+    auto it = registrations_by_wd.find({registration.inotify_fd, registration.wd});
     chassert(it != registrations_by_wd.end());
     std::erase(it->second, &registration);
     if (!it->second.empty())
@@ -340,11 +357,11 @@ void DirectoryWatchReactor::detachWatcher(WatcherRegistration & registration)
     registrations_by_wd.erase(it);
     /// The events of the watch that are still in the queue, and its `IN_IGNORED`, find no watchers and are skipped.
     /// `EINVAL` means that the kernel has dropped the watch already, and its `IN_IGNORED` is still in the queue.
-    if (inotify_rm_watch(inotify_fd, registration.wd) == -1 && errno != EINVAL)
+    if (inotify_rm_watch(registration.inotify_fd, registration.wd) == -1 && errno != EINVAL)
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot stop watching directory {}", registration.watcher->path);
 }
 
-void DirectoryWatchReactor::dispatchEvents()
+void DirectoryWatchReactor::dispatchEvents(int inotify_fd)
 {
     chassert(touched_watchers.empty());
 
@@ -365,7 +382,7 @@ void DirectoryWatchReactor::dispatchEvents()
         for (size_t offset = 0; offset < static_cast<size_t>(bytes_read);)
         {
             const auto & event = *reinterpret_cast<const inotify_event *>(buffer.data() + offset);
-            dispatchEvent(event);
+            dispatchEvent(inotify_fd, event);
             offset += sizeof(inotify_event) + event.len;
         }
 
@@ -373,7 +390,7 @@ void DirectoryWatchReactor::dispatchEvents()
     }
 }
 
-void DirectoryWatchReactor::dispatchQueuedEvents()
+void DirectoryWatchReactor::dispatchQueuedEvents(int inotify_fd)
 {
     chassert(touched_watchers.empty());
 
@@ -402,12 +419,12 @@ void DirectoryWatchReactor::dispatchQueuedEvents()
         for (size_t offset = 0; offset < static_cast<size_t>(bytes_read);)
         {
             const auto & event = *reinterpret_cast<const inotify_event *>(buffer.data() + offset);
-            dispatchEvent(event);
+            dispatchEvent(inotify_fd, event);
             offset += sizeof(inotify_event) + event.len;
         }
 
         commitTouchedWatchers();
-        remaining -= std::min(remaining, static_cast<size_t>(bytes_read));
+        remaining -=std::min(remaining, static_cast<size_t>(bytes_read));
     }
 }
 
@@ -442,17 +459,17 @@ void DirectoryWatchReactor::commitTouchedWatchers()
     removeFailedWatchers();
 }
 
-void DirectoryWatchReactor::dispatchEvent(const inotify_event & event)
+void DirectoryWatchReactor::dispatchEvent(int inotify_fd, const inotify_event & event)
 {
     if (event.mask & IN_Q_OVERFLOW)
     {
-        LOG_WARNING(log, "The queue of inotify events has overflowed, so some changes of the watched directories are lost. "
-            "Consider increasing `fs.inotify.max_queued_events`");
+        LOG_WARNING(log, "The queue of inotify descriptor {} has overflowed, so some changes of the directories watched with it "
+            "are lost. Consider increasing `fs.inotify.max_queued_events`", inotify_fd);
         return;
     }
 
     /// The events of a watch that has been removed, which were still in the queue.
-    auto it = registrations_by_wd.find(event.wd);
+    auto it = registrations_by_wd.find({inotify_fd, event.wd});
     if (it == registrations_by_wd.end())
         return;
 

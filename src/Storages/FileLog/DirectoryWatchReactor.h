@@ -20,6 +20,7 @@ struct inotify_event;
 #include <chrono>
 #include <deque>
 #include <future>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -32,8 +33,10 @@ namespace DB
 class DirectoryWatcherBase;
 
 /// One thread for all `DirectoryWatcherBase` objects, so threads and inotify instances don't grow with `FileLog` tables.
-/// Linux: one inotify descriptor under `epoll`, a watch per directory. macOS: one `kqueue` for directory and file
-/// descriptors, plus timed scans. Watcher callbacks run on this thread, one at a time, and must not block.
+/// Linux: a fixed pool of inotify descriptors under `epoll`, a watch per directory, each watcher on a random descriptor
+/// of the pool. Each descriptor has its own queue of events, so when a directory that changes all the time overflows
+/// one, only the watchers of that descriptor lose events. macOS: one `kqueue` for directory and file descriptors, plus
+/// timed scans. Watcher callbacks run on this thread, one at a time, and must not block.
 class DirectoryWatchReactor
 {
 public:
@@ -120,34 +123,41 @@ private:
         WatcherRegistration & operator=(const WatcherRegistration &) = delete;
 
         DirectoryWatcherBase * watcher;
-        /// The watch of the directory in `inotify_fd`, shared by all watchers of the directory. A watcher gets only the
-        /// events queued after it was added (see `attachWatcher`). -1 once the kernel has dropped it.
+        /// The descriptor of `inotify_fds` the watcher is assigned to.
+        int inotify_fd = -1;
+        /// The watch of the directory in `inotify_fd`, shared by all watchers of the directory on that descriptor. A
+        /// watcher gets only the events queued after it was added (see `attachWatcher`). -1 once the kernel has dropped it.
         int wd = -1;
         /// Its callback has failed in the current read, and it is removed at the end of it.
         bool failed = false;
     };
 
     void runLoop();
+    /// Closes the descriptors of `inotify_fds` that are open.
+    void closeInotifyDescriptors();
     void attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration);
     void detachWatcher(WatcherRegistration & registration);
     /// Reads the events of `inotify_fd` and hands them to the watchers.
-    void dispatchEvents();
+    void dispatchEvents(int inotify_fd);
     /// Reads exactly the events that are in the queue of `inotify_fd` right now and hands them to the watchers, so
     /// that a watcher added next does not get them.
-    void dispatchQueuedEvents();
+    void dispatchQueuedEvents(int inotify_fd);
     /// Commits the events of `touched_watchers` after a read, and removes the watchers that failed in it.
     void commitTouchedWatchers();
-    /// Hands one event to the watchers of its watch, and adds those to `touched_watchers`.
-    void dispatchEvent(const inotify_event & event);
+    /// Hands one event read from `inotify_fd` to the watchers of its watch, and adds those to `touched_watchers`.
+    void dispatchEvent(int inotify_fd, const inotify_event & event);
     void removeFailedWatchers();
     /// Commits the watchers whose deadline is not after `now`.
     void flushExpiredPairings(std::chrono::steady_clock::time_point now);
 
     Epoll epoll;
-    int inotify_fd = -1;
+    //each inotify fd can have at most 16384 items in the queue by default, so we use a pool of them to avoid overflow
+    static constexpr size_t inotify_instances = 8;
+    std::array<int, inotify_instances> inotify_fds;
 
-    /// The registrations of the watchers of each watch of `inotify_fd`.
-    std::unordered_map<int, std::vector<WatcherRegistration *>> registrations_by_wd;
+    /// The registrations of the watchers of each watch, by the descriptor of `inotify_fds` and the watch: a watch
+    /// descriptor is unique only within its inotify instance.
+    std::map<std::pair<int, int>, std::vector<WatcherRegistration *>> registrations_by_wd;
 
     /// Watchers waiting for the second half of a rename split between two reads; few, so unsorted. Each sets its own
     /// deadline while decoding, and the loop scans all of them for the earliest and the expired ones. On expiry the
