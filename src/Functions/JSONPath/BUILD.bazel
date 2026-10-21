@@ -23,7 +23,7 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
-        "@clickhouse_double_conversion//:_double-conversion",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = [
@@ -115,8 +115,5 @@ ch_cc_library(
     deps = [
         "//src/Parsers:headers",
         "//src/Common",
-        "//src:headers",
-        "//base:common",
-        "@clickhouse_jemalloc//:_jemalloc",
     ],
 )

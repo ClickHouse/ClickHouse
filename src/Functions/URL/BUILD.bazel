@@ -129,12 +129,10 @@ ch_cc_library(
     copts = ["-g1"],
     implementation_deps = [
         ":clickhouse_functions_url__compile_1",
-        "@clickhouse_libpqxx//:_libpqxx",
         "//base:common",
         "//src:headers",
         "//src/Common",
-        "//src/Functions:headers",
-        "@clickhouse_vectorscan//:_vectorscan__compile_0",
+        "//src/Functions:clickhouse_functions_obj__compile_0",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
     local_includes = [
@@ -156,17 +154,14 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@llvm-project//third-party/siphash",
         "//base/glibc-compatibility",
-        "//contrib/jemalloc-cmake:headers",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse_libhdfs3//:_hdfs3",
     ],
     alwayslink = True,
 )
 
 ch_cc_library(
     name = "clickhouse_functions_url__compile_1",
+    source_headers = False,
     srcs = ["tldLookup.generated.cpp"],
     hdrs = ["tldLookup.h"],
     clickhouse_code = True,
@@ -175,7 +170,6 @@ ch_cc_library(
         "-Wno-shorten-64-to-32",
     ],
     implementation_deps = [
-        "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
     local_includes = [
@@ -197,11 +191,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@llvm-project//third-party/siphash",
         "//base/glibc-compatibility",
-        "//contrib/jemalloc-cmake:headers",
-        "@clickhouse_openssl//:crypto",
-        "@clickhouse_libhdfs3//:_hdfs3",
     ],
     alwayslink = True,
 )
