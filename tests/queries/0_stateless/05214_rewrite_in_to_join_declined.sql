@@ -63,6 +63,10 @@ FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT AFTER id IN (SELECT k FROM s));
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id FROM t ORDER BY id LIMIT UNTIL id IN (SELECT k FROM s));
 
+SELECT '-- IN with a key that equals cannot compare';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT s IN (SELECT sumState(number) FROM numbers(3)) FROM (SELECT sumState(number) AS s FROM numbers(3)));
+
 SELECT '-- IN read on the totals row of a view';
 DROP VIEW IF EXISTS vt;
 CREATE VIEW vt AS SELECT id FROM t GROUP BY id WITH TOTALS;

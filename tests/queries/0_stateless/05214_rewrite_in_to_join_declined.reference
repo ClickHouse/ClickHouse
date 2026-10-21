@@ -22,6 +22,8 @@
 -- IN inside LIMIT AFTER and LIMIT UNTIL
 0	1
 0	1
+-- IN with a key that equals cannot compare
+0	1
 -- IN read on the totals row of a view
 0	1
 -- IN subquery that reads a view with totals

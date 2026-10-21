@@ -319,6 +319,10 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
         if (key_base->hasDynamicStructure() || isVariant(key_base) || column_base->hasDynamicStructure() || isVariant(column_base))
             return false;
 
+        /// The join compares the key with `equals`, which a set does not need.
+        if (!key_base->isComparableForEquality() || !column_base->isComparableForEquality())
+            return false;
+
         /// A set turns a key carrying a sub-second part into no match when it casts it to a type that cannot hold one.
         if (isDateTime64(key_base) && !isDateTime64(column_base))
             return false;
