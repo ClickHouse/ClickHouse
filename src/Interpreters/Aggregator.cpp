@@ -123,11 +123,6 @@ bool worthConvertToTwoLevel(
         || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
 }
 
-bool reachedSpillFloor(size_t min_bytes_before_external_group_by, const DB::AggregatedDataVariants & result)
-{
-    return result.memoryUsage() >= min_bytes_before_external_group_by;
-}
-
 /// The row capacity of each chunk that `convertToBlockImpl` emits. +1 for `nullKeyData`: if the table
 /// doesn't have it, that's not a problem, just memory for one excessive row is preallocated.
 /// A non-zero `max_rows_per_block` lowers the `max_block_size` bound so that a table smaller than
@@ -417,7 +412,6 @@ Aggregator::Params::Params(
     size_t group_by_two_level_threshold_,
     size_t group_by_two_level_threshold_bytes_,
     size_t max_bytes_before_external_group_by_,
-    size_t min_bytes_before_external_group_by_,
     bool empty_result_for_aggregation_by_empty_set_,
     TemporaryDataOnDiskScopePtr tmp_data_scope_,
     size_t max_threads_,
@@ -448,7 +442,6 @@ Aggregator::Params::Params(
     , group_by_two_level_threshold(group_by_two_level_threshold_)
     , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
     , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
-    , min_bytes_before_external_group_by(min_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
     , max_threads(max_threads_)
@@ -2682,9 +2675,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// table. The session's shared drain table is memory no sweep writes once it is below the
     /// part floor, so left resident it keeps every later block over the threshold.
     Int64 spill_decision_memory = current_memory_usage;
-    bool reached_spill_floor = reachedSpillFloor(params.min_bytes_before_external_group_by, result);
     if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
-        && result.isTwoLevel() && worth_convert_to_two_level && reached_spill_floor
+        && result.isTwoLevel() && worth_convert_to_two_level
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
     {
         /// The backlog itself was already shed above, under the same trigger; what is left here
@@ -2705,7 +2697,6 @@ bool Aggregator::executeOnBlock(Columns columns,
         && result.isTwoLevel()
         && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level
-        && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
         size_t size = spill_decision_memory + params.min_free_disk_space;
@@ -5750,12 +5741,10 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
       * or re-seeds the kept keys into the emptied table (after it); see
       * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
-    bool reached_spill_floor = reachedSpillFloor(params.min_bytes_before_external_group_by, result);
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level
-        && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
