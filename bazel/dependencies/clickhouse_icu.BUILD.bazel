@@ -60,5 +60,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
     ],
-    deps = [":_icudata"],
+    implementation_deps = [":_icudata"],
 )
