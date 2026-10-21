@@ -5,8 +5,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/IDataType.h>
@@ -295,28 +293,10 @@ bool shouldSkipTopKAboveMergeTreeInput(
     if (!defer_to_read_in_order)
         return false;
 
-    /// Probe full read-in-order applicability (direction, nulls direction, collator,
-    /// key-expression mapping) rather than just matching column names. A name-only match
-    /// would defer even when `optimizeReadInOrder` cannot satisfy the `SortingStep`
-    /// (e.g. `ORDER BY ... COLLATE`), silently disabling both optimizations.
-    SortingStep probe_sort_step(
-        input_node.step->getOutputHeader(),
-        description,
-        limit,
-        sort_step.getSettings());
-
-    if (!wouldReadInOrderBeUseful(probe_sort_step, reading->getStorageMetadata()->getSortingKey(), input_node))
-        return false;
-
-    /// `wouldReadInOrderBeUseful` is unaware of `FINAL`-time gating: even when the sort
-    /// description matches the storage's sorting key, pass 2's
-    /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for
-    /// `direction != 1 && query_info.isFinal()`. Deferring on the column match alone would
-    /// silently disable both optimizations. When reading `FINAL`, only defer if every sort
-    /// column is ascending.
-    const bool any_desc = std::ranges::any_of(
-        description, [](const SortColumnDescription & c) { return c.direction != 1; });
-    return !(reading->isQueryWithFinal() && any_desc);
+    /// as in `tryTopKThroughJoin`: defer only if pass 2 can read in order, a reverse read may be impossible (`FINAL`)
+    SortingStep probe_sort_step(input_node.step->getOutputHeader(), description, limit, sort_step.getSettings());
+    const auto order_info = getInputOrderIfReadInOrderIsUseful(probe_sort_step, reading->getStorageMetadata()->getSortingKey(), input_node);
+    return order_info && (order_info->direction == 1 || reading->canReadInReverseOrder());
 }
 
 bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
@@ -360,9 +340,6 @@ bool addArrayJoinEmptinessFilter(
     QueryPlan::Nodes & nodes)
 {
     const Names & array_join_columns = array_join.getColumns();
-    if (array_join_columns.empty())
-        return false;
-
     ActionsDAG dag(input_node->step->getOutputHeader()->getColumnsWithTypeAndName());
 
     auto length_function = FunctionFactory::instance().get("length", nullptr);
@@ -376,15 +353,7 @@ bool addArrayJoinEmptinessFilter(
 
     for (const auto & name : array_join_columns)
     {
-        const auto * input = dag.tryFindInOutputs(name);
-        if (!input)
-            return false;
-
-        const auto & type = input->result_type;
-        if (!typeid_cast<const DataTypeArray *>(type.get()) && !typeid_cast<const DataTypeMap *>(type.get()))
-            return false;
-
-        const auto & length = dag.addFunction(length_function, {input}, {});
+        const auto & length = dag.addFunction(length_function, {&dag.findInOutputs(name)}, {});
         non_empty.push_back(&dag.addFunction(greater_function, {&length, zero}, {}));
     }
 

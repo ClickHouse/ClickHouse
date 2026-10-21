@@ -1,15 +1,19 @@
 #include <Core/Joins.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -145,6 +149,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     return true;
 }
 
+}
+
 /// Push `Limit + Sort` down through a Join when the sort key only references
 /// columns from the side preserved by the join (left of LEFT JOIN, right of RIGHT JOIN).
 ///
@@ -214,13 +220,8 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (sort_node->children.size() != 1)
         return 0;
 
-    /// Peel a chain of ExpressionSteps between Sort and Join, translating the sort
-    /// description to the input level of each step. An `arrayJoin` in such a step changes
-    /// the number of output rows per input row: the soundness sketch assumes "every
-    /// preserved-side row produces at least one output row" and that the top-n of the sort
-    /// output corresponds to the top-n of the preserved side - both invariants break when an
-    /// `arrayJoin` above the join expands rows, because the n rows we keep on the preserved
-    /// side may expand into fewer (or zero) final rows. See `#82279`.
+    /// Peel the expressions between Sort and Join. An `arrayJoin` above the join changes the number of rows of the
+    /// preserved side, so the top-n of that side no longer gives the top-n of the result (see `#82279`).
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * join_node = sort_node->children.front();
     if (!peelPassThroughExpressions(join_node, description))
@@ -292,6 +293,20 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return 0;
     }
 
+    /// Do not push `Sort + Limit` below the join when the preserved input is read with
+    /// parallel replicas. Each replica reads a coordinated subset of rows; per-replica
+    /// `Limit n` after a per-replica sort would emit each replica's local top-n instead
+    /// of the global top-n. Furthermore, the inserted `Sort` would let `optimizeReadInOrder`
+    /// (which has no through-join guard once the join is no longer between sort and read)
+    /// turn the preserved-side scan into `WithOrder` mode, conflicting with the existing
+    /// `read_in_order_through_join` skip for parallel replicas and causing coordination
+    /// mode mismatch ("Replica decided to read in Default mode, not in WithOrder").
+    if (const auto * reading = findMergeTreeRead(preserved_input_node))
+    {
+        if (reading->isParallelReadingFromReplicas())
+            return 0;
+    }
+
     /// Defer to `optimizeReadInOrder` (second-pass) when the preserved input can stream
     /// rows in the requested sort order from MergeTree's primary key. That path scans
     /// only the rows the LIMIT will keep, without materializing a sort - strictly better
@@ -336,10 +351,6 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
         && !joinMayHaveDelayedBlocks(*join_node->step)
         && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
-    /// only the parallel replicas check, the block below decides whether pass 2 reads in order
-    if (shouldSkipTopKAboveMergeTreeInput(
-            *preserved_input_node, *sort_step, description, n, /*defer_to_read_in_order=*/ false))
-        return 0;
     if (second_pass_can_apply)
     {
         /// Probe full read-in-order applicability (direction, nulls direction,
