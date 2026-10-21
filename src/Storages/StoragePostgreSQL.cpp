@@ -270,9 +270,6 @@ void StoragePostgreSQL::readImpl(
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
-        WhichDataType which(column_data.type);
-        if (which.isEnum())
-            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 

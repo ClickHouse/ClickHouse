@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,6 +20,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -28,6 +30,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/RadixUniqExactTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -55,6 +58,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_group_by;
+    extern const QueryPlanSerializationSettingsUInt64 min_bytes_before_external_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -69,6 +73,13 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_aggregation_memory_tracker;
+    extern const SettingsUInt64 min_bytes_before_external_group_by;
 }
 
 namespace ErrorCodes
@@ -227,6 +238,16 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     params.top_k.reset();
 }
 
+bool AggregatingStep::supportsDataflowStatisticsCollection() const
+{
+    /// `recordAggregationStateSizes` refuses to measure the single state of an aggregation without keys that owns
+    /// memory (`uniqExact`), so such a query never gets statistics. Refuse it before the plan with parallel replicas is built.
+    if (params.keys.empty()
+        && std::ranges::any_of(params.aggregates, [](const auto & aggregate) { return !aggregate.function->hasTrivialDestructor(); }))
+        return false;
+    return grouping_sets_params.empty();
+}
+
 void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
 {
     params.top_k = std::move(top_k);
@@ -265,6 +286,17 @@ static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processo
     bool tracked = false;
     for (const auto * processor : step_processors)
     {
+        /// The radix partitioned `uniqExact` has one state for all its transforms.
+        if (const auto * route_transform = typeid_cast<const RadixUniqExactRouteTransform *>(processor))
+        {
+            if (auto peak = route_transform->getState().getPeakMemoryUsage())
+            {
+                peak_memory += *peak;
+                tracked = true;
+            }
+            break;
+        }
+
         const auto * aggregating_transform = typeid_cast<const AggregatingTransform *>(processor);
         if (!aggregating_transform)
             continue;
@@ -458,6 +490,69 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     return nullptr;
 }
 
+bool AggregatingStep::canUseRadixUniqExact() const
+{
+    if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging || params.only_merge
+        || params.overflow_row || !params.keys.empty() || params.aggregates.size() != 1)
+        return false;
+
+    const auto & aggregate = params.aggregates[0];
+    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1
+        || !WhichDataType(aggregate.function->getResultType()).isUInt64())
+        return false;
+
+    /// The type of the column as the transforms read it, not the argument type of the function, which has no `LowCardinality`.
+    return isRadixUniqExactSupported(*input_headers.front()->getByName(aggregate.argument_names[0]).type);
+}
+
+void AggregatingStep::buildRadixUniqExact(
+    QueryPipelineBuilder & pipeline,
+    const AggregatingTransformParamsPtr & transform_params,
+    size_t max_threads,
+    const StatsCollectingParams & stats_collecting_params) const
+{
+    const auto & aggregator_params = transform_params->params;
+    const auto & aggregate = aggregator_params.aggregates[0];
+    const auto & output_header = transform_params->getHeader();
+
+    const auto & input_header = pipeline.getHeader();
+    const auto & argument = input_header.getByName(aggregate.argument_names[0]);
+    const size_t num_streams = pipeline.getNumStreams();
+    auto state = createRadixUniqExactState(*argument.type, num_streams, stats_collecting_params);
+
+    const size_t key_position = input_header.getPositionByName(argument.name);
+    auto result_header = std::make_shared<const Block>(output_header);
+
+    size_t stream = 0;
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<RadixUniqExactRouteTransform>(header, result_header, state, stream++, key_position);
+    });
+
+    const size_t num_builders = std::min(max_threads, state->numBuckets());
+    pipeline.transform([&](OutputPortRawPtrs ports)
+    {
+        auto barrier = std::make_shared<RadixUniqExactBarrierTransform>(result_header, ports.size(), num_builders);
+        Processors processors{barrier};
+
+        auto input = barrier->getInputs().begin();
+        for (auto * port : ports)
+            connect(*port, *input++);
+
+        for (auto & output : barrier->getOutputs())
+        {
+            auto builder = std::make_shared<RadixUniqExactBuildTransform>(result_header, state);
+            connect(output, builder->getInputs().front());
+            processors.push_back(std::move(builder));
+        }
+        return processors;
+    });
+
+    pipeline.resize(1);
+    pipeline.addTransform(std::make_shared<RadixUniqExactSumTransform>(
+        result_header, state, aggregator_params.empty_result_for_aggregation_by_empty_set));
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     size_t new_merge_threads = merge_threads;
@@ -519,8 +614,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
+    const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && canUseRadixUniqExact();
+
+    /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
+    const StatsCollectingParams radix_uniq_exact_stats_params = params.stats_collecting_params;
+    if (params.keys.empty())
+        params.stats_collecting_params.disable();
+
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
+    if (use_radix_uniq_exact)
+    {
+        buildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+        return;
+    }
 
     if (!grouping_sets_params.empty())
     {
@@ -713,6 +822,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            /// When this merge does not sort but the replicas' does, the sample it feeds to the updater is
+            /// priced in the replicas' row order all the same - see `setReplicasSendOutputInKeyOrder`,
+            /// which `considerEnablingParallelReplicas` sets from the plan the replicas will run.
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });
@@ -1137,6 +1249,15 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
             = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
+    /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
+    /// while reading the strict named schema, which would break every distributed `GROUP BY` of a query that
+    /// sets `use_aggregation_memory_tracker` or a `compatibility` below the release that fixes the regression.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER)
+        settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker] = params.use_aggregation_memory_tracker;
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY)
+        settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by] = params.min_bytes_before_external_group_by;
+
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.
     settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
@@ -1234,13 +1355,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (!sort_description_for_merging.empty())
     {
-        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version);
-        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
     }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     if (!grouping_sets_params.empty())
     {
@@ -1250,11 +1371,11 @@ void AggregatingStep::serialize(Serialization & ctx) const
             /// Only used keys are needed.
             writeVarUInt(grouping_set.used_keys.size(), ctx.out);
             for (const auto & used_key : grouping_set.used_keys)
-                writeStringBinary(used_key, ctx.out);
+                ctx.writeColumnName(used_key);
         }
     }
 
-    serializeAggregateDescriptions(params.aggregates, ctx.out);
+    serializeAggregateDescriptions(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -1417,6 +1538,9 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
+        ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY
+            ? size_t(ctx.settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by])
+            : size_t(ctx.context->getSettingsRef()[Setting::min_bytes_before_external_group_by]),
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
         Context::getGlobalContextInstance()->getTempDataOnDisk(),
         0, //settings[QueryPlanSerializationSetting::max_threads],
@@ -1435,7 +1559,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
+        ctx.version >=DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER
+            ? bool(ctx.settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker])
+            : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
 
     params.top_k = std::move(top_k);
 

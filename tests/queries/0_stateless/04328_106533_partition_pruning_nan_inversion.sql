@@ -66,8 +66,8 @@ DROP TABLE t_106533_dec;
 
 -- Part-level minmax index (built from the partition-key columns, no explicit secondary index).
 -- It is aggregated with getExtremes too, so a part mixing finite floats with NaN stores a finite
--- [min, max] that hides the NaN. use_skip_indexes = 0 also disables part-level minmax pruning, so it is
--- the unindexed oracle.
+-- [min, max] that hides the NaN. use_partition_pruning = 0 disables part-level minmax pruning and
+-- use_statistics_for_part_pruning = 0 disables pruning by statistics, so together they are the unindexed oracle.
 
 DROP TABLE IF EXISTS t_106533_partlevel;
 
@@ -77,12 +77,12 @@ ENGINE = MergeTree PARTITION BY isNull(val) ORDER BY id SETTINGS min_bytes_for_w
 INSERT INTO t_106533_partlevel VALUES (1, 1.0), (2, nan), (3, 3.0);
 
 SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.));
-SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_partition_pruning = 0, use_statistics_for_part_pruning = 0;
 
 -- A positive range is decided by intersection alone, which a hidden NaN cannot make true, so the mixed
 -- part is pruned for val > 500 as an all-finite one would be.
 SELECT count() FROM t_106533_partlevel WHERE val > 500;
-SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_partition_pruning = 0, use_statistics_for_part_pruning = 0;
 SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel WHERE val > 500);
 
 -- The part-level bound is also read as a semantic extremum: _minmax_count_projection answers
