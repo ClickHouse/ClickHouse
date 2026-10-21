@@ -444,20 +444,7 @@ void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePoint
     chars.resize(offsets_cursor);
     UInt8 * out_chars = chars.data() + old_chars;
     for (size_t i = 0; i < count; ++i)
-    {
-        const auto value = unalignedLoad<UnhashedPackedStringRef>(row_at(i) + offset);
-        if (value.isLarge())
-        {
-            memcpy(out_chars, value.getLargePtr(), value.getLargeSize());
-            out_chars += value.getLargeSize();
-        }
-        else
-        {
-            /// Copying the whole ref is cheaper than a variable length copy.
-            memcpy(out_chars, value.getSmallPtr(), sizeof(value));
-            out_chars += value.getSmallSize();
-        }
-    }
+        out_chars = unalignedLoad<UnhashedPackedStringRef>(row_at(i) + offset).copyTo(out_chars);
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const

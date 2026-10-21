@@ -668,21 +668,7 @@ void gatherColumnStringChars(RowStoreStringRefs & refs)
     chars.resize_exact(refs.cursor);
     UInt8 * out_chars = chars.data() + old_chars;
     for (size_t i = 0; i < refs.staged_rows; ++i)
-    {
-        const UnhashedPackedStringRef & value = refs.values[i];
-        if (value.isLarge())
-        {
-            memcpy(out_chars, value.getLargePtr(), value.getLargeSize());
-            out_chars += value.getLargeSize();
-        }
-        else
-        {
-            /// Copying the whole ref is cheaper than a variable length copy. The bytes past the
-            /// string land on the next value or in the padding of `chars`.
-            memcpy(out_chars, value.getSmallPtr(), sizeof(value));
-            out_chars += value.getSmallSize();
-        }
-    }
+        out_chars = refs.values[i].copyTo(out_chars);
     chassert(out_chars == chars.data() + chars.size());
     /// Free the refs right away, the next column still has its own.
     refs.values = {};
