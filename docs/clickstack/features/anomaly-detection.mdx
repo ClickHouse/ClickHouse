@@ -146,8 +146,8 @@ ClickStack waits 30 seconds after a window closes before evaluating it, so late-
 
 Notifications describe the anomaly instead of a threshold. For example:
 
-- Title: `Alert for "Checkout errors" - value 142 is above the expected range (z-score 4.2)`
-- Body: `Value 142 is above the expected range — z-score 4.2 vs sensitivity 3; expected 120 ± 7.3 (expected range 105 to 135).`
+- Title: `Alert for "Checkout errors" - value 142 is above the expected range (z-score 4.4)`
+- Body: `Value 142 is above the expected range — z-score 4.4 vs sensitivity 3; expected 120 ± 5 (expected range 105 to 135).`
 
 Custom alert names and messages can reference the bucket that triggered the notification with `{{anomaly.value}}`, `{{anomaly.expectedValue}}`, `{{anomaly.expectedStddev}}`, `{{anomaly.lowerBound}}`, `{{anomaly.upperBound}}`, and `{{anomaly.zScore}}`. These values are only set on firing notifications. Resolved notifications don't include them, so wrap them in `{{#if anomaly}}...{{/if}}` if the same name or message is used for both.
 
