@@ -743,8 +743,11 @@ static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & c
 
     if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
     {
+        /// These are as deterministic as the aggregate function their arguments name, such as an unseeded
+        /// `groupArraySample`, which is known only with the types of its arguments.
+        static const NameSet functions_of_aggregate_functions{"arrayReduce", "arrayReduceInRanges", "initializeAggregation"};
         const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
-        if (!resolver || !resolver->isDeterministic())
+        if (!resolver || !resolver->isDeterministic() || functions_of_aggregate_functions.contains(resolver->getName()))
             return true;
     }
 
@@ -755,15 +758,20 @@ NameSet getNonDeterministicDefaults(const Names & column_names, const ColumnsDes
 {
     const auto defaults = columns.getDefaults();
 
-    /// For each column with a default visited, whether its default is non-deterministic.
+    /// For each column with a default visited, whether its default is non-deterministic. A subcolumn, which a default
+    /// can read as well, is filled together with its column.
     std::unordered_map<String, bool> visited;
     std::function<bool(const String &)> is_non_deterministic = [&](const String & name)
     {
-        const auto it = defaults.find(name);
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (!column)
+            return false;
+
+        const auto it = defaults.find(column->getNameInStorage());
         if (it == defaults.end())
             return false;
 
-        if (const auto visited_it = visited.find(name); visited_it != visited.end())
+        if (const auto visited_it = visited.find(it->first); visited_it != visited.end())
             return visited_it->second;
 
         RequiredSourceColumnsVisitor::Data required_columns;
@@ -772,15 +780,14 @@ NameSet getNonDeterministicDefaults(const Names & column_names, const ColumnsDes
 
         const bool result = callsNonDeterministicFunction(*it->second.expression, context)
             || std::ranges::any_of(required_columns.requiredColumns(), is_non_deterministic);
-        visited.emplace(name, result);
+        visited.emplace(it->first, result);
         return result;
     };
 
     NameSet result;
     for (const auto & name : column_names)
     {
-        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        if (column && is_non_deterministic(column->getNameInStorage()))
+        if (is_non_deterministic(name))
             result.insert(name);
     }
     return result;
