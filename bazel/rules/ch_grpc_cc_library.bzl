@@ -20,6 +20,10 @@ def ch_grpc_cc_library(name, proto, deps = [], **kwargs):
         srcs = [grpc_sources],
         hdrs = [":" + headers],
         strip_include_prefix = "/" + proto.package + "/_virtual_imports/" + proto.name,
-        deps = [cc_proto, Label("@clickhouse_grpc//:grpc++")] + deps,
+        deps = [
+            cc_proto,
+            Label("@clickhouse_grpc//:grpc++"),
+            Label("@clickhouse_grpc//:grpc_codegen_headers"),
+        ] + deps,
         **kwargs
     )

@@ -490,6 +490,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         "@clickhouse_grpc//:grpc__compile_0",
+        "@clickhouse_grpc//:grpc_codegen_headers",
         "@clickhouse_google_protobuf//:_libprotobuf",
     ],
     includes = ["cpp/src"],

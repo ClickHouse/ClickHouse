@@ -229,6 +229,7 @@ cc_library(
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_grpc//:grpc++_unsecure",
+        "@clickhouse_grpc//:grpc_codegen_headers",
     ],
 )
 

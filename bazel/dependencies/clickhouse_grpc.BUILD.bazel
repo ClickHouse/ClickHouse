@@ -1689,6 +1689,14 @@ cc_library(
     deps = ["@clickhouse_zlib_ng//:_zlib", ":address_sorting", ":gpr", ":upb_json_lib", ":upb_textformat_lib", ":grpc__compile_0", ":grpc__compile_1"],
 )
 
+# grpc_cpp_plugin emits ports_def.inc and ports_undef.inc in generated
+# headers and sources. The gRPC runtime itself does not include this pair.
+cc_library(
+    name = "grpc_codegen_headers",
+    textual_hdrs = glob(["include/grpcpp/*.inc"]),
+    includes = ["include"],
+)
+
 ch_cc_library(
     name = "grpc++",
     implementation_deps = [
@@ -1780,7 +1788,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_time",
     ],
     hdrs = _GRPC_CPP_PUBLIC_HEADERS,
-    textual_hdrs = glob(["include/grpcpp/*.inc"]),
 )
 
 ch_cc_library(
@@ -1866,7 +1873,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_time",
     ],
     hdrs = _GRPC_CPP_PUBLIC_HEADERS,
-    textual_hdrs = glob(["include/grpcpp/*.inc"]),
 )
 
 cc_binary(
