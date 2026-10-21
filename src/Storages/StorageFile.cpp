@@ -339,34 +339,35 @@ void listFilesWithRegexpMatchingImpl(
 
     if (first_glob_pos == std::string::npos)
     {
-        try
+        /// We use fs::canonical to resolve the canonical path and check if the file does exists
+        /// but the result path will be fs::absolute.
+        /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+        /// It is the existence check that skips a suffix that does not resolve, classified like the
+        /// other filesystem queries of the walk: a missing file is no match, but an error such as
+        /// `EACCES` on a component means the file may exist and could not be read. The WHOLE
+        /// candidate is resolved rather than only its parent: a `..` behind a symlink can make the
+        /// raw path resolve while the normalized path below names a missing lexical sibling, and
+        /// that sibling must still be returned so the reader reports it as absent instead of
+        /// silently skipping.
+        const std::string candidate = path_for_ls + for_match;
+        std::error_code canon_ec;
+        (void)fs::canonical(candidate, canon_ec);
+        if (canon_ec)
         {
-            /// We use fs::canonical to resolve the canonical path and check if the file does exists
-            /// but the result path will be fs::absolute.
-            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            /// The throwing overload on purpose: it is the existence check the `catch` below relies
-            /// on to skip a suffix that does not resolve. The WHOLE candidate is resolved rather
-            /// than only its parent: a `..` behind a symlink can make the raw path resolve while
-            /// the normalized path below names a missing lexical sibling, and that sibling must
-            /// still be returned so the reader reports it as absent instead of silently skipping.
-            (void)fs::canonical(path_for_ls + for_match);
-            /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
-            /// survive here: the check and the reader would name different files.
-            const fs::path absolute_path = fs::absolute(path_for_ls + for_match).lexically_normal();
-            /// This exact-match branch is reached for suffixes without globs, including the
-            /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
-            /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
-            /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
-            /// directory); in that case keep the byte count at zero but still return the path.
-            std::error_code size_ec;
-            const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+            skipUnresolvableOrThrow(canon_ec, candidate);
+            return;
         }
-        catch (const std::exception &) // NOLINT
-        {
-            /// There is no such file, but we just ignore this.
-            /// throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", for_match);
-        }
+        /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
+        /// survive here: the check and the reader would name different files.
+        const fs::path absolute_path = fs::absolute(candidate).lexically_normal();
+        /// This exact-match branch is reached for suffixes without globs, including the
+        /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
+        /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
+        /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
+        /// directory); in that case keep the byte count at zero but still return the path.
+        std::error_code size_ec;
+        const size_t file_size = fs::file_size(absolute_path, size_ec);
+        add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         return;
     }
 
