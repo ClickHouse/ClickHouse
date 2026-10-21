@@ -6,22 +6,21 @@
 #include <Processors/Executors/Runtime/V1/ExecutorTasks.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
-#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/ThreadStatus.h>
 
 #include <algorithm>
 #include <memory>
 #include <shared_mutex>
-#include <stack>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -35,36 +34,161 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char executing_graph_add_node_fail[];
+    extern const char executing_graph_build_fail[];
 }
 
 namespace Runtime::V1
 {
 
-namespace
-{
-
-/// Identify a processor in a malformed-graph diagnostic. `getUniqID` distinguishes repeated
-/// processor classes only while `CurrentThread` is initialized; outside a query thread every
-/// processor falls back to the `_0` suffix. The address keeps the two endpoints of the broken
-/// edge distinguishable in every context, and lets the reader match them against a pipeline dump.
-String describeProcessor(const IProcessor * processor)
-{
-    return fmt::format("{} at {}", processor->getUniqID(), static_cast<const void *>(processor));
-}
-
-}
-
-ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_)
+ExecutingGraph::ExecutingGraph(
+    std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_)
     : processors(std::move(processors_))
     , profile_processors(profile_processors_)
+    , spill_state(nodes, memory_reservation_)
 {
-    /// Create nodes for every processor.
+    /// Stands in for an allocation failure while the graph is built.
+    fiu_do_on(FailPoints::executing_graph_build_fail,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_build_fail);
+    });
+
+    /// Create nodes for every processor and register their spillable components.
     for (auto it = processors->begin(); it != processors->end(); ++it)
         addNode(it);
 
     /// Create edges.
     for (auto & node : nodes)
         addEdges(node);
+}
+
+ExecutingGraph::~ExecutingGraph() = default;
+
+void ExecutingGraph::detachSpillables()
+{
+    spill_state.detachSpillables();
+}
+
+void ExecutingGraph::scheduleSpills(Queue & queue)
+{
+    std::shared_lock nodes_lock(nodes_mutex);
+    spill_state.scheduleSpills(queue);
+}
+
+ExecutingGraph::SpillState::SpillState(Nodes & nodes_, MemoryReservation * memory_reservation_)
+    : nodes(nodes_)
+    , memory_reservation(memory_reservation_)
+{
+    if (!memory_reservation)
+    {
+        if (auto group = CurrentThread::getGroup())
+            memory_spill_scheduler = group->memory_spill_scheduler;
+    }
+}
+
+ExecutingGraph::SpillState::~SpillState()
+{
+    detachSpillables();
+}
+
+void ExecutingGraph::SpillState::detachSpillables()
+{
+    for (auto & node : nodes)
+        if (!node.registered_spillables.empty())
+            unregisterSpillables(node);
+    spillable_owners.clear();
+    memory_reservation = nullptr;
+    memory_spill_scheduler.reset();
+}
+
+void ExecutingGraph::SpillState::registerSpillables(Node & node)
+{
+    if (!memory_reservation && !memory_spill_scheduler)
+        return;
+    auto components = node.processor()->getSpillables();
+    node.registered_spillables.reserve(components.size());
+    for (auto * spillable : components)
+    {
+        chassert(spillable);
+        if (memory_reservation)
+            memory_reservation->registerSpillable(spillable);
+        else
+            memory_spill_scheduler->registerSpillable(spillable);
+        node.registered_spillables.push_back(spillable);
+        if (memory_reservation)
+        {
+            std::lock_guard lock(spillables_mutex);
+            spillable_owners[spillable].push_back(&node);
+        }
+    }
+}
+
+void ExecutingGraph::SpillState::unregisterSpillables(Node & node)
+{
+    std::lock_guard lock(spillables_mutex);
+    while (!node.registered_spillables.empty())
+    {
+        auto * spillable = node.registered_spillables.back();
+        node.registered_spillables.pop_back();
+        if (memory_reservation)
+            memory_reservation->unregisterSpillable(spillable, node.processor());
+        else
+            memory_spill_scheduler->unregisterSpillable(spillable);
+
+        auto it = spillable_owners.find(spillable);
+        if (it == spillable_owners.end())
+            continue;
+        absl::erase_if(it->second, [&](const auto & n) { return n == &node; });
+        if (it->second.empty())
+            spillable_owners.erase(it);
+    }
+}
+
+bool ExecutingGraph::SpillState::scheduleSpill(Node & node, ISpillable * spillable, Queue & queue) const
+{
+    /// Caller owns `status_mutex`. The owning status excludes both `prepare` and `work`.
+    if (!memory_reservation || node.status != ExecStatus::Idle
+        || !memory_reservation->scheduleSpill(spillable, node.processor()))
+        return false;
+    node.spill_target = spillable;
+    node.status = ExecStatus::Executing;
+    queue.push(node.processor());
+    return true;
+}
+
+void ExecutingGraph::SpillState::scheduleSpills(Queue & queue)
+{
+    chassert(memory_reservation);
+
+    struct Candidate
+    {
+        ISpillable * spillable;
+        Int64 bytes;
+        absl::InlinedVector<Node *, 2> owners;
+    };
+    absl::InlinedVector<Candidate, 8> candidates;
+    {
+        std::lock_guard lock(spillables_mutex);
+        for (const auto & [spillable, owners] : spillable_owners)
+            if (auto bytes = memory_reservation->getSpillCandidateBytes(spillable); bytes > 0)
+                candidates.push_back({spillable, bytes, owners});
+    }
+    std::ranges::sort(candidates, std::greater{}, &Candidate::bytes);
+    for (const auto & candidate : candidates)
+    {
+        for (auto * node : candidate.owners)
+        {
+            std::lock_guard lock(node->status_mutex);
+            if (scheduleSpill(*node, candidate.spillable, queue))
+                break;
+        }
+    }
+}
+
+ISpillable * ExecutingGraph::getSpillTarget(const IProcessor & processor)
+{
+    std::shared_lock lock(nodes_mutex);
+    /// The caller already owns this node's execution slot.
+    return processors_map.at(&processor)->spill_target;
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_iter)
@@ -77,6 +201,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
+    spill_state.registerSpillables(new_node);
     return new_node;
 }
 
@@ -115,16 +240,23 @@ ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
     return addNode(std::prev(processors->end()));
 }
 
-ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to)
+ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const Node & from, const IProcessor * to)
 {
     auto it = processors_map.find(to);
     if (it == processors_map.end())
+    {
+        /// `printPipeline` numbers processors by their position in the list, not by `processors_id`.
+        const auto dump_id = std::distance(processors->begin(), from.processor_iter);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Processor {} was found as {} for processor {}, but not found in list of processors",
-            describeProcessor(to),
+            "Processor {} is connected to an {} port of processor n{} {}, but it is not in the list of processors. "
+            "See n{} in the pipeline dump",
+            to->getUniqID(),
             edge.backward ? "input" : "output",
-            describeProcessor(from));
+            dump_id,
+            from.processor()->getUniqID(),
+            dump_id);
+    }
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
@@ -145,7 +277,7 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
 
         const IProcessor * to = &input.getOutputPort().getProcessor();
         Edge edge(nullptr, true, &input, &input.getOutputPort(), &node.post_updated_input_ports);
-        auto & added_edge = addEdge(node.back_edges, std::move(edge), from, to);
+        auto & added_edge = addEdge(node.back_edges, std::move(edge), node, to);
         input.setUpdateInfo(&added_edge.update_info);
         result.back.push_back(&added_edge);
     }
@@ -158,7 +290,7 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
 
         const IProcessor * to = &output.getInputPort().getProcessor();
         Edge edge(nullptr, false, &output.getInputPort(), &output, &node.post_updated_output_ports);
-        auto & added_edge = addEdge(node.direct_edges, std::move(edge), from, to);
+        auto & added_edge = addEdge(node.direct_edges, std::move(edge), node, to);
         output.setUpdateInfo(&added_edge.update_info);
         result.direct.push_back(&added_edge);
     }
@@ -346,6 +478,7 @@ void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & proces
 void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
     StackWithMemoryTracking<Node *> stack;
+    UpdateNodeBuffers buffers;
 
     /// Add childless processors to stack.
     for (auto & node : nodes)
@@ -363,16 +496,40 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(*node->processor(), queue, async_queue);
+        updateNode(*node->processor(), queue, async_queue, buffers);
     }
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
+namespace
+{
+
+template <typename Container>
+void resetBuffer(Container & container)
+{
+    if (container.capacity() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity)
+        Container().swap(container);
+    else
+        container.clear();
+}
+
+}
+
+void ExecutingGraph::UpdateNodeBuffers::reset()
+{
+    resetBuffer(updated_edges);
+    resetBuffer(updated_processors);
+    resetBuffer(pending_expansion);
+}
+
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers)
 {
     Processors delayed_destruction;
-    DevectorWithMemoryTracking<Edge *> updated_edges;
-    DevectorWithMemoryTracking<Node *> updated_processors;
-    VectorWithMemoryTracking<Node *> pending_expansion;
+    auto & updated_edges = buffers.updated_edges;
+    auto & updated_processors = buffers.updated_processors;
+    auto & pending_expansion = buffers.pending_expansion;
+
+    /// The buffers may be left non-empty by a previous call that exited early or threw.
+    buffers.reset();
 
     std::shared_lock read_lock(nodes_mutex);
 
@@ -431,12 +588,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                 std::unique_lock<std::mutex> lock(std::move(*stack_top_lock));
 
                 auto & processor = *node.processor();
+                node.spill_target = nullptr;
                 const auto last_status = node.last_processor_status;
                 IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                 node.last_processor_status = status;
-                if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                    CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
-
                 if (profile_processors)
                 {
                     /// NeedData
@@ -469,11 +624,20 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     case IProcessor::Status::PortFull:
                     {
                         node.status = ExecutingGraph::ExecStatus::Idle;
+                        if (spill_state.memory_reservation)
+                        {
+                            /// A request may have arrived while this node was owned by normal execution.
+                            for (auto * spillable : processor.getSpillables())
+                                if (spill_state.scheduleSpill(node, spillable, queue))
+                                    break;
+                        }
                         break;
                     }
                     case IProcessor::Status::Finished:
                     {
                         node.status = ExecutingGraph::ExecStatus::Finished;
+                        if (last_status != IProcessor::Status::Finished)
+                            spill_state.unregisterSpillables(node);
                         accountFinishedProcessorInGroup(*node.processor_iter);
                         break;
                     }
