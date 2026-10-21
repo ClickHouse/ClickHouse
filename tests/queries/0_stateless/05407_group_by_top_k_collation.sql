@@ -8,7 +8,8 @@
 -- Every query runs with the optimization off and then on, so the reference holds identical pairs. The off run reads
 -- in large blocks and does not spill, which does not change its result and keeps it cheap.
 -- A collated heap starts only once a stream's table holds 32768 keys and its last block inserted almost only new
--- keys, so the tables begin with 33792 distinct starter keys m0, m1, ..., which a single stream reads first.
+-- keys, so the tables begin with 33792 distinct starter keys m0, m1, ..., which a single stream reads first. A read
+-- can return a whole granule as one block, so `index_granularity` stays at most 1024 to start the heap at their end.
 -- Under 'en' they sort after a... and before Z..., so they are outside every tested result.
 
 SET max_rows_to_group_by = 0;
@@ -131,7 +132,7 @@ SETTINGS max_threads = 4, max_block_size = 1024, enable_adaptive_aggregator = 0,
 -- one and the arena grows with their 2000-byte payloads until the table crosses the two-level byte threshold and
 -- spills. The flush recreates the table, whose heap waits again; the result comes from the rows after the payloads.
 SELECT 'external aggregation';
-CREATE TABLE t_05407_spill (s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+CREATE TABLE t_05407_spill (s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024;
 INSERT INTO t_05407_spill SELECT multiIf(number < 33792, concat('m', toString(number)),
     number < 37888, concat('n', leftPad(toString(number), 6, '0'), repeat('x', 2000)),
     concat(['Z', 'a', 'á'][(number - 37888) % 3 + 1], toString((number - 37888) % 997)))
