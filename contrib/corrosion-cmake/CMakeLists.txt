@@ -256,9 +256,9 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
 codegen-units = 4")
-    message(STATUS "Rust release profile: unoptimized (opt-level = 0), to limit LLVM memory usage under sanitizers")
+    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")

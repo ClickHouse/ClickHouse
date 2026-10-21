@@ -14,6 +14,7 @@ INSERT INTO tab SELECT 1, 'ccc', 2;
 CREATE ROW POLICY pol1 ON tab USING y != 'ccc' TO ALL;
 
 SET enable_analyzer = 1;
+SET read_in_order_use_virtual_row = 1;
 -- Lazy FINAL rewrites the FINAL plan (LazyReadReplacingFinal) and changes the EXPLAIN shape this
 -- test asserts on. Pin to the default so a randomized run doesn't alter the plan.
 SET query_plan_optimize_lazy_final = 0;
