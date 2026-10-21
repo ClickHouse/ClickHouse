@@ -26,25 +26,32 @@ static constexpr UInt64 UNIQ_COMBINED_PRECISION = 12;
 
 /// The statistics of all columns of a data part are loaded at once, so getting the aggregate function from
 /// the factory for every column would dominate the loading. An aggregate function is immutable, so it is
-/// shared by all statistics of the same type. The number of distinct types is bounded by the table schemas.
+/// shared by all statistics of the same type. The cache outlives the tables, so it is cleared when it has too many types.
 static AggregateFunctionPtr getCollector(const DataTypePtr & data_type)
 {
+    static constexpr size_t max_cached_types = 10000;
+
     static std::mutex mutex;
     static std::unordered_map<String, AggregateFunctionPtr> collectors;
 
     String type_name = data_type->getName();
-    std::lock_guard lock(mutex);
-    auto & collector = collectors[type_name];
-    if (!collector)
     {
-        AggregateFunctionProperties properties;
-        auto function = AggregateFunctionFactory::instance().get(
-            "uniqCombined64", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
-        if (function->allocatesMemoryInArena())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} for uniq_v2 statistics allocates memory in arena", function->getName());
-        collector = std::move(function);
+        std::lock_guard lock(mutex);
+        if (auto it = collectors.find(type_name); it != collectors.end())
+            return it->second;
     }
-    return collector;
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(
+        "uniqCombined64", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
+    if (function->allocatesMemoryInArena())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} for uniq_v2 statistics allocates memory in arena", function->getName());
+
+    std::lock_guard lock(mutex);
+    if (collectors.size() >= max_cached_types)
+        collectors.clear();
+    collectors.emplace(std::move(type_name), function);
+    return function;
 }
 
 StatisticsUniqV2::StatisticsUniqV2(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
