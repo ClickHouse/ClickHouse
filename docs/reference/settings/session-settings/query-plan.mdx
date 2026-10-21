@@ -203,6 +203,20 @@ Determine which side of the join should be the build table (also called inner, t
 - 'false': Never swap tables (the right table is the build table).
 - 'true': Always swap tables (the left table is the build table).
 
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to use lazy materialization for `LIMIT n` queries over joins."}]}]}/>
+
+Use lazy materialization for `LIMIT n` queries over joins, with or without `ORDER BY`: the columns of the
+`MergeTree` tables, and of the object storage tables if
+`query_plan_optimize_lazy_materialization_for_object_storage` is enabled, are read only for the `n` rows that
+survive the `LIMIT`, rather than for every row the joins produce. The decision is made on one merged
+`ActionsDAG` for the whole subtree below the `LIMIT`, so a value that a filter needs and the result needs
+again is computed twice, cheaply, above the `LIMIT`, instead of becoming a column carried through every join
+in between. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
