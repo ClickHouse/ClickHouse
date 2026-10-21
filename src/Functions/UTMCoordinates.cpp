@@ -250,9 +250,7 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
     const Float64 lon_origin_rad = ((zone - 1) * 6.0 - 180.0 + 3.0) * DEG_TO_RAD;
     const Float64 ecc_prime_sq = WGS84_ECC_SQ / (1.0 - WGS84_ECC_SQ);
 
-    Float64 sin_lat;
-    Float64 cos_lat;
-    sinCos(lat_rad, sin_lat, cos_lat);
+    const auto [sin_lat, cos_lat] = sinCos(lat_rad);
     const Float64 tan_lat = std::tan(lat_rad);
 
     const Float64 n = WGS84_A / std::sqrt(1.0 - WGS84_ECC_SQ * sin_lat * sin_lat);
@@ -308,9 +306,7 @@ void utmToWGS84(Float64 easting, Float64 northing, UInt8 zone, bool is_north, Fl
         + (21.0 * e1 * e1 / 16.0 - 55.0 * e1 * e1 * e1 * e1 / 32.0) * std::sin(4.0 * mu)
         + (151.0 * e1 * e1 * e1 / 96.0) * std::sin(6.0 * mu);
 
-    Float64 sin_phi1;
-    Float64 cos_phi1;
-    sinCos(phi1, sin_phi1, cos_phi1);
+    const auto [sin_phi1, cos_phi1] = sinCos(phi1);
     const Float64 tan_phi1 = std::tan(phi1);
 
     const Float64 n1 = WGS84_A / std::sqrt(1.0 - e2 * sin_phi1 * sin_phi1);
