@@ -9,6 +9,7 @@
 DROP TABLE IF EXISTS t_clear_mt;
 DROP TABLE IF EXISTS t_clear_ttl;
 DROP TABLE IF EXISTS t_clear_rmt;
+DROP TABLE IF EXISTS t_clear_b;
 
 CREATE TABLE t_clear_mt (id UInt32, a UInt32, b UInt32, w UInt32, tp Tuple(x UInt32), n Nested(x UInt32))
 ENGINE = MergeTree ORDER BY id;
@@ -120,6 +121,40 @@ ALTER TABLE t_clear_ttl UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
 
+CREATE TABLE t_clear_b (id UInt32, x UInt32, b UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_b VALUES (1, 1, 2222), (2, 2, 4444);
+SYSTEM STOP MERGES t_clear_b;
+
+-- A later ADD COLUMN must not make a pending full rewrite write a default from a pending-cleared column.
+ALTER TABLE t_clear_b REWRITE PARTS SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0;
+ALTER TABLE t_clear_b ADD COLUMN d1 UInt32 DEFAULT b * 2; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
+
+-- A compact part stores the index and projection columns it lacks, so these write `d` from `b`.
+ALTER TABLE t_clear_b ADD COLUMN d UInt32 DEFAULT b * 2;
+ALTER TABLE t_clear_b ADD INDEX idx_d d TYPE minmax GRANULARITY 1;
+ALTER TABLE t_clear_b ADD PROJECTION p_d (SELECT id, d ORDER BY d);
+ALTER TABLE t_clear_b MATERIALIZE INDEX idx_d SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_b MATERIALIZE PROJECTION p_d SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
+
+-- A later MODIFY TTL must not make a pending UPDATE re-evaluate a TTL over a pending-cleared column.
+ALTER TABLE t_clear_b UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0;
+ALTER TABLE t_clear_b MODIFY TTL toDateTime(if(b = 0, 4102444800, 946684800)) + toIntervalSecond(x) SETTINGS materialize_ttl_after_modify = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
+
+-- An UPDATE of `x` recomputes `m`, which re-evaluates a TTL over `m` that reads `b`.
+ALTER TABLE t_clear_b ADD COLUMN m UInt32 MATERIALIZED x;
+ALTER TABLE t_clear_b MODIFY TTL toDateTime(if(b = 0, 4102444800, 946684800)) + toIntervalSecond(m) SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_clear_b UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
+
 CREATE TABLE t_clear_rmt (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_rmt', '1') ORDER BY id
 SETTINGS merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
@@ -139,3 +174,4 @@ SELECT id, b, d FROM t_clear_rmt ORDER BY id;
 DROP TABLE t_clear_mt;
 DROP TABLE t_clear_ttl;
 DROP TABLE t_clear_rmt;
+DROP TABLE t_clear_b;

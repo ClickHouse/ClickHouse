@@ -14327,6 +14327,20 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
     else if (command.type == MutationCommand::APPLY_PATCHES)
         for (const auto & column : columns.getAllPhysical())
             updated.insert(column.name);
+    /// Materializing an index or a projection on a compact part also writes their columns the part does not store.
+    else if (command.type == MutationCommand::MATERIALIZE_INDEX)
+    {
+        for (const auto & index : metadata.getSecondaryIndices())
+            if (index.name == command.index_name)
+                for (const auto & column : index.expression->getRequiredColumns())
+                    read.insert(column);
+    }
+    else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
+    {
+        for (const auto & projection : metadata.getProjections())
+            if (projection.name == command.projection_name)
+                read.insert(projection.required_columns.begin(), projection.required_columns.end());
+    }
 
     bool executes_ttl = command.type == MutationCommand::MATERIALIZE_TTL;
 
