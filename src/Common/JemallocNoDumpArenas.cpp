@@ -124,6 +124,7 @@ void * allocateImpl(size_t bytes, size_t alignment) noexcept
         }
         catch (...)
         {
+            tryLogCurrentException("JemallocNoDumpArenas");
             return nullptr;
         }
     }
