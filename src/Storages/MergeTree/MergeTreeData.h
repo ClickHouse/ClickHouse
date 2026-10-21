@@ -870,6 +870,10 @@ public:
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
+    bool checkPartCanBeRemoved(const MergeTreePartInfo & part_info);
+    bool checkPartCanBeRemoved(const String & part_name);
+    bool hasPartInAnyState(const String & part_name) const;
+
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
@@ -920,6 +924,8 @@ public:
         const Names & deduplicate_by_columns,
         bool cleanup,
         ContextPtr context);
+
+    virtual void removeTemporaryPart(const MutableDataPartPtr & part) const;
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
@@ -1020,6 +1026,7 @@ public:
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
+    void outdateRemovedPartsLocally(const DataPartsVector & parts, DataPartsLock & lock);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
@@ -2327,6 +2334,12 @@ protected:
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
+    void setFilenameRegexpForCachePrewarming(MergeTreeSettingsPtr settings);
+    std::shared_ptr<const re2::RE2> getFilenameRegexpForCachePrewarming() const;
+
+    StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
+    void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
 
@@ -2499,9 +2512,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    StorageSnapshotPtr
-    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
 
