@@ -163,6 +163,7 @@ static bool isMetadataSystemQuery(const ASTSystemQuery & query)
         case ASTSystemQuery::Type::CLEAR_CONNECTIONS_CACHE:
         case ASTSystemQuery::Type::CLEAR_MARK_CACHE:
         case ASTSystemQuery::Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case ASTSystemQuery::Type::CLEAR_STATISTICS_CACHE:
         case ASTSystemQuery::Type::CLEAR_UNCOMPRESSED_CACHE:
         case ASTSystemQuery::Type::CLEAR_INDEX_MARK_CACHE:
         case ASTSystemQuery::Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
