@@ -100,17 +100,17 @@ merged parts.
 In `Parquet` format, all columns of a data part are stored in a single `data.parquet` file, which can be read by
 external applications. The granules of such a part are the row groups of the Parquet file, and their size is
 controlled by `parquet_row_group_granularity_rows` and `parquet_row_group_granularity_bytes`.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", 0, 0, "New setting"}) \
     DECLARE(UInt32, min_level_for_parquet_part, 0, R"(
 Minimal part level to create a data part in `Parquet` format instead of `Wide` or `Compact`.
 See `min_bytes_for_parquet_part`.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", 0, 0, "New setting"}) \
     DECLARE(UInt64, min_rows_for_parquet_part, 0, R"(
 Minimal number of rows to create a data part in `Parquet` format instead of `Wide` or `Compact`.
 See `min_bytes_for_parquet_part`.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", 0, 0, "New setting"}) \
     DECLARE(UInt64, parquet_row_group_granularity_rows, 1024 * 1024, R"(
 Maximum number of rows in a row group of a data part in `Parquet` format.
