@@ -192,7 +192,11 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
 {
     /// If the current host isn't the initiator then there are other hosts working on this backup (at least the initiator itself).
     if (current_host != kInitiator)
-        setBackupQueryIsSentToOtherHosts();
+    {
+        /// No distributed DDL queue path to watch: only the initiator queues the query there, and only
+        /// the initiator waits for the other hosts to pick it up.
+        setBackupQueryIsSentToOtherHosts(/* ddl_entry_path = */ "");
+    }
 }
 
 BackupCoordinationOnCluster::~BackupCoordinationOnCluster() = default;
@@ -227,9 +231,9 @@ void BackupCoordinationOnCluster::createRootNodes()
     });
 }
 
-void BackupCoordinationOnCluster::setBackupQueryIsSentToOtherHosts()
+void BackupCoordinationOnCluster::setBackupQueryIsSentToOtherHosts(const String & ddl_entry_path)
 {
-    stage_sync.setQueryIsSentToOtherHosts();
+    stage_sync.setQueryIsSentToOtherHosts(ddl_entry_path);
 }
 
 bool BackupCoordinationOnCluster::isBackupQuerySentToOtherHosts() const
