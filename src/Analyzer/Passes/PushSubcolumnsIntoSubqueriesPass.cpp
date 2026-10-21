@@ -247,6 +247,7 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(
 void collectLeafQueries(const IQueryTreeNode * source, std::vector<const QueryNode *> & leaves);
 NamesAndTypes getExportedColumns(const QueryTreeNodePtr & source);
 std::optional<size_t> findUnambiguousColumnIndex(const NamesAndTypes & exported_columns, const String & column_name);
+bool composedSubcolumnPreservesStructure(const DataTypePtr & argument_type, const String & prefix, const String & suffix);
 
 /// Type of the nested JSON-array subcolumn `<subcolumn_path>` (`:`Array(JSON)`.b1...bN`) of the
 /// `Dynamic` value that the column `column_name` exported by `source` reads, or nullptr when the
@@ -310,7 +311,7 @@ DataTypePtr resolveExportedJSONArraySubcolumnType(
             found_json_ancestor = prefix_type && prefix_type->getTypeId() == TypeIndex::Object;
         }
 
-        if (!found_json_ancestor)
+        if (!found_json_ancestor || !composedSubcolumnPreservesStructure(column_type, export_path, subcolumn_path))
             return nullptr;
 
         return column_type->tryGetSubcolumnType(export_path + "." + subcolumn_path);
@@ -338,6 +339,21 @@ DataTypePtr resolveExportedJSONArraySubcolumnType(
     }
 
     if (!found_json_ancestor)
+        return nullptr;
+
+    /// The flat name of the nested subcolumn can identify another subcolumn of the storage column
+    /// than the structured extraction (see composedSubcolumnPreservesStructure).
+    bool preserves_structure = false;
+    for (const auto & [storage_column_name, value_path] : pairs)
+    {
+        auto storage_column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), String(storage_column_name));
+        if (!storage_column)
+            continue;
+        preserves_structure = composedSubcolumnPreservesStructure(storage_column->type, String(value_path), subcolumn_path);
+        break;
+    }
+
+    if (!preserves_structure)
         return nullptr;
 
     auto subcolumn = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), value_name + "." + subcolumn_path);
@@ -478,12 +494,22 @@ std::optional<CandidateMatch> matchChainedJSONArrayElement(FunctionNode & functi
             {
                 auto prefix_type = column_type->tryGetSubcolumnType(subcolumn_path);
                 found_json_ancestor = found_json_ancestor || (prefix_type && prefix_type->getTypeId() == TypeIndex::Object);
+
+                /// The flat name of the composed path can identify another subcolumn than the
+                /// structured extraction (see composedSubcolumnPreservesStructure).
+                if (!composedSubcolumnPreservesStructure(column_type, subcolumn_path, path_component))
+                    return {};
             }
 
             subcolumn_path = subcolumn_path.empty() ? path_component : subcolumn_path + "." + path_component;
         }
 
         if (!found_json_ancestor)
+            return {};
+
+        /// In ``Tuple(j JSON, `j.a.:`Array(JSON)`.@`b`` Array(Dynamic))`` the flat name of the nested
+        /// JSON-array subcolumn of the path `j.a` is the sibling element.
+        if (!composedSubcolumnPreservesStructure(column_type, subcolumn_path, array_subcolumn_path))
             return {};
 
         subcolumn_path += "." + array_subcolumn_path;
@@ -1876,11 +1902,19 @@ bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * s
     return false;
 }
 
-/// Whether the leaf query reads, outside of its projection, a column that contains the column
-/// `name` of `source`. Such a use keeps reading the containing column after the pushdown, which
-/// would then read the subcolumn a second time instead of extracting it from the value already read.
-/// The projection slots are covered by the liveness of the exports in the parent queries.
-bool leafReadsContainingColumnOutsideProjection(const QueryNode & leaf, const IQueryTreeNode * source, const String & name)
+/// Whether the leaf query reads a column that contains the column `name` of `source` in a clause or
+/// a projection slot that stays after the pushdown. Such a use keeps reading the containing column,
+/// and the pushdown would then read the subcolumn a second time instead of extracting it from the
+/// value already read. A projection slot that trivially exports a column is covered by the liveness
+/// of the exports in the parent queries; a computed projection slot (`cityHash64(tup) AS h`) is
+/// skipped only when its exported name (`exported_names` are the exported names of the target,
+/// positionally) is not referenced by the parent query (`references`).
+bool leafReadsContainingColumn(
+    const QueryNode & leaf,
+    const IQueryTreeNode * source,
+    const String & name,
+    const Names & exported_names,
+    const std::unordered_map<String, size_t> & references)
 {
     for (const auto * clause : {
              leaf.getJoinTreeNode().get(), leaf.getPrewhere().get(), leaf.getWhere().get(), leaf.getWithNode().get(),
@@ -1890,6 +1924,23 @@ bool leafReadsContainingColumnOutsideProjection(const QueryNode & leaf, const IQ
              leaf.getOffset().get()})
     {
         if (readsContainingColumn(clause, source, name))
+            return true;
+    }
+
+    const auto & projection_nodes = leaf.getProjection().getNodes();
+    for (size_t i = 0; i < projection_nodes.size(); ++i)
+    {
+        if (resolveCanonicalColumn(projection_nodes[i]))
+            continue;
+
+        if (i < exported_names.size())
+        {
+            auto references_it = references.find(exported_names[i]);
+            if (references_it == references.end() || references_it->second == 0)
+                continue;
+        }
+
+        if (readsContainingColumn(projection_nodes[i].get(), source, name))
             return true;
     }
 
@@ -2116,11 +2167,12 @@ void processQuery(
     bool any_group_applied = false;
     std::unordered_map<const IQueryTreeNode *, std::vector<std::unordered_map<String, CanonicalColumn>>> canonical_exports_by_source;
 
-    for (auto & group : state.groups)
+    /// Whether a validated group passes the guards below. The guards of a group depend on which of
+    /// its siblings are applicable, so they are evaluated to a fixpoint before anything is
+    /// committed: a sibling rejected by a guard keeps its occurrences, and they keep the whole
+    /// parent column alive for the other groups as well.
+    auto passes_guards = [&](const PushdownGroup & group)
     {
-        if (!group.applicable)
-            continue;
-
         /// If the whole column is still referenced outside of the replaced occurrences (either
         /// directly or by an occurrence of a non-viable or non-applicable group), the parent projection column
         /// stays, and the subquery would read both the whole column and the subcolumn from the
@@ -2210,12 +2262,20 @@ void processQuery(
                 return &other_group != &group && other_group.applicable && other_group.source == group.source
                     && has_plain_occurrences(other_group) && pushes_ancestor_of_guarded_value(other_group);
             }))
-            continue;
+            return false;
 
         /// A use of a column containing the pushed subcolumn inside the target itself, such as
-        /// `WHERE cityHash64(tup) > 0`, keeps that column read regardless of the parent queries.
+        /// `WHERE cityHash64(tup) > 0` or a live `cityHash64(tup) AS h` export, keeps that column
+        /// read regardless of the other parent references.
         std::vector<const QueryNode *> leaves;
         collectLeafQueries(group.source.get(), leaves);
+        Names exported_names;
+        if (!leaves.empty())
+        {
+            for (const auto & projection_column : leaves.front()->getProjectionColumns())
+                exported_names.push_back(projection_column.name);
+        }
+        const auto & source_references = state.column_references[group.source.get()];
         bool read_in_target = false;
         for (size_t i = 0; i < leaves.size() && i < canonical_exports_per_leaf.size() && !read_in_target; ++i)
         {
@@ -2223,12 +2283,12 @@ void processQuery(
             if (export_it == canonical_exports_per_leaf[i].end())
                 continue;
             const auto & [canonical_source, canonical_name] = export_it->second;
-            read_in_target = leafReadsContainingColumnOutsideProjection(
-                *leaves[i], canonical_source, canonical_name + "." + group.subcolumn_path);
+            read_in_target = leafReadsContainingColumn(
+                *leaves[i], canonical_source, canonical_name + "." + group.subcolumn_path, exported_names, source_references);
         }
 
         if (read_in_target)
-            continue;
+            return false;
 
         size_t references = 0;
         for (const auto & [column_name, count] : state.column_references[group.source.get()])
@@ -2247,7 +2307,26 @@ void processQuery(
                 replaced_references += other_group.occurrences;
         }
 
-        if (references > replaced_references)
+        return references <= replaced_references;
+    };
+
+    bool applicable_changed = true;
+    while (applicable_changed)
+    {
+        applicable_changed = false;
+        for (auto & group : state.groups)
+        {
+            if (group.applicable && !passes_guards(group))
+            {
+                group.applicable = false;
+                applicable_changed = true;
+            }
+        }
+    }
+
+    for (auto & group : state.groups)
+    {
+        if (!group.applicable)
             continue;
 
         commitGroup(group, *state.synthesized_carrier_reads);
