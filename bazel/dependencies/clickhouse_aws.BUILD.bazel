@@ -36,11 +36,22 @@ ch_cc_library(
     ] + glob(["src/aws-cpp-sdk-core/source/utils/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/**/*.cpp"]) + [
         "@clickhouse//contrib:aws-cmake/aws_stubs.cpp",
     ]),
-    hdrs = glob([
-        "generated/src/aws-cpp-sdk-glue/include/**/*.h",
-        "generated/src/aws-cpp-sdk-s3/include/**/*.h",
-        "src/aws-cpp-sdk-core/include/**/*.h",
-    ]) + ["config/contrib/aws-cmake/include/aws/core/SDKConfig.h"],
+    # This target builds CRT HTTP and no-op telemetry. These SDK backends
+    # require sources and system APIs that this target does not compile.
+    hdrs = glob(
+        [
+            "generated/src/aws-cpp-sdk-glue/include/**/*.h",
+            "generated/src/aws-cpp-sdk-s3/include/**/*.h",
+            "src/aws-cpp-sdk-core/include/**/*.h",
+        ],
+        exclude = [
+            "src/aws-cpp-sdk-core/include/aws/core/external/CommonCryptorSPI.h",
+            "src/aws-cpp-sdk-core/include/aws/core/http/curl/*.h",
+            "src/aws-cpp-sdk-core/include/aws/core/http/windows/*.h",
+            "src/aws-cpp-sdk-core/include/aws/core/platform/refs/IXmlHttpRequest2Ref.h",
+            "src/aws-cpp-sdk-core/include/smithy/tracing/impl/opentelemetry/*.h",
+        ],
+    ) + ["config/contrib/aws-cmake/include/aws/core/SDKConfig.h"],
     copts = [
         "-w",
         "-std=c++23",
@@ -69,7 +80,12 @@ ch_cc_library(
         "generated/src/aws-cpp-sdk-glue/include",
         "config/contrib/aws-cmake/include",
     ],
+    implementation_deps = [
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_http//:aws_c_http",
+    ],
     deps = [
+        "@clickhouse_aws_c_common//:aws_c_common",
         "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
         "@clickhouse_aws_crt_cpp//:aws_crt_cpp",
     ],
