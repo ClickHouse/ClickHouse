@@ -5,11 +5,6 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "clickhouse__compile_0",
     srcs = ["main.cpp"],
-    additional_compiler_inputs = [
-        "//bazel:gen/base/base/GitHash.generated.cpp",
-        "//bazel:gen/includes/configs/config_version.cpp",
-        "@clickhouse_zlib_ng//:config/contrib/zlib-ng-cmake/gzread.c",
-    ],
     clickhouse_code = True,
     features = ["-static_link_cpp_runtimes"],
     implementation_deps = [

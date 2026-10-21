@@ -82,10 +82,6 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
     ] + glob(["c++/include/orc/**/*.hh"]),
-    additional_compiler_inputs = [
-        "c++/src/Reader.cc",
-        "c++/src/sargs/PredicateLeaf.cc",
-    ],
     copts = [
         "-w",
         "-std=c++23",
