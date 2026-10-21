@@ -76,6 +76,26 @@
             </time_based_one_time_password>
         </totuser_empty_password_1>
 
+        <totuser_mysql_plaintext>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_mysql_plaintext>
+        <totuser_mysql_double_sha1>
+            <!-- Double SHA1 of 'abacaba' -->
+            <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
+            <time_based_one_time_password>
+                <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_mysql_double_sha1>
+
         <totuser_single_use>
             <password>pw</password>
             <time_based_one_time_password>
