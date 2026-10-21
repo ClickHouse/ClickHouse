@@ -53,7 +53,7 @@ The condition reads as a sentence: **Alert when z-score is at least** `3` **when
 
 <Image img="/images/clickstack/anomaly-detection/anomaly-alert-condition.webp" alt="Anomaly detection selected as the alert type, with the z-score, direction, baseline, and interval controls, a plain-language summary, and the backtest result" size="lg"/>
 
-- **z-score is at least** (default `3`): how many standard deviations a value must be from the expected value to count as anomalous. Any positive number, in steps of 0.5. Lower values are more sensitive and fire more often.
+- **z-score is at least** (default `3`): how many standard deviations a value must be from the expected value to count as anomalous. The minimum is 0.5, and the arrows change it in steps of 0.5. Lower values are more sensitive and fire more often.
 - **When value is** (default `outside expected range`): which direction to alert on: `above expected`, `below expected`, or `outside expected range`. Use `above expected` for error counts and latency, and `below expected` for throughput or sign-ups.
 - **Compared to the past** (default 2 hours): how much history ClickStack uses to measure normal variation: 30 minutes, or 1, 2, 4, 6, 12, or 24 hours. A longer baseline gives a more stable range but adapts more slowly to a new normal.
 - **Checked every** (default 5 minutes): how often the alert is evaluated: 5, 15, or 30 minutes, or 1 hour. Shorter and longer intervals aren't available for anomaly alerts.
@@ -67,9 +67,9 @@ Prefer `above expected` or `below expected` over `outside expected range` for sp
 </Step>
 <Step title="Review the backtest and preview" id="review-preview">
 
-The line under the summary is a backtest: it replays the current settings over the last 24 hours and reports how often the alert would have notified, for example "Would have notified 6 times in the past 24 hours, firing on 12 of 288 checks." The count turns yellow when the alert would notify often enough to be noisy.
+The line under the summary is a backtest: it replays the current settings over recent history and reports how often the alert would have notified, for example "Would have notified 6 times in the past 24 hours, firing on 12 of 288 checks." For search alerts, the backtest covers the last 24 hours. For dashboard chart alerts, it covers the chart's selected time range, up to 24 hours. The count turns yellow when the alert would notify more than 10 times a day.
 
-The **Anomaly detection chart** below the form plots the same 24 hours:
+The **Anomaly detection chart** below the form plots the same range:
 
 - The solid line is the series.
 - The dashed line is the expected baseline.
@@ -99,7 +99,7 @@ Some series are poor fits for anomaly detection. A warning appears under the pre
 | Warning | Cause | What to do |
 |---|---|---|
 | Not enough history for a baseline yet | The series is new, or most of the preview range has no baseline data. | Wait for more data, or use a static threshold until there is history. |
-| Most time buckets are empty | The series has fewer than about one event per minute. | Widen the search, remove a group-by, or use a static threshold. |
+| Most time buckets are empty | More than half of the minutes since the series first had data are empty, roughly fewer than one event per minute. | Widen the search, remove a group-by, or use a static threshold. |
 | This series is nearly flat | The series barely varies, so tiny fluctuations produce extreme z-scores. | Use a static threshold, or raise the z-score. |
 
 <Image img="/images/clickstack/anomaly-detection/anomaly-suitability-warning.webp" alt="Anomaly detection chart for a sparse series with a warning that most time buckets are empty" size="lg"/>
@@ -113,7 +113,7 @@ For each bucket:
 1. **Expected value.** ClickStack takes the moving average of the 7 buckets that ended one evaluation window earlier. Expected values are never negative.
 2. **Spread.** ClickStack computes the standard deviation of the series in ClickHouse, over the baseline you selected in **Compared to the past**. The baseline is never shorter than one evaluation window.
 3. **z-score.** The z-score is `(value − expected) / standard deviation`.
-4. **Decision.** The bucket fires when the z-score passes the configured threshold in the configured direction, and the value differs from the expected value by at least 5% of the expected value. The 5% floor stops near-constant series from firing on trivial wiggles.
+4. **Decision.** The bucket fires when the z-score passes the configured threshold in the configured direction, and the value differs from the expected value by at least 5% of the expected value, or by 0.01 when the expected value is 0. The 5% floor stops near-constant series from firing on trivial wiggles.
 
 The expected range is `expected ± z-score × standard deviation`, widened by the 5% floor. In the preview, everything outside it is shaded as the alert trigger zone.
 
@@ -165,7 +165,7 @@ The **Evaluation History** table lists each check with its state, the latest val
 
 <Image img="/images/clickstack/anomaly-detection/anomaly-alert-history.webp" alt="Evaluation history for an anomaly alert, with Alert and Ok states for each 5-minute check" size="lg"/>
 
-If an alert stays in the alerting state for many consecutive windows, the detail page suggests that the series has a new normal rather than an anomaly. Raise the z-score, or update the alert so it compares against a more relevant baseline.
+If an alert stays in the alerting state for 20 or more consecutive windows, the detail page suggests that the series has a new normal rather than an anomaly. Raise the z-score, or update the alert so it compares against a more relevant baseline.
 
 ## Backtesting with MCP {#backtesting-with-mcp}
 
