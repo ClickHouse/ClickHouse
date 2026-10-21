@@ -3329,7 +3329,7 @@ Affects only the native TCP protocol.
 )", 0, \
         {"26.7", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."}) \
     DECLARE(Bool, run_query_in_background, false, R"(
-If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+If enabled, the server schedules the query in the background, waits until the query has passed its checks (for example, that the tables exist and the user has the required grants) and is about to start its main work, returns an empty successful result, and runs the query to completion regardless of what happens to the connection. An error raised before that point is returned to the client; a later one is recorded only in `system.query_log`.
 
 A background query does not survive a server restart. On shutdown it obeys the same server settings as a foreground query: `shutdown_wait_unfinished_queries` chooses between cancelling it and waiting for it (queued entries are discarded either way, without a `system.query_log` entry), and `shutdown_wait_unfinished` limits how long the server waits.
 
