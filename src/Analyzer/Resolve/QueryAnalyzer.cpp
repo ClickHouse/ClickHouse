@@ -5013,10 +5013,12 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
 
     StoragePtr storage = table_node->getStorage();
     StorageSnapshotPtr storage_snapshot = table_node->getStorageSnapshot();
-    if (resolveStorageProxy(storage) != storage)
+    if (auto nested = resolveStorageProxy(storage); nested != storage)
     {
         /// A lazy stand-in forwards neither the metadata refresh nor, before loading, the metadata of the table.
-        storage = resolveStorageProxyLoading(storage);
+        if (!nested->isObjectStorage())
+            return;
+        storage = nested;
         storage->updateExternalDynamicMetadataIfExists(scope.context);
         auto metadata = storage->getInMemoryMetadataPtr(scope.context, false);
         storage_snapshot = storage->getStorageSnapshot(metadata, scope.context);
@@ -5026,7 +5028,7 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
     if (!cluster_storage)
         return;
 
-    replaced_table_storages.push_back({cluster_storage, table_node->getStorage(), table_node->getStorageSnapshot()});
+    replaced_table_storages.push_back({cluster_storage, storage, storage_snapshot});
     table_node->replaceStorage(cluster_storage, cluster_storage->getStorageSnapshot(storage_snapshot->metadata, scope.context));
 }
 

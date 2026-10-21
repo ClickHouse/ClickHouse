@@ -30,7 +30,10 @@ same result
 0
 same result
 4950	100
--- SQL SECURITY DEFINER view
+-- SQL SECURITY DEFINER and NONE views
+0
+same result
+179700
 0
 same result
 179700
