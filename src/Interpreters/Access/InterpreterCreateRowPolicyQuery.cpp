@@ -153,7 +153,11 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
+    {
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
+        if (access_control.doesForbidSQLAccessEntitiesTargetingUsersConfig())
+            roles_from_query->throwIfTargetingUsersFromUsersConfig(access_control);
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;

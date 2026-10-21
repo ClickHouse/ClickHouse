@@ -440,12 +440,12 @@ Para obtener más información sobre las columnas virtuales, consulte [aquí](/e
 
 ## Comodines en la ruta {#wildcards-in-path}
 
-El argumento `path` puede especificar varios archivos usando comodines similares a los de bash. Para que un archivo se procese, debe existir y coincidir con el patrón completo de la ruta. La lista de archivos se determina durante `SELECT` (no en el momento de `CREATE`).
+El argumento `path` puede especificar varios archivos usando comodines similares a los de bash. Para que un archivo se procese, debe existir y coincidir con el patrón completo de la ruta. La enumeración de archivos se determina durante `SELECT` (no en el momento de `CREATE`).
 
 * `*` — Sustituye cualquier cantidad de caracteres, excepto `/`, incluida la cadena vacía.
 * `**` — Sustituye cualquier cantidad de caracteres, incluido `/`, incluida la cadena vacía.
 * `?` — Sustituye cualquier carácter individual.
-* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
+* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`. Cada cadena puede contener a su vez los comodines `*` y `?`, de modo que `{csv,csv.*}` coincide tanto con `.csv` como con `.csv.gz`.
 * `{N..M}` — Sustituye cualquier número dentro del rango de N a M, incluidos ambos extremos. N y M pueden tener ceros a la izquierda; por ejemplo, `000..078`.
 
 Las construcciones con `{}` son similares a la función de tabla [remote](/es/reference/functions/table-functions/remote).
@@ -508,7 +508,7 @@ rows_processed:        5068534
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:31
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueuePullMicroseconds':273776,'LogTest':17}
 exception:
 ```
 
@@ -584,7 +584,7 @@ rows_processed:        5112621
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:12
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueuePullMicroseconds':5841972,'LogTest':17}
 exception:
 ```
 

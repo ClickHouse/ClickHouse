@@ -466,7 +466,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         /// such as `length(vec)` needs the physical vector column even though `vec` is not an
         /// output node of the DAG.
         auto pruned_projection_expression = expression.clone();
-        pruned_projection_expression.removeUnusedResult(sort_column);
+        pruned_projection_expression.removeFromOutputs(sort_column);
         pruned_projection_expression.removeUnusedActions();
 
         for (const auto * input : pruned_projection_expression.getInputs())
@@ -595,7 +595,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const size_t sort_column_pos = std::find(outputs.begin(), outputs.end(), sort_column_node) - outputs.begin();
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
-            expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
+            expression.removeFromOutputs(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 

@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexPhraseSearch.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -24,6 +24,7 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
+    extern const Event TextIndexFilledFromFoldedPostings;
     extern const Event TextIndexPositionsDecodeMicroseconds;
     extern const Event TextIndexPhraseMatchMicroseconds;
     extern const Event TextIndexPositionsBlocksRead;
@@ -53,7 +54,7 @@ namespace ErrorCodes
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
-    MergeTreeIndexWithCondition index_,
+    IndexReadTask index_read_task_,
     NamesAndTypesList columns_,
     MergeTreeIndexGranulePtr index_granule_)
     : IMergeTreeReader(
@@ -67,12 +68,13 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)
-    , index(std::move(index_))
+    , index_read_task(std::move(index_read_task_))
     , can_read_incomplete_granules(main_reader_->canReadIncompleteGranules())
-    , condition_text(std::dynamic_pointer_cast<MergeTreeIndexConditionText>(index.condition_template->generateUnsubstituted()))
+    , condition_text(std::dynamic_pointer_cast<MergeTreeIndexConditionText>(index_read_task.index.condition_template->generateUnsubstituted()))
     , resolved_searches(columns_.size())
 {
     search_queries.reserve(columns_.size());
+
     for (const auto & column : columns_)
     {
         if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX) || !WhichDataType(column.type).isUInt8())
@@ -82,11 +84,15 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
                 column.name, column.type->getName());
         }
 
-        search_queries.push_back(condition_text->getSearchQueryForVirtualColumn(column.name));
+        auto task_column_it = std::ranges::find(index_read_task.columns, column.name, &IndexReadTask::Column::name);
+        if (task_column_it == index_read_task.columns.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the read task of the text index '{}'", column.name, index_read_task.index.index->index.name);
+
+        search_queries.push_back(task_column_it->search_query);
     }
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state
@@ -94,9 +100,9 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .version = index_format.version,
         .condition = condition_text.get(),
         .part_info = *data_part_info_for_read,
-        .index = *index.index,
+        .index = *index_read_task.index.index,
         .readable_ranges = nullptr,
-        .skip_postings_deserialization = false,
+        .text_index_read_postings = true,
         .reader_settings = settings,
     };
 
@@ -263,12 +269,12 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 
 void MergeTreeReaderTextIndex::readGranule()
 {
-    auto substreams = index.index->getSubstreams();
+    auto substreams = index_read_task.index.index->getSubstreams();
     auto data_part = getDataPart();
 
     LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
 
-    auto sparse_index_stream = makeTextIndexInputStream(*data_part_info_for_read, index.index->getFileName(), substreams[0], settings, /*expected_buffer_size=*/ std::nullopt);
+    auto sparse_index_stream = makeTextIndexInputStream(*data_part_info_for_read, index_read_task.index.index->getFileName(), substreams[0], settings, /*expected_buffer_size=*/ std::nullopt);
     sparse_index_stream->seekToStart();
     resetCursors();
 
@@ -276,7 +282,7 @@ void MergeTreeReaderTextIndex::readGranule()
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
 
-    auto granule_ptr = index.index->createIndexGranule();
+    auto granule_ptr = index_read_task.index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
     setIndexGranule(std::move(granule_ptr));
 }
@@ -380,7 +386,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
     if (index_format.version != 2)
         return;
 
@@ -389,11 +395,11 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         [](const auto & substream) { return substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions; });
 
     if (positions_substream == index_format.substreams.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index.index->index.name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index_read_task.index.index->index.name);
 
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
-        index.index->getFileName(),
+        index_read_task.index.index->getFileName(),
         *positions_substream,
         settings,
         /*expected_buffer_size=*/ std::nullopt);
@@ -406,7 +412,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t current_range_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    MutableColumns & res_columns, Columns & /* shared_columns */)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -471,10 +477,17 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         MutableColumns fallback_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols);
+        Columns fallback_shared_cols(fallback_columns_list.size());
+        fallback_reader->readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols, fallback_shared_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
-            fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
+        {
+            if (fallback_cols[col_idx])
+                fallback_block.insert({std::move(fallback_cols[col_idx]), col_name_type.type, col_name_type.name});
+            else
+                fallback_block.insert({fallback_shared_cols[col_idx], col_name_type.type, col_name_type.name});
+            ++col_idx;
+        }
     }
 
     size_t fallback_offset = 0;
@@ -505,6 +518,10 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
+            /// Filled once for all rows read, after the loop.
+            if (getFoldedPostings(i))
+                continue;
+
             auto & column_mutable = *res_columns[i];
 
             if (is_always_true[i])
@@ -553,6 +570,15 @@ size_t MergeTreeReaderTextIndex::readRows(
             cleanupPostingsBlocks(*rows_range);
     }
 
+    if (read_rows > 0)
+    {
+        for (size_t i = 0; i < res_columns.size(); ++i)
+        {
+            if (const auto * folded_postings = getFoldedPostings(i))
+                fillColumnFromPostings(*res_columns[i], *folded_postings, from_row - read_rows, read_rows);
+        }
+    }
+
     current_mark = from_mark;
     current_row = from_row;
     return read_rows;
@@ -575,8 +601,8 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStr
 {
     return makeTextIndexInputStream(
         *data_part_info_for_read,
-        index.index->getFileName(),
-        index.index->getSubstreams()[2],
+        index_read_task.index.index->getFileName(),
+        index_read_task.index.index->getSubstreams()[2],
         settings,
         estimatePostingListBufferSize(token_info));
 }
@@ -618,7 +644,6 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
 
     const auto & analyzer = granule->getAnalyzer();
     PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(effective_range->begin), static_cast<UInt32>(effective_range->end));
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
@@ -628,6 +653,12 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         const auto & search_query = search_queries[i];
         if (search_query->getTokens().empty() && search_query->getPatterns().empty())
             continue;
+
+        if (getFoldedPostings(i))
+            continue;
+
+        if (range_posting.isEmpty())
+            range_posting.addRangeClosed(static_cast<UInt32>(effective_range->begin), static_cast<UInt32>(effective_range->end));
 
         /// Phrase queries are resolved from positional data (.pos) in applyPostingsPhrase,
         /// not from per-mark posting lists.
@@ -770,6 +801,41 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & 
         chassert(relative_row_number < num_rows);
         column_data[old_size + relative_row_number] = 1;
     }
+}
+
+const PostingList * MergeTreeReaderTextIndex::getFoldedPostings(size_t column_idx) const
+{
+    if (use_lazy_mode || is_always_true[column_idx] || use_fallback[column_idx])
+        return nullptr;
+
+    const auto & search_query = search_queries[column_idx];
+    if (search_query->getSearchMode() == TextSearchMode::Phrase)
+        return nullptr;
+
+    if (search_query->getTokens().empty() && search_query->getPatterns().empty())
+        return &empty_postings;
+
+    const auto & query_builder = granule->getAnalyzer().getQueryBuilder(*search_query);
+    if (query_builder.is_failed)
+        return &empty_postings;
+
+    if (query_builder.needReadPostings())
+        return nullptr;
+
+    return query_builder.postings ? &*query_builder.postings : &empty_postings;
+}
+
+void MergeTreeReaderTextIndex::fillColumnFromPostings(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexFilledFromFoldedPostings);
+
+    /// Posting-list row ids are 32-bit, so a larger offset cannot legitimately occur.
+    if (row_offset > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index posting lists do not support row offset larger than UINT32_MAX, got {}", row_offset);
+
+    PostingList range;
+    range.addRangeClosed(static_cast<UInt32>(row_offset), static_cast<UInt32>(std::min<size_t>(row_offset + num_rows - 1, std::numeric_limits<UInt32>::max())));
+    fillColumn(column, postings & range, row_offset, num_rows);
 }
 
 MergeTreeReaderTextIndex::ResolvedSearch MergeTreeReaderTextIndex::resolveSearch(size_t column_idx)
@@ -1121,7 +1187,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 std::make_shared<PaddedPODArray<UInt32>>(phraseSearchBlocked(*search_query)));
         });
 
-        doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::get<FlatPostingsPtr>(cell->value)).first;
+        doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::get<PaddedPODArrayPtr>(cell->value)).first;
     }
 
     const auto & matching_doc_ids = *doc_ids_it->second;
@@ -1168,7 +1234,7 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
 
 void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & granules)
 {
-    auto it = granules.find(index.index->index.name);
+    auto it = granules.find(index_read_task.index.index->index.name);
 
     if (it != granules.end() && it->second)
     {
@@ -1180,11 +1246,11 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     MergeTreeIndexGranulePtr index_granule)
 {
-    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, std::move(index_granule));
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index_read_task, columns_to_read, std::move(index_granule));
 }
 
 }

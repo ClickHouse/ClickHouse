@@ -16,6 +16,10 @@
 -- for `fillMissingColumns` exactly as a range read from disk does, so all three reads below have
 -- to agree, and agree with the default expression and with the sibling's offsets.
 
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_cc_added;
 
 CREATE TABLE t_cc_added (id UInt64, s String, n Nested(a UInt64))

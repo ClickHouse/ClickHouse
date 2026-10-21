@@ -78,6 +78,10 @@ public:
     virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
     virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
 
+    /// The whole output is consumed only by `min` / `max` (see `FormatFilterInfo::min_max_from_statistics`).
+    virtual bool supportsMinMaxFromStatistics() const { return false; }
+    virtual void setMinMaxFromStatistics() {}
+
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 

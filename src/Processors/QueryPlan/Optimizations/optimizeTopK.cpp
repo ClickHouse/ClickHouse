@@ -23,16 +23,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
-/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`).
-static bool dependsOnItsBlock(const ActionsDAG & actions)
+bool dependsOnItsBlock(const ActionsDAG & actions)
 {
-    for (const auto & node : actions.getNodes())
-        if (node.type == ActionsDAG::ActionType::FUNCTION
-            && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery()))
-            return true;
-
-    return false;
+    return actions.hasNonDeterministicOrStatefulFunctions();
 }
 
 /// True if a value of this type can contain a floating-point number anywhere inside it - directly,
@@ -40,6 +33,30 @@ static bool dependsOnItsBlock(const ActionsDAG & actions)
 static bool typeCanContainFloat(const DataTypePtr & type)
 {
     return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
+}
+
+/// A deterministic hash of the planning-time parameters of a TopK. The query condition cache keys
+/// the entries written by TopK reads with it, so the same query reuses the cached decisions while a
+/// different TopK (different `LIMIT`, sort column, direction, NULLS FIRST/LAST, collation, ...)
+/// gets a fresh entry.
+static UInt64 topKPlanHash(
+    const String & sort_column_name,
+    const DataTypePtr & sort_column_type,
+    size_t num_sort_columns,
+    size_t limit,
+    const SortColumnDescription & sort_col_desc)
+{
+    SipHash hash;
+    hash.update(sort_column_name);
+    const String type_name = sort_column_type->getName();
+    hash.update(type_name);
+    hash.update(num_sort_columns);
+    hash.update(limit);
+    hash.update(sort_col_desc.direction);
+    hash.update(sort_col_desc.nulls_direction);
+    if (sort_col_desc.collator)
+        hash.update(sort_col_desc.collator->getLocale());
+    return hash.get64();
 }
 
 /// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no
@@ -56,6 +73,8 @@ static size_t tryTopKForFormatSource(
     const ColumnWithTypeAndName & sort_column,
     const String & sort_column_name,
     const SortColumnDescription & sort_col_desc,
+    size_t num_sort_columns,
+    size_t limit,
     const Optimization::ExtraSettings & settings)
 {
     auto * source_step = dynamic_cast<SourceStepWithFilterBase *>(step);
@@ -105,6 +124,7 @@ static size_t tryTopKForFormatSource(
     auto info = std::make_shared<FormatTopKFilterInfo>();
     info->column_name = sort_column_name;
     info->threshold_tracker = std::move(threshold_tracker);
+    info->plan_hash = topKPlanHash(sort_column_name, sort_column.type, num_sort_columns, limit, sort_col_desc);
     source_step->setTopKFilter(std::move(info));
 
     return 0;
@@ -244,7 +264,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         const auto row_level_filter = source_step ? source_step->getRowLevelFilter() : nullptr;
         if (actions_depend_on_block || (row_level_filter && dependsOnItsBlock(row_level_filter->actions)))
             return 0;
-        return tryTopKForFormatSource(node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, settings);
+        return tryTopKForFormatSource(
+            node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, num_sort_columns, n, settings);
     }
 
     /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
@@ -334,21 +355,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     {
         TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0, /*dynamic_filter_pending=*/ use_dynamic_filtering};
 
-        /// Compute a deterministic hash from the planning-time parameters. Used by
-        /// `updateQueryConditionCache` to partition QCC entries by TopK plan, so the same
-        /// query reuses cached granule decisions and a different TopK plan (different LIMIT,
-        /// sort column, direction, NULLS FIRST/LAST, COLLATE, etc.) gets a fresh entry.
-        SipHash hash;
-        hash.update(info.column_name);
-        const String type_name = info.data_type->getName();
-        hash.update(type_name);
-        hash.update(info.num_sort_columns);
-        hash.update(info.limit_n);
-        hash.update(info.direction);
-        hash.update(sort_col_desc.nulls_direction);
-        if (sort_col_desc.collator)
-            hash.update(sort_col_desc.collator->getLocale());
-        info.condition_hash = hash.get64();
+        /// Used by `updateQueryConditionCache` to partition QCC entries by TopK plan.
+        info.condition_hash = topKPlanHash(info.column_name, info.data_type, info.num_sort_columns, info.limit_n, sort_col_desc);
 
         read_from_mergetree_step->setTopKColumn(info);
     }

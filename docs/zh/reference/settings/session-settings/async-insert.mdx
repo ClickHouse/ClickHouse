@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="async_insert">
-  ## async_insert
-</div>
+## async_insert {#async_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 如果为 true，来自 INSERT 查询的数据会先存储在队列中，随后在后台刷写到表中。如果 wait&#95;for&#95;async&#95;insert 为 false，则 INSERT 查询几乎会立即处理；否则客户端会等待，直到数据刷写到表中
 
-<div id="async_insert_busy_timeout_decrease_rate">
-  ## async_insert_busy_timeout_decrease_rate
-</div>
+## async_insert_busy_timeout_decrease_rate {#async_insert_busy_timeout_decrease_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 自适应异步插入超时按指数速率下降的速率
 
-<div id="async_insert_busy_timeout_increase_rate">
-  ## async_insert_busy_timeout_increase_rate
-</div>
+## async_insert_busy_timeout_increase_rate {#async_insert_busy_timeout_increase_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -43,9 +37,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 自适应异步插入超时增大的指数增长率
 
-<div id="async_insert_busy_timeout_max_ms">
-  ## async_insert_busy_timeout_max_ms
-</div>
+## async_insert_busy_timeout_max_ms {#async_insert_busy_timeout_max_ms}
 
 **别名**: `async_insert_busy_timeout_ms`
 
@@ -57,9 +49,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 Cloud 默认值：`1000` (1 秒) 。
 
-<div id="async_insert_busy_timeout_min_ms">
-  ## async_insert_busy_timeout_min_ms
-</div>
+## async_insert_busy_timeout_min_ms {#async_insert_busy_timeout_min_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="50" />
 
@@ -67,9 +57,7 @@ Cloud 默认值：`1000` (1 秒) 。
 
 如果通过 async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout 启用了自动调整，则该值表示自首次出现数据起，每个查询在转储已收集数据之前的最短等待时间。它也用作自适应算法的初始值
 
-<div id="async_insert_deduplicate">
-  ## async_insert_deduplicate
-</div>
+## async_insert_deduplicate {#async_insert_deduplicate}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -77,9 +65,7 @@ Cloud 默认值：`1000` (1 秒) 。
 
 此设置仅在 [`deduplicate_insert`](/zh/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) 设置为 `backward_compatible_choice` 时生效。
 
-<div id="async_insert_max_data_size">
-  ## async_insert_max_data_size
-</div>
+## async_insert_max_data_size {#async_insert_max_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
@@ -89,18 +75,14 @@ Cloud 默认值：`1000` (1 秒) 。
 
 Cloud 默认值：`104857600` (100 MiB) 。
 
-<div id="async_insert_max_query_number">
-  ## async_insert_max_query_number
-</div>
+## async_insert_max_query_number {#async_insert_max_query_number}
 
 <SettingsInfoBlock type="UInt64" default_value="450" />
 
 实际写入前允许的最大 insert 查询数。
 仅当设置 [`async_insert_deduplicate`](/zh/reference/settings/session-settings/async-insert#async_insert_deduplicate) 为 1 时才生效。
 
-<div id="async_insert_poll_timeout_ms">
-  ## async_insert_poll_timeout_ms
-</div>
+## async_insert_poll_timeout_ms {#async_insert_poll_timeout_ms}
 
 <SettingsInfoBlock type="毫秒" default_value="10" />
 
@@ -108,9 +90,15 @@ Cloud 默认值：`104857600` (100 MiB) 。
 
 从异步插入队列轮询数据的超时时间
 
-<div id="async_insert_use_adaptive_busy_timeout">
-  ## async_insert_use_adaptive_busy_timeout
-</div>
+## async_insert_select_as_async_insert {#async_insert_select_as_async_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "默认允许 `INSERT ... SELECT` 查询使用异步插入。"}]}]} />
+
+当 `async_insert` 已启用，且查询符合条件 (向 `MergeTree` 家族的目标端插入单个小数据块，且没有依赖视图) 时，此设置决定用户发起的 `INSERT ... SELECT` 能否使用异步插入队列。禁用此设置后，无论 `async_insert` 是否启用，`INSERT ... SELECT` 都会同步执行。内部插入 (可刷新materialized view、`POPULATE`、`CREATE TABLE ... AS SELECT`) 始终同步执行，不受此设置影响。
+
+## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
