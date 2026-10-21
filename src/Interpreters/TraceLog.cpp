@@ -48,7 +48,7 @@ UInt64 hideAllocationAddress(UInt64 ptr)
     /// The key must not be predictable, so it is read from the OS randomness source.
     static const std::array<UInt64, 2> key = []
     {
-        std::array<UInt64, 2> words;
+        std::array<UInt64, 2> words{};
         if (::getentropy(words.data(), sizeof(words)) != 0)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getentropy");
         return words;
