@@ -81,7 +81,7 @@ ClickPipes authenticates to your Google Cloud project using a [service account k
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creating a service account key with BigQuery and Cloud Storage permissions" size="lg" border/>
 
-#### GCP workload identity (Private Preview) {#gcp-workload-identity}
+#### GCP workload identity (Beta) {#gcp-workload-identity}
 
 Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve the managed service account from the ClickPipes service context. Grant it the [BigQuery and GCS roles](#permissions) below, and create the pipe with `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` authentication. Do not provide service account credentials with this authentication method.
 
