@@ -15,6 +15,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
+#include <Common/SettingsChanges.h>
 
 #include <memory>
 #include <mutex>
@@ -64,6 +65,25 @@ public:
         bool lazy_init = false);
 
     String getName() const override;
+
+    /// The `object_storage_cluster` table setting: a `SELECT` from the table is read through the `*Cluster`
+    /// table function over `cluster_name` (see `readsThroughCluster`), which gets `engine_args` (the engine
+    /// arguments as `StorageObjectStorageConfiguration::initialize` left them) and `partition_by` (the
+    /// `PARTITION BY` of the table). `settings_changes` are the query settings from the `SETTINGS` clause of
+    /// the table (the format settings), which are passed to the nodes, because they do not read the table.
+    /// The cluster is looked up at query time only. Called by the engine creator before the table is used.
+    void setObjectStorageCluster(String cluster_name, ASTs engine_args, ASTPtr partition_by, SettingsChanges settings_changes);
+
+    /// Whether a `SELECT` from this table under `context` is read through the cluster of the
+    /// `object_storage_cluster` setting. Only the initiator of a query does so, never a secondary query.
+    /// `getQueryProcessingStage` and `read` must agree on it.
+    bool readsThroughCluster(const ContextPtr & context) const;
+
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info) const override;
 
     /// The concrete data format resolved for this table (after schema/format inference).
     /// Used by the unified `URL` engine to persist the delegate's inferred format.
@@ -273,6 +293,23 @@ protected:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
     BackgroundJobsAssignee background_operations_assignee;
+
+private:
+    /// See `setObjectStorageCluster`.
+    String object_storage_cluster;
+    ASTs object_storage_cluster_engine_args;
+    ASTPtr object_storage_cluster_partition_by;
+    SettingsChanges object_storage_cluster_settings_changes;
+
+    void readThroughCluster(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams);
 };
 
 }

@@ -5,11 +5,15 @@
 #include <Common/parseGlobs.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -186,6 +190,28 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     setInMemoryMetadata(metadata);
 }
 
+StorageObjectStorageCluster::StorageObjectStorageCluster(
+    const String & cluster_name_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    const StorageID & table_id_,
+    const StorageInMemoryMetadata & table_metadata_,
+    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_,
+    ASTs table_engine_args_,
+    ASTPtr table_partition_by_)
+    : IStorageCluster(
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    , configuration{configuration_}
+    , object_storage(object_storage_)
+    , hive_partition_columns_to_read_from_file_path(hive_partition_columns_to_read_from_file_path_)
+    , table_engine_args(std::move(table_engine_args_))
+    , table_partition_by(std::move(table_partition_by_))
+{
+    /// The configuration is shared with the table, which other queries read concurrently,
+    /// so it is not initialized again here: the table did it.
+    setInMemoryMetadata(table_metadata_);
+}
+
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
@@ -309,11 +335,69 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     return configuration->totalBytes(query_context);
 }
 
+void StorageObjectStorageCluster::replaceTableWithClusterTableFunction(
+    ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const
+{
+    const auto * select = query->as<ASTSelectQuery>();
+    if (!select || !select->tables())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a SELECT query from table {}, got '{}'",
+            getStorageID().getNameForLogs(), query->formatForErrorMessage());
+
+    const auto storage_id = getStorageID();
+    ASTTableExpression * table_expression = nullptr;
+    for (const auto & element : select->tables()->children)
+    {
+        auto * expression = element->as<ASTTablesInSelectQueryElement &>().table_expression->as<ASTTableExpression>();
+        if (!expression || !expression->database_and_table_name)
+            continue;
+        const DatabaseAndTableWithAlias table(*expression, context->getCurrentDatabase());
+        if (table.database == storage_id.database_name && table.table == storage_id.table_name)
+        {
+            table_expression = expression;
+            break;
+        }
+    }
+    if (!table_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} not found in the query '{}'",
+            storage_id.getNameForLogs(), query->formatForErrorMessage());
+
+    /// Only the physical columns are read from the objects: the replicas get the declared structure and
+    /// never infer it.
+    const auto structure = storage_snapshot->metadata->getColumns().getAllPhysical().toNamesAndTypesDescription();
+
+    ASTs engine_args;
+    for (const auto & arg : *table_engine_args)
+        engine_args.push_back(arg->clone());
+
+    ASTs args = configuration->getClusterTableFunctionArguments(std::move(engine_args), structure, context);
+    if (table_partition_by)
+        args.push_back(makeASTFunction("partition_by", table_partition_by->clone()));
+    args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+
+    auto table_function = makeASTFunction(configuration->getClusterTableFunctionName(), std::move(args));
+
+    /// Keep the columns qualified by the table name or the alias resolvable.
+    String alias = table_expression->database_and_table_name->tryGetAlias();
+    table_function->setAlias(alias.empty() ? storage_id.table_name : alias);
+
+    for (auto & child : table_expression->children)
+        if (child == table_expression->database_and_table_name)
+            child = table_function;
+    table_expression->database_and_table_name = nullptr;
+    table_expression->table_function = std::move(table_function);
+}
+
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
+    if (table_engine_args)
+    {
+        replaceTableWithClusterTableFunction(query, storage_snapshot, context);
+        return;
+    }
+
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         return;

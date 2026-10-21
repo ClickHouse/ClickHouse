@@ -60,6 +60,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
@@ -270,7 +271,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
     });
 
-    auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)
+    auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled, &query_context](const StoragePtr & storage_ptr)
     {
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
@@ -283,6 +284,10 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         /// above `ReadFromCluster` to collect the `WHERE` from - without this the predicate is null and
         /// no `_path` / `_file` pruning happens at all.
         if (dynamic_cast<const IStorageCluster *>(raw))
+            return true;
+        /// The same for a table read through the cluster of its `object_storage_cluster` setting.
+        if (const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(raw);
+            object_storage && object_storage->readsThroughCluster(query_context))
             return true;
         if (typeid_cast<const StorageView *>(raw))
             return true;

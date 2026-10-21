@@ -28,6 +28,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/StorageDictionary.h>
@@ -3653,8 +3654,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (table_node || table_function_node)
         {
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            // Only wrap if it's specifically IStorageCluster, not StorageDistributed or other remote storages
+            // Only wrap if it's specifically IStorageCluster, not StorageDistributed or other remote storages,
+            // or a table that is read through one (the `object_storage_cluster` setting).
             should_wrap_left_table = (dynamic_cast<const IStorageCluster *>(storage.get()) != nullptr);
+            if (const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(storage.get()))
+                should_wrap_left_table = object_storage->readsThroughCluster(planner_context->getQueryContext());
         }
 
         /** Reading the leftmost table through a subquery keeps the join on the initiator instead of running

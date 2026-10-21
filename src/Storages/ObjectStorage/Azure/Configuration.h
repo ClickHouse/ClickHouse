@@ -125,6 +125,9 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    String getClusterTableFunctionName() const override;
+    ASTs getClusterTableFunctionArguments(ASTs engine_args, const String & structure_, ContextPtr context) const override;
+
     void setInitializationAsOneLake(
         const String & client_id_,
         const String & client_secret_,

@@ -44,6 +44,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -61,6 +62,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
     extern const SettingsBool iceberg_delete_data_on_drop;
+    extern const SettingsBool use_object_storage_cluster;
 }
 
 namespace ErrorCodes
@@ -397,6 +399,77 @@ String StorageObjectStorage::getName() const
     return configuration->getEngineName();
 }
 
+void StorageObjectStorage::setObjectStorageCluster(
+    String cluster_name, ASTs engine_args, ASTPtr partition_by, SettingsChanges settings_changes)
+{
+    object_storage_cluster = std::move(cluster_name);
+    object_storage_cluster_engine_args = std::move(engine_args);
+    object_storage_cluster_partition_by = std::move(partition_by);
+    object_storage_cluster_settings_changes = std::move(settings_changes);
+}
+
+bool StorageObjectStorage::readsThroughCluster(const ContextPtr & context) const
+{
+    if (object_storage_cluster.empty() || !context->getSettingsRef()[Setting::use_object_storage_cluster])
+        return false;
+
+    /// A secondary query is one that another server sent here, e.g. a node of the cluster reading its share of
+    /// the files: it must read on this node, or the reading would fan out again. The initiator's own reads stay
+    /// initial queries, also when they run with an increased `distributed_depth`, like the read of the
+    /// `cold_table` of a `Distributed` table (see `StorageDistributed::read`), which is a local plan on the
+    /// initiator under the initiator's client info.
+    return context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY;
+}
+
+QueryProcessingStage::Enum StorageObjectStorage::getQueryProcessingStage(
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
+{
+    /// The same stages as `IStorageCluster::getQueryProcessingStage` for the initiator, as `read` delegates to it.
+    if (readsThroughCluster(context) && to_stage >= QueryProcessingStage::WithMergeableState)
+        return QueryProcessingStage::WithMergeableState;
+    return QueryProcessingStage::FetchColumns;
+}
+
+void StorageObjectStorage::readThroughCluster(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    ASTs engine_args;
+    for (const auto & arg : object_storage_cluster_engine_args)
+        engine_args.push_back(arg->clone());
+
+    auto cluster_storage = std::make_shared<StorageObjectStorageCluster>(
+        object_storage_cluster,
+        configuration,
+        object_storage,
+        getStorageID(),
+        *storage_snapshot->metadata,
+        hive_partition_columns_to_read_from_file_path,
+        std::move(engine_args),
+        object_storage_cluster_partition_by ? object_storage_cluster_partition_by->clone() : nullptr);
+
+    /// The nodes read with the format settings of the table, not only with those of the query.
+    ContextPtr cluster_context = local_context;
+    if (!object_storage_cluster_settings_changes.empty())
+    {
+        auto context_copy = Context::createCopy(local_context);
+        context_copy->applySettingsChanges(object_storage_cluster_settings_changes);
+        cluster_context = std::move(context_copy);
+    }
+
+    LOG_TRACE(log, "Reading through cluster {}", object_storage_cluster);
+
+    auto cluster_snapshot = cluster_storage->getStorageSnapshot(storage_snapshot->metadata, cluster_context);
+    cluster_storage->read(
+        query_plan, column_names, cluster_snapshot, query_info, cluster_context, processed_stage, max_block_size, num_streams);
+}
+
 bool StorageObjectStorage::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration->format);
@@ -642,7 +715,7 @@ void StorageObjectStorage::read(
     const StorageSnapshotPtr & storage_snapshot_,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     size_t num_streams)
 {
@@ -718,6 +791,13 @@ void StorageObjectStorage::read(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Reading from a partitioned {} storage is not implemented yet",
                         getName());
+    }
+
+    /// The `object_storage_cluster` setting. It is checked by `getQueryProcessingStage` too, which chose the stage.
+    if (readsThroughCluster(local_context))
+    {
+        readThroughCluster(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+        return;
     }
 
     const auto & settings = local_context->getSettingsRef();

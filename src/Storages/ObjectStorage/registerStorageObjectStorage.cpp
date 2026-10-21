@@ -40,6 +40,11 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString disk;
 }
 
+namespace StorageObjectStorageSetting
+{
+    extern const StorageObjectStorageSettingsString object_storage_cluster;
+}
+
 namespace
 {
 
@@ -52,6 +57,20 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
+    /// The settings of the engine itself (`object_storage_cluster`) are not query settings.
+    String object_storage_cluster;
+    SettingsChanges query_settings_changes;
+    if (args.storage_def->settings)
+    {
+        StorageObjectStorageSettings storage_settings;
+        storage_settings.loadFromSettingsChanges(args.storage_def->settings->changes);
+        object_storage_cluster = storage_settings[StorageObjectStorageSetting::object_storage_cluster].value;
+
+        for (const auto & change : args.storage_def->settings->changes)
+            if (!StorageObjectStorageSettings::isEngineOnlySetting(change.name))
+                query_settings_changes.push_back(change);
+    }
+
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
     // session and user are ignored.
@@ -61,7 +80,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         Settings settings = context->getSettingsCopy();
 
         // Apply changes from SETTINGS clause, with validation.
-        settings.applyChanges(args.storage_def->settings->changes);
+        settings.applyChanges(query_settings_changes);
 
         format_settings = getFormatSettings(context, settings);
     }
@@ -105,7 +124,14 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    /// The engine arguments as `initialize` left them (evaluated, as they are stored in the table definition),
+    /// before the storage adds the inferred ones to the definition: the configuration knows their form.
+    ASTs object_storage_cluster_engine_args;
+    if (!object_storage_cluster.empty())
+        for (const auto & arg : args.engine_args)
+            object_storage_cluster_engine_args.push_back(arg->clone());
+
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -123,6 +149,30 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (!object_storage_cluster.empty())
+    {
+        /// Only `CREATE` checks that the table can be read through a cluster at all. The cluster itself is never
+        /// looked up here: it is looked up by every query, so `ATTACH` and the server startup do not depend on it.
+        if (args.mode <= LoadingStrictnessLevel::CREATE)
+        {
+            ASTs engine_args;
+            for (const auto & arg : object_storage_cluster_engine_args)
+                engine_args.push_back(arg->clone());
+            const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            configuration->getClusterTableFunctionName();
+            configuration->getClusterTableFunctionArguments(
+                std::move(engine_args), metadata->getColumns().getAllPhysical().toNamesAndTypesDescription(), context);
+        }
+
+        storage->setObjectStorageCluster(
+            object_storage_cluster,
+            std::move(object_storage_cluster_engine_args),
+            partition_by ? partition_by->clone() : nullptr,
+            std::move(query_settings_changes));
+    }
+
+    return storage;
 }
 
 #endif
@@ -266,6 +316,16 @@ select _path, * from azure_table;
 │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
 │ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+## Reading through a cluster {#object-storage-cluster}
+
+With the `object_storage_cluster` setting, a `SELECT` from the table is read through the [azureBlobStorageCluster](/reference/functions/table-functions/azureBlobStorageCluster) table function over the named cluster: the initiator lists the files and hands them out to the nodes of the cluster, which read them and send back the results. See the same section of the [S3](/reference/engines/table-engines/integrations/s3#object-storage-cluster) engine.
+
+```sql
+CREATE TABLE azure_table (key UInt64, data String)
+    ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=...;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'data/*.parquet', 'Parquet')
+    SETTINGS object_storage_cluster = 'cluster_simple';
 ```
 
 ## See also {#see-also}
@@ -611,6 +671,24 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
 - [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the engine. Empty (disabled) by default.
+- `object_storage_cluster` - the name of a cluster to read the table through, see [Reading through a cluster](#object-storage-cluster). Empty (disabled) by default.
+
+## Reading through a cluster {#object-storage-cluster}
+
+The table setting `object_storage_cluster` names a cluster that a `SELECT` from the table is read through, as with the [s3Cluster](/reference/functions/table-functions/s3Cluster) table function: the initiator lists the files (with the `WHERE` conditions on `_path`, `_file` and the partition columns of the `hive` partition strategy pruning them) and hands them out to the nodes of the cluster, which read them and send back the partially processed results. The nodes get the query with the table replaced by the `s3Cluster` table function with the arguments of the engine, the columns of the table as the structure, and the `PARTITION BY` of the table as the `partition_by` argument.
+
+- The cluster is looked up by each query: `CREATE`, `ATTACH` and the server startup do not depend on it, and a query fails with `CLUSTER_DOESNT_EXIST` if it does not exist.
+- Only the initiator of a query reads through the cluster: a query that another server sent (for example to a shard of a `Distributed` table) reads on its own node. The `cold_table` of a `Distributed` table is read on the initiator, so it is read through the cluster.
+- `INSERT` is not affected.
+- The nodes need the cluster in their configuration, and the user needs the grants of the `s3Cluster` table function on them.
+- The [use_object_storage_cluster](/reference/settings/session-settings/use#use_object_storage_cluster) setting disables it for a query.
+
+```sql
+CREATE TABLE hits (year UInt16, country String, counter UInt64)
+    ENGINE = S3('https://my-bucket.s3.amazonaws.com/hits/', 'Parquet', partition_strategy = 'hive')
+    PARTITION BY (year, country)
+    SETTINGS object_storage_cluster = 'cluster_simple';
+```
 
 ## S3-related settings {#settings}
 

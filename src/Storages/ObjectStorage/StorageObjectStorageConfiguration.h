@@ -137,6 +137,14 @@ public:
     virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
+    /// For reading a table of this engine through a cluster (the `object_storage_cluster` table setting):
+    /// the name of the `*Cluster` table function that reads the same objects, and its arguments (without
+    /// the cluster name) made from `engine_args`, the arguments of the table engine as `initialize` left them,
+    /// with `structure` and the resolved format added, so that the nodes infer neither of them.
+    /// Throw `BAD_ARGUMENTS` for an engine or a form of the arguments that cannot be read this way.
+    virtual String getClusterTableFunctionName() const;
+    virtual ASTs getClusterTableFunctionArguments(ASTs engine_args, const String & structure_, ContextPtr context) const;
+
     bool isNamespaceWithGlobs() const;
 
     virtual bool isArchive() const { return false; }

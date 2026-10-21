@@ -46,6 +46,18 @@ bool StorageObjectStorageSettings::hasBuiltin(std::string_view name)
     return StorageObjectStorageSettingsImpl::hasBuiltin(name);
 }
 
+bool StorageObjectStorageSettings::isEngineOnlySetting(std::string_view name)
+{
+#define CHECK_ENGINE_ONLY_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+    if (name == #NAME) \
+        return true;
+
+    STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(CHECK_ENGINE_ONLY_SETTING, CHECK_ENGINE_ONLY_SETTING)
+
+#undef CHECK_ENGINE_ONLY_SETTING
+    return false;
+}
+
 void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)
 {
     for (const auto & [name, value, _] : changes)

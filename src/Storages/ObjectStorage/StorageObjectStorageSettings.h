@@ -64,13 +64,25 @@ struct StorageObjectStorageSettings
 
     static bool hasBuiltin(std::string_view name);
 
+    /// Whether `name` is a setting of the engine itself (e.g. `object_storage_cluster`), not a format setting.
+    /// Such a setting is not a query setting, so it must not be applied to `Settings`.
+    static bool isEngineOnlySetting(std::string_view name);
+
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;
 };
 
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
+/// The settings of the engine itself, as opposed to the format settings below: these are not query
+/// settings, so they must not be applied to the query `Settings` (see `isEngineOnlySetting`).
+#define STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(String, object_storage_cluster, "", R"(
+The name of a cluster to read the table through: a `SELECT` lists the files on the initiator and hands them out to the nodes of the cluster, like the `*Cluster` table functions (`s3Cluster`, `azureBlobStorageCluster`). The cluster is looked up at query time only. An empty string means the table is read on the current node. `INSERT` is not affected. See also the `use_object_storage_cluster` setting.
+)", 0) \
+
 #define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }

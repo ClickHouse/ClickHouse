@@ -7,6 +7,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -145,7 +146,7 @@ VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configur
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
+        if (function_node && (function_node->getFunctionName() == "headers" || function_node->getFunctionName() == "partition_by"))
             result.push_back(i);
     }
     return result;
@@ -183,6 +184,22 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
         if (settings_ast)
         {
             settings->loadFromQuery(*settings_ast);
+            args.erase(it);
+            break;
+        }
+    }
+    /// `partition_by(expr)` is the `PARTITION BY` of the table that the reading of a table with the
+    /// `object_storage_cluster` setting passes to the nodes in the `*Cluster` table function, because
+    /// `partition_strategy = 'hive'` takes the partition columns from it (see `StorageObjectStorageCluster`).
+    for (auto it = args.begin(); it != args.end(); ++it)
+    {
+        const auto * function = (*it)->as<ASTFunction>();
+        if (function && function->name == "partition_by")
+        {
+            if (!function->arguments || function->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "The argument `partition_by` of the table function '{}' must have exactly one expression", getName());
+            partition_by = function->arguments->children[0]->clone();
             args.erase(it);
             break;
         }

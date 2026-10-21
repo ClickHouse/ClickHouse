@@ -714,6 +714,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}, {"partition_strategy", 7}, {"partition_columns_in_data_file", 8}, {"storage_class_name", 9}};
     }
 
+    if (auto format_it = engine_args_to_idx.find("format"); format_it != engine_args_to_idx.end())
+        format_argument_position = format_it->second;
+
     /// This argument is always the first
     String url_str = checkAndGetLiteralArgument<String>(args[0], "url");
 
@@ -1205,6 +1208,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
+    format_argument_position = parsed_arguments.format_argument_position;
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     chassert(s3_settings != nullptr);
@@ -1224,6 +1228,73 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 {
     addStructureAndFormatToArgsIfNeededS3(
         args, structure_, format_, context, with_structure, S3StorageParsedArguments::getMaxNumberOfArguments(with_structure));
+}
+
+String StorageS3Configuration::getClusterTableFunctionName() const
+{
+    if (isDataLakeConfiguration())
+        return StorageObjectStorageConfiguration::getClusterTableFunctionName();
+    return "s3Cluster";
+}
+
+ASTs StorageS3Configuration::getClusterTableFunctionArguments(ASTs args, const String & structure_, ContextPtr context) const
+{
+    if (isDataLakeConfiguration())
+        return StorageObjectStorageConfiguration::getClusterTableFunctionArguments(std::move(args), structure_, context);
+
+    auto make_key_value = [](const String & key, const String & value)
+    {
+        return makeASTOperator("equals", ASTs{make_intrusive<ASTIdentifier>(key), make_intrusive<ASTLiteral>(value)});
+    };
+
+    /// The positional arguments of the engine and of the table function differ only by `structure`, which the
+    /// function takes right after `format`. A `structure` key-value argument makes the function read the
+    /// positional arguments the way the engine does (see `S3StorageParsedArguments::fromAST`).
+    if (tryGetNamedCollectionWithOverrides(args, context))
+    {
+        addStructureAndFormatToArgsIfNeededS3(
+            args, structure_, format, context, /*with_structure=*/ true, S3StorageParsedArguments::getMaxNumberOfArguments());
+        return args;
+    }
+
+    if (format_argument_position)
+    {
+        if (*format_argument_position >= args.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected position {} of the format argument in {} arguments",
+                *format_argument_position, args.size());
+        args[*format_argument_position] = make_intrusive<ASTLiteral>(format);
+    }
+
+    bool has_key_value_arguments = false;
+    bool has_format_key = false;
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.empty())
+            continue;
+        has_key_value_arguments = true;
+        if (const auto * key = function->arguments->children[0]->as<ASTIdentifier>(); key && key->name() == "format")
+            has_format_key = true;
+    }
+
+    if (has_key_value_arguments)
+    {
+        /// Key-value arguments are the last ones (`headers` cannot follow them), so these can be appended.
+        if (!has_format_key && !format_argument_position)
+            args.push_back(make_key_value("format", format));
+        args.push_back(make_key_value("structure", structure_));
+    }
+    else if (format_argument_position)
+    {
+        args.insert(args.begin() + *format_argument_position + 1, make_intrusive<ASTLiteral>(structure_));
+    }
+    else
+    {
+        /// Without a format the positional arguments mean the same for the engine and the table function.
+        addStructureAndFormatToArgsIfNeededS3(
+            args, structure_, format, context, /*with_structure=*/ true, S3StorageParsedArguments::getMaxNumberOfArguments());
+    }
+    return args;
 }
 }
 

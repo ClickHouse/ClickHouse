@@ -81,6 +81,8 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
+    /// The position of the positional `format` argument parsed by `fromAST`, if there is one.
+    std::optional<size_t> format_argument_position;
 
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
@@ -148,6 +150,9 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    String getClusterTableFunctionName() const override;
+    ASTs getClusterTableFunctionArguments(ASTs engine_args, const String & structure_, ContextPtr context) const override;
+
     static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 
     S3::URI url;
@@ -166,6 +171,9 @@ public:
     String biglake_adc_client_id;
     String biglake_adc_client_secret;
     String biglake_adc_refresh_token;
+
+    /// The position of the positional `format` argument, if the configuration was parsed from such arguments.
+    std::optional<size_t> format_argument_position;
 
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;

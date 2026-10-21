@@ -8458,6 +8458,9 @@ The timeout in milliseconds for connecting to a remote replica during query exec
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
+    DECLARE(Bool, use_object_storage_cluster, true, R"(
+Read a table of an object storage engine (`S3`, `AzureBlobStorage`) that has the table setting `object_storage_cluster` through the `*Cluster` table function over that cluster: the initiator lists the files and hands them out to the nodes of the cluster. When disabled, the table setting is ignored and the table is read on the current node only, as if the setting were not set.
+)", 0) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \

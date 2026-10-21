@@ -875,6 +875,65 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure);
 }
 
+String StorageAzureConfiguration::getClusterTableFunctionName() const
+{
+    if (isDataLakeConfiguration() || disk || is_onelake)
+        return StorageObjectStorageConfiguration::getClusterTableFunctionName();
+    return "azureBlobStorageCluster";
+}
+
+ASTs StorageAzureConfiguration::getClusterTableFunctionArguments(ASTs args, const String & structure_, ContextPtr context) const
+{
+    if (isDataLakeConfiguration() || disk || is_onelake)
+        return StorageObjectStorageConfiguration::getClusterTableFunctionArguments(std::move(args), structure_, context);
+
+    if (tryGetNamedCollectionWithOverrides(args, context))
+    {
+        addStructureAndFormatToArgsIfNeededAzure(args, structure_, format, context, /*with_structure=*/ true);
+        return args;
+    }
+
+    /// The table function takes the same positional arguments as the engine plus `structure` as the last one,
+    /// which requires the format and the compression before it:
+    /// (connection_string, container_name, blobpath, format, compression[, partition_strategy[, partition_columns_in_data_file]], structure)
+    /// (storage_account_url, container_name, blobpath, account_name, account_key, format, compression[, partition_strategy[, partition_columns_in_data_file]], structure)
+    if (args.size() < 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The engine {} with fewer than 3 arguments cannot be read through a cluster", getEngineName());
+
+    ASTs trailing_function_args;
+    while (!args.empty() && args.back()->as<ASTFunction>())
+    {
+        trailing_function_args.insert(trailing_function_args.begin(), args.back());
+        args.pop_back();
+    }
+
+    auto is_format_arg = [](const String & s)
+    {
+        return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
+    };
+
+    size_t format_position = 3;
+    if (args.size() > 3 && !is_format_arg(checkAndGetLiteralArgument<String>(args[3], "format/account_name")))
+        format_position = 5; /// After `account_name` and `account_key`.
+
+    if (args.size() < format_position)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected arguments of the engine {}: expected the account key after the account name", getEngineName());
+
+    if (args.size() == format_position)
+        args.push_back(make_intrusive<ASTLiteral>(format));
+    else
+        args[format_position] = make_intrusive<ASTLiteral>(format);
+
+    if (args.size() == format_position + 1)
+        args.push_back(make_intrusive<ASTLiteral>("auto")); /// compression
+
+    args.push_back(make_intrusive<ASTLiteral>(structure_));
+    args.insert(args.end(), trailing_function_args.begin(), trailing_function_args.end());
+    return args;
+}
+
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     AzureStorageParsedArguments parsed_arguments;

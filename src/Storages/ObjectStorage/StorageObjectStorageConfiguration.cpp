@@ -49,6 +49,16 @@ void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
     update(object_storage_ptr, context);
 }
 
+String StorageObjectStorageConfiguration::getClusterTableFunctionName() const
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The engine {} cannot be read through a cluster", getEngineName());
+}
+
+ASTs StorageObjectStorageConfiguration::getClusterTableFunctionArguments(ASTs, const String &, ContextPtr) const
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The engine {} cannot be read through a cluster", getEngineName());
+}
+
 void StorageObjectStorageConfiguration::create( ///NOLINT
     ObjectStoragePtr /*object_storage_ptr*/,
     ContextPtr /*context*/,
