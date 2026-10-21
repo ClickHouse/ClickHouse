@@ -19,7 +19,8 @@ function body()
     echo "body('SELECT 1 AS x /* ${CLICKHOUSE_DATABASE}_$1 */ FORMAT JSONEachRow')"
 }
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('${URL}', $(body plain))"
+# The baseline must stay a single-server read even where parallel replicas are enabled by the profile.
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('${URL}', $(body plain)) SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', '${URL}', $(body cluster))"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM url('${URL}', $(body replicas)) SETTINGS enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_shard_localhost', parallel_replicas_for_cluster_engines = 1, automatic_parallel_replicas_mode = 0"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', '${URL}', 'JSONEachRow', 'x UInt8', $(body explicit))"
