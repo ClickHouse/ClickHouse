@@ -38,6 +38,8 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell
 from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
+GITHUB_API_URL = "https://api.github.com"
+
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
 # widespread failures (e.g. build broken, environment issue) where every test failed,
@@ -767,7 +769,7 @@ class Targeting:
         if token:
             headers["Authorization"] = f"Bearer {token}"
         repo = self.info.repo_name or "ClickHouse/ClickHouse"
-        url = f"https://api.github.com/repos/{repo}/{path}"
+        url = f"{GITHUB_API_URL}/repos/{repo}/{path}"
         deadline = time.monotonic() + self.config.github_retry_sec
         attempt = 0
         while True:
