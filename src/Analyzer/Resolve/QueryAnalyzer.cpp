@@ -5604,9 +5604,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         auto value_text = std::make_shared<ConstantNode>(constant->getColumn(), constant->getResultType())
                                               ->toAST()->formatWithSecretsOneLine();
                         ParserExpression value_parser;
-                        key_and_value[1] = buildQueryTree(
+                        auto printed_value = buildQueryTree(
                             parseQuery(value_parser, value_text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                             scope.context);
+
+                        /// Keep the value as written if it prints as another constant, e.g. an aggregate state prints as a `String`.
+                        auto printed_constant = printed_value->clone();
+                        resolveExpressionNode(printed_constant, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, false /*allow_niladic_functions*/);
+                        const auto * reparsed = printed_constant->as<ConstantNode>();
+                        if (reparsed && reparsed->getResultType()->equals(*constant->getResultType())
+                            && reparsed->getValue() == constant->getValue())
+                            key_and_value[1] = std::move(printed_value);
                     }
                 }
             }
