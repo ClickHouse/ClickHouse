@@ -194,6 +194,8 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
+    /// The snapshot referencing the written files is committed, so they must never be removed.
+    bool committed = false;
 
     /// Manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;

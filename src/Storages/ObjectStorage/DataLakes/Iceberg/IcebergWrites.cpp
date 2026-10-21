@@ -1378,6 +1378,9 @@ void IcebergStorageSink::onFinish()
 void IcebergStorageSink::onException(std::exception_ptr /* exception */)
 {
     cancelBuffers();
+    /// Files already uploaded by a failed insert are referenced by no snapshot; once committed they belong to the table.
+    if (!committed)
+        removeDataFilesAndManifests();
 }
 
 void IcebergStorageSink::finalizeBuffers()
@@ -1401,6 +1404,7 @@ void IcebergStorageSink::finalizeBuffers()
         if (initializeMetadata())
         {
             successed_write = true;
+            committed = true;
             break;
         }
         ++i;
