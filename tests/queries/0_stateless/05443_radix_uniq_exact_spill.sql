@@ -8,9 +8,9 @@ SET max_threads = 2, collect_hash_table_stats_during_aggregation = 0, optimize_u
 SELECT uniqExact(number) FROM numbers_mt(20000000)
 SETTINGS max_bytes_before_external_group_by = '16Mi', max_memory_usage = '100Mi', log_comment = '05443_numbers';
 
--- Frequent values mixed with distinct ones.
-SELECT uniqExact(if(number % 10 = 0, number, number % 3)) FROM numbers_mt(200000000)
-SETTINGS max_bytes_before_external_group_by = '16Mi', max_memory_usage = '100Mi', log_comment = '05443_frequent';
+-- Frequent values mixed with 10 million distinct ones.
+SELECT uniqExact(if(number % 2 = 0, number, number % 3)) FROM numbers_mt(20000000)
+SETTINGS max_bytes_before_external_group_by = '4Mi', max_memory_usage = '32Mi', log_comment = '05443_frequent';
 
 -- Strings, whose keys are their 128-bit hashes.
 SELECT uniqExact(toString(number)) FROM numbers_mt(5000000)
