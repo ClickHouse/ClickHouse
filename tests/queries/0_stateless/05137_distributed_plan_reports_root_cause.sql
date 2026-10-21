@@ -31,6 +31,12 @@ SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 777, 'reading task fai
 
 SYSTEM DISABLE FAILPOINT distributed_plan_delay_root_cause_report;
 
+-- The failing task frees its resources for longer than the initiator waits for each task when it
+-- cancels them. The task reports its failure before it frees them.
+SYSTEM ENABLE FAILPOINT distributed_plan_delay_failed_task_release;
+SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 777, 'reading task fails') GROUP BY x FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SYSTEM DISABLE FAILPOINT distributed_plan_delay_failed_task_release;
+
 -- Without a failure the same queries complete.
 SELECT count() FROM (SELECT throwIf(rowNumberInAllBlocks() > 1000000, 'never') FROM t_root_cause);
 SELECT count() FROM (SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 7777777, 'never') GROUP BY x);
