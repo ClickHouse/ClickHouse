@@ -405,14 +405,14 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +776,59 @@
+@@ -440,7 +776,60 @@
  
          preprocessor_results.append(pp_output)
  
 -    return preprocessor_results
 +    return (preprocessor_results, []) if attr_prefix == "pub" else ([], preprocessor_results)
 +
-+def _owned_symbol_inputs(ctx, dep, files, tools, index):
++def _owned_symbol_inputs(ctx, dep, files, tools, index, is_owner = False):
 +    objects = []
 +    unsupported = []
 +    forwarded = False
@@ -432,9 +432,10 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +                objects.extend(own)
 +            elif lib.pic_static_library or lib.static_library or lib.dynamic_library or lib.interface_library:
 +                unsupported.append("library without owned objects")
-+    # A deps-only bridge may forward links, but it does not own those symbols.
-+    if not objects and forwarded:
-+        unsupported.append("forwarded libraries without owned objects")
++    # Forwarded symbols are never owned by this direct dependency. A caller's
++    # own objects remain inspectable even when the caller has normal deps.
++    if forwarded and (not objects or not is_owner):
++        unsupported.append("forwarded libraries")
 +    output = None
 +    if objects:
 +        output = ctx.actions.declare_file("{}.dwyu_nm_{}.txt".format(ctx.label.name, index))
@@ -458,7 +459,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    tool = ctx.attr._tool_nm[DefaultInfo].files_to_run
 +    symbols = ctx.actions.declare_file("{}.dwyu_owned_symbols.json".format(target.label.name))
 +    ctx.actions.write(symbols, json.encode(dict(
-+        owner = _owned_symbol_inputs(ctx, struct(label = target.label, cc_info = target[CcInfo]), files, [tool], "owner"),
++        owner = _owned_symbol_inputs(ctx, struct(label = target.label, cc_info = target[CcInfo]), files, [tool], "owner", is_owner = True),
 +        deps = [_owned_symbol_inputs(ctx, dep, files, [tool], "dep_" + str(i)) for i, dep in enumerate(deps)],
 +        implementation_deps = [_owned_symbol_inputs(ctx, dep, files, [tool], "impl_" + str(i)) for i, dep in enumerate(implementation_deps)],
 +    )))

@@ -1,3 +1,4 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -62,5 +63,45 @@ cc_library(
     name = "negative_weak_duplicate",
     srcs = ["consumer.cpp"],
     implementation_deps = [":api", ":weak_provider", ":other_weak_provider"],
+    tags = ["manual"],
+)
+
+# The caller needs provider through a dependency that also owns unrelated code.
+cc_library(
+    name = "partial_bridge",
+    srcs = ["idle.cpp"],
+    deps = [":provider"],
+)
+cc_library(
+    name = "negative_partial_bridge",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api", ":partial_bridge", ":unrelated_without_header"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "direct_with_forwarded",
+    srcs = ["provider.cpp"],
+    deps = [":unrelated_without_header"],
+)
+cc_library(
+    name = "private_direct_with_forwarded",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api", ":direct_with_forwarded"],
+)
+cc_library(
+    name = "missing_partial_bridge",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api", ":unrelated_without_header"],
+    tags = ["manual"],
+)
+cc_binary(
+    name = "partial_bridge_binary",
+    srcs = ["link_main.cpp"],
+    deps = [":negative_partial_bridge"],
+)
+cc_binary(
+    name = "missing_partial_bridge_binary",
+    srcs = ["link_main.cpp"],
+    deps = [":missing_partial_bridge"],
     tags = ["manual"],
 )
