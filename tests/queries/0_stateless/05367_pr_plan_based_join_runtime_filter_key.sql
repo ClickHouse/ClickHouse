@@ -39,9 +39,9 @@ FROM
 (
     SELECT query_id, log_comment
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND NOT is_initial_query
       AND initial_query_id IN (SELECT argMax(query_id, event_time_microseconds) FROM system.query_log
-                               WHERE event_date >= yesterday() AND current_database = currentDatabase()
+                               WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
                                  AND log_comment IN ('05367_inner', '05367_semi') AND type = 'QueryFinish' AND is_initial_query
                                GROUP BY log_comment)
 ) AS tasks
@@ -49,12 +49,11 @@ INNER JOIN
 (
     SELECT query_id, sum(output_rows) AS probe_rows
     FROM system.processors_profile_log
-    WHERE event_date >= yesterday() AND name LIKE 'MergeTreeSelect%' AND plan_step_description = currentDatabase() || '.rf_probe'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND name LIKE 'MergeTreeSelect%' AND plan_step_description = currentDatabase() || '.rf_probe'
     GROUP BY query_id
 ) AS reads ON reads.query_id = tasks.query_id
 GROUP BY log_comment
-ORDER BY log_comment
-SETTINGS max_rows_to_read = 0; -- the system logs can be really big
+ORDER BY log_comment;
 
 DROP TABLE rf_probe;
 DROP TABLE rf_build;

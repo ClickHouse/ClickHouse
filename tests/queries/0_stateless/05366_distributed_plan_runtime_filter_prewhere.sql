@@ -47,9 +47,9 @@ FROM
 (
     SELECT query_id, log_comment, ProfileEvents['RuntimeFiltersCreated'] AS filters_created
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND NOT is_initial_query
       AND initial_query_id IN (SELECT argMax(query_id, event_time_microseconds) FROM system.query_log
-                               WHERE event_date >= yesterday() AND current_database = currentDatabase()
+                               WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
                                  AND log_comment IN ('05366_fragment', '05366_fragment_swapped') AND type = 'QueryFinish' AND is_initial_query
                                GROUP BY log_comment)
 ) AS tasks
@@ -57,19 +57,18 @@ LEFT JOIN
 (
     SELECT query_id, count() AS published
     FROM system.text_log
-    WHERE event_date >= yesterday() AND message LIKE 'Published shared fixed-hash-table runtime filter%'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE 'Published shared fixed-hash-table runtime filter%'
     GROUP BY query_id
 ) AS publications USING query_id
 LEFT JOIN
 (
     SELECT query_id, sum(output_rows) AS probe_rows
     FROM system.processors_profile_log
-    WHERE event_date >= yesterday() AND name LIKE 'MergeTreeSelect%' AND plan_step_description = currentDatabase() || '.probe'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND name LIKE 'MergeTreeSelect%' AND plan_step_description = currentDatabase() || '.probe'
     GROUP BY query_id
 ) AS reads ON reads.query_id = tasks.query_id
 GROUP BY log_comment
-ORDER BY log_comment
-SETTINGS max_rows_to_read = 0; -- the system logs can be really big
+ORDER BY log_comment;
 
 DROP TABLE probe;
 DROP TABLE build;
