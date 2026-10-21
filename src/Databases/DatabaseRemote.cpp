@@ -70,7 +70,7 @@ DatabaseRemote::DatabaseRemote(
     const String & database_name_,
     const String & remote_database_,
     const String & username_,
-    const String & password_,
+    std::string_view password_,
     ClusterPtr cluster_,
     ClusterPtr remote_only_cluster_,
     bool secure_,
@@ -1020,7 +1020,7 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
                     make_intrusive<ASTLiteral>(remote_database),
                     make_intrusive<ASTLiteral>(table_name),
                     make_intrusive<ASTLiteral>(username),
-                    make_intrusive<ASTLiteral>(password)};
+                    make_intrusive<ASTLiteral>(String(password))};
                 if (has_implicit_sharding_key)
                     engine_arguments.push_back(makeASTFunction("rand"));
             }
@@ -1123,7 +1123,7 @@ struct DatabaseRemoteClusters
 /// self-connection; this matches the well-tested behavior of the `remote` table function and the
 /// `Remote` storage engine and, as for them, means the stored credentials are honored only for
 /// genuinely remote shards.
-static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, const String & password, bool secure, ContextPtr context)
+static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, std::string_view password, bool secure, ContextPtr context)
 {
     size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
     Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
@@ -1204,7 +1204,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         String addresses_expr;
         String remote_database;
         String username = "default";
-        String password;
+        SecretString password;
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
@@ -1226,7 +1226,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             }
             remote_database = named_collection->getAnyOrDefault<String>({"database", "db"}, "default");
             username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");
-            password = named_collection->getOrDefault<String>("password", "");
+            password = named_collection->getOrDefault<SecretString>("password");
         }
         else
         {

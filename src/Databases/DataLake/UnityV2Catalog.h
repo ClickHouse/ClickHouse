@@ -27,7 +27,7 @@ public:
         const std::string & base_url_,
         std::string_view catalog_credential_,
         const std::string & auth_scope_,
-        const std::string & auth_header_,
+        std::string_view auth_header_,
         const std::string & oauth_server_uri_,
         DB::ContextPtr context_);
 
@@ -152,7 +152,7 @@ private:
     DB::HTTPHeaderEntries getAuthHeaders(bool force_refresh) const;
 
     /// Uses `auth_header_` only when `catalog_credential_` is empty, as in `RestCatalog`.
-    void maybeSetAuthHeader(std::string_view catalog_credential_, const std::string & auth_header_);
+    void maybeSetAuthHeader(std::string_view catalog_credential_, std::string_view auth_header_);
 
     void checkNamespaceExists(const std::string & schema_name) const;
 

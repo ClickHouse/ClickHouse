@@ -108,10 +108,11 @@ struct ThreadCache
 
 #endif
 
-void * JemallocNoDumpArenas::allocate(size_t bytes, size_t alignment)
+namespace
 {
-    const bool aligned = alignment > alignof(std::max_align_t);
 
+void * allocateImpl(size_t bytes, size_t alignment) noexcept
+{
 #if USE_JEMALLOC && defined(OS_LINUX)
     if (alloc_flags == 0) [[unlikely]]
     {
@@ -120,25 +121,40 @@ void * JemallocNoDumpArenas::allocate(size_t bytes, size_t alignment)
         static thread_local ThreadCache tcache(MALLOCX_ARENA((*arenas)[(cpu < 0 ? 0 : cpu) % arenas->size()]));
     }
     int flags = alloc_flags;
-    if (aligned)
+    if (alignment > alignof(std::max_align_t))
         flags |= MALLOCX_ALIGN(alignment);
-#endif
-
-    AllocationTrace trace;
-    size_t actual_size = aligned ? Memory::trackMemory(bytes, trace, std::align_val_t(alignment)) : Memory::trackMemory(bytes, trace);
-
-#if USE_JEMALLOC && defined(OS_LINUX)
-    void * ptr = je_mallocx(bytes, flags);
+    return je_mallocx(bytes, flags);
 #else
-    void * ptr = aligned ? Memory::newNoExcept(bytes, std::align_val_t(alignment)) : Memory::newNoExcept(bytes);
+    return alignment > alignof(std::max_align_t) ? Memory::newNoExcept(bytes, std::align_val_t(alignment)) : Memory::newNoExcept(bytes);
 #endif
+}
 
+}
+
+void * JemallocNoDumpArenas::allocate(size_t bytes, size_t alignment)
+{
+    AllocationTrace trace;
+    size_t actual_size = alignment > alignof(std::max_align_t) ? Memory::trackMemory(bytes, trace, std::align_val_t(alignment)) : Memory::trackMemory(bytes, trace);
+    void * ptr = allocateImpl(bytes, alignment);
     if (!ptr) [[unlikely]]
     {
         [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(actual_size);
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocNoDumpArenas: Cannot allocate {}.", ReadableSize(bytes));
     }
+    trace.onAlloc(ptr, actual_size);
+    return ptr;
+}
 
+void * JemallocNoDumpArenas::allocate(size_t bytes, size_t alignment, std::nothrow_t) noexcept
+{
+    AllocationTrace trace;
+    size_t actual_size = alignment > alignof(std::max_align_t) ? Memory::trackMemoryFromC(bytes, trace, std::align_val_t(alignment)) : Memory::trackMemoryFromC(bytes, trace);
+    void * ptr = allocateImpl(bytes, alignment);
+    if (!ptr) [[unlikely]]
+    {
+        [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(actual_size);
+        return nullptr;
+    }
     trace.onAlloc(ptr, actual_size);
     return ptr;
 }

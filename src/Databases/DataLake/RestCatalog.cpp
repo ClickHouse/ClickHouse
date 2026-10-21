@@ -88,7 +88,7 @@ namespace ProfileEvents
 namespace DB::DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsSecretString catalog_credential;
-    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsSecretString auth_header;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsSecretString onelake_bearer_token;
     extern const DatabaseDataLakeSettingsSecretString onelake_refresh_token;
@@ -106,7 +106,7 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1);
 static constexpr auto ONELAKE_DFS_HOST_SUFFIX = ".dfs.fabric.microsoft.com";
 
-DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
+DB::HTTPHeaderEntry parseAuthHeader(std::string_view auth_header)
 {
     /// Parse a string of format "Authorization: <auth_scheme> <auth_token>"
     /// into a key-value header "Authorization", "<auth_scheme> <auth_token>"
@@ -245,7 +245,7 @@ RestCatalog::RestCatalog(
     const std::string & base_url_,
     std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
@@ -711,7 +711,7 @@ HorizonCatalog::HorizonCatalog(
     const std::string & base_url_,
     std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,

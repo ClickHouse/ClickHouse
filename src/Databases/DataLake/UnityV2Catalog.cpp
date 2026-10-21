@@ -136,7 +136,7 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & base_url_,
     std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
@@ -167,7 +167,7 @@ UnityV2Catalog::UnityV2Catalog(
 
 UnityV2Catalog::~UnityV2Catalog() = default;
 
-void UnityV2Catalog::maybeSetAuthHeader(std::string_view catalog_credential_, const std::string & auth_header_)
+void UnityV2Catalog::maybeSetAuthHeader(std::string_view catalog_credential_, std::string_view auth_header_)
 {
     if (!catalog_credential_.empty() || auth_header_.empty())
         return;

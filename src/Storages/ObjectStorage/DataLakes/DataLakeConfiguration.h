@@ -67,7 +67,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsSecretString storage_catalog_credential;
 
     extern const DataLakeStorageSettingsString storage_auth_scope;
-    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsSecretString storage_auth_header;
     extern const DataLakeStorageSettingsString storage_oauth_server_uri;
     extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }

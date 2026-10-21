@@ -172,7 +172,7 @@ Stored in the table definition, so it survives a server restart. Falls back to t
     DECLARE(String, storage_oauth_server_uri, "", "OAuth server uri", 0)             \
     DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
     DECLARE(String, storage_warehouse, "", "Warehouse name inside the catalog", 0)             \
-    DECLARE(String, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
+    DECLARE(SecretString, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
     DECLARE(String, storage_aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
     DECLARE(SecretString, storage_aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \

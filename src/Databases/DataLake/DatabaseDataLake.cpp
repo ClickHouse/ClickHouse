@@ -76,7 +76,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString warehouse;
     extern const DatabaseDataLakeSettingsSecretString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
-    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsSecretString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
@@ -282,7 +282,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -298,7 +298,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -315,7 +315,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -1810,7 +1810,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
-        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        std::string_view auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
         /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
         /// gates below, which also self-skip on attach). An already-persisted database whose
         /// `auth_header` was accepted by an older version must still attach at startup, so a

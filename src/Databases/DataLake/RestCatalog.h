@@ -23,7 +23,7 @@ namespace DataLake
 {
 
 /// Parses "Name: value" into a header entry.
-DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
+DB::HTTPHeaderEntry parseAuthHeader(std::string_view auth_header);
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -33,7 +33,7 @@ public:
         const std::string & base_url_,
         std::string_view catalog_credential_,
         const std::string & auth_scope_,
-        const std::string & auth_header_,
+        std::string_view auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
@@ -405,7 +405,7 @@ public:
         const std::string & base_url_,
         std::string_view catalog_credential_,
         const std::string & auth_scope_,
-        const std::string & auth_header_,
+        std::string_view auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
