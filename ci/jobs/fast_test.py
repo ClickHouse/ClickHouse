@@ -66,6 +66,7 @@ def clone_submodules():
         "contrib/clickstack",
         "contrib/heks",
         "contrib/sql-console",
+        "contrib/optimized-routines",
         # Parquet: the native reader and writer need the Thrift-generated structures from Arrow's
         # source tree and the Thrift runtime; the Arrow formats need FlatBuffers. Snappy (with crc32c,
         # which it requires) is the default compression of Parquet files written by other tools.
@@ -295,6 +296,7 @@ def main():
                 name="Build ClickHouse",
                 command=f"command time -v cmake --build {build_dir_normalized} --"
                 " clickhouse-bundle clickhouse-stripped lexer_test",
+                info_extractor=Result.cpp_build_info_extractor,
             )
         )
         Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
