@@ -65,24 +65,37 @@ SELECT count() FROM t_json_map_chained WHERE j['a']['b'] = 42 SETTINGS optimize_
 
 DROP TABLE t_json_map_chained;
 
--- Pruning for subscript primary keys and secondary indices
-DROP TABLE IF EXISTS t_json_pk_idx;
-CREATE TABLE t_json_pk_idx
+-- Secondary index pruning survives when j['k'] defines the index
+DROP TABLE IF EXISTS t_json_idx_pruning;
+CREATE TABLE t_json_idx_pruning
 (
     id UInt64,
     j JSON(k UInt64),
     INDEX idx_k j['k'] TYPE minmax GRANULARITY 1
 )
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_json_idx_pruning SELECT number, concat('{"k":', toString(number), '}')::JSON FROM numbers(100);
+
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_idx_pruning WHERE j['k'] = 42) WHERE explain LIKE '%idx_k%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_idx_pruning WHERE j['k'] = 42) WHERE explain LIKE '%1/100%';
+
+DROP TABLE t_json_idx_pruning;
+
+-- Primary key pruning survives when j['k'] defines the primary key
+DROP TABLE IF EXISTS t_json_pk_pruning;
+CREATE TABLE t_json_pk_pruning
+(
+    id UInt64,
+    j JSON(k UInt64)
+)
 ENGINE = MergeTree ORDER BY j['k']
 SETTINGS index_granularity = 1;
 
-INSERT INTO t_json_pk_idx SELECT number, concat('{"k":', toString(number), '}')::JSON FROM numbers(100);
+INSERT INTO t_json_pk_pruning SELECT number, concat('{"k":', toString(number), '}')::JSON FROM numbers(100);
 
--- Secondary index pruning survives when j['k'] defines the index
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_pk_idx WHERE j['k'] = 42) WHERE explain LIKE '%idx_k%' AND explain LIKE '%1/100%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_pk_pruning WHERE j['k'] = 42) WHERE explain LIKE '%Condition:%' AND NOT (explain LIKE '%Condition: true%');
 
--- Primary key pruning survives when j['k'] defines the primary key
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_pk_idx WHERE j['k'] = 42) WHERE explain LIKE '%Condition:%' AND NOT (explain LIKE '%Condition: true%');
-
-DROP TABLE t_json_pk_idx;
+DROP TABLE t_json_pk_pruning;
 
