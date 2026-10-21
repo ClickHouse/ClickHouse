@@ -45,7 +45,7 @@ void validateEntityName(const String & name, std::string_view entity)
 {
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} name cannot be empty", entity);
-    if (name.find('/') != String::npos)
+    if (name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} name cannot contain '/': `{}`", entity, name);
 }
 

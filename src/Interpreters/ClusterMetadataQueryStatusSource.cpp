@@ -67,7 +67,7 @@ String ClusterMetadataQueryStatusSource::formatReplicaLabel(const String & repli
 
 std::pair<String, UInt16> ClusterMetadataQueryStatusSource::parseDisplayAddress(const String & label)
 {
-    if (label.find(':') == String::npos)
+    if (!label.contains(':'))
         return {label, 0};
     return Cluster::Address::fromString(label);
 }

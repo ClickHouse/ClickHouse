@@ -59,7 +59,7 @@ void validateNodeName(const String & node_name)
 {
     if (node_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cluster metadata DDL worker node name cannot be empty");
-    if (node_name.find('/') != String::npos)
+    if (node_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cluster metadata DDL worker node name cannot contain '/': `{}`", node_name);
 }
 

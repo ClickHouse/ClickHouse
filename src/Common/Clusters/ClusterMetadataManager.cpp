@@ -256,7 +256,7 @@ void validateKeeperChildName(const String & name, std::string_view setting_name)
     if (name.empty())
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}` cannot be empty", setting_name);
 
-    if (name.find('/') != String::npos)
+    if (name.contains('/'))
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}` cannot contain '/': `{}`", setting_name, name);
 }
 
