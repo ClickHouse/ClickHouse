@@ -151,9 +151,9 @@ private:
     void flushExpiredPairings(std::chrono::steady_clock::time_point now);
 
     Epoll epoll;
-    //each inotify fd can have at most 16384 items in the queue by default, so we use a pool of them to avoid overflow
+    /// Each inotify descriptor can have at most 16384 events in the queue by default, so we use a pool of them to avoid overflow.
     static constexpr size_t inotify_instances = 8;
-    std::array<int, inotify_instances> inotify_fds;
+    std::array<int, inotify_instances> inotify_fds{};
 
     /// The registrations of the watchers of each watch, by the descriptor of `inotify_fds` and the watch: a watch
     /// descriptor is unique only within its inotify instance.
