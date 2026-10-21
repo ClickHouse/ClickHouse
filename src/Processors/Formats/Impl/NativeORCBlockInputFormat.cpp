@@ -982,6 +982,21 @@ static void buildORCSearchArgumentImpl(
 
             break;
         }
+        case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
+        {
+            /// Each atom approximates the whole predicate leaf, so ORC may skip the data that any of the
+            /// atoms rules out, which is what their conjunction does.
+            auto atoms = std::move(rpn_stack.back().group_atoms);
+            rpn_stack.pop_back();
+            builder.startAnd();
+            for (auto & atom : atoms)
+            {
+                rpn_stack.push_back(std::move(atom));
+                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            }
+            builder.end();
+            break;
+        }
         /// There is no optimization with space-filling curves for ORC.
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.

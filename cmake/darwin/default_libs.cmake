@@ -21,6 +21,7 @@ if (NOT SANITIZE STREQUAL "thread")
     # (e.g. from the query profiler), permanently deadlocking the process.
     # Excluded only under TSan, which interposes these functions itself; the other
     # sanitizers run the query profiler too, so they need the workaround as well.
+    # Also serializes calls into libc's private time zone rwlock, which has the same defect.
     # See base/darwin-compatibility/pthread_rwlock_shim.c and FB24027930.
     add_subdirectory(base/darwin-compatibility)
 endif ()

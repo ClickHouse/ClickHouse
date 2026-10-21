@@ -18,19 +18,20 @@ namespace ErrorCodes
     extern const int UNACCEPTABLE_URL;
 }
 
-void RemoteHostFilter::checkURL(const Poco::URI & uri) const
+bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) const
 {
-    if (!checkForDirectEntry(uri.getHost()) &&
-        !checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
-    {
-        std::string masked_uri = uri.toString();
-        maskURIUserinfo(masked_uri);
-        /// An S3 URI can carry its presigned query in the path, which `toString` renders as `%3F`.
-        boost::replace_all(masked_uri, "%3F", "?");
-        maskPresignedURLParameters(masked_uri);
-        throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
-                                                      "see <remote_url_allow_hosts>", masked_uri);
-    }
+    if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
+        return true;
+    if (!throw_on_error)
+        return false;
+
+    std::string masked_uri = uri.toString();
+    maskURIUserinfo(masked_uri);
+    /// An S3 URI can carry its presigned query in the path, which `toString` renders as `%3F`.
+    boost::replace_all(masked_uri, "%3F", "?");
+    maskPresignedURLParameters(masked_uri);
+    throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
+                                                  "see <remote_url_allow_hosts>", masked_uri);
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
