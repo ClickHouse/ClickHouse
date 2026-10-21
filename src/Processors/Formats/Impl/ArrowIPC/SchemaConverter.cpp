@@ -307,21 +307,13 @@ ArrowType parseType(const flatbuf::Field & field)
             }
             break;
         }
-        /// View-list types the reader cannot decode, but whose physical buffer layout is known. Keep them as
-        /// `Unsupported` placeholders (so schema inference can drop them and a `SELECT` of such a column errors
-        /// clearly), but parse their children and record the layout so `advanceField` can advance the node/buffer
-        /// cursors past an *unrequested* column of this type and keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.kind = TypeKind::ListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "ListView");
             break;
         case flatbuf::Type_LargeListView:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.kind = TypeKind::LargeListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "LargeListView");
             break;
@@ -1144,6 +1136,8 @@ DataTypePtr fieldToCHType(
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
         {
             const ArrowField & element = type.children.at(0);
             result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, isNullableField(element), allow_null_type));
