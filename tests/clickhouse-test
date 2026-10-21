@@ -4097,7 +4097,13 @@ class TestCase:
         # NOTE:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
-        self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # They live in a directory of their own, so the globs over the prefix do not list the
+        # whole suite directory (tens of thousands of files) several times per test.
+        fatal_dir = os.path.join(os.path.dirname(self.stderr_file), ".stderr-fatal")
+        os.makedirs(fatal_dir, exist_ok=True)
+        self.fatal_sanitizer_prefix = os.path.join(
+            fatal_dir, os.path.basename(self.stderr_file) + "-fatal"
+        )
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
