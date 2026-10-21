@@ -21,8 +21,8 @@ namespace DB
 struct UncompressedCacheCell
 {
     Memory<JemallocCacheAllocator> data;
-    size_t compressed_size{};
-    UInt32 additional_bytes{};
+    size_t compressed_size;
+    UInt32 additional_bytes;
 };
 
 struct UncompressedSizeWeightFunction

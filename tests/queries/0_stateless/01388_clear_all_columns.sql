@@ -6,8 +6,7 @@ DROP TABLE test;
 
 DROP TABLE IF EXISTS test;
 
-CREATE TABLE test (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
+CREATE TABLE test (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test (x, y) VALUES (1, 1), (2, 2), (3, 3);
 
 ALTER TABLE test CLEAR COLUMN x;

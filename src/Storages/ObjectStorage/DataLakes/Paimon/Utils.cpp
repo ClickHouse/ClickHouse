@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <ctime>
+#include <filesystem>
 #include <ranges>
 #include <utility>
 #include <vector>
@@ -26,6 +28,7 @@ namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 extern const int BAD_ARGUMENTS;
+extern const int PATH_ACCESS_DENIED;
 }
 }
 namespace Paimon
@@ -94,7 +97,7 @@ String formatDecimal(const Decimal<T> & x, UInt32 scale)
     return wb.str();
 }
 
-static String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
+String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
 {
     WriteBufferFromOwnString wb;
     writeDateTimeText<'-', ':', 'T', '.', true>(x, scale, wb, time_zone);
@@ -186,7 +189,7 @@ DB::Row getPartitionFields(const String & partition_string, const PaimonTableSch
     return partition_key_value;
 };
 
-static String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
+String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
     auto get_partition_value = [&partition, &partition_default_name](Int32 i, Paimon::DataType & data_type) -> String
     {
@@ -298,6 +301,17 @@ String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSc
         bucket_path = partition_string + bucket_path;
     }
     return bucket_path;
+}
+
+void checkPathIsRelativeToTable(const String & path, std::string_view kind)
+{
+    const std::filesystem::path fs_path(path);
+    if (fs_path.has_root_path() || std::ranges::any_of(fs_path, [](const auto & component) { return component == ".."; }))
+        throw Exception(
+            ErrorCodes::PATH_ACCESS_DENIED,
+            "Paimon {} path `{}` must be relative to the table directory and must not contain `..`",
+            kind,
+            path);
 }
 
 String concatPath(std::initializer_list<String> paths)

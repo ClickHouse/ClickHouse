@@ -391,7 +391,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            return llvm::ConstantFP::get(type, static_cast<double>(element));
+            return llvm::ConstantFP::get(type, element);
         }
         else if constexpr (is_integer<T>)
         {

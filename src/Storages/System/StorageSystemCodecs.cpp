@@ -1,10 +1,5 @@
 
 #include <Storages/System/StorageSystemCodecs.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -36,6 +31,3 @@ void StorageSystemCodecs::fillData(MutableColumns & res_columns, ContextPtr, con
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCodecs) }

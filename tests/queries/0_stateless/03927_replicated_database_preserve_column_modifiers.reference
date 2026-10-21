@@ -1,2 +1,0 @@
-key	Int64
-value	Nullable(String)

@@ -9,7 +9,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
@@ -28,7 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToChildren final : public IFunction
+class FunctionH3ToChildren : public IFunction
 {
 public:
     static constexpr auto name = "h3ToChildren";
@@ -93,10 +92,10 @@ public:
         const auto & data_resolution = col_resolution->getData();
 
 
-        auto dst_data_column = ColumnUInt64::create();
-        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & dst_data = *dst_data_column;
-        auto & dst_offsets = dst_offsets_column->getData();
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = dst->getData();
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -116,16 +115,14 @@ public:
                 continue;
             }
 
-            int64_t children_size = 0;
-            cellToChildrenSize(parent_hindex, child_resolution, &children_size);
-            const size_t vec_size = static_cast<size_t>(children_size);
+            const size_t vec_size = cellToChildrenSize(parent_hindex, child_resolution);
             if (vec_size > MAX_ARRAY_SIZE)
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
 
-            VectorWithMemoryTracking<H3Index> hindex_vec;
+            std::vector<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
@@ -141,7 +138,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
+        return dst;
     }
 };
 

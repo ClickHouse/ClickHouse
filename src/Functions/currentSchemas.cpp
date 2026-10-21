@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -17,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionCurrentSchemas final : public IFunction
+class FunctionCurrentSchemas : public IFunction
 {
     const String db_name;
 

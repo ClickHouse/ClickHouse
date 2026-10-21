@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -14,9 +15,6 @@
 
 namespace DB
 {
-
-class BlobStorageLogWriter;
-using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 
 class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
 {
@@ -32,9 +30,7 @@ public:
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
-        size_t read_until_position_ = 0,
-        BlobStorageLogWriterPtr blob_storage_log_ = {},
-        String container_for_logging_ = {});
+        size_t read_until_position_ = 0);
 
     off_t seek(off_t off, int whence) override;
 
@@ -53,14 +49,11 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
-    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
+    std::optional<size_t> getRemoteFileSize() const override;
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
-
-    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
-    bool supportsExternalBufferMode() const override { return use_external_buffer; }
 
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
@@ -70,9 +63,18 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
+    /// Creates the client on first use. Thread-safe.
+    const AzureBlobStorage::BlobClient & getBlobClient() const;
+
+    /// The offset just past the last byte that the current download is allowed to deliver.
+    /// `reported_length` is the length of the response body as reported by the remote endpoint,
+    /// and is not trusted: it is bounded by `read_until_position_`, which is set locally.
+    static size_t getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_);
+
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
-    BlobClientPtr blob_client;
+    mutable BlobClientPtr blob_client;
+    mutable std::once_flag blob_client_created;
 
     const String path;
     size_t max_single_read_retries;
@@ -89,7 +91,7 @@ private:
     off_t read_until_position = 0;
 
     off_t offset = 0;
-    size_t total_size{};
+    size_t total_size;
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;
@@ -97,9 +99,6 @@ private:
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
     /// No-way to make metadata non-mutable, because readBig method is const.
     mutable MultiVersion<std::optional<ObjectMetadata>> last_object_metadata;
-
-    mutable BlobStorageLogWriterPtr blob_storage_log;
-    String container_for_logging;
 };
 
 }

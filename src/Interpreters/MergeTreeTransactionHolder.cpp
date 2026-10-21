@@ -16,8 +16,8 @@ MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactio
     , autocommit(autocommit_)
     , owned_by_session_context(owned_by_session_context_)
 {
-    chassert(!txn || txn->getState() == MergeTreeTransaction::RUNNING);
-    chassert(!owned_by_session_context || owned_by_session_context == owned_by_session_context->getSessionContext().get());
+    assert(!txn || txn->getState() == MergeTreeTransaction::RUNNING);
+    assert(!owned_by_session_context || owned_by_session_context == owned_by_session_context->getSessionContext().get());
 }
 
 MergeTreeTransactionHolder::MergeTreeTransactionHolder(MergeTreeTransactionHolder && rhs) noexcept
@@ -75,9 +75,9 @@ MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(const MergeTr
     if (rhs.txn && !rhs.owned_by_session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Tried to copy non-empty MergeTreeTransactionHolder that is not owned by session context. It's a bug");
-    chassert(!txn);
-    chassert(!autocommit);
-    chassert(!owned_by_session_context);
+    assert(!txn);
+    assert(!autocommit);
+    assert(!owned_by_session_context);
     return *this;
 }
 

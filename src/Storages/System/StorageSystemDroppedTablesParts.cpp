@@ -1,6 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -8,6 +6,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageProxy.h>
 
 
 namespace DB
@@ -42,7 +41,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         String database_name = storage->getStorageID().getDatabaseName();
         String table_name = storage->getStorageID().getTableName();
         String engine_name = storage->getName();
-        if (!dynamic_cast<MergeTreeData *>(storage.get()))
+        if (!castStorage<MergeTreeData>(storage, DeferredTable::Skip))
             continue;
 
         if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
@@ -83,6 +82,3 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
 
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDroppedTablesParts) }

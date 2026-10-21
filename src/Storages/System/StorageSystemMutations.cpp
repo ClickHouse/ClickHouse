@@ -1,11 +1,11 @@
 #include <Columns/ColumnString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -25,7 +25,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
     {
         { "database",                      std::make_shared<DataTypeString>(), "The name of the database to which the mutation was applied."},
         { "table",                         std::make_shared<DataTypeString>(), "The name of the table to which the mutation was applied."},
-        { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_clickhouse_keeper>/mutations/` directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
+        { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the <table_path_in_clickhouse_keeper>/mutations/ directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
         { "command",                       std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
         { "create_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
         { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
@@ -37,7 +37,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         },
         { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
-        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation of a replicated table may not be completed yet due to a long-running INSERT that is creating a new data part that will need to be mutated."},
+        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
@@ -82,11 +82,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const MergeTreeData *>(table.get()))
                 continue;
 
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
@@ -136,6 +133,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         std::vector<MergeTreeMutationStatus> statuses;
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
+            /// NOLINT(storage-cast): `merge_tree_tables` is filled with already resolved storages.
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
                 statuses = merge_tree->getMutationsStatus();
         }
@@ -195,6 +193,3 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMutations) }

@@ -22,22 +22,6 @@ SerializationMapKeysOrValues::SerializationMapKeysOrValues(
 {
 }
 
-UInt128 SerializationMapKeysOrValues::getHash(const SerializationPtr & keys_or_values_serialization_, MergeTreeMapSerializationVersion serialization_version_)
-{
-    SipHash hash;
-    hash.update("MapKeysOrValues");
-    hash.update(keys_or_values_serialization_->getHash());
-    hash.update(static_cast<UInt8>(serialization_version_));
-    return hash.get128();
-}
-
-SerializationPtr SerializationMapKeysOrValues::create(const SerializationPtr & keys_or_values_serialization_, MergeTreeMapSerializationVersion serialization_version_)
-{
-    if (!keys_or_values_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationMapKeysOrValues(keys_or_values_serialization_, serialization_version_));
-    return ISerialization::pooled(getHash(keys_or_values_serialization_, serialization_version_), [&] { return new SerializationMapKeysOrValues(keys_or_values_serialization_, serialization_version_); });
-}
-
 /// Deserialization state for the bucketed Map keys/values subcolumn.
 /// Mirrors the structure of `DeserializeBinaryBulkStateMap` but
 /// holds nested states for keys or values only (not the full Map).
@@ -62,17 +46,6 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
             new_state->bucket_keys_or_values_states[bucket] = bucket_keys_or_values_states[bucket] ? bucket_keys_or_values_states[bucket]->clone() : nullptr;
         new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (buckets_info_state)
-            callback(buckets_info_state);
-        for (const auto & bucket_state : bucket_keys_or_values_states)
-        {
-            if (bucket_state)
-                callback(bucket_state);
-        }
     }
 };
 
@@ -206,12 +179,12 @@ namespace
 /// Reassembles a single Array(key_type) or Array(value_type) column from per-bucket Array columns.
 /// Similar to `collectMapFromBuckets` in SerializationMap but works with a single Array column
 /// (keys or values) instead of a full Map(key, value).
-void collectMapKeysOrValuesFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & keys_or_values_buckets, IColumn & keys_or_values_column)
+void collectMapKeysOrValuesFromBuckets(const Columns & keys_or_values_buckets, IColumn & keys_or_values_column)
 {
     if (keys_or_values_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
 
-    VectorWithMemoryTracking<ColumnPtr> data_buckets(keys_or_values_buckets.size());
+    Columns data_buckets(keys_or_values_buckets.size());
     std::vector<const ColumnArray::Offsets *> offsets_buckets(keys_or_values_buckets.size());
     for (size_t bucket = 0; bucket != keys_or_values_buckets.size(); ++bucket)
     {
@@ -243,14 +216,14 @@ void collectMapKeysOrValuesFromBuckets(const VectorWithMemoryTracking<ColumnPtr>
 /// restoring original insertion order using the bucket index array.
 template <typename IndexColumn>
 void collectMapKeysOrValuesFromBucketsWithOrderImpl(
-    const VectorWithMemoryTracking<ColumnPtr> & keys_or_values_buckets,
+    const Columns & keys_or_values_buckets,
     const IndexColumn & bucket_index_col,
     IColumn & keys_or_values_column)
 {
     if (keys_or_values_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
 
-    VectorWithMemoryTracking<ColumnPtr> data_buckets(keys_or_values_buckets.size());
+    Columns data_buckets(keys_or_values_buckets.size());
     std::vector<const ColumnArray::Offsets *> offsets_buckets(keys_or_values_buckets.size());
     for (size_t bucket = 0; bucket != keys_or_values_buckets.size(); ++bucket)
     {
@@ -295,7 +268,7 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
 
 /// Dispatch on the index column type for collectMapKeysOrValuesFromBucketsWithOrderImpl.
 void collectMapKeysOrValuesFromBucketsWithOrder(
-    const VectorWithMemoryTracking<ColumnPtr> & keys_or_values_buckets,
+    const Columns & keys_or_values_buckets,
     const IColumn & bucket_index_column,
     IColumn & keys_or_values_column)
 {
@@ -360,7 +333,7 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
         const size_t buckets_rows_offset = reorder_with_skipped_rows ? 0 : rows_offset;
         const size_t buckets_limit = reorder_with_skipped_rows ? rows_offset + limit : limit;
 
-        VectorWithMemoryTracking<ColumnPtr> keys_or_values_buckets(buckets_info_state_concrete->buckets);
+        Columns keys_or_values_buckets(buckets_info_state_concrete->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state_concrete->buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);

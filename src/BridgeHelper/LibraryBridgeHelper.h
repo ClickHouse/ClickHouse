@@ -37,8 +37,6 @@ protected:
 
     Poco::URI createBaseURI() const override;
 
-    std::optional<String> getLibrariesSandboxPath() const override;
-
     static constexpr size_t DEFAULT_PORT = 9012;
 
     const Poco::Util::AbstractConfiguration & config;

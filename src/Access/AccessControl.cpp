@@ -298,11 +298,6 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
-
-    /// Keep in sync with `attachSystemTables`: `system.user_query_log` is attached (and thus safe to grant
-    /// SELECT on implicitly) only when this is enabled. When disabled, the name is free for a regular table.
-    setUserQueryLogEnabled(config_.getBool("query_log.enable_user_query_log", true));
-
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setImpersonateUserAllowed(config_.getBool("access_control_improvements.allow_impersonate_user", config_.getBool("allow_impersonate_user", true)));
@@ -311,6 +306,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
+    setReadonlyRestrictsSetRole(config_.getBool("access_control_improvements.readonly_restricts_set_role", false));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
@@ -562,6 +558,11 @@ scope_guard AccessControl::subscribeForChanges(const UUID & id, const OnChangedH
 scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
     return changes_notifier->subscribeForChanges(ids, handler);
+}
+
+scope_guard AccessControl::subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const
+{
+    return changes_notifier->subscribeForBatchFinished(handler);
 }
 
 bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)

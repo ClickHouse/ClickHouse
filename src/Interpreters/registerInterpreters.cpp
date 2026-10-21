@@ -38,7 +38,6 @@ void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
-void registerInterpreterCreateMaskingPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory);
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory);
@@ -60,14 +59,12 @@ void registerInterpreterDropResourceQuery(InterpreterFactory & factory);
 void registerInterpreterCreateIndexQuery(InterpreterFactory & factory);
 void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
-void registerInterpreterHypotheticalIndexQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 
-void registerInterpreters();
 void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();
@@ -107,7 +104,6 @@ void registerInterpreters()
     registerInterpreterCreateRoleQuery(factory);
     registerInterpreterCreateQuotaQuery(factory);
     registerInterpreterCreateRowPolicyQuery(factory);
-    registerInterpreterCreateMaskingPolicyQuery(factory);
     registerInterpreterCreateSettingsProfileQuery(factory);
     registerInterpreterDropAccessEntityQuery(factory);
     registerInterpreterMoveAccessEntityQuery(factory);
@@ -129,7 +125,6 @@ void registerInterpreters()
     registerInterpreterCreateIndexQuery(factory);
     registerInterpreterCreateNamedCollectionQuery(factory);
     registerInterpreterDropIndexQuery(factory);
-    registerInterpreterHypotheticalIndexQuery(factory);
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
     registerInterpreterUpdateQuery(factory);

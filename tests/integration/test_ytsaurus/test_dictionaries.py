@@ -1,13 +1,16 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 
 from .yt_helpers import YtsaurusURIHelper, YTsaurusCLI
 
-# The `ytsaurus_backend` docker image is amd64-only.
-if is_arm():
-    pytestmark = pytest.mark.skip
+from helpers.cluster import is_arm
 
+
+if is_arm():
+    # skip due to no arm support for ytsaurus-backend docker image
+    # https://github.com/ytsaurus/ytsaurus/blob/main/BUILD.md
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -335,7 +338,7 @@ def test_dictionary_xml_config(started_cluster):
         "/etc/clickhouse-server/dictionaries/yt_config_dict.xml", dict_config
     )
     instance.query("SYSTEM RELOAD CONFIG")
-    assert instance.query("SELECT dictGet('yt_dict_xml', 'value', 3)") == "0\n"
+    assert instance.query(f"SELECT dictGet('yt_dict_xml', 'value', 3)") == "0\n"
     yt.remove_table(path)
 
 
@@ -395,7 +398,7 @@ def test_yt_dictionary_with_named_collection(started_cluster):
     )
 
     instance.query(
-        """
+        f"""
         CREATE DICTIONARY yt_dict(id UInt64, len Int32) PRIMARY KEY id SOURCE(YTSAURUS(NAME ytsaurus_nc)) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
         """
     )

@@ -1,36 +1,18 @@
-import argparse
-import os
-
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--gtest_filter", default="")
-    args = parser.parse_args()
-
-    # Our static OpenSSL must ignore the image's system openssl.cnf.
-    os.environ["OPENSSL_CONF"] = "/dev/null"
-
-    job_name = Info().job_name
-
     # Note, LSan does not compatible with debugger
-    if "asan" not in job_name:
-        # With gdb we will capture stacktrace in case of abnormal termination and timeout.
-        # The tests run sequentially in a single binary, so the timeout must cover the sum of
-        # all test durations: under TSan that sum has grown to 38-40 minutes on average, and a
-        # run on a slower machine regularly exceeded the previous 45-minute budget, blaming
-        # whichever test happened to be running at that moment. Keep several tens of minutes
-        # of headroom (the praktika job-level timeout is 5 hours).
-        command_launcher = "timeout -s INT -v 90m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
+    if "asan" not in Info().job_name:
+        # With gdb we will capture stacktrace in case of abnormal termination and timeout (45 mins)
+        command_launcher = f"timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
     else:
         command_launcher = ""
 
     R = Result.from_gtest_run(
         unit_tests_path="./ci/tmp/unit_tests_dbms",
         command_launcher=command_launcher,
-        gtest_filter=args.gtest_filter,
     )
 
     profraw_files = (
@@ -45,7 +27,7 @@ if __name__ == "__main__":
 
         # Auto-detect available LLVM profdata tool
         llvm_profdata = None
-        for ver in ["22", "21", "20", "19", "18", "17", "16", ""]:
+        for ver in ["21", "20", "19", "18", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata = cmd

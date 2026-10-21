@@ -2,7 +2,6 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -108,15 +107,6 @@ void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, siz
 {
     timestamps.resize_exact(num_rows);
 
-    /// Sparse columns must be converted to dense before type dispatch, since
-    /// typeid_cast does not see through the ColumnSparse wrapper.
-    ColumnPtr dense;
-    if (typeid_cast<const ColumnSparse *>(ttl_column))
-    {
-        dense = ttl_column->convertToFullColumnIfSparse();
-        ttl_column = dense.get();
-    }
-
     if (const auto * col_date = typeid_cast<const ColumnUInt16 *>(ttl_column))
     {
         const auto & data = col_date->getData();
@@ -147,7 +137,7 @@ void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, siz
         /// Same inner-type dispatch as ITTLAlgorithm::getTimestampByIndex,
         /// but only executed once for the constant value.
         const auto & inner = col_const->getDataColumn();
-        Int64 value = 0;
+        Int64 value;
         if (typeid_cast<const ColumnUInt16 *>(&inner))
             value = date_lut.fromDayNum(DayNum(col_const->getValue<UInt16>()));
         else if (typeid_cast<const ColumnUInt32 *>(&inner))

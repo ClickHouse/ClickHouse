@@ -34,7 +34,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    const char * nl = nullptr;
+    const char * nl;
     while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
@@ -81,8 +81,8 @@ void writeQueryWithHighlightedErrorPositions(
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
 
-        chassert(current_position_to_hilite <= end);
-        chassert(current_position_to_hilite >= begin);
+        assert(current_position_to_hilite <= end);
+        assert(current_position_to_hilite >= begin);
 
         out.write(pos, current_position_to_hilite - pos);
 

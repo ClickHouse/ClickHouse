@@ -151,126 +151,6 @@ ReturnType parseDateTimeBestEffortImpl(
         return true;
     };
 
-    /// Validate that a word is a known full month or weekday name (not just a prefix match).
-    /// For example, "March" is valid but "Married" is not, even though both start with "Mar".
-    auto is_valid_month_or_weekday_name = [] (const char * word, size_t len)
-    {
-        return (len == 7 && 0 == strncasecmp(word, "January", 7))
-            || (len == 8 && 0 == strncasecmp(word, "February", 8))
-            || (len == 5 && 0 == strncasecmp(word, "March", 5))
-            || (len == 5 && 0 == strncasecmp(word, "April", 5))
-            || (len == 4 && 0 == strncasecmp(word, "June", 4))
-            || (len == 4 && 0 == strncasecmp(word, "July", 4))
-            || (len == 6 && 0 == strncasecmp(word, "August", 6))
-            || (len == 9 && 0 == strncasecmp(word, "September", 9))
-            || (len == 7 && 0 == strncasecmp(word, "October", 7))
-            || (len == 8 && 0 == strncasecmp(word, "November", 8))
-            || (len == 8 && 0 == strncasecmp(word, "December", 8))
-            || (len == 6 && 0 == strncasecmp(word, "Monday", 6))
-            || (len == 7 && 0 == strncasecmp(word, "Tuesday", 7))
-            || (len == 9 && 0 == strncasecmp(word, "Wednesday", 9))
-            || (len == 8 && 0 == strncasecmp(word, "Thursday", 8))
-            || (len == 6 && 0 == strncasecmp(word, "Friday", 6))
-            || (len == 8 && 0 == strncasecmp(word, "Saturday", 8))
-            || (len == 6 && 0 == strncasecmp(word, "Sunday", 6));
-    };
-
-    /// Fast path for the canonical 'YYYY-MM-DD hh:mm:ss' / 'YYYY-MM-DD' layout (what toString(DateTime/DateTime64)
-    /// emits). Reads the fixed-offset fields directly, then falls through to the general loop below for any
-    /// optional fractional/timezone tail and to the shared finalization. It is a strict subset of the general
-    /// parser: it only engages when the token matches exactly and ends cleanly, otherwise the general loop runs.
-    ///
-    /// Prime the working buffer before reading position()/buffer().end(): an unprimed ReadBuffer has a
-    /// null/empty buffer, so `s + date_length` would be pointer arithmetic on null. eof() is cheap on the
-    /// hot path (ReadBufferFromMemory is already primed and returns false without refilling).
-    if (!in.eof())
-    {
-        const char * const s = in.position();
-        const char * const buffer_end = in.buffer().end();
-        static constexpr size_t date_length = 10;       /// YYYY-MM-DD
-        static constexpr size_t date_time_length = 19;  /// YYYY-MM-DD hh:mm:ss
-
-        /// Gate every fixed-offset access on the available byte count. `s + date_length` would form an
-        /// out-of-range pointer (undefined behavior) when the working buffer holds fewer than date_length
-        /// bytes, e.g. a one-byte value like '1'. `buffer_end - s` is an in-bounds subtraction (both point
-        /// into the primed working buffer) and is non-negative since position() never passes buffer().end().
-        const size_t available = static_cast<size_t>(buffer_end - s);
-
-        auto is_two_digits = [](const char * p) { return isNumericASCII(p[0]) && isNumericASCII(p[1]); };
-
-        const bool date_matches =
-            available >= date_length
-            && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
-            && s[4] == '-' && is_two_digits(s + 5)
-            && s[7] == '-' && is_two_digits(s + 8)
-            && isSymbolIn('-', allowed_date_delimiters);
-
-        if (date_matches)
-        {
-            const bool time_matches =
-                available >= date_time_length
-                && (s[10] == ' ' || s[10] == 'T')
-                && is_two_digits(s + 11) && s[13] == ':'
-                && is_two_digits(s + 14) && s[16] == ':'
-                && is_two_digits(s + 17);
-
-            const size_t length = time_matches ? date_time_length : date_length;
-
-            /// Capture the field values while `s` is still valid: the boundary probe below may refill the
-            /// buffer and invalidate `s`.
-            const UInt16 fp_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-            const UInt8 fp_month = (s[5] - '0') * 10 + (s[6] - '0');
-            const UInt8 fp_day = (s[8] - '0') * 10 + (s[9] - '0');
-            UInt8 fp_hour = 0;
-            UInt8 fp_minute = 0;
-            UInt8 fp_second = 0;
-            if (time_matches)
-            {
-                fp_hour = (s[11] - '0') * 10 + (s[12] - '0');
-                fp_minute = (s[14] - '0') * 10 + (s[15] - '0');
-                fp_second = (s[17] - '0') * 10 + (s[18] - '0');
-            }
-
-            const char * const next = s + length;
-            bool engage = true;
-
-            if (next < buffer_end)
-            {
-                /// The byte after the prefix is known. Defer to the general parser if it extends the last field
-                /// (a digit) or, after a date-only match, starts an uncovered time part (' '/'T').
-                if (isNumericASCII(*next) || (!time_matches && (*next == ' ' || *next == 'T')))
-                    engage = false;
-            }
-            else
-            {
-                /// next == buffer_end: the follower byte is in the next ReadBuffer chunk (or this is true EOF).
-                /// Advance and refill via eof() to inspect it. A digit is an over-long field, which the general
-                /// parser also rejects. A refill cannot be rewound, so instead of deferring we commit the
-                /// captured fields and continue - that reaches the same state the general parser would here.
-                in.position() += length;
-                if (!in.eof() && isNumericASCII(*in.position()))
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected digit after the canonical date/time prefix");
-            }
-
-            if (engage)
-            {
-                year = fp_year;
-                month = fp_month;
-                day_of_month = fp_day;
-                if (time_matches)
-                {
-                    hour = fp_hour;
-                    minute = fp_minute;
-                    second = fp_second;
-                    has_time = true;
-                }
-                /// The boundary branch already advanced to buffer_end (and any refill kept the position there).
-                if (next < buffer_end)
-                    in.position() += length;
-            }
-        }
-    }
-
     while (!in.eof())
     {
         if ((year && !has_time) || (!year && has_time))
@@ -293,12 +173,6 @@ ReturnType parseDateTimeBestEffortImpl(
         {
             num_digits = readDigits(digits, sizeof(digits), in);
 
-            /// Unix timestamps with subsecond precision are matched on exact digit count, assuming a 10-digit
-            /// seconds part (timestamps on/after 2001-09-09 01:46:40 UTC). This keeps parsing unambiguous.
-            /// Without it, a 9-digit input could be a pre-2001 second timestamp or a microsecond timestamp from
-            /// 1970. The trade-off is that pre-2001 subsecond timestamps (12-digit ms, 15-digit us, 18-digit ns)
-            /// are rejected here; resolving that would require make this function aware of `scale` argument so we could
-            /// split from the right instead.
             if (num_digits == 13 && !year && !has_time)
             {
                 /// This is unix timestamp with millisecond.
@@ -307,38 +181,6 @@ ReturnType parseDateTimeBestEffortImpl(
                 {
                     fractional->digits = 3;
                     readDecimalNumber<3>(fractional->value, digits + 10);
-                }
-                else if constexpr (strict)
-                {
-                    /// Fractional part is not allowed.
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
-                }
-                return ReturnType(true);
-            }
-            if (num_digits == 16 && !year && !has_time)
-            {
-                /// This is unix timestamp with microsecond.
-                readDecimalNumber<10>(res, digits);
-                if (fractional)
-                {
-                    fractional->digits = 6;
-                    readDecimalNumber<6>(fractional->value, digits + 10);
-                }
-                else if constexpr (strict)
-                {
-                    /// Fractional part is not allowed.
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
-                }
-                return ReturnType(true);
-            }
-            if (num_digits == 19 && !year && !has_time)
-            {
-                /// This is unix timestamp with nanosecond.
-                readDecimalNumber<10>(res, digits);
-                if (fractional)
-                {
-                    fractional->digits = 9;
-                    readDecimalNumber<9>(fractional->value, digits + 10);
                 }
                 else if constexpr (strict)
                 {
@@ -610,14 +452,6 @@ ReturnType parseDateTimeBestEffortImpl(
                                     ErrorCodes::CANNOT_PARSE_DATETIME,
                                     "Cannot read DateTime: alphabetical characters after day of month don't look like month: {}",
                                     std::string(alpha, 3));
-
-                            /// If there are still more alphabetical characters, the word is longer than any known month name.
-                            if (!in.eof() && isAlphaASCII(*in.position()))
-                                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
-
-                            /// If the word is longer than 3 characters, validate that it is a known full month name.
-                            if (num_alpha > 3 && !is_valid_month_or_weekday_name(alpha, num_alpha))
-                                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
                         }
                         else
                             return on_error(
@@ -875,7 +709,27 @@ ReturnType parseDateTimeBestEffortImpl(
                         memcpy(full_word + 3, rest, num_rest);
                         size_t full_len = 3 + num_rest;
 
-                        if (!is_valid_month_or_weekday_name(full_word, full_len))
+                        bool is_valid_name
+                            = (full_len == 7 && 0 == strncasecmp(full_word, "January", 7))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "February", 8))
+                            || (full_len == 5 && 0 == strncasecmp(full_word, "March", 5))
+                            || (full_len == 5 && 0 == strncasecmp(full_word, "April", 5))
+                            || (full_len == 4 && 0 == strncasecmp(full_word, "June", 4))
+                            || (full_len == 4 && 0 == strncasecmp(full_word, "July", 4))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "August", 6))
+                            || (full_len == 9 && 0 == strncasecmp(full_word, "September", 9))
+                            || (full_len == 7 && 0 == strncasecmp(full_word, "October", 7))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "November", 8))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "December", 8))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "Monday", 6))
+                            || (full_len == 7 && 0 == strncasecmp(full_word, "Tuesday", 7))
+                            || (full_len == 9 && 0 == strncasecmp(full_word, "Wednesday", 9))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "Thursday", 8))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "Friday", 6))
+                            || (full_len == 8 && 0 == strncasecmp(full_word, "Saturday", 8))
+                            || (full_len == 6 && 0 == strncasecmp(full_word, "Sunday", 6));
+
+                        if (!is_valid_name)
                             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
                     }
 
@@ -1037,7 +891,7 @@ ReturnType parseDateTimeBestEffortImpl(
 template <typename ReturnType, bool is_us_style, bool strict = false>
 ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, const char * allowed_date_delimiters = nullptr)
 {
-    time_t whole = 0;
+    time_t whole;
     DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
 
     if constexpr (std::is_same_v<ReturnType, bool>)

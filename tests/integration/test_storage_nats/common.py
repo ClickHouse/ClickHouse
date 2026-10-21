@@ -116,6 +116,33 @@ def count_in_recent_log(instance, pattern, look_behind_lines = 10000):
     )
     return int(result.strip() or 0)
 
+def log_line_count(instance):
+    # Absolute line count of the whole log, to be used as an anchor for `count_in_log_after`.
+    result = instance.exec_in_container(
+        ["bash", "-c", "wc -l < /var/log/clickhouse-server/clickhouse-server.log"]
+    )
+    return int(result.strip() or 0)
+
+def count_in_log_after(instance, pattern, after_line):
+    # Counts matches strictly after an absolute line offset, so a count of zero really means "no
+    # such line was written since the anchor". Unlike `count_in_recent_log`, which looks at a
+    # fixed-size tail, this cannot lose an older match as the log grows.
+    #
+    # An absolute offset only goes stale if the log rotates between the anchor and the count. The
+    # integration config rotates at 1000M keeping 10 files
+    # (`helpers/0_common_instance_config.xml`), which is hours away at these tests' log rate, and
+    # callers assert the log has not shrunk below the anchor so a rotation fails loudly.
+    result = instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tail -n +{} /var/log/clickhouse-server/clickhouse-server.log | grep -Ec {} || true".format(
+                after_line + 1, shlex.quote(pattern)
+            ),
+        ]
+    )
+    return int(result.strip() or 0)
+
 def check_table_is_ready(instance, table_name):
     try:
         instance.query("SELECT * FROM {}".format(table_name))

@@ -89,28 +89,7 @@ public:
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
-    /// Forward the size guard onto the nested table that `dropInnerTableIfAny` will
-    /// actually drop, so `CREATE OR REPLACE` cannot delete an over-limit nested table
-    /// that plain `DROP TABLE` would refuse.
-    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
-
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
-
-    /// The read is delegated to the nested `ReplacingMergeTree` (see `read`), which receives the very same
-    /// `SelectQueryInfo`, so the wrapper must advertise the capabilities and the statistics of the nested
-    /// table instead of the `IStorage` defaults. Otherwise a query over the wrapper - directly or through
-    /// `Merge` - silently loses `PREWHERE`, the optimization to subcolumns and the size estimates.
-    bool supportsPrewhere() const override;
-    bool canMoveConditionsToPrewhere() const override;
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
-    bool supportsSubcolumns() const override;
-    bool supportsOptimizationToSubcolumns() const override;
-
-    ColumnSizeByName getColumnSizes() const override;
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
-
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -121,15 +100,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    /// Back up / restore the data of the underlying nested ReplacingMergeTree table.
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-
-    /// `backupData` delegates to the nested ReplacingMergeTree, which supports per-partition backups, so mirror
-    /// its capability here. Otherwise `BackupEntriesCollector` would reject `BACKUP TABLE ... PARTITIONS` before
-    /// the delegation can run, because `IStorage::supportsBackupPartition` defaults to `false`.
-    bool supportsBackupPartition() const override;
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
@@ -161,11 +131,6 @@ public:
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
-
-    /// NOTE: `supportsTrivialCountOptimization` is deliberately not forwarded to the nested table. The nested
-    /// `ReplacingMergeTree` still holds the deleted rows (`_sign = 0`) and the superseded versions of the
-    /// updated rows, and `read` filters them out with `FINAL` and a `_sign = 1` filter, so counting the parts
-    /// of the nested table would report more rows than a read returns.
 
 private:
     static boost::intrusive_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(

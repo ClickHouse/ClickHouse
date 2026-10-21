@@ -39,7 +39,7 @@ void PeekableWriteBuffer::nextImpl()
 
 void PeekableWriteBuffer::dropCheckpoint()
 {
-    chassert(checkpoint);
+    assert(checkpoint);
     checkpoint = std::nullopt;
 
     /// If we have saved data in own memory, write it to sub-buf.
@@ -67,7 +67,7 @@ void PeekableWriteBuffer::dropCheckpoint()
 
 void PeekableWriteBuffer::rollbackToCheckpoint(bool drop)
 {
-    chassert(checkpoint);
+    assert(checkpoint);
 
     /// Just ignore all data written after checkpoint.
     if (write_to_own_memory)

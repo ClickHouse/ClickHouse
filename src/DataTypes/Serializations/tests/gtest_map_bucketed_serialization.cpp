@@ -92,6 +92,7 @@ ColumnPtr deserializeRange(
     std::map<String, std::unique_ptr<ReadBufferFromString>> buffers;
 
     ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.read_statistics = true;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         auto name = ISerialization::getSubcolumnNameForStream(path);

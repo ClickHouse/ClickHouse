@@ -9,12 +9,8 @@ namespace DB
 
 class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
 {
-private:
-    explicit SerializationDateTime(const TimezoneMixin & time_zone_);
-
 public:
-    static UInt128 getHash(const TimezoneMixin & time_zone_);
-    static SerializationPtr create(const TimezoneMixin & time_zone_);
+    explicit SerializationDateTime(const TimezoneMixin & time_zone_);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -31,17 +27,12 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 };
 
 class SerializationTime final : public SerializationNumber<Int32>
 {
-private:
-    explicit SerializationTime(const DataTypeTime & /*time_type*/);
-
 public:
-    static UInt128 getHash(const DataTypeTime & time_type);
-    static SerializationPtr create(const DataTypeTime & time_type);
+    explicit SerializationTime(const DataTypeTime & /*time_type*/);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -58,9 +49,7 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-
-    /// Hive has no Time type, so the HiveText output format does not support it (throws NOT_IMPLEMENTED).
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 };
 
 }
+

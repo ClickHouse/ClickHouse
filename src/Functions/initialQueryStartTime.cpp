@@ -2,12 +2,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
 namespace DB
 {
-class FunctionInitialQueryStartTime final : public IFunction
+class FunctionInitialQueryStartTime : public IFunction
 {
     const time_t initial_query_start_time;
 public:

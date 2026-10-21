@@ -7,8 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SYNC_USER="${CLICKHOUSE_DATABASE}_sync_user"
 ASYNC_USER="${CLICKHOUSE_DATABASE}_async_user"
 
-# Pin the busy wait: the test checks which inserts end up asynchronous, not how long they are batched.
-${CLICKHOUSE_CLIENT} --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_ms 1 --multiquery <<EOF
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS source_table, target_table, target_table_remote_sync, target_table_remote_async, async_insert_mv, sync_insert_mv;
 DROP USER IF EXISTS ${SYNC_USER}, ${ASYNC_USER};
 

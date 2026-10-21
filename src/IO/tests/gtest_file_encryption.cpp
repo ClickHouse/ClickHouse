@@ -134,14 +134,14 @@ TEST_P(FileEncryptionCipherTest, Decryption)
     encryptor.setOffset(base_offset);
     for (size_t i = 0; i < expected.size(); ++i)
     {
-        char c = {};
+        char c;
         encryptor.decrypt(&input[i], 1, &c);
         ASSERT_EQ(expected[i], c);
     }
 
     for (size_t i = 0; i < expected.size(); ++i)
     {
-        char c = {};
+        char c;
         encryptor.setOffset(base_offset + i);
         encryptor.decrypt(&input[i], 1, &c);
         ASSERT_EQ(expected[i], c);

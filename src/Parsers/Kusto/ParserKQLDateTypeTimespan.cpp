@@ -129,9 +129,13 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
     }
     else if (*(ptr + number_len) == '\0')
     {
-        /// A plain number without any suffix or colon is NOT a timespan literal.
-        /// In KQL, a timespan must have a suffix (d, h, m, s, ms, etc.) or colon format (d.hh:mm:ss).
-        return false;
+        if (sign)
+            time_span = -(std::stoi(String(ptr, ptr + number_len))) * 86400;
+        else
+            time_span = std::stoi(String(ptr, ptr + number_len)) * 86400;
+
+        time_span_unit = KQLTimespanUint::second;
+        return true;
     }
     else
     {

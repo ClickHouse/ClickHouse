@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -179,8 +181,13 @@ try
     addOptionsToTheClientConfiguration(options);
 
     /// Apply settings specified as command line arguments (read environment variables).
+    /// Apply only the changed settings and check them against the constraints: replacing the whole
+    /// `Settings` would drop what the session context got from the user's profiles and roles
+    /// (e.g. `readonly`, resource limits, `additional_table_filters`).
     global_context = session->sessionContext();
-    global_context->setSettings(*cmd_settings);
+    SettingsChanges cmd_settings_changes = cmd_settings->changes();
+    global_context->checkSettingsConstraints(cmd_settings_changes, SettingSource::QUERY);
+    global_context->applySettingsChanges(cmd_settings_changes);
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:
@@ -191,10 +198,9 @@ try
     delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
     {
+        echo_queries = getClientConfiguration().getBool("echo", false);
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
-
-    setupEchoAndHighlightSettings();
 
     load_suggestions = true;
     wait_for_suggestions_to_load = true;
@@ -202,7 +208,7 @@ try
     prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
-    enable_highlight = ConfigHelper::getBool(getClientConfiguration(), "highlight", true);
+    enable_highlight = getClientConfiguration().getBool("highlight", true);
     multiline = getClientConfiguration().has("multiline");
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     default_database = getClientConfiguration().getString("database", "");
@@ -259,3 +265,5 @@ catch (...)
 }
 
 }
+
+#endif

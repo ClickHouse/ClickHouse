@@ -4,8 +4,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -13,11 +11,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -28,25 +21,6 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTLiteral::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "Literal");
-    w.writeFieldValue("value", value);
-    w.writeAlias(*this);
-}
-
-void ASTLiteral::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-    /// A `Literal` always requires an explicit `value` key (a NULL literal is written
-    /// with an explicit `value`), so reject input that omits it instead of silently
-    /// deserializing as a NULL literal, which the SQL parser cannot produce.
-    if (!r.has("value"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'value' key for Literal during AST JSON deserialization");
-    value = r.readField("value");
-    r.readAlias(*this);
-}
-
 String ASTLiteral::getID(char delim) const
 {
     return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
@@ -54,7 +28,6 @@ String ASTLiteral::getID(char delim) const
 
 ASTPtr ASTLiteral::clone() const
 {
-    /// The copy constructor clears the token-info bit - see `ASTLiteral(const ASTLiteral &)`.
     auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
@@ -114,8 +87,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low = 0;
-        UInt64 high = 0;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -151,8 +124,8 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low = 0;
-        UInt64 high = 0;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);
@@ -167,7 +140,13 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
 }
 
-/// Use different rules for escaping backslashes and quotes
+/// Use different rules for escaping backslashes and quotes.
+///
+/// Container literals (`Array`/`Tuple`/`Map`/`Object`) are handled explicitly so that the visitor
+/// recurses into itself. Delegating them to the embedded `FieldVisitorToString` would escape the
+/// nested strings -- the elements of an `IN` tuple, for instance -- with the default backslash
+/// rules, and `\'` does not escape a quote under PostgreSQL's default `standard_conforming_strings`,
+/// so an embedded `'` would terminate the literal.
 class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
 {
 public:
@@ -178,12 +157,95 @@ private:
     FieldVisitorToString visitor;
 };
 
+/// Forward declarations of the explicit specializations so that the container overloads below can
+/// recurse into each other (e.g. a Tuple element that is itself a String or a nested Tuple)
+/// regardless of definition order.
+template<> String FieldVisitorToStringPostgreSQL::operator() (const String & x) const;
+template<> String FieldVisitorToStringPostgreSQL::operator() (const Array & x) const;
+template<> String FieldVisitorToStringPostgreSQL::operator() (const Tuple & x) const;
+template<> String FieldVisitorToStringPostgreSQL::operator() (const Map & x) const;
+template<> String FieldVisitorToStringPostgreSQL::operator() (const Object & x) const;
+
 template<>
 String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 {
     WriteBufferFromOwnString wb;
-    writeQuotedStringPostgreSQL(x, wb);
+    /// Lossless: emits the `E'...'` form when needed, so the value survives on every
+    /// `standard_conforming_strings` setting. A plain `'...'` literal only doubles the quote and
+    /// leaves backslashes alone, which breaks out when the server has the setting off -- there a
+    /// `\` directly before the doubled quote consumes the first one and the second terminates the
+    /// literal.
+    writeQuotedStringPostgreSQLLossless(x, wb);
     return wb.str();
+}
+
+template<>
+String FieldVisitorToStringPostgreSQL::operator() (const Array & x) const
+{
+    checkStackSize();
+    WriteBufferFromOwnString wb;
+
+    wb << '[';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+
+    return wb.str();
+}
+
+template<>
+String FieldVisitorToStringPostgreSQL::operator() (const Tuple & x) const
+{
+    checkStackSize();
+    WriteBufferFromOwnString wb;
+
+    /// For single-element tuples we must use the explicit tuple() function,
+    /// or they will be parsed back as plain literals.
+    if (x.size() > 1)
+        wb << '(';
+    else
+        wb << "tuple(";
+
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
+}
+
+template<>
+String FieldVisitorToStringPostgreSQL::operator() (const Map & x) const
+{
+    checkStackSize();
+    WriteBufferFromOwnString wb;
+
+    wb << '[';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+
+    return wb.str();
+}
+
+template<>
+String FieldVisitorToStringPostgreSQL::operator() (const Object & x) const
+{
+    checkStackSize();
+    /// Like `FieldVisitorToString`, an Object is written as a String containing valid JSON, but the
+    /// string itself has to be quoted with the PostgreSQL rules.
+    return (*this)(convertObjectToString(x));
 }
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

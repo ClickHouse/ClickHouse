@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/DequeWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -42,7 +41,7 @@ public:
         size_t buf_size_,
         const S3::S3RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
-        std::optional<ObjectAttributes> object_metadata_ = std::nullopt,
+        std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
@@ -72,7 +71,7 @@ private:
     void writePart(PartData && data);
     void writeMultipartUpload();
     void createMultipartUpload();
-    bool completeMultipartUpload();
+    void completeMultipartUpload();
     void abortMultipartUpload();
     void tryToAbortMultipartUpload() noexcept;
 
@@ -87,7 +86,7 @@ private:
     const S3::S3RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
-    const std::optional<ObjectAttributes> object_metadata;
+    const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
@@ -96,8 +95,8 @@ private:
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
-    DequeWithMemoryTracking<String> multipart_tags;
-    DequeWithMemoryTracking<String> multipart_checksums; // if enabled
+    std::deque<String> multipart_tags;
+    std::deque<String> multipart_checksums; // if enabled
     bool multipart_upload_finished = false;
 
     /// Track that prefinalize() is called only once
@@ -107,7 +106,7 @@ private:
     /// There are two ways after:
     /// First is to call prefinalize/finalize, which leads to single part upload
     /// Second is to write more data, which leads to multi part upload
-    DequeWithMemoryTracking<PartData> detached_part_data;
+    std::deque<PartData> detached_part_data;
     char fake_buffer_when_prefinalized[1] = {};
 
     /// offset() and count() are unstable inside nextImpl

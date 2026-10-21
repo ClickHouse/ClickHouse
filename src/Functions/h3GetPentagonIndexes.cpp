@@ -9,7 +9,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -27,7 +26,7 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 namespace
 {
 
-class FunctionH3GetPentagonIndexes final : public IFunction
+class FunctionH3GetPentagonIndexes : public IFunction
 {
 public:
     static constexpr auto name = "h3GetPentagonIndexes";
@@ -76,7 +75,7 @@ public:
         result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
-        VectorWithMemoryTracking<H3Index> hindex_vec;
+        std::vector<H3Index> hindex_vec;
         result_data.reserve(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)

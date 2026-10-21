@@ -109,6 +109,9 @@ struct QueryState
     /// Data was read.
     bool read_all_data = true;
 
+    /// A state got uuids to exclude from a query
+    std::optional<std::vector<UUID>> part_uuids_to_ignore;
+
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
     /// temporary place for incoming data block for input()
@@ -118,6 +121,10 @@ struct QueryState
 
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
+    /// Whether the input is positioned at the start of a packet. Cleared before the packet type is
+    /// read and set again once the packet is fully consumed, so any throw in between leaves it
+    /// cleared. Input starting mid-packet can only be discarded with the connection.
+    bool at_packet_boundary = true;
     bool query_duration_already_logged = false;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
@@ -149,11 +156,6 @@ struct QueryState
     bool isEnanbledPartialResultOnFirstCancel() const;
 };
 
-
-struct LastBlockInputParameters
-{
-    Protocol::Compression compression = Protocol::Compression::Disable;
-};
 
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
@@ -224,6 +226,9 @@ private:
     std::unique_ptr<Session> session;
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
+    /// A state got uuids to exclude from a query
+    std::optional<std::vector<UUID>> part_uuids_to_ignore;
+
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
     std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
@@ -255,9 +260,6 @@ private:
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
     std::shared_ptr<std::mutex> callback_mutex = std::make_shared<std::mutex>();
 
-    /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
-    LastBlockInputParameters last_block_in;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
     /// It is the name of the server that will be sent to the client.
@@ -285,22 +287,16 @@ private:
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
-
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
     void processQuery(std::shared_ptr<QueryState> & state);
+    void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
 
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
+    bool skipDataPacket(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    bool processUnexpectedData();
-    [[noreturn]] void processUnexpectedQuery();
-    [[noreturn]] void processUnexpectedHello();
-    [[noreturn]] void processUnexpectedTablesStatusRequest();
-    /// Reject the obsolete IgnoredPartUUIDs packet (allow_experimental_query_deduplication was removed).
-    [[noreturn]] void processObsoleteIgnoredPartUUIDs();
 
     /// Process INSERT query
     void startInsertQuery(QueryState & state);
@@ -317,13 +313,11 @@ private:
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
-    /// Send an exception when the connection buffers are not initialized yet
-    /// (for example, when their allocation failed because the server memory limit is reached).
-    void trySendExceptionWithoutConnectionBuffers(const Exception & e);
     void sendProgress(QueryState & state);
     static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendEndOfStream(QueryState & state);
+    void sendPartUUIDs(QueryState & state);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
     void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);

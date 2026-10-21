@@ -9,7 +9,6 @@
 
 
 #include <Common/PODArray.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -35,13 +34,13 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
 */
-class FunctionEvalMLMethod final : public IFunction
+class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionEvalMLMethod>(context_);
+        return std::make_shared<FunctionEvalMLMethod>(context);
     }
     explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
     {}
@@ -100,7 +99,6 @@ public:
         return agg_function->predictValues(arguments, context);
     }
 
-private:
     ContextPtr context;
 };
 

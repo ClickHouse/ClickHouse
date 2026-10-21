@@ -1,6 +1,6 @@
-SELECT if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))
+SELECT if(number = 1, \'hello\', if(number = 2, \'world\', \'xyz\'))
 FROM numbers(10)
-SELECT if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))
+SELECT if(number = 1, \'hello\', if(number = 2, \'world\', \'xyz\'))
 FROM numbers(10)
 \N
 \N

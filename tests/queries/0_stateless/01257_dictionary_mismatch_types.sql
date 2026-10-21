@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-parallel
 
 DROP DATABASE IF EXISTS test_dict_db;
 CREATE DATABASE test_dict_db;

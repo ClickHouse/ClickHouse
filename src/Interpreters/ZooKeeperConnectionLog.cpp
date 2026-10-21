@@ -116,8 +116,7 @@ void ZooKeeperConnectionLog::addWithEventType(
     const zkutil::ZooKeeper & zookeeper,
     const std::string_view reason)
 {
-    add([&](ZooKeeperConnectionLogElement & element)
-    {
+    ZooKeeperConnectionLogElement element;
     element.event_type = type;
 
     std::chrono::time_point<std::chrono::system_clock> current_time = std::chrono::system_clock::now();
@@ -141,6 +140,7 @@ void ZooKeeperConnectionLog::addWithEventType(
     element.enabled_feature_flags = getEnabledFeatureFlags(zookeeper);
     element.availability_zone = zookeeper.getConnectedHostAvailabilityZone();
     element.reason = reason;
-    });
+
+    add(std::move(element));
 }
 }

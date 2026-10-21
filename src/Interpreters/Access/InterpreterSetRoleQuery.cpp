@@ -5,13 +5,20 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 readonly;
+}
+
 namespace ErrorCodes
 {
+    extern const int READONLY;
     extern const int SET_NON_GRANTED_ROLE;
 }
 
@@ -30,6 +37,15 @@ BlockIO InterpreterSetRoleQuery::execute()
 void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 {
     auto session_context = getContext()->getSessionContext();
+
+    /// `readonly` is read from the query context: a client `--readonly 1` raises it there only, while a
+    /// mid-session `SET readonly = 1` also reaches it because a query context inherits session settings.
+    if (getContext()->getAccessControl().doesReadonlyRestrictSetRole()
+        && getContext()->getSettingsRef()[Setting::readonly])
+        throw Exception(
+            ErrorCodes::READONLY,
+            "Cannot execute SET ROLE in readonly mode. "
+            "This restriction is enabled by access_control_improvements.readonly_restricts_set_role");
 
     if (query.kind == ASTSetRoleQuery::Kind::SET_ROLE_DEFAULT)
         session_context->setCurrentRolesDefault();
@@ -70,7 +86,6 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Roles
     user.default_roles = roles_from_query;
 }
 
-void registerInterpreterSetRoleQuery(InterpreterFactory & factory);
 void registerInterpreterSetRoleQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
