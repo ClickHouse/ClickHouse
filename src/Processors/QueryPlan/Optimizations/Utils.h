@@ -136,8 +136,8 @@ const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
     bool defer_to_read_in_order);
 
 /// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
-/// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`, so rows with unequal non-zero array
-/// sizes still reach an aligned `ARRAY JOIN` and raise `SIZES_OF_ARRAYS_DONT_MATCH`.
+/// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`: an unaligned `ARRAY JOIN` drops a row only
+/// when all its arrays are empty.
 ///
 /// Must be built on the immediate input of `array_join`: joined columns are present there under
 /// the names in `array_join.getColumns()`, and constant arrays are folded by `ActionsDAG` itself.
