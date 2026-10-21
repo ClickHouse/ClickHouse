@@ -359,6 +359,7 @@ Pipe executeRemoveOrphanFiles(
         ReadBufferFromString buf(older_than_str);
         time_t ts = 0;
         readDateTimeText(ts, buf);
+        assertEOF(buf); // reject trailing characters
 
         if (ts > now)
             throw Exception(

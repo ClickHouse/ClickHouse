@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_DATETIME;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -36,6 +37,59 @@ namespace ErrorCodes
 void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_column)
 {
     column.insertFrom(sample_column, 0);
+}
+
+
+namespace
+{
+
+/// A PostgreSQL value arrives as a complete, already isolated string, so nothing may be left unread after
+/// parsing it as a date and time. Otherwise a value such as `2024 April 4` is silently truncated to the
+/// unix timestamp `2024` with the rest of the string thrown away.
+///
+/// The tolerated leftovers are the fractional seconds and the UTC offset that PostgreSQL renders for
+/// `timestamp` and `timestamp with time zone` (`2025-01-02 03:04:05.6789+00`, also `+03:30` or `-08`).
+/// A plain `DateTime` has no place for subsecond precision, so `readDateTimeText` stops in front of the
+/// dot and the fraction is dropped here; the offset is not applied either - the value is interpreted in
+/// the time zone of the ClickHouse column, as before - but neither may be treated as garbage.
+///
+/// The offset is matched exactly as PostgreSQL renders it - two-digit hours, then optionally minutes and
+/// seconds, each separated by a colon - so that a malformed tail such as `+0:` or `+::30` is rejected
+/// rather than waved through as "digits and colons in some order".
+void assertPostgreSQLDateTimeFullyParsed(ReadBuffer & in)
+{
+    skipDateTimeFractionalSeconds(in);
+
+    if (!in.eof() && (*in.position() == '+' || *in.position() == '-'))
+    {
+        ++in.position();
+
+        auto read_two_digit_group = [&in]
+        {
+            UInt8 group_value = 0;
+            for (size_t i = 0; i < 2; ++i)
+            {
+                if (in.eof() || !isNumericASCII(*in.position()))
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the time zone offset of a date and time value");
+                group_value = static_cast<UInt8>(group_value * 10 + (*in.position() - '0'));
+                ++in.position();
+            }
+            return group_value;
+        };
+
+        read_two_digit_group();
+        /// Minutes and seconds of the offset: PostgreSQL never renders a value of 60 or more there.
+        for (size_t group = 0; group < 2 && !in.eof() && *in.position() == ':'; ++group)
+        {
+            ++in.position();
+            if (read_two_digit_group() >= 60)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid minutes or seconds in the time zone offset of a date and time value");
+        }
+    }
+
+    assertEOF(in);
+}
+
 }
 
 
@@ -122,6 +176,7 @@ try
             ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             time = std::max<time_t>(time, 0);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
@@ -134,6 +189,7 @@ try
             /// (a `timestamp(p)` carries its precision), and the stored value is in units of 10^-scale.
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
             readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -294,6 +350,7 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             time = std::max<time_t>(time, 0);
             return time;
         };
@@ -307,6 +364,7 @@ void preparePostgreSQLArrayInfo(
             /// units of 10^-scale.
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*nested);
             readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
+            assertPostgreSQLDateTimeFullyParsed(in);
             /// No non-negative clamp here: unlike 32-bit `DateTime`, `DateTime64` has a valid
             /// pre-epoch range, so negative values must be preserved (same as the scalar parser).
             return time;
