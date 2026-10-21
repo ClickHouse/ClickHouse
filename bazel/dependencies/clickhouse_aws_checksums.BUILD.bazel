@@ -69,6 +69,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "@clickhouse_llvm_project//:libcxxabi_headers",
             ":aws_checksums",
+            "@clickhouse_aws_c_common//:aws_c_common",
         ],
     }),
     language = "C",

@@ -161,6 +161,8 @@ ch_cc_library(
         ":_curl_hostcheck",
         ":_hdr_histogram",
         ":_http-parser",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
     ],
     includes = [
         "include",

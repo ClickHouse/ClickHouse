@@ -38,12 +38,21 @@ ch_cc_library(
         "src/common/cuda_stream_pool.h",
     ]),
     hdrs = glob(["include/**/*.h"]),
+    private_hdrs = [
+        "src/metric/elementwise_metric.cu",
+        "src/metric/multiclass_metric.cu",
+        "src/metric/survival_metric.cu",
+        "src/objective/aft_obj.cu",
+        "src/objective/hinge.cu",
+        "src/objective/multiclass_obj.cu",
+        "src/objective/quantile_obj.cu",
+        "src/objective/regression_obj.cu",
+    ],
     additional_compiler_inputs = glob([
         "plugin/federated/*.cc",
         "plugin/federated/*.cu",
         "plugin/federated/*.cuh",
         "plugin/sycl/**/*.cc",
-        "src/**/*.cu",
         "src/**/*.cuh",
     ]) + [
         "plugin/federated/README.md",
