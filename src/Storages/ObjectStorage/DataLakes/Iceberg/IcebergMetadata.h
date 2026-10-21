@@ -261,6 +261,7 @@ private:
     void alterPartitionDropImpl(
         const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id);
 };
+
 }
 
 #endif
