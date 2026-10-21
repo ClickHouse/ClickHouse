@@ -56,6 +56,7 @@ namespace Setting
 {
 
 extern const SettingsBool enable_multiple_prewhere_read_steps;
+extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsBool use_query_condition_cache;
 extern const SettingsBool use_query_condition_cache_for_top_k;
 
@@ -1287,11 +1288,23 @@ Pipe ReadFromMemoryStorageStep::makePipe()
         /// set for IN or hash table for JOIN, which can't be done concurrently.
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
         ///
-        /// A materialized CTE feeds the rest of the query, so it is read with `num_streams` sources
-        /// that share one block index. A CTE with ORDER BY keeps one source to return its rows in order.
+        /// A materialized CTE feeds the rest of the query, so it is read with up to `num_streams` sources
+        /// that share one block index, one per estimated block. A CTE with ORDER BY at any level keeps
+        /// one source to return its rows in order.
         auto materialized_cte = typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE();
+        size_t num_sources = 1;
+        if (materialized_cte && !materialized_cte->has_order_by)
+        {
+            num_sources = num_streams;
+            if (materialized_cte->estimated_rows)
+            {
+                UInt64 max_block_size = context->getSettingsRef()[Setting::max_block_size];
+                UInt64 estimated_blocks = (*materialized_cte->estimated_rows + max_block_size - 1) / max_block_size;
+                num_sources = std::min<UInt64>(num_sources, std::max<UInt64>(1, estimated_blocks));
+            }
+        }
         auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
-        Pipes pipes(materialized_cte && !materialized_cte->has_order_by ? num_streams : 1);
+        Pipes pipes(num_sources);
         for (auto & pipe : pipes)
             pipe = Pipe(std::make_shared<MemorySource>(
                 physical_columns,

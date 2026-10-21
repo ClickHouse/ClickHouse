@@ -26,3 +26,34 @@ SELECT trimLeft(explain) FROM (
 -- A sorted CTE is read with one source, so its rows keep their order.
 WITH t AS MATERIALIZED (SELECT number AS n FROM numbers_mt(100000) ORDER BY n DESC SETTINGS max_block_size = 1000)
 SELECT groupArray(n) = arrayReverseSort(groupArray(n)) FROM (SELECT n FROM t WHERE n IN (SELECT n FROM t));
+
+-- A sorted subquery inside the CTE also keeps one source.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN PIPELINE
+    WITH t AS MATERIALIZED (SELECT n FROM (SELECT number AS n FROM numbers(1000) ORDER BY n DESC))
+    SELECT count() FROM t WHERE n IN (SELECT n FROM t)
+) WHERE explain LIKE '%AggregatingTransform%';
+
+WITH t AS MATERIALIZED (SELECT n FROM (SELECT number AS n FROM numbers_mt(100000) ORDER BY n DESC) SETTINGS max_block_size = 1000)
+SELECT groupArray(n) = arrayReverseSort(groupArray(n)) FROM (SELECT n FROM t WHERE n IN (SELECT n FROM t));
+
+-- A CTE that reads a sorted CTE keeps one source.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN PIPELINE
+    WITH a AS MATERIALIZED (SELECT number AS n FROM numbers(1000) ORDER BY n DESC),
+         b AS MATERIALIZED (SELECT n FROM a)
+    SELECT count() FROM b WHERE n IN (SELECT n FROM b) AND n IN (SELECT n FROM a)
+) WHERE explain LIKE '%AggregatingTransform%';
+
+-- A CTE estimated to fit in one block is read with one source.
+DROP TABLE IF EXISTS small;
+CREATE TABLE small (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO small SELECT number FROM numbers(10);
+
+SELECT trimLeft(explain) FROM (
+    EXPLAIN PIPELINE
+    WITH t AS MATERIALIZED (SELECT n FROM small)
+    SELECT count() FROM t WHERE n IN (SELECT n FROM t)
+) WHERE explain LIKE '%AggregatingTransform%';
+
+DROP TABLE small;

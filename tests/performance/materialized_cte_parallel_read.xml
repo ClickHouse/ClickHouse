@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <enable_materialized_cte>1</enable_materialized_cte>
+    </settings>
+
+    <create_query>CREATE TABLE materialized_cte_small (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO materialized_cte_small SELECT number, number * 3 FROM numbers(100)</fill_query>
+
+    <!-- Each CTE is referenced twice: a CTE with one reference is inlined, not materialized. -->
+    <query tag='filter, then GROUP BY with 1M keys'>
+        WITH t AS MATERIALIZED (SELECT number % 1000003 AS k, number AS v FROM numbers_mt(100000000))
+        SELECT count(), sum(s) FROM (SELECT k, sum(v) AS s FROM t WHERE v % 3 = 0 GROUP BY k) WHERE k IN (SELECT k FROM t WHERE v % 1000 = 0)
+    </query>
+    <query tag='JOIN with 50K rows'>
+        WITH t AS MATERIALIZED (SELECT number % 1000003 AS k, number AS v FROM numbers_mt(100000000)),
+             d AS (SELECT number AS k, number % 7 AS g FROM numbers(50000))
+        SELECT g, count(), sum(v) FROM t INNER JOIN d USING (k) WHERE k IN (SELECT k FROM t WHERE v % 1000 = 0) GROUP BY g ORDER BY g
+        FORMAT Null
+    </query>
+    <query tag='LIKE filter on a String column'>
+        WITH t AS MATERIALIZED (SELECT number % 1000003 AS k, number AS v, toString(number) AS s FROM numbers_mt(100000000))
+        SELECT count(), sum(length(s)) FROM t WHERE s LIKE '%77%' AND k IN (SELECT k FROM t WHERE v % 1000 = 0)
+    </query>
+    <!-- A CTE estimated to fit in one block is read with one source, so the query does not start max_threads threads. -->
+    <query tag='small CTE'>
+        WITH t AS MATERIALIZED (SELECT k, v FROM materialized_cte_small)
+        SELECT count(), sum(v) FROM t WHERE k IN (SELECT k FROM t WHERE v % 2 = 0)
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS materialized_cte_small</drop_query>
+</test>
