@@ -96,7 +96,7 @@ struct HashJoinMatchEntry
 /// The statistics of the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`).
 struct RadixUniqExactEntry
 {
-    bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
+    [[nodiscard]] bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
     {
         auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
         return num_streams != new_entry.num_streams || differs(num_distinct, new_entry.num_distinct)
@@ -104,7 +104,7 @@ struct RadixUniqExactEntry
             || streams_ended_in_set != new_entry.streams_ended_in_set;
     }
 
-    std::string dump() const
+    [[nodiscard]] std::string dump() const
     {
         return fmt::format(
             "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}, streams_ended_in_set={}",

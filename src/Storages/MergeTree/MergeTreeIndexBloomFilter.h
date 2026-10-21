@@ -164,7 +164,7 @@ public:
     /// The filter is sized by the number of distinct values, so about half of its bits are set.
     /// It still compresses when adjacent granules have the same values, or, with several columns,
     /// when the filters of columns with fewer distinct values are mostly zeros, so the codec is chosen per block.
-    bool isCompressible() const override { return false; }
+    [[nodiscard]] bool isCompressible() const override { return false; }
 
 private:
     size_t bits_per_row;

@@ -360,7 +360,7 @@ struct IMergeTreeIndex
     /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
     /// slows down reading it. The blocks of such an index that the part's codec does not compress well
     /// are written with codec `NONE`.
-    virtual bool isCompressible() const { return true; }
+    [[nodiscard]] virtual bool isCompressible() const { return true; }
 
     [[nodiscard]] Names getColumnsRequiredForIndexCalc() const;
     [[nodiscard]] const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;

@@ -37,7 +37,7 @@ public:
     [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     /// The argument is returned as it is.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     [[nodiscard]] String getSignatureString() const override { return "(T) -> T"; }
 

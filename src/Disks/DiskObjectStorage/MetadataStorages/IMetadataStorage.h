@@ -348,7 +348,7 @@ public:
     /// background by `BlobKillerThread`, which never schedules its task for a storage that answers `false`:
     /// `plain` and `plain_rewritable` remove blobs synchronously inside the transaction and the `web`
     /// storages are read-only, so for them the task would only wake up every second to find nothing to do.
-    virtual bool hasDeadBlobsQueue() const { return true; }
+    [[nodiscard]] virtual bool hasDeadBlobsQueue() const { return true; }
 
     /// For a storage whose `hasDeadBlobsQueue` may change from `false` to `true` at runtime (a cache layer over
     /// a read-only `plain` disk, which still drains the blobs queued before a reload), `BlobKillerThread` stops
@@ -371,7 +371,7 @@ public:
     /// The same as `hasDeadBlobsQueue`, but for the queue of blobs missing in some of the cluster locations,
     /// which is drained in background by `BlobCopierThread`. Only a storage spanning several locations
     /// fills it, so every single-location storage, including `local`, answers `false`.
-    virtual bool hasMissingBlobsQueue() const { return true; }
+    [[nodiscard]] virtual bool hasMissingBlobsQueue() const { return true; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.

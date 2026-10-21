@@ -391,7 +391,7 @@ public:
         return columns;
     }
 
-    size_t getTotalByteCount() const override
+    [[nodiscard]] size_t getTotalByteCount() const override
     {
         return data ? data->getTotalByteCount() : 0;
     }

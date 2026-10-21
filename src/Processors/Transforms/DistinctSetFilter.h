@@ -144,7 +144,7 @@ public:
         virtual MutableColumns next(size_t max_rows, size_t max_bytes) = 0;
 
         /// Retained hash-table and arena memory, zero after the final key is extracted.
-        virtual size_t getTotalByteCount() const = 0;
+        [[nodiscard]] virtual size_t getTotalByteCount() const = 0;
     };
 
     /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the result

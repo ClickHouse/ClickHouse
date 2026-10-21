@@ -20,7 +20,7 @@ public:
 
     [[nodiscard]] String getName() const override { return "BroadcastReceive"; }
 
-    const String & getExchangeId() const { return exchange_id; }
+    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

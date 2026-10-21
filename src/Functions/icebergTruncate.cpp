@@ -138,7 +138,7 @@ public:
 
     [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
     {
         /// For `Int64`, `value - value mod N` of the lowest values is below the `Int64` minimum and wraps around.
         if (WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isInt64())
@@ -146,7 +146,7 @@ public:
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
