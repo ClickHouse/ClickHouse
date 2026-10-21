@@ -92,7 +92,8 @@ $CLIENT --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'uuid-named', count() FROM icebergS3(s3_conn, filename = '${P4}')
     SETTINGS optimize_trivial_count_query = 1"
 
-# Ranking by `last-updated-ms` lists every file: the `<N>-<uuid>` file committed last is selected.
+# Without `iceberg_list_only_v_prefixed_metadata_files` (also under `compatibility` 26.10) or ranking
+# by `last-updated-ms`, every file is a candidate: the `<N>-<uuid>` file committed last is selected.
 P6="${PREFIX}/by_last_updated_ms"
 copy_object "${P3}/metadata/v2.metadata.json" "${P6}/metadata/v1.metadata.json"
 copy_object "${P3}/metadata/v3.metadata.json" "${P6}/metadata/00002-${UUID_B}.metadata.json"
@@ -100,6 +101,10 @@ copy_manifests "${P6}"
 $CLIENT --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'v file only', count() FROM icebergS3(s3_conn, filename = '${P6}')
     SETTINGS optimize_trivial_count_query = 1;
+    SELECT 'all files', count() FROM icebergS3(s3_conn, filename = '${P6}')
+    SETTINGS optimize_trivial_count_query = 1, iceberg_list_only_v_prefixed_metadata_files = 0;
+    SELECT 'compatibility 26.10', count() FROM icebergS3(s3_conn, filename = '${P6}')
+    SETTINGS optimize_trivial_count_query = 1, compatibility = '26.10';
     SELECT 'by last-updated-ms', count()
     FROM icebergS3(s3_conn, filename = '${P6}', SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1)
     SETTINGS optimize_trivial_count_query = 1;"

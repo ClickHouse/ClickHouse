@@ -1500,8 +1500,8 @@ When using the `Iceberg` table engine in ClickHouse, the system needs to locate 
 
 3. **Default Search**:
 * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
-* On S3 and Azure, unless `iceberg_use_version_hint` is enabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not)
-* To rank all `.metadata.json` files of a directory written with both naming schemes, enable `iceberg_recent_metadata_file_by_last_updated_ms_field`
+* On S3 and Azure, with `iceberg_list_only_v_prefixed_metadata_files` enabled (the default) and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not)
+* To keep all `.metadata.json` files of a directory written with both naming schemes as candidates, disable the query-level setting `iceberg_list_only_v_prefixed_metadata_files` with `SET` or the query's `SETTINGS` (ranked by version number) or enable `iceberg_recent_metadata_file_by_last_updated_ms_field` (ranked by `last-updated-ms`)
 
 ### Selecting the most recent file {#most-recent-file}
 

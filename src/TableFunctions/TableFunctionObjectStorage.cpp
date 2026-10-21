@@ -1754,8 +1754,8 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
 
 3. **Default Search**:
 * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
-* On S3 and Azure, unless `iceberg_use_version_hint` is enabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not)
-* To rank all `.metadata.json` files of a directory written with both naming schemes, enable `iceberg_recent_metadata_file_by_last_updated_ms_field`
+* On S3 and Azure, with `iceberg_list_only_v_prefixed_metadata_files` enabled (the default) and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not)
+* To keep all `.metadata.json` files of a directory written with both naming schemes as candidates, disable the query-level setting `iceberg_list_only_v_prefixed_metadata_files` with `SET` or the query's `SETTINGS` (ranked by version number) or enable `iceberg_recent_metadata_file_by_last_updated_ms_field` (ranked by `last-updated-ms`)
 
 ### Selecting the Most Recent File {#most-recent-file}
 
@@ -1768,7 +1768,7 @@ After identifying candidate files using the above rules, the system determines w
 * The file with the highest version number is selected
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+**Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
