@@ -98,9 +98,6 @@ ch_cc_library(
         "absl/time/internal/cctz/include/cctz/civil_time_detail.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -446,9 +443,6 @@ ch_cc_library(
         "absl/profiling/internal/exponential_biased.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -503,9 +497,6 @@ ch_cc_library(
         "absl/flags/internal/commandlineflag.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -756,9 +747,6 @@ ch_cc_library(
         "absl/base/internal/hardening.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -830,7 +818,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":absl_bits",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -869,9 +856,6 @@ ch_cc_library(
         "absl/debugging/leak_check.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -1124,9 +1108,6 @@ ch_cc_library(
         "absl/log/internal/nullguard.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -1178,9 +1159,6 @@ ch_cc_library(
         "absl/base/log_severity.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -1342,9 +1320,6 @@ ch_cc_library(
         "absl/random/internal/randen_traits.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -1464,7 +1439,6 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":absl_raw_logging_internal",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -1598,9 +1572,6 @@ ch_cc_library(
         "absl/base/internal/spinlock_wait.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -1742,9 +1713,6 @@ ch_cc_library(
         "absl/base/internal/strerror.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_base_config",
@@ -1992,9 +1960,6 @@ ch_cc_library(
         "absl/time/internal/cctz/include/cctz/zone_info_source.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_civil_time",
