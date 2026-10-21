@@ -43,6 +43,10 @@ void updateJoinKeyDistinctCounts(
     JoinKind kind,
     JoinStrictness strictness);
 
+/// Converts a row or distinct-value estimate to `UInt64`. Estimates can exceed the `UInt64` range (a cross
+/// product of large inputs), so the result saturates at the maximum; NaN and non-positive values give 0.
+UInt64 toUInt64Saturating(Float64 estimate);
+
 }
 
 }

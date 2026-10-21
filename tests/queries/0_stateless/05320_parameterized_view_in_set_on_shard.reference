@@ -1,0 +1,29 @@
+-- { echoOn }
+SELECT countIf(number IN (SELECT x FROM pv(p = 0))) FROM dist;
+2
+SELECT countIf(number NOT IN (SELECT x FROM pv(p = 0))) FROM dist;
+6
+SELECT number IN (SELECT x FROM pv(p = 0)) AS k, count() FROM dist GROUP BY k ORDER BY k;
+0	6
+1	2
+SELECT number, number IN (SELECT x FROM pv(p = 0)) FROM dist ORDER BY number;
+0	0
+0	0
+1	0
+1	0
+2	1
+2	1
+3	0
+3	0
+SELECT countIf(number IN (SELECT x FROM pv(p = 0))) FROM remote('127.0.0.{1,2}', currentDatabase(), data);
+2
+SELECT countIf(number IN (SELECT x FROM pv(p = 0))) FROM dist SETTINGS serialize_query_plan = 1;
+2
+SELECT countIf(number IN (SELECT x FROM pv(p = 0))), countIf(number IN (SELECT x FROM pv(p = 3))) FROM dist;
+2	0
+SELECT countIf(number IN (SELECT x FROM pv(p = 0))) FROM data SETTINGS enable_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0, log_comment = '05320_parallel_replicas',
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3,
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0;
+1
+1

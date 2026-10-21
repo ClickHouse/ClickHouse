@@ -531,7 +531,7 @@ WHERE current_database = currentDatabase()
   AND query_id = initial_query_id -- only the statements issued here: a Replicated database logs
                                   -- each DDL again from the replay worker, which inherits the
                                   -- initiator's initial_query_id but gets a fresh query_id
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
+  AND event_date >= yesterday() AND event_time >= now() - 600
 ORDER BY event_time_microseconds;
 
 -- The transcript above is scoped to the statements this test issued. A Replicated database also
@@ -550,4 +550,4 @@ SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;
+  AND event_date >= yesterday() AND event_time >= now() - 600;

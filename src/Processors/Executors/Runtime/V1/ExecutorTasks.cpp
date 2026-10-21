@@ -15,6 +15,32 @@ namespace ErrorCodes
 namespace Runtime::V1
 {
 
+void ExecutorTasks::notifySpillRequested()
+{
+    std::lock_guard lock(mutex);
+    if (finished)
+        return;
+    spill_requested.store(true, std::memory_order_release);
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    if (num_threads == 1)
+        async_task_queue.notify(PollingQueue::Notification::Spill);
+#endif
+    if (!threads_queue.empty())
+        executor_contexts[threads_queue.popAny()]->wakeUp();
+}
+
+void ExecutorTasks::pushSpillTasks(Queue & queue, size_t thread_number)
+{
+    std::unique_lock lock(mutex);
+    while (!queue.empty() && !finished)
+    {
+        fast_task_queue.push(queue.front(), thread_number);
+        queue.pop();
+        has_fast_tasks = true;
+    }
+    tryWakeUpAnyOtherThreadWithTasks(*executor_contexts[thread_number], lock);
+}
+
 void ExecutorTasks::finish()
 {
     {
@@ -94,13 +120,19 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     #if defined(OS_LINUX) || defined(OS_DARWIN)
         if (num_threads == 1)
         {
-            if (auto res = async_task_queue.tryGetReadyTask(lock))
+            auto res = async_task_queue.tryGetReadyTask(lock);
+            if (res)
             {
                 context.setTask(static_cast<IProcessor *>(res.data));
                 return;
             }
+            if (res.hasNotification(PollingQueue::Notification::Finish) || res.hasNotification(PollingQueue::Notification::Spill))
+                return;
         }
     #endif
+
+        if (spill_requested.load(std::memory_order_acquire))
+            return;
 
         /// Try get async task assigned to this thread or any other task from queue.
         if (!fast_task_queue.empty())
@@ -140,7 +172,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
             auto res = async_task_queue.wait(lock);
             if (!res)
             {
-                if (finished)
+                if (res.hasNotification(PollingQueue::Notification::Finish) || res.hasNotification(PollingQueue::Notification::Spill))
                     return;
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
             }
@@ -218,7 +250,8 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
     return 0; // No new tasks -- no need for new threads
 }
 
-void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler)
+void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
+    bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element)
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
@@ -239,7 +272,8 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAll
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, callback, step_profiler));
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(
+                i, profile_processors, trace_processors, callback, step_profiler, process_list_element));
     }
 }
 
@@ -333,7 +367,8 @@ void ExecutorTasks::preempt(size_t slot_id)
         /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
         tryWakeUpAnyOtherThreadWithTasks(*context, lock); // this releases the lock if it wakes up a thread
     }
-    else if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
+    else if (!spill_requested.load(std::memory_order_acquire)
+        && task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
     {
         /// Finish pipeline if preempted thread was the last non-idle thread executed the last task of the whole pipeline
         lock.unlock();
@@ -353,8 +388,16 @@ void ExecutorTasks::processAsyncTasks()
     {
         /// Wait for async tasks.
         std::unique_lock lock(mutex);
-        while (auto task = async_task_queue.wait(lock))
+        while (true)
         {
+            auto task = async_task_queue.wait(lock);
+            if (task.hasNotification(PollingQueue::Notification::Finish))
+                break;
+            if (task.hasNotification(PollingQueue::Notification::Spill))
+                continue;
+            if (!task)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
+
             auto * processor = static_cast<IProcessor *>(task.data);
             processor->onAsyncJobReady();
 

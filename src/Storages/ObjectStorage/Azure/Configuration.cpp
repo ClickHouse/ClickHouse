@@ -44,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -69,7 +68,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
 
 void StorageAzureConfiguration::check(ContextPtr context)
 {
-    auto url = Poco::URI(connection_params.getConnectionURL());
+    auto url = Poco::URI(connection_params.getConnectionURLWithoutQuery());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
     StorageObjectStorageConfiguration::check(context);
 }
@@ -165,9 +164,9 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
 
     if (pos_container != std::string::npos)
     {
-        String container_blob_path = connection_url.substr(pos_container+5);
-        connection_url = connection_url.substr(0,pos_container+4);
-        container_name = connection_url.substr(pos_container+4);
+        size_t host_end = pos_container + suffix.size();
+        String container_blob_path = host_end < connection_url.size() ? connection_url.substr(host_end + 1) : "";
+        connection_url.resize(host_end);
         auto pos_blob_path = container_blob_path.find('/');
 
         if (pos_blob_path != std::string::npos)
@@ -187,9 +186,9 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
         auto pos_net = connection_url.find(suffix);
 
         if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
-            || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
+            || pos_at <= pos_slash + 3 || pos_dot <= pos_at + 1)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect url format for a abfss url {}", connection_url);
         }
         auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
         auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
@@ -678,9 +677,10 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     const String & structure_,
     const String & format_,
     ContextPtr context,
-    bool with_structure)
+    bool with_structure,
+    bool is_replayed_definition)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -892,7 +892,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
         }
         return;
     }
-    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure);
+    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure, is_replayed_definition);
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)

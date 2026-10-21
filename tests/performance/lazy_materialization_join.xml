@@ -1,0 +1,53 @@
+<test>
+    <!--
+        Lazy materialization over joins: for a query with a LIMIT over joins, the columns that only the result needs
+        are read for the rows the LIMIT returns, by the row index of each table, instead of being read for every row
+        and carried through the joins. The joins are pinned so that both sides are read directly and keep the order
+        they are written in. The last query is a control: a single table, which the other lazy materialization path
+        handles, must not change.
+    -->
+    <settings>
+        <join_algorithm>hash</join_algorithm>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <query_plan_optimize_join_order_limit>0</query_plan_optimize_join_order_limit>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+    </settings>
+
+    <create_query>CREATE TABLE lazy_join_facts (k UInt64, dim_key UInt32, other_key UInt32, ts UInt64, payload String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE lazy_join_dim (dim_key UInt32, name String, descr String) ENGINE = MergeTree ORDER BY dim_key</create_query>
+    <create_query>CREATE TABLE lazy_join_other (other_key UInt32, info String) ENGINE = MergeTree ORDER BY other_key</create_query>
+
+    <fill_query>INSERT INTO lazy_join_facts SELECT number, number % 100000, number % 50000, cityHash64(number), repeat(randomPrintableASCII(25), 4) FROM numbers_mt(40000000)</fill_query>
+    <!-- Only the even keys are in the dimension, so that a LEFT JOIN leaves half of the rows unmatched. -->
+    <fill_query>INSERT INTO lazy_join_dim SELECT number * 2, concat('name_', toString(number * 2)), repeat(randomPrintableASCII(50), 4) FROM numbers_mt(50000)</fill_query>
+    <fill_query>INSERT INTO lazy_join_other SELECT number, repeat(randomPrintableASCII(50), 4) FROM numbers_mt(50000)</fill_query>
+    <fill_query>OPTIMIZE TABLE lazy_join_facts FINAL</fill_query>
+
+    <!-- ORDER BY ... LIMIT over a join: the payload of both sides is read for the rows of the LIMIT only. With a much
+         larger LIMIT the rows of the LIMIT, spread at random by `ts`, touch most granules, so the lazy read reads the
+         payload a second time, as for a single table. -->
+    <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 10 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 100 FORMAT Null</query>
+
+    <!-- A LIMIT without ORDER BY, with a filter on the dimension that keeps one key in every 100000 rows, as many rows
+         as the LIMIT, so that the joins go through the whole fact table: the payload of those rows is not read. -->
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key WHERE d.name = 'name_12344' LIMIT 400 FORMAT Null</query>
+
+    <!-- A LEFT JOIN that leaves half of the rows unmatched, sorted by a column of the dimension, so that the unmatched
+         rows come first and the dimension side stands at its defaults there. -->
+    <query>SELECT f.k, f.payload, d.descr FROM lazy_join_facts f LEFT JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY d.name, f.ts LIMIT 100 FORMAT Null</query>
+
+    <!-- Two joins. -->
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 FORMAT Null</query>
+
+    <!-- A large offset: the limit cap applies to the limit only, so the rows before the offset are read without the
+         payload. A LEFT JOIN returns every fact row, so the offset takes almost the whole table. -->
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f LEFT JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key LIMIT 39000000, 10 FORMAT Null</query>
+
+    <!-- Control: a single table, which the other lazy materialization path handles. -->
+    <query>SELECT k, payload FROM lazy_join_facts ORDER BY sipHash64(k, ts) LIMIT 10 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_join_facts</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lazy_join_dim</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lazy_join_other</drop_query>
+</test>

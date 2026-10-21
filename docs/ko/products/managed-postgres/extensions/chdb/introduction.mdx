@@ -76,10 +76,11 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_p
 (18 rows)
 ```
 
-[CREATE TABLE]에서도 이러한 URL로부터 컬럼을 추론하고 행을 로드할 수 있습니다:
+[CREATE TABLE]에서도 이러한 URL로부터 컬럼을 추론하고 행을 로드할 수 있습니다(주의: 이 공개 데이터 파일에는 4,100만 개의 행이 있습니다):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -134,6 +135,13 @@ chdb 및 chdb&#95;hook 확장 기능은 [chDB] 쿼리를 실행하기 위해 `ch
 
 ```sh
 curl -sL https://lib.chdb.io | bash
+```
+
+macOS에서는 확장 기능을 빌드하기 전에 라이브러리에 서명해야 할 수도 있습니다:
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
 ```
 
 [chDB]를 헬퍼 앱에 정적으로 컴파일하려면 [설치](#compile-from-source)
@@ -208,13 +216,19 @@ test suite는 기본 &quot;postgres&quot; super user와 같은 super user 계정
 make installcheck PGUSER=postgres
 ```
 
+`COPY` 후크에서 `file://` 스킴을 비활성화하려면 `NO_FILE_SCHEME`을 정의하십시오:
+
+```sh
+make NO_FILE_SCHEME=1
+```
+
 PostgreSQL 18 이상에서 사용자 정의 접두사에 확장 기능을 설치하려면 `install`에만 `prefix` 인수를 전달하십시오(다른 `make` 타깃에는 전달하지 마십시오):
 
 ```sh
 make install prefix=/usr/local/extras
 ```
 
-그다음 해당 prefix가 다음 [`postgresql.conf` 매개변수]에 포함되어 있는지 확인하십시오:
+그다음 해당 접두사가 다음 [`postgresql.conf` 매개변수]에 포함되어 있는지 확인하십시오:
 
 ```ini
 extension_control_path = '/usr/local/extras/postgresql/share:$system'
