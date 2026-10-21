@@ -10659,7 +10659,7 @@ Allows the `GROUP BY ... WITH CLUSTER <distance>` modifier, which merges groups 
 - 0 — `GROUP BY ... WITH CLUSTER` is rejected during query analysis.
 - 1 — `GROUP BY ... WITH CLUSTER` is enabled.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to gate the experimental `GROUP BY ... WITH CLUSTER <distance>` modifier."}) \
+        {"26.11", false, false, "New setting to gate the experimental `GROUP BY ... WITH CLUSTER <distance>` modifier."}) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
