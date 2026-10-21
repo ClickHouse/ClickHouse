@@ -18,6 +18,11 @@ struct SelectQueryOptions;
 /// Returned query will always contain some (>1) subqueries, possibly with joins.
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
+/// Whether this query reads with replicas by shipping a plan fragment rather than a query. Answers for
+/// the whole query, so a subquery naming the other implementation in its own `SETTINGS` does not split
+/// one query across both.
+bool parallelReplicasArePlanBased(const ContextPtr & context);
+
 /// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
 const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
