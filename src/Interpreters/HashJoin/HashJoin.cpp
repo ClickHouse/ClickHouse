@@ -373,9 +373,8 @@ SkippedRows countInsertableKeysImpl(
     size_t rows = 0;
     size_t key_bytes = 0;
     size_t max_key_bytes = 0;
-    for (size_t i = 0; i < selector.size(); ++i)
+    for (const size_t row : selector)
     {
-        const size_t row = selector[i];
         if (null_map && (*null_map)[row])
         {
             skipped.null_key = true;
