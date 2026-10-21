@@ -539,7 +539,7 @@ struct PlainStringDecoder : public PageDecoder
         if (value_filter && value_filter->hasBulkScanCondition())
         {
             const String & needle = value_filter->getBulkScanNeedle();
-            bulk_scan_enabled = needle.size() >= 4 && needle.find('\0') == String::npos;
+            bulk_scan_enabled = needle.size() >= 4 && !needle.contains('\0');
         }
     }
 
