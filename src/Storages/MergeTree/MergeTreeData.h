@@ -725,14 +725,15 @@ public:
         MarkCachePtr mark_cache;
         MarkCachePtr index_mark_cache;
         PrimaryIndexCachePtr primary_index_cache;
+        StatisticsCachePtr statistics_cache;
 
-        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache; }
+        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
     };
 
     /// Returns caches that should be prewarmed for a part of the given size.
     CachesToPrewarm getCachesToPrewarm(size_t part_uncompressed_bytes) const;
 
-    /// Prewarm mark cache, index mark cache, and primary index cache for the most recent data parts.
+    /// Prewarm mark cache, index mark cache, primary index cache and statistics cache for the most recent data parts.
     void prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches);
 
     String getLogName() const { return log.loadName(); }
@@ -2263,26 +2264,6 @@ protected:
     /// LOGICAL_ERROR, because the "is this part already present" check and the actual load are
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
-
-    /// Protects the `refresh_stats_task` holder itself (it is reassigned by `startStatisticsCache`, which
-    /// can run concurrently with `stopStatisticsCache` when a table startup or an `ALTER` races with a
-    /// shutdown) and `refresh_stats_stopped`. The task callback reads the holder without this mutex: it
-    /// only runs while the task is active, and the holder is reassigned only after deactivating it.
-    std::mutex refresh_stats_task_mutex;
-    BackgroundSchedulePoolTaskHolder refresh_stats_task;
-    /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
-    bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
-    /// Set before `refresh_stats_task` is deactivated, so that a running `refreshStatistics` returns between parts.
-    std::atomic_bool refresh_stats_cancelled = false;
-
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
-
-    void startStatisticsCache();
-    /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.
-    /// Idempotent. Called on shutdown.
-    void stopStatisticsCache();
-    void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
