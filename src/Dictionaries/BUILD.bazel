@@ -158,6 +158,7 @@ ch_cc_library(
         "//src/Compression:clickhouse_compression",
         "//src/Access/Common:clickhouse_common_access",
         "//src/Functions:headers",
+        "@clickhouse_fmtlib//:_fmt",
     ],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
@@ -181,7 +182,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
@@ -251,6 +251,7 @@ ch_cc_library(
         "//base/poco/Redis:_poco_redis",
         "//src/Common/mysqlxx",
         "//src/Functions:headers",
+        "@clickhouse_fmtlib//:_fmt",
     ],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
@@ -275,7 +276,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
@@ -310,6 +310,7 @@ ch_cc_library(
         "//src/Compression:clickhouse_compression",
         "//src/Access/Common:clickhouse_common_access",
         "//src/Functions:headers",
+        "@clickhouse_fmtlib//:_fmt",
     ],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     local_includes = [
@@ -333,7 +334,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
