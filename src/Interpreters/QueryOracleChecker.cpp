@@ -875,6 +875,7 @@ bool usesFinalAnywhere(const ASTPtr & ast)
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
 /// `ANY` pairs with an arbitrary match (`ANY INNER` keeps one row per key), so it is plan-dependent too.
+/// `SEMI` takes the other side's columns from an arbitrary match, like `ANY`.
 /// A join written without a strictness gets `join_default_strictness`, or `ALL` if it is `LATERAL`.
 /// Checked recursively: such a join in any subquery taints the whole query.
 bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_strictness)
@@ -886,7 +887,8 @@ bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_
         auto strictness = join->strictness;
         if (strictness == JoinStrictness::Unspecified && !join->lateral && join->kind != JoinKind::Cross && join->kind != JoinKind::Comma)
             strictness = default_strictness;
-        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
+        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny
+            || strictness == JoinStrictness::Semi)
             return true;
     }
     return anyChild(ast, [&](const ASTPtr & child) { return hasNonDeterministicJoinAnywhere(child, default_strictness); });
@@ -2754,7 +2756,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     if (hasNonDeterministicJoinAnywhere(query_ast, context->getSettingsRef()[Setting::join_default_strictness]))
     {
-        LOG_TRACE(logger, "Oracle skip: ASOF or ANY JOIN (the matched row is plan-dependent)");
+        LOG_TRACE(logger, "Oracle skip: ASOF, ANY or SEMI JOIN (the matched row is plan-dependent)");
         return false;
     }
 
