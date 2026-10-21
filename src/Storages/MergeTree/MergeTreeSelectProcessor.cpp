@@ -173,6 +173,15 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     return index_read_result;
 }
 
+void MergeTreeIndexBuildContext::accountDroppedMarks(size_t part_index, size_t dropped_marks) const
+{
+    auto & remaining_marks = part_remaining_marks.at(part_index).value;
+    bool part_fully_processed = remaining_marks.fetch_sub(dropped_marks, std::memory_order_acq_rel) == dropped_marks;
+
+    if (part_fully_processed)
+        index_reader_pool->clear(part_index);
+}
+
 /// A mark that the primary key skips against the top-K threshold has all its rows beyond the threshold, so the
 /// `__topKFilter` would have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not
 /// match the PREWHERE either, and the query condition cache entry of the PREWHERE is salted with the top-K plan

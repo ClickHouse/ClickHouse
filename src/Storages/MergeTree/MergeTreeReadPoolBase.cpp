@@ -688,7 +688,7 @@ void MergeTreeReadPoolBase::chargeStagedColumnsCacheWriteEstimate() const
     /// the query really writes stays bounded by `columns_cache_max_bytes_to_write_to_cache`,
     /// which defaults to the same half of the cache the estimate budget does, so the estimate
     /// gate stands down for such a pool instead of over-charging it.
-    if (ranges_refiner)
+    if (!ranges_refiners.empty())
         return;
 
     const auto budget = getContext()->getColumnsCacheWriteBudget();
@@ -781,7 +781,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     /// Every task of every pool is built here, so this is the one place that is guaranteed to
-    /// run before the first task exists and after `setReadRangesRefiner`.
+    /// run before the first task exists and after `addReadRangesRefiner`.
     commitColumnsCacheWriteEstimate();
 
     auto task_size_predictor = read_info->shared_size_predictor
@@ -882,26 +882,40 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
 
 MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
 {
-    if (!ranges_refiner || ranges.empty())
+    if (ranges_refiners.empty() || ranges.empty())
         return ranges;
 
     size_t marks_before = ranges.getNumberOfMarks();
     MarkRanges cut;
     if (info.read_request_map)
         cut = ranges;
-    auto refined = ranges_refiner->refine(info, std::move(ranges));
-    size_t marks_after = refined.getNumberOfMarks();
 
-    if (marks_after > marks_before)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Ranges refiner returned {} marks for a cut of {} marks of part {}, refinement may only drop marks",
-            marks_after, marks_before, info.data_part_info->getPartName());
+    auto refined = std::move(ranges);
+    for (const auto & refiner : ranges_refiners)
+    {
+        size_t marks_in = refined.getNumberOfMarks();
+        refined = refiner->refine(info, std::move(refined));
+        size_t marks_out = refined.getNumberOfMarks();
+
+        if (marks_out > marks_in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Ranges refiner returned {} marks for a cut of {} marks of part {}, refinement may only drop marks",
+                marks_out, marks_in, info.data_part_info->getPartName());
+
+        if (refined.empty())
+            break;
+    }
+    size_t marks_after = refined.getNumberOfMarks();
 
     if (marks_after < marks_before)
     {
-        ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedMarks, marks_before - marks_after);
+        size_t dropped_marks = marks_before - marks_after;
+        ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedMarks, dropped_marks);
         if (info.read_request_map)
             recordDroppedRanges(info, std::move(cut), refined);
+
+        if (marks_dropped_listener)
+            marks_dropped_listener(info, dropped_marks);
     }
 
     if (marks_after == 0)
@@ -923,7 +937,7 @@ void MergeTreeReadPoolBase::recordDroppedRanges(const MergeTreeReadTaskInfo & in
 
 MarkRangesPtr MergeTreeReadPoolBase::getActualReadRequestMap(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & replica_map) const
 {
-    if (!ranges_refiner || !info.read_request_map)
+    if (ranges_refiners.empty() || !info.read_request_map)
         return replica_map;
 
     const auto & initial_map = replica_map ? replica_map : info.read_request_map;

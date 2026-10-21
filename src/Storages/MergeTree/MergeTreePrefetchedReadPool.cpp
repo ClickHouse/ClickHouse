@@ -209,7 +209,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     if (task.isValidReadersFuture())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
 
-    if (ranges_refiner)
+    if (!ranges_refiners.empty())
     {
         /// The refining job never prefetches dropped ranges, but the task boundaries and the
         /// prefetch admission were decided at fill time from the unrefined ranges: a heavily
@@ -310,7 +310,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
             if (thread_task->pruned_by_refiner)
                 continue;
         }
-        else if (ranges_refiner)
+        else if (!ranges_refiners.empty())
         {
             thread_task->ranges = refineReadRanges(*thread_task->read_info, std::move(thread_task->ranges));
             if (thread_task->ranges.empty())

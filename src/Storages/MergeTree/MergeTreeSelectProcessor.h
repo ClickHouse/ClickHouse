@@ -107,6 +107,12 @@ struct MergeTreeIndexBuildContext
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+    /// The counterpart of the accounting in `getPreparedIndexReadResult` for marks a read pool's
+    /// range refiners dropped at task-cut time: they never become tasks, so account for them here;
+    /// otherwise the cached per-part index read result would never be released. Wired to the pool
+    /// as its marks-dropped listener (see `MergeTreeReadPoolBase::setMarksDroppedListener`).
+    void accountDroppedMarks(size_t part_index, size_t dropped_marks) const;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

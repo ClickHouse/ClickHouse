@@ -17,6 +17,9 @@ struct MergeTreeReadTaskInfo;
 /// bitmap, both built lazily per part (see `IndexReadRangesRefiner`). Pools call `refine` on
 /// every cut; ranges dropped here never become read tasks.
 ///
+/// A pool applies its refiners as a chain, one after another, in installation order
+/// (see `MergeTreeReadPoolBase::addReadRangesRefiner`).
+///
 /// Contract:
 /// - `refine` returns a subset of `ranges`: marks may only be removed, never added.
 /// - Refinement is an optimization: it must be sound to skip it for any particular cut
