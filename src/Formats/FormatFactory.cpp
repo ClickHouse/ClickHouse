@@ -362,6 +362,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         }
     }
     format_settings.parquet.auto_assign_field_ids = settings[Setting::output_format_parquet_auto_assign_field_ids];
+    format_settings.parquet.write_geometry_logical_type = settings[Setting::output_format_parquet_geometry_logical_type];
     format_settings.parquet.write_file_logical_type = settings[Setting::output_format_parquet_write_file_logical_type];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {

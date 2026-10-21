@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -41,7 +42,7 @@ public:
                 return nullptr;
 
             auto key = data_files[current_index];
-            auto object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
+            auto object_metadata = getObjectMetadataForRead(*object_storage, RelativePathWithMetadata(key), /*with_tags=*/ false);
 
             if (callback)
                 callback(FileProgress(0, object_metadata.size_bytes));
