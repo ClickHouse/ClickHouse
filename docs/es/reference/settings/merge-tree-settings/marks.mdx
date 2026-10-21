@@ -12,17 +12,13 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-<div id="marks_compress_block_size">
-  ## marks_compress_block_size
-</div>
+## marks_compress_block_size {#marks_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Tamaño del bloque de compresión de marks; es el tamaño real del bloque que se va a comprimir.
+Tamaño, en bytes sin comprimir, de los bloques utilizados al escribir archivos de marcas comprimidos para partes de datos nuevas o reescritas. Solo se aplica cuando `compress_marks` está habilitado. Controla la estructura de tramas de la compresión y el almacenamiento en búfer; no modifica la granularidad del índice.
 
-<div id="marks_compression_codec">
-  ## marks_compression_codec
-</div>
+## marks_compression_codec {#marks_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 

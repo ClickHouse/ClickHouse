@@ -16,24 +16,35 @@ This page covers day-2 operation of the connector on both install targets. For i
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-Day-2 Kubernetes operations use the `helm` CLI on your workstation. Only `init` carries a built-in Helm client, so install `helm` before your first upgrade.
-</Note>
+`connector upgrade` needs a CLI from v0.50.0 on and carries its own Helm client, so no `helm` binary is needed:
 
-Upgrade the release from the public chart repository with the values overlay that `init` staged:
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+`context add` runs once per cluster and records the kubeconfig context the connector runs in; `--use` makes it the current context, and `context use <name>` switches later. `connector upgrade` prompts before changing anything; its flags are in the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade).
+
+Chart versions are the release tags without the leading `v`: tag `v0.50.0` is chart `0.50.0`. The executor runs as a single replica with the `Recreate` strategy, so an upgrade disconnects it briefly. See [when the connector is offline](/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) for what happens to commands in that window.
+
+To upgrade with the `helm` CLI instead, use the values overlay that `init` staged:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-Chart versions are the release tags without the leading `v` (chart `X.Y.Z` corresponds to tag `vX.Y.Z`). The published chart already points at the public container image, so plain installs and upgrades need no image values. To inspect chart defaults, run `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. The executor runs as a single replica with the `Recreate` strategy, so an upgrade disconnects it briefly. See [when the connector is offline](/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) for what happens to commands in that window.
+The published chart already points at the public container image, so plain installs and upgrades need no image values. To inspect chart defaults, run `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`.
 
-An install from a direct chart reference (`oci://`, a URL, or a local archive or directory) has no repository to resolve against. Rerun `helm upgrade clicklink-connector <same-chart-reference>` at the new version instead. Re-running `init` with a newer CLI also converges, but needs an entry point: `--handoff` if you kept the bundle, or a fresh enrollment token with `--force` after the documented cleanup. The `helm upgrade` above is the routine path (see [re-runs and recovery](#re-runs-and-recovery)).
+<Note>
+`init` from releases before v0.50.0 wrote `image.tag` into `clicklink-values.yaml`, pinned to the release that staged it. Remove the key once, with `yq -i 'del(.image.tag)' clicklink-values.yaml`, before the next `helm upgrade` with that file; otherwise the chart moves and the pods keep the old image. `connector upgrade` does not read the overlay and clears a stale tag in the release itself.
+</Note>
+
+`connector upgrade` refuses a release whose image comes from a [private mirror](/products/bring-your-own-cloud/connector/configuration#private-mirrors); use the `helm upgrade` above, which keeps the mirror from your overlay. An install from a direct chart reference (`oci://`, a URL, or a local archive or directory) has no repository to resolve against: rerun `helm upgrade clicklink-connector <same-chart-reference>` at the new version. Re-running `init` with a newer CLI also converges, but needs an entry point: `--handoff` if you kept the bundle, or a fresh enrollment token with `--force` (see [re-runs and recovery](#re-runs-and-recovery)).
 
 ### Linux VM {#upgrades-linux-vm}
 

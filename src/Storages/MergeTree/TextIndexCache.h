@@ -162,7 +162,7 @@ enum class TextIndexPostingsCacheKind : UInt8
 
 /// A single cell of TextIndexPostingsCache. It holds one of:
 ///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
-///   - FlatPostingsPtr:       a sorted array of doc ids of a phrase-search result;
+///   - PaddedPODArrayPtr:     a sorted array of doc ids of a phrase-search result;
 ///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
 /// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
 /// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.
@@ -173,8 +173,8 @@ struct TextIndexPostingsCacheCell
     {
     }
 
-    explicit TextIndexPostingsCacheCell(FlatPostingsPtr flat)
-        : value(std::move(flat))
+    explicit TextIndexPostingsCacheCell(PaddedPODArrayPtr array)
+        : value(std::move(array))
     {
     }
 
@@ -183,7 +183,7 @@ struct TextIndexPostingsCacheCell
     {
     }
 
-    std::variant<PostingListPtr, FlatPostingsPtr, PostingListSegmentPtr> value;
+    std::variant<PostingListPtr, PaddedPODArrayPtr, PostingListSegmentPtr> value;
 };
 
 /// Estimate of the memory usage (bytes) of a posting cache cell
@@ -200,7 +200,7 @@ struct TextIndexPostingsWeightFunction
 
             if constexpr (std::is_same_v<T, PostingListPtr>)
                 return payload->getSizeInBytes();
-            else if constexpr (std::is_same_v<T, FlatPostingsPtr>)
+            else if constexpr (std::is_same_v<T, PaddedPODArrayPtr>)
                 return payload->allocated_bytes();
             else if constexpr (std::is_same_v<T, PostingListSegmentPtr>)
                 return payload->bytesAllocated();

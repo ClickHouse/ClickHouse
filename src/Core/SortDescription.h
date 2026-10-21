@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
@@ -166,6 +168,9 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
 /// and `Object` are only known at run time and may hold such a value.
 bool comparisonCanMergeDistinctValues(const IDataType & type);
 
+/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header);
+
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
   */
@@ -192,8 +197,14 @@ class WriteBuffer;
 class ReadBuffer;
 
 /// `version` is the query-plan serialization version of the stream: a `WITH FILL` column carries its
-/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP.
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version);
+/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP. `for_cache_key` and
+/// `input_header` make the sort columns build-independent; see `writeCacheKeyColumnName`.
+void serializeSortDescription(
+    const SortDescription & sort_description,
+    WriteBuffer & out,
+    UInt64 version,
+    bool for_cache_key = false,
+    const Block * input_header = nullptr);
 void deserializeSortDescription(
     SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity = 0);
 

@@ -75,9 +75,10 @@
             "fr/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
+        "fr/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
-          "group": "Intégrations de la communauté",
+          "group": "Intégrations communautaires",
           "pages": [
             "fr/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "fr/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",

@@ -148,7 +148,8 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     options.forceMaterializeCTE();
 
     return std::make_unique<InterpreterSelectQueryAnalyzer>(
-        subquery_select, subquery_context, options, subquery_context->getViewSource());
+        subquery_select, subquery_context, options,
+        subquery_context->isViewInnerQuery() ? nullptr : subquery_context->getViewSource());
 }
 
 static bool subqueryUsesViewSource(const InterpreterSelectQueryAnalyzer & interpreter, const ContextPtr & context)

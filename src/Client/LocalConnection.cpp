@@ -67,7 +67,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsDoubleAuto promql_evaluation_time;
-    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
     extern const SettingsString logsql_table;
     extern const SettingsString logsql_time_column;
@@ -229,12 +229,21 @@ void LocalConnection::sendQuery(
     const String parse_time_logsql_table = parse_time_settings[Setting::logsql_table];
     const String parse_time_logsql_time_column = parse_time_settings[Setting::logsql_time_column];
     const String parse_time_logsql_message_column = parse_time_settings[Setting::logsql_message_column];
-    const bool parse_time_allow_experimental_logsql_dialect = parse_time_settings[Setting::allow_experimental_logsql_dialect];
+    const bool parse_time_enable_logsql_dialect = parse_time_settings[Setting::enable_logsql_dialect];
     const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
     const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
 
+    /// Apply only what the client changed, like `TCPHandler` does. Replacing the whole `Settings`
+    /// would drop what the session context holds beyond the client's copy, e.g. the settings of
+    /// a `SET profile`, which the client does not track.
+    /// The changes must be checked against the constraints, as the session may belong to a restricted
+    /// user (the embedded client of the web terminal and the SSH interface).
     if (query_settings)
-        query_context->setSettings(*query_settings);
+    {
+        SettingsChanges settings_changes = query_settings->changes();
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
@@ -323,13 +332,17 @@ void LocalConnection::sendQuery(
     state->logsql_table = parse_time_logsql_table;
     state->logsql_time_column = parse_time_logsql_time_column;
     state->logsql_message_column = parse_time_logsql_message_column;
-    state->allow_experimental_logsql_dialect = parse_time_allow_experimental_logsql_dialect;
+    state->enable_logsql_dialect = parse_time_enable_logsql_dialect;
     state->json_ast_max_depth = parse_time_max_ast_depth;
     state->json_ast_max_elements = parse_time_max_ast_elements;
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
-    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    /// Nothing drains the unbounded queue when profile events are not sent.
+    if (send_profile_events)
+    {
+        state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    }
     state->logs_queue = std::make_shared<InternalTextLogsQueue>();
     const auto client_logs_level = getContext()->getSettingsRef()[Setting::send_logs_level];
     state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
@@ -430,7 +443,7 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserLogsQLQuery>(
                     state->logsql_database, state->logsql_table,
                     state->logsql_time_column, state->logsql_message_column,
-                    begin, end, state->allow_experimental_logsql_dialect, state->max_parser_depth,
+                    begin, end, state->enable_logsql_dialect, state->max_parser_depth,
                     state->max_query_size);
             else if (dialect == Dialect::trino)
                 parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->enable_trino_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
