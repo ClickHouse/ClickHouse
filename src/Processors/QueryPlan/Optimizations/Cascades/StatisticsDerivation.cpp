@@ -663,7 +663,7 @@ static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 
 /// NDV of a group key in the input; without a known NDV, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
 /// Taking the zero NDV of a key without statistics as known would estimate a single group and a maximum
-/// of zero rows.
+/// of zero rows for any input, and make a merge of all groups on one node look free.
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     if (auto number_of_distinct_values = knownDistinctValues(input_statistics, column))
