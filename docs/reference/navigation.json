@@ -668,7 +668,6 @@
                 "reference/functions/aggregate-functions/sumKahan",
                 "reference/functions/aggregate-functions/sumMap",
                 "reference/functions/aggregate-functions/sumMapWithOverflow",
-                "reference/functions/aggregate-functions/sumPromQL",
                 "reference/functions/aggregate-functions/sumWithOverflow",
                 "reference/functions/aggregate-functions/theilsU",
                 "reference/functions/aggregate-functions/timeSeriesAvgToGrid",

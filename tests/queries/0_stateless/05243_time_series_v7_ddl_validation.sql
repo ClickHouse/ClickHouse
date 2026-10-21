@@ -41,8 +41,8 @@ CREATE TABLE ts_good ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES INNER COLUMNS (min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))));
 DROP TABLE ts_good;
 
--- External bucketed samples targets need the same merge-safe schema as inner targets.
--- Full-definition `ATTACH` checks are in 05257, which generates fresh UUIDs for reruns.
+-- Version 11 supports bucketed samples only in inner targets.
+-- Physical inner target and full-definition `ATTACH` checks are in 05257, which generates fresh UUIDs for reruns.
 CREATE TABLE ts_external_raw
 (
     id UUID,
@@ -51,61 +51,10 @@ CREATE TABLE ts_external_raw
     min_time DateTime64(3),
     max_time DateTime64(3)
 ) ENGINE = AggregatingMergeTree ORDER BY (id, bucket) SETTINGS allow_dimensions_outside_sorting_key = 1;
-CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
-SAMPLES ts_external_raw; -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11, recent_samples_ttl_seconds = 0
+SAMPLES ts_external_raw; -- { serverError INCORRECT_QUERY }
 DROP TABLE ts_external_raw;
 
-CREATE TABLE ts_external_replacing
-(
-    id UUID,
-    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3), Float64))),
-    bucket DateTime64(3),
-    min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3))
-) ENGINE = ReplacingMergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
-SAMPLES ts_external_replacing; -- { serverError INVALID_SETTING_VALUE }
-DROP TABLE ts_external_replacing;
-
-CREATE TABLE ts_external_good
-(
-    id UUID,
-    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3), Float64))),
-    bucket DateTime64(3),
-    min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3))
-) ENGINE = AggregatingMergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_external_good_owner ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
-SAMPLES ts_external_good;
-INSERT INTO ts_external_good VALUES ('00000000-0000-0000-0000-000000000001', [(toDateTime64(1000, 3), 1.)], toDateTime64(0, 3), toDateTime64(1000, 3), toDateTime64(1000, 3));
-INSERT INTO ts_external_good VALUES ('00000000-0000-0000-0000-000000000001', [(toDateTime64(1001, 3), 2.)], toDateTime64(0, 3), toDateTime64(1001, 3), toDateTime64(1001, 3));
-OPTIMIZE TABLE ts_external_good FINAL;
-SELECT count(), sum(length(samples)) FROM ts_external_good;
-
--- Recheck the physical target before reads and writes after an independent target ALTER.
-CREATE TABLE ts_alter_target AS ts_external_good ENGINE = AggregatingMergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_alter_owner ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES ts_alter_target;
-ALTER TABLE ts_alter_target MODIFY COLUMN samples Array(Tuple(DateTime64(3), Float64));
-SELECT * FROM ts_alter_owner LIMIT 1; -- { serverError BAD_TYPE_OF_FIELD }
-INSERT INTO ts_alter_owner (metric_name, tags, samples)
-VALUES ('m', map(), [(toDateTime64(1000, 3), 1.)]); -- { serverError BAD_TYPE_OF_FIELD }
-DROP TABLE ts_alter_owner;
-DROP TABLE ts_alter_target;
-
--- RESTORE must validate the currently bound physical target before restoring any data.
-CREATE TABLE ts_restore_target AS ts_external_good ENGINE = AggregatingMergeTree ORDER BY (id, bucket);
-CREATE TABLE ts_restore_owner ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES ts_restore_target;
-BACKUP TABLE ts_restore_owner TO Memory('05243_ts_unsafe_restore') FORMAT Null;
-DROP TABLE ts_restore_target;
-CREATE TABLE ts_restore_target AS ts_external_good ENGINE = ReplacingMergeTree ORDER BY (id, bucket);
-SELECT * FROM ts_restore_owner LIMIT 1; -- { serverError INVALID_SETTING_VALUE }
-DROP TABLE ts_restore_owner;
-RESTORE TABLE ts_restore_owner FROM Memory('05243_ts_unsafe_restore') FORMAT Null; -- { serverError INVALID_SETTING_VALUE }
-DROP TABLE IF EXISTS ts_restore_owner;
-DROP TABLE ts_restore_target;
-
-DROP TABLE ts_external_good_owner;
-DROP TABLE ts_external_good;
 CREATE TABLE ts_plain ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES INNER COLUMNS (samples Array(Tuple(DateTime64(3), Float64)))
 SAMPLES INNER ENGINE = MergeTree;
