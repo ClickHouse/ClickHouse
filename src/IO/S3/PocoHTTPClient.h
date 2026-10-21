@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -197,6 +198,8 @@ public:
         const std::shared_ptr<Aws::Http::HttpRequest> & request,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
+
+    void RetryRequestSleep(std::chrono::milliseconds sleep_time) override;
 
 private:
 
