@@ -30,6 +30,7 @@ String column IN declines	1
 text ngrams, UTF-8 tail	1	1
 text sparseGrams, UTF-8 tail	1	1
 text splitByNonAlpha, UTF-8 tail	1	1
+text ngrams, UTF-8 tail, full width	1	1
 text ngrams IN, UTF-8 tail	1	1
 text ngrams prunes	1
 text sparseGrams prunes	1

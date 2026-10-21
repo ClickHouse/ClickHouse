@@ -1157,7 +1157,7 @@ static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_stri
         return true;
 
     /// A value with any number of trailing zero bytes matches, so one lookup covers them only if none can end up in a term.
-    if (both_stripped && stripped_size != needle.size()
+    if (both_stripped
         && (context.has_preprocessor || !tokensSurviveTrailingNuls(context.tokenizer_type, withoutTrailingZeros(needle))))
         return false;
 

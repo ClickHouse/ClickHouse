@@ -113,6 +113,7 @@ INSERT INTO t_token  SELECT number, if(number = 7, concat('VALUE', unhex('C200')
 SELECT 'text ngrams, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM t_ngrams WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
 SELECT 'text sparseGrams, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM t_sparse WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
 SELECT 'text splitByNonAlpha, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM t_token WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
+SELECT 'text ngrams, UTF-8 tail, full width', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 6)), (SELECT count() FROM t_ngrams WHERE s = toFixedString(concat('VALUE', unhex('C2')), 6));
 SELECT 'text ngrams IN, UTF-8 tail', (SELECT count() FROM w_log WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))), (SELECT count() FROM t_ngrams WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8)));
 -- The trimmed constant must keep pruning where it ends on a sequence boundary, and the `splitByNonAlpha` tokenizer,
 -- which has no final-term clamp, must keep pruning in both cases.
