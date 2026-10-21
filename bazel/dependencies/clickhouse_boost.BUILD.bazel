@@ -51,7 +51,6 @@ cc_library(
     deps = [
         ":_boost_context__compile_0",
         ":_boost_context__compile_1",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
 )
 
@@ -90,7 +89,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 ch_cc_library(
@@ -177,7 +175,6 @@ ch_cc_library(
         ":boost_headers",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 ch_cc_library(
@@ -189,7 +186,6 @@ ch_cc_library(
     copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 _ASIO_COMPILER_OPTIONS = [
