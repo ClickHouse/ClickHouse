@@ -123,6 +123,12 @@ using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
+#if USE_GPU
+namespace GPU
+{
+class GPUDevice;
+}
+#endif
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
 class TextIndexHeaderCache;
@@ -649,13 +655,7 @@ protected:
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
-    /// Positional arguments inside views must be resolved even on remote/secondary nodes where
-    /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
-    /// not on the initiator).
     bool is_view_inner_query = false;
-    /// Set by local shard plans, whose query is printed from a resolved query tree. Inherited by context copies and
-    /// ignored in view bodies; `withUnresolvedPositionalArguments` resets it for other queries.
-    bool positional_arguments_already_resolved = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -1671,6 +1671,14 @@ public:
     std::shared_ptr<PageCache> getPageCache() const;
     void clearPageCache() const;
 
+#if USE_GPU
+    /// Takes the GPU with the `gpu_*` server settings. It is called at the start of the server when `enable_gpu` is
+    /// set, before any query, and the device is released at shutdown.
+    void setGPU(const ServerSettings & server_settings);
+    /// Throws when `enable_gpu` is not set.
+    GPU::GPUDevice & getGPU() const;
+#endif
+
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<MarkCache> getMarkCache() const;
@@ -2007,11 +2015,6 @@ public:
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
-
-    bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
-    void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
-    /// For a query that is not printed from the resolved query tree: `context`, or its copy with the flag reset.
-    static ContextPtr withUnresolvedPositionalArguments(const ContextPtr & context);
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
