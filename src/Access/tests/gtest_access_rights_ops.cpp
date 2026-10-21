@@ -589,6 +589,123 @@ TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
     ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
 
+TEST(AccessRights, RevokeFilter)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://bar/.*");
+
+    // Revoke exact filter leaves the rest
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    auto filters = root.getFilters("S3");
+    ASSERT_EQ(filters.size(), 1);
+    ASSERT_EQ(filters[0].path, "s3://bar/.*");
+
+    // Revoke non-existent filter does nothing
+    const AccessRights before = root;
+    root.revoke(AccessType::READ, "S3", "s3://baz/.*");
+    ASSERT_EQ(root, before);
+
+    // Revoke the remaining filter leaves the tree empty
+    root.revoke(AccessType::READ, "S3", "s3://bar/.*");
+    ASSERT_TRUE(root.isEmpty());
+
+    // Revoke without filter removes whole subtree
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://bar/.*");
+    root.revoke(AccessRightsElement{AccessType::READ, "S3"});
+    ASSERT_TRUE(root.isEmpty());
+
+    // Revoke one of multiple overlapping filters leaves the others intact
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.grant(AccessType::READ, "S3", "s3://foo/.*bar");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    filters = root.getFilters("S3");
+    ASSERT_EQ(filters.size(), 1);
+    ASSERT_EQ(filters[0].path, "s3://foo/.*bar");
+
+    // Revoke a filter with the grant option
+    root = {};
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.isEmpty());
+}
+
+TEST(AccessRights, RevokeFilterUnderUnfilteredGrant)
+{
+    AccessRights root;
+
+    // Revoke filter from global grant throws
+    root.grant(AccessType::READ, "S3");
+    const AccessRights before = root;
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+    ASSERT_EQ(root, before);
+
+    // Revoke filter from global parent grant throws
+    root = {};
+    root.grant(AccessType::READ);
+    ASSERT_THROW(root.revoke(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+
+    // Revoke filter from global grants children throws
+    root = {};
+    root.grant(AccessType::READ, "S3");
+    auto read_write = AccessRightsElement{AccessType::READ|AccessType::WRITE, "S3"};
+    read_write.filter = "s3://foo/.*";
+    root.grant(read_write);
+    ASSERT_THROW(root.revoke(read_write), Exception);
+
+    // Revoke filter from sibling grant leaves the other grants intact
+    root = {};
+    root.grant(AccessType::WRITE, "S3");
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.getFilters("S3").empty());
+    ASSERT_TRUE(root.isGranted(AccessType::WRITE, "S3"));
+
+    // Revoke filter from unrelated grant leaves the other grants intact
+    root = {};
+    root.grant(AccessType::READ, "SQLITE");
+    root.grant(AccessType::READ, "S3", "s3://foo/.*");
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.getFilters("S3").empty());
+    ASSERT_TRUE(root.isGranted(AccessType::READ, "SQLITE"));
+
+    // Revoke filter from partially revoked grant leaves the other grants intact
+    root = {};
+    root.grant(AccessType::READ);
+    root.revoke(AccessType::READ, "S3");
+    const AccessRights with_partial_revoke = root;
+    root.revoke(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_EQ(root, with_partial_revoke);
+}
+
+TEST(AccessRights, RevokeFilterGrantOption)
+{
+    AccessRights root;
+
+    // Revoke grant option from a specific filter
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://bar/.*");
+    root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_EQ(root.getFilters("S3").size(), 2);
+    auto grantable = root.getGrantableRights().getFilters("S3");
+    ASSERT_EQ(grantable.size(), 1);
+    ASSERT_EQ(grantable[0].path, "s3://bar/.*");
+
+    // Revoke grant option from a filter when there is also a global grant
+    root = {};
+    root.grant(AccessType::READ, "S3");
+    root.grantWithGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*");
+    ASSERT_TRUE(root.isGranted(AccessType::READ, "S3"));
+    ASSERT_TRUE(root.getGrantableRights().isEmpty());
+
+    // Partial revoke of filtered grant option is not allowed
+    root = {};
+    root.grantWithGrantOption(AccessType::READ, "S3");
+    ASSERT_THROW(root.revokeGrantOption(AccessType::READ, "S3", "s3://foo/.*"), Exception);
+}
+
 TEST(AccessRights, RevokeWithParameters)
 {
     AccessRights root;
@@ -625,7 +742,7 @@ TEST(AccessRights, RevokeWithParametersWithGrantOption)
     ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE CREATE USER ON system*");
 }
 
-TEST(AccessRights, ParialRevokeWithGrantOption)
+TEST(AccessRights, PartialRevokeWithGrantOption)
 {
     AccessRights root;
     root.grant(AccessType::SELECT);
