@@ -239,6 +239,16 @@ def test_predefined_query_handler():
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
         cluster.instance.query("DROP TABLE test_table")
 
+        # `_request_body` is bound from the request body only. A capture group binding it would leave the body
+        # unread, and the unread body would be appended to the handler's query, extending its SQL.
+        res_capture = cluster.instance.http_request(
+            "test_predefined_handler_request_body_capture/bob",
+            method="POST",
+            data="UNION ALL SELECT 1+1".encode("utf8"),
+        )
+        assert res_capture.status_code != 200
+        assert b"BAD_ARGUMENTS" in res_capture.content
+
         cluster.instance.http_request(
             "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
             method="GET",

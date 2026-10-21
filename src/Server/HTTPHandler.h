@@ -96,6 +96,8 @@ protected:
         feeds_request_body_to_query = feeds_to_query;
     }
 
+    bool feedsRequestBodyToQuery() const { return feeds_request_body_to_query; }
+
 private:
     String introspection_handler_name;
 

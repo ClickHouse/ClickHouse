@@ -1806,6 +1806,16 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
             {
                 const auto & capturing_value = matches[capturing_index];
 
+                /// A capture binding `_request_body` would leave the body unread (see below). A configuration-defined
+                /// handler appends an unread body to the query text, because its query is not analyzed and the body
+                /// may be the data of an `INSERT`, so the body would extend the handler's SQL. A SQL-defined handler
+                /// appends the body only to an `INSERT`, which cannot use `_request_body`, so a capture may bind it.
+                if (capturing_value.data() && capturing_name == "_request_body" && receive_params.contains(capturing_name)
+                    && feedsRequestBodyToQuery())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The query parameter `_request_body` is bound from the HTTP request body and cannot be captured "
+                        "from the URL or a header");
+
                 if (capturing_value.data())
                     context->setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
             }
