@@ -72,19 +72,6 @@ public:
         , func(std::forward<Func>(func_))
     {}
 
-    // NOTE: makeLoadJob() helper should be used instead of direct ctor call
-    template <class LoadJobSetType, class WIFunc, class WDFunc, class DFFunc, class Func>
-    LoadJob(LoadJobSetType && dependencies_, String name_, size_t pool_id_, WIFunc && on_waiters_increment_, WDFunc && on_waiters_decrement_, DFFunc && dependency_failure_, Func && func_)
-        : dependencies(std::forward<LoadJobSetType>(dependencies_))
-        , name(std::move(name_))
-        , execution_pool_id(pool_id_)
-        , pool_id(pool_id_)
-        , on_waiters_increment(std::forward<WIFunc>(on_waiters_increment_))
-        , on_waiters_decrement(std::forward<WDFunc>(on_waiters_decrement_))
-        , dependency_failure(std::forward<DFFunc>(dependency_failure_))
-        , func(std::forward<Func>(func_))
-    {}
-
     // Current job status.
     LoadStatus status() const;
     std::exception_ptr exception() const;
@@ -128,13 +115,6 @@ private:
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
 
-    // Handlers that is called by every new waiting thread, just before going to sleep.
-    // If `on_waiters_increment` throws, then wait is canceled, and corresponding `on_waiters_decrement` will never be called.
-    // It can be used for counting and limits on number of waiters.
-    // Note that implementations are called under `LoadJob::mutex` and should be fast.
-    std::function<void(const LoadJobPtr & self)> on_waiters_increment;
-    std::function<void(const LoadJobPtr & self)> on_waiters_decrement;
-
     // Handler for failed or canceled dependencies.
     // If job needs to be canceled on `dependency` failure, then function should set `cancel` to a specific reason.
     // Note that implementation should be fast and cannot use AsyncLoader, because it is called under `AsyncLoader::mutex`.
@@ -163,49 +143,7 @@ void cancelOnDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & depen
 void ignoreDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel);
 
 template <class F> concept LoadJobDependencyFailure = std::invocable<F, const LoadJobPtr &, const LoadJobPtr &, std::exception_ptr &>;
-template <class F> concept LoadJobOnWaiters = std::invocable<F, const LoadJobPtr &>;
 template <class F> concept LoadJobFunc = std::invocable<F, AsyncLoader &, const LoadJobPtr &>;
-
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
 
 LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
 {
@@ -400,6 +338,16 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
+    using WaiterCallback = std::function<void(const LoadJobPtr & job)>;
+
+    // Handlers called by every new thread waiting for a job of this loader: `on_increment` just before going to sleep, `on_decrement` after waking up.
+    // If `on_increment` throws, then wait is canceled, and corresponding `on_decrement` will never be called.
+    // It can be used for counting and limits on number of waiters.
+    // Note that implementations are called under `LoadJob::mutex` and should be fast.
+    // Note that the cleanup wait in `remove` does not call them, because it runs in the noexcept `~LoadTask`.
+    // Must be set before any job is scheduled.
+    void setWaiterCallbacks(WaiterCallback on_increment, WaiterCallback on_decrement);
+
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
     void wait();
 
@@ -434,6 +382,7 @@ public:
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
     // Throws if job is FAILED or CANCELED unless `no_throw` is set. Returns or throws immediately if called on non-pending job.
+    // Also throws if a waiter increment callback throws to cancel the wait, which `no_throw` does not suppress.
     // Waiting for a not scheduled job is considered to be LOGICAL_ERROR, use waitLoad() helper instead to make sure the job is scheduled.
     // There are more rules if `wait()` is called from another job:
     //  1) waiting on a dependent job is considered to be LOGICAL_ERROR;
@@ -476,7 +425,7 @@ private:
     void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
-    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
+    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job, bool run_waiter_callbacks);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
     void setCurrentPriority(std::unique_lock<std::mutex> & lock, std::optional<Priority> priority);
@@ -492,6 +441,9 @@ private:
     const bool log_progress; // Periodically log total progress
     const bool log_events; // Log all important events: job start/end, waits, prioritizations
     LoggerPtr log;
+
+    WaiterCallback on_waiters_increment;
+    WaiterCallback on_waiters_decrement;
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;
