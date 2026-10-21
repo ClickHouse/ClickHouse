@@ -136,5 +136,34 @@ FROM
 
 DROP TABLE t_uneven;
 DROP TABLE t_uneven_real;
+
+-- the baseline keeps every mark of each hundredth window and two marks of each other window. Only the full windows survive
+SELECT '-- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules';
+DROP TABLE IF EXISTS t_mass;
+DROP TABLE IF EXISTS t_mass_real;
+CREATE TABLE t_mass (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_mass_real (a UInt64, b UInt64, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(192000);
+INSERT INTO t_mass_real SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(192000);
+CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 64;
+SELECT
+    extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
+    extractGroups(report, 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
+    real,
+    real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
+FROM
+(
+    SELECT arrayStringConcat(groupArray(explain), '\n') AS report
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v = 1)
+) AS estimated,
+(
+    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
+    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v = 1 SETTINGS use_skip_indexes_on_data_read = 0)
+) AS materialized;
+
+DROP TABLE t_mass;
+DROP TABLE t_mass_real;
 DROP TABLE t_budget;
 DROP TABLE t_budget_real;

@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// the sampling of the `EXPLAIN WHATIF` scans, the same for the granules of a projection and the windows of a skip index
+/// the sampling of the `EXPLAIN WHATIF` scans, the same for the granules of a projection and the baseline marks of a skip index
 
 /// fewer sampled units can't give an error estimate
 constexpr size_t min_sampled_units = 30;

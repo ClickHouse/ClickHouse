@@ -76,35 +76,46 @@ size_t countWindows(const MarkRanges & windows, size_t granularity)
     return count;
 }
 
-/// all windows, or a sample of them as the projection estimate takes granules
+/// all windows, or the windows of a sample of the baseline marks, so a window with more baseline marks is more likely in the sample
+/// one mark from every run of the marks of `step` windows on average, so the part reads no more windows than one of every `step`
 /// the same `GRANULARITY` gives every candidate the same windows
-/// `weights` gets the windows that each sampled window stands for, the last run of `step` can be shorter
+/// `weights` gets the baseline marks that each sampled window stands for: the runs that took it, and the last run can be shorter
 MarkRanges windowsToScan(
-    const MarkRanges & windows, size_t granularity, size_t step, const String & part_name, std::vector<double> & weights)
+    const MarkRanges & baseline, const MarkRanges & windows, size_t granularity, size_t total_marks, size_t step,
+    const String & part_name, std::vector<double> & weights)
 {
-    if (step <= 1)
+    if (step <= 1 || windows.empty())
         return windows;
 
+    const size_t marks = baseline.getNumberOfMarks();
     const size_t count = countWindows(windows, granularity);
-    const auto sampled = sampleUnits(count, step, part_name);
+    const size_t run = (marks * step + count - 1) / count;
+    const auto sampled = sampleUnits(marks, run, part_name);
     MarkRanges ranges;
-    const auto * range = windows.begin();
-    /// the windows in the ranges before `range`
-    size_t windows_before = 0;
+    const auto * range = baseline.begin();
+    /// the baseline marks in the ranges before `range`
+    size_t marks_before = 0;
     for (size_t i = 0; i < sampled.size(); ++i)
     {
-        while (sampled[i] >= windows_before + windowsInRange(*range, granularity))
+        while (sampled[i] >= marks_before + range->getNumberOfMarks())
         {
-            windows_before += windowsInRange(*range, granularity);
+            marks_before += range->getNumberOfMarks();
             ++range;
         }
-        const size_t begin = range->begin + (sampled[i] - windows_before) * granularity;
-        const size_t end = std::min(begin + granularity, range->end);
+        const size_t begin = (range->begin + sampled[i] - marks_before) / granularity * granularity;
+        const auto run_marks = static_cast<double>(std::min(run, marks - i * run));
+        /// a window with the marks of more than a run can take more than one mark
+        if (!ranges.empty() && ranges.back().end > begin)
+        {
+            weights.back() += run_marks;
+            continue;
+        }
+        const size_t end = std::min(begin + granularity, total_marks);
         if (!ranges.empty() && ranges.back().end == begin)
             ranges.back().end = end;
         else
             ranges.emplace_back(begin, end);
-        weights.push_back(static_cast<double>(std::min(step, count - i * step)));
+        weights.push_back(run_marks);
     }
     return ranges;
 }
@@ -180,10 +191,13 @@ bool tryEstimateEmpirical(
     UInt64 rows_planned = 0;
     for (size_t i = 0; i < saved_parts.size(); ++i)
     {
-        read_ranges[i] = windowsToScan(read_ranges[i], skip_index_granularity, step, saved_parts[i].data_part->name, sample_weights[i]);
+        const auto & part = *saved_parts[i].data_part;
+        read_ranges[i] = windowsToScan(
+            saved_parts[i].ranges, read_ranges[i], skip_index_granularity, part.index_granularity->getMarksCountWithoutFinal(), step,
+            part.name, sample_weights[i]);
         part_sampled[i] = countWindows(read_ranges[i], skip_index_granularity) < part_windows[i];
         sampled |= part_sampled[i];
-        rows_planned += saved_parts[i].data_part->index_granularity->getRowsCountInRanges(read_ranges[i]);
+        rows_planned += part.index_granularity->getRowsCountInRanges(read_ranges[i]);
     }
     if (read_limit != 0 && rows_planned > read_limit)
     {
@@ -204,7 +218,7 @@ bool tryEstimateEmpirical(
     size_t sampled_part_windows = 0;
     UInt64 baseline_marks = 0;
     std::vector<double> window_survives;
-    /// a sampled window counts with its baseline marks times the windows it stands for
+    /// a sampled window counts with the baseline marks it stands for
     std::vector<double> window_weights;
 
     /// Position of the next baseline mark, gives every candidate's bitmap the same coordinates
@@ -315,8 +329,7 @@ bool tryEstimateEmpirical(
                     /// every sampled window overlaps the baseline, so the windows flush in the order of the sample
                     chassert(window_weights.size() - window_weights_before < sample_weights[part_idx].size());
                     window_survives.push_back(survives);
-                    window_weights.push_back(sample_weights[part_idx][window_weights.size() - window_weights_before]
-                        * static_cast<double>(baseline_marks_in_window));
+                    window_weights.push_back(sample_weights[part_idx][window_weights.size() - window_weights_before]);
                 }
             };
 
