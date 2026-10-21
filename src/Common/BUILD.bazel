@@ -563,6 +563,28 @@ exports_files(
     visibility = ["//src:__pkg__"],
 )
 
+_PRIVATE_DBMS_HEADERS = [
+    "SQLDefinedHandlers/SQLDefinedHandlerFromAST.h",
+    "Scheduler/Workload/WorkloadEntityConfigStorage.h",
+    "Scheduler/Workload/WorkloadEntityDiskStorage.h",
+    "Scheduler/Workload/WorkloadEntityKeeperStorage.h",
+]
+
+exports_files(_PRIVATE_DBMS_HEADERS, visibility = ["//src:__pkg__"])
+
+_PRIVATE_COMMON_IO_HEADERS = [
+    "FieldVisitorToJSONElement.h",
+    "QueryIdSwitcher.h",
+    "SelfContained.h",
+    "SilkThreadLocalStorageSanitizer.h",
+    "StudentTTable.h",
+    "StudentTTestOneSample.h",
+    "blockDumper.h",
+    "randomNumber.h",
+]
+
+exports_files(_PRIVATE_COMMON_IO_HEADERS, visibility = ["//src:__pkg__"])
+
 ch_cc_library(
     name = "Common",
     srcs = [
@@ -575,8 +597,10 @@ ch_cc_library(
         exclude = [
             "CaresPTRResolver.h",
             "IO.h",
+            "LLVMCoverageMapping.h",
+            "MachO.h",
             "**/tests/**/*.h",
-        ],
+        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS,
     ),
     clickhouse_code = True,
     implementation_deps = [

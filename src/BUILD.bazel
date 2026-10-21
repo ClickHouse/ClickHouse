@@ -1441,7 +1441,16 @@ ch_cc_library(
         "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp",
         "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp",
         "//bazel:gen/includes/configs/config_version.cpp",
-    ] + _PRIVATE_IO_HEADERS,
+    ] + _PRIVATE_IO_HEADERS + [
+        "//src/Common:FieldVisitorToJSONElement.h",
+        "//src/Common:QueryIdSwitcher.h",
+        "//src/Common:SelfContained.h",
+        "//src/Common:SilkThreadLocalStorageSanitizer.h",
+        "//src/Common:StudentTTable.h",
+        "//src/Common:StudentTTestOneSample.h",
+        "//src/Common:blockDumper.h",
+        "//src/Common:randomNumber.h",
+    ],
     hdrs = glob(
         ["IO/**/*.h"],
         exclude = _PRIVATE_IO_HEADERS,
@@ -2683,7 +2692,12 @@ ch_cc_library(
         "//src/Functions:UserDefined/UserDefinedWebAssemblyScriptAbi.cpp",
         "//src/Functions:UserDefined/UserDefinedWebAssemblyTypeHelpers.cpp",
         "//src/Functions:UserDefined/createUserDefinedSQLObjectsStorage.cpp",
-    ] + glob(["Processors/Formats/Impl/Parquet/*.cpp"]) + glob(["Processors/Formats/Impl/ArrowIPC/*.cpp"]) + glob(["Coordination/*.cpp"]) + glob(["Coordination/Storage/*.cpp"]) + _PRIVATE_DBMS_0_HEADERS,
+    ] + glob(["Processors/Formats/Impl/Parquet/*.cpp"]) + glob(["Processors/Formats/Impl/ArrowIPC/*.cpp"]) + glob(["Coordination/*.cpp"]) + glob(["Coordination/Storage/*.cpp"]) + _PRIVATE_DBMS_0_HEADERS + [
+        "//src/Common:SQLDefinedHandlers/SQLDefinedHandlerFromAST.h",
+        "//src/Common:Scheduler/Workload/WorkloadEntityConfigStorage.h",
+        "//src/Common:Scheduler/Workload/WorkloadEntityDiskStorage.h",
+        "//src/Common:Scheduler/Workload/WorkloadEntityKeeperStorage.h",
+    ],
     hdrs = _GENERATED_HDRS_1,
     additional_compiler_inputs = [
         "//bazel:gen/embedded/programs/keeper/dashboard.html",
