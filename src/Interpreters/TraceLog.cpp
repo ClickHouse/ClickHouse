@@ -20,15 +20,23 @@
 #include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/ErrnoException.h>
 #include <Common/SipHash.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 
+#include <array>
 #include <cstring>
-#include <random>
+#include <sys/random.h>
+#include <unistd.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYSTEM_ERROR;
+}
 
 namespace
 {
@@ -37,21 +45,18 @@ namespace
 /// same value, but the heap address is not published. 0 stays 0 (no address).
 UInt64 hideAllocationAddress(UInt64 ptr)
 {
-    /// ClickHouse's libc++ obtains `std::random_device` output from the OS
-    /// randomness source and throws if it cannot be read.
-    static const std::pair<UInt64, UInt64> key = []
+    /// The key must not be predictable, so it is read from the OS randomness source.
+    static const std::array<UInt64, 2> key = []
     {
-        std::random_device device;
-        const auto next = [&device]
-        {
-            return (UInt64{device()} << 32) | UInt64{device()};
-        };
-        return std::pair{next(), next()};
+        std::array<UInt64, 2> words;
+        if (::getentropy(words.data(), sizeof(words)) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getentropy");
+        return words;
     }();
 
     if (ptr == 0)
         return 0;
-    const UInt64 hash = sipHash64Keyed(key.first, key.second, reinterpret_cast<const char *>(&ptr), sizeof(ptr));
+    const UInt64 hash = sipHash64Keyed(key[0], key[1], reinterpret_cast<const char *>(&ptr), sizeof(ptr));
     return hash ? hash : 1;
 }
 
