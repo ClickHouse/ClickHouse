@@ -787,7 +787,7 @@ private:
     void initColumnsCache();
     bool canWriteToColumnsCache() const;
     void addToColumnsCacheWrite(
-        RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, const ColumnPtr & column, bool has_substituted_defaults);
+        RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);

@@ -4411,15 +4411,15 @@ bool Reader::canWriteToColumnsCache() const
 }
 
 void Reader::addToColumnsCacheWrite(
-    RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, const ColumnPtr & column, bool has_substituted_defaults)
+    RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults)
 {
     auto & write = row_group.columns_cache_writes.at(idx_in_output_block);
     if (!write.active)
         return;
 
-    /// Only a whole chunk is written, see `COLUMNS_CACHE_CHUNK_ROWS`: the row subgroups of a row group written to
+    /// Only a whole chunk is kept, see `COLUMNS_CACHE_CHUNK_ROWS`: the row subgroups of a row group written to
     /// the cache are its chunks, and one filtered by PREWHERE before this column was decoded, or cut short by the
-    /// column index, is not written. Neither is a column with values replaced with defaults
+    /// column index, is not kept. Neither is a column with values replaced with defaults
     /// (`input_format_null_as_default`): the cache does not keep which values are replaced, which a later query
     /// may need for the block missing values, even if this query does not (e.g. the column is `PREWHERE`-only).
     const size_t num_rows = size_t(row_group.meta->num_rows);
@@ -4431,8 +4431,20 @@ void Reader::addToColumnsCacheWrite(
         && column->size() == chunk_rows
         && !has_substituted_defaults;
 
-    if (!complete || !canWriteToColumnsCache())
+    if (!complete)
         return;
+
+    /// Give back the capacity the column holds beyond its values: the decoder reserves memory by an estimate,
+    /// which can be far off (for dictionary-encoded strings, it is the average length of the values of the
+    /// dictionary, not of the rows), and an entry retains - and is charged for - all its memory.
+    /// The column has just been formed and is not shared yet, so this reallocates it in place, without a copy.
+    static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+    if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
+    {
+        auto mutable_column = IColumn::mutate(std::move(column));
+        mutable_column->shrinkToFit();
+        column = std::move(mutable_column);
+    }
 
     /// The decoded column itself becomes the entry, shared with the result of the read: no copy is made. It was
     /// allocated by this query, and its memory is handed over to the server when the cache admits it, see `setMany`.
@@ -4463,14 +4475,25 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
     if (row_group.columns_cache_writes.empty())
         return;
 
+    /// A column of a row group is served from the cache only if all its chunks are there, see `initColumnsCache`,
+    /// so the chunks of a column are written only all together. The budget is checked once for the row group:
+    /// it is a soft threshold, and the entries of the row group that crosses it are written in full.
+    const size_t num_rows = size_t(row_group.meta->num_rows);
+    const size_t num_chunks = (num_rows + COLUMNS_CACHE_CHUNK_ROWS - 1) / COLUMNS_CACHE_CHUNK_ROWS;
     std::vector<ColumnsCache::MappedPtr> entries;
-    for (auto & write : row_group.columns_cache_writes)
-        for (auto & entry : write.entries)
-            entries.push_back(std::move(entry));
+    if (canWriteToColumnsCache())
+    {
+        for (auto & write : row_group.columns_cache_writes)
+        {
+            if (write.entries.size() != num_chunks)
+                continue;
+            for (auto & entry : write.entries)
+                entries.push_back(std::move(entry));
+        }
+    }
     row_group.columns_cache_writes.clear();
 
-    /// The budget is a soft threshold: the entries of the row group that crosses it are written in full.
-    if (entries.empty() || !canWriteToColumnsCache())
+    if (entries.empty())
         return;
 
     const ColumnsCacheOptions & cache_options = *options.columns_cache;
