@@ -3885,7 +3885,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         // Skip index analysis and return parts with all marks
         // The coordinator will choose ranges to read for workers based on index analysis on its side
         result.parts_with_ranges = std::move(res_parts);
-        result.index_analysis_skipped = true;
         result.index_analysis_was_already_done_on_initiator = true;
     }
     else
@@ -6017,7 +6016,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             std::move(index_read_result_pool),
             std::move(part_remaining_marks));
         index_build_context->needs_analyzed_ranges
-            = result.index_analysis_skipped && index_build_context->index_reader_pool->hasSkipIndexReader();
+            = result.index_analysis_was_already_done_on_initiator && index_build_context->index_reader_pool->hasSkipIndexReader();
     }
 
     Pipe pipe;
