@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_trivial_approximate_count_query">
-  ## optimize_trivial_approximate_count_query
-</div>
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ Valores posibles:
 * 0 — Optimización deshabilitada.
   * 1 — Optimización habilitada.
 
-<div id="optimize_trivial_count_query">
-  ## optimize_trivial_count_query
-</div>
+## optimize_trivial_count_query {#optimize_trivial_count_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,9 +40,7 @@ Véase también:
 
 * [optimize&#95;functions&#95;to&#95;subcolumns](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)
 
-<div id="optimize_trivial_count_with_sparsity_filter">
-  ## optimize_trivial_count_with_sparsity_filter
-</div>
+## optimize_trivial_count_with_sparsity_filter {#optimize_trivial_count_with_sparsity_filter}
 
 <BetaBadge />
 
@@ -94,26 +88,26 @@ Véase también:
 
 * [optimize&#95;trivial&#95;count&#95;query](/es/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)
 
-<div id="optimize_trivial_group_by_limit_query">
-  ## optimize_trivial_group_by_limit_query
-</div>
+## optimize_trivial_group_by_limit_query {#optimize_trivial_group_by_limit_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nuevo SETTING que limita la agregación a un máximo de LIMIT claves distintas para las consultas `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nueva configuración que limita la agregación a un máximo de LIMIT claves distintas para consultas `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-Activa o desactiva la optimización de una consulta trivial `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sin funciones de agregación, funciones de ventana ni `arrayJoin` en la proyección, sin cláusulas `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window y sin modificadores `GROUP BY`) estableciendo `max_rows_to_group_by = n + offset` con `group_by_overflow_mode = 'any'`. La agregación se detiene en cuanto se obtienen `n + offset` claves distintas.
+Habilita o deshabilita la optimización de una consulta trivial `SELECT ... FROM table GROUP BY key_expr LIMIT n` (sin cláusulas `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/de ventana y sin modificadores de `GROUP BY`), que consiste en limitar la agregación a `n + offset` claves distintas.
 
-La optimización se suprime cuando el usuario ha establecido explícitamente `group_by_overflow_mode` en un valor distinto de `any` (para preservar el comportamiento explícito de `throw`/`break`), y cuando el usuario ya ha establecido un `max_rows_to_group_by` más restrictivo (la optimización no tendría efecto).
+Si la proyección no contiene funciones de agregación, el límite se aplica estableciendo `max_rows_to_group_by = n + offset` con `group_by_overflow_mode = 'any'` (esta variante también se aplica en los segmentos de las consultas distribuidas). Si la proyección contiene funciones de agregación, el límite solo se aplica cuando el servidor realiza toda la agregación localmente: en cuanto cualquier thread de agregación supera el límite, todos los threads pasan a compartir un único conjunto de `n + offset` claves conservadas, de modo que los valores agregados de las claves devueltas siguen siendo exactos.
+
+La optimización no se aplica cuando el usuario ha establecido explícitamente `group_by_overflow_mode` en un valor distinto de `any` (para respetar el comportamiento `throw`/`break` que ha elegido de forma explícita), cuando el usuario ya ha establecido un `max_rows_to_group_by` más restrictivo, ni cuando se usa [exact&#95;rows&#95;before&#95;limit](/es/reference/settings/session-settings/other#exact_rows_before_limit) (el límite haría que `rows_before_limit_at_least` informara como máximo `n + offset`).
+
+La variante con funciones de agregación es incompatible con el heap top-K de `GROUP BY` de [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/es/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) en la misma consulta. Como el heap es más rápido, el corte solo se aplica cuando no se puede usar el heap: cuando está deshabilitado, cuando `n + offset` supera [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/es/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization), cuando `max_rows_to_group_by` está establecido o cuando el plan de consulta está serializado.
 
 Valores posibles:
 
 * 0 — Optimización deshabilitada.
 * 1 — Optimización habilitada.
 
-<div id="optimize_trivial_insert_select">
-  ## optimize_trivial_insert_select
-</div>
+## optimize_trivial_insert_select {#optimize_trivial_insert_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -121,9 +115,10 @@ Valores posibles:
 
 Optimiza la consulta trivial &#39;INSERT INTO table SELECT ... FROM TABLES&#39;
 
-<div id="optimize_trivial_view_pushdown_to_distributed">
-  ## optimize_trivial_view_pushdown_to_distributed
-</div>
+Combine esta configuración con un valor explícito de `max_insert_threads`: la optimización limita el `SELECT` a
+`max_insert_threads` threads de lectura, lo que modifica el número de bloques que genera el `SELECT`.
+
+## optimize_trivial_view_pushdown_to_distributed {#optimize_trivial_view_pushdown_to_distributed}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

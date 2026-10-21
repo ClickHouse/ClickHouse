@@ -23,6 +23,7 @@
 #include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -76,6 +77,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char backup_pause_on_start[];
+    extern const char backups_hold_registration_until_ddl_worker_stops[];
     extern const char backups_pause_before_publishing_progress[];
     extern const char restore_pause_before_publishing_final_progress[];
     extern const char restore_pause_on_start[];
@@ -687,6 +689,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
     backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
+    backup_create_params.fsync_backup_files = backup_settings.fsync_backup_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
@@ -1352,6 +1355,15 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
                                                      BackupStatus status, std::map<String, String> settings)
 {
+    /// Outside `infos_mutex`, so that the hold does not block the shutdown wait.
+    /// During shutdown the DDL worker is stopped only after `ProcessList::killAllQueries`.
+    fiu_do_on(FailPoints::backups_hold_registration_until_ddl_worker_stops,
+    {
+        const auto & ddl_worker = Context::getGlobalContextInstance()->getDDLWorker();
+        while (fiu_fail(FailPoints::backups_hold_registration_until_ddl_worker_stops) && ddl_worker.isCurrentlyActive())
+            sleepForMilliseconds(10);
+    });
+
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
     info.id = id;

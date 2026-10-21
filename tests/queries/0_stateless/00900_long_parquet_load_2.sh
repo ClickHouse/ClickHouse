@@ -44,10 +44,17 @@ EXCLUDE=(
     04514_geo_pruning_iceberg_geostats.parquet
     04515_geo_pruning_iceberg_malformed_bbox.parquet
     04691_geo_page_pruning_null_bbox.parquet
+    # Files with the `GEOMETRY` and `GEOGRAPHY` logical types, tested separately.
+    05361_geospatial_crs_default.parquet
+    05361_geospatial_crs_geography.parquet
+    05361_geospatial_crs_srid.parquet
+    05361_geospatial_geography_points.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
     04045_delta_sample_93093.parquet
+    # `FILE` logical type fixture with raw binary `inline` values, tested by 05361.
+    file_logical_type_arrow_rs.parquet
     # Hand-crafted file for testing dictionary memory estimation with sparse nullables.
     04099_dict_nullable_string_memory.parquet
     # Schema fixtures for the 04757 schema-inference cache key test. The VARIANT one carries a

@@ -17,20 +17,16 @@ Con ClickHouse Cloud, nunca tendrá que preocuparse por aplicar parches ni por l
 * Para conocer el calendario de publicación de versiones, consulte la página de [estado de lanzamiento](/es/resources/changelogs/cloud/release-status)
 
 <Note>
-  Estamos introduciendo un nuevo mecanismo de actualización, un concepto al que llamamos &quot;make before break&quot; (o MBB). Con este nuevo enfoque, añadimos réplicas actualizadas antes de retirar las antiguas durante la operación de actualización. Esto se traduce en actualizaciones más fluidas y menos disruptivas para las cargas de trabajo activas.
-
-  Como parte de este cambio, los datos históricos de las tablas del sistema se conservarán durante un máximo de 30 días en el contexto de los eventos de actualización. Además, los datos de las tablas del sistema anteriores al 19 de diciembre de 2024 para los servicios en AWS o GCP, y anteriores al 14 de enero de 2025 para los servicios en Azure, no se conservarán como parte de la migración a los nuevos niveles de la organización.
+  Con [MBB](/es/products/cloud/features/autoscaling/make-before-break) en ClickHouse Cloud, los datos históricos de las tablas del sistema se conservan durante un máximo de 30 días en el contexto de los eventos de actualización.
 </Note>
 
-<div id="version-compatibility">
-  ## Compatibilidad de versiones
-</div>
+## Compatibilidad de versiones {#version-compatibility}
 
 Cuando creas un servicio, la configuración [`compatibility`](/es/reference/settings/session-settings/compatibility#compatibility) se establece en la versión más reciente de ClickHouse disponible en ClickHouse Cloud en el momento en que tu servicio se aprovisiona por primera vez.
 
 La configuración `compatibility` te permite usar los valores predeterminados de configuración de versiones anteriores. Cuando tu servicio se actualiza a una nueva versión, la versión especificada para la configuración `compatibility` no cambia. Esto significa que los valores predeterminados de configuración que existían cuando creaste tu servicio por primera vez no cambiarán (a menos que ya hayas anulado esos valores predeterminados, en cuyo caso se conservarán después de la actualización).
 
-No puedes administrar la configuración `compatibility` predeterminada a nivel de servicio. Debes [contactar con soporte](https://clickhouse.com/support/program) si quieres cambiar la versión establecida para la configuración `compatibility` predeterminada de tu servicio. Sin embargo, puedes anular la configuración `compatibility` a nivel de usuario, rol, perfil, consulta o sesión mediante los mecanismos de configuración estándar de ClickHouse, como `SET compatibility = '22.3'` en una sesión o `SETTINGS compatibility = '22.3'` en una consulta.
+En ClickHouse Cloud, no puedes administrar directamente la configuración `compatibility` predeterminada a nivel de servicio; debes [contactar con el soporte de ClickHouse](https://clickhouse.com/support/program) si quieres cambiar la versión establecida para la configuración `compatibility` predeterminada de tu servicio. Sin embargo, puedes anular la configuración `compatibility` a nivel de usuario, rol, perfil, consulta o sesión mediante los mecanismos de configuración estándar de ClickHouse, como `SET compatibility = '26.8'` en una sesión o `SETTINGS [other settings,] compatibility = '26.8'` en una consulta.
 
 <div id="maintenance-mode">
   ## Modo de mantenimiento
@@ -113,9 +109,7 @@ En concreto, los servicios:
   * Cambiar a un canal más lento no revertirá su servicio a una versión anterior y lo mantendrá en la versión actual hasta que haya una versión más reciente disponible en ese canal; por ejemplo, de Regular a Slow o de Fast a Regular o Slow
 </Note>
 
-<div id="scheduled-upgrades">
-  ## Actualizaciones programadas
-</div>
+## Actualizaciones programadas {#scheduled-upgrades}
 
 <EnterprisePlanFeatureBadge feature="Actualizaciones programadas" linking_verb_are="true" />
 
