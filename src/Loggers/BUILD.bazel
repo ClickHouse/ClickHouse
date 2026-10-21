@@ -151,5 +151,13 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["*.h"], exclude = ["OwnJSONPatternFormatter.h"]),
-    deps = ["//base/poco/Util:_poco_util"],
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_boost//:boost_headers",
+        "//src/Common",
+        "//src:core_types",
+    ],
 )

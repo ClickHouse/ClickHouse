@@ -94,8 +94,15 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(["**/*.h"]) + ["//src/Common/Config:ConfigProcessor.h"],
+    strip_include_prefix = "/src",
     deps = [
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/XML:_poco_xml",
+        "//bazel:clickhouse_config_headers",
+        "//src/Common",
         "//base/poco/Util:_poco_util",
         "//src/Loggers:headers",
     ],
