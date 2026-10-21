@@ -97,11 +97,13 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     distributed_plan_fallback_to_local_execution = 0;
 DROP TABLE t_gating_dist;
 
--- `WITH FILL` is not supported yet; without `make_distributed_plan` the same query runs single-node.
-SELECT '-- 10. WITH FILL is rejected (fail-close)';
+-- `WITH FILL` is distributed and gives the same result as the single-node query that follows.
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
+SELECT '-- 10. WITH FILL distributes';
 SELECT k FROM t_gating WHERE k IN (0, 2, 4) GROUP BY k ORDER BY k WITH FILL
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
-    distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+    distributed_plan_execute_locally = 1, max_rows_to_group_by = 0,
+    distributed_plan_fallback_to_local_execution = 0;
 SELECT k FROM t_gating WHERE k IN (0, 2, 4) GROUP BY k ORDER BY k WITH FILL
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 
