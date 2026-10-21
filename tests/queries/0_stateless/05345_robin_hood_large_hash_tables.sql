@@ -23,7 +23,10 @@ SELECT 'uniqExact';
 SELECT uniqExact(number) FROM numbers(9000000);
 
 SELECT 'Merge of two-level states';
-SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM remote('127.0.0.{1,2}', numbers(9000000)) GROUP BY k);
+-- With `prefer_localhost_replica = 1` the single thread aggregates the local shard and does not finish the handshake
+-- with the remote one in time, so the remote server closes the connection after `handshake_timeout_milliseconds`.
+SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM remote('127.0.0.{1,2}', numbers(9000000)) GROUP BY k)
+SETTINGS prefer_localhost_replica = 0;
 
 SELECT 'JOIN';
 -- Only `parallel_hash` uses two-level maps, plain `hash` uses one-level maps.
