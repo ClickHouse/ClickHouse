@@ -1,5 +1,5 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e..99f3f12 100644
+index 13af75e..0423f31 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -32,7 +32,21 @@ index 13af75e..99f3f12 100644
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -363,7 +369,11 @@ def _dywu_results_from_deps(deps):
+@@ -171,6 +177,13 @@ def _process_target(ctx, target, config, output_path, is_target_under_inspection
+     args.add("--target", str(target.label))
+     args.add("--output", processing_output)
+     args.add_all("--header_files", header_files, expand_directories = True, omit_if_empty = False)
++    if config.preprocessing_mode == "compiler":
++        cc = target.cc_info.compilation_context
++        args.add_all(
++            "--exported_include_dirs",
++            depset(transitive = [cc.includes, cc.system_includes, cc.external_includes]),
++            omit_if_empty = False,
++        )
+     if is_target_under_inspection:
+         args.add("--is_target_under_inspection")
+     if _is_verbose(ctx):
+@@ -363,7 +376,11 @@ def _dywu_results_from_deps(deps):
      """
      We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
      """
@@ -45,7 +59,7 @@ index 13af75e..99f3f12 100644
  
  def _gather_transitive_reports(ctx):
      """
-@@ -373,9 +383,29 @@ def _gather_transitive_reports(ctx):
+@@ -373,9 +390,29 @@ def _gather_transitive_reports(ctx):
      """
      reports = []
      if ctx.attr._recursive:
@@ -78,7 +92,7 @@ index 13af75e..99f3f12 100644
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +416,307 @@ def _return_on_skip(ctx):
+@@ -386,12 +423,307 @@ def _return_on_skip(ctx):
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -388,7 +402,7 @@ index 13af75e..99f3f12 100644
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +765,59 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
+@@ -440,7 +772,59 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
  
          preprocessor_results.append(pp_output)
  
@@ -449,7 +463,7 @@ index 13af75e..99f3f12 100644
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +887,17 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -510,8 +894,17 @@ def dwyu_cc_aspect_impl(target, ctx):
      #
  
      config = _make_dwyu_config(ctx)
@@ -469,7 +483,7 @@ index 13af75e..99f3f12 100644
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +915,39 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -529,26 +922,39 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -511,7 +525,7 @@ index 13af75e..99f3f12 100644
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +959,20 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,17 +966,20 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -535,7 +549,7 @@ index 13af75e..99f3f12 100644
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +986,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -584,3 +993,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -723,7 +737,7 @@ index 13af75e..99f3f12 100644
 +    )
 +    return [DefaultInfo(files = depset([report])), OutputGroupInfo(dwyu_consumer = depset([report]))]
 diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
-index bd8a745..f3d1f1c 100644
+index bd8a745..c085215 100644
 --- a/dwyu/cc/aspect/factory.bzl
 +++ b/dwyu/cc/aspect/factory.bzl
 @@ -2,7 +2,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
@@ -887,10 +901,86 @@ index bd8a745..f3d1f1c 100644
 +    },
 +)
 diff --git a/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp b/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
-index 0453d1b..ef65beb 100644
+index 0453d1b..c213e73 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
-@@ -68,23 +68,12 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
+@@ -4,6 +4,9 @@
+ #include "dwyu/cc/aspect/private/analyze_includes/result.h"
+ #include "dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h"
+ 
++#include <algorithm>
++#include <filesystem>
++#include <map>
+ #include <set>
+ #include <string>
+ #include <tuple>
+@@ -14,6 +17,51 @@
+ namespace dwyu {
+ namespace {
+ 
++struct UnverifiedDirectory {
++    std::vector<std::shared_ptr<CcDependency>> providers;
++    std::string reason;
++};
++
++void useExportedDirectories(const std::vector<IncludeStatement>& includes,
++                            const TargetUsage::Status usage,
++                            const std::vector<std::shared_ptr<CcDependency>>& deps,
++                            std::vector<UnverifiedDirectory>& unverified) {
++    namespace fs = std::filesystem;
++    std::map<fs::path, std::vector<std::shared_ptr<CcDependency>>> directories;
++    for (const auto& dep : deps) {
++        for (const auto& directory : dep->exported_include_dirs) {
++            auto& providers = directories[fs::path{directory}.lexically_normal()];
++            if (std::find(providers.begin(), providers.end(), dep) == providers.end()) providers.push_back(dep);
++        }
++    }
++    for (const auto& include : includes) {
++        const auto& statement = include.include;
++        if (statement.size() < 3) continue;
++        const fs::path spelling{statement.substr(1, statement.size() - 2)};
++        // An absolute header name never needs a configured search directory.
++        if (spelling.is_absolute()) continue;
++        const auto resolved = fs::path{include.resolved_include}.lexically_normal();
++        for (const auto& [directory, providers] : directories) {
++            if ((directory / spelling).lexically_normal() != resolved) continue;
++            const bool has_parent = std::find(spelling.begin(), spelling.end(), fs::path{".."}) != spelling.end();
++            const bool unsupported = !include.unsupported_search_flag.empty() || has_parent;
++            const bool quoted = statement.front() != '<' || statement.back() != '>';
++            // A quoted include resolved alongside its source requires no
++            // dependency search directory, even if one lists the same directory.
++            if (quoted && (fs::path{include.file}.parent_path() / spelling).lexically_normal() == resolved) continue;
++            if (!quoted && !unsupported && providers.size() == 1) {
++                providers.front()->usage.update(usage);
++                continue;
++            }
++            std::string reason = include.file + " " + statement + " -> " + include.resolved_include;
++            if (unsupported) reason += " (unsupported compiler search " + include.unsupported_search_flag + ")";
++            else if (quoted) reason += " (quoted include may use a quote directory)";
++            else reason += " (directory exported by multiple direct dependencies)";
++            unverified.push_back({providers, std::move(reason)});
++        }
++    }
++}
++
+ std::vector<IncludeStatement>
+ findIncludesWithoutDirectDependency(const std::vector<IncludeStatement>& includes,
+                                     const TargetUsage::Status usage,
+@@ -61,6 +109,13 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
+         private_includes, TargetUsage::Status::Private, system_under_inspection.target_under_inspection.header_files,
+         system_under_inspection.headers_to_all_deps_map);
+ 
++    std::vector<UnverifiedDirectory> unverified_directories;
++    auto all_deps = system_under_inspection.public_deps;
++    all_deps.insert(all_deps.end(), system_under_inspection.private_deps.begin(), system_under_inspection.private_deps.end());
++    useExportedDirectories(public_includes, TargetUsage::Status::Public,
++                           system_under_inspection.public_deps, unverified_directories);
++    useExportedDirectories(private_includes, TargetUsage::Status::Private, all_deps, unverified_directories);
++
+     if (report_missing_direct_deps) {
+         result.setPublicIncludesWithoutDirectDep(std::move(public_includes_without_direct_dep));
+         result.setPrivateIncludesWithoutDirectDep(std::move(private_includes_without_direct_dep));
+@@ -68,23 +123,12 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
  
      if (report_unused_deps) {
          std::set<std::string> unused_deps{};
@@ -918,7 +1008,19 @@ index 0453d1b..ef65beb 100644
          }
  
          for (const auto& ignored : ignored_unused_deps) {
-@@ -98,12 +87,8 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
+@@ -94,16 +138,20 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
+ 
+         result.setUnusedDeps(std::move(unused_deps));
+         result.setUnusedImplDeps(std::move(unused_impl_deps));
++        for (const auto& directory : unverified_directories) {
++            // A direct owner or another proven use already retains this
++            // exported directory. Forwarders of the same directory add nothing.
++            if (std::any_of(directory.providers.begin(), directory.providers.end(),
++                            [](const auto& dep) { return dep->usage.is_used(); })) continue;
++            for (const auto& dep : directory.providers)
++                result.markUnverifiedCompilationDep(dep->name, directory.reason);
++        }
+     }
  
      if (optimize_impl_deps) {
          std::set<std::string> deps_which_should_be_private{};
@@ -934,7 +1036,7 @@ index 0453d1b..ef65beb 100644
          result.setDepsWhichShouldBePrivate(std::move(deps_which_should_be_private));
      }
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
-index f27d618..ba3fa79 100644
+index f27d618..0a23cf6 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 @@ -12,7 +12,8 @@
@@ -958,7 +1060,15 @@ index f27d618..ba3fa79 100644
              for (const auto& include_data : per_file_data["resolved_includes"]) {
                  auto include = include_data["include"].get<std::string>();
                  if (!isIgnoredInclude(include, ignored_includes)) {
-@@ -36,4 +41,36 @@ std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string
+@@ -27,6 +32,7 @@ std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string
+                     include_stmt.file = per_file_data["file"].get<std::string>();
+                     include_stmt.include = std::move(include);
+                     include_stmt.resolved_include = include_data["file"].get<std::string>();
++                    include_stmt.unsupported_search_flag = include_data.value("unsupported_search_flag", std::string{});
+                     include_statements.push_back(std::move(include_stmt));
+                 }
+             }
+@@ -36,4 +42,36 @@ std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string
      return include_statements;
  }
  
@@ -996,7 +1106,7 @@ index f27d618..ba3fa79 100644
 +
  } // namespace dwyu
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.h b/dwyu/cc/aspect/private/analyze_includes/include_statement.h
-index b0697ed..a4703c2 100644
+index b0697ed..8e619c9 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/include_statement.h
 @@ -4,6 +4,8 @@
@@ -1008,7 +1118,13 @@ index b0697ed..a4703c2 100644
  #include <vector>
  
  namespace dwyu {
-@@ -19,7 +21,12 @@ struct IncludeStatement {
+@@ -15,11 +17,18 @@ struct IncludeStatement {
+     std::string include;
+     // The path of the included file. The path is relative to the Bazel actions execution directory
+     std::string resolved_include;
++    // A configured compiler option whose directory lookup cannot be attributed.
++    std::string unsupported_search_flag;
+ };
  
  // Parse the result of preprocessing the individual source files of the target under inspection
  std::vector<IncludeStatement> getIncludeStatements(const std::vector<std::string>& files,
@@ -1230,16 +1346,16 @@ index d062c5b..4e7f045 100644
      }
      else {
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-index 5d235c1..ad684bf 100644
+index 5d235c1..bcba6a9 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-@@ -39,7 +39,16 @@ Result::Result(std::string target) : target_{std::move(target)} {}
+@@ -39,7 +39,22 @@ Result::Result(std::string target) : target_{std::move(target)} {}
  
  bool Result::isOk() const {
      return public_includes_without_direct_dep_.empty() && private_includes_without_direct_dep_.empty() &&
 -           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty();
 +           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty() &&
-+           unverified_link_deps_.empty();
++           unverified_link_deps_.empty() && unverified_compilation_deps_.empty();
 +}
 +
 +void Result::markUnverifiedLinkDeps(const std::vector<std::string>& candidates) {
@@ -1248,10 +1364,16 @@ index 5d235c1..ad684bf 100644
 +        const auto priv = unused_impl_deps_.erase(dep);
 +        if (pub || priv) unverified_link_deps_.insert(dep);
 +    }
++}
++
++void Result::markUnverifiedCompilationDep(const std::string& dep, const std::string& reason) {
++    const auto pub = unused_deps_.erase(dep);
++    const auto priv = unused_impl_deps_.erase(dep);
++    if (pub || priv) unverified_compilation_deps_.insert(dep + ": " + reason);
  }
  
  void Result::setPublicIncludesWithoutDirectDep(std::vector<IncludeStatement> includes) {
-@@ -105,6 +114,11 @@ std::string Result::toString(const std::string& report_path) const {
+@@ -105,6 +120,16 @@ std::string Result::toString(const std::string& report_path) const {
          }
      }
  
@@ -1260,42 +1382,50 @@ index 5d235c1..ad684bf 100644
 +        for (const auto& dep : unverified_link_deps_) content += "  " + dep + "\n";
 +    }
 +
++    if (!unverified_compilation_deps_.empty()) {
++        content += "\nCompiler include observations cannot identify which dependency supplied an include directory:\n";
++        for (const auto& dep : unverified_compilation_deps_) content += "  " + dep + "\n";
++    }
++
      content += "\n";
      content += "DWYU Report: " + report_path + "\n";
  
-@@ -118,6 +132,7 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
+@@ -118,6 +143,8 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
      data["private_includes_without_dep"] = makeMissingIncludesMap(private_includes_without_direct_dep_);
      data["unused_deps"] = unused_deps_;
      data["unused_implementation_deps"] = unused_impl_deps_;
 +    if (!unverified_link_deps_.empty()) data["unverified_link_deps"] = unverified_link_deps_;
++    data["unverified_compilation_deps"] = unverified_compilation_deps_;
      data["deps_which_should_be_private"] = public_dep_which_should_be_private_;
      // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
      // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/private/analyze_includes/result.h
-index 4129d2d..8696486 100644
+index 4129d2d..f66f625 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.h
-@@ -16,6 +16,7 @@ class Result {
+@@ -16,6 +16,8 @@ class Result {
      explicit Result(std::string target);
  
      bool isOk() const;
 +    void markUnverifiedLinkDeps(const std::vector<std::string>& candidates);
++    void markUnverifiedCompilationDep(const std::string& dep, const std::string& reason);
  
      std::string toString(const std::string& report_path) const;
      nlohmann::json toJson(bool use_implementation_deps) const;
-@@ -33,6 +34,7 @@ class Result {
+@@ -33,6 +35,8 @@ class Result {
      std::vector<IncludeStatement> private_includes_without_direct_dep_;
      std::set<std::string> unused_deps_;
      std::set<std::string> unused_impl_deps_;
 +    std::set<std::string> unverified_link_deps_;
++    std::set<std::string> unverified_compilation_deps_;
      std::set<std::string> public_dep_which_should_be_private_;
  };
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
-index 1af6179..40045fd 100644
+index 1af6179..0a04727 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
-@@ -50,7 +50,7 @@ void TargetUsage::update(const Status usage_update) {
+@@ -50,14 +50,17 @@ void TargetUsage::update(const Status usage_update) {
  
  SystemUnderInspection getSystemUnderInspection(const std::string& target_under_inspection,
                                                 const std::vector<std::string>& deps,
@@ -1304,27 +1434,42 @@ index 1af6179..40045fd 100644
      SystemUnderInspection system{};
  
      system.target_under_inspection = getTargetUnderInspectionFromFile(target_under_inspection);
-@@ -58,6 +58,7 @@ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_i
+ 
      for (const auto& file_path : deps) {
          const auto data = readJsonFromFile(file_path);
-         auto cc_dep = std::make_shared<CcDependency>(CcDependency{data["target"].get<std::string>(), TargetUsage{}});
+-        auto cc_dep = std::make_shared<CcDependency>(CcDependency{data["target"].get<std::string>(), TargetUsage{}});
++        auto cc_dep = std::make_shared<CcDependency>(CcDependency{
++            data["target"].get<std::string>(), TargetUsage{},
++            data.value("exported_include_dirs", std::vector<std::string>{})});
 +        if (inspect_headerless || !data["header_files"].empty()) system.public_deps.push_back(cc_dep);
          for (const auto& header_file : data["header_files"].get<std::vector<std::string>>()) {
              updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_public_deps_map);
              updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_all_deps_map);
-@@ -67,6 +68,7 @@ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_i
+@@ -66,7 +69,10 @@ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_i
+ 
      for (const auto& file_path : impl_deps) {
          const auto data = readJsonFromFile(file_path);
-         auto cc_dep = std::make_shared<CcDependency>(CcDependency{data["target"].get<std::string>(), TargetUsage{}});
+-        auto cc_dep = std::make_shared<CcDependency>(CcDependency{data["target"].get<std::string>(), TargetUsage{}});
++        auto cc_dep = std::make_shared<CcDependency>(CcDependency{
++            data["target"].get<std::string>(), TargetUsage{},
++            data.value("exported_include_dirs", std::vector<std::string>{})});
 +        if (inspect_headerless || !data["header_files"].empty()) system.private_deps.push_back(cc_dep);
          for (const auto& header_file : data["header_files"].get<std::vector<std::string>>()) {
              updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_all_deps_map);
          }
 diff --git a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
-index 70a8ae5..a899c6b 100644
+index 70a8ae5..522973b 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
-@@ -42,15 +42,13 @@ struct SystemUnderInspection {
+@@ -34,6 +34,7 @@ struct CcTargetUnderInspection {
+ struct CcDependency {
+     std::string name;
+     TargetUsage usage;
++    std::vector<std::string> exported_include_dirs;
+ };
+ 
+ struct SystemUnderInspection {
+@@ -42,15 +43,13 @@ struct SystemUnderInspection {
      CcTargetUnderInspection target_under_inspection;
      HeadersToDepsMap headers_to_public_deps_map;
      HeadersToDepsMap headers_to_all_deps_map;
@@ -1362,10 +1507,10 @@ index e914b98..96a1fc6 100644
          "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
 diff --git a/trial/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
 new file mode 100644
-index 0000000..f14d6ac
+index 0000000..78ca8be
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler.h
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,215 @@
 +#ifndef DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
 +#define DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
 +
@@ -1473,8 +1618,11 @@ index 0000000..f14d6ac
 +            return;
 +        }
 +        resolved = execPath(resolved);
-+        if ((!root_is_owned || resolved != own_file) && !search.isToolchain(resolved))
-+            observations(pending_file, pending_public).push_back({{"include", pending_statement}, {"file", resolved}});
++        if ((!root_is_owned || resolved != own_file) && !search.isToolchain(resolved)) {
++            auto include = nlohmann::json{{"include", pending_statement}, {"file", resolved}};
++            if (!search.unsupportedFlag().empty()) include["unsupported_search_flag"] = search.unsupportedFlag();
++            observations(pending_file, pending_public).push_back(std::move(include));
++        }
 +        pending_statement.clear();
 +        pending_file.clear();
 +    };
@@ -1580,10 +1728,10 @@ index 0000000..f14d6ac
 +#endif
 diff --git a/trial/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 new file mode 100644
-index 0000000..f5f565e
+index 0000000..53d73ec
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,205 @@
 +#ifndef DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_SEARCH_H
 +#define DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_SEARCH_H
 +
@@ -1693,6 +1841,8 @@ index 0000000..f5f565e
 +        return std::any_of(toolchain_directories_.begin(), toolchain_directories_.end(),
 +                           [&](const auto& directory) { return isUnder(file, directory); });
 +    }
++
++    const std::string& unsupportedFlag() const { return unsupported_; }
 +
 +    std::string guardedHeader(const std::string& statement, const std::string& includer) const {
 +        if (!unsupported_.empty())
@@ -1855,6 +2005,34 @@ index e1818bd..0c4b58b 100644
 +    } else {
 +        output_json = extractIncludesFromFiles(options);
 +    }
+ 
+     std::ofstream output{options.output};
+     if (output.is_open()) {
+diff --git a/dwyu/cc/aspect/private/process_target/main.cpp b/dwyu/cc/aspect/private/process_target/main.cpp
+index 0bd71e6..c67b02e 100644
+--- a/dwyu/cc/aspect/private/process_target/main.cpp
++++ b/dwyu/cc/aspect/private/process_target/main.cpp
+@@ -17,6 +17,7 @@ struct ProgramOptions {
+     std::string target{};
+     std::string output{};
+     std::vector<std::string> header_files{};
++    std::vector<std::string> exported_include_dirs{};
+     bool is_target_under_inspection{false};
+     bool verbose{false};
+ };
+@@ -31,6 +32,7 @@ ProgramOptions parseProgramOptions(const int argc, ProgramOptionsParser::ConstCh
+     parser.addOptionValue("--output", options.output);
+     // Header files associated with the target
+     parser.addOptionList("--header_files", options.header_files);
++    parser.addOptionList("--exported_include_dirs", options.exported_include_dirs);
+     // Processing the target under inspection itself, not one of its dependencies
+     parser.addOptionFlag("--is_target_under_inspection", options.is_target_under_inspection);
+     // Print debugging information
+@@ -61,6 +63,7 @@ int main_impl(ProgramOptions options) {
+     nlohmann::json json{};
+     json["target"] = std::move(options.target);
+     json["header_files"] = std::move(options.header_files);
++    json["exported_include_dirs"] = std::move(options.exported_include_dirs);
  
      std::ofstream output{options.output};
      if (output.is_open()) {

@@ -361,6 +361,8 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         source = json.loads(path.read_bytes())
         if canonical(source.get("analyzed_target", "")) != row["label"] or any(
             not isinstance(source.get(field), typ) for field, typ in FIELDS.items()
+        ) or not isinstance(source.get("unverified_compilation_deps"), list) or any(
+            not isinstance(reason, str) or not reason for reason in source["unverified_compilation_deps"]
         ):
             report["status"] = "invalid"
             report["reason"] = "invalid original report fields or owner"
@@ -377,6 +379,9 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         )
         if source.get("unchecked_link_inputs") or configured_headers[0]["contents"]["unchecked_link_inputs"]:
             report["status"] = "unchecked_link_inputs"
+        elif source["unverified_compilation_deps"]:
+            report["status"] = "unverified_compilation_deps"
+            report["reason"] = source["unverified_compilation_deps"]
         elif any(report["findings"].values()):
             report["status"] = "findings"
         elif configured_headers[0]["contents"]["raw_assembly"]:
@@ -427,6 +432,10 @@ def read_strict(row, events, path, original_deleted, filesets):
             raise ValueError("analyzed_target mismatch")
         if any(not isinstance(report.get(field), typ) for field, typ in FIELDS.items()):
             raise ValueError("missing or invalid DWYU result fields")
+        if not isinstance(report.get("unverified_compilation_deps"), list) or any(
+            not isinstance(reason, str) or not reason for reason in report["unverified_compilation_deps"]
+        ):
+            raise ValueError("invalid compiler directory dependency reasons")
         result["findings"] = {field: len(report[field]) for field in FIELDS}
         result["findings"]["unverified_link_deps"] = len(report.get("unverified_link_deps", []))
         if all(e.get("completed", {}).get("success") for e in selected):
@@ -453,6 +462,9 @@ def read_strict(row, events, path, original_deleted, filesets):
                 raise ValueError("fresh report lacks matching successful BEP digest/length")
         if report.get("unchecked_link_inputs"):
             result["status"] = "unchecked_link_inputs"
+        elif report["unverified_compilation_deps"]:
+            result["status"] = "unverified_compilation_deps"
+            result["reason"] = report["unverified_compilation_deps"]
         elif any(result["findings"].values()):
             result["status"] = "findings"
         elif not all(e.get("completed", {}).get("success") for e in selected):
