@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Restoring a table with an external target, a MATERIALIZED VIEW's TO or a TimeSeries one, must
-# authorize that target, like a CREATE does. Otherwise the restored object is an arbitrary write
+# Restoring a table with an external target, a `MATERIALIZED VIEW`'s `TO` or a `TimeSeries` one, must
+# authorize that target, like a `CREATE` does. Otherwise the restored object is an arbitrary write
 # primitive: the forged backups below are built entirely from the user's own objects and name a
 # target they hold no grant on.
 
@@ -55,7 +55,7 @@ GRANT READ ON DISK, WRITE ON DISK TO $user;
 -- SELECT or INSERT, so every denial below still comes from the view target.
 GRANT TABLE ENGINE ON MergeTree TO $user;
 -- Same for the TimeSeries arm: creating that table locally needs the engines and a temporary table.
-GRANT TABLE ENGINE ON TimeSeries, TABLE ENGINE ON AggregatingMergeTree TO $user;
+GRANT TABLE ENGINE ON TimeSeries, TABLE ENGINE ON AggregatingMergeTree, TABLE ENGINE ON ReplacingMergeTree TO $user;
 GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO $user;
 GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW ON $db_restored.* TO $user;
 "
@@ -103,12 +103,12 @@ echo "-- a view with an inner table carries no target id, so it is still allowed
 deny_or_allow "BACKUP TABLE $db.mv_inner TO $bk_inner FORMAT Null"
 deny_or_allow "RESTORE TABLE $db.mv_inner AS $db.mv_inner_ok FROM $bk_inner FORMAT Null"
 
-# A TimeSeries table reaches the same primitive through its external targets, and a temporary one
-# is checked on a separate branch of the restore gate, so it needs its own arm.
+# A `TimeSeries` table reaches the same primitive through its external targets (`version` 9 or earlier),
+# and a temporary one is checked on a separate branch of the restore gate, so it needs its own arm.
 echo "-- a temporary TimeSeries table forges the same primitive through an external target"
 if ${CLICKHOUSE_CLIENT} --user "$user" --multiquery -q "
     SET allow_experimental_time_series_table = 1;
-    CREATE TEMPORARY TABLE ts ENGINE = TimeSeries METRICS $db.metrics;
+    CREATE TEMPORARY TABLE ts ENGINE = TimeSeries SETTINGS version = 9 METRICS $db.metrics;
     BACKUP TEMPORARY TABLE ts, TABLE $db.metrics AS $db.dst TO $bk_ts SETTINGS structure_only = 1 FORMAT Null;
     " > /dev/null 2>&1; then echo "forged"; else echo "forge failed"; fi
 deny_or_allow "RESTORE TEMPORARY TABLE ts AS ts2 FROM $bk_ts SETTINGS structure_only = 1 FORMAT Null"
