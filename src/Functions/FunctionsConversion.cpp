@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -71,6 +72,14 @@ static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemor
     return nullptr;
 }
 
+/// Throws a copy of an error that was remembered without being recorded in `system.errors`, and records it now.
+[[noreturn]] static void throwDeferredError(const Exception & error)
+{
+    Exception copy(error);
+    copy.recordToSystemErrors();
+    throw copy;
+}
+
 /// Under `accurateCastOrNull` the per-variant conversions to the same target type can DISAGREE on
 /// nullability: a conversion that can never fail (e.g. UInt16 -> Float32) returns a plain column,
 /// while one that can fail (e.g. DateTime -> Float32) returns a Nullable column to mark failures.
@@ -129,6 +138,10 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     {
         /// Skip shared variant, it will be processed later.
         if (i == column_dynamic.getSharedVariantDiscriminator())
+            continue;
+
+        /// Types without values are not converted, so they cannot fail the conversion.
+        if (variant_column.getVariantPtrByGlobalDiscriminator(i)->empty())
             continue;
 
         ColumnsWithTypeAndName new_args = arguments;
@@ -2168,10 +2181,13 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
     const auto & variant_types = from_variant.getVariants();
     ElementWrappers variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
+    /// Errors of the variants that cannot be converted, thrown only for a column with values of these variants.
+    VectorWithMemoryTracking<std::shared_ptr<const Exception>> variant_errors(variant_types.size());
 
     /// Create conversion wrapper for each variant.
-    for (const auto & variant_type : variant_types)
+    for (size_t i = 0; i != variant_types.size(); ++i)
     {
+        const auto & variant_type = variant_types[i];
         WrapperType wrapper;
         if (cast_type == CastType::accurateOrNull)
         {
@@ -2180,13 +2196,34 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         }
         else
         {
-            wrapper = prepareUnpackDictionaries(variant_type, to_type);
+            try
+            {
+                Exception::SuppressErrorCodesScope suppress_error_codes;
+                wrapper = prepareUnpackDictionaries(variant_type, to_type);
+                /// Some conversions fail only when executed, even on an empty column.
+                ColumnsWithTypeAndName empty_variant = {{variant_type->createColumn(), variant_type, ""}};
+                wrapper(empty_variant, to_type, nullptr, 0);
+            }
+            catch (Exception & e)
+            {
+                if (!isTypeMismatchError(e.code()) && e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                {
+                    e.recordToSystemErrors();
+                    throw;
+                }
+                wrapper = {};
+                variant_errors[i] = std::make_shared<Exception>(e);
+            }
         }
         variant_wrappers.push_back(wrapper);
     }
 
+    /// None of the variants can be converted.
+    if (std::ranges::all_of(variant_errors, [](const auto & error) { return error != nullptr; }))
+        throwDeferredError(*variant_errors.front());
+
     bool keep_nullable = settings.cast_keep_nullable;
-    return [variant_wrappers, variant_types, to_type, keep_nullable]
+    return [variant_wrappers, variant_errors, variant_types, to_type, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -2205,6 +2242,8 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             /// Check if we have wrapper for this variant.
             if (variant_wrapper)
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+            else if (variant_errors[i] && !variant_col->empty())
+                throwDeferredError(*variant_errors[i]);
             cast_variant_columns.push_back(std::move(cast_variant));
         }
 
