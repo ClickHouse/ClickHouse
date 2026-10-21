@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -8,8 +9,10 @@ namespace DB
 class IStorage;
 struct StorageID;
 
-/// `storage` itself or a storage it reads through (see IStorage::getUnderlyingStorages) whose merges blend rows, or nullptr
-const IStorage * findBlendingEngine(const IStorage & storage);
+/// `storage` itself or a storage it reads through (see IStorage::getUnderlyingStorages, also the target of a
+/// materialized view or a `Buffer`) whose merges blend rows, or nullptr.
+/// Throws if the user of `context` cannot see a table which `storage` reads through.
+ConstStoragePtr findBlendingEngine(const IStorage & storage, const ContextPtr & context);
 
 /// Throws if a row policy for `table_id` applies to `storage` while it reads a blending engine,
 /// unless `allow_suspicious_row_policies_with_blending_engines` is set or `replaced`, the table which had

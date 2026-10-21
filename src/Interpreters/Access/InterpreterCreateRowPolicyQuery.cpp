@@ -61,9 +61,9 @@ namespace
             policy.to_roles = *query.roles;
     }
 
-    void checkStorageIsNotBlendingEngine(const String & subject, const IStorage & storage)
+    void checkStorageIsNotBlendingEngine(const String & subject, const IStorage & storage, const ContextPtr & context)
     {
-        const auto * blending = findBlendingEngine(storage);
+        auto blending = findBlendingEngine(storage, context);
         if (!blending)
             return;
 
@@ -76,7 +76,7 @@ namespace
             "See https://clickhouse.com/docs/sql-reference/statements/create/row-policy, or set "
             "allow_suspicious_row_policies_with_blending_engines = 1 to create the policy anyway",
             subject,
-            blending == &storage ? "has" : "reads a table with",
+            blending.get() == &storage ? "has" : "reads a table with",
             blending->getName());
     }
 
@@ -94,7 +94,7 @@ namespace
                 checkStorageIsNotBlendingEngine(
                     fmt::format("Table {}.{}, which a policy on {}.* is used for,",
                         backQuoteIfNeed(database), backQuoteIfNeed(it->name()), backQuoteIfNeed(database)),
-                    *table);
+                    *table, context);
         }
     }
 
@@ -119,7 +119,7 @@ namespace
             if (storage)
                 checkStorageIsNotBlendingEngine(
                     fmt::format("Table {}.{}", backQuoteIfNeed(full_name.database), backQuoteIfNeed(full_name.table_name)),
-                    *storage);
+                    *storage, context);
         }
     }
 }
