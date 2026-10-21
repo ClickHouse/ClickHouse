@@ -1693,12 +1693,8 @@ void LocalServer::processConfig()
 
     String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
     /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
-    /// But a non-interactive run, which processes its queries and exits, gets no cache by default: it
-    /// would pay for copying the columns it reads into the cache and for the memory they take, and
-    /// rarely read them again before it exits. An explicit `columns_cache_size` enables it.
-    const bool runs_queries_and_exits = !is_interactive && !delayed_interactive;
     size_t columns_cache_size = config().getUInt64("columns_cache_size",
-        runs_queries_and_exits ? 0 : getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
     double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
     if (columns_cache_size > max_cache_size)
     {
