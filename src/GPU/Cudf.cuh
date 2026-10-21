@@ -7,7 +7,7 @@
 #include <cudf/column/column_view.hpp>
 #include <cudf/types.hpp>
 
-#include <GPU/CCCL.h>
+#include <cuda/stream_ref>
 
 #include <cuda_runtime_api.h>
 

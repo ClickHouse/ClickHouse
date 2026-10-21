@@ -1,6 +1,10 @@
 #pragma once
 
-#include <GPU/CCCL.h>
+#include <array>
+#include <tuple>
+#include <utility>
+
+#include <cuda/stream_ref>
 
 #include <cuda_runtime_api.h>
 

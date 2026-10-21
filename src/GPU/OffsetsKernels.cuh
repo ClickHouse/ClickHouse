@@ -1,6 +1,11 @@
 #pragma once
 
-#include <GPU/CCCL.h>
+/// Before CCCL, which forward-declares `std::get` for these without libc++'s `abi_tag` - see contrib/cccl-cmake.
+#include <array>
+#include <tuple>
+#include <utility>
+
+#include <cuda/stream_ref>
 
 #include <cstddef>
 #include <cstdint>

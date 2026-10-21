@@ -9,7 +9,13 @@
 #include <base/defines.h>
 
 #include <cuda_runtime_api.h>
-#include <GPU/CCCL.h>
+
+#include <array>
+#include <tuple>
+#include <utility>
+
+#include <cuda/memory_pool>
+#include <cuda/stream_ref>
 
 #include <boost/noncopyable.hpp>
 
