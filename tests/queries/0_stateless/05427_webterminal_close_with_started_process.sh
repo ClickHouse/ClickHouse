@@ -110,7 +110,7 @@ read_until(sock, [b"Ok.", b":) "], 60)
 send_frame(sock, 0x02, b"SELECT dictGet('executable_pool_simple_implicit_key', 'a', toUInt64(1))\r")
 read_until(sock, [b"1 a", b":) "], 60)
 
-query = f"SELECT number FROM numbers(100000000) SETTINGS log_comment = '{marker}' FORMAT TSV\r"
+query = f"SELECT number FROM numbers(100000000) SETTINGS max_rows_to_read = 0, log_comment = '{marker}' FORMAT TSV\r"
 send_frame(sock, 0x02, query.encode())
 read_until(sock, [b"99999"], 60)
 
