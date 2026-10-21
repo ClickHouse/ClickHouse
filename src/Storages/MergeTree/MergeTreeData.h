@@ -1186,6 +1186,14 @@ public:
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
         const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr context) const;
 
+    /// A pending `CLEAR COLUMN` is applied when the part is read, so no unfinished mutation ahead of it may read the column.
+    void checkAlterDoesntReorderInProgressMutationReads(
+        const AlterCommands & commands,
+        const std::map<std::string, MutationCommands> & unfinished_mutations,
+        const StorageInMemoryMetadata & old_metadata,
+        const StorageInMemoryMetadata & new_metadata,
+        ContextPtr context) const;
+
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
@@ -2315,6 +2323,10 @@ protected:
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
+
+    /// Storage names of the columns a mutation command reads when it is executed with `metadata`.
+    NameSet getColumnsReadByMutationCommand(
+        const MutationCommand & command, const StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
     void acquireTableDiskRoots();

@@ -6753,6 +6753,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
+    checkAlterDoesntReorderInProgressMutationReads(commands, unfinished_mutations, old_metadata, new_metadata, local_context);
+
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
 
     /// `checkAlterIsPossible` runs before `changeSettings`, so the live settings still hold the OLD
@@ -14151,29 +14153,36 @@ bool MergeTreeData::canUsePolymorphicParts() const
 }
 
 
+namespace
+{
+
+[[noreturn]] void throwAffectedByUnfinishedMutation(
+    const std::string & mutation_name,
+    const std::string & action_name,
+    const std::string & entity_name,
+    const std::string & identifier_name)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot {} {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
+        "Wait this mutation, or KILL it with command "
+        "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+        action_name,
+        entity_name,
+        backQuoteIfNeed(identifier_name),
+        mutation_name,
+        mutation_name);
+}
+
+}
+
 void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
 {
     if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
-    auto throw_exception = [] (
-        const std::string & mutation_name,
-        const std::string & action_name,
-        const std::string & entity_name,
-        const std::string & identifier_name)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot {} {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
-            "Wait this mutation, or KILL it with command "
-            "\"KILL MUTATION WHERE mutation_id = '{}'\"",
-            action_name,
-            entity_name,
-            backQuoteIfNeed(identifier_name),
-            mutation_name,
-            mutation_name);
-    };
+    const auto throw_exception = throwAffectedByUnfinishedMutation;
 
     for (const auto & [mutation_name, commands] : unfinished_mutations)
     {
@@ -14236,6 +14245,256 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     for (const auto & stats_col2 : mutation_command.statistics_columns)
                         if (stats_col1 == stats_col2)
                             throw_exception(mutation_name, "drop", "statistics", stats_col1);
+            }
+        }
+    }
+}
+
+NameSet MergeTreeData::getColumnsReadByMutationCommand(
+    const MutationCommand & command, const StorageInMemoryMetadata & metadata, ContextPtr local_context) const
+{
+    const auto & columns = metadata.getColumns();
+    const auto table_id = getStorageID();
+
+    auto to_storage_name = [&](const String & name) -> String
+    {
+        auto storage_name_of = [&](const String & column_name) -> std::optional<String>
+        {
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+                return column->getNameInStorage();
+            return std::nullopt;
+        };
+
+        if (auto storage_name = storage_name_of(name))
+            return *storage_name;
+
+        for (const auto & qualifier : {table_id.table_name + ".", table_id.database_name + "." + table_id.table_name + "."})
+            if (name.starts_with(qualifier))
+                if (auto storage_name = storage_name_of(name.substr(qualifier.size())))
+                    return *storage_name;
+
+        /// A dynamic subcolumn, such as `json.a.b`, is not in the description.
+        auto dot = name.find('.');
+        if (dot != String::npos && columns.hasPhysical(name.substr(0, dot)))
+            return name.substr(0, dot);
+
+        return name;
+    };
+
+    auto expression_sources = [&](const ASTPtr & expression)
+    {
+        NameSet sources;
+        for (const auto & name : expressionSourceColumns(expression->clone(), columns, local_context))
+            sources.insert(to_storage_name(name));
+        return sources;
+    };
+
+    NameSet read;
+    NameSet updated;
+
+    auto add_identifiers = [&](ASTPtr expression)
+    {
+        normalizeSetOperations(expression, local_context);
+        auto identifiers = collectIdentifiersFullNames(buildQueryTree(expression, local_context));
+        read.insert(identifiers.begin(), identifiers.end());
+    };
+
+    auto alter = command.ast();
+    if (alter && alter->predicate)
+        add_identifiers(ASTPtr(alter->predicate));
+
+    if (alter && alter->update_assignments)
+    {
+        for (const auto & child : alter->update_assignments->children)
+        {
+            const auto & assignment = child->as<ASTAssignment &>();
+            read.insert(assignment.column_name);
+            updated.insert(assignment.column_name);
+            add_identifiers(assignment.expression());
+        }
+    }
+
+    if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        read.insert(command.column_name);
+    else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+        updated.insert(command.column_name);
+    else if (command.type == MutationCommand::APPLY_PATCHES)
+        for (const auto & column : columns.getAllPhysical())
+            updated.insert(column.name);
+
+    /// The mutation recomputes the MATERIALIZED columns and TTLs that depend on the columns it changes.
+    if (!updated.empty())
+    {
+        const auto any_dependency = [](const String &, ColumnDependency::Kind) { return true; };
+
+        std::vector<std::pair<String, NameSet>> materialized_sources;
+        for (const auto & column : columns)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
+                materialized_sources.emplace_back(column.name, expression_sources(column.default_desc.expression));
+
+        NameSet recomputed;
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto & [name, sources] : materialized_sources)
+            {
+                if (!recomputed.contains(name) && std::ranges::any_of(sources, [&](const String & source) { return updated.contains(source); }))
+                {
+                    recomputed.insert(name);
+                    updated.insert(name);
+                    changed = true;
+                }
+            }
+
+            for (const auto & dependency : metadata.getColumnDependencies(updated, /*include_ttl_target=*/ true, any_dependency))
+                if (dependency.kind == ColumnDependency::TTL_TARGET && updated.insert(dependency.column_name).second)
+                    changed = true;
+        }
+
+        for (const auto & [name, sources] : materialized_sources)
+            if (recomputed.contains(name))
+                read.insert(sources.begin(), sources.end());
+
+        for (const auto & dependency : metadata.getColumnDependencies(updated, /*include_ttl_target=*/ true, any_dependency))
+            if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                read.insert(dependency.column_name);
+    }
+
+    if (command.type == MutationCommand::MATERIALIZE_TTL)
+    {
+        auto add_ttl = [&](const TTLDescription & ttl)
+        {
+            for (const auto & column : ttl.expression_source_columns)
+                read.insert(column.name);
+            for (const auto & column : ttl.where_expression_source_columns)
+                read.insert(column.name);
+        };
+
+        if (metadata.hasRowsTTL())
+            add_ttl(metadata.getRowsTTL());
+        for (const auto & ttl : metadata.getRowsWhereTTLs())
+            add_ttl(ttl);
+        for (const auto & ttl : metadata.getGroupByTTLs())
+            add_ttl(ttl);
+        for (const auto & ttl : metadata.getMoveTTLs())
+            add_ttl(ttl);
+        for (const auto & ttl : metadata.getRecompressionTTLs())
+            add_ttl(ttl);
+        for (const auto & [_, ttl] : metadata.getColumnTTLs())
+            add_ttl(ttl);
+
+        /// A `GROUP BY` TTL aggregates every column that is not a key.
+        if (metadata.hasAnyGroupByTTL())
+            for (const auto & column : columns.getAllPhysical())
+                read.insert(column.name);
+    }
+
+    /// A full rewrite writes a column the part does not store from its default.
+    if (command.type == MutationCommand::REWRITE_PARTS || command.type == MutationCommand::APPLY_DELETED_MASK
+        || command.type == MutationCommand::MATERIALIZE_TTL)
+    {
+        for (const auto & column : columns)
+            if (column.default_desc.expression
+                && (column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Materialized))
+                read.insert(column.name);
+    }
+
+    NameSet result;
+    std::vector<String> to_expand;
+    for (const auto & name : read)
+        to_expand.push_back(to_storage_name(name));
+
+    while (!to_expand.empty())
+    {
+        String name = std::move(to_expand.back());
+        to_expand.pop_back();
+        if (!result.insert(name).second)
+            continue;
+
+        auto default_desc = columns.getDefault(name);
+        if (default_desc && default_desc->expression)
+            for (const auto & source : expression_sources(default_desc->expression))
+                if (!result.contains(source))
+                    to_expand.push_back(source);
+    }
+
+    return result;
+}
+
+void MergeTreeData::checkAlterDoesntReorderInProgressMutationReads(
+    const AlterCommands & commands,
+    const std::map<std::string, MutationCommands> & unfinished_mutations,
+    const StorageInMemoryMetadata & old_metadata,
+    const StorageInMemoryMetadata & new_metadata,
+    ContextPtr local_context) const
+{
+    if (unfinished_mutations.empty())
+        return;
+
+    NameSet dropped_columns;
+    const AlterCommand * read_set_change = nullptr;
+    for (const AlterCommand & command : commands)
+    {
+        if (command.type == AlterCommand::DROP_COLUMN)
+            dropped_columns.insert(command.column_name);
+        else if (!read_set_change
+                 && (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN
+                     || command.type == AlterCommand::MODIFY_TTL))
+            read_set_change = &command;
+    }
+
+    NameSet pending_cleared_columns;
+    if (read_set_change)
+        for (const auto & [_, mutation_commands] : unfinished_mutations)
+            for (const MutationCommand & mutation_command : mutation_commands)
+                if (mutation_command.type == MutationCommand::DROP_COLUMN && mutation_command.clear)
+                    pending_cleared_columns.insert(mutation_command.column_name);
+
+    if (dropped_columns.empty() && pending_cleared_columns.empty())
+        return;
+
+    const bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+    auto affects = [&](const String & read_column, const String & column)
+    {
+        if (read_column == column)
+            return true;
+
+        /// Dropping a `Nested` group drops its members, as in `AlterConversions::isColumnDropped`.
+        auto dot = read_column.find('.');
+        return share_nested_offsets && dot != String::npos && std::string_view(read_column).substr(0, dot) == column;
+    };
+
+    for (const auto & [mutation_name, mutation_commands] : unfinished_mutations)
+    {
+        for (const MutationCommand & mutation_command : mutation_commands)
+        {
+            auto old_read = getColumnsReadByMutationCommand(mutation_command, old_metadata, local_context);
+            auto new_read = getColumnsReadByMutationCommand(mutation_command, new_metadata, local_context);
+
+            for (const auto & column : dropped_columns)
+                for (const auto * read : {&old_read, &new_read})
+                    for (const auto & read_column : *read)
+                        if (affects(read_column, column))
+                            throwAffectedByUnfinishedMutation(mutation_name, "drop", "column", column);
+
+            for (const auto & read_column : new_read)
+            {
+                if (old_read.contains(read_column))
+                    continue;
+
+                for (const auto & cleared_column : pending_cleared_columns)
+                {
+                    const bool is_own_column = mutation_command.type == MutationCommand::DROP_COLUMN && mutation_command.clear
+                        && mutation_command.column_name == cleared_column;
+                    if (is_own_column || !affects(read_column, cleared_column))
+                        continue;
+
+                    if (read_set_change->type == AlterCommand::MODIFY_TTL)
+                        throwAffectedByUnfinishedMutation(mutation_name, "modify", "table", "TTL");
+                    throwAffectedByUnfinishedMutation(
+                        mutation_name, read_set_change->type == AlterCommand::ADD_COLUMN ? "add" : "modify", "column",
+                        read_set_change->column_name);
+                }
             }
         }
     }

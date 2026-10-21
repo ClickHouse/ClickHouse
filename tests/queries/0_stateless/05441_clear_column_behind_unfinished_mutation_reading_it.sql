@@ -1,0 +1,123 @@
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+-- no-replicated-database: relies on alter_sync = 0 and on mutations held on a single replica
+-- no-shared-merge-tree: relies on max_replicated_mutations_in_queue
+
+-- A pending CLEAR COLUMN is applied when a part is read, so it is refused while an unfinished mutation
+-- that reads the column is ahead of it, whether it reads it directly, through a default, an ALIAS,
+-- a TTL or a full rewrite of the part.
+
+DROP TABLE IF EXISTS t_clear_mt;
+DROP TABLE IF EXISTS t_clear_ttl;
+DROP TABLE IF EXISTS t_clear_rmt;
+
+CREATE TABLE t_clear_mt (id UInt32, a UInt32, b UInt32, w UInt32, tp Tuple(x UInt32), n Nested(x UInt32))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_mt (id, a, b, tp, `n.x`) VALUES (1, 1111, 2222, tuple(5), [1, 2]), (2, 3333, 4444, tuple(6), [3]);
+ALTER TABLE t_clear_mt
+    ADD COLUMN d UInt32 DEFAULT b * 2,
+    ADD COLUMN al UInt32 ALIAS b * 2,
+    ADD COLUMN e UInt32 DEFAULT al + 1,
+    ADD COLUMN f UInt32 DEFAULT tp.x * 2,
+    ADD COLUMN g UInt32 DEFAULT arraySum(n.x),
+    ADD COLUMN d2 UInt32 DEFAULT b + 1;
+
+SYSTEM STOP MERGES t_clear_mt;
+ALTER TABLE t_clear_mt MATERIALIZE COLUMN d SETTINGS mutations_sync = 0;
+SELECT 'pending', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_clear_mt CLEAR COLUMN a SETTINGS alter_sync = 0;
+SYSTEM START MERGES t_clear_mt;
+ALTER TABLE t_clear_mt UPDATE w = w WHERE 1 SETTINGS mutations_sync = 2;
+SELECT id, a, b, d FROM t_clear_mt ORDER BY id;
+
+SYSTEM STOP MERGES t_clear_mt;
+
+ALTER TABLE t_clear_mt UPDATE w = al WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_mt UPDATE w = w + 1 WHERE e > 0 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_mt DELETE WHERE e = 4445 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_mt MATERIALIZE COLUMN e SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+-- Writes the columns the part does not store from their defaults, so `e` from `b`.
+ALTER TABLE t_clear_mt REWRITE PARTS SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_mt UPDATE w = w + 1 WHERE t_clear_mt.b > 0 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+-- A later ALTER must not make the pending reader read a column that a pending CLEAR clears.
+ALTER TABLE t_clear_mt MATERIALIZE COLUMN d2 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN a SETTINGS alter_sync = 0;
+ALTER TABLE t_clear_mt MODIFY COLUMN d2 UInt32 DEFAULT b + 2;
+ALTER TABLE t_clear_mt MODIFY COLUMN d2 UInt32 DEFAULT a + 1; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_mt MATERIALIZE COLUMN f SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN tp SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_mt MATERIALIZE COLUMN g SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN n SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
+SYSTEM START MERGES t_clear_mt;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 2, mutations_sync = 2;
+SELECT id, b, d FROM t_clear_mt ORDER BY id;
+
+CREATE TABLE t_clear_ttl (id UInt32, b UInt32, w UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_ttl VALUES (1, 2222, 1), (2, 4444, 2);
+SYSTEM STOP MERGES t_clear_ttl;
+
+ALTER TABLE t_clear_ttl MODIFY TTL toDateTime(if(b = 0, 4102444800, 946684800)) SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_clear_ttl MATERIALIZE TTL SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_clear_ttl CLEAR COLUMN w SETTINGS alter_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
+
+-- A GROUP BY TTL aggregates every column, here `b` only in SET.
+ALTER TABLE t_clear_ttl MODIFY TTL toDateTime(946684800) + toIntervalSecond(id) GROUP BY id SET w = sum(b) SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_clear_ttl MATERIALIZE TTL SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
+
+-- Changing `w` re-evaluates the TTL, which reads `b`: an UPDATE of `w`, and a CLEAR of `w`.
+ALTER TABLE t_clear_ttl MODIFY TTL toDateTime(if(b = 0, 4102444800, 946684800)) + toIntervalSecond(w) SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_clear_ttl UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
+
+ALTER TABLE t_clear_ttl CLEAR COLUMN w SETTINGS alter_sync = 0;
+ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
+
+CREATE TABLE t_clear_rmt (id UInt32, a UInt32, b UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_rmt', '1') ORDER BY id
+SETTINGS merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
+INSERT INTO t_clear_rmt VALUES (1, 1111, 2222), (2, 3333, 4444);
+ALTER TABLE t_clear_rmt ADD COLUMN d UInt32 DEFAULT b * 2 SETTINGS alter_sync = 2;
+ALTER TABLE t_clear_rmt MODIFY SETTING max_replicated_mutations_in_queue = 0;
+ALTER TABLE t_clear_rmt MATERIALIZE COLUMN d SETTINGS mutations_sync = 0;
+SYSTEM SYNC REPLICA t_clear_rmt PULL;
+SELECT 'pending', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_clear_rmt' AND NOT is_done;
+ALTER TABLE t_clear_rmt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_clear_rmt MODIFY SETTING max_replicated_mutations_in_queue = 16;
+ALTER TABLE t_clear_rmt UPDATE a = a WHERE 1 SETTINGS mutations_sync = 2;
+SELECT id, b, d FROM t_clear_rmt ORDER BY id;
+ALTER TABLE t_clear_rmt CLEAR COLUMN b SETTINGS alter_sync = 2, mutations_sync = 2;
+SELECT id, b, d FROM t_clear_rmt ORDER BY id;
+
+DROP TABLE t_clear_mt;
+DROP TABLE t_clear_ttl;
+DROP TABLE t_clear_rmt;
