@@ -252,8 +252,7 @@ IcebergIterator::IcebergIterator(
 
 void IcebergIterator::ensureDeletesReady()
 {
-    /// Every thread that comes here before the deletes are ready parses delete manifests, one at a time,
-    /// until none is left; the last one to finish sorts the result.
+    /// Threads arriving before the deletes are ready share the delete manifests; the last one to finish sorts.
     UniqueLock lock(deletes_mutex);
     while (!deletes_ready)
     {
@@ -299,7 +298,6 @@ void IcebergIterator::ensureDeletesReady()
             /// Every slot is held by a delete manifest another thread is parsing.
             if (delete_manifests_in_progress == 0)
             {
-                /// Stored, so that the other threads waiting here see it too.
                 deletes_exception = std::make_exception_ptr(Exception(
                     ErrorCodes::LOGICAL_ERROR, "No read-ahead slot is free while no Iceberg delete manifest is being parsed"));
                 delete_manifest_parsed.notify_all();
