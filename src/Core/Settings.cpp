@@ -5847,7 +5847,7 @@ Patterns recognised:
 - `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
 - Bare `col` / `NOT col` on `Int*`, `UInt*`, `Bool` columns (truthy test).
 
-The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+The equality patterns are not applied to `Float*`, `Enum*`, `Date32`, `Nullable`, `LowCardinality`,
 or composite types (`Tuple`, `Array`, `Map`, ...) — for these the count is served from the
 regular scan path.
 
@@ -6310,7 +6310,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out. Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
 Possible values:
 
@@ -10655,6 +10655,10 @@ Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptD
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to gate the experimental XGBoost integration (the `XGBOOST` dictionary layout and the `predictXGBoost` function)."}) \
+    DECLARE(Bool, enable_elasticsearch, false, R"(
+Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
