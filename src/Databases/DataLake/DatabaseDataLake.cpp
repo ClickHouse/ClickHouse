@@ -40,8 +40,10 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 
@@ -129,6 +131,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
     extern const DataLakeStorageSettingsBool allow_experimental_iceberg_compaction;
+    extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 }
 
 namespace ServerSetting
@@ -920,6 +923,17 @@ Exception DatabaseDataLake::cannotTellNewTableLocation(const String & name) cons
         backQuoteIfNeed(getDatabaseName()), name);
 }
 
+void DatabaseDataLake::checkStorageTypeMatchesEngine(
+    const String & name, DatabaseDataLakeStorageType engine_type, DatabaseDataLakeStorageType catalog_type) const
+{
+    if (catalog_type != engine_type)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog of database {} places table {} in {}, while its table engine writes to {}. "
+            "Use the table engine variant for {}",
+            backQuoteIfNeed(getDatabaseName()), name, catalog_type, engine_type, catalog_type);
+}
+
 static std::optional<String> chooseTableEngineName(DataLake::DataLakeTableFormat table_format, DatabaseDataLakeStorageType storage_type)
 {
     if (table_format == DataLake::DataLakeTableFormat::ICEBERG)
@@ -999,20 +1013,11 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     const auto namespace_name = DataLake::parseTableName(name).first;
     const auto engine_type = toDataLakeStorageType(engine_storage_type);
 
-    auto storage_mismatch = [&](DatabaseDataLakeStorageType catalog_type)
-    {
-        return Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog of database {} places table {} in {}, while its table engine writes to {}. "
-            "Use the table engine variant for {}",
-            backQuoteIfNeed(getDatabaseName()), name, catalog_type, engine_type, catalog_type);
-    };
-
     auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
     if (!table_metadata)
     {
-        if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
-            throw storage_mismatch(*catalog_storage_type);
+        if (const auto catalog_storage_type = catalog->getStorageType())
+            checkStorageTypeMatchesEngine(name, engine_type, *catalog_storage_type);
 
         if (!catalog->assignsLocationToNewNamespaces())
             throw cannotTellNewTableLocation(name);
@@ -1023,8 +1028,7 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
             throw cannotTellNewTableLocation(name);
     }
 
-    if (table_metadata->getStorageType() != engine_type)
-        throw storage_mismatch(table_metadata->getStorageType());
+    checkStorageTypeMatchesEngine(name, engine_type, table_metadata->getStorageType());
 
     auto engine_args = buildTableEngineArgs(settings, *catalog, *table_metadata, /* lightweight */false);
 
@@ -1045,6 +1049,132 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
             name, backQuoteIfNeed(getDatabaseName()));
 
     return engine_args.args;
+}
+
+/// Returns the storage type of an Iceberg table engine, or nullopt if the engine is not Iceberg.
+static std::optional<DatabaseDataLakeStorageType> getIcebergEngineStorageType(const String & engine_name)
+{
+    if (engine_name == IcebergDefinition::storage_engine_name || engine_name == IcebergS3Definition::storage_engine_name)
+        return DatabaseDataLakeStorageType::S3;
+    if (engine_name == IcebergAzureDefinition::storage_engine_name)
+        return DatabaseDataLakeStorageType::Azure;
+    if (engine_name == IcebergHDFSDefinition::storage_engine_name)
+        return DatabaseDataLakeStorageType::HDFS;
+    if (engine_name == IcebergLocalDefinition::storage_engine_name)
+        return DatabaseDataLakeStorageType::Local;
+    return std::nullopt;
+}
+
+StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr context_, const ASTCreateQuery & create, const ColumnsDescription & columns) const
+{
+    /// Views and dictionaries have no table engine.
+    if (!create.storage || !create.storage->engine)
+        return nullptr;
+    const auto & engine = *create.storage->engine;
+
+    /// If there are engine arguments, they specify the location. In such cases the storage factory creates the table.
+    if (engine.arguments && !engine.arguments->children.empty())
+        return nullptr;
+
+    const auto engine_storage_type = getIcebergEngineStorageType(engine.name);
+    if (!engine_storage_type)
+        return nullptr;
+
+    auto catalog = getCatalog();
+    if (!catalog->writesInitialMetadata())
+        return nullptr;
+
+    /// The storage factory does not create this table, so run its engine checks here. Otherwise the catalog request
+    /// would silently drop clauses such as `TTL` that the engine does not support.
+    StorageFactory::instance().checkEngineFeatures(create, columns, LoadingStrictnessLevel::CREATE, context_);
+
+    const auto & name = create.getTable();
+
+    /// A new table has no data files to infer the schema from.
+    if (columns.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot create table {} in database {} without a column list: the table does not exist yet, so there is no data to infer the schema from",
+            name, backQuoteIfNeed(getDatabaseName()));
+
+    /// The catalog schema keeps only names and types, so a special column would become an ordinary one.
+    if (!columns.hasOnlyOrdinary())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported when the catalog of database {} creates table {}",
+            backQuoteIfNeed(getDatabaseName()), name);
+
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    /// Verify the engine and catalog have the same storage type. Without a catalog-wide location, the namespace location tells it.
+    if (const auto catalog_storage_type = catalog->getStorageType())
+    {
+        checkStorageTypeMatchesEngine(name, *engine_storage_type, *catalog_storage_type);
+    }
+    else
+    {
+        auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+        if (!table_metadata && catalog->assignsLocationToNewNamespaces())
+        {
+            /// The namespace location appears only once the namespace exists.
+            catalog->createNamespaceIfNotExists(namespace_name);
+            table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
+        }
+
+        if (table_metadata)
+            checkStorageTypeMatchesEngine(name, *engine_storage_type, table_metadata->getStorageType());
+    }
+
+    auto storage_settings = std::make_shared<DataLakeStorageSettings>();
+    storage_settings->loadFromSettingsChanges(settings.allChanged());
+    if (create.storage->settings)
+    {
+        /// The catalog stores the table, not ClickHouse, so only the settings that go into the create request apply.
+        for (const auto & change : create.storage->settings->changes)
+            if (change.name != "iceberg_format_version")
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table setting {} is not supported when the catalog of database {} creates table {}. "
+                    "Only `iceberg_format_version` is applied. Specify the location in the table engine arguments to use other settings",
+                    change.name, backQuoteIfNeed(getDatabaseName()), name);
+        storage_settings->loadFromQuery(*create.storage->settings);
+    }
+
+    /// The create request carries only `PARTITION BY` and `ORDER BY`.
+    if (create.storage->primary_key || create.storage->sample_by)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "PRIMARY KEY and SAMPLE BY clauses are not supported when the catalog of database {} creates table {}. "
+            "Specify the location in the table engine arguments to use them",
+            backQuoteIfNeed(getDatabaseName()), name);
+
+    ASTPtr partition_by;
+    if (create.storage->partition_by)
+        partition_by = create.storage->partition_by->clone();
+    ASTPtr order_by;
+    if (create.storage->order_by)
+        order_by = create.storage->order_by->clone();
+
+    /// Build JSON for the CreateTable request to the catalog. It includes schema, specs, and properties, but not location.
+    auto metadata_object = Iceberg::createEmptyMetadataFile(
+        /* path_location */ "", columns, partition_by, order_by, context_, (*storage_settings)[DataLakeStorageSetting::iceberg_format_version]).first;
+    Iceberg::setMetadataCompressionCodecProperty(metadata_object, context_);
+
+    catalog->createNamespaceIfNotExists(namespace_name);
+    catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
+    LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
+
+    auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+    if (!storage)
+        throw Exception(
+            ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Table {} was created in the catalog of database {}, but the catalog does not return it",
+            name, backQuoteIfNeed(getDatabaseName()));
+
+    return storage;
 }
 
 bool DatabaseDataLake::empty() const

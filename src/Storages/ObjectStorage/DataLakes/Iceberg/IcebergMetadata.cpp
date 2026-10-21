@@ -142,7 +142,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
-extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
@@ -1050,24 +1049,14 @@ void IcebergMetadata::createInitial(
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
-    auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    const auto compression_method = setMetadataCompressionCodecProperty(metadata_content_object, local_context);
+    if (metadata_content_object->has("properties"))
+        metadata_content = stringifyJSON(metadata_content_object, 4);
 
     /// Use the Iceberg spec file extension (gzip -> "gz"), not the raw setting token.
     auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
-
-    if (!compression_method_str.empty())
-    {
-        /// A catalog that writes the first metadata file itself reads the codec from this property.
-        /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
-        const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("write.metadata.compression-codec", codec_name);
-        metadata_content_object->set("properties", properties);
-        metadata_content = stringifyJSON(metadata_content_object, 4);
-    }
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
 

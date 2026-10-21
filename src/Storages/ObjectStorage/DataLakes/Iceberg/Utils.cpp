@@ -1300,6 +1300,25 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
+CompressionMethod setMetadataCompressionCodecProperty(Poco::JSON::Object::Ptr metadata_object, const ContextPtr & context)
+{
+    const auto & compression_method_str = context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    const auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    if (compression_method_str.empty())
+        return compression_method;
+
+    /// Key on the raw setting: an explicit `none` must reach a catalog that defaults to gzip.
+    const String codec_name = compression_method == CompressionMethod::None ? "none" : toContentEncodingName(compression_method);
+    Poco::JSON::Object::Ptr properties = metadata_object->getObject("properties");
+    if (!properties)
+    {
+        properties = new Poco::JSON::Object;
+        metadata_object->set("properties", properties);
+    }
+    properties->set("write.metadata.compression-codec", codec_name);
+    return compression_method;
+}
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:

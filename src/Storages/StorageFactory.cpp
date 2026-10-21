@@ -119,6 +119,83 @@ void StorageFactory::registerStorage(
 }
 
 
+void StorageFactory::checkEngineFeatures(
+    const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const
+{
+    const auto & name = query.storage->engine->name;
+    auto it = storages.find(name);
+    if (it == storages.end())
+    {
+        auto hints = getHints(name);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
+    }
+
+    const ASTStorage * storage_def = query.storage;
+
+    auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
+    {
+        if (!feature_matcher_fn(it->second.features))
+        {
+            String msg;
+            auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
+            for (size_t index = 0; index < supporting_engines.size(); ++index)
+            {
+                if (index)
+                    msg += ", ";
+                msg += supporting_engines[index];
+            }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support {}. "
+                            "Currently only the following engines have support for the feature: [{}]",
+                            name, feature_description, msg);
+        }
+    };
+
+    if (storage_def->settings)
+        check_feature(
+            "SETTINGS clause",
+            [](StorageFeatures features) { return features.supports_settings; });
+
+    if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+        check_feature(
+            "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
+            [](StorageFeatures features) { return features.supports_sort_order; });
+
+    if (storage_def->unique_key)
+        check_feature(
+            "UNIQUE KEY clause",
+            [](StorageFeatures features) { return features.supports_unique_key; });
+
+    if (storage_def->ttl_table)
+        check_feature(
+            "TTL clause",
+            [](StorageFeatures features) { return features.supports_ttl; });
+
+    /// Older servers could store a column `TTL` inherited from the source table (see #121335).
+    /// Accept it in a replayed definition, so such tables can still load; the `TTL` is ignored.
+    if (!columns.getColumnTTLs().empty() && !isReplayedTableDefinition(mode, query, local_context))
+        check_feature(
+            "TTL clause",
+            [](StorageFeatures features) { return features.supports_ttl; });
+
+    if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
+        check_feature(
+            "skipping indices",
+            [](StorageFeatures features) { return features.supports_skipping_indices; });
+
+    if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
+        check_feature(
+            "projections",
+            [](StorageFeatures features) { return features.supports_projections; });
+
+    if (query.sql_security)
+        check_feature(
+            "SQL SECURITY clause",
+            [](StorageFeatures features) { return features.supports_sql_security; });
+}
+
+
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
@@ -193,74 +270,7 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            auto it = storages.find(name);
-            if (it == storages.end())
-            {
-                auto hints = getHints(name);
-                if (!hints.empty())
-                    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
-                throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
-            }
-
-            auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
-            {
-                if (!feature_matcher_fn(it->second.features))
-                {
-                    String msg;
-                    auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
-                    for (size_t index = 0; index < supporting_engines.size(); ++index)
-                    {
-                        if (index)
-                            msg += ", ";
-                        msg += supporting_engines[index];
-                    }
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support {}. "
-                                    "Currently only the following engines have support for the feature: [{}]",
-                                    name, feature_description, msg);
-                }
-            };
-
-            if (storage_def->settings)
-                check_feature(
-                    "SETTINGS clause",
-                    [](StorageFeatures features) { return features.supports_settings; });
-
-            if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
-                check_feature(
-                    "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
-                    [](StorageFeatures features) { return features.supports_sort_order; });
-
-            if (storage_def->unique_key)
-                check_feature(
-                    "UNIQUE KEY clause",
-                    [](StorageFeatures features) { return features.supports_unique_key; });
-
-            if (storage_def->ttl_table)
-                check_feature(
-                    "TTL clause",
-                    [](StorageFeatures features) { return features.supports_ttl; });
-
-            /// Older servers could store a column `TTL` inherited from the source table (see #121335).
-            /// Accept it in a replayed definition, so such tables can still load; the `TTL` is ignored.
-            if (!columns.getColumnTTLs().empty() && !isReplayedTableDefinition(mode, query, local_context))
-                check_feature(
-                    "TTL clause",
-                    [](StorageFeatures features) { return features.supports_ttl; });
-
-            if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
-                check_feature(
-                    "skipping indices",
-                    [](StorageFeatures features) { return features.supports_skipping_indices; });
-
-            if (query.columns_list && query.columns_list->projections && !query.columns_list->projections->children.empty())
-                check_feature(
-                    "projections",
-                    [](StorageFeatures features) { return features.supports_projections; });
-
-            if (query.sql_security)
-                check_feature(
-                    "SQL SECURITY clause",
-                    [](StorageFeatures features) { return features.supports_sql_security; });
+            checkEngineFeatures(query, columns, mode, local_context);
         }
     }
 

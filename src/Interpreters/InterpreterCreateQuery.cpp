@@ -2858,21 +2858,40 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.storage && create.storage->engine && !isLoadingFromExistingMetadata(mode) && !create.attach_short_syntax)
             throwIfNestedTableFunctionDependsOnCurrentUserGrants(create.storage->engine->ptr(), getContext());
 
-        res = StorageFactory::instance().get(create,
-            data_path,
-            getContext(),
-            getContext()->getGlobalContext(),
-            properties.columns,
-            properties.constraints,
-            mode,
-            is_restore_from_backup);
+        /// Some databases create the table in an external catalog. Otherwise the storage factory creates it.
+        if (mode == LoadingStrictnessLevel::CREATE)
+        {
+            try
+            {
+                res = database->maybeCreateTableInExternalCatalog(getContext(), create, properties.columns);
+            }
+            catch (const Exception & e)
+            {
+                /// A query on another server can create the table in the catalog after the existence check above.
+                if (e.code() == ErrorCodes::TABLE_ALREADY_EXISTS && create.if_not_exists)
+                    return false;
+                throw;
+            }
+        }
 
-        /// If schema was inferred while storage creation, add columns description to create query.
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
-        addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
-        /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
-        if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
-            res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
+        if (!res)
+        {
+            res = StorageFactory::instance().get(create,
+                data_path,
+                getContext(),
+                getContext()->getGlobalContext(),
+                properties.columns,
+                properties.constraints,
+                mode,
+                is_restore_from_backup);
+
+            /// If schema was inferred while storage creation, add columns description to create query.
+            auto & create_query = query_ptr->as<ASTCreateQuery &>();
+            addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
+            /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
+            if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
+                res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
+        }
     }
 
     validateStorage(*res, mode, getContext(), create.isTemporary());

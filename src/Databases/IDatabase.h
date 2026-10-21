@@ -29,6 +29,7 @@ namespace DB
 
 struct Settings;
 struct ConstraintsDescription;
+class ColumnsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
@@ -543,6 +544,13 @@ public:
     virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
 
     virtual String getDefaultTableEngineName(const String & /*table_name*/) const { return {}; }
+
+    /// Creates the table in the external catalog of the database, and returns the table loaded from the catalog.
+    /// Returns nullptr if the database does not create tables this way. In such cases the storage factory creates the table.
+    virtual StoragePtr maybeCreateTableInExternalCatalog(ContextPtr /*context*/, const ASTCreateQuery & /*create*/, const ColumnsDescription & /*columns*/) const
+    {
+        return nullptr;
+    }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
