@@ -122,18 +122,22 @@ bool typeContainsFloat(const DataTypePtr & type)
 NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
 {
     const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+
+    /// `Graphite` merges adjacent rows of one path into one row with a rounded time.
+    /// A path filter can make rows adjacent unless the path is the first sorting key column.
     const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
-    const bool is_graphite = data && data->merging_params.mode == MergeTreeData::MergingParams::Graphite;
+    if (data && data->merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        const auto & path = data->merging_params.graphite_params.path_column_name;
+        if (sorting_key.column_names.empty() || sorting_key.column_names.front() != path)
+            return {};
+        return {path};
+    }
 
     NameSet names;
     for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
-    {
-        /// `Graphite` rolls up rows of one path with different times and rewrites the time
-        if (is_graphite && sorting_key.column_names[i] != data->merging_params.graphite_params.path_column_name)
-            continue;
         if (!typeContainsFloat(sorting_key.data_types[i]))
             names.insert(sorting_key.column_names[i]);
-    }
     return names;
 }
 
