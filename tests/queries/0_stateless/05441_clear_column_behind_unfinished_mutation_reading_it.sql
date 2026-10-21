@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_clear_ttl;
 DROP TABLE IF EXISTS t_clear_rmt;
 DROP TABLE IF EXISTS t_clear_b;
 DROP TABLE IF EXISTS t_clear_m;
+DROP TABLE IF EXISTS t_clear_i;
 
 CREATE TABLE t_clear_mt (id UInt32, a UInt32, b UInt32, w UInt32, tp Tuple(x UInt32), n Nested(x UInt32))
 ENGINE = MergeTree ORDER BY id;
@@ -142,6 +143,7 @@ KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT
 ALTER TABLE t_clear_b MATERIALIZE PROJECTION p_d SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_b CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_b' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_b DROP INDEX idx_d, DROP PROJECTION p_d SETTINGS alter_sync = 0;
 
 -- A later MODIFY TTL must not make a pending UPDATE re-evaluate a TTL over a pending-cleared column.
 ALTER TABLE t_clear_b UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
@@ -164,6 +166,21 @@ ALTER TABLE t_clear_m UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_m CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_m' AND NOT is_done SYNC FORMAT Null;
 
+-- Rebuilding an index or a projection on a compact part stores the defaulted columns it needs, so `d` from `b`.
+CREATE TABLE t_clear_i (id UInt32, x UInt32, b UInt32, w UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_i VALUES (1, 1, 2222, 0), (2, 2, 4444, 0);
+ALTER TABLE t_clear_i ADD COLUMN d UInt32 DEFAULT b * 2;
+SYSTEM STOP MERGES t_clear_i;
+ALTER TABLE t_clear_i UPDATE w = w + 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_clear_i CLEAR COLUMN b SETTINGS alter_sync = 0;
+ALTER TABLE t_clear_i ADD INDEX idx_d (x + d) TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_clear_i ADD PROJECTION p_d (SELECT id, x, d ORDER BY x); -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_i' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_i ADD INDEX idx_d (x + d) TYPE minmax GRANULARITY 1;
+ALTER TABLE t_clear_i UPDATE w = w + 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_clear_i CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_i' AND NOT is_done SYNC FORMAT Null;
+
 CREATE TABLE t_clear_rmt (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_rmt', '1') ORDER BY id
 SETTINGS merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
@@ -185,3 +202,4 @@ DROP TABLE t_clear_ttl;
 DROP TABLE t_clear_rmt;
 DROP TABLE t_clear_b;
 DROP TABLE t_clear_m;
+DROP TABLE t_clear_i;

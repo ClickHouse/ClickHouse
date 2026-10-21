@@ -7263,7 +7263,8 @@ void StorageReplicatedMergeTree::alter(
         for (const auto & command : commands)
         {
             const bool can_change_mutation_reads = command.type == AlterCommand::ADD_COLUMN
-                || command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::MODIFY_TTL;
+                || command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::MODIFY_TTL
+                || command.type == AlterCommand::ADD_INDEX || command.type == AlterCommand::ADD_PROJECTION;
             if (command.isDropOrRename() || can_change_mutation_reads)
             {
                 if (shutdown_called || partial_shutdown_called)

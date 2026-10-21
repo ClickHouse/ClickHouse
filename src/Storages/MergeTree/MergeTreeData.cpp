@@ -14305,6 +14305,15 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
         read.insert(identifiers.begin(), identifiers.end());
     };
 
+    auto add_defaulted = [&](const String & name)
+    {
+        auto storage_name = to_storage_name(name);
+        auto default_desc = columns.getDefault(storage_name);
+        if (default_desc && default_desc->expression
+            && (default_desc->kind == ColumnDefaultKind::Default || default_desc->kind == ColumnDefaultKind::Materialized))
+            read.insert(storage_name);
+    };
+
     auto alter = command.ast();
     if (alter && alter->predicate)
         add_identifiers(ASTPtr(alter->predicate));
@@ -14341,6 +14350,14 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
             if (projection.name == command.projection_name)
                 read.insert(projection.required_columns.begin(), projection.required_columns.end());
     }
+
+    /// A mutation of a compact part stores the index and projection columns the part lacks, computed from their defaults.
+    for (const auto & index : metadata.getSecondaryIndices())
+        for (const auto & column : index.expression->getRequiredColumns())
+            add_defaulted(column);
+    for (const auto & projection : metadata.getProjections())
+        for (const auto & column : projection.required_columns)
+            add_defaulted(column);
 
     bool executes_ttl = command.type == MutationCommand::MATERIALIZE_TTL;
 
@@ -14465,7 +14482,8 @@ void MergeTreeData::checkAlterDoesntReorderInProgressMutationReads(
             dropped_columns.insert(command.column_name);
         else if (!read_set_change
                  && (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN
-                     || command.type == AlterCommand::MODIFY_TTL))
+                     || command.type == AlterCommand::MODIFY_TTL || command.type == AlterCommand::ADD_INDEX
+                     || command.type == AlterCommand::ADD_PROJECTION))
             read_set_change = &command;
     }
 
@@ -14519,6 +14537,10 @@ void MergeTreeData::checkAlterDoesntReorderInProgressMutationReads(
 
                     if (read_set_change->type == AlterCommand::MODIFY_TTL)
                         throwAffectedByUnfinishedMutation(mutation_name, "modify", "table", "TTL");
+                    if (read_set_change->type == AlterCommand::ADD_INDEX)
+                        throwAffectedByUnfinishedMutation(mutation_name, "add", "index", read_set_change->index_name);
+                    if (read_set_change->type == AlterCommand::ADD_PROJECTION)
+                        throwAffectedByUnfinishedMutation(mutation_name, "add", "projection", read_set_change->projection_name);
                     throwAffectedByUnfinishedMutation(
                         mutation_name, read_set_change->type == AlterCommand::ADD_COLUMN ? "add" : "modify", "column",
                         read_set_change->column_name);
