@@ -506,7 +506,6 @@ public:
     void finishStream(size_t stream_index) override
     {
         auto & stream = streams[stream_index];
-        stream.ended_in_set = stream.mode != Mode::Routing;
         /// The local set holds distinct keys, so no buffer needs a deduplication while it is moved.
         if (stream.mode != Mode::Routing)
         {
@@ -708,12 +707,10 @@ public:
 
         std::vector<size_t> stream_distinct;
         std::vector<size_t> stream_keys;
-        size_t num_ended_in_set = 0;
         for (const auto & stream : streams)
         {
             stream_distinct.push_back(stream.estimated_distinct);
             stream_keys.push_back(stream.num_routed);
-            num_ended_in_set += stream.ended_in_set;
         }
 
         auto median = [](std::vector<size_t> & values)
@@ -728,8 +725,7 @@ public:
                 .num_distinct = num_distinct,
                 .stream_distinct = median(stream_distinct),
                 .stream_keys = median(stream_keys),
-                .num_streams = streams.size(),
-                .streams_ended_in_set = num_ended_in_set * 2 > streams.size()},
+                .num_streams = streams.size()},
             stats_collecting_params);
     }
 
@@ -827,21 +823,27 @@ private:
         /// keys of the stream when it is finished.
         size_t num_routed = 0;
         size_t estimated_distinct = 0;
-        /// For the statistics: whether the stream inserted its keys into a local set when it was finished.
-        bool ended_in_set = false;
     };
 
     /// Starts the stream in the mode and with the budget that the statistics of a previous run tell (see the statistics in
     /// `RadixUniqExactTransform.h`).
     void startFromHint(Stream & stream)
     {
+        /// Whether a stream ended in a set does not tell whether a set pays: a stream that started in it ends in it. With
+        /// many streams, each one has few distinct keys, and a set of keys that are not repeated only costs inserts that
+        /// miss the cache.
         const size_t stream_distinct = hint->stream_distinct;
-        if (hint->streams_ended_in_set || stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+        const double new_distinct_ratio = static_cast<double>(stream_distinct) / static_cast<double>(std::max<size_t>(hint->stream_keys, 1));
+        if (worthUnboundedSet(new_distinct_ratio, stream_distinct))
         {
             stream.mode = Mode::UnboundedSet;
             stream.local_set.reset(std::bit_ceil(std::max<size_t>(stream_distinct * 2, INITIAL_LOCAL_SET_CAPACITY)));
             return;
         }
+
+        /// A stream that fits into the bounded set starts in it, as without the statistics.
+        if (stream_distinct * 2 * sizeof(Key) <= MAX_LOCAL_SET_BYTES)
+            return;
 
         switchToRouting(stream);
         /// Mostly unique keys are not deduplicated until the stream grows to twice its previous size.
@@ -1028,7 +1030,7 @@ private:
         size_t num_deduplicated = sample.num_buffers;
 
         const size_t estimated_size = static_cast<size_t>(static_cast<double>(stream.num_buffered) * sample.remaining_ratio) + 1;
-        if (sample.new_distinct_ratio <= 0.25 && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+        if (worthUnboundedSet(sample.new_distinct_ratio, estimated_size))
         {
             switchToUnboundedSet(stream, estimated_size);
             return;
@@ -1110,6 +1112,13 @@ private:
             .num_buffers = num_deduplicated,
             .remaining_ratio = median(remaining_ratios, 1),
             .new_distinct_ratio = median(new_distinct_ratios, 1)};
+    }
+
+    /// Whether the keys of a stream are mostly repeated, so that a set deduplicates them right away, and the set of its
+    /// distinct keys is small enough for the inserts to stay fast.
+    static bool worthUnboundedSet(double new_distinct_ratio, size_t num_distinct)
+    {
+        return new_distinct_ratio <= 0.25 && num_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES;
     }
 
     /// Most of the keys of the stream are repeated, and their set is small, so they are better deduplicated right
