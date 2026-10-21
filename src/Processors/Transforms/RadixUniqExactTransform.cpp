@@ -65,11 +65,16 @@ ALWAYS_INLINE inline UInt64 bucketHash(UInt32 x)
     return intHash64(x);
 }
 
-/// The 128-bit keys are uniformly distributed (see `mixKey`), so their low half is used as the hash, and the high half
-/// is used for the slot.
+/// The low half of the 128-bit keys is uniformly distributed (see `mixKey`), so it is used as the hash.
 ALWAYS_INLINE inline UInt64 bucketHash(UInt128 x)
 {
     return static_cast<UInt64>(x);
+}
+
+/// The 256-bit keys are the values themselves, as in `uniqExact`, so every word goes through `intHash64`.
+ALWAYS_INLINE inline UInt64 bucketHash(UInt256 x)
+{
+    return intHash64(x.items[0] ^ intHash64(x.items[1] ^ intHash64(x.items[2] ^ intHash64(x.items[3]))));
 }
 
 /// The slot of a key in a set is selected by the top bits of a different hash:
@@ -90,15 +95,25 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)
     return slotHash(UInt64{x});
 }
 
+/// The high half of `mixKey` keeps the varying bits of the value in place (e.g. the low bytes of a zero-padded
+/// `FixedString(12)`), so it is multiplied too.
 ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 {
-    return static_cast<UInt64>(x >> 64);
+    return slotHash(static_cast<UInt64>(x >> 64));
 }
 
-/// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`) uniformly distributed,
-/// so that both halves of the result can serve as hashes. It is a two-round Feistel network with `intHash64` as the
-/// round function: each round only XORs one half with a function of the other one, so it can be undone, and distinct
-/// values stay distinct.
+/// The words are combined by multiplications by odd constants (the primes of xxHash64), which keep a word that differs
+/// different, without the cost of `intHash64` at every insertion.
+ALWAYS_INLINE inline UInt64 slotHash(UInt256 x)
+{
+    return slotHash(static_cast<UInt64>(
+        x.items[0] ^ (x.items[1] * 0xC2B2AE3D27D4EB4FULL) ^ (x.items[2] * 0x165667B19E3779F9ULL) ^ (x.items[3] * 0x27D4EB2F165667C5ULL)));
+}
+
+/// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`, `Decimal128`) uniformly
+/// distributed, so that both halves of the result can serve as hashes. It is a two-round Feistel network with
+/// `intHash64` as the round function: each round only XORs one half with a function of the other one, so it can be
+/// undone, and distinct values stay distinct.
 ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
 {
     UInt64 low = static_cast<UInt64>(x);
@@ -340,7 +355,8 @@ public:
                 /// the only dependency between the iterations is the number of keys.
                 /// A block that repeats the previous row (long runs, e.g. a sorted `CounterID`) is skipped with
                 /// vector compares, as the per-row stores would cost 1.85x the ordinary `uniqExact` there.
-                constexpr size_t block_size = DUPLICATES_BLOCK_BYTES / sizeof(T);
+                /// At least one row, as a 32-byte value does not fit into the 16-byte registers of SSE2 and NEON.
+                constexpr size_t block_size = std::max<size_t>(DUPLICATES_BLOCK_BYTES / sizeof(T), 1);
                 for (size_t block = begin; block < end; block += block_size)
                 {
                     const size_t block_end = std::min(block + block_size, end);
@@ -920,6 +936,30 @@ void routeFixed(RadixUniqExactState<Key> & state, size_t stream, const IColumn &
     state.template routeValues<T>(stream, column.getRawData().data(), column.size(), null_map); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
+/// The values of the other sizes are zero-padded to the key (e.g. `FixedString(12)` to `UInt128`). All of them have the
+/// same size, so equal keys mean equal values.
+template <typename Key>
+void routePadded(RadixUniqExactState<Key> & state, size_t stream, const IColumn & column, const UInt8 * null_map)
+{
+    const char * bytes = column.getRawData().data(); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const size_t size = column.sizeOfValueIfFixed();
+    if (!column.isFixedAndContiguous() || size >= sizeof(Key))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+
+    state.routeRows(
+        stream, column.size(), null_map,
+        [&](size_t row)
+        {
+            Key key{};
+            memcpy(&key, bytes + row * size, size);
+            if constexpr (std::is_same_v<Key, UInt128>)
+                return mixKey(key);
+            else
+                return key;
+        },
+        [&](size_t lhs, size_t rhs) { return memcmp(bytes + lhs * size, bytes + rhs * size, size) == 0; });
+}
+
 template <>
 void RadixUniqExactState<UInt32>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
@@ -928,25 +968,48 @@ void RadixUniqExactState<UInt32>::route(size_t stream, const IColumn & column, c
         case 1: routeFixed<UInt32, UInt8>(*this, stream, column, null_map); return;
         case 2: routeFixed<UInt32, UInt16>(*this, stream, column, null_map); return;
         case 4: routeFixed<UInt32, UInt32>(*this, stream, column, null_map); return;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+        default: routePadded(*this, stream, column, null_map); return;
     }
 }
 
 template <>
 void RadixUniqExactState<UInt64>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    if (column.sizeOfValueIfFixed() != sizeof(UInt64))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
-    routeFixed<UInt64, UInt64>(*this, stream, column, null_map);
+    if (column.sizeOfValueIfFixed() == sizeof(UInt64))
+        routeFixed<UInt64, UInt64>(*this, stream, column, null_map);
+    else
+        routePadded(*this, stream, column, null_map);
 }
 
-/// Strings and `IPv6` are represented by their 128-bit `SipHash`, the same key as in `uniqExact`, and other 16-byte
-/// values by a bijection of themselves. Consecutive duplicates are compared by their bytes before they are hashed.
+template <>
+void RadixUniqExactState<UInt256>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
+{
+    if (column.sizeOfValueIfFixed() != sizeof(UInt256))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+    routeFixed<UInt256, UInt256>(*this, stream, column, null_map);
+}
+
+/// The fixed-size values of 9 to 16 bytes are represented by a bijection of themselves (zero-padded), strings by the 128-bit `SipHash` of their bytes, the
+/// same key as in `uniqExact`, and the values of the other types by the 128-bit `SipHash` of `updateHashWithValue`, as in
+/// `uniqExact`. Consecutive duplicates are compared by their bytes before they are hashed. The values of the other types
+/// are not compared: `compareAt` can find equal the values with different hashes (e.g. -0.0 and 0.0 in a `Tuple`).
 template <>
 void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
+    if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
+    {
+        const char * bytes = column.getRawData().data();
+        auto data = [bytes](size_t row) { return unalignedLoad<UInt128>(bytes + row * sizeof(UInt128)); };
+        routeRows(
+            stream, column.size(), null_map,
+            [&](size_t row) { return mixKey(data(row)); },
+            [&](size_t lhs, size_t rhs) { return data(lhs) == data(rhs); });
+    }
+    else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() > sizeof(UInt64) && column.sizeOfValueIfFixed() < sizeof(UInt128))
+    {
+        routePadded(*this, stream, column, null_map);
+    }
+    else if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
     {
         const char * chars = reinterpret_cast<const char *>(column_string->getChars().data());
         const auto * offsets = column_string->getOffsets().data();
@@ -980,26 +1043,17 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
             [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; });
     }
-    else if (const auto * column_ipv6 = typeid_cast<const ColumnIPv6 *>(&column))
-    {
-        const auto & data = column_ipv6->getData();
-        routeRows(
-            stream, column.size(), null_map,
-            [&](size_t row) { return sipHash128Padded(reinterpret_cast<const char *>(&data[row]), sizeof(IPv6)); },
-            [&](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; });
-    }
-    else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
-    {
-        const char * bytes = column.getRawData().data();
-        auto data = [bytes](size_t row) { return unalignedLoad<UInt128>(bytes + row * sizeof(UInt128)); };
-        routeRows(
-            stream, column.size(), null_map,
-            [&](size_t row) { return mixKey(data(row)); },
-            [&](size_t lhs, size_t rhs) { return data(lhs) == data(rhs); });
-    }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in RadixUniqExactState", column.getName());
+        routeRows(
+            stream, column.size(), null_map,
+            [&](size_t row)
+            {
+                SipHash hash;
+                column.updateHashWithValue(row, hash);
+                return hash.get128();
+            },
+            [](size_t, size_t) { return false; });
     }
 }
 
@@ -1047,46 +1101,46 @@ RadixUniqExactStatePtr createState(size_t num_streams, const StatsCollectingPara
 namespace
 {
 
-/// The types for which `uniqExact` keeps the value itself in the set, and their size if it is at most 64 bits.
-std::optional<size_t> valueKeySize(const IDataType & type)
+/// The size of the key of the type (see the `route` of each key). The values of up to 16 and of 32 bytes that are
+/// unambiguously represented by their bytes are the keys themselves, zero-extended, as equal bytes mean equal values.
+/// Other values are represented by a 128-bit hash, which is smaller than a padded 32-byte key. `uniqExact` keeps the values themselves for numbers and the 128-bit `SipHash` for the
+/// others (e.g. `Decimal`), so the radix partitioning counts the same values or more, if the hashes collide.
+size_t keySize(const IDataType & type)
 {
-    WhichDataType which(type);
-    if (which.isNativeInteger() || which.isFloat() || which.isEnum() || which.isDate() || which.isDate32() || which.isDateTime() || which.isIPv4())
-        return type.getSizeOfValueInMemory();
-    return {};
-}
-
-bool isHashedKey(const IDataType & type)
-{
-    WhichDataType which(type);
-    return which.isUInt128() || which.isInt128() || which.isUUID() || which.isString() || which.isFixedString() || which.isIPv6();
+    if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    {
+        const size_t size = type.getSizeOfValueInMemory();
+        for (size_t key_size : {sizeof(UInt32), sizeof(UInt64), sizeof(UInt128)})
+        {
+            if (size <= key_size)
+                return key_size;
+        }
+        if (size == sizeof(UInt256))
+            return size;
+    }
+    return sizeof(UInt128);
 }
 
 }
 
 bool isRadixUniqExactSupported(const IDataType & argument_type)
 {
-    const IDataType & type = *removeNullable(argument_type.shared_from_this());
-    if (const auto size = valueKeySize(type))
-        return *size <= sizeof(UInt64);
-    return isHashedKey(type);
+    /// The values of `LowCardinality` are not routed yet. It wraps `Nullable`, not the other way round.
+    return !argument_type.lowCardinality();
 }
 
 RadixUniqExactStatePtr createRadixUniqExactState(
     const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params)
 {
-    const IDataType & type = *removeNullable(argument_type.shared_from_this());
-    if (const auto size = valueKeySize(type))
+    switch (keySize(*removeNullable(argument_type.shared_from_this())))
     {
-        if (*size <= sizeof(UInt32))
-            return createState<UInt32>(num_streams, stats_collecting_params);
-        if (*size == sizeof(UInt64))
-            return createState<UInt64>(num_streams, stats_collecting_params);
+        case sizeof(UInt32): return createState<UInt32>(num_streams, stats_collecting_params);
+        case sizeof(UInt64): return createState<UInt64>(num_streams, stats_collecting_params);
+        case sizeof(UInt128): return createState<UInt128>(num_streams, stats_collecting_params);
+        case sizeof(UInt256): return createState<UInt256>(num_streams, stats_collecting_params);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument type {} for the radix partitioned uniqExact", argument_type.getName());
     }
-    else if (isHashedKey(type))
-        return createState<UInt128>(num_streams, stats_collecting_params);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument type {} for the radix partitioned uniqExact", argument_type.getName());
 }
 
 
