@@ -1,3 +1,5 @@
+-- Random settings limits: max_bytes_before_external_set=(0, 0); max_bytes_ratio_before_external_set=(0, 0)
+-- The set of `IN` stays in memory: a set on disk throws `QUERY_WAS_CANCELLED` in the `break` mode.
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (key UInt64, value UInt64, INDEX value_idx value TYPE bloom_filter GRANULARITY 1) ENGINE=MergeTree() ORDER BY key;
 

@@ -57,7 +57,7 @@ O `ON CLUSTER` opcional se aplica a toda a instrução (um nome de cluster). O C
 
 `CREATE ROW POLICY` exige o privilégio [CREATE ROW POLICY](/pt-BR/reference/statements/grant#access-management) na tabela em que a política é criada. `OR REPLACE` descarta uma política existente de mesmo nome, incluindo os roles aos quais ela se aplica, e por isso exige também o privilégio [DROP ROW POLICY](/pt-BR/reference/statements/grant#access-management) nessa tabela. O privilégio `DROP ROW POLICY` é exigido independentemente de a política já existir ou não, de modo que a instrução não pode ser usada para descobrir quais políticas existem.
 
-## Vários nomes e tabelas
+## Vários nomes e tabelas {#multiple-names-and-tables}
 
 Válido:
 
@@ -94,11 +94,21 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## Cláusula USING
+## Cláusula USING {#using-clause}
 
-Permite especificar uma condição para filtrar linhas. Um usuário verá uma linha se a condição resultar em um valor diferente de zero para essa linha.
+Define uma condição de filtro para uma tabela. O usuário só pode ver as linhas para as quais a condição é verdadeira (ou seja, retorna um valor diferente de zero). Isso equivale a adicionar uma condição `WHERE` extra a cada consulta que o usuário executa na tabela.
 
-## Cláusula TO
+Por exemplo, a política a seguir restringe `analyst_role` às linhas da UE:
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+Com essa política, `SELECT * FROM db.orders` retorna as mesmas linhas que `SELECT * FROM db.orders WHERE region = 'EU'` retornaria.
+
+## Cláusula TO {#to-clause}
 
 Na seção `TO`, você pode informar uma lista de usuários e roles para os quais esta política deve se aplicar. Por exemplo, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
@@ -106,7 +116,7 @@ A palavra-chave `ALL` significa todos os usuários do ClickHouse, incluindo o us
 
 As roles indicadas na seção `TO`, incluindo aquelas após `ALL EXCEPT`, são comparadas com as roles habilitadas do usuário atual ([`system.enabled_roles`](/pt-BR/reference/system-tables/enabled_roles)), e não com todas as roles concedidas ao usuário, de modo que [`SET ROLE`](/pt-BR/reference/statements/set-role) pode alterar quais políticas se aplicam.
 
-## Cláusula AS
+## Cláusula AS {#as-clause}
 
 É possível ter mais de uma política habilitada na mesma tabela para o mesmo usuário ao mesmo tempo. Portanto, precisamos de uma forma de combinar as condições de várias políticas.
 
@@ -153,7 +163,13 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 permitir ao usuário `peter` ver as linhas da table1 somente se `b=1` AND `c=2`, embora
 qualquer outra tabela em mydb tenha apenas a política `b=1` aplicada ao usuário.
 
-## Tabelas Distributed e com dados remotos
+## Tabelas que leem dados de outras tabelas {#tables-that-read-from-other-tables}
+
+Uma ROW POLICY filtra as linhas no momento em que os dados são efetivamente lidos. Uma tabela `Alias` retorna as linhas da tabela à qual aponta como se fossem suas. Assim, as ROW POLICIES da tabela à qual o alias aponta também se aplicam às leituras feitas por meio dele, combinadas com as políticas do próprio alias por um `AND` lógico. Uma tabela `Merge` aplica as políticas das tabelas das quais lê os dados. Há uma exceção: quando uma tabela correspondente lê dados remotamente, como uma tabela `Distributed`, o servidor remoto processa a consulta antes da aplicação da política, pois esta é executada após a leitura dessa tabela, e não no momento da leitura. A consulta pode falhar se agregar dados sem selecionar as colunas usadas pela política ou retornar menos linhas do que a política permite se o servidor remoto aplicar `ORDER BY ... LIMIT` a linhas que a política teria ocultado. Em vez disso, defina a política nas tabelas locais subjacentes de cada servidor remoto.
+
+Isso não vale para todas as tabelas que leem dados de outra tabela. Uma tabela `Buffer` e uma visão materializada que leem por meio de sua tabela de destino **não** herdam as ROW POLICIES dessa tabela: a política é definida com base no schema da tabela de destino e, no caso de uma visão com `SQL SECURITY DEFINER`, é avaliada para um usuário diferente daquele que executa a leitura. Nesses casos, defina a política na tabela que os usuários de fato consultam.
+
+## Tabelas Distributed e com dados remotos {#distributed-and-remote-backed-tables}
 
 Uma política de linha filtra as linhas no local em que os dados da tabela são efetivamente lidos. Uma tabela que delega a leitura a servidores remotos, como uma tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed) ou um wrapper dela (por exemplo, uma visão materializada com destino `Distributed`), apenas envia o texto da consulta aos servidores remotos e não consegue aplicar o filtro da política à leitura remota. Para evitar que o filtro seja silenciosamente descartado, as consultas a essa tabela feitas por usuários aos quais a política se aplica são rejeitadas com o erro `ILLEGAL_PREWHERE`.
 
@@ -168,11 +184,15 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   Isso funciona quando a consulta é enviada como texto, que é o padrão. Com [`serialize_query_plan = 1`](/pt-BR/reference/settings/session-settings/serialize#serialize_query_plan), o iniciador envia um plano de leitura já criado, e um servidor remoto que executa esse plano não aplica suas próprias políticas de linha. Portanto, a leitura de uma tabela `Distributed` sobre `local_table` retorna linhas não filtradas. Mantenha `serialize_query_plan = 0` para usuários cujas políticas de linha devam ser aplicadas. Consulte a [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
-## Cláusula ON CLUSTER
+## Tabelas Join {#join-tables}
+
+Uma tabela [Join](/pt-BR/reference/engines/table-engines/special/join) é uma tabela hash previamente preparada que um `JOIN` ou `joinGet` lê exatamente como está, de modo que suas linhas não podem ser filtradas nesse momento. Uma política aplicada a essa tabela, incluindo uma política `ON db.*` válida para todo o banco de dados, filtra um `SELECT` simples na tabela; porém, enquanto ela estiver em vigor, as consultas `JOIN` e `joinGet` nessa tabela falham com `ACCESS_DENIED`.
+
+## Cláusula ON CLUSTER {#on-cluster-clause}
 
 Permite criar políticas de linha em um cluster. Consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl). Essa também é uma maneira prática de criar a política nas tabelas locais de cada servidor do cluster.
 
-## Exemplos
+## Exemplos {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

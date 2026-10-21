@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from build_download_helper import get_gh_api
 from git_helper import TAG_REGEXP
-from version_helper import (
+from ci.jobs.scripts.clickhouse_version import (
     ClickHouseVersion,
     get_version_from_string,
     get_version_from_tag,
