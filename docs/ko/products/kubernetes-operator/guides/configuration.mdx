@@ -48,20 +48,77 @@ spec:
 
 `replicas: 3` 및 `shards: 2`로 구성된 클러스터는 총 6개의 ClickHouse 파드를 생성합니다.
 
-<div id="keeper-integration">
-  ### Keeper 통합
-</div>
+### Keeper 통합 {#keeper-integration}
 
-모든 ClickHouse 클러스터는 클러스터 조정을 위해 KeeperCluster를 참조해야 합니다:
+모든 ClickHouse 클러스터는 클러스터 조정을 위해 Keeper 앙상블이 필요합니다. `keeperClusterRef`와 `externalKeeper` 중 정확히 하나만 설정하십시오. 둘 다 설정하거나 둘 다 설정하지 않은 클러스터는 거부됩니다.
+
+`keeperClusterRef`에는 이 연산자가 관리하는 KeeperCluster를 지정하십시오:
 
 ```yaml
 spec:
   keeperClusterRef:
     name: my-keeper
-    # namespace: keeper-system  # 선택 사항, 기본값은 ClickHouseCluster 네임스페이스
+    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
 `keeperClusterRef.namespace`가 설정되면 연산자는 두 네임스페이스를 모두 감시해야 합니다. `WATCH_NAMESPACE`가 구성되어 있다면 해당 목록에 ClickHouse와 Keeper 네임스페이스를 모두 포함하십시오.
+
+### 외부에서 관리되는 Keeper {#external-keeper}
+
+연산자가 관리하지 않는 Keeper 앙상블(ensemble)에 ClickHouse를 연결하려면 `externalKeeper`를 사용하십시오.
+다른 연산자가 소유한 앙상블, 다른 Kubernetes 클러스터나 가상 머신 또는
+베어 메탈에서 실행되는 앙상블, 여러 시스템이 공유하는 앙상블 등이 이에 해당합니다.
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port`의 기본값은 `9181`입니다. `host`에는 DNS 이름 또는 IP 주소를 지정하며, IPv6 주소는 대괄호로
+묶어야 합니다. TLS로 연결하려면 `tls: Enabled`를 설정하고, `port`에는 앙상블(ensemble)이 보안 연결(secure connection)을
+수신 대기하는 포트를 지정하십시오:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse는 시스템 트러스트 스토어(system trust store)와 사용자가 구성한 `caBundle`을 기준으로 Keeper 인증서를
+검증합니다. 자세한 내용은 [TLS를 통한 ClickHouse-Keeper 통신](#clickhouse-keeper-communication-over-tls)을 참조하십시오.
+
+여러 ClickHouse 클러스터가 하나의 앙상블(ensemble)을 공유한다면 `settings.extraConfig`로 클러스터마다 고유한 루트 znode를
+지정하여 복제 메타데이터, SQL로 정의된 사용자, 이름이 지정된 컬렉션이
+서로 충돌하지 않도록 하십시오. znode는 ClickHouse를 시작하기 전에 생성해야 하며, 생성한 후에는 변경하지 마십시오.
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+`zookeeper.root`를 `settings.extraReloadableConfig`에 넣지 마십시오. 설정을 다시 로드하면 실행 중인 클러스터의 루트가 바뀌어
+복제된 테이블이 읽기 전용 상태가 됩니다. 루트 znode에 ACL이 설정되어 있다면 클러스터의 `keeper-identity`가
+하위 znode를 생성할 수 있도록 허용해야 합니다.
+
+연산자는 이 서버들을 변경하지 않으며, ClickHouse를 리컨실하기 전에 이 서버들이 준비될 때까지 기다리지도 않습니다.
+앙상블(ensemble)의 가용성 유지는 사용자의 책임입니다.
+
+인증은 연산자가 관리하는 Keeper와 동일한 방식으로 동작합니다. 연산자는 클러스터 시크릿(Secret)에서
+`keeper-identity` 키를 읽어 ClickHouse에 전달합니다. 시크릿 구조는
+[외부 시크릿](#external-secret)을 참조하십시오.
 
 <div id="keepercluster-configuration">
   ## KeeperCluster 구성
@@ -79,6 +136,28 @@ spec:
       requests:
         storage: 5Gi
 ```
+
+### 종료 시 리더십 이양 {#keeper-leadership-handover}
+
+Keeper 컨테이너에는 기본 `preStop` 후크가 설정되어 있습니다. 이 후크는 레플리카가 중지되기 전에 Raft
+리더십을 넘기도록 요청하고, 이양이 완료될 때까지 기다린 후에
+컨테이너가 종료되도록 합니다. 이 후크는 연산자가 시작한 롤아웃뿐만 아니라
+컨테이너가 정상적으로 중지될 때마다 실행됩니다. 디스케줄러에 의한 축출(eviction), 노드 드레인(drain), 자동 스케일러
+동작도 모두 동일한 후크를 트리거합니다. 이 후크는 조정 루프(reconcile loop) 로직이 아니라 큐블릿 수준의 `preStop` 핸들러이기
+때문입니다.
+
+이 후크가 없으면 현재 리더를 재시작할 때 새 선출이 완료될 때까지 앙상블(ensemble)에 리더가 없는 상태가
+지속됩니다. 부하가 높을 때는 선출에 수 초가 걸릴 수 있으며, ClickHouse에서는 이것이 Keeper 연결 끊김과 쿼리
+지연 시간 증가로 나타납니다. 이 후크는 레플리카에 리더십 양보를 요청한 다음(Keeper의 4글자 명령어 `ydld`를
+`http_control` 포트로 전송), 레플리카가 더 이상 리더가 아니게 될 때까지 상태를 폴링합니다. 요청만 보내고
+곧바로 컨테이너를 중지하지 않는 이유는, 요청을 보낸 뒤 확인하지 않는 방식(fire-and-forget)으로는 쓰기 부하 상황에서
+여전히 `SIGTERM`과의 경쟁에서 밀릴 수 있기 때문입니다. 이렇게 대기해야 리더가 없는 구간을 일정 범위 안으로 제한할 수 있습니다.
+
+이 후크는 별도의 구성이 필요 없으며, 지원되지 않는 환경에서도 문제 없이 동작합니다. 여기서 사용하는 리더십 명령어를 아직 지원하지 않는
+26.3 이전 버전의 Keeper에서는 요청이 아무 동작도 하지 않으며(no-op), 컨테이너는 후크가 없을 때와 동일하게 중지됩니다.
+이 후크는 셸 스크립트를 실행하므로 image에 `bash`가 포함되어 있어야 합니다. distroless 또는 scratch Keeper image를 사용하는 경우
+`containerTemplate.lifecycle`을 통해 후크를 재정의하거나 제거하십시오. 자세한 내용은
+[API 참조](/ko/products/kubernetes-operator/reference/api-reference#containertemplatespec)를 참고하십시오.
 
 <div id="storage-configuration">
   ## 저장소 구성
@@ -361,6 +440,70 @@ spec:
   Operator는 지정된 모든 마운트를 포함하는 프로젝티드 볼륨을 생성합니다.
 </Note>
 
+### 상태 프로브 {#health-probes}
+
+연산자는 모든 ClickHouse 및 Keeper 컨테이너에 활성 상태(liveness) 프로브와 준비 상태(readiness) 프로브를 구성합니다.
+시작(startup) 프로브는 기본적으로 설정되지 않습니다.
+
+| 리소스                 | 프로브       | 기본 검사                                                                                         |
+| ------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | liveness  | 서버 간(interserver) 포트 `9009`에 HTTP `GET /ping` 요청                                              |
+| `ClickHouseCluster` | readiness | 관리용 HTTP 포트 `9002`에 HTTP `GET /ping` 요청                                                       |
+| `KeeperCluster`     | liveness  | 클라이언트 포트 `2181`에 TCP 연결 (`settings.tls.enabled`와 `settings.tls.required`가 모두 `true`이면 `2281`) |
+| `KeeperCluster`     | readiness | `http_control` 포트 `9123`에 HTTP `GET /ready` 요청                                                |
+
+ClickHouse와 Keeper는 동일한 기본 타이밍 설정을 사용합니다.
+
+| 프로브       | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse는 테이블을 로드하기 전에 서버 간 리스너를 열고, 테이블 로드가 끝난 후에 클라이언트 리스너를 엽니다. 따라서 테이블 로딩이 오래 걸리더라도 활성 상태 프로브는 실패하지 않으며, 준비 상태 프로브를 통과했다면 레플리카가 쿼리를 처리할 수 있는 상태임을 뜻합니다.
+
+두 리소스 모두 `spec.containerTemplate`을 통해 어떤 프로브든 재정의할 수 있습니다. 예를 들어 ClickHouse 활성 상태 프로브는 다음과 같이 사용자 정의합니다.
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  직접 설정한 프로브(probe)는 연산자 기본값을 완전히 대체하며, 필드 단위로 머지되지 않습니다.
+  핸들러(`httpGet`, `tcpSocket` 또는 `exec`)와 필요한 타이밍 필드를 모두 지정하십시오. 생략한 필드는 위의 연산자 값이 아니라 Kubernetes 기본값(예: `timeoutSeconds: 1`, `failureThreshold: 3`)으로 폴백됩니다.
+</Warning>
+
+#### 시작 프로브(Startup probe) {#startup-probe}
+
+컨테이너 시작에 활성 상태 프로브가 허용하는 시간보다 더 오래 걸리는 경우 `startupProbe`를 사용하십시오. 기본값에서 활성 상태 프로브는 약 60초의 초기 지연 후 5초 간격으로 최대 10회의 검사 실패를 허용합니다.
+Kubernetes는 시작 프로브가 성공할 때까지 활성 상태 프로브와 준비 상태 프로브의 실행을 보류하므로, 시작이 느려도 재시작 루프가 발생하지 않습니다.
+예를 들어, 대용량 스냅샷을 재생(replay)하는 Keeper 레플리카에 연결 수락을 시작하기까지 최대 10분을 부여하려면 다음과 같이 설정합니다:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+시작 프로브(startup probe)가 성공하면 이후에는 일반 활성 상태 프로브(liveness probe)와 준비 상태 프로브(readiness probe)가 상태 확인을 이어받습니다.
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### 지원되는 모든 컨테이너 템플릿 옵션은 [API 참조](/ko/products/kubernetes-operator/reference/api-reference#containertemplatespec)에서 확인하십시오.
 </div>
@@ -398,13 +541,12 @@ spec:
   이 포맷은 cert-manager에서 생성한 인증서와 호환됩니다.
 </Note>
 
-<div id="clickhouse-keeper-communication-over-tls">
-  ### TLS를 통한 ClickHouse-Keeper 통신
-</div>
+### TLS를 통한 ClickHouse-Keeper 통신 {#clickhouse-keeper-communication-over-tls}
 
-KeeperCluster에서 TLS가 활성화되어 있으면 ClickHouseCluster는 자동으로 Keeper 노드에 대한 보안 연결(connection)을 사용합니다.
+`keeperClusterRef`가 참조하는 KeeperCluster에서 TLS가 활성화되어 있으면 ClickHouseCluster는 자동으로 Keeper 노드에 대한 보안 연결(connection)을 사용합니다.
+`externalKeeper`를 사용할 때는 대신 `tls: Enabled`를 설정하고, 각 노드의 `port`를 앙상블의 보안 클라이언트 포트(예: `9281`)로 지정하십시오.
 
-ClickHouseCluster는 시스템 신뢰 저장소와 구성한 모든 `caBundle`을 기준으로 Keeper 노드 인증서를 검증합니다.
+ClickHouseCluster는 시스템 트러스트 스토어와 구성한 모든 `caBundle`을 기준으로 Keeper 노드 인증서를 검증합니다.
 
 비공개 CA(예: 자체 서명 또는 내부 CA)를 신뢰하려면 사용자 지정 CA 번들 참조를 제공하십시오:
 
@@ -919,11 +1061,9 @@ spec:
 
 축소 시 레플리카를 제거하기 전에 연산자는 먼저 해당 레플리카에서 클라이언트 트래픽을 로드 해제하고, 더 이상 게시되지 않을 때까지 기다린 후 남은 데이터를 유지되는 레플리카에 복제한 다음에만 삭제합니다.
 
-<div id="server-logging">
-  ### 서버 로깅
-</div>
+### 서버 로깅 {#server-logging}
 
-`spec.settings.logger`에서 ClickHouse 서버 로그를 구성합니다. 모든 필드는 안전한 기본값이 적용되는 선택 사항이므로, 별도로 설정하지 않은 클러스터도 기본적으로 컨테이너 콘솔과 디스크의 롤링 파일 모두에 `trace` 수준으로 로그를 기록합니다.
+`spec.settings.logger`에서 ClickHouse 서버 로그를 구성합니다. 모든 필드는 안전한 기본값이 적용되는 선택 사항이므로, 별도로 설정하지 않은 클러스터도 기본적으로 컨테이너 콘솔과 디스크의 롤링 파일 모두에 `information` 수준으로 로그를 기록합니다.
 
 ```yaml
 spec:
@@ -931,35 +1071,71 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: trace      # Default: trace
-      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
-      count: 50         # Default: 50. Number of rotated files to keep
+      level: information # Default: information
+      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
+      count: 10         # Default: 10. Number of rotated files to keep
 ```
 
-| 필드          | 기본값     | 설명                                                                                                                |
-| ----------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| `logToFile` | `true`  | `false`이면 연산자가 파일 대상을 제거하고, 서버는 컨테이너 콘솔에만 로그를 기록합니다.                                                              |
-| `jsonLogs`  | `false` | `true`이면 연산자가 `formatting.type: json`을 추가하므로 각 줄이 JSON 객체가 됩니다.                                                   |
-| `level`     | `trace` | 로그 출력 상세도입니다. `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal` 중 하나입니다. |
-| `size`      | `1000M` | 단일 로그 파일이 회전되기 전 최대 크기입니다.                                                                                        |
-| `count`     | `50`    | 서버가 유지하는 회전된 로그 파일 수입니다.                                                                                          |
+| 필드          | 기본값           | 설명                                                                                                                |
+| ----------- | ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `logToFile` | `true`        | `false`이면 연산자가 파일 대상을 제거하고, 서버는 컨테이너 콘솔에만 로그를 기록합니다.                                                              |
+| `jsonLogs`  | `false`       | `true`이면 연산자가 `formatting.type: json`을 추가하므로 각 줄이 JSON 객체가 됩니다.                                                   |
+| `level`     | `information` | 로그 출력 상세도입니다. `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal` 중 하나입니다. |
+| `size`      | `100M`        | 단일 로그 파일이 회전되기 전 최대 크기입니다.                                                                                        |
+| `count`     | `10`          | 서버가 유지하는 회전된 로그 파일 수입니다.                                                                                          |
 
-연산자는 `kubectl logs`가 작동하도록 항상 콘솔 로깅을 유지하고, `logToFile`이 `true`이면 여기에 파일 로깅을 추가합니다. 기본값을 사용하는 cluster는 다음 `logger` 블록으로 렌더링됩니다:
+연산자는 `kubectl logs`가 작동하도록 항상 콘솔 로깅을 유지하고, `logToFile`이 `true`이면 여기에 파일 로깅을 추가합니다. 기본값을 사용하는 클러스터는 다음 `logger` 블록으로 렌더링됩니다:
 
 ```yaml
 logger:
   console: true
-  level: trace
+  level: information
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 1000M
-  count: 50
+  size: 100M
+  count: 10
 ```
 
-동일한 `spec.settings.logger` 블록은 `KeeperCluster`에도 적용되며, 이 경우 연산자는 파일을 `/var/log/clickhouse-keeper/` 아래에 기록합니다.
+동일한 `spec.settings.logger` 블록은 `KeeperCluster`에도 적용되며, 이 경우 연산자는 파일을 `/var/log/clickhouse-keeper/` 아래에 기록하고 Raft 로거(`raft_logs_level`)도 동일한 `level`로 설정합니다.
 
 <Note>
   `logToFile`과 관계없이 콘솔 로깅은 계속 활성화되므로, 파일 로깅을 비활성화해도 `kubectl logs`는 계속 작동합니다. JSON을 파싱하는 구조화된 로그 저장소로 로그를 전송하는 경우 `jsonLogs: true`로 설정하십시오.
+</Note>
+
+### 시스템 로그 테이블 {#system-log-tables}
+
+연산자는 `query_log`, `part_log`, `text_log`, `metric_log`, `asynchronous_metric_log` 시스템 테이블을 활성화합니다. 이 테이블들은 데이터와 같은 볼륨에 저장되므로 `spec.settings.systemLogsTTLDays`가 테이블 TTL로 보관 기간을 제한합니다. 클러스터를 생성할 때 이 필드를 지정하지 않으면 기본값 지정 웹훅이 값을 `30`으로 설정합니다. TTL을 명시적으로 비활성화하려면 `0`으로 설정하세요.
+
+```yaml
+spec:
+  settings:
+    systemLogsTTLDays: 14
+```
+
+<Note>
+  이 기본값은 새 클러스터에만 적용됩니다. `systemLogsTTLDays`가 도입되기 전에 생성된 클러스터에서는 이 필드를 직접 설정하기 전까지 시스템 로그 테이블(System Log Table)이 크기 제한 없이 계속 누적됩니다.
+</Note>
+
+TTL은 다음번 서버 재시작 시 적용됩니다. 테이블별 TTL 재정의, 기타 시스템 로그 설정 조정, `@remove` 속성을 사용한 테이블 완전 비활성화는 모두 `extraConfig`를 통해 수행할 수 있습니다:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      text_log:
+        ttl: event_date + INTERVAL 90 DAY DELETE
+      metric_log:
+        collect_interval_milliseconds: 60000
+      part_log:
+        "@remove": "1"
+```
+
+<Note>
+  테이블을 비활성화해도 삭제되지는 않습니다. 직접 테이블을 삭제할 때까지 기존 데이터는 디스크에 남아 있습니다.
+</Note>
+
+<Note>
+  ClickHouse는 TTL이 변경된 시스템 테이블을 재생성하고, 기존 데이터는 `system.text_log_0`처럼 이름을 변경한 테이블에 보관합니다. 이력이 더 이상 필요하지 않으면 해당 테이블을 삭제하세요.
 </Note>
 
 <div id="custom-configuration">
@@ -987,6 +1163,26 @@ spec:
 
 * [YAML 구성 예시](/ko/concepts/features/configuration/server-config/configuration-files#example-1)
 * [모든 서버 설정](/ko/reference/settings/server-settings/settings)
+
+### 다시 로드할 수 있는 추가 구성 {#reloadable-extra-configuration}
+
+`extraConfig`를 변경하면 ClickHouse 파드가 다시 시작됩니다. 연산자는 런타임에 어떤 설정이 적용되는지 알 수 없기 때문입니다. ClickHouse가 실행 중에 다시 로드할 수 있는 설정에는 `extraConfig` 대신 `extraReloadableConfig`를 사용하세요. 대표적인 예가 `named_collections`입니다. 연산자는 파드를 다시 시작하지 않고 구성을 다시 로드해 변경 사항을 적용합니다:
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+각 최상위 섹션은 `extraConfig`와 `extraReloadableConfig` 중 한 곳에만 두십시오. 두 곳에서 같은 섹션을 설정하면 연산자가 경고를 표시합니다.
+
+<Note>
+  `extraReloadableConfig`를 사용한다는 것은 그 안의 설정을 다시 로드해도 안전하다고 보증한다는 의미입니다. 재시작해야만 적용되는 설정을 여기에 넣으면 오류는 발생하지 않지만, 다음 재시작 시점에야 적용됩니다.
+</Note>
 
 <div id="embedded-extra-users-configuration">
   ### 내장된 추가 사용자 구성
@@ -1108,4 +1304,16 @@ spec:
 env:
 - name: RESYNC_PERIOD
   value: "1m"
+```
+
+연산자는 여러 클러스터를 동시에 리컨실합니다. 컨트롤러당 병렬로 실행할 수 있는 리컨실리에이션의 수는 `MAX_CONCURRENT_RECONCILES`(기본값 `4`)로 설정합니다.
+
+## 리컨실리에이션 일시 중지 {#pausing-reconciliation}
+
+`ClickHouseCluster` 또는 `KeeperCluster`에 `clickhouse.com/pause-reconciliation: "true"` 어노테이션을 설정하면 연산자가 해당 리소스의 리컨실리에이션을 중지합니다. 연산자는 일시 중지된 리소스에 `ReconcileSucceeded=False`와 사유 `ReconciliationPaused`를 보고하며, 그 외에는 리소스를 건드리지 않습니다. 연산자가 수동 변경 사항을 되돌리려 할 때 유용합니다. 일시 중지된 동안 연산자는 클러스터 상태를 관찰하지 않으므로 `Ready`와 `Healthy`를 포함한 모든 상태 조건을 사유가 `ReconciliationPaused`인 `Unknown`으로 보고합니다. 재개하려면 어노테이션을 제거하세요. 보류 중인 spec 변경 사항은 다음 리컨실리에이션에서 적용됩니다.
+
+```bash
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
+# ... manual surgery ...
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -214,6 +215,29 @@ ColumnPtr executeDecimal(const ColumnWithTypeAndName & col_left, const ColumnWit
   */
 
 
+#if USE_MULTITARGET_CODE
+/// Compares `size` 16-byte values ordered by their bytes (`IPv6`, `FixedString(16)`); `Op` is over `int`.
+template <typename Op, bool b_is_constant>
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE void compareBigEndian16_x86_64_v4(
+    const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        if constexpr (b_is_constant)
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b), 0);
+        else
+            c[i] = Op::apply(compareBigEndian16Halves(a + i * 16, b + i * 16), 0);
+    }
+}
+
+template <typename Op> struct OrderedComparisonOverInt { using Type = void; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOp<A, B>> { using Type = LessOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOp<A, B>> { using Type = GreaterOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<LessOrEqualsOp<A, B>> { using Type = LessOrEqualsOp<int, int>; };
+template <typename A, typename B> struct OrderedComparisonOverInt<GreaterOrEqualsOp<A, B>> { using Type = GreaterOrEqualsOp<int, int>; };
+#endif
+
+
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
@@ -244,12 +268,21 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    using OrderedOpOverInt = typename OrderedComparisonOverInt<Op>::Type;
+    static constexpr bool is_ordered_ipv6 = std::is_same_v<A, IPv6> && std::is_same_v<B, IPv6> && !std::is_void_v<OrderedOpOverInt>;
+#endif
+
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                compareBigEndian16_x86_64_v4<OrderedOpOverInt, false>(
+                    reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(b.data()), c.data(), a.size());
+            else
+                vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -275,12 +308,24 @@ struct NumComparisonImpl
         }
     }))
 
+#if USE_MULTITARGET_CODE
+    /// Takes `b` by value, so that only the AVX-512 path needs it in memory.
+    static void X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE vectorConstantOrderedIPv6_x86_64_v4(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    {
+        compareBigEndian16_x86_64_v4<OrderedOpOverInt, true>(
+            reinterpret_cast<const UInt8 *>(a.data()), reinterpret_cast<const UInt8 *>(&b), c.data(), a.size());
+    }
+#endif
+
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImpl_x86_64_v4(a, b, c);
+            if constexpr (is_ordered_ipv6)
+                vectorConstantOrderedIPv6_x86_64_v4(a, b, c);
+            else
+                vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -394,6 +439,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, false>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -405,6 +458,14 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            compareBigEndian16_x86_64_v4<Op, true>(a_data.data(), b_data.data(), c.data(), a_data.size() / 16);
+            return;
+        }
+#endif
+
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
@@ -1173,6 +1234,20 @@ private:
         return c_res;
     }
 
+    bool acceptsArgumentTypes(const DataTypes & arguments, const DataTypePtr & result_type) const
+    {
+        try
+        {
+            return getReturnTypeImpl(arguments)->equals(*result_type);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                return false;
+            throw;
+        }
+    }
+
     ColumnPtr executeWithConstString(
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
@@ -1214,17 +1289,55 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
+        DataTypePtr type_of_converted = type_to_compare;
         if (converted.isNull())
         {
-            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            converted = convertFieldToTypeWithWiderIntegers(string_value, type_of_converted, type_string, params.format_settings);
+            const DataTypes wider_arguments
+                = left_const ? DataTypes{type_of_converted, type_to_compare} : DataTypes{type_to_compare, type_of_converted};
+            /// `executeImpl` is safe only for argument types that `getReturnTypeImpl` accepts.
+            if (!converted.isNull() && !acceptsArgumentTypes(wider_arguments, result_type))
+                converted = Field();
         }
 
-        ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
+        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
+        if (converted.isNull())
+        {
+            if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                       || IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals)
+            {
+                /// Every value of the type is on one known side of an out-of-range integer constant.
+                /// `x <= C` and `x > C` must stay complementary: an inverting rewrite relies on it.
+                const auto range = string_value.getType() == Field::Types::String
+                    ? classifyIntegerLiteralRange(string_value.safeGet<String>(), *type_to_compare)
+                    : IntegerLiteralRange::NotApplicable;
+
+                if (range == IntegerLiteralRange::AboveMax || range == IntegerLiteralRange::BelowMin)
+                {
+                    const bool left_is_less
+                        = left_const ? range == IntegerLiteralRange::BelowMin : range == IntegerLiteralRange::AboveMax;
+                    const bool result = left_is_less
+                        ? IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                        : IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals;
+                    return result_type->createColumnConst(input_rows_count, static_cast<UInt8>(result));
+                }
+
+                /// A composite constant that could not be read with wider integer elements has no single side to answer for.
+                const WhichDataType which_to_compare(removeNullable(type_to_compare));
+                if (which_to_compare.isArray() || which_to_compare.isTuple() || which_to_compare.isMap())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Cannot compare with '{}': an integer in it does not fit {}, and the constant cannot be compared by value",
+                        string_value.safeGet<String>(), type_to_compare->getName());
+            }
+
+            return result_type->createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+        }
+
+        ColumnPtr column_converted = type_of_converted->createColumnConst(input_rows_count, converted);
 
         ColumnsWithTypeAndName tmp_columns{
-            {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},
-            {!left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, ""},
+            {left_const ? column_converted : col_left_untyped->getPtr(), left_const ? type_of_converted : type_to_compare, ""},
+            {!left_const ? column_converted : col_right_untyped->getPtr(), !left_const ? type_of_converted : type_to_compare, ""},
         };
 
         return executeImpl(tmp_columns, result_type, input_rows_count);
@@ -1258,25 +1371,6 @@ private:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
-        /// comparisons would produce ColumnNothing which doesn't match the declared
-        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
-        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
-        /// and the element-wise null-safe comparison handles Nothing types correctly.
-        if constexpr (!is_null_safe_cmp_mode)
-        {
-            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
-            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
-                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
-                {
-                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                }
-            }
-        }
-
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1303,6 +1397,18 @@ private:
 
             x[i].column = x_columns[i];
             y[i].column = y_columns[i];
+
+            /// An element of type `Nothing` or `Nullable(Nothing)` is an untyped NULL. A non-null-safe comparison with NULL
+            /// is NULL whatever the other value, so compare a typed NULL pair and let the other elements decide the result.
+            if constexpr (!is_null_safe_cmp_mode)
+            {
+                if (x[i].type->onlyNull() || isNothing(x[i].type) || y[i].type->onlyNull() || isNothing(y[i].type))
+                {
+                    auto null_type = makeNullable(std::make_shared<DataTypeUInt8>());
+                    x[i] = {null_type->createColumnConstWithDefaultValue(input_rows_count), null_type, ""};
+                    y[i] = x[i];
+                }
+            }
         }
 
         return executeTupleImpl(x, y, tuple_size, input_rows_count);
@@ -1773,14 +1879,39 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — comparison is defined for numbers (cross-type via
+    /// least-supertype), strings, dates, UUIDs, IPv4/IPv6, equivalent enums,
+    /// and same-arity tuples (element-wise). Result is `UInt8` for the
+    /// null-safe variants (`isDistinctFrom` / `isNotDistinctFrom`) and for
+    /// non-Nullable inputs; otherwise `Nullable(UInt8)` propagates from any
+    /// Nullable element. The DSL doesn't capture this matrix concisely, so
+    /// the legacy `getReturnTypeImpl(DataTypes)` remains authoritative;
+    /// the string is surfaced via `system.functions`.
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
+    /// Bypass the DSL — the (Any, Any) -> UInt8 signature is documentation-only
+    /// and does not capture Nullable propagation for tuples. Delegate to the
+    /// legacy `DataTypes` overload, which performs full validation and wraps
+    /// the result in `Nullable(UInt8)` when any tuple element is nullable.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
     /// exceptions either: comparing a date to a string parses that string. These two properties
     /// have to be answered separately.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
     }
-
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

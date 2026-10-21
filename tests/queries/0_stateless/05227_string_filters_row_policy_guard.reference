@@ -1,0 +1,10 @@
+MergeTree
+3334
+1667
+Parquet
+3334
+1667
+control
+3334
+05227_row_policy_control	1
+05227_row_policy_guard	0
