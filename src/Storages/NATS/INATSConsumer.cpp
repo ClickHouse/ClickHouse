@@ -15,8 +15,6 @@ namespace DB
 
 static const int64_t DRAIN_TIMEOUT_MS = 5000;
 
-static std::atomic<UInt64> next_consumer_number = 0;
-
 INATSConsumer::INATSConsumer(
     NATSConnectionPtr connection_,
     const std::vector<String> & subjects_,
@@ -24,8 +22,7 @@ INATSConsumer::INATSConsumer(
     LoggerPtr log_,
     uint32_t queue_size_,
     const std::atomic<bool> & stopped_)
-    : consumer_number(next_consumer_number.fetch_add(1, std::memory_order_relaxed))
-    , connection(std::move(connection_))
+    : connection(std::move(connection_))
     , subjects(subjects_)
     , log(log_)
     , stopped(stopped_)
@@ -96,23 +93,20 @@ void INATSConsumer::unsubscribe()
         if (status != NATS_OK)
         {
             if (was_closed)
-                LOG_DEBUG(log, "A subscription of consumer {} was already closed by the NATS client",
-                    consumer_number);
+                LOG_DEBUG(log, "A subscription of the consumer was already closed by the NATS client");
             else
-                LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
-                    consumer_number, natsStatus_GetText(status));
+                LOG_WARNING(log, "Failed to start draining a subscription of the consumer: {}", natsStatus_GetText(status));
             continue;
         }
 
         status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
         if (status != NATS_OK)
-            LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
-                consumer_number, natsStatus_GetText(status));
+            LOG_WARNING(log, "A subscription of the consumer did not finish draining: {}", natsStatus_GetText(status));
     }
 
     subscriptions.clear();
 
-    LOG_DEBUG(log, "Consumer {} unsubscribed", consumer_number);
+    LOG_DEBUG(log, "Consumer unsubscribed");
 }
 
 void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
@@ -175,8 +169,7 @@ void INATSConsumer::ackMessages(std::vector<NatsMsgPtr> & messages)
     {
         auto status = natsMsg_Ack(msg.get(), nullptr);
         if (status != NATS_OK)
-            LOG_WARNING(log, "Failed to acknowledge a message in consumer {}: {} (server may redeliver it)",
-                consumer_number, natsStatus_GetText(status));
+            LOG_WARNING(log, "Failed to acknowledge a message in the consumer: {} (server may redeliver it)", natsStatus_GetText(status));
     }
     messages.clear();
 }
@@ -247,7 +240,7 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
             auto queue = nats_consumer->loadReceived();
             if (!queue->push(std::move(data)))
             {
-                LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", nats_consumer->consumer_number);
+                LOG_DEBUG(nats_consumer->log, "Consumer is shutting down, dropping a message");
                 nats_consumer->nackMessage(msg);
             }
         }

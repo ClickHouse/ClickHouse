@@ -11,6 +11,7 @@ class IColumn : public COW<IColumn>
 private:
     friend class COW<IColumn>;
     virtual MutablePtr clone() const = 0;
+    virtual size_t sizeOfObject() const = 0;
 
 public:
     IColumn() = default;
