@@ -12,14 +12,23 @@ PR_SETTINGS="enable_parallel_replicas = 1, max_parallel_replicas = 3, automatic_
 
 # Prints whether the query reads with parallel replicas (ReadFromCluster in the plan), then whether its result
 # with them equals the result without them, then the result.
+# One client runs all three queries: client startup dominates the run time under sanitizers.
 function check()
 {
     local query="$1"
     local settings="${PR_SETTINGS}${2:+, $2}"
-    $CLICKHOUSE_CLIENT -q "EXPLAIN $query SETTINGS $settings" | grep -c 'ReadFromCluster'
-    local with_pr without_pr
-    with_pr=$($CLICKHOUSE_CLIENT -q "$query SETTINGS $settings")
-    without_pr=$($CLICKHOUSE_CLIENT -q "$query SETTINGS enable_parallel_replicas = 0")
+    local separator="check_output_separator"
+    local output with_pr without_pr
+    output=$($CLICKHOUSE_CLIENT -q "
+        EXPLAIN $query SETTINGS $settings;
+        SELECT '$separator';
+        $query SETTINGS $settings;
+        SELECT '$separator';
+        $query SETTINGS enable_parallel_replicas = 0;
+    ")
+    awk -v s="$separator" '$0 == s { exit } /ReadFromCluster/ { ++n } END { print n + 0 }' <<< "$output"
+    with_pr=$(awk -v s="$separator" '$0 == s { ++n; next } n == 1' <<< "$output")
+    without_pr=$(awk -v s="$separator" '$0 == s { ++n; next } n == 2' <<< "$output")
     [ "$with_pr" = "$without_pr" ] && echo "same result" || echo "different result: '$with_pr' vs '$without_pr'"
     echo "$with_pr"
 }
@@ -69,7 +78,7 @@ check "SELECT sum(a) FROM t PREWHERE a > 10"
 echo "-- correlated subquery"
 check "SELECT count() FROM t AS x WHERE exists(SELECT 1 FROM numbers(20) AS n WHERE n.number = x.a)"
 
-echo "-- the table in a subquery is read in full by every replica"
+echo "-- the table read again in a subquery"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50)"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50)" "parallel_replicas_allow_in_with_subquery = 0"
 
@@ -79,7 +88,7 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO mt SELECT number FROM numbers(600);
 "
 
-echo "-- a subquery that the replica plans as a query of its own"
+echo "-- the table in a UNION subquery"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)"
 check "SELECT count() FROM mt WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)" "parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1"
 

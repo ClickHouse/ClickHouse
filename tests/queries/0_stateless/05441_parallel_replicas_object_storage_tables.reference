@@ -48,14 +48,14 @@ same result
 0
 same result
 20
--- the table in a subquery is read in full by every replica
+-- the table read again in a subquery
 0
 same result
 50
 0
 same result
 50
--- a subquery that the replica plans as a query of its own
+-- the table in a UNION subquery
 0
 same result
 50
