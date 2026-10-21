@@ -1767,7 +1767,7 @@ bool IStorageURLBase::prefersLargeBlocks() const
 
 bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context, format_settings);
 }
 
 size_t IStorageURLBase::getMaxReadStreams(size_t num_streams, ContextPtr context)
@@ -2056,12 +2056,11 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         std::shuffle(uri_options->begin(), uri_options->end(), thread_local_rng);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = settings[Setting::parallelize_output_from_storages];
     /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
-    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < resize_to)
-        pipe.resize(resize_to);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context))
+        resizeOutputAfterReading(pipe, resize_to, /* keep_streams = */ false, build_settings.min_outstreams_per_resize_after_split);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));

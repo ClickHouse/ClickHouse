@@ -444,7 +444,7 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context, format_settings);
 }
 
 size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
@@ -872,6 +872,7 @@ void StorageObjectStorage::read(
         local_context,
         max_block_size,
         num_streams);
+    read_step->setParallelizeOutputAfterReading(parallelizeOutputAfterReading(local_context));
 
     query_plan.addStep(std::move(read_step));
 }

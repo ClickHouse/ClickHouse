@@ -10335,7 +10335,7 @@ Parallelize the final merge of the per-thread single-level aggregation hash tabl
 )", 0, \
         {"26.8", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."}) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
-Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
+Specifies the minimum number of output streams of a `Resize`, `StrictResize` or `AffinityResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur. `AffinityResize` follows `file`, `url` and object storage reads with at least as many streams as threads; after its split, a stream takes chunks only of the streams of its group.
 
 ### What is a Resize Node
 A `Resize` node is a processor in the query pipeline that adjusts the number of data streams flowing through the pipeline. It can either increase or decrease the number of streams to balance the workload across multiple threads or processors. For example, if a query requires more parallelism, the `Resize` node can split a single stream into multiple streams. Conversely, it can merge multiple streams into fewer streams to consolidate data processing.
@@ -10360,7 +10360,7 @@ In some cases, where the inputs/outputs are indivisible by the number of split `
 The `min_outstreams_per_resize_after_split` setting ensures that the splitting of `Resize` nodes is meaningful and avoids creating too few streams, which could lead to inefficient parallel processing. By enforcing a minimum number of output streams, this setting helps maintain a balance between parallelism and overhead, optimizing query execution in scenarios involving stream splitting and merging.
 
 ### Disabling the Setting
-To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
+To disable the split of `Resize` and `AffinityResize` nodes, set this setting to 0. This will prevent the splitting of these nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0, \
         {"25.6", 0, 24, "New setting."}) \
     DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
