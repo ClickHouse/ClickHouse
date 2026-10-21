@@ -8,7 +8,11 @@ exports_files([
 
 cc_library(
     name = "fp16",
-    hdrs = glob(["include/**/*.h"]),
+    hdrs = [
+        "include/fp16.h",
+        "include/fp16/bitcasts.h",
+        "include/fp16/fp16.h",
+    ],
     includes = [
         "include",
     ],

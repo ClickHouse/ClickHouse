@@ -79,14 +79,6 @@ def ch_cc_library(
             str(Label("@platforms//cpu:" + arch)): runtime if arch in arches else []
             for arch in CLICKHOUSE_TARGET_FLAGS
         } | {"//conditions:default": runtime})
-    if language == "C" and libcxx_headers:
-        libcxx_files = [
-            Label("@clickhouse_llvm_project//:runtime_source_inputs"),
-        ]
-        additional_compiler_inputs = select({
-            str(Label("@platforms//cpu:" + arch)): libcxx_files if arch in arches else []
-            for arch in CLICKHOUSE_TARGET_FLAGS
-        } | {"//conditions:default": libcxx_files}) + additional_compiler_inputs
     if language in ["C", "ASM"] and libcxx_headers:
         kwargs["implementation_deps"] = select({
             str(Label("@platforms//cpu:" + arch)): [Label("@clickhouse_llvm_project//:libcxx_config_headers")]

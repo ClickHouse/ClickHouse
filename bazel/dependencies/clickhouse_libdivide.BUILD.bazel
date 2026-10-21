@@ -12,8 +12,8 @@ exports_files([
 cc_library(
     name = "libdivide",
     hdrs = glob([
-        "**/*.h",
-        "**/*.hpp",
+        "*.h",
+        "*.hpp",
     ]),
     includes = [
         ".",

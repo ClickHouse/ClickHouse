@@ -9,7 +9,11 @@ exports_files([
 
 cc_library(
     name = "rapidjson",
-    hdrs = glob(["include/rapidjson/**/*.h"]),
+    hdrs = glob([
+        "include/rapidjson/*.h",
+        "include/rapidjson/error/*.h",
+        "include/rapidjson/internal/*.h",
+    ]),
     includes = [
         "include",
     ],
