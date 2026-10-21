@@ -10,6 +10,8 @@
             <!-- A case-insensitive alias of `lower`, also in another case. -->
             <function>LCASE</function>
             <function>listed_executable_udf</function>
+            <!-- Can be called without parentheses: `SELECT currentUser`, `SELECT current_user`. -->
+            <function>currentUser</function>
         </functions_requiring_grant>
     </access_control_improvements>
 </clickhouse>

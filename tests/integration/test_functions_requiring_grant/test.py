@@ -154,6 +154,31 @@ def test_lambda_alias_shadowing_listed_function():
     )
 
 
+def test_function_without_parentheses_requires_grant():
+    """`currentUser` may be called without parentheses, which the analyzer resolves on a separate path."""
+    instance.query("CREATE USER A")
+
+    for query in [
+        "SELECT currentUser()",
+        "SELECT currentUser",
+        "SELECT current_user",
+        "WITH currentUser AS u SELECT u",
+    ]:
+        assert "Not enough privileges" in instance.query_and_get_error(
+            query, user="A"
+        ), query
+
+    # A column with the same name takes priority, so the function is not called.
+    assert (
+        instance.query("SELECT currentUser FROM (SELECT 1 AS currentUser)", user="A")
+        == "1\n"
+    )
+
+    instance.query("GRANT FUNCTION ON currentUser TO A")
+    assert instance.query("SELECT currentUser", user="A") == "A\n"
+    assert instance.query("SELECT current_user", user="A") == "A\n"
+
+
 def test_system_functions_readable_without_grant():
     """A listed SQL UDF must not break introspection for users who cannot execute it."""
     instance.query("CREATE USER A")
