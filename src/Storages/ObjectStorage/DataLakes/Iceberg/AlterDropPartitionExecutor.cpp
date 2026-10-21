@@ -251,7 +251,6 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        /// Resolve the base like INSERT: a listing that cannot be ordered is refused, not ranked.
         auto [snapshot, table_state] = catalog
             ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
             : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_metadata_pointer_overrides=*/true);

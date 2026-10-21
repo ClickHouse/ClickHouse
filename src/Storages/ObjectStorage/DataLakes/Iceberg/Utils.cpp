@@ -1337,8 +1337,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
-        /// Manifests and manifest lists share the directory but are never named `v...`. `<N>-<uuid>`
-        /// names share their first character with uuid-named manifests, so they need the full listing.
+        /// Manifests and manifest lists share this directory but are never named `v...`.
         if (list_v_prefixed_names_only)
             metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
         if (metadata_files.empty())
