@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -6,6 +7,39 @@ exports_files([
     "LICENSE",
     "build/mkversion",
 ])
+
+# These are include fragments of the ClickHouse-generated portable.h.
+# Only that configuration owner may refer to their source labels.
+exports_files(
+    [
+        "include/ac/assert.h",
+        "include/ac/fdset.h",
+        "include/ac/localize.h",
+    ],
+    visibility = ["@clickhouse//contrib/openldap-cmake:__pkg__"],
+)
+
+cc_library(
+    name = "_config_support",
+    hdrs = ["include/ldap_cdefs.h"],
+    includes = ["include"],
+)
+
+# liblber/debug.c includes ldap_pvt.h -> openldap.h -> ldap.h -> lber.h.
+# libldap also includes liblber/lber-int.h, so the shared declarations cannot
+# be owned by libldap without a dependency cycle between the two archives.
+cc_library(
+    name = "_api",
+    hdrs = [
+        "include/lber.h",
+        "include/ldap.h",
+        "include/openldap.h",
+    ],
+    includes = ["include"],
+    deps = [
+        "@clickhouse//contrib/openldap-cmake:headers",
+    ],
+)
 
 ch_cc_library(
     name = "_lber",
@@ -22,21 +56,44 @@ ch_cc_library(
         "libraries/liblber/stdio.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
     ],
-    hdrs = glob([
-        "include/**/*.h",
-        "libraries/liblber/**/*.h",
-        "libraries/liblunicode/ucdata/**/*.h",
-    ]),
+    hdrs = [
+        "include/ac/ctype.h",
+        "include/ac/errno.h",
+        "include/ac/signal.h",
+        "include/ac/socket.h",
+        "include/ac/stdarg.h",
+        "include/ac/stdlib.h",
+        "include/ac/string.h",
+        "include/ac/syslog.h",
+        "include/ac/time.h",
+        "include/ac/unistd.h",
+        "include/getopt-compat.h",
+        "include/lber_pvt.h",
+        "include/ldap_defaults.h",
+        "include/ldap_log.h",
+        "include/ldap_queue.h",
+        "include/lutil.h",
+        "include/lutil_lockf.h",
+        "libraries/liblber/lber-int.h",
+        "libraries/liblunicode/ucdata/ucdata.h",
+    ],
+    # These shared headers require portable.h's SIZEOF_* definitions. Both
+    # real libraries enter them after portable.h, including liblber/debug.c.
+    textual_hdrs = [
+        "include/ac/bytes.h",
+        "include/ldap_pvt.h",
+        "include/ldap_pvt_uc.h",
+    ],
     additional_compiler_inputs = ["libraries/liblber/debug.c"],
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         "include",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "LBER_LIBRARY",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -44,15 +101,12 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "libraries/liblber",
-    ],
+    local_includes = ["libraries/liblber"],
     deps = [
-        "@clickhouse_openssl//:ssl",
+        ":_api",
+        ":_config_support",
         "@clickhouse//contrib/openldap-cmake:headers",
+        "@clickhouse//contrib/openldap-cmake:private_config",
     ],
 )
 
@@ -133,7 +187,19 @@ ch_cc_library(
         "libraries/libldap/vlvctrl.c",
         "libraries/libldap/whoami.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/ldap-version.c",
+        "include/ac/dirent.h",
+        "include/ac/param.h",
+        "include/ldap_avl.h",
+        "include/ldap_int_thread.h",
+        "include/ldap_pvt_thread.h",
+        "include/ldap_rq.h",
     ] + glob(["libraries/libldap/**/*.h"]),
+    hdrs = [
+        "include/ldap_schema.h",
+        "include/ldap_utf8.h",
+        "include/ldif.h",
+        "include/slapi-plugin.h",
+    ],
     additional_compiler_inputs = [
         "libraries/liblber/debug.c",
         "libraries/libldap/dnssrv.c",
@@ -145,8 +211,14 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    implementation_deps = [
+        ":_lber",
+        "@clickhouse//contrib/openldap-cmake:private_config",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+    ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "LDAP_LIBRARY",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -154,11 +226,10 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "libraries/libldap",
+    local_includes = ["libraries/libldap"],
+    deps = [
+        ":_api",
+        ":_config_support",
+        "@clickhouse//contrib/openldap-cmake:headers",
     ],
-    deps = [":_lber"],
 )

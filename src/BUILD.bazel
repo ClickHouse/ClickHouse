@@ -2745,6 +2745,7 @@ ch_cc_library(
         "@clickhouse_mongo_c_driver//:_libbson",
         "@clickhouse_nats_io//:_nats_io",
         "@clickhouse_nuraft//:_nuraft",
+        "@clickhouse_openldap//:_api",
         "@clickhouse_openldap//:_lber",
         "@clickhouse_orc//:_orc",
         "@clickhouse_rocksdb//:_rocksdb",
