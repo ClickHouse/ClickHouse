@@ -101,8 +101,8 @@ enum class FilterResult
     const String & filter_column_name);
 
 /// Move `node` down through `ExpressionStep`s that pass every sort key through as an alias of an input, and rename
-/// the keys in `description` to the inputs. Returns false if a step computes a key or has `arrayJoin`. Then do not
-/// use `node` and `description`.
+/// the keys in `description` to the inputs. Returns false if a step computes a key, has `arrayJoin`, or is sensitive
+/// to the number of rows it evaluates (`isSensitiveToEvaluationCount`). Then do not use `node` and `description`.
 [[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
 
 /// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used by top-K

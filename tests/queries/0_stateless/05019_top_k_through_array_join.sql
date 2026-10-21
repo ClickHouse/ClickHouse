@@ -193,3 +193,8 @@ SELECT x, e FROM (SELECT x, arr AS e FROM t_aj_nullable ARRAY JOIN arr ORDER BY 
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj_nullable ARRAY JOIN arr ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
 DROP TABLE t_aj_nullable;
+
+-- a stateful function between the sort and the ARRAY JOIN must see all rows, so the sort does not move
+SELECT '-- stateful function below the sort';
+SELECT number, rowNumberInAllBlocks() AS rn FROM numbers(10) ARRAY JOIN [number] AS e ORDER BY number DESC LIMIT 2 SETTINGS query_plan_execute_functions_after_sorting = 0, max_threads = 1, query_plan_top_k_through_array_join = 0;
+SELECT number, rowNumberInAllBlocks() AS rn FROM numbers(10) ARRAY JOIN [number] AS e ORDER BY number DESC LIMIT 2 SETTINGS query_plan_execute_functions_after_sorting = 0, max_threads = 1, query_plan_top_k_through_array_join = 1;

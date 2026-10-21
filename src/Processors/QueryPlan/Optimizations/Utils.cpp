@@ -309,8 +309,9 @@ bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & descr
         if (node->children.size() != 1)
             return false;
 
+        /// a moved sort changes the rows this step evaluates, so a function like `rowNumberInAllBlocks` gives other values
         const ActionsDAG & dag = expression_step->getExpression();
-        if (dag.hasArrayJoin())
+        if (dag.hasArrayJoin() || isSensitiveToEvaluationCount(dag))
             return false;
 
         for (auto & sort_column : description)
