@@ -45,8 +45,6 @@ extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 namespace QueryPlanOptimizations
 {
 
-constexpr bool debug_logging_enabled = false;
-
 /// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
 /// A `MergeTree` read the pass would distribute, and the table it reads. A `Merge` read contributes one
 /// entry per underlying table while `consider_merges` is set - all sharing that one node - which is what the
@@ -167,7 +165,7 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
     return false;
 }
 
-class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>
+class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor>
 {
     QueryPlan::Nodes & nodes;
     const QueryPlanOptimizationSettings & optimization_settings;
@@ -175,7 +173,7 @@ class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplic
 public:
     ApplyParallelReplicasVisitor(
         QueryPlan::Node * root_, QueryPlan::Nodes & nodes_, const QueryPlanOptimizationSettings & optimization_settings_)
-        : QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>(root_)
+        : QueryPlanVisitor<ApplyParallelReplicasVisitor>(root_)
         , nodes(nodes_)
         , optimization_settings(optimization_settings_)
     {
@@ -419,13 +417,13 @@ private:
     }
 };
 
-class ConvertToDistributedVisitor : public QueryPlanVisitor<ConvertToDistributedVisitor, debug_logging_enabled>
+class ConvertToDistributedVisitor : public QueryPlanVisitor<ConvertToDistributedVisitor>
 {
     QueryPlan & query_plan;
 
 public:
     explicit ConvertToDistributedVisitor(QueryPlan & query_plan_)
-        : QueryPlanVisitor<ConvertToDistributedVisitor, debug_logging_enabled>(query_plan_.getRootNode())
+        : QueryPlanVisitor<ConvertToDistributedVisitor>(query_plan_.getRootNode())
         , query_plan(query_plan_)
     {
     }
