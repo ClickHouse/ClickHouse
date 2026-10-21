@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
-# Regression: a row policy filter can call a SQL UDF (`CREATE FUNCTION`), which is inlined into the
-# filter only when it is actually applied - the raw AST the plan cache fingerprints still shows just
-# the call, e.g. `f(x)`. Redefining the UDF with `CREATE OR REPLACE FUNCTION` changes what the
-# filter enforces without changing that raw AST, so a hit must not keep enforcing the policy body
-# that was live when the plan was cached. Symmetrically, if the UDF body itself contains a
-# subquery, that must make the plan uncacheable for the same reason a literal subquery in the
-# filter does (see 04495): the read is invisible to the plan leaves and to the cache's dependency
-# tracking.
+# Regression: a row policy filter can call a SQL UDF (`CREATE FUNCTION`), which the analyzer inlines
+# into the filter with its own lookup of the UDF body - the raw AST the plan cache fingerprints still
+# shows just the call, e.g. `f(x)`. The body baked into the plan cannot be tied to the body a later
+# check sees (a concurrent `CREATE OR REPLACE FUNCTION` could slip in between), so a plan reading a
+# table whose row policy calls a SQL UDF is not cached at all, and redefining the UDF takes effect
+# immediately. The same holds if the UDF body contains a subquery (see 04495).
 # The plan cache is a single, server-wide cache inspected via `SYSTEM DROP QUERY PLAN CACHE` and
 # exact `QueryPlanCacheHits` counts, and the test creates a global user, so it runs in isolation
 # (see 04489 for the full rationale of the tags).
@@ -56,7 +54,7 @@ hits_of_last_run()
 
 QUERY="SELECT sum(x) FROM ${CLICKHOUSE_DATABASE}.t_udf"
 
-echo "-- 1. row policy calling a subquery-free UDF: query IS cacheable"
+echo "-- 1. row policy calling a subquery-free UDF: query is NOT cacheable"
 $CLICKHOUSE_CLIENT --query "
     CREATE OR REPLACE FUNCTION udf_04602 AS (a) -> a <= 3;
     DROP ROW POLICY IF EXISTS p_udf_04602 ON ${CLICKHOUSE_DATABASE}.t_udf;
@@ -65,7 +63,7 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
 echo "-- boundary <= 3 (rows 1,2,3): $(run_user "$QUERY")"
 run_user "$QUERY" > /dev/null
-echo "-- hits after a repeat (must be 1, cached): $(hits_of_last_run 'SELECT sum(x) FROM')"
+echo "-- hits after a repeat (must be 0, not cached): $(hits_of_last_run 'SELECT sum(x) FROM')"
 
 echo "-- 2. redefining the UDF changes the enforced boundary without a stale cache hit"
 $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE FUNCTION udf_04602 AS (a) -> a <= 1;"

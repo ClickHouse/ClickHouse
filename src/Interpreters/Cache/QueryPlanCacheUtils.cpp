@@ -153,11 +153,7 @@ bool isFunctionCheckingAccessOnCreate(const String & name)
         || effective_name.starts_with("dict");
 }
 
-/// What a row-policy filter AST, or the body of any SQL UDF it calls, contains that the plan cache
-/// cannot support. SQL UDFs are inlined into a row-policy filter at read time (see
-/// `checkRowPolicyFilterExpression` in RowPolicy.cpp for the same descent pattern), so whatever is
-/// hidden inside a UDF body is just as invisible to the plan leaves and to the AST closure walked
-/// by `ASTDependencyCollector` as if it were written directly into the filter.
+/// What a row-policy filter AST contains that the plan cache cannot support.
 struct RowPolicyFilterContents
 {
     /// A subquery (a scalar `(SELECT ...)`, an `IN (SELECT ...)`, or a bare select node): it reads
@@ -165,6 +161,17 @@ struct RowPolicyFilterContents
     bool has_subquery = false;
     /// A call to an executable or WebAssembly UDF, which a deserialized plan cannot rebuild.
     bool has_function_resolved_outside_function_factory = false;
+    /// A call to a SQL UDF (`CREATE FUNCTION`). The analyzer inlines its body into the filter with
+    /// its own lookup in `UserDefinedSQLFunctionFactory`, so the body baked into the plan cannot be
+    /// tied to the body any later check sees: a concurrent `CREATE OR REPLACE FUNCTION` between
+    /// filter analysis and identity recording would pair the old body with a fingerprint of the new
+    /// one, and every later validation would pass while the plan keeps enforcing the old body. SQL
+    /// UDFs in the query itself make it uncacheable for a similar reason (see
+    /// `isFunctionUnsafeForPlanCache`).
+    bool has_sql_udf = false;
+    /// A call to a name that no factory knows, e.g. a SQL UDF dropped after the filter was analyzed:
+    /// the plan would keep its inlined body while the raw filter AST stays the same.
+    bool has_unknown_function = false;
     /// A call to a non-deterministic function (e.g. `today`, `now`): the filter is planned into the
     /// cached plan itself, so its value could be frozen at the time the plan was analyzed - a hit
     /// would keep enforcing the analysis-time cutoff instead of the current one. This mirrors the
@@ -173,15 +180,15 @@ struct RowPolicyFilterContents
     /// A call to a function that checks access rights when it is created (see
     /// `isFunctionCheckingAccessOnCreate`): a hit does not create it again, so the check is lost.
     bool has_function_checking_access = false;
+
+    bool isCacheable() const
+    {
+        return !has_subquery && !has_function_resolved_outside_function_factory && !has_sql_udf && !has_unknown_function
+            && !has_non_deterministic_function && !has_function_checking_access;
+    }
 };
 
-/// Walks `ast` and, recursively, the bodies of the SQL UDFs it calls, with `visited_udfs` guarding
-/// against cycles.
-void collectRowPolicyFilterContents(
-    const IAST & ast,
-    const ContextPtr & context,
-    std::unordered_set<String> & visited_udfs,
-    RowPolicyFilterContents & contents)
+void collectRowPolicyFilterContents(const IAST & ast, const ContextPtr & context, RowPolicyFilterContents & contents)
 {
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
         contents.has_subquery = true;
@@ -193,30 +200,25 @@ void collectRowPolicyFilterContents(
 
         if (isFunctionResolvedOutsideFunctionFactory(function->name, context))
             contents.has_function_resolved_outside_function_factory = true;
+        else if (UserDefinedSQLFunctionFactory::instance().has(function->name))
+            contents.has_sql_udf = true;
+        else if (function->name != "lambda" && !FunctionFactory::instance().hasNameOrAlias(function->name))
+            contents.has_unknown_function = true;
         /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is pure.
-        /// SQL UDFs are not in `FunctionFactory`; their bodies are walked below instead.
         else if (getFunctionCanonicalNameIfAny(function->name) != "arrayJoin")
         {
             if (const auto func = FunctionFactory::instance().tryGet(function->name, context); func && !func->isDeterministic())
                 contents.has_non_deterministic_function = true;
         }
-
-        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
-            udf_body && visited_udfs.insert(function->name).second)
-            collectRowPolicyFilterContents(*udf_body, context, visited_udfs, contents);
     }
 
     for (const auto & child : ast.children)
-        collectRowPolicyFilterContents(*child, context, visited_udfs, contents);
+        collectRowPolicyFilterContents(*child, context, contents);
 }
 
 struct RowPolicyInfo
 {
-    /// Hash of the effective SELECT row-policy filter (empty when there is no restrictive policy),
-    /// combined with the current body of every SQL UDF it calls (recursively). Folding in the UDF
-    /// bodies makes the hash change when `CREATE OR REPLACE FUNCTION` redefines a UDF used by the
-    /// filter, even though the filter's own AST (the unexpanded call, e.g. `f(a)`) stays the same;
-    /// without this, a cache hit could keep enforcing a stale, already-replaced filter body.
+    /// Hash of the effective SELECT row-policy filter (empty when there is no restrictive policy).
     IASTHash hash{};
     /// What makes the plan uncacheable, if anything (see `RowPolicyFilterContents`).
     RowPolicyFilterContents contents;
@@ -227,17 +229,8 @@ RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const RowPolicyFilter
     RowPolicyInfo info;
     if (row_policy && !row_policy->isAlwaysTrue() && row_policy->expression)
     {
-        std::unordered_set<String> visited_udfs;
-        collectRowPolicyFilterContents(*row_policy->expression, context, visited_udfs, info.contents);
-
-        /// The walk above always runs to completion, so `visited_udfs` is the complete transitive
-        /// set of the SQL UDFs the filter calls.
-        SipHash hash_state;
-        row_policy->expression->updateTreeHash(hash_state, /*ignore_aliases=*/false);
-        for (const auto & udf_name : visited_udfs)
-            if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(udf_name))
-                udf_body->updateTreeHash(hash_state, /*ignore_aliases=*/false);
-        info.hash = getSipHash128AsPair(hash_state);
+        collectRowPolicyFilterContents(*row_policy->expression, context, info.contents);
+        info.hash = row_policy->expression->getTreeHash(/*ignore_aliases=*/false);
     }
     return info;
 }
@@ -414,6 +407,16 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
             "Not caching plan: row policy on {}.{} calls an executable or WebAssembly UDF", dep.database, dep.table);
+        return false;
+    }
+    if (row_policy_info.contents.has_sql_udf)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: row policy on {}.{} calls a SQL UDF", dep.database, dep.table);
+        return false;
+    }
+    if (row_policy_info.contents.has_unknown_function)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: row policy on {}.{} calls an unknown function", dep.database, dep.table);
         return false;
     }
     if (row_policy_info.contents.has_non_deterministic_function)
@@ -1110,15 +1113,13 @@ bool validateQueryPlanCacheEntry(
         if (getMetadataVersionOrSchemaHash(metadata) != dep.metadata_version)
             return false;
 
-        /// A policy that changed to contain a subquery, a non-deterministic function or a call to a UDF the plan cannot rebuild
+        /// A policy that changed to contain a subquery, a non-deterministic function or a call to a UDF
         /// (or that changed in any other way) alters the hash and is rejected here; the explicit
-        /// content guards are defense in depth, mirroring the store path in `fillDependency`.
+        /// content guards are defense in depth, mirroring the store path in `fillDependency`. They
+        /// also catch a change the raw filter AST does not show: a name of the filter that started
+        /// resolving to a SQL UDF, or stopped resolving at all.
         const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
-        if (row_policy_info.contents.has_subquery
-            || row_policy_info.contents.has_function_resolved_outside_function_factory
-            || row_policy_info.contents.has_non_deterministic_function
-            || row_policy_info.contents.has_function_checking_access
-            || row_policy_info.hash != dep.row_policy_hash)
+        if (!row_policy_info.contents.isCacheable() || row_policy_info.hash != dep.row_policy_hash)
             return false;
 
         /// Record the identity that was just proven, so that materialization can bind its leaf

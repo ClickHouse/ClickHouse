@@ -35,8 +35,9 @@ A `SELECT` query can use the plan cache when all of the following hold:
   function body, so `CREATE OR REPLACE FUNCTION` could otherwise leave a stale plan under the same key. Queries calling
   executable or WebAssembly user-defined functions (directly or from a row policy) are not cached even when such a function is declared
   deterministic, because a cache hit rebuilds functions through the built-in function factory only. A query reading a table whose
-  applicable row policy calls a non-deterministic function (e.g. `today`, `currentUser`) is not cached either. A row policy calling
-  a deterministic SQL user-defined function does not prevent caching: the current function body is part of the row policy fingerprint.
+  applicable row policy calls a non-deterministic function (e.g. `today`, `currentUser`) is not cached either. A query reading a
+  table whose applicable row policy calls a SQL user-defined function is not cached either: the function body is inlined into the
+  filter while the plan is built, and a concurrent `CREATE OR REPLACE FUNCTION` could leave the plan with a body the cache cannot detect.
 - The query contains no call of a function that checks access rights while the query is analyzed (introspection functions such as
   `demangle`, dictionary functions, AI functions, `joinGet`, `getMacro`, ...), including inside expanded view bodies, row policies and
   `ALIAS` columns of tables read inside expanded view bodies. Such a call with constant arguments is folded into a constant, and a cache hit
