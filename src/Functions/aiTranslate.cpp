@@ -25,31 +25,17 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
-    {
-        /// `instructions` and `temperature` are optional, but `temperature` is only
-        /// valid once `instructions` is present, so the optional positions are spelled
-        /// as explicit prefix alternatives rather than two independent optionals (see
-        /// the note in `aiGenerate.cpp`).
-        return
-            "(const String, Nullable(String), const String) -> Nullable(String)"
-            " OR (const String, Nullable(String), const String, const String) -> Nullable(String)"
-            " OR (const String, Nullable(String), const String, const String, const Number) -> Nullable(String)"
-            " OR (const String, String, const String) -> String"
-            " OR (const String, String, const String, const String) -> String"
-            " OR (const String, String, const String, const String, const Number) -> String";
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"target_language", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
@@ -105,12 +91,12 @@ are taken from the `credentials` key of the optional parameter map, or from the
         .arguments = {
             {"text", "Text to translate.", {"String"}},
             {"target_language", "Target language name or BCP-47 code (e.g. `'French'`, `'es-MX'`).", {"String"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.3`), `max_tokens` (maximum output tokens per call; default `1024`), `instructions` (additional style or dialect instructions for the translator). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.3`), `max_tokens` (maximum output tokens per call; default `1024`), `instructions` (additional style or dialect instructions for the translator). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"The translated text, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
             {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French')", "Bonjour le monde!"},
-            {"Translate to Japanese with style instructions", "CREATE TABLE articles (body String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');\nSELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5", ""},
+            {"Translate to Japanese with style instructions", "SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

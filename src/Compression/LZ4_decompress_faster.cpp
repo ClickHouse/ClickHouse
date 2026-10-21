@@ -165,7 +165,7 @@ template <>
   * Explanation:
   *
   * https://stackoverflow.com/questions/33692969/assembler-mmx-errors
-  * https://web.archive.org/web/20190117031545/https://software.intel.com/en-us/node/524274
+  * https://software.intel.com/en-us/node/524274
   *
   * Actually it's possible to use 'emms' instruction after decompression routine.
   * But it's more easy to just use 'xmm' registers and avoid using 'mm' registers.

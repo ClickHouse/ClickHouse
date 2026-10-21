@@ -37,17 +37,7 @@ struct RowPolicy;
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
-/** Interprets the SELECT query with `TreeRewriter` and `ExpressionAnalyzer`, the query analysis that
-  * preceded the analyzer. Returns the stream of blocks with the results of the query before the
-  * `to_stage` stage.
-  *
-  * A query a user sends is never interpreted this way anymore - the analyzer
-  * (`InterpreterSelectQueryAnalyzer`) has been the only query analysis a query is given since v26.9,
-  * and the code that gave it the other one was removed in v26.10. What is left are the
-  * internal callers that compile a synthetic `SELECT` over a source they construct themselves, and do
-  * not go through query analysis at all: the projection machinery (`ProjectionDescription`,
-  * `optimizeUseAggregateProjection`) and the AST-based arms of `EXPLAIN SYNTAX` / `EXPLAIN AST`. Do not
-  * add a new caller; use `InterpreterSelectQueryAnalyzer`.
+/** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
 class InterpreterSelectQuery : public IInterpreterUnionOrSelectQuery
 {
@@ -179,9 +169,7 @@ private:
 
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
-    /// Whether the row policy filter can be handed to the storage's read(). Shared by the
-    /// push site and the apply-as-FilterStep fallback, which must stay exact complements.
-    bool shouldPushRowLevelFilterToStorage() const;
+    bool shouldMoveToPrewhere() const;
 
     Block getSampleBlockImpl();
 
@@ -190,13 +178,15 @@ private:
     /// Different stages of query execution.
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final);
+    void executeAggregation(
+        QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
-    void executeOrder(QueryPlan & query_plan);
+    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
+    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
     void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);

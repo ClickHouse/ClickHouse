@@ -154,7 +154,7 @@ namespace HistogramMetrics
 
     MetricFamily & KeeperReadWaitForWriteTimeMetricFamily = Factory::instance().registerMetric(
         "keeper_read_wait_for_write_time_milliseconds",
-        "Time read request spends queued behind an in-flight request batch before it is executed",
+        "Time read request waits for the write request it depends on to complete",
         {10, 100, 250, 500},
         {}
     );

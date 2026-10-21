@@ -59,12 +59,7 @@ namespace DB
     M(GreaterOrEquals) \
     M(Spaceship)              /** <=>. Used in MySQL for NULL-safe equality comparison. */ \
     M(PipeMark) \
-    M(PipeOperator)           /** |>. Pipe operator: FROM t |> WHERE x |> SELECT y */ \
     M(Concatenation)          /** String concatenation operator: || */ \
-    M(Tilde)                  /** ~. Used in PostgreSQL as the regular expression match operator. */ \
-    M(TildeAsterisk)          /** ~*. Used in PostgreSQL as the case-insensitive regular expression match operator. */ \
-    M(NotTilde)               /** !~. Used in PostgreSQL as the regular expression not-match operator. */ \
-    M(NotTildeAsterisk)       /** !~*. Used in PostgreSQL as the case-insensitive regular expression not-match operator. */ \
     \
     M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
     M(DoubleAt)               /** @@. Used for MySQL-style global variables. */ \

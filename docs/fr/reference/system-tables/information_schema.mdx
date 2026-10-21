@@ -18,7 +18,6 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
-│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -39,7 +38,6 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA` contient les vues suivantes :
 
 * [COLUMNS](#columns)
-* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -382,19 +380,3 @@ Colonnes :
 </div>
 
 Fournit des informations sur les index de table. Renvoie actuellement un résultat vide (aucune ligne), ce qui suffit à assurer la compatibilité avec des outils tiers comme Tableau Online.
-
-<div id="collations">
-  ## COLLATIONS
-</div>
-
-Fournit des informations sur les collations disponibles. Contient les collations de [system.collations](/fr/reference/system-tables/collations), ainsi que deux lignes de compatibilité MySQL : `utf8mb4_0900_ai_ci` — la collation annoncée par le protocole MySQL lors du handshake, dans `SCHEMATA.DEFAULT_COLLATION_NAME` et dans `TABLES.TABLE_COLLATION` — et `binary` — la pseudo-collation que le protocole MySQL attribue aux colonnes numériques et aux autres colonnes non textuelles dans les métadonnées du jeu de résultats — afin qu&#39;un client compatible MySQL qui suit les collations annoncées jusqu&#39;à cette vue puisse les y trouver.
-
-Colonnes :
-
-* `collation_name` ([String](/fr/reference/data-types/string)) — Le nom de la collation.
-* `character_set_name` ([Nullable](/fr/reference/data-types/nullable)([String](/fr/reference/data-types/string))) — Le jeu de caractères associé (`utf8mb4` pour `utf8mb4_0900_ai_ci`, `binary` pour `binary`, sinon `NULL`). Fourni pour assurer la compatibilité avec MySQL.
-* `id` ([Nullable](/fr/reference/data-types/nullable)([UInt64](/fr/reference/data-types/int-uint))) — L&#39;identifiant de la collation MySQL (`255` pour `utf8mb4_0900_ai_ci`, `63` pour `binary`, sinon `NULL`). Fourni pour assurer la compatibilité avec MySQL.
-* `is_default` ([Nullable](/fr/reference/data-types/nullable)([String](/fr/reference/data-types/string))) — Indique si la collation est celle par défaut de son jeu de caractères (`Yes` pour les deux lignes de compatibilité MySQL, sinon `NULL`). Fourni pour assurer la compatibilité avec MySQL.
-* `is_compiled` ([Nullable](/fr/reference/data-types/nullable)([String](/fr/reference/data-types/string))) — Indique si la collation est compilée dans le serveur (`Yes` pour les deux lignes de compatibilité MySQL, sinon `NULL`). Fourni pour assurer la compatibilité avec MySQL.
-* `sortlen` ([Nullable](/fr/reference/data-types/nullable)([UInt64](/fr/reference/data-types/int-uint))) — La longueur minimale de tri (`0` pour `utf8mb4_0900_ai_ci`, `1` pour `binary`, sinon `NULL`). Fourni pour assurer la compatibilité avec MySQL.
-* `pad_attribute` ([Nullable](/fr/reference/data-types/nullable)([String](/fr/reference/data-types/string))) — L&#39;attribut de remplissage, `NO PAD` ou `PAD SPACE` (`NO PAD` pour les deux lignes de compatibilité MySQL, sinon `NULL`). Fourni pour assurer la compatibilité avec MySQL.

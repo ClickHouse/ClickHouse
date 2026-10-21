@@ -1,4 +1,3 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -43,8 +42,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_, size_t max_expanded_ast_elements_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_), max_expanded_ast_elements(max_expanded_ast_elements_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_)
         {
         }
 
@@ -98,7 +97,6 @@ namespace
         TableNamesSet dependencies;
         bool can_throw;
         bool validate_current_database;
-        size_t max_expanded_ast_elements;
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
@@ -126,16 +124,14 @@ namespace
                             mv_to_dependency->uuid = target.inner_uuid;
                         }
                     }
-                    else if (target.kind == ViewTarget::Kind::Inner)
+                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
                     {
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
                     else if (target.kind == ViewTarget::Kind::Samples
-                        || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
-                        || target.kind == ViewTarget::Kind::TimeRanges
-                        || target.kind == ViewTarget::Kind::MetricFamilies)
+                        || target.kind == ViewTarget::Kind::Metrics)
                     {
                         /// External target tables of a TimeSeries table are referential dependencies.
                         /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
@@ -173,9 +169,7 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        /// The limit comes from the context of the query creating the view. A definition loaded
-                        /// from metadata was bounded when it was created, so it is not limited here.
-                        ApplyWithSubqueryVisitor::visit(select_copy, max_expanded_ast_elements);
+                        ApplyWithSubqueryVisitor::visit(select_copy);
 
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
@@ -604,9 +598,9 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
@@ -614,7 +608,7 @@ CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true, /*max_expanded_ast_elements=*/0};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw, /*validate_current_database=*/true};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }

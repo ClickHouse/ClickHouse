@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <unordered_set>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
@@ -261,9 +262,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// column attribute rather than type name.
     {
         String n = type_name;
-        toUpperASCII(n);
-        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC"
-            || n == "SETTINGS" || n == "STATISTICS")
+        boost::to_upper(n);
+        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC")
         {
             expected.add(pos, "type name");
             return false;
@@ -329,16 +329,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!type_name_suffix.empty())
         type_name = type_name_upper + " " + type_name_suffix;
 
-    /// The SQL standard, PostgreSQL and Trino spell the composite types case-insensitively,
-    /// e.g. ARRAY(INTEGER), MAP(VARCHAR, BIGINT).
-    if (pos->type == TokenType::OpeningRoundBracket)
-    {
-        if (type_name_upper == "ARRAY")
-            type_name = "Array";
-        else if (type_name_upper == "MAP")
-            type_name = "Map";
-    }
-
     /// skip trailing comma in types, e.g. Tuple(Int, String,)
     if (pos->type == TokenType::Comma)
     {
@@ -374,25 +364,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Handle Tuple types specially - parse directly into ASTTupleDataType
     /// to avoid creating ASTNameTypePair nodes for each named element.
-    ///
-    /// `Tuple()` is the one form this fast path rejects and the generic argument parser below
-    /// accepts, so detect an empty argument list up front and leave it to the generic parser. For
-    /// every other argument list this fast path is authoritative: the generic parser applies exactly
-    /// the same element parsers (`ParserNameTypePair` is `ParserIdentifier` followed by
-    /// `ParserDataType`), so it stops at the same token and fails the same way. Falling through on
-    /// failure used to parse the argument list a second time, which doubled the work at every
-    /// nesting level - a malformed `Tuple(Tuple(...))` of depth N cost 2^N and exhausted
-    /// `max_parser_backtracks` instead of reporting a syntax error.
-    bool use_tuple_fast_path = type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket;
-    if (use_tuple_fast_path)
+    if (type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket)
     {
-        auto after_bracket = pos;
-        ++after_bracket;
-        use_tuple_fast_path = after_bracket->type != TokenType::ClosingRoundBracket;
-    }
-
-    if (use_tuple_fast_path)
-    {
+        auto saved_pos = pos;
         ++pos;
 
         auto tuple_node = make_intrusive<ASTTupleDataType>();
@@ -465,7 +439,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         }
 
-        return false;
+        /// Fall back to generic parser
+        pos = saved_pos;
     }
 
     auto data_type_node = make_intrusive<ASTDataType>();
@@ -509,7 +484,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             DynamicArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (equalsCaseInsensitive(type_name, "json"))
+        else if (boost::to_lower_copy(type_name) == "json")
         {
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);

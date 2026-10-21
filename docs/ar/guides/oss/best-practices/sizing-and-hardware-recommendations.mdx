@@ -92,7 +92,7 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 * مقدار البيانات التي تُعالَج في الاستعلامات.
 
 ومع ذلك، وبوجه عام، كلما زادت الذاكرة المتاحة لديك، زادت سرعة تنفيذ استعلاماتك.
-إذا كانت حالة الاستخدام لديك حساسة من ناحية التكلفة، فقد تكفي كميات أقل من الذاكرة، إذ يمكن تمكين الإعدادات ([`max_bytes_before_external_group_by`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) و [`max_bytes_before_external_sort`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) للسماح بترحيل البيانات إلى القرص، لكن تجدر الإشارة إلى أن ذلك قد يؤثر بشكل كبير في أداء الاستعلامات.
+إذا كانت حالة الاستخدام لديك حساسة من ناحية التكلفة، فقد تكفي كميات أقل من الذاكرة، إذ يمكن تمكين الإعدادات ([`max_bytes_before_external_group_by`](/ar/reference/settings/session-settings#max_bytes_before_external_group_by) و[`max_bytes_before_external_sort`](/ar/reference/settings/session-settings#max_bytes_before_external_sort)) للسماح بترحيل البيانات إلى القرص، لكن تجدر الإشارة إلى أن ذلك قد يؤثر بشكل كبير في أداء الاستعلامات.
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### ما نسبة الذاكرة إلى التخزين التي ينبغي اعتمادها؟
@@ -281,7 +281,7 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 
 * [Cloudflare](https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/?utm_source=linkedin\&utm_medium=social\&utm_campaign=blog)
 * [eBay](https://innovation.ebayinc.com/tech/engineering/ou-online-analytical-processing/)
-* [GitLab](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/clickhouse_usage/)
+* [GitLab](https://handbook.gitlab.com/handbook/engineering/development/ops/monitor/observability/#clickhouse-datastore)
 * [Lyft](https://eng.lyft.com/druid-deprecation-and-clickhouse-adoption-at-lyft-120af37651fd)
 * [MessageBird](https://clickhouse.com/blog/how-messagebird-uses-clickhouse-to-monitor-the-delivery-of-billions-of-messages)
 * [Microsoft](https://clickhouse.com/blog/self-service-data-analytics-for-microsofts-biggest-web-properties)

@@ -9,10 +9,6 @@ using namespace DB;
 namespace
 {
 constexpr auto FORMAT_VERSION = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-
-/// Tables created with the deprecated positional `MergeTree(date, key, granularity)` syntax use
-/// date-based part names, for which a name cannot be derived from a `MergeTreePartInfo`.
-constexpr auto FORMAT_VERSION_V0 = MergeTreeDataFormatVersion(0);
 }
 
 /// Two parts can both be marked "uncovered" (no other part contains either of them) and
@@ -214,57 +210,4 @@ TEST(OverlappingPartCovering, EmptySet)
     EXPECT_TRUE(markers.empty());
     EXPECT_EQ(0u, markers.size());
     EXPECT_TRUE(markers.getContainingPart("all_0_5_1").empty());
-}
-
-/// V0 format version ------------------------------------------------------------------------------
-///
-/// `StorageReplicatedMergeTree::checkPartsImpl` builds this index from the empty unexpected parts on
-/// disk and passes both the info and the name of every part. Deriving the name from the info instead
-/// throws `BAD_DATA_PART_NAME` for a V0 table and leaves it readonly.
-
-TEST(OverlappingPartCovering, V0DisjointMarkers)
-{
-    OverlappingPartCovering markers(FORMAT_VERSION_V0);
-    const String first = "20150101_20150101_0_5_2";
-    const String second = "20150101_20150101_6_11_3";
-
-    markers.add(MergeTreePartInfo::fromPartName(first, FORMAT_VERSION_V0), first);
-    markers.add(MergeTreePartInfo::fromPartName(second, FORMAT_VERSION_V0), second);
-
-    EXPECT_EQ(2u, markers.size());
-    EXPECT_TRUE(markers.getOverlappingParts().empty());
-    EXPECT_EQ(first, markers.getContainingPart(MergeTreePartInfo::fromPartName("20150101_20150101_0_3_1", FORMAT_VERSION_V0)));
-    EXPECT_EQ(second, markers.getContainingPart(MergeTreePartInfo::fromPartName("20150101_20150101_8_10_1", FORMAT_VERSION_V0)));
-}
-
-TEST(OverlappingPartCovering, V0IntersectingMarkersStillCoverDownstreamParts)
-{
-    OverlappingPartCovering markers(FORMAT_VERSION_V0);
-    const String first = "20150101_20150101_0_5_2";
-    const String second = "20150101_20150101_2_11_3";
-
-    markers.add(MergeTreePartInfo::fromPartName(first, FORMAT_VERSION_V0), first);
-
-    String reason;
-    markers.add(MergeTreePartInfo::fromPartName(second, FORMAT_VERSION_V0), second, &reason);
-    EXPECT_FALSE(reason.empty());
-
-    EXPECT_EQ(2u, markers.size());
-    EXPECT_EQ(1u, markers.getOverlappingParts().size());
-    EXPECT_EQ(second, markers.getContainingPart(MergeTreePartInfo::fromPartName("20150101_20150101_9_10_1", FORMAT_VERSION_V0)));
-    EXPECT_EQ(first, markers.getContainingPart(MergeTreePartInfo::fromPartName("20150101_20150101_0_5_1", FORMAT_VERSION_V0)));
-}
-
-TEST(OverlappingPartCovering, V0ContainedPartIsNotStored)
-{
-    OverlappingPartCovering markers(FORMAT_VERSION_V0);
-    const String outer = "20150101_20150101_0_11_3";
-    const String inner = "20150101_20150101_2_5_1";
-
-    markers.add(MergeTreePartInfo::fromPartName(outer, FORMAT_VERSION_V0), outer);
-    markers.add(MergeTreePartInfo::fromPartName(inner, FORMAT_VERSION_V0), inner);
-
-    EXPECT_EQ(1u, markers.size());
-    EXPECT_TRUE(markers.getOverlappingParts().empty());
-    EXPECT_EQ(outer, markers.getContainingPart(MergeTreePartInfo::fromPartName(inner, FORMAT_VERSION_V0)));
 }

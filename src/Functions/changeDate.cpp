@@ -58,16 +58,25 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When the component is a time-of-day field (Hour/Minute/Second), date-only inputs
-        /// are promoted: Date -> DateTime, Date32 -> DateTime64(3). Other inputs keep their type.
+        FunctionArgumentDescriptors args{
+            {"date_or_datetime", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateOrDate32OrDateTimeOrDateTime64), nullptr, "Date or date with time"},
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        const auto & input_type = arguments[0].type;
+
         if (component == Component::Hour || component == Component::Minute || component == Component::Second)
-            return
-                "(Date, NativeInteger) -> DateTime"
-                " OR (Date32, NativeInteger) -> DateTime64(3)"
-                " OR (T : DateTime | DateTime64, NativeInteger) -> T";
-        return "(T : DateOrDateTime, NativeInteger) -> T";
+        {
+            if (isDate(input_type))
+                return std::make_shared<DataTypeDateTime>();
+            if (isDate32(input_type))
+                return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
+        }
+
+        return input_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -222,10 +231,10 @@ public:
         }
         else if (isDate32(result_type))
         {
-            min_date = date_lut.makeDayNum(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1);
-            max_date = date_lut.makeDayNum(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31);
-            min_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
-            max_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+            min_date = date_lut.makeDayNum(1900, 1, 1);
+            max_date = date_lut.makeDayNum(2299, 12, 31);
+            min_year = 1900;
+            max_year = 2299;
         }
         else if (isDateTime(result_type))
         {

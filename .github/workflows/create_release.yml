@@ -3,7 +3,6 @@
 name: CreateRelease
 concurrency:
   group: ${{ github.workflow }}
-  queue: max
 on:
   workflow_dispatch:
     inputs:
@@ -11,13 +10,18 @@ on:
         description: Git reference (branch or commit SHA) from which to create the release
         required: true
         default: ''
-      skip-repo:
-        description: Skip repo updates (package export/test); for recovery/rerun
+      type:
+        description: Release type - new for a new release branch, patch for a patch release
+        type: choice
+        options: ['patch', 'new']
+        default: patch
+      only-repo:
+        description: Run only repo updates including docker (repo-recovery, tests)
         required: false
         type: boolean
         default: false
-      skip-docker:
-        description: Skip docker image builds; for recovery/rerun
+      only-docker:
+        description: Run only docker builds (repo-recovery, tests)
         required: false
         type: boolean
         default: false
@@ -37,13 +41,18 @@ on:
         required: true
         type: string
         default: ''
-      skip-repo:
-        description: Skip repo updates (package export/test); for recovery/rerun
+      type:
+        description: Release type - new for a new release branch, patch for a patch release
+        required: true
+        type: string
+        default: patch
+      only-repo:
+        description: Run only repo updates including docker (repo-recovery, tests)
         required: false
         type: boolean
         default: false
-      skip-docker:
-        description: Skip docker image builds; for recovery/rerun
+      only-docker:
+        description: Run only docker builds (repo-recovery, tests)
         required: false
         type: boolean
         default: false
@@ -71,45 +80,10 @@ permissions: write-all
 
 jobs:
 
-  config_workflow:
-    runs-on: [self-hosted, arm-tiny]
-    needs: []
-    name: "Config Workflow"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
-          ${{ toJson(inputs) }}
-          EOF
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "CreateRelease" --ci --timestamp
-
-  create_release:
+  createrelease:
     runs-on: [self-hosted, amd-release-maker]
-    needs: [config_workflow]
-    name: "Create Release"
+    needs: []
+    name: "CreateRelease"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -118,12 +92,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
           export ROBOT_CLICKHOUSE_COMMIT_TOKEN=$(cat<<'EOF'
           ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
           EOF
@@ -143,4 +118,4 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Create Release' --workflow "CreateRelease" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'CreateRelease' --workflow "CreateRelease" --ci --timestamp

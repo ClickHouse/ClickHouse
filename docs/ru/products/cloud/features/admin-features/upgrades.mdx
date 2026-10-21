@@ -8,25 +8,26 @@ keywords: ['обновления', 'управление версиями', 'в�
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-С ClickHouse Cloud вам не нужно беспокоиться об установке исправлений и обновлениях. Мы регулярно выпускаем обновления, включающие исправления, новые возможности и улучшения производительности.
-
-* Полный список нововведений в ClickHouse см. в нашем [changelog Cloud](/ru/resources/changelogs/cloud/2026)
-* Сведения о сроках выхода версий см. на странице [статуса релизов](/ru/resources/changelogs/cloud/release-status)
+С ClickHouse Cloud вам не нужно беспокоиться об установке исправлений и обновлениях. Мы регулярно выпускаем обновления, включающие исправления, новые возможности и улучшения производительности. Полный список нововведений в ClickHouse см. в нашем [changelog Cloud](/ru/resources/changelogs/cloud/2026).
 
 <Note>
-  При использовании [MBB](/ru/products/cloud/features/autoscaling/make-before-break) в ClickHouse Cloud исторические данные системных таблиц при обновлениях сохраняются не более чем за 30 дней.
+  Мы внедряем новый механизм обновления — подход, который называем &quot;make before break&quot; (или MBB). В рамках этого подхода перед удалением старых реплик в процессе обновления мы сначала добавляем обновленные. Благодаря этому обновления проходят более плавно и с меньшим влиянием на выполняющиеся рабочие нагрузки.
+
+  В рамках этого изменения исторические данные системных таблиц будут сохраняться до 30 дней в рамках событий обновления. Кроме того, данные системных таблиц старше 19 декабря 2024 года для сервисов в AWS или GCP, а также старше 14 января 2025 года для сервисов в Azure, не будут сохраняться в рамках миграции на новые уровни организации.
 </Note>
 
-## Совместимость версий {#version-compatibility}
+<div id="version-compatibility">
+  ## Совместимость версий
+</div>
 
-Когда вы создаёте сервис, параметру [`compatibility`](/ru/reference/settings/session-settings/compatibility#compatibility) присваивается самая актуальная версия ClickHouse, доступная в ClickHouse Cloud на момент первоначального создания сервиса.
+Когда вы создаёте сервис, параметру [`compatibility`](/ru/reference/settings/session-settings#compatibility) присваивается самая актуальная версия ClickHouse, доступная в ClickHouse Cloud на момент первоначального создания сервиса.
 
 Параметр `compatibility` позволяет использовать значения параметров по умолчанию из предыдущих версий. При обновлении сервиса до новой версии значение, указанное для параметра `compatibility`, не меняется. Это означает, что значения по умолчанию для параметров, существовавших на момент создания сервиса, останутся прежними (если только вы уже не переопределили эти значения по умолчанию — в этом случае они сохранятся и после обновления).
 
-В ClickHouse Cloud вы не можете напрямую управлять значением `compatibility` по умолчанию на уровне сервиса — если вы хотите изменить версию, заданную для этого значения `compatibility` по умолчанию, необходимо [обратиться в ClickHouse Support](https://clickhouse.com/support/program). Однако вы можете переопределить параметр `compatibility` на уровне пользователя, роли, профиля, запроса или сеанса, используя стандартные механизмы настройки ClickHouse, например `SET compatibility = '26.8'` в сеансе или `SETTINGS [other settings,] compatibility = '26.8'` в запросе.
+Вы не можете управлять значением `compatibility` по умолчанию на уровне сервиса. Если вы хотите изменить версию, заданную для этого значения `compatibility` по умолчанию, необходимо [обратиться в службу поддержки](https://clickhouse.com/support/program). Однако вы можете переопределить параметр `compatibility` на уровне пользователя, роли, профиля, запроса или сеанса, используя стандартные механизмы настройки ClickHouse, например `SET compatibility = '22.3'` в сеансе или `SETTINGS compatibility = '22.3'` в запросе.
 
 <div id="maintenance-mode">
   ## Режим обслуживания
@@ -53,12 +54,12 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Быстрый канал релизов (ранние обновления)
+  ### Канал быстрых релизов (ранние обновления)
 </div>
 
-<ScalePlanFeatureBadge feature="Быстрый канал релизов" />
+<ScalePlanFeatureBadge feature="Канал быстрых релизов" />
 
-Помимо стандартного графика обновлений, мы предлагаем **быстрый канал релизов**, если вы хотите, чтобы ваши сервисы получали обновления раньше, чем это предусмотрено обычным графиком релизов.
+Помимо стандартного графика обновлений, мы предлагаем канал **быстрых релизов**, если вы хотите, чтобы ваши сервисы получали обновления раньше, чем это предусмотрено обычным графиком релизов.
 
 В частности, сервисы будут:
 
@@ -73,7 +74,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 <br />
 
-Этот **быстрый канал релизов** подходит для тестирования новых возможностей в некритичных средах. **Он не рекомендуется для production-рабочих нагрузок со строгими требованиями к доступности и надежности.**
+Этот канал **быстрых релизов** подходит для тестирования новых возможностей в некритичных средах. **Он не рекомендуется для production-рабочих нагрузок со строгими требованиями к доступности и надежности.**
 
 <div id="regular-release-channel">
   ### Обычный канал релизов

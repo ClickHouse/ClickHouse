@@ -9,11 +9,13 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-## 背景 {#background}
+<div id="background">
+  ## 背景
+</div>
 
 インクリメンタルmaterialized view (Materialized Views) を使用すると、計算コストをクエリ時から挿入時に移せるため、`SELECT` クエリを高速化できます。
 
-Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized view は、データがテーブルに挿入される際に、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目のターゲットテーブルに挿入されます。さらに行が挿入されると、結果は再びターゲットテーブルに送られ、そこで中間結果が更新・マージされます。このマージ後の結果は、元のすべてのデータに対してクエリを実行した場合と同等です。
+Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized view は、データがテーブルに挿入される際に、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目の「ターゲット」テーブルに挿入されます。さらに行が挿入されると、結果は再びターゲットテーブルに送られ、そこで中間結果が更新・マージされます。このマージ後の結果は、元のすべてのデータに対してクエリを実行した場合と同等です。
 
 Materialized Views の主な目的は、ターゲットテーブルに挿入される結果が、行に対する集計、フィルタリング、または変換の結果を表すことにあります。こうした結果は、多くの場合、元データをより小さく表現したものになります (集計の場合は部分的なスケッチになります) 。これに加えて、ターゲットテーブルから結果を読み取るクエリもシンプルになるため、同じ計算を元データに対して実行する場合よりもクエリ時間が短くなります。つまり、計算 (ひいてはクエリレイテンシ) をクエリ時から挿入時へ移せます。
 
@@ -631,7 +633,7 @@ WHERE DisplayName = 'brand_new_user'
 
 * **挿入時のパフォーマンスを評価します。** JOIN は挿入のコストを増加させます。特に右側のテーブルが大きい場合に顕著です。本番相当の代表的なデータを使用して挿入レートをベンチマークしてください。
 
-* **単純なルックアップには Dictionaries を優先します**。高コストな JOIN 演算を避けるため、キー・バリューのルックアップ (例: ユーザー ID から名前) には [Dictionaries](/ja/concepts/features/dictionaries/index) を使用してください。挿入時のルックアップを確実に行うには、データを完全にロードするタイプの Dictionary レイアウトを使用してください。[キャッシュベースのレイアウト](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を使用すると、インジェストがローカルのウォームアップ済みキャッシュに依存してしまう可能性があります。
+* **単純なルックアップには Dictionaries を優先します**。高コストな JOIN 演算を避けるため、キー・バリューのルックアップ (例: ユーザー ID から名前) には [Dictionaries](/ja/concepts/features/dictionaries/index) を使用してください。
 
 * **マージ効率のために `GROUP BY` と `ORDER BY` を揃えます。** `SummingMergeTree` または `AggregatingMergeTree` を使用する場合は、効率的に行をマージできるよう、`GROUP BY` がターゲットテーブルの `ORDER BY` 句と一致していることを確認してください。
 
@@ -1045,9 +1047,11 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-## 並列処理と順次処理 {#materialized-views-parallel-vs-sequential}
+<div id="materialized-views-parallel-vs-sequential">
+  ## 並列処理と順次処理
+</div>
 
-前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) によって決まります。
+前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings#parallel_view_processing) によって決まります。
 
 デフォルトでは、この設定は `0` (`false`) であり、Materialized View は `uuid` の順に順次実行されます。
 
@@ -1315,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-この場合、users CTE は posts への挿入のたびに再評価され、新しい users が挿入されても materialized view は更新されません。更新されるのは、posts に挿入があったときだけです。
+この場合、users CTE は posts への挿入のたびに再評価され、新しい users が挿入されても materialized view は更新されません。更新されるのは posts が挿入されたときだけです。
 
-一般に、CTE は、materialized view が関連付けられている同じソーステーブルに対して動作するロジックに使用するか、参照する table が小さく、パフォーマンスのボトルネックになる可能性が低いことを確認してください。あるいは、[JOIN を使用した Materialized Views と同じ最適化](/ja/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)を検討してください。
+一般に、CTE は、materialized view がアタッチされているものと同じソーステーブルに対して動作するロジックに使用するか、参照先のテーブルが小さく、パフォーマンスのボトルネックになりにくいことを確認してください。あるいは、[JOIN を使用する materialized view と同様の最適化](/ja/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)を検討してください。

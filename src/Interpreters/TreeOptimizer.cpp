@@ -12,7 +12,6 @@
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
-#include <Interpreters/getASTFunctionArgumentColumns.h>
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
@@ -99,24 +98,11 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & source_columns, ContextPtr context)
+void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
     if (!select_query->groupBy())
-        return;
-
-    /// An `ARRAY JOIN` result may shadow a source column of the same name; see `tryGetASTFunctionArgumentColumns`.
-    const NameSet array_join_result_names = getArrayJoinResultNames(*select_query);
-
-    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
-    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
-    /// row. In such a row the key is output as its column default. Rewriting f(g) -> g makes the
-    /// output projection recompute f(defaultOf(g)) instead of defaultOf(typeOf(f(g))) (e.g.
-    /// toString(number) from number = 0 gives '0' instead of the required String default ''),
-    /// which changes the result. See #110715.
-    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
-        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
         return;
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
@@ -178,19 +164,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & so
                 {
                     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
                     if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-                    {
-                        UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(context);
                         function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
-                    }
                 }
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
 
-                /// The claim can depend on the arguments, so resolve as many of them as the AST
-                /// allows. An argument that stays unresolved leaves the function unclaimed.
-                auto argument_columns = tryGetASTFunctionArgumentColumns(*function, source_columns, array_join_result_names);
-                if (!argument_columns || !function_builder->isInjective(*argument_columns))
+                if (!function_builder->isInjective({}))
                 {
                     ++i;
                     continue;
@@ -549,10 +529,10 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeAggregationFunctions(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
+void optimizeAggregationFunctions(ASTPtr & query)
 {
     /// Move arithmetic operations out of aggregation functions
-    ArithmeticOperationsInAgrFuncVisitor::Data data{tables_with_columns};
+    ArithmeticOperationsInAgrFuncVisitor::Data data;
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
@@ -562,9 +542,9 @@ void optimizeMultiIfToIf(ASTPtr & query)
     OptimizeMultiIfToIfVisitor(data).visit(query);
 }
 
-void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const NamesAndTypesList & source_columns, ContextPtr context)
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
-    RemoveInjectiveFunctionsVisitor::Data data(context, source_columns, getArrayJoinResultNames(query->as<ASTSelectQuery &>()));
+    RemoveInjectiveFunctionsVisitor::Data data(context);
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
@@ -627,16 +607,6 @@ void TreeOptimizer::optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     if (!select_query->groupBy())
         return;
 
-    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
-    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
-    /// row. In such a row the key is output as its column default. Dropping a key that is a function
-    /// of other keys makes the output projection recompute it from those keys' totals-row defaults
-    /// (e.g. toString(number) from number = 0 gives '0' instead of the required String default ''),
-    /// which changes the result. See #110715.
-    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
-        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
-        return;
-
     auto group_by = select_query->groupBy();
     const auto & group_by_keys = group_by->children;
 
@@ -672,7 +642,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Move arithmetic operations out of aggregation functions
     if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
-        optimizeAggregationFunctions(query, tables_with_columns);
+        optimizeAggregationFunctions(query);
 
     bool converted_to_cnf = false;
     if (settings[Setting::convert_query_to_cnf])
@@ -702,7 +672,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, result.source_columns, context);
+    optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings[Setting::optimize_group_by_function_keys])
@@ -713,19 +683,13 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove injective functions inside uniq
     if (settings[Setting::optimize_injective_functions_inside_uniq])
-        optimizeInjectiveFunctionsInsideUniq(query, result.source_columns, context);
+        optimizeInjectiveFunctionsInsideUniq(query, context);
 
-    /// Eliminate min/max/any aggregators of functions of GROUP BY keys.
-    /// GROUPING SETS with a single set is classified as an ordinary GROUP BY by ExpressionAnalyzer
-    /// (see analyzeAggregation), so it emits no rows with a key absent from the aggregated set and
-    /// the elimination stays valid; only the multi-set form has to be skipped.
-    const bool is_multi_set_grouping_sets = select_query->group_by_with_grouping_sets
-        && select_query->groupBy() && select_query->groupBy()->children.size() > 1;
+    /// Eliminate min/max/any aggregators of functions of GROUP BY keys
     if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
-        && !select_query->group_by_with_cube
-        && !is_multi_set_grouping_sets)
+        && !select_query->group_by_with_cube)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY

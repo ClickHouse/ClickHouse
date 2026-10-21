@@ -1,5 +1,0 @@
-<clickhouse>
-    <system_tables>
-        <skip_alias_columns>true</skip_alias_columns>
-    </system_tables>
-</clickhouse>

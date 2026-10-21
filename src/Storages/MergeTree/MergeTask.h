@@ -15,6 +15,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -26,7 +27,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
-#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
@@ -85,15 +85,6 @@ class MergeTask
 {
 public:
     static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
-    /// Marks the suffix of the throwaway temporary part of `OPTIMIZE ... DRY RUN`. Kept short:
-    /// it replaces the part name in the temporary directory name, so it is paid on every dry run.
-    static constexpr auto DRY_RUN_TEMP_INFIX = "dr_";
-
-    /// Assembles the temporary directory name of a merge.
-    static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
-
-    /// Whether `part` has a calculated rows TTL that has expired at `time` for all its rows.
-    static bool isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -108,6 +99,7 @@ public:
         Names deduplicate_by_columns_,
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
+        bool need_prefix,
         ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
         MergedPartOffsetsPtr merged_part_offsets_,
@@ -142,6 +134,7 @@ public:
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
+            global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
 
@@ -236,13 +229,7 @@ private:
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
         bool vertical_ttl_delete{false};
-        /// When true, all source parts are fully expired (MergeType::TTLDrop).
-        /// The data pipeline is skipped entirely — no readers are opened,
-        /// no buffers allocated, and the result is an empty part.
-        bool ttl_drop_short_circuit{false};
         CompressionCodecPtr compression_codec{nullptr};
-        /// T when `compression_codec` came from an explicit (non-`Default`) `RECOMPRESS` TTL. Adaptive codec selection must not override it.
-        bool is_explicit_recompression{false};
 
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
@@ -292,13 +279,11 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
-        /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
-        /// per-column writer and MergeTextIndexesTask.
-        StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
+        bool need_prefix{};
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 
