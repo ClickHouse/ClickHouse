@@ -72,12 +72,12 @@ static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemor
     return nullptr;
 }
 
-/// Throws a copy of an error that was remembered without being recorded in `system.errors`, and records it now.
-[[noreturn]] static void throwDeferredError(const Exception & error)
+/// Copies an error that was remembered without being recorded in `system.errors`, and records the copy.
+static Exception copyDeferredError(const Exception & error)
 {
     Exception copy(error);
     copy.recordToSystemErrors();
-    throw copy;
+    return copy;
 }
 
 /// Under `accurateCastOrNull` the per-variant conversions to the same target type can DISAGREE on
@@ -2218,7 +2218,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
     }
 
     if (std::ranges::all_of(variant_errors, [](const auto & error) { return error != nullptr; }))
-        throwDeferredError(*variant_errors.front());
+        throw copyDeferredError(*variant_errors.front());
 
     bool keep_nullable = settings.cast_keep_nullable;
     return [variant_wrappers, variant_errors, variant_types, to_type, keep_nullable]
@@ -2241,7 +2241,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             if (variant_wrapper)
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
             else if (variant_errors[i] && !variant_col->empty())
-                throwDeferredError(*variant_errors[i]);
+                throw copyDeferredError(*variant_errors[i]);
             cast_variant_columns.push_back(std::move(cast_variant));
         }
 
