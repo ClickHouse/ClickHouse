@@ -8,133 +8,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-O ClickHouse tem [suporte completo a `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1), com uma ampla variedade de algoritmos de junção. Para maximizar o desempenho, recomendamos seguir as sugestões de otimização de junção listadas neste guia.
+O ClickHouse oferece suporte a uma ampla variedade de algoritmos de junção, que oferecem diferentes compromissos entre velocidade de execução e uso de memória. Para a sintaxe e a semântica de JOIN, consulte a [referência da cláusula `JOIN`](/pt-BR/reference/statements/select/join). Para orientações prescritivas de otimização e exemplos práticos, consulte [Minimize e otimize JOINs](/pt-BR/concepts/best-practices/minimize-optimize-joins).
 
-* Para um desempenho ideal, você deve procurar reduzir o número de `JOIN`s nas consultas, especialmente em workloads analíticas em tempo real que exigem desempenho na casa dos milissegundos. Procure limitar cada consulta a no máximo 3 ou 4 junções. Detalhamos várias formas de minimizar junções na [seção de modelagem de dados](/pt-BR/guides/clickhouse/data-modelling/schema-design), incluindo desnormalização, Dictionaries e visões materializadas.
-* A partir do ClickHouse 24.12, o planejador de consultas reordena automaticamente junções entre duas tabelas para colocar a tabela menor no lado direito, visando ao melhor desempenho. Na versão 25.9, isso foi estendido para otimizar a ordem das junções em consultas que envolvem três ou mais tabelas.
-* Se a sua consulta exigir um direct join, ou seja, um `LEFT ANY JOIN`, como mostrado abaixo, recomendamos usar [Dictionaries](/pt-BR/concepts/features/dictionaries/index) sempre que possível.
-
-<Image img="/images/guides/joins-1.webp" size="sm" alt="Junção LEFT ANY" />
-
-* Ao fazer junções internas, em geral é mais eficiente escrevê-las como subconsultas usando a cláusula `IN`. Considere as consultas a seguir, que são funcionalmente equivalentes. Ambas encontram o número de `posts` que não mencionam ClickHouse na pergunta, mas mencionam em `comments`.
-
-```sql
-SELECT count()
-FROM stackoverflow.posts AS p
-ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
-WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
-Peak memory usage: 1.23 GiB.
-```
-
-Observe que usamos um `ANY INNER JOIN`, em vez de apenas um `INNER JOIN`, pois não queremos o produto cartesiano, ou seja, queremos apenas uma correspondência para cada post.
-
-Esse junção pode ser reescrito usando uma subconsulta, melhorando significativamente o desempenho:
-
-```sql
-SELECT count()
-FROM stackoverflow.posts
-WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
-        SELECT PostId
-        FROM stackoverflow.comments
-        WHERE Text ILIKE '%clickhouse%'
-))
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
-Peak memory usage: 323.52 MiB.
-```
-
-Embora o ClickHouse tente aplicar condições a todas as cláusulas de junção e subconsultas, recomendamos que os usuários sempre apliquem manualmente condições a todas as subcláusulas, sempre que possível, minimizando assim o volume de dados no `JOIN`. Considere o exemplo abaixo, em que queremos calcular o número de votos positivos em posts relacionados a Java desde 2020.
-
-Uma consulta ingênua, com a tabela maior no lado esquerdo, leva 56s para ser concluída:
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.posts AS p
-INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
-```
-
-Reordenar este junção melhora drasticamente o desempenho, para 1,5 s:
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
-```
-
-Adicionar um filtro à tabela da esquerda melhora ainda mais o desempenho, para 0,5 s.
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
-Peak memory usage: 249.42 MiB.
-```
-
-Essa consulta pode ser melhorada ainda mais movendo o `INNER JOIN` para uma subconsulta, como mencionado anteriormente, mantendo o filtro tanto na consulta externa quanto na interna.
-
-```sql
-SELECT count() AS upvotes
-FROM stackoverflow.votes
-WHERE (VoteTypeId = 2) AND (PostId IN (
-        SELECT Id
-        FROM stackoverflow.posts
-        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
-))
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
-Peak memory usage: 250.66 MiB.
-```
-
-<div id="choosing-a-join-algorithm">
-  ## Escolhendo um algoritmo de junção
-</div>
+## Escolhendo um algoritmo de junção {#choosing-a-join-algorithm}
 
 O ClickHouse oferece vários [algoritmos de junção](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1). Esses algoritmos normalmente envolvem um equilíbrio entre consumo de memória e desempenho. A seguir, apresentamos uma visão geral dos algoritmos de junção do ClickHouse com base no consumo relativo de memória e no tempo de execução:
 
@@ -158,9 +34,7 @@ Uma descrição completa e detalhada de cada algoritmo de `JOIN` pode ser encont
 
 A seleção dos algoritmos de junção apropriados depende de você querer otimizar o uso de memória ou o desempenho.
 
-<div id="optimizing-join-performance">
-  ## Otimizando o desempenho de junção
-</div>
+## Otimizando o desempenho de junção {#optimizing-join-performance}
 
 Se a sua principal métrica de otimização for o desempenho e você estiver buscando executar a junção o mais rápido possível, poderá usar a seguinte árvore de decisão para escolher o algoritmo de junção adequado:
 
@@ -184,9 +58,7 @@ O grace hash join é o mais flexível dos três algoritmos de junção que não 
 
 Qual dos três algoritmos de junção que não ficam restritos à memória é o mais rápido depende do volume de dados, dos tipos de dados e da distribuição dos valores das colunas da chave de junção. É sempre melhor executar alguns benchmarks com volumes realistas de dados para determinar qual algoritmo é o mais rápido.
 
-<div id="optimizing-for-memory">
-  ## Otimizando para memória
-</div>
+## Otimizando para memória {#optimizing-for-memory}
 
 Se você quiser otimizar uma junção para usar o mínimo possível de memória, em vez de priorizar o menor tempo de execução, poderá usar esta árvore de decisão:
 

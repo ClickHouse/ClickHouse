@@ -8,133 +8,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-ClickHouse는 다양한 조인 알고리즘과 함께 [포괄적인 `JOIN` 지원](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)을 제공합니다. 성능을 극대화하려면 이 가이드에 나열된 조인 최적화 권장 사항을 따르는 것이 좋습니다.
+ClickHouse는 실행 속도와 메모리 사용량 사이에서 각기 다른 절충점을 지닌 다양한 조인 알고리즘(join algorithms)을 지원합니다. JOIN 구문과 의미 체계는 [`JOIN` 절 참고 문서](/ko/reference/statements/select/join)를 참조하십시오. 구체적인 최적화 지침과 단계별 예시는 [JOIN 최소화 및 최적화](/ko/concepts/best-practices/minimize-optimize-joins)를 참조하십시오.
 
-* 최적의 성능을 위해서는 쿼리의 `JOIN` 수를 줄이는 것이 좋으며, 특히 밀리초 단위의 응답 성능이 필요한 실시간 분석 워크로드에서는 더욱 중요합니다. 하나의 쿼리에서 조인은 최대 3~4개를 목표로 하십시오. [데이터 모델링 섹션](/ko/guides/clickhouse/data-modelling/schema-design)에서는 비정규화, Dictionaries, 구체화된 뷰(Materialized View)를 포함해 조인을 최소화하는 여러 방법을 자세히 설명합니다.
-* ClickHouse 24.12부터는 쿼리 플래너가 최적의 성능을 위해 2개 테이블 조인의 순서를 자동으로 재정렬하여 더 작은 테이블을 오른쪽에 배치합니다. 25.9 버전에서는 이 기능이 확장되어 3개 이상의 테이블을 조인하는 쿼리의 조인 순서까지 최적화할 수 있게 되었습니다.
-* 쿼리에 Direct 조인, 즉 아래와 같은 `LEFT ANY JOIN`이 필요한 경우에는 가능하면 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용하는 것이 좋습니다.
-
-<Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join" />
-
-* inner join을 수행하는 경우에는 `IN` 절을 사용하는 서브쿼리로 작성하는 편이 더 효율적인 경우가 많습니다. 다음 쿼리를 살펴보십시오. 두 쿼리는 기능적으로 동일합니다. 둘 다 질문에는 ClickHouse가 언급되지 않았지만 `comments`에는 언급된 `posts`의 수를 찾습니다.
-
-```sql
-SELECT count()
-FROM stackoverflow.posts AS p
-ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
-WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
-Peak memory usage: 1.23 GiB.
-```
-
-`INNER` join만이 아니라 `ANY INNER JOIN`을 사용하는 이유는 카테시안 곱이 발생하지 않도록 하기 위해서입니다. 즉, 각 게시물마다 일치하는 항목은 하나만 있으면 됩니다.
-
-이 조인(join)은 서브쿼리(subquery)를 사용해 다시 작성할 수 있으며, 이렇게 하면 성능이 크게 향상됩니다:
-
-```sql
-SELECT count()
-FROM stackoverflow.posts
-WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
-        SELECT PostId
-        FROM stackoverflow.comments
-        WHERE Text ILIKE '%clickhouse%'
-))
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
-Peak memory usage: 323.52 MiB.
-```
-
-ClickHouse는 모든 조인 절과 서브쿼리에 조건을 푸시다운하려고 시도하지만, 가능하다면 항상 모든 하위 절에도 조건을 수동으로 적용할 것을 권장합니다. 이렇게 하면 `JOIN`할 데이터의 크기를 최소화할 수 있습니다. 아래 예시에서는 2020년 이후 Java 관련 게시물의 up-vote 수를 계산하려고 합니다.
-
-더 큰 테이블을 왼쪽에 둔 단순한 쿼리는 56초 만에 완료됩니다:
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.posts AS p
-INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
-```
-
-이 join의 순서를 바꾸면 성능이 크게 개선되어 실행 시간이 1.5초로 줄어듭니다:
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
-```
-
-왼쪽 테이블에 필터를 추가하면 성능이 더욱 향상되어 실행 시간이 0.5초까지 단축됩니다.
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
-Peak memory usage: 249.42 MiB.
-```
-
-앞서 언급한 것처럼, `INNER JOIN`을 서브쿼리로 옮기고 외부 쿼리와 내부 쿼리 모두에 필터를 유지하면 이 쿼리를 한층 더 개선할 수 있습니다.
-
-```sql
-SELECT count() AS upvotes
-FROM stackoverflow.votes
-WHERE (VoteTypeId = 2) AND (PostId IN (
-        SELECT Id
-        FROM stackoverflow.posts
-        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
-))
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
-Peak memory usage: 250.66 MiB.
-```
-
-<div id="choosing-a-join-algorithm">
-  ## 조인 알고리즘 선택
-</div>
+## 조인 알고리즘 선택 {#choosing-a-join-algorithm}
 
 ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)을 지원합니다. 이러한 알고리즘은 일반적으로 메모리 사용량과 성능을 맞바꾸는 특성이 있습니다. 아래에서는 상대적인 메모리 사용량과 실행 시간을 기준으로 ClickHouse 조인 알고리즘을 개괄적으로 설명합니다.
 
@@ -158,9 +34,7 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 적절한 조인 알고리즘을 선택할 때는 메모리와 성능 중 무엇을 우선적으로 최적화할지에 따라 달라집니다.
 
-<div id="optimizing-join-performance">
-  ## 조인 성능 최적화
-</div>
+## 조인 성능 최적화 {#optimizing-join-performance}
 
 핵심 최적화 지표가 성능이고 조인을 가능한 한 빠르게 실행하려는 경우, 적절한 조인 알고리즘을 선택하는 데 다음 의사결정 트리를 사용할 수 있습니다.
 
@@ -184,9 +58,7 @@ Grace hash join은 세 가지 메모리 비제약 조인 알고리즘 중 가장
 
 세 가지 메모리 비제약 알고리즘 중 어느 것이 가장 빠른지는 데이터 양, 데이터 타입, 조인 키 컬럼의 값 분포에 따라 달라집니다. 어떤 알고리즘이 가장 빠른지 판단하려면 실제와 유사한 데이터와 데이터 규모로 벤치마크를 수행하는 것이 가장 좋습니다.
 
-<div id="optimizing-for-memory">
-  ## 메모리 사용량 최적화
-</div>
+## 메모리 사용량 최적화 {#optimizing-for-memory}
 
 가장 빠른 실행 시간보다 메모리 사용량을 최소화하도록 조인을 최적화하려면, 다음 의사결정 트리를 사용할 수 있습니다:
 

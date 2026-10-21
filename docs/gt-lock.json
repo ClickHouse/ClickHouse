@@ -7,44 +7,44 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-21T08:21:57.487Z",
+          "updatedAt": "2026-10-21T10:00:15.117Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "ja": {
-          "updatedAt": "2026-10-21T08:21:57.693Z",
+          "updatedAt": "2026-10-21T10:00:15.235Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "ko": {
-          "updatedAt": "2026-10-21T08:21:57.901Z",
+          "updatedAt": "2026-10-21T10:00:15.351Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-21T08:21:58.099Z",
+          "updatedAt": "2026-10-21T10:00:15.462Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "ru": {
-          "updatedAt": "2026-10-21T08:21:58.311Z",
+          "updatedAt": "2026-10-21T10:00:15.586Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "zh": {
-          "updatedAt": "2026-10-21T08:21:58.514Z",
+          "updatedAt": "2026-10-21T10:00:15.703Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "ar": {
-          "updatedAt": "2026-10-21T08:21:58.711Z",
+          "updatedAt": "2026-10-21T10:00:15.814Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         },
         "fr": {
-          "updatedAt": "2026-10-21T08:21:58.919Z",
+          "updatedAt": "2026-10-21T10:00:15.931Z",
           "fileName": "docs.json",
-          "postProcessHash": "91f64f3cbe568cfa148fb7e8b435040996340661142e7949a1a483c219a6a21b"
+          "postProcessHash": "3df4f8be181baaf7b711439752d4b89195f7c21f5ed5c09081059282924e1b24"
         }
       },
       "fileName": "docs.json"
@@ -9570,51 +9570,50 @@
     },
     {
       "fileId": "f5ce39fe202f1d2058060e020c9907e4c6b9d5391233ab23ecd9e86ecbe82cd1",
-      "versionId": "a4f2cf94227dfffaf235baceec4e814c7ef2b93a03c794bf59d468808397fd6e",
+      "versionId": "da842af1b1cbd85d34b93a6e7497e86321ab8ac49609dc399664c23fbaf28d9b",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.839Z",
+          "updatedAt": "2026-10-21T10:00:18.162Z",
           "fileName": "es/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "5e30c6a0514dcb1fc80b59d1e5af47502b40739a19e96eea54a6bcd6d032ae38"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.839Z",
-          "fileName": "ja/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "2fc76c438d81ed96b7143a1ab7b3d48b5aa54f6e443a0da751e1d12236b932b6"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.839Z",
-          "fileName": "ko/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "3cee4ebe4d871e62899d325c63a25a66f9d6d9f2bca4f481b315b0382e4cd6eb"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.839Z",
-          "fileName": "pt-BR/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "563dfc2c5bf74ce7b28ac4a5a7612036a55e6c576c48aabcd1359bb61a92c658"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.840Z",
-          "fileName": "ru/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "a39c50760351553ffc3b350167a25e5fbdbd78a39b8b44b9e639448b7bd7a85d"
+          "postProcessHash": "5c5988085c81a56176d79f829064723cfcd9e01050d4ac7356be3babd7acb3b1"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.840Z",
+          "updatedAt": "2026-10-21T10:00:18.167Z",
           "fileName": "zh/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "4e939fdc9b1e9f46207cb7b1696fc8f44d3a5401a0954f95bd5c5054a0364c9d"
+          "postProcessHash": "16480e4a132b6b5ae08c4a824b81fdf3612e04dcade41ca58acf9f40226fcf0b"
+        },
+        "ru": {
+          "updatedAt": "2026-10-21T10:00:18.173Z",
+          "fileName": "ru/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "55cfd2198403d1fa5c44d069d8ae4a4e489e1380824a00a0263423efe7da5179"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.840Z",
+          "updatedAt": "2026-10-21T10:00:18.173Z",
           "fileName": "ar/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "545f9eefe5f063dedb053c157519c487ea7ee84da3b68da3531fb1b3649cc5ee"
+          "postProcessHash": "4824357ef9a649a889798db89ba5d607d86793f53fc7aa5cf21356756c11cb38"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.174Z",
+          "fileName": "ko/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "e192c8822ab58f3b425a4fdcb3358c2396eab9f74ef92f9b145060ce11f464ae"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-21T10:00:18.174Z",
+          "fileName": "pt-BR/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "4ed99da5d0eff0fb53a721561266be416108506586d622b0031e348249c4a266"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.840Z",
+          "updatedAt": "2026-10-21T10:00:18.174Z",
           "fileName": "fr/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "9c0421c1768615027e8872700e9ab549e21d13c4940d3a3bf66cbbcd5f1b578d"
+          "postProcessHash": "8c6eda901199f0f023a32753fa5e082ea43251439c583703cae56cf2444f26cb"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.175Z",
+          "fileName": "ja/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "d2b7b0cbd8a8af883424a852174cb28208a3a747eb3b65264344b3ca818dbe83"
         }
       },
-      "fileName": "concepts/best-practices/minimize-optimize-joins.mdx",
-      "staged": false
+      "fileName": "concepts/best-practices/minimize-optimize-joins.mdx"
     },
     {
       "fileId": "7ec4f0c6beb3abb8f501022b3c25e20e44e1635cc5ee443d3ae06afc4acf84ec",
@@ -73032,51 +73031,50 @@
     },
     {
       "fileId": "563158e639c78bf309c4e1c5d95166a23eb3b30e5bd0659b78d34030b85de7d5",
-      "versionId": "13f7ff581d3f8509a00a75caeb96c50a32946eb8bdd074870d82773fed0c3943",
+      "versionId": "3aa621443a8238d9b24a9696e4d7437ec6595be59580d9559f7c363e1e8a0df1",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
-          "fileName": "es/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "c8d3bc847b6eabc46d315937aec4a7766479f6fa3f6e24f8e96efaae69cfaaf7"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
-          "fileName": "ja/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "904db17d3a164e1fb88ce8d3abdfdb084bd647b732f4fb3615b725be6eb900f0"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
-          "fileName": "ko/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "08fd9d51eb5b1b699022a0bee0525c0c615c4946049300f76ce316edcb79ab9c"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
+          "updatedAt": "2026-10-21T10:00:18.150Z",
           "fileName": "pt-BR/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "257f2d367e6e54637c33039822784915daf8e362a7597a1d2176608aa64fd883"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
-          "fileName": "ru/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "19c560af8a8886a60dd3f4b87291fb6d7e41c7c4becd059b323ed9ff421af8a5"
+          "postProcessHash": "f809bc3d01668a2d97b69968396cb8d9484e48f979519e30dfd24e62e958dfde"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
+          "updatedAt": "2026-10-21T10:00:18.151Z",
           "fileName": "zh/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "cf79af01f7526da906e0fc4df99d4fc182228485d198a07d6ba814460fe18c3f"
+          "postProcessHash": "d43e2da037a19c78df1501fa9475303013d12b8604aff841ac6b8de4b3a51bac"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:07.858Z",
+          "updatedAt": "2026-10-21T10:00:18.156Z",
           "fileName": "ar/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "954ae5e41d7875123e93b4f434b7ddc5eef8ef736af9edfd7d5db3d9c1ea7785"
+          "postProcessHash": "2d885417a2e93bbf4f6f4af868fd4b2070f3baf68b203c7df1b6d9f32f312e44"
+        },
+        "ru": {
+          "updatedAt": "2026-10-21T10:00:18.156Z",
+          "fileName": "ru/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "a52430596d4c6b7782f00d344c7ac6a20e817c67c71872e64cd2277024a87575"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.859Z",
+          "updatedAt": "2026-10-21T10:00:18.167Z",
           "fileName": "fr/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "d7904b6de507257e6bba8e1bbcedae20627d82a562f7538b8dd8dce36394d86b"
+          "postProcessHash": "ebd8d8970bbf94537bb9fb4c67016612a907e636fd842e0ff57325bbb5f1edb1"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.169Z",
+          "fileName": "ja/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "555e0edb5bfd26184d9d4f1fb318f199d9550eb4966e4e7a80a86efe69daacc3"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.170Z",
+          "fileName": "ko/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "5503843bd30b6bfc1a5b35c818eb08259dc7bf907f79276f6a6efcc9cf0dcd22"
+        },
+        "es": {
+          "updatedAt": "2026-10-21T10:00:18.171Z",
+          "fileName": "es/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "6ddde819dfcc66292e6807a49c3d9042c8c16ac413f8dc3f85b83cf4e0203f1a"
         }
       },
-      "fileName": "concepts/features/operations/select/joining-tables.mdx",
-      "staged": false
+      "fileName": "concepts/features/operations/select/joining-tables.mdx"
     },
     {
       "fileId": "4cf4b752de588849eb0ec49ab8f0660e9942a684fb036c1a88d4ead5eac6c32e",
@@ -77950,51 +77948,50 @@
     },
     {
       "fileId": "4510afaa03cc91ae23e50ff87f4d977cca33974c3628ea9a040293bb8aa8353e",
-      "versionId": "0afb1f3cdcc90e6f1af9f5e3beb2c0bc2309f97d9f1c9cfdd0d2b52b30642914",
+      "versionId": "2b1e9914585b5231b44b1aa90e8bc3e57c394d449bc8336d11dd53d42ed27d4a",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
-          "fileName": "es/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "9bb8379618b20f6c458d2c92c8b20d2d9837f79484ef10b3abc60060851b6647"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
-          "fileName": "ja/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "3c0fbde713623e93775b0f43088d8879d33bdc631a8a7993c8124c8d9bdf4650"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
-          "fileName": "ko/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "55e6f9348b7766c8ecd1197e3415016e69cbabe0afc92b95cba714691ae6d1d5"
+        "zh": {
+          "updatedAt": "2026-10-21T10:00:18.153Z",
+          "fileName": "zh/integrations/clickpipes/mysql/source/gcp.mdx",
+          "postProcessHash": "104a4e18dbe301f26f5612c2f9f11c437dd85fcbaf1500d084ed7c4818837a3c"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
+          "updatedAt": "2026-10-21T10:00:18.159Z",
           "fileName": "pt-BR/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "5f2ce22a387c8d31c41c5258895f743e8a8c0d4871946d4ef6cb85430bf2d261"
+          "postProcessHash": "e1d5b250d7994c327863ca3cfd772170dac7afceda14f0c297170e1a217bdc90"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
-          "fileName": "ru/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "2f27eaa23cbbbd3a67e3d4fea9a2a040acb28ab9637158b8beb4b1ab2919cbe5"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
-          "fileName": "zh/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "0a8c20aff23f6fa961d7e869855cc734012dfc46dffe7058f7619bec244d6e18"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.989Z",
-          "fileName": "ar/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "c2182c17f7d5b2389c1ffa880c25f13e224fadd870007d356715e05f71511b57"
+        "es": {
+          "updatedAt": "2026-10-21T10:00:18.159Z",
+          "fileName": "es/integrations/clickpipes/mysql/source/gcp.mdx",
+          "postProcessHash": "561186067a42b4c1f32ead1d924d525ef0c4b4f3693b017bbf2def2e67d18eee"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.990Z",
+          "updatedAt": "2026-10-21T10:00:18.161Z",
           "fileName": "fr/integrations/clickpipes/mysql/source/gcp.mdx",
-          "postProcessHash": "18c45040d79cbf97d71bdbb87e325c47f42702bb72c3d86d4159a6bf3349cc98"
+          "postProcessHash": "8f1026b4e548ca21ec06ec55caad997dc33dae2eec55b0b658a5a8789de1c1ef"
+        },
+        "ru": {
+          "updatedAt": "2026-10-21T10:00:18.161Z",
+          "fileName": "ru/integrations/clickpipes/mysql/source/gcp.mdx",
+          "postProcessHash": "316293213c7648b92cbccca2559223db32f9c640d54e21aa15d986704092033d"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.163Z",
+          "fileName": "ja/integrations/clickpipes/mysql/source/gcp.mdx",
+          "postProcessHash": "54de494c05cefe4dd052ed669564ee5c77bcc96356cccb18a7c3e3d57abd2707"
+        },
+        "ar": {
+          "updatedAt": "2026-10-21T10:00:18.164Z",
+          "fileName": "ar/integrations/clickpipes/mysql/source/gcp.mdx",
+          "postProcessHash": "ceddc8f2815de88a8caae05efd269a4350fcdd4fb4c2088aa9f3fc506152fa3d"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.165Z",
+          "fileName": "ko/integrations/clickpipes/mysql/source/gcp.mdx",
+          "postProcessHash": "10d9db65db89885311edb41b701db76d14b657b88f2f8e6c679545dd39dd7424"
         }
       },
-      "fileName": "integrations/clickpipes/mysql/source/gcp.mdx",
-      "staged": false
+      "fileName": "integrations/clickpipes/mysql/source/gcp.mdx"
     },
     {
       "fileId": "e18685bc517e349fe34638a87bc7a8a39bd33b52453069c033ac61dff14e62a8",
@@ -78813,51 +78810,50 @@
     },
     {
       "fileId": "cd5751a6ec22f63b7d40d0cf5bab9c1c39e72c069ef36092315bddb3c0084306",
-      "versionId": "f53a561da898cc45f1b09af4f9b126f4f581ba478ffabf34b09b8732940d0385",
+      "versionId": "cd8cd870f363af4534091b424c835859aa971ce0de3bee9b21bbaa2475b3d71b",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.004Z",
-          "fileName": "es/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "759cf45f1b9a14a42fdeeef120f6c773a200dc701d5241bd8723a9ee8ae5b72a"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.004Z",
-          "fileName": "ja/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "7d4571f806c2aa7f2c1ae7c508e86e382839da92d8694ae86bddfbf49ea48f8e"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.004Z",
-          "fileName": "ko/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "cea56b42d4dbc70345b0789cee86099d9756672d1dc5fa5b341539b374d3fbe9"
+        "ru": {
+          "updatedAt": "2026-10-21T10:00:18.154Z",
+          "fileName": "ru/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
+          "postProcessHash": "3cae621980f473065166c43f05237a0c89ef2ec370c5383326297c22bde14ef7"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.005Z",
+          "updatedAt": "2026-10-21T10:00:18.159Z",
           "fileName": "pt-BR/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "ebf43a11d6493ee4309f5049926966b6b8c67e5e0538e60a7723a2416adf5733"
+          "postProcessHash": "c5d5c4e085b1508781aca12d34377706ba706d50b1c31e4f8fd90b17b23cf4cf"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.005Z",
-          "fileName": "ru/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "00c3c803f8b00d5f16528dd041141a70b0974822d6a0a4aacdb6daeaabb9bbfd"
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.166Z",
+          "fileName": "ko/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
+          "postProcessHash": "a31ff912aecdf6a650cf2683886c906b27342080ba377da6285f4e989c02f92f"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.005Z",
+          "updatedAt": "2026-10-21T10:00:18.166Z",
           "fileName": "zh/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "7a3335e42bd1fd76c829f893cf2517b1fb03044e7a3e10bd00c5c9b13231b1a3"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.005Z",
-          "fileName": "ar/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "d8e89248b401c6a225f8a84ac978ad3b7cc4e6bb4d63f8c18c498e43a7a9f16b"
+          "postProcessHash": "87ff8df273f533d15b5f458726cd83acd2328c791f694ea24d103a25c9c11bd9"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.005Z",
+          "updatedAt": "2026-10-21T10:00:18.168Z",
           "fileName": "fr/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-          "postProcessHash": "757d86fef25597279e4c0ae89710a9b822072e209463da7491309fa832b5128a"
+          "postProcessHash": "d7fbe24d2674c04efd66a2ce9327afa6d269363c68baf25557a4ac4ae769c429"
+        },
+        "es": {
+          "updatedAt": "2026-10-21T10:00:18.169Z",
+          "fileName": "es/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
+          "postProcessHash": "4ddb3ed99e9688990709f8ee70c3b2d62e82b2ec07465b9a1b8d6ca42876b265"
+        },
+        "ar": {
+          "updatedAt": "2026-10-21T10:00:18.169Z",
+          "fileName": "ar/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
+          "postProcessHash": "9cec5991e65b3e055f45cee91dcde32fab800aa65ac2e157ef352af812a7b529"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.170Z",
+          "fileName": "ja/integrations/clickpipes/postgres/source/google-cloudsql.mdx",
+          "postProcessHash": "9658302bb4df99c539a671cb7e2390c40c0d855bfb4fd7e874cbf51ba2d4d5f3"
         }
       },
-      "fileName": "integrations/clickpipes/postgres/source/google-cloudsql.mdx",
-      "staged": false
+      "fileName": "integrations/clickpipes/postgres/source/google-cloudsql.mdx"
     },
     {
       "fileId": "74741d0d2bcd1964f56ef59199e93640e512d87e8c293b3e0a5d315ef56cb0cb",
@@ -83587,47 +83583,47 @@
     },
     {
       "fileId": "a985dfac03d083ff1f7979a0dca075162ac42bc2c8ec12451302e2aed9ced7bf",
-      "versionId": "c6291b6eedbc0d5eac105508ed7d3e635bd2d42f6c9ec14559008050b2503df2",
+      "versionId": "c782bf16db7ae697dd0cd21316df67b94162f09e9ad106d5a4b5d5d101a4ff1f",
       "translations": {
         "es": {
-          "updatedAt": "2026-09-24T10:24:07.259Z",
+          "updatedAt": "2026-10-21T10:00:18.152Z",
           "fileName": "es/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "d5ae212dfc8dc8753475a5b3c2d69bbcf4166cfb2063ee90acf4fa7af87637f3"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:07.259Z",
-          "fileName": "ja/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "6a41f9b64e208f245393088f9908ae71b9063c8aecc0e37abed2254e39a17163"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:07.259Z",
-          "fileName": "ko/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "11a5d0fe9f76891dddc6c2e893b73d6cb3f6608bb3cf5f1edfe21acf89dea41c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:07.260Z",
-          "fileName": "pt-BR/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "56df4c31e3c889b642311d9f6d166eb08d9213644850ddf84e35f7a20a071a23"
+          "postProcessHash": "39c147bcd97eb655fd404280a0c745f2219a3da71f220b060cbaa7cc31c138e5"
         },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:07.260Z",
+          "updatedAt": "2026-10-21T10:00:18.160Z",
           "fileName": "ru/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "6093f9197a32b17452b301b5603ac6753ab15a490f3c9a93ccfafe4eabf81f70"
+          "postProcessHash": "a7ddf672072b68e40ece62411205654d145a7aee1effee8b9f2d34a426269b73"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.162Z",
+          "fileName": "ja/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "495c87007e6444d87e3a8b85018254bd5d79b64edca86196be7cc1d45044819b"
         },
         "zh": {
-          "updatedAt": "2026-09-24T10:24:07.261Z",
+          "updatedAt": "2026-10-21T10:00:18.164Z",
           "fileName": "zh/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "069c118ff7359fda54c397b867a45ec9e534a4be59ced69da1ba4b610234da7d"
+          "postProcessHash": "43a84c1bab60a7a6138c07b29d7856a5cc628109b5517934c3a4bf1d652fb5d6"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.171Z",
+          "fileName": "ko/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "13689bd210f145c184624f056efd351f705379dbfc00675380fa960cd1b4419e"
         },
         "ar": {
-          "updatedAt": "2026-09-24T10:24:07.261Z",
+          "updatedAt": "2026-10-21T10:00:18.171Z",
           "fileName": "ar/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "1ad0350cd53e53507b475bcc1d2fbc9874ad94fc00b5ee161a95e7dbefa10f94"
+          "postProcessHash": "101a6ef4cc520a11ca9656dfbe54c4ec90e67111222f477563eb15afcb3159d9"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-21T10:00:18.172Z",
+          "fileName": "pt-BR/products/cloud/guides/best-practices/usagelimits.mdx",
+          "postProcessHash": "b4627e47c201d35d292e90e41c63b87c5858f5ad2622522c6c865dfbb121e30e"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:07.262Z",
+          "updatedAt": "2026-10-21T10:00:18.172Z",
           "fileName": "fr/products/cloud/guides/best-practices/usagelimits.mdx",
-          "postProcessHash": "3987c774fe160d8270ac5f375824e0e36bd3c0d08aeaf9283352eccfa97dda8f"
+          "postProcessHash": "b2657f61145bf5fa030392f886506fea6f52aa7114c0e38fdda97d8a8a249d72"
         }
       },
       "fileName": "products/cloud/guides/best-practices/usagelimits.mdx"
@@ -133530,47 +133526,47 @@
     },
     {
       "fileId": "06ab3b7d9e220c891c6c8bd43d1dc5eb5d1052aafb2deb403fed629feb5fa73a",
-      "versionId": "18be79945ee41316431baec3945ccac7cd3141134a2c8910b664d49576d6c29b",
+      "versionId": "17f95e8cca52b4ebfb96d550dc6d3dfff0892b4a7edf9a26e8ee3a62f8aa1872",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:27.633Z",
-          "fileName": "es/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "e2aed0cf34e10673dc1add66aa361d96c04833a0478e8496da9e29430604aa75"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:27.633Z",
-          "fileName": "ja/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "07643175a5c3af3362903ec953c010d8088c8a1e694b3a7ebd76ef730b3dcfce"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:27.634Z",
-          "fileName": "ko/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "89f62e00f283305047ebb895316233101d5032eff757436cca6476d4a20b3dd2"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:27.634Z",
-          "fileName": "pt-BR/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "aa3d6518f3de984b277578240ff36b2101654cd808a8a7c1135a72c438390e22"
+        "zh": {
+          "updatedAt": "2026-10-21T10:00:18.153Z",
+          "fileName": "zh/products/cloud/features/large-single-replica-services.mdx",
+          "postProcessHash": "9c750b5f8552f14775e0054bffd9a69e24f1b5fc827f9c35ccbfb34e714e63e0"
         },
         "ru": {
-          "updatedAt": "2026-08-26T08:10:27.635Z",
+          "updatedAt": "2026-10-21T10:00:18.154Z",
           "fileName": "ru/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "b2193a144fb6b20c4ec3c5091420338485f13c64dd9f0d47095edfcb24cf8fbd"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:27.635Z",
-          "fileName": "zh/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "e5ea21c03fb42ad213b7faa5cf987b3cad60f3f41cea41c4cd2be170fbee191a"
+          "postProcessHash": "72b7a7c7cc49812e37f97bfc482876b4ddd8218daae3926e3456474d1c74d807"
         },
         "ar": {
-          "updatedAt": "2026-08-26T08:10:27.636Z",
+          "updatedAt": "2026-10-21T10:00:18.155Z",
           "fileName": "ar/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "ec3053dc662974a5c1015b5d1864c3888a091adbfd0e5cee71c5556463d4d852"
+          "postProcessHash": "afca46c4e698893586c4c4e2a29b89b67d3b33a3cd226529ce444762d7ff04ad"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.158Z",
+          "fileName": "ko/products/cloud/features/large-single-replica-services.mdx",
+          "postProcessHash": "ea9b420e28d3ecab5b2e90bf09e35901e5a5fb6f641c066aeac8737906e79376"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:27.636Z",
+          "updatedAt": "2026-10-21T10:00:18.160Z",
           "fileName": "fr/products/cloud/features/large-single-replica-services.mdx",
-          "postProcessHash": "d6c2212a4a7b0beb31260fad62fc770fe1df775a8c85fc682f14c18dea938adb"
+          "postProcessHash": "4ba6196b9fc4811a8f5e27dc4084ad9e282813dafbd6a070bcc539f6c94f327a"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.163Z",
+          "fileName": "ja/products/cloud/features/large-single-replica-services.mdx",
+          "postProcessHash": "1118db1544731312149a0a5fc7b985d9fb421308841664813c3526cdca4e65b0"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-21T10:00:18.165Z",
+          "fileName": "pt-BR/products/cloud/features/large-single-replica-services.mdx",
+          "postProcessHash": "39b1512667ef909116e309bc4e57bb360bb97e62e437c752222e203603e89f36"
+        },
+        "es": {
+          "updatedAt": "2026-10-21T10:00:18.166Z",
+          "fileName": "es/products/cloud/features/large-single-replica-services.mdx",
+          "postProcessHash": "daa283f9bd2f95ef654612182dfbe1d6b87210845e72e2a4eba2f2928033f68e"
         }
       },
       "fileName": "products/cloud/features/large-single-replica-services.mdx"
@@ -142378,47 +142374,47 @@
     },
     {
       "fileId": "5f3f5de5c79f201b92363706343ee7a29968a276323d27d460f39e55ec6a86b7",
-      "versionId": "fef468368e3bfff8b8829ee58d298d073ad2712480e11e3d3d9b19a040a7a58d",
+      "versionId": "3edf33efc6a45bff7c84938593f48e3ce973ab8df84e4af0774db4c612eb3ce0",
       "translations": {
+        "fr": {
+          "updatedAt": "2026-10-21T10:00:18.156Z",
+          "fileName": "fr/integrations/clickpipes/security/gcp-workload-identity.mdx",
+          "postProcessHash": "0c97b04af52358c313478167dd5e836982e1f31fea501575df895411ffdbf725"
+        },
         "es": {
-          "updatedAt": "2026-10-16T03:19:02.465Z",
+          "updatedAt": "2026-10-21T10:00:18.157Z",
           "fileName": "es/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "fc3263438c390656b598e21db7d9f1b493e399db6b0b8a7b045f9b1c2c6ab32b"
-        },
-        "ja": {
-          "updatedAt": "2026-10-16T03:19:02.466Z",
-          "fileName": "ja/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "9533b15ba2fe8a5093886c9b031135f55b272bf4a208051b6f0c0edfeb36c3c3"
-        },
-        "ko": {
-          "updatedAt": "2026-10-16T03:19:02.466Z",
-          "fileName": "ko/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "d59abff4eae3b957cc59c26a507263f1ef5b7173eafe088c6f10a82f602e0556"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-10-16T03:19:02.466Z",
-          "fileName": "pt-BR/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "c0a04514ec736a0f4531aaa2d1aa8d2441c563a07e99ae92621656baeb7b83de"
+          "postProcessHash": "55d796f265982e35c07cfc20ae18d1595605f7c9eafb4bfb5bde993972a1b0e0"
         },
         "ru": {
-          "updatedAt": "2026-10-16T03:19:02.467Z",
+          "updatedAt": "2026-10-21T10:00:18.158Z",
           "fileName": "ru/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "cf70631e66fdccf80229be063d4643a76cb5697ff231ae2faa67799f54afce06"
+          "postProcessHash": "a5a2aad45c23950d406b13ea0e8cbc547666e62849ff81c4a95aa4e1b40a97bc"
         },
-        "zh": {
-          "updatedAt": "2026-10-16T03:19:02.467Z",
-          "fileName": "zh/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "aee33ed01673e7b9bd832f51267b37aea7f163affe86f6b727120f26106895a8"
+        "pt-BR": {
+          "updatedAt": "2026-10-21T10:00:18.158Z",
+          "fileName": "pt-BR/integrations/clickpipes/security/gcp-workload-identity.mdx",
+          "postProcessHash": "1eba266712cb3d8c66a43bc96a4606bac566937d47fe697955a2835bbc3faef8"
         },
         "ar": {
-          "updatedAt": "2026-10-16T03:19:02.467Z",
+          "updatedAt": "2026-10-21T10:00:18.162Z",
           "fileName": "ar/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "f27fad47936d5dca3d91473429fd104bb5f776cf0393226bbc2d61f8ad3352d4"
+          "postProcessHash": "aeac2c4a8c112b1d27f7ea26c09f88c44b4a0bcc14013ac2c6984bf501e4772b"
         },
-        "fr": {
-          "updatedAt": "2026-10-16T03:19:02.468Z",
-          "fileName": "fr/integrations/clickpipes/security/gcp-workload-identity.mdx",
-          "postProcessHash": "9622a8bff4d20c4aeb1c841bcf369bfeb6b97081184021dec99262d0075ce8a2"
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.165Z",
+          "fileName": "ja/integrations/clickpipes/security/gcp-workload-identity.mdx",
+          "postProcessHash": "da8c96c8126c0b25e2b4e29149ff71ea104be62fed70e9de9e09e78f461560ae"
+        },
+        "zh": {
+          "updatedAt": "2026-10-21T10:00:18.168Z",
+          "fileName": "zh/integrations/clickpipes/security/gcp-workload-identity.mdx",
+          "postProcessHash": "107332997b5b4ff0525e1ef0b565a53dd4e1146238b56a25a0a8eb29c0bbaf22"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.172Z",
+          "fileName": "ko/integrations/clickpipes/security/gcp-workload-identity.mdx",
+          "postProcessHash": "e9fbac478edf7bbbff78a6741b2fe0ea24ee9220bd2ba31245b76205e4d4c41a"
         }
       },
       "fileName": "integrations/clickpipes/security/gcp-workload-identity.mdx"
@@ -142892,6 +142888,53 @@
         }
       },
       "fileName": "reference/engines/table-engines/integrations/elasticsearch.mdx"
+    },
+    {
+      "fileId": "db713ca07eff4eb335f24e0a71bde4d613cdd78b22ec23894eac33ff30791a6c",
+      "versionId": "7e42b29aecc278774bf9c8088b6b8464bc2656b7dfbfb9d98c3735b29e0a6b0e",
+      "translations": {
+        "fr": {
+          "updatedAt": "2026-10-21T10:00:18.151Z",
+          "fileName": "snippets/fr/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "aeca8a3cadac800e00843e3a1c11248d8d11418cb2cfad83a49ea9e3184965d9"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-21T10:00:18.155Z",
+          "fileName": "snippets/pt-BR/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "11b48f69fd3ca6fe07c25a1ece4cfec0f19523c300c41b542dd6bdda05f5cf35"
+        },
+        "ru": {
+          "updatedAt": "2026-10-21T10:00:18.157Z",
+          "fileName": "snippets/ru/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "7adc53632d6e93fa17df732f543c4edbb83af24f5b80f40759aeeb3e49d58461"
+        },
+        "es": {
+          "updatedAt": "2026-10-21T10:00:18.160Z",
+          "fileName": "snippets/es/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "efc9ae5315792480c16dcab9a5c9aae8a8b7e892c6fff88cbb322ac642047ff0"
+        },
+        "ar": {
+          "updatedAt": "2026-10-21T10:00:18.161Z",
+          "fileName": "snippets/ar/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "df5a72c67941d981e43f3cc94a81fcc6af7abd46fe0f1f6d21e32baf0feb880b"
+        },
+        "ja": {
+          "updatedAt": "2026-10-21T10:00:18.163Z",
+          "fileName": "snippets/ja/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "c7ede75c82c2b5b7591e0da58aee6b3ebcb8d4a84c546a45b2a4c1ff259f8e9a"
+        },
+        "ko": {
+          "updatedAt": "2026-10-21T10:00:18.164Z",
+          "fileName": "snippets/ko/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "e69eb75bb3c3b90dc0a9bcf4db11d14937c66b0503f152399a9bb625af42ed9d"
+        },
+        "zh": {
+          "updatedAt": "2026-10-21T10:00:18.167Z",
+          "fileName": "snippets/zh/clickpipes/_cloudsql_iam_authentication.mdx",
+          "postProcessHash": "429d45e14a085b716b4b9c4cdd9f089c989d776522b3a516563413faf0cab7d7"
+        }
+      },
+      "fileName": "snippets/clickpipes/_cloudsql_iam_authentication.mdx"
     }
   ]
 }

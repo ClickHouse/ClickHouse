@@ -8,133 +8,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-ClickHouse ofrece [compatibilidad completa con `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1), con una amplia variedad de algoritmos de JOIN. Para maximizar el rendimiento, recomendamos seguir las sugerencias de optimización de JOIN que se enumeran en esta guía.
+ClickHouse admite una amplia variedad de algoritmos de JOIN que ofrecen distintos equilibrios entre velocidad de ejecución y uso de memoria. Para la sintaxis y la semántica de JOIN, consulte la [referencia de la cláusula `JOIN`](/es/reference/statements/select/join). Para obtener recomendaciones concretas de optimización y ejemplos prácticos, consulte [Minimizar y optimizar los JOIN](/es/concepts/best-practices/minimize-optimize-joins).
 
-* Para un rendimiento óptimo, conviene reducir el número de `JOIN` en las consultas, especialmente en cargas de trabajo analíticas en tiempo real donde se requiere latencia de milisegundos. Intenta no superar los 3 o 4 joins por consulta. En la [sección de modelado de datos](/es/guides/clickhouse/data-modelling/schema-design) detallamos varios cambios para minimizar los joins, como la desnormalización, los diccionarios y las vistas materializadas.
-* A partir de ClickHouse 24.12, el planificador de consultas reordena automáticamente los joins entre dos tablas para situar la tabla más pequeña en el lado derecho y así obtener un rendimiento óptimo. En la versión 25.9, esto se amplió para optimizar el orden de join en consultas que combinan tres o más tablas.
-* Si tu consulta requiere un direct join, es decir, un `LEFT ANY JOIN`, como se muestra a continuación, recomendamos usar [Dictionaries](/es/concepts/features/dictionaries/index) siempre que sea posible.
-
-<Image img="/images/guides/joins-1.webp" size="sm" alt="LEFT ANY JOIN" />
-
-* Si realizas inner joins, a menudo resulta más eficiente escribirlos como subconsultas con la cláusula `IN`. Considera las siguientes consultas, que son funcionalmente equivalentes. Ambas encuentran el número de `posts` que no mencionan ClickHouse en la pregunta, pero sí en los `comments`.
-
-```sql
-SELECT count()
-FROM stackoverflow.posts AS p
-ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
-WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
-Peak memory usage: 1.23 GiB.
-```
-
-Tenga en cuenta que usamos un `ANY INNER JOIN` en lugar de un simple `INNER JOIN`, ya que no queremos el producto cartesiano; es decir, queremos solo una coincidencia por cada post.
-
-Este join puede reescribirse mediante una subconsulta, lo que mejora significativamente el rendimiento:
-
-```sql
-SELECT count()
-FROM stackoverflow.posts
-WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
-        SELECT PostId
-        FROM stackoverflow.comments
-        WHERE Text ILIKE '%clickhouse%'
-))
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
-Peak memory usage: 323.52 MiB.
-```
-
-Aunque ClickHouse intenta propagar las condiciones a todas las cláusulas JOIN y subconsultas, recomendamos que los usuarios las apliquen siempre manualmente a todas las subcláusulas cuando sea posible, minimizando así el tamaño de los datos que llegan a `JOIN`. Considere el siguiente ejemplo, en el que queremos calcular el número de votos positivos de las publicaciones relacionadas con Java desde 2020.
-
-Una consulta ingenua, con la tabla más grande en el lado izquierdo, se completa en 56 s:
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.posts AS p
-INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
-```
-
-Reordenar este join mejora drásticamente el rendimiento, hasta 1,5 s:
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
-```
-
-Añadir un filtro a la tabla izquierda mejora aún más el rendimiento, hasta 0,5 s.
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
-Peak memory usage: 249.42 MiB.
-```
-
-Esta consulta puede optimizarse aún más moviendo el `INNER JOIN` a una subconsulta, como se indicó anteriormente, manteniendo el filtro tanto en la consulta externa como en la interna.
-
-```sql
-SELECT count() AS upvotes
-FROM stackoverflow.votes
-WHERE (VoteTypeId = 2) AND (PostId IN (
-        SELECT Id
-        FROM stackoverflow.posts
-        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
-))
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
-Peak memory usage: 250.66 MiB.
-```
-
-<div id="choosing-a-join-algorithm">
-  ## Elección de un algoritmo de JOIN
-</div>
+## Elección de un algoritmo de JOIN {#choosing-a-join-algorithm}
 
 ClickHouse admite varios [algoritmos de JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1). Estos algoritmos suelen intercambiar uso de memoria por rendimiento. A continuación se ofrece una visión general de los algoritmos de JOIN de ClickHouse en función de su consumo relativo de memoria y su tiempo de ejecución:
 
@@ -158,9 +34,7 @@ Puede encontrar [aquí](https://clickhouse.com/blog/clickhouse-fully-supports-jo
 
 La elección de los algoritmos de JOIN adecuados depende de si busca optimizar la memoria o el rendimiento.
 
-<div id="optimizing-join-performance">
-  ## Optimización del rendimiento de JOIN
-</div>
+## Optimización del rendimiento de JOIN {#optimizing-join-performance}
 
 Si su métrica de optimización principal es el rendimiento y busca ejecutar el join lo más rápido posible, puede usar el siguiente árbol de decisión para elegir el algoritmo de join adecuado:
 
@@ -184,9 +58,7 @@ Grace hash join es el más flexible de los tres algoritmos de join no limitados 
 
 Cuál de los tres algoritmos no limitados por memoria es el más rápido depende del volumen de datos, los tipos de datos y la distribución de valores de las columnas de la clave de join. Siempre es mejor ejecutar algunos benchmarks con volúmenes de datos realistas para determinar qué algoritmo es el más rápido.
 
-<div id="optimizing-for-memory">
-  ## Optimización para minimizar el uso de memoria
-</div>
+## Optimización para minimizar el uso de memoria {#optimizing-for-memory}
 
 Si quiere optimizar un join para reducir al mínimo el uso de memoria, en lugar de priorizar el tiempo de ejecución más rápido, puede usar este árbol de decisión:
 

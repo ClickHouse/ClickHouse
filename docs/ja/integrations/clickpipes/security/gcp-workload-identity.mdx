@@ -101,9 +101,11 @@ OpenAPI または Terraform を使用して、サービスコンテキストを�
 
 ## ソースへのアクセス権を付与する {#grant-source-access}
 
-IAM メンバーには `serviceAccount:<principal>` を使用します。`<principal>` には、サービスのコンテキストで返されるメールアドレスを指定します。各ソースのアクセス許可セクションの説明に従い、そのソースに必要なロールのみを付与してください。
+IAM メンバーには `serviceAccount:<principal>` を使用します。`<principal>` には、サービスコンテキストで返されるメールアドレスを指定します。各ソースのアクセス許可セクションの説明に従い、そのソースに必要なロールのみを付与してください。
 
 * [BigQuery](/ja/integrations/clickpipes/bigquery/overview#permissions)
+* [Cloud SQL for Postgres](/ja/integrations/clickpipes/postgres/source/google-cloudsql#iam-database-authentication)
+* [Cloud SQL for MySQL](/ja/integrations/clickpipes/mysql/source/gcp#iam-database-authentication)
 * [Google Managed Service for Apache Kafka](/ja/integrations/clickpipes/kafka/reference#gcp-workload-identity)
 * [Google Cloud ストレージ](/ja/integrations/clickpipes/object-storage/gcs/overview#permissions)
 * [Google Cloud Pub/Sub](/ja/integrations/clickpipes/pubsub/auth#use-workload-identity)

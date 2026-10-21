@@ -8,133 +8,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-ClickHouse [完整支持 `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)，并提供多种 JOIN 算法可供选择。为获得最佳性能，我们建议遵循本指南中列出的 JOIN 优化建议。
+ClickHouse 支持多种 JOIN 算法，它们在执行速度与内存占用之间各有取舍。有关 JOIN 的语法和语义，请参阅 [`JOIN` 子句参考文档](/zh/reference/statements/select/join)。如需具体的优化建议和详细示例，请参阅[尽量减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)。
 
-* 为了获得最佳性能，应尽量减少查询中的 `JOIN` 数量，尤其是在要求毫秒级响应的实时分析工作负载中。建议将单个查询中的 `JOIN` 数量控制在 3 到 4 个以内。我们在[数据建模部分](/zh/guides/clickhouse/data-modelling/schema-design)中详细介绍了多种减少 JOIN 的方法，包括反规范化、字典和 materialized views。
-* 从 ClickHouse 24.12 开始，查询规划器会自动调整双表 JOIN 的顺序，将较小的表放在右侧以获得最佳性能。到了 25.9 版本，这一能力进一步扩展到可优化包含三个或更多表的查询的 JOIN 顺序。
-* 如果你的查询需要 direct join，即 `LEFT ANY JOIN` (如下所示) ，我们建议在可能的情况下使用[字典](/zh/concepts/features/dictionaries/index)。
-
-<Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join" />
-
-* 如果执行的是 inner join，通常将其改写为使用 `IN` 子句的子查询会更高效。请看下面这些功能等价的查询。它们都会找出那些在问题中未提到 ClickHouse、但在 `comments` 中提到的 `posts` 数量。
-
-```sql
-SELECT count()
-FROM stackoverflow.posts AS p
-ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
-WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
-Peak memory usage: 1.23 GiB.
-```
-
-请注意，这里我们使用的是 `ANY INNER JOIN`，而不是普通的 `INNER JOIN`，因为我们不希望产生笛卡尔积；也就是说，我们希望每篇帖子只匹配一条记录。
-
-这个 join 也可以改写为子查询，从而显著提升性能：
-
-```sql
-SELECT count()
-FROM stackoverflow.posts
-WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
-        SELECT PostId
-        FROM stackoverflow.comments
-        WHERE Text ILIKE '%clickhouse%'
-))
-```
-
-```response
-┌─count()─┐
-│       86 │
-└─────────┘
-
-1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
-Peak memory usage: 323.52 MiB.
-```
-
-尽管 ClickHouse 会尝试将条件下推到所有 JOIN 子句和子查询中，但我们仍建议用户在可能的情况下，始终手动将条件应用到所有子子句上，从而尽量减少参与 `JOIN` 的数据量。请看下面的示例，我们想计算自 2020 年以来与 Java 相关的帖子获得的赞成票数量。
-
-一个未经优化的查询，将较大的表放在左侧，执行完成耗时 56 秒：
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.posts AS p
-INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
-```
-
-调整这个 join 的顺序后，性能大幅提升至 1.5 秒：
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
-```
-
-在左侧表上添加过滤器后，耗时可进一步缩短到 0.5 秒。
-
-```sql
-SELECT countIf(VoteTypeId = 2) AS upvotes
-FROM stackoverflow.votes AS v
-INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
-WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
-Peak memory usage: 249.42 MiB.
-```
-
-如前所述，将 `INNER JOIN` 移到子查询中，并在外层查询和内层查询中都保留过滤器后，此查询还可以进一步优化。
-
-```sql
-SELECT count() AS upvotes
-FROM stackoverflow.votes
-WHERE (VoteTypeId = 2) AND (PostId IN (
-        SELECT Id
-        FROM stackoverflow.posts
-        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
-))
-```
-
-```response
-┌─upvotes─┐
-│  261915 │
-└─────────┘
-
-1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
-Peak memory usage: 250.66 MiB.
-```
-
-<div id="choosing-a-join-algorithm">
-  ## 选择 JOIN 算法
-</div>
+## 选择 JOIN 算法 {#choosing-a-join-algorithm}
 
 ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)。这些算法通常需要在内存使用和性能之间做权衡。下面基于相对内存消耗和执行时间，对 ClickHouse 的 JOIN 算法做一个概览：
 
@@ -158,9 +34,7 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 选择合适的 JOIN 算法，取决于你希望优先优化内存使用还是性能。
 
-<div id="optimizing-join-performance">
-  ## 优化 JOIN 性能
-</div>
+## 优化 JOIN 性能 {#optimizing-join-performance}
 
 如果你最关注的优化指标是性能，并希望以尽可能快的速度执行 JOIN，可以参考下面的决策树来选择合适的 JOIN 算法：
 
@@ -184,9 +58,7 @@ Grace hash join 是这三种不受内存限制的 JOIN 算法中最灵活的一�
 
 这三种不受内存限制的算法中哪一种最快，取决于数据量、数据类型以及连接键列的值分布。最佳做法始终是使用接近真实规模的真实数据运行一些基准测试，以确定哪种算法最快。
 
-<div id="optimizing-for-memory">
-  ## 针对内存进行优化
-</div>
+## 针对内存进行优化 {#optimizing-for-memory}
 
 如果你希望优化 join，以尽可能降低内存占用，而不是追求最快的执行时间，那么可以参考下面这个决策树：
 

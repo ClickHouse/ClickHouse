@@ -99,11 +99,13 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 | `ready`     | 托管身份及其身份模拟配置已就绪。若 workload identity 不受支持，可能不返回此字段。 |
 | `principal` | 需要在您的源资源上授予权限的 Google 服务账号邮箱。在身份就绪之前，可能不返回此字段。     |
 
-## 为数据源授予访问权限 {#grant-source-access}
+## 为 source 授予访问权限 {#grant-source-access}
 
-使用 `serviceAccount:<principal>` 作为 IAM 成员，其中 `<principal>` 是服务上下文中返回的电子邮件地址。请仅为其授予数据源所需的角色，具体要求请参阅相应数据源的权限部分：
+使用 `serviceAccount:<principal>` 作为 IAM 成员，其中 `<principal>` 是服务上下文中返回的电子邮件地址。请仅为其授予 source 所需的角色，具体要求请参阅相应 source 的权限部分：
 
 * [BigQuery](/zh/integrations/clickpipes/bigquery/overview#permissions)
+* [Cloud SQL for Postgres](/zh/integrations/clickpipes/postgres/source/google-cloudsql#iam-database-authentication)
+* [Cloud SQL for MySQL](/zh/integrations/clickpipes/mysql/source/gcp#iam-database-authentication)
 * [Google Managed Service for Apache Kafka](/zh/integrations/clickpipes/kafka/reference#gcp-workload-identity)
 * [Google Cloud Storage](/zh/integrations/clickpipes/object-storage/gcs/overview#permissions)
 * [Google Cloud Pub/Sub](/zh/integrations/clickpipes/pubsub/auth#use-workload-identity)
