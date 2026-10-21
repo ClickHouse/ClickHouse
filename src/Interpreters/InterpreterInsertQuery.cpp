@@ -496,7 +496,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
+    /// Not only on the initiator: a follower or a `*Cluster` worker executing a forwarded INSERT would otherwise
+    /// start a coordinated read in a materialized view, and nothing coordinates it.
+    if (context->canUseTaskBasedParallelReplicas())
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
@@ -941,7 +943,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
+    /// Not only on the initiator: a follower or a `*Cluster` worker executing a forwarded INSERT would otherwise
+    /// start a coordinated read in a materialized view, and nothing coordinates it.
+    if (context->canUseTaskBasedParallelReplicas())
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
