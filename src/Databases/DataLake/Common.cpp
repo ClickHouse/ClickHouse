@@ -148,9 +148,7 @@ String icebergPrimitiveTypeToGlueType(const String & type_name_arg)
     /// Hive has no time-of-day type; Iceberg's Glue integration stores it as string.
     if (type_name == f_time)
         return "string";
-    /// Glue does not distinguish timestamp from timestamptz, nor microsecond from nanosecond
-    /// precision. The precise Iceberg type is recovered from `metadata.json` on read
-    /// (see GlueCatalog::getActualTimestampType).
+    /// Glue uses `timestamp` for all variants; ClickHouse recovers the exact type from `metadata.json`.
     if (type_name == f_timestamp || type_name == f_timestamptz || type_name == f_timestamp_ns || type_name == f_timestamptz_ns)
         return "timestamp";
     if (type_name == f_string || type_name == f_uuid)
@@ -160,9 +158,7 @@ String icebergPrimitiveTypeToGlueType(const String & type_name_arg)
     if (type_name.starts_with("decimal("))
         return type_name;
 
-    /// Unknown or newer primitive (e.g. variant, geometry): pass it through unchanged rather than
-    /// failing the write. Glue accepts arbitrary type strings; consumers that cannot interpret it
-    /// will reject only this column.
+    /// Pass unknown Iceberg types through; Glue accepts them even if some consumers cannot.
     return type_name;
 }
 

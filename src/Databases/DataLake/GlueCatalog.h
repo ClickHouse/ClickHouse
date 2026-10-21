@@ -105,22 +105,14 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
-    /// Translates an Iceberg schema object (`{"schema-id": .., "fields": [..]}`) into the Glue
-    /// `StorageDescriptor.Columns` representation used by Apache Iceberg's Glue catalog: one column
-    /// per top-level field, with a Hive-style type string and the `iceberg.field.id`,
-    /// `iceberg.field.optional` and `iceberg.field.current` parameters that `getTableMetadata`
-    /// reads back. Athena and other Glue consumers require these columns to be present.
+    /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
     static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
 
-    /// Returns the schema referenced by `current-schema-id` in an Iceberg `metadata.json` object.
+    /// Selects the top-level v1 `schema` or the entry referenced by `current-schema-id`.
     static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
 
 private:
-    /// Builds the `TableInput` for an `UpdateTable` call that moves `metadata_location` to
-    /// `new_metadata_path`. Glue's `UpdateTable` replaces the whole table definition, so the
-    /// existing definition is fetched first and only the metadata pointer (and, when `columns`
-    /// is given, the column list) is changed; everything else, including columns written by a
-    /// previous commit, is preserved.
+    /// Updates `metadata_location` and optional columns while preserving the rest of the Glue `TableInput`.
     Aws::Glue::Model::TableInput buildUpdatedTableInput(
         const String & namespace_name,
         const String & table_name,
@@ -154,6 +146,8 @@ private:
     };
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
+
+    Poco::JSON::Object::Ptr getMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const;
 
     mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };

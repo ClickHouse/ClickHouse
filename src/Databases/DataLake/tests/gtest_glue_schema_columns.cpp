@@ -21,7 +21,7 @@ Poco::JSON::Object::Ptr parseObject(const std::string & json)
 
 Poco::Dynamic::Var parseType(const std::string & json)
 {
-    /// Wrap so that both primitive (string) and complex (object) types parse uniformly.
+    /// Parse primitive and complex types through the same JSON wrapper.
     return parseObject("{\"type\": " + json + "}")->get("type");
 }
 
@@ -110,18 +110,20 @@ TEST(GlueSchemaColumns, CurrentSchemaSelection)
     ASSERT_EQ(columns.size(), 2u);
     EXPECT_EQ(columns[1].GetName(), "b");
 
-    /// Format version 1 metadata with a single top-level schema.
-    auto v1_metadata = parseObject(R"json({"format-version": 1, "schema": {"fields": [{"id": 1, "name": "x", "required": false, "type": "double"}]}})json");
+    /// In v1, the top-level `schema` takes precedence over `schemas`.
+    auto v1_metadata = parseObject(R"json({"format-version": 1, "schema": {"schema-id": 0, "fields": [{"id": 1, "name": "x", "required": false, "type": "double"}]},
+        "current-schema-id": 1, "schemas": [{"schema-id": 1, "fields": [{"id": 2, "name": "stale", "required": false, "type": "int"}]}]})json");
     auto v1_columns = GlueCatalog::glueColumnsFromIcebergSchema(GlueCatalog::getCurrentSchema(v1_metadata));
     ASSERT_EQ(v1_columns.size(), 1u);
+    EXPECT_EQ(v1_columns[0].GetName(), "x");
     EXPECT_EQ(v1_columns[0].GetType(), "double");
 
     EXPECT_TRUE(GlueCatalog::glueColumnsFromIcebergSchema(nullptr).empty());
     EXPECT_TRUE(GlueCatalog::getCurrentSchema(nullptr).isNull());
 }
 
-/// What ClickHouse writes must be parseable by its own Glue reader.
-TEST(GlueSchemaColumns, RoundTripThroughReader)
+/// Without a metadata location, the Glue reader can still parse ordinary nested types.
+TEST(GlueSchemaColumns, NestedTypesParseableByGlueFallback)
 {
     const auto glue_type = icebergTypeToGlueType(parseType(
         R"json({"type":"struct","fields":[

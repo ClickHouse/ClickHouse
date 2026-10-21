@@ -58,6 +58,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
@@ -404,6 +405,43 @@ bool GlueCatalog::tryGetTableMetadata(
 
         if (result.requiresSchema())
         {
+            if (isReadableGlueTable(table_outcome))
+            {
+                /// Reject empty current Glue names even when Iceberg metadata supplies the types.
+                size_t position = 0;
+                for (const auto & column : table_outcome.GetStorageDescriptor().GetColumns())
+                {
+                    const auto & parameters = column.GetParameters();
+                    if (auto it = parameters.find("iceberg.field.current"); it != parameters.end() && it->second == "false")
+                        continue;
+
+                    if (column.GetName().empty())
+                        throw DB::Exception(
+                            DB::ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                            "Column name in data lake catalog table schema cannot be empty (field at position {})",
+                            position);
+                    ++position;
+                }
+
+                if (!result.hasDataLakeSpecificProperties())
+                    setup_specific_properties();
+
+                if (auto properties = result.getDataLakeSpecificProperties();
+                    properties && !properties->iceberg_metadata_file_location.empty())
+                {
+                    /// Use `metadata.json` because Glue types are lossy and nested names may be unescaped.
+                    const auto & metadata_uri = properties->iceberg_metadata_file_location;
+                    auto schema = getCurrentSchema(getMetadataObject(metadata_uri, result));
+                    if (!schema || !schema->has(DB::Iceberg::f_fields))
+                        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", metadata_uri);
+
+                    DB::Iceberg::IcebergSchemaProcessor processor(/*allow_geo_parser=*/true);
+                    processor.addIcebergTableSchema(schema);
+                    result.setSchema(*processor.getClickHouseTableSchemaById(schema->getValue<Int32>(DB::Iceberg::f_schema_id)));
+                    return true;
+                }
+            }
+
             DB::NamesAndTypesList schema;
             auto columns = table_outcome.GetStorageDescriptor().GetColumns();
             for (const auto & column : columns)
@@ -515,18 +553,7 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to read table metadata, reason why table is unreadable: {}", table_metadata.getReasonWhyTableIsUnreadable());
 
     const String & metadata_uri = table_specific_properties->iceberg_metadata_file_location;
-
-    if (!metadata_objects.get(metadata_uri))
-    {
-        auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-        auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
-        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
-            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
-        metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
-    }
-
-    auto metadata_object = *metadata_objects.get(metadata_uri);
-    return resolveTimestampTypeFromMetadata(metadata_object, column_name, glue_column_type);
+    return resolveTimestampTypeFromMetadata(getMetadataObject(metadata_uri, table_metadata), column_name, glue_column_type);
 }
 
 String GlueCatalog::resolveTimestampTypeFromMetadata(
@@ -606,6 +633,19 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     return {object_storage, bucket_name, table_path};
 }
 
+Poco::JSON::Object::Ptr GlueCatalog::getMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const
+{
+    if (auto cached = metadata_objects.get(metadata_uri))
+        return *cached;
+
+    auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
+    auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
+    auto metadata_object = DB::Iceberg::getMetadataJSONObject(
+        metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
+    metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
+    return metadata_object;
+}
+
 String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const
 {
     auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, table_metadata);
@@ -675,8 +715,7 @@ std::optional<std::string> GlueCatalog::getDefaultTableLocation(
 namespace
 {
 
-/// `metadata_path` looks like s3://bucket/some/your/path/metadata/vN.metadata.json.
-/// Drop the `metadata/vN.metadata.json` suffix to get the table location.
+/// Remove `metadata/vN.metadata.json` from the S3 path to get the table location.
 String tableLocationFromMetadataPath(const String & metadata_path)
 {
     return fs::path(metadata_path).parent_path().parent_path().string();
@@ -688,6 +727,12 @@ Poco::JSON::Object::Ptr GlueCatalog::getCurrentSchema(const Poco::JSON::Object::
 {
     if (!metadata_object)
         return nullptr;
+
+    /// For v1, the top-level `schema` is authoritative.
+    if (metadata_object->has(DB::Iceberg::f_schema)
+        && (!metadata_object->has(DB::Iceberg::f_format_version)
+            || metadata_object->getValue<Int32>(DB::Iceberg::f_format_version) == 1))
+        return metadata_object->getObject(DB::Iceberg::f_schema);
 
     if (metadata_object->has(DB::Iceberg::f_schemas) && metadata_object->has(DB::Iceberg::f_current_schema_id))
     {
@@ -747,8 +792,7 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
 
     Aws::Glue::Model::StorageDescriptor sd;
     sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
-    /// Without columns in the storage descriptor the table is unreadable by Athena
-    /// ("Relation contains no accessible columns") and invisible to Glue-based schema tooling.
+    /// Athena cannot read a Glue table without columns in its storage descriptor.
     sd.SetColumns(glueColumnsFromIcebergSchema(getCurrentSchema(metadata_content)));
 
     table_input.SetStorageDescriptor(sd);
@@ -788,8 +832,7 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
     {
         const auto & existing = get_outcome.GetResult().GetTable();
 
-        /// Carry over everything `TableInput` can express, so a commit from ClickHouse does not
-        /// erase attributes set by other tools (comments, owner, columns, extra parameters).
+        /// Preserve existing Glue attributes when advancing the metadata pointer.
         sd = existing.GetStorageDescriptor();
         parameters = existing.GetParameters();
         if (!existing.GetDescription().empty())
@@ -820,6 +863,14 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
     sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
     if (columns)
         sd.SetColumns(*columns);
+    else if (get_outcome.IsSuccess() && sd.GetColumns().empty())
+    {
+        /// Restore missing Glue columns from the committed Iceberg schema.
+        auto schema = getCurrentSchema(getMetadataObject(new_metadata_path, TableMetadata{}));
+        if (!schema || !schema->has(DB::Iceberg::f_fields))
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", new_metadata_path);
+        sd.SetColumns(glueColumnsFromIcebergSchema(schema));
+    }
     table_input.SetStorageDescriptor(sd);
 
     parameters["metadata_location"] = new_metadata_path;
