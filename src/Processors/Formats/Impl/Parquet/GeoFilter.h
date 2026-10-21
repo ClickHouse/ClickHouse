@@ -35,8 +35,8 @@ std::vector<SpatialFilter> extractSpatialFilters(
 /// using only geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
 /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
 bool rowGroupFailsSpatialFilters(
-    const parq::RowGroup & rg_meta,
-    const std::vector<Reader::PrimitiveColumnInfo> & primitive_columns,
+    const Reader & reader,
+    size_t row_group_idx,
     const std::vector<SpatialFilter> & filters);
 
 /// Build a KeyCondition for: (xmin <= q_xmax) AND (xmax >= q_xmin) AND (ymin <= q_ymax) AND (ymax >= q_ymin).
