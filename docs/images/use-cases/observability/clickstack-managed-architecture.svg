@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="700" viewBox="0 0 940 700" fill="none">
+  <title>ClickHouse Observability managed architecture</title>
+  <desc>OTLP over gRPC and HTTP enters the managed OpenTelemetry collector, which writes to ClickHouse. ClickStack UI queries ClickHouse. All three components are managed by ClickHouse Cloud.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse"><path d="m1 1 7 4-7 4" stroke="#A3A3A0" stroke-width="2" fill="none"/></marker>
+    <filter id="glow" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="8"/></filter>
+  </defs>
+  <g font-family="Inter, Arial, sans-serif" text-anchor="middle">
+    <g fill="#A3A3A0" font-family="Inconsolata, monospace" font-size="22">
+      <text x="350" y="42">OTLP (gRPC)</text><text x="590" y="42">OTLP (HTTP)</text>
+    </g>
+    <rect x="100" y="105" width="740" height="560" rx="16" stroke="#A3A3A0" stroke-width="1.5" stroke-dasharray="8 8"/>
+    <text x="470" y="620" fill="#A3A3A0" font-size="21">ClickHouse Observability</text>
+    <text x="470" y="647" fill="#A3A3A0" font-size="18">Managed by ClickHouse Cloud</text>
+    <path d="M350 60v113" stroke="#A3A3A0" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M590 60v113" stroke="#A3A3A0" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="240" y="180" width="460" height="100" rx="12" fill="#A3A3A0" opacity=".18" filter="url(#glow)"/>
+    <rect x="240" y="180" width="460" height="100" rx="8" fill="#3A3A36" stroke="#A3A3A0"/>
+    <!-- Official OpenTelemetry icon: cncf/artwork, projects/opentelemetry/icon/white. -->
+    <g transform="translate(278 192) scale(.07)"><path fill="#fff" d="M528.7 545.9c-42 42-42 110.1 0 152.1s110.1 42 152.1 0 42-110.1 0-152.1-110.1-42-152.1 0zm113.7 113.8c-20.8 20.8-54.5 20.8-75.3 0-20.8-20.8-20.8-54.5 0-75.3 20.8-20.8 54.5-20.8 75.3 0 20.8 20.7 20.8 54.5 0 75.3zm36.6-643l-65.9 65.9c-12.9 12.9-12.9 34.1 0 47l257.3 257.3c12.9 12.9 34.1 12.9 47 0l65.9-65.9c12.9-12.9 12.9-34.1 0-47L725.9 16.7c-12.9-12.9-34-12.9-46.9 0zM217.3 858.8c11.7-11.7 11.7-30.8 0-42.5l-33.5-33.5c-11.7-11.7-30.8-11.7-42.5 0L72.1 852l-.1.1-19-19c-10.5-10.5-27.6-10.5-38 0-10.5 10.5-10.5 27.6 0 38l114 114c10.5 10.5 27.6 10.5 38 0s10.5-27.6 0-38l-19-19 .1-.1 69.2-69.2zm348.6-652.9L419.5 352.3c-13 13-13 34.4 0 47.4l90.4 90.4c63.9-46 153.5-40.3 211 17.2l73.2-73.2c13-13 13-34.4 0-47.4L613.3 205.9c-13-13.1-34.4-13.1-47.4 0zm-94 322.3l-53.4-53.4c-12.5-12.5-33-12.5-45.5 0L184.7 663.2c-12.5 12.5-12.5 33 0 45.5l106.7 106.7c12.5 12.5 33 12.5 45.5 0L458 694.1c-25.6-52.9-21-116.8 13.9-165.9z"/></g>
+    <text x="500" y="225" fill="#FFFFFF" font-size="29" font-weight="600">OpenTelemetry</text>
+    <text x="500" y="254" fill="#FFFFFF" font-size="18">Managed collector</text>
+    <path d="M470 280v53" stroke="#A3A3A0" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="240" y="340" width="460" height="100" rx="12" fill="#FAFF69" opacity=".35" filter="url(#glow)"/>
+    <rect x="240" y="340" width="460" height="100" rx="8" fill="#FAFF69" stroke="#A3A3A0"/>
+    <g transform="translate(310 365) scale(2.4)" fill="#1F1F1C"><rect x="0" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="4.5" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="9.0002" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="13.4993" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="18.0005" y="7.8752" width="2.24992" height="4.49985" rx="0.547286"/></g>
+    <text x="492" y="402" fill="#1F1F1C" font-size="34">ClickHouse</text>
+    <path d="M470 447v46" stroke="#A3A3A0" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <rect x="240" y="500" width="460" height="90" rx="12" fill="#A3A3A0" opacity=".18" filter="url(#glow)"/>
+    <rect x="240" y="500" width="460" height="90" rx="8" fill="#3A3A36" stroke="#A3A3A0"/>
+    <!-- Exact yellow variant of the supplied ClickStack mark. -->
+    <g transform="translate(312 520) scale(.18) translate(-57.4 -40)">
+      <path d="M282.566 105V235.001L169.983 300.001L57.4 235.001V105L169.983 40L282.566 105Z" fill="#FAFF69"/>
+      <path d="M198.098 82.8931C199.852 84.177 200.671 86.8134 200.074 89.2541L184.361 153.528H213.355C215.095 153.528 216.669 154.83 217.359 156.841C218.05 158.852 217.725 161.187 216.532 162.782L146.731 256.124C145.34 257.984 143.114 258.391 141.36 257.108C139.607 255.823 138.788 253.187 139.384 250.746L155.097 186.472H126.104C124.363 186.472 122.789 185.17 122.099 183.16C121.408 181.149 121.734 178.814 122.927 177.218L192.728 83.8762C194.118 82.0166 196.344 81.6092 198.098 82.8931Z" fill="#1F1F1C"/>
+    </g>
+    <text x="380" y="557" text-anchor="start" fill="#FFFFFF" font-size="32" font-weight="600">ClickStack UI</text>
+  </g>
+</svg>

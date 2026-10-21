@@ -12,17 +12,25 @@ import { Image } from "/snippets/components/Image.jsx";
 
 ClickHouse Observability runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
 
-In this model, **ClickHouse, the ClickStack UI (HyperDX), and the OpenTelemetry (OTel) ingestion collector** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible for instrumenting their applications and sending telemetry from their environment to the managed service.
+In this model, **ClickHouse, the ClickStack UI, and the OpenTelemetry (OTel) ingestion collector** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible for instrumenting their applications and sending telemetry from their environment to the managed service.
 
-<Image img="/images/use-cases/observability/clickstack-fully-managed-architecture.png" alt="Fully managed architecture with the OpenTelemetry collector, ClickHouse, and HyperDX operated by ClickHouse Cloud" size="lg"/>
+<Image img="/images/use-cases/observability/clickstack-managed-architecture.svg" alt="Fully managed architecture with the OpenTelemetry collector, ClickHouse, and ClickStack UI operated by ClickHouse Cloud" size="lg"/>
+
+### OpenTelemetry collector: data ingestion {#open-telemetry-collector-managed}
+
+ClickHouse Observability includes a managed OpenTelemetry (OTel) collector to ingest telemetry in an open, standardized way. In your service, open **Team Settings → Data → Managed Telemetry** to copy the OTLP endpoint and API key. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for connection and authentication instructions.
+
+The collector exports telemetry to ClickHouse Cloud in efficient batches. It uses table schemas optimized for each telemetry signal.
+
+The ingestion collector is managed by ClickHouse Cloud. You may still need collectors in your own environment to gather telemetry such as host metrics or Kubernetes logs and forward it to the managed endpoint.
 
 ### ClickHouse Cloud: the engine {#clickhouse-cloud}
 
 At the heart of ClickHouse Observability is ClickHouse Cloud, a serverless version of ClickHouse - a column-oriented database designed for real-time analytics at scale. It powers the ingestion and querying of observability data, enabling:
 
-- Sub-second search across terabytes of events
-- Ingestion of billions of high-cardinality records per day
-- High compression rates of at least 10x on observability data
+- Fast search across large volumes of events
+- Ingestion of high-cardinality telemetry at scale
+- Column-oriented compression for observability data
 - Native support for semi-structured JSON data, allowing dynamic schema evolution
 - A powerful SQL engine with hundreds of built-in analytical functions
 
@@ -31,23 +39,14 @@ ClickHouse Cloud handles observability data as wide events, allowing for deep co
 In addition to ClickHouse Open Source, it provides a number of benefits for observability:
 
 - Automatic scaling of compute independent of storage
-- Low-cost and effectively unlimited retention based on object storage
+- Object storage for retaining telemetry independently of compute capacity
 - Integrated authentication
-- Automated backups
 - Security and compliance features
 - Seamless upgrades
 
-### OpenTelemetry collector: data ingestion {#open-telemetry-collector-managed}
+### ClickStack UI: the interface {#hyperdx}
 
-ClickHouse Observability includes a managed OpenTelemetry (OTel) collector to ingest telemetry in an open, standardized way. In your service, open **Team Settings → Managed Telemetry** to copy the OTLP endpoint and API key used to send data.
-
-The collector exports telemetry to ClickHouse Cloud in efficient batches. It supports optimized table schemas per data source, ensuring scalable performance across all signal types.
-
-The ingestion collector is managed by ClickHouse Cloud. You may still need collectors in your own environment to gather telemetry such as host metrics or Kubernetes logs and forward it to the managed endpoint.
-
-### ClickStack UI (HyperDX): the interface {#hyperdx}
-
-ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
+ClickStack UI is the user interface for ClickStack. It offers:
 
 - Natural language and Lucene-style search
 - Live tailing for real-time debugging
@@ -56,8 +55,28 @@ ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
 - Dashboard creation and alert configuration
 - SQL query interface for advanced analysis
 
-Designed specifically for ClickHouse, HyperDX combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast.
+Designed specifically for ClickHouse, ClickStack UI combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast.
 
 In ClickHouse Observability, the UI is integrated into the ClickHouse Cloud console authentication system.
+
+### Ingestion and query isolation {#ingestion-query-isolation}
+
+ClickHouse Observability uses separate compute for ingestion and querying. Write compute handles incoming telemetry and background data maintenance. Read compute serves searches, dashboards, notebooks, and alert queries. Both access the same underlying object storage.
+
+This separation reduces competition between ingestion and query workloads. If write compute is temporarily unavailable, read compute can continue querying stored data, although the newest telemetry may be delayed. If read compute is unavailable, ingestion can continue, but searches and alert evaluation may be interrupted.
+
+### Scaling {#scaling}
+
+ClickHouse Cloud manages capacity as workloads change. The managed collectors scale horizontally to handle ingestion traffic, while write and read compute scale independently of each other and of storage.
+
+Scaling is not instantaneous. Sudden increases in ingestion can delay when new telemetry becomes searchable, and query spikes can increase response times while capacity adjusts. Separating the workloads helps limit the impact of one workload on the other.
+
+### Ingestion buffering and recovery {#ingestion-buffering-recovery}
+
+The managed collector first attempts to write telemetry to ClickHouse. If ClickHouse temporarily cannot accept writes, the ingestion pipeline can store batches in Amazon S3 for later replay. This temporary ingestion buffer is separate from the object storage used by ClickHouse for stored telemetry. When writes resume, the buffered data is ingested into ClickHouse.
+
+During recovery, recent telemetry may appear late or out of order as the backlog is processed. This buffering supports recovery from temporary write interruptions; it does not provide cross-region failover or guarantee delivery in every failure scenario.
+
+Some data can still be lost, including data held only in a collector's memory when it stops, or batches that cannot be written to either ClickHouse or S3. Configure your sending agents and collectors to retry failed exports and, where supported, use persistent queues to retain telemetry during interruptions.
 
 For self-configured architecture, see [Self-configured architecture](/clickstack/self-configured/architecture).

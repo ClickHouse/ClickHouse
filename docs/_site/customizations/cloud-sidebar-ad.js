@@ -62,12 +62,14 @@
     return window.location.pathname.replace(/^\/docs(?=\/|$)/, '');
   }
 
-  function isClickStackPage() {
-    return /^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?clickstack(?:\/|$)/.test(normalizedPath());
+  function isClickStackOssPage() {
+    var path = normalizedPath();
+    return /^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?clickstack(?:\/|$)/.test(path)
+      && !/^\/(?:(?:ar|es|fr|ja|ko|pt-BR|ru|zh)\/)?clickstack\/(?:observability|self-configured)(?:\/|$)/.test(path);
   }
 
   function adSettings() {
-    return isClickStackPage() ? {
+    return isClickStackOssPage() ? {
       id: 'observability',
       dismissedKey: 'ch-observability-sidebar-ad-dismissed',
       href: 'https://clickhouse.cloud/signUp?loc=docs-observability-sidebar',
@@ -79,7 +81,7 @@
   }
 
   function getAdCopy() {
-    if (isClickStackPage()) return {
+    if (isClickStackOssPage()) return {
       ariaLabel: 'Try ClickHouse Observability',
       dismissLabel: 'Dismiss ClickHouse Observability advert permanently',
       title: 'Try ClickHouse Observability',
@@ -204,7 +206,7 @@
       existing.remove();
       existing = null;
     }
-    if (!isGetStartedPage() && !isClickStackPage()) {
+    if (!isGetStartedPage() && !isClickStackOssPage()) {
       if (existing) existing.remove();
       return true;
     }
