@@ -31,20 +31,25 @@ SETTINGS disk = disk(
 SYSTEM FLUSH LOGS text_log;
 
 SELECT 'local metadata, blob killer started', count() > 0 FROM system.text_log
-WHERE logger_name = '05136_local_metadata::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE logger_name = '05136_local_metadata::BlobKillerThread' AND message LIKE 'Execution started%'
+    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE;
 
 -- The copier reports this at startup even when \`data_background_replication\` is not enabled.
 SELECT 'local metadata, blob copier not needed', count() > 0 FROM system.text_log
-WHERE logger_name = '05136_local_metadata::BlobCopierThread' AND message LIKE 'Execution is not needed%';
+WHERE logger_name = '05136_local_metadata::BlobCopierThread' AND message LIKE 'Execution is not needed%'
+    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE;
 
 SELECT 'plain_rewritable, blob killer started', count() FROM system.text_log
-WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%';
+WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%'
+    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE;
 
 SELECT 'plain_rewritable, blob killer not needed', count() > 0 FROM system.text_log
-WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution is not needed%';
+WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution is not needed%'
+    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE;
 
 SELECT 'plain_rewritable, blob copier not needed', count() > 0 FROM system.text_log
-WHERE logger_name = '05136_plain_rewritable::BlobCopierThread' AND message LIKE 'Execution is not needed%';
+WHERE logger_name = '05136_plain_rewritable::BlobCopierThread' AND message LIKE 'Execution is not needed%'
+    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE;
 
 -- Nothing is deferred on such a disk, so waiting for the cleanup returns immediately instead of hanging.
 SYSTEM WAIT BLOBS CLEANUP '05136_plain_rewritable';
