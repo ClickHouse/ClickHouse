@@ -99,7 +99,7 @@ struct TopKAggregationHeapBase
     /// it stopped keeping new keys out of the hash table.
     bool collatedSkipsRepeat(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end)
     {
-        return has_collators && !skip_sample_done && sampleCollatedSkips(key_columns, row_begin, row_end);
+        return has_collators && sampleCollatedSkips(key_columns, row_begin, row_end);
     }
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
@@ -211,7 +211,8 @@ protected:
     UInt64 sample_window_rows = 0;          /// all rows of the current window
     UInt64 sample_recent_repeats = 0;       /// of them, rows whose key hash was in `recent_key_slots`
     UInt64 repeat_rows = 0;                 /// rows of the windows since the last one whose skipped rows were mostly new keys
-    bool skip_sample_done = false;          /// the sample filled up, so the heap runs to the end
+    UInt64 blocks_after_sample = 0;         /// blocks since the sample filled up, to move the checked slice
+    bool skip_sample_done = false;          /// the sample filled up, so only `recent_key_slots` decides
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path

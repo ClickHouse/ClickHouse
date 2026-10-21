@@ -128,11 +128,12 @@ bool TopKAggregationHeapBase::shouldFreeze() const
     if (frozen || !heap_column)
         return false;
 
+    /// A heap with a `COLLATE` key tracks only the keys inserted after its late start, so it may never fill.
     const UInt64 window_observed = observed_rows - window_start_observed_rows;
     const UInt64 window_skipped = skipped_rows - window_start_skipped_rows;
     if (profitability_window && window_observed >= profitability_window
         && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1 && evicted_keys < k
-        && heap_indices.size() >= k)
+        && (heap_indices.size() >= k || has_collators))
         return true;
 
     return tie_overflow;
@@ -146,17 +147,21 @@ bool TopKAggregationHeapBase::shouldFreeze() const
 /// few hot keys the sample misses. A window of `collated_sample_window` sampled rows (2^`collated_sample_bits` times as many rows when
 /// only the second estimate decides) with either below `collated_min_new_key_share` extends a run of repeats; the heap
 /// freezes once the run reaches `collated_repeat_rows_per_skipped_key` rows per key skipped so far, because freezing
-/// inserts those keys after all, and stops sampling at `collated_sample_max_keys` sampled keys (about 2M skipped).
+/// inserts those keys after all. Past `collated_sample_max_keys` sampled keys (about 2M skipped) only the recent hashes
+/// of 1/`collated_block_slices_after_sample` of each block decide: a skipped key outside them would cost a lookup into
+/// a large table, which the comparison wins.
 /// Measured on 20M rows, `LIMIT 10`, 'en', heap off / without this check / with it: 1 thread, 100K keys in cycles
 /// 268 / 494 / 274 ms, 1M 315 / 466 / 340 ms, 1M in descending order 328 / 740 / 324 ms, 5 keys after 100K unique ones
 /// 140 / 331 / 106 ms; 16 threads, 1M keys in cycles 106 / 40 / 48 ms (as with the heap off when the run needs no
-/// length).
+/// length). Past the sample, heap off / on: 1M keys in cycles after 3M unique ones 844 / 419 ms, and 97M rows of one
+/// key after them 896 / 596 ms (1632 ms without the recent hashes).
 static constexpr UInt32 collated_sample_bits = 6;
 static constexpr UInt64 collated_sample_window = 256;
 static constexpr double collated_min_new_key_share = 0.5;
 static constexpr double collated_repeat_rows_per_skipped_key = 0.5;
 static constexpr size_t collated_sample_max_keys = 32768;
 static constexpr size_t collated_recent_key_slots = 4096;
+static constexpr size_t collated_block_slices_after_sample = 8;
 
 bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end)
 {
@@ -164,13 +169,23 @@ bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_colu
         || row_end <= row_begin)
         return false;
 
-    const size_t rows = row_end - row_begin;
-    sample_window_rows += rows;
+    /// Past the sample, a slice of each block stands for all of it; the slice moves through the block from block to block.
+    size_t begin = row_begin;
+    size_t rows = row_end - row_begin;
+    UInt64 weight = 1;
+    if (skip_sample_done)
+    {
+        rows = std::max<size_t>(1, rows / collated_block_slices_after_sample);
+        begin = std::min(row_begin + (blocks_after_sample++ % collated_block_slices_after_sample) * rows, row_end - 1);
+        weight = collated_block_slices_after_sample;
+    }
+
+    sample_window_rows += rows * weight;
     sample_hashes.resize(rows);
     for (size_t i = 0; i < key_columns.size(); ++i)
-        key_columns[i]->computeHashInto(row_begin, row_end, sample_hashes.data(), i == 0);
+        key_columns[i]->computeHashInto(begin, begin + rows, sample_hashes.data(), i == 0);
 
-    if (!skipped_key_sample)
+    if (!skip_sample_done && !skipped_key_sample)
         skipped_key_sample = std::make_unique<HashSet<UInt32>>();
 
     /// Direct-mapped by the low bits; odd tags, so that an empty slot never matches.
@@ -179,45 +194,52 @@ bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_colu
     const size_t slot_mask = recent_key_slots.size() - 1;
 
     const ColumnRawPtrs ranked_columns(key_columns.begin(), key_columns.begin() + directions.size());
+    UInt64 recent_repeats_in_block = 0;
     for (size_t i = 0; i < rows; ++i)
     {
         const UInt32 hash = sample_hashes[i];
         UInt32 & slot = recent_key_slots[hash & slot_mask];
-        sample_recent_repeats += slot == (hash | 1);
+        recent_repeats_in_block += slot == (hash | 1);
         slot = hash | 1;
 
-        if (hash >> (32 - collated_sample_bits))
+        if (skip_sample_done || hash >> (32 - collated_sample_bits))
             continue;
         ++sample_rows;
-        if (shouldSkipCollated(ranked_columns, row_begin + i))
+        if (shouldSkipCollated(ranked_columns, begin + i))
             sample_new_keys += skipped_key_sample->insert(hash).second;
     }
+    sample_recent_repeats += recent_repeats_in_block * weight;
 
-    if (skipped_key_sample->size() >= collated_sample_max_keys)
+    if (!skip_sample_done && skipped_key_sample->size() >= collated_sample_max_keys)
     {
         skip_sample_done = true;
         skipped_key_sample.reset();
-        sample_hashes = {};
-        recent_key_slots = {};
-        return false;
+        sample_rows = 0;
+        sample_new_keys = 0;
     }
 
     const bool recent_repeats = static_cast<double>(sample_window_rows - sample_recent_repeats)
         < collated_min_new_key_share * static_cast<double>(sample_window_rows);
-    if (sample_rows < collated_sample_window
-        && !(recent_repeats && sample_window_rows >= (collated_sample_window << collated_sample_bits)))
+    const bool enough_rows = sample_window_rows >= (collated_sample_window << collated_sample_bits);
+    /// Past the sample, a window covers whole rotations of the slice, so that it sees every part of the blocks.
+    const bool window_done = skip_sample_done
+        ? enough_rows && blocks_after_sample % collated_block_slices_after_sample == 0
+        : sample_rows >= collated_sample_window || (recent_repeats && enough_rows);
+    if (!window_done)
         return false;
 
     const bool repeats = recent_repeats
-        || static_cast<double>(sample_new_keys) < collated_min_new_key_share * static_cast<double>(sample_rows);
+        || (!skip_sample_done
+            && static_cast<double>(sample_new_keys) < collated_min_new_key_share * static_cast<double>(sample_rows));
     repeat_rows = repeats ? repeat_rows + sample_window_rows : 0;
     sample_rows = 0;
     sample_new_keys = 0;
     sample_window_rows = 0;
     sample_recent_repeats = 0;
+    const size_t sampled_keys = skip_sample_done ? collated_sample_max_keys : skipped_key_sample->size();
     return repeats
         && static_cast<double>(repeat_rows)
-        >= collated_repeat_rows_per_skipped_key * static_cast<double>(skipped_key_sample->size() << collated_sample_bits);
+        >= collated_repeat_rows_per_skipped_key * static_cast<double>(sampled_keys << collated_sample_bits);
 }
 
 void TopKAggregationHeapBase::freezeBase()

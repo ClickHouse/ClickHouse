@@ -294,6 +294,22 @@ SELECT s, count() FROM (SELECT multiIf(number < 33792, concat('m', toString(numb
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
     enable_group_by_top_k_optimization = 1, log_comment = '05407_run_one_key';
+-- After the last block of unique keys only an existing key comes, so the heap never fills, and freezes.
+SELECT s, count() FROM (SELECT if(number < 32768, concat('m', toString(number)), 'm1') AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT if(number < 32768, concat('m', toString(number)), 'm1') AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_never_fills';
+-- A tail of one key, with unique keys in the first eighth of every block, still makes the heap give up after it has
+-- skipped more keys than it samples (about 2M).
+SELECT s, count() FROM (SELECT multiIf(number < 2200000, concat('m', toString(number)), number % 8192 < 1024,
+    concat('u', toString(number)), 'n') AS s FROM numbers(3500000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 8192, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_after_sample';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -322,7 +338,8 @@ SELECT log_comment, sum(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEve
     sum(ProfileEvents['AggregationTopKHeapsFrozen']) AS heaps_frozen
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-    AND log_comment IN ('05407_run_new_best', '05407_run_new_keys', '05407_run_one_key', '05407_run_repeats')
+    AND log_comment IN ('05407_run_after_sample', '05407_run_never_fills', '05407_run_new_best', '05407_run_new_keys',
+        '05407_run_one_key', '05407_run_repeats')
 GROUP BY log_comment
 ORDER BY log_comment;
 
