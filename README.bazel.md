@@ -199,6 +199,7 @@ CMake hash recorded below.
 | `ebef76675` (verification snapshot) | Correct Abseil header ownership and Linux inputs; remove redundant Arrow dependencies | [0f7b59a5](https://app.buildbuddy.io/invocation/0f7b59a5-eb82-4090-affc-c07036ecb7a5) | [b7a72f38](https://app.buildbuddy.io/invocation/b7a72f38-fa50-45af-815f-ec63cce8d946) |
 | `21fc69dbe` (verification snapshot) | Remove Arrow header aggregate, give DBMS direct Arrow/Parquet owners, and remove unused Parquet Boost regex | [6fa26f91](https://app.buildbuddy.io/invocation/6fa26f91-ddda-4b63-8f04-8d123608ba19) | [c824f631](https://app.buildbuddy.io/invocation/c824f631-dc12-4dec-97be-fcab22810c16) |
 | `0f42b2607` (verification snapshot) | Remove the redundant Common dependency from Google Cloud REST; retain Common through Poco TLS | [42d3c7aa](https://app.buildbuddy.io/invocation/42d3c7aa-b12b-485c-84ae-2ee07afdbdd4) | [9b8f8ef4](https://app.buildbuddy.io/invocation/9b8f8ef4-ceb1-4e71-847c-6aa8289fe6cf) |
+| `97b2d9a3e` (verification snapshot) | Correct Linux private headers and dependencies for AI SDK, CCTZ, CRC32C, lemmagen, NuRaft, replxx, SILK and ZXC | [4810ce74](https://app.buildbuddy.io/invocation/4810ce74-5c61-4347-9a8e-b6ba1af6e0b6) | [1bd31480](https://app.buildbuddy.io/invocation/1bd31480-0e1c-453e-9ec9-025ae693bf5e) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

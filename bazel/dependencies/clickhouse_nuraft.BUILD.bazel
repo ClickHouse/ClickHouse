@@ -8,10 +8,16 @@ exports_files([
 
 ch_cc_library(
     name = "_nuraft",
-    srcs = glob(["src/*.cxx"]) + glob([
-        "src/*.h",
-        "src/*.hxx",
-    ]),
+    srcs = glob(["src/*.cxx"]) + [
+        "src/crc32.hxx",
+        "src/exit_handler.hxx",
+        "src/fix_format.hxx",
+        "src/handle_client_request.hxx",
+        "src/handle_custom_notification.hxx",
+        "src/histogram.h",
+        "src/stat_mgr.hxx",
+        "src/tracer.hxx",
+    ],
     hdrs = glob(["include/**/*.hxx"]),
     copts = [
         "-w",
@@ -19,9 +25,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         "@clickhouse_boost//:boost_asio_headers",
-        "@clickhouse_libfiu//:_libfiu",
-        "@clickhouse_libssh//:_ssh",
-        "@clickhouse_libarchive//:_libarchive",
+        "@clickhouse_boost//:boost_headers",
     ],
     includes = [
         "include",
@@ -94,12 +98,6 @@ ch_cc_library(
         "include/libnuraft",
     ],
     deps = [
-        "@clickhouse_boost//:_boost_coroutine",
-        "@clickhouse//base:common",
         "@clickhouse//src/Common",
-        "@clickhouse//src:headers",
-        "@clickhouse//base:pcg_random",
-        "@clickhouse//base/poco/Foundation:_poco_foundation",
-        "@clickhouse_boost//:boost_headers",
     ],
 )

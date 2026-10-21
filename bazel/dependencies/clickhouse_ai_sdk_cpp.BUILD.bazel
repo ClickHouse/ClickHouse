@@ -14,10 +14,19 @@ _AI_SDK_CPP_LOCAL_INCLUDES = [
 
 ch_cc_library(
     name = "_ai-sdk-cpp-anthropic",
-    srcs = glob(["src/providers/anthropic/*.cpp"]) + glob(["src/**/*.h"]),
+    srcs = glob(["src/providers/anthropic/*.cpp"]) + glob([
+        "src/http/*.h",
+        "src/providers/*.h",
+        "src/providers/anthropic/*.h",
+        "src/utils/*.h",
+    ]),
     copts = [
         "-std=c++20",
         "-w",
+    ],
+    implementation_deps = [
+        ":_ai-sdk-cpp-core",
+        "@clickhouse_nlohmann_json//:nlohmann_json",
     ],
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
@@ -30,7 +39,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
-    deps = [":_ai-sdk-cpp-core"],
 )
 
 ch_cc_library(
@@ -76,10 +84,19 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_ai-sdk-cpp-openai",
-    srcs = glob(["src/providers/openai/*.cpp"]) + glob(["src/**/*.h"]),
+    srcs = glob(["src/providers/openai/*.cpp"]) + glob([
+        "src/http/*.h",
+        "src/providers/*.h",
+        "src/providers/openai/*.h",
+        "src/utils/*.h",
+    ]),
     copts = [
         "-std=c++20",
         "-w",
+    ],
+    implementation_deps = [
+        ":_ai-sdk-cpp-core",
+        "@clickhouse_nlohmann_json//:nlohmann_json",
     ],
     local_defines = [
         "AI_SDK_HAS_OPENAI=1",
@@ -92,5 +109,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
-    deps = [":_ai-sdk-cpp-core"],
 )

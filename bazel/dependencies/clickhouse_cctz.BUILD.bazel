@@ -1235,7 +1235,14 @@ ch_cc_library(
         "src/time_zone_lookup.cc",
         "src/time_zone_posix.cc",
         "src/zone_info_source.cc",
-    ] + glob(["src/**/*.h"]),
+        "src/time_zone_fixed.h",
+        "src/time_zone_if.h",
+        "src/time_zone_impl.h",
+        "src/time_zone_info.h",
+        "src/time_zone_libc.h",
+        "src/time_zone_posix.h",
+        "src/tzfile.h",
+    ],
     hdrs = glob(["include/**/*.h"]),
     copts =
         [

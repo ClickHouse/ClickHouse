@@ -10,7 +10,7 @@ ch_cc_library(
     name = "_lemmagen",
     srcs = [
         "src/RdrLemmatizer.cpp",
-    ] + glob(["src/**/*.h"]),
+    ],
     hdrs = glob(["include/**/*.h"]),
     copts = [
         "-w",
