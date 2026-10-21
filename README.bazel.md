@@ -201,6 +201,7 @@ CMake hash recorded below.
 | `0f42b2607` (verification snapshot) | Remove the redundant Common dependency from Google Cloud REST; retain Common through Poco TLS | [42d3c7aa](https://app.buildbuddy.io/invocation/42d3c7aa-b12b-485c-84ae-2ee07afdbdd4) | [9b8f8ef4](https://app.buildbuddy.io/invocation/9b8f8ef4-ceb1-4e71-847c-6aa8289fe6cf) |
 | `97b2d9a3e` (verification snapshot) | Correct Linux private headers and dependencies for AI SDK, CCTZ, CRC32C, lemmagen, NuRaft, replxx, SILK and ZXC | [4810ce74](https://app.buildbuddy.io/invocation/4810ce74-5c61-4347-9a8e-b6ba1af6e0b6) | [1bd31480](https://app.buildbuddy.io/invocation/1bd31480-0e1c-453e-9ec9-025ae693bf5e) |
 | `35609a001` (verification snapshot) | Give OpenSSL, HDFS and Snappy headers to compiled owners; preserve private crypto assembly and HDFS implementation deps | [06b8e9e4](https://app.buildbuddy.io/invocation/06b8e9e4-9195-4ea8-b2c0-fe6fead6d473) | [55a6e9ae](https://app.buildbuddy.io/invocation/55a6e9ae-c112-44dc-8f29-8db49e64a4de) |
+| `cba24794c` (verification snapshot) | Give libpq only its 49 private Linux headers and three public API headers | [c80af064](https://app.buildbuddy.io/invocation/c80af064-b110-4d96-b39b-77f8b360c97c) | [24f4bb87](https://app.buildbuddy.io/invocation/24f4bb87-4ace-4672-bab1-1be3fb388f3d) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
