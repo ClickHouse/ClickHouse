@@ -12,7 +12,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 @@ -41,102 +40,6 @@
      visibility = ["//visibility:public"],
  )
-
+ 
 -_CONFIG_SITE_MUSL_LINES = [
 -    "#define _LIBCPP_HAS_MUSL_LIBC 1",
 -]
@@ -115,7 +115,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 @@ -169,41 +72,17 @@
      ],
  )
-
+ 
 -write_file(
 +# ClickHouse keeps its ABI and assertion configuration in the LLVM fork.
 +filegroup(
@@ -161,9 +161,9 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 +    srcs = ["include/__assertion_handler"],
 +    visibility = ["//visibility:public"],
  )
-
+ 
  copy_to_directory(
-@@ -227,11 +106,17 @@
+@@ -227,12 +106,22 @@
          ":__config_site",
          ":libcxx_headers_files",
      ],
@@ -172,6 +172,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 -        "include",
 -        "src",
 -    ],
+-    visibility = ["//visibility:public"],
 +    # The complete Linux toolchain owns public C++ headers. Searching both
 +    # copies makes include_next find another C++ wrapper instead of libc.
 +    # Bootstrap runtimes still need their source and generated headers.
@@ -183,10 +184,15 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 +            "src",
 +        ],
 +    }),
-     visibility = ["//visibility:public"],
++    visibility = ["//visibility:public"],
++    deps = select({
++        "@llvm//platforms/config:gnu": ["@glibc//:gnu_libc_headers"],
++        "//conditions:default": [],
++    }),
  )
-
-@@ -467,10 +352,13 @@
+ 
+ filegroup(
+@@ -467,10 +356,13 @@
          ],
          "//conditions:default": [],
      }),
@@ -204,7 +210,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
      # The MSVC route exposes only the purpose-built static libc++ archive.
      # Generic routes retain the cc_library default so the shared-runtime rule
      # can preserve the pre-MSVC implementation graph.
-@@ -479,7 +367,7 @@
+@@ -479,7 +371,7 @@
          "//conditions:default": False,
      }),
      local_defines = [
@@ -213,14 +219,14 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
          "_LIBCPP_BUILDING_LIBRARY",
          "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
          "_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER",
-@@ -510,7 +398,7 @@
+@@ -510,7 +402,7 @@
          ":windows_msvc": [],
          "//conditions:default": ["@llvm-project//libcxxabi:textual_hdrs"],
      }),
 -    visibility = ["//compiler-rt:__pkg__"],
 +    visibility = ["//visibility:public"],
  )
-
+ 
  cc_runtime_stage0_asan_static_library(
 diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
 --- a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
@@ -288,7 +294,7 @@ diff --git a/toolchain/cc_toolchain.bzl b/toolchain/cc_toolchain.bzl
 diff --git a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel b/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
 --- a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
-@@ -143,9 +143,8 @@
+@@ -143,13 +143,15 @@
              "src/__support/wctype_utils.h",
          ] if int(LLVM_VERSION_MAJOR) >= 22 else []
      ),
@@ -300,7 +306,15 @@ diff --git a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel b/3rd_party/llvm-p
      visibility = ["//visibility:public"],
      deps = [
          "@llvm-project//compiler-rt:sanitizers_interface_headers",
-@@ -164,3 +163,139 @@
+-    ],
++    ] + select({
++        "@llvm//platforms/config:gnu": ["@glibc//:gnu_libc_headers"],
++        "//conditions:default": [],
++    }),
+ )
+ 
+ cc_library(
+@@ -164,3 +166,139 @@
      includes = ["."],
      visibility = ["//visibility:public"],
  )
@@ -469,7 +483,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
 +    includes = ["include"],
      visibility = ["//visibility:public"],
  )
-
+ 
 @@ -107,6 +115,7 @@
      "lib/builtins/divsi3.c",
      "lib/builtins/divti3.c",
@@ -493,16 +507,79 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
 +        "lib/builtins/truncxfhf2.c",
      ],
  )
-
+ 
 @@ -564,6 +575,7 @@
-
+ 
  cc_library(
      name = "builtins",
 +    alwayslink = True,
      srcs = select(
          {
              "@platforms//cpu:x86_64": [":builtins_x86_64_sources"],
-@@ -687,7 +699,8 @@
+@@ -597,6 +609,7 @@
+         ],
+         "@platforms//cpu:armv7": [
+             "lib/builtins/arm/sync-ops.h",
++            "lib/builtins/unwind-ehabi-helpers.h",
+         ],
+         "@platforms//cpu:riscv64": [
+             "lib/builtins/cpu_model/riscv.h",
+@@ -615,6 +628,54 @@
+             ":builtins_bf16_sources",
+         ],
+         "//conditions:default": [],
++    }) + [
++        "lib/builtins/fp_add_impl.inc",
++        "lib/builtins/fp_compare_impl.inc",
++        "lib/builtins/fp_div_impl.inc",
++        "lib/builtins/fp_extend_impl.inc",
++        "lib/builtins/fp_fixint_impl.inc",
++        "lib/builtins/fp_fixuint_impl.inc",
++        "lib/builtins/fp_mul_impl.inc",
++        "lib/builtins/fp_trunc_impl.inc",
++        "lib/builtins/int_div_impl.inc",
++        "lib/builtins/int_mulo_impl.inc",
++        "lib/builtins/int_mulv_impl.inc",
++        "lib/builtins/int_to_fp_impl.inc",
++        "lib/builtins/cpu_model/cpu_model.h",
++    ] + select({
++        "@platforms//cpu:aarch64": [
++            "lib/builtins/cpu_model/AArch64CPUFeatures.inc",
++            "lib/builtins/cpu_model/aarch64/hwcap.inc",
++            # "lib/builtins/cpu_model/aarch64/lse_atomics/atomic_helper.inc",
++            "lib/builtins/cpu_model/aarch64/lse_atomics/getauxval.inc",
++        ],
++        "@platforms//cpu:riscv64": [
++            "lib/builtins/riscv/int_mul_impl.inc",
++        ] + ([
++            "lib/builtins/cpu_model/riscv/hwprobe.inc",
++            "lib/builtins/cpu_model/riscv/unimplemented.inc",
++        ] if int(LLVM_VERSION_MAJOR) >= 23 else []),
++        "//conditions:default": [],
++    }) + select({
++        "@llvm//platforms/config:windows_aarch64": [
++            "lib/builtins/cpu_model/aarch64/lse_atomics/windows.inc",
++        ],
++        "//conditions:default": [],
++    }) + select({
++        "@llvm//platforms/config:linux_aarch64": ([
++            "lib/builtins/cpu_model/aarch64/fmv/hwcap.inc",
++        ] if int(LLVM_VERSION_MAJOR) >= 22 else [
++            "lib/builtins/cpu_model/aarch64/fmv/mrs.inc",
++        ]) + [
++            "lib/builtins/cpu_model/aarch64/fmv/getauxval.inc",
++        ],
++        "@llvm//platforms/config:macos_aarch64": [
++            "lib/builtins/cpu_model/aarch64/fmv/apple.inc",
++        ],
++        "@llvm//platforms/config:windows_aarch64": [
++            "lib/builtins/cpu_model/aarch64/fmv/windows.inc",
++        ],
++        "//conditions:default": [],
+     }),
+     copts = select({
+         ":windows_msvc": [
+@@ -687,7 +748,8 @@
      }),
      includes = ["lib/builtins"],
      linkstatic = True,
@@ -512,23 +589,79 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
          (
              # The following additional architectures support float16:
              # - aarch64_be
-@@ -763,6 +776,7 @@
+@@ -707,62 +769,13 @@
+         ],
+         "//conditions:default": [],
+     }),
+-    textual_hdrs = [
+-        "lib/builtins/fp_add_impl.inc",
+-        "lib/builtins/fp_compare_impl.inc",
+-        "lib/builtins/fp_div_impl.inc",
+-        "lib/builtins/fp_extend_impl.inc",
+-        "lib/builtins/fp_fixint_impl.inc",
+-        "lib/builtins/fp_fixuint_impl.inc",
+-        "lib/builtins/fp_mul_impl.inc",
+-        "lib/builtins/fp_trunc_impl.inc",
+-        "lib/builtins/int_div_impl.inc",
+-        "lib/builtins/int_mulo_impl.inc",
+-        "lib/builtins/int_mulv_impl.inc",
+-        "lib/builtins/int_to_fp_impl.inc",
+-        "lib/builtins/cpu_model/cpu_model.h",
+-        "lib/builtins/unwind-ehabi-helpers.h",
+-    ] + select({
+-        "@platforms//cpu:aarch64": [
+-            "lib/builtins/cpu_model/AArch64CPUFeatures.inc",
+-            "lib/builtins/cpu_model/aarch64/hwcap.inc",
+-            # "lib/builtins/cpu_model/aarch64/lse_atomics/atomic_helper.inc",
+-            "lib/builtins/cpu_model/aarch64/lse_atomics/getauxval.inc",
+-        ],
+-        "@platforms//cpu:riscv64": [
+-            "lib/builtins/riscv/int_mul_impl.inc",
+-        ] + ([
+-            "lib/builtins/cpu_model/riscv/hwprobe.inc",
+-            "lib/builtins/cpu_model/riscv/unimplemented.inc",
+-        ] if int(LLVM_VERSION_MAJOR) >= 23 else []),
+-        "//conditions:default": [],
+-    }) + select({
+-        "@llvm//platforms/config:windows_aarch64": [
+-            "lib/builtins/cpu_model/aarch64/lse_atomics/windows.inc",
+-        ],
+-        "//conditions:default": [],
+-    }) + select({
+-        "@llvm//platforms/config:linux_aarch64": ([
+-            "lib/builtins/cpu_model/aarch64/fmv/hwcap.inc",
+-        ] if int(LLVM_VERSION_MAJOR) >= 22 else [
+-            "lib/builtins/cpu_model/aarch64/fmv/mrs.inc",
+-        ]) + [
+-            "lib/builtins/cpu_model/aarch64/fmv/getauxval.inc",
+-        ],
+-        "@llvm//platforms/config:macos_aarch64": [
+-            "lib/builtins/cpu_model/aarch64/fmv/apple.inc",
+-        ],
+-        "@llvm//platforms/config:windows_aarch64": [
+-            "lib/builtins/cpu_model/aarch64/fmv/windows.inc",
+-        ],
+-        "//conditions:default": [],
+-    }),
+     deps = select({
+         "@platforms//cpu:aarch64": [
+             ":builtins_aarch64_atomic",
          ],
          "//conditions:default": [],
      }),
 +    visibility = ["//visibility:public"],
  )
-
+ 
  cc_runtime_stage0_static_library(
-@@ -880,6 +894,7 @@
-
+@@ -880,6 +893,7 @@
+ 
  cc_library(
      name = "sanitizers_interface_headers",
 +    features = ["external_include_paths"],
      hdrs = glob(["include/sanitizer/*.h"]),
      includes = ["include"],
      visibility = ["//visibility:public"],
-@@ -2908,6 +2923,7 @@
+@@ -2908,6 +2922,7 @@
  cc_library(
      name = "xray",
      srcs = [
@@ -536,41 +669,45 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
          ":xray_arch_sources",
          ":xray_headers",
          ":xray_sources",
-@@ -2929,6 +2945,7 @@
+@@ -2929,6 +2944,7 @@
          ":sanitizer_common_libc",
      ],
      alwayslink = True,
 +    visibility = ["//visibility:public"],
  )
-
+ 
  cc_library(
-@@ -3059,6 +3076,7 @@
+@@ -3059,6 +3075,7 @@
      ],
      linkstatic = True,
      alwayslink = True,
 +    visibility = ["//visibility:public"],
  )
-
+ 
  cc_library(
-@@ -3076,6 +3094,7 @@
+@@ -3076,6 +3093,7 @@
      ],
      linkstatic = True,
      alwayslink = True,
 +    visibility = ["//visibility:public"],
  )
-
+ 
  cc_library(
 diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
 --- a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
-@@ -39,10 +39,16 @@
-     hdrs = glob([
-         "include/**",
-     ]),
+@@ -36,13 +36,17 @@
+ 
+ cc_library(
+     name = "headers",
+-    hdrs = glob([
+-        "include/**",
+-    ]),
 -    includes = [
 -        "include",
 -        "src",
 -    ],
++    hdrs = [":libcxxabi_headers_files"],
 +    # The complete Linux toolchain owns public C++ headers. Searching both
 +    # copies makes include_next find another C++ wrapper instead of libc.
 +    # Bootstrap runtimes still need their source and generated headers.
@@ -583,8 +720,19 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
 +    }),
      visibility = ["//visibility:public"],
  )
-
-@@ -148,17 +154,20 @@
+ 
+@@ -87,9 +91,7 @@
+         # LIBCXXABI_ENABLE_THREADS
+         "src/cxa_thread_atexit.cpp",
+     ],
+-    hdrs = glob([
+-        "include/**",
+-    ]),
++    hdrs = [":libcxxabi_headers_files"],
+     copts = [
+         "-std=c++23",
+         "-fstrict-aliasing",
+@@ -148,17 +150,20 @@
          ],
          "@platforms//os:macos": [],
      }),
@@ -608,7 +756,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
 -    visibility = ["//compiler-rt:__pkg__"],
 +    visibility = ["//visibility:public"],
  )
-
+ 
  cc_runtime_stage0_static_library(
 diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/bootstrap_binary.bzl
 --- a/toolchain/bootstrap/bootstrap_binary.bzl
@@ -673,3 +821,45 @@ diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_sta
          "//toolchain:runtime_stage",
          "//config:asan",
          "//config:msan",
+diff --git a/runtimes/glibc/extension/glibc-headers.BUILD.bazel b/runtimes/glibc/extension/glibc-headers.BUILD.bazel
+--- a/runtimes/glibc/extension/glibc-headers.BUILD.bazel
++++ b/runtimes/glibc/extension/glibc-headers.BUILD.bazel
+@@ -3,12 +3,17 @@
+ 
+ cc_library(
+     name = "gnu_libc_headers",
+-    hdrs = ["include"],
++    hdrs = glob(["include/**/*.h"]),
+     # user code should always get glibc headers as -isystem
+     # but it seems glibc itself includes as <...>
+     features = ["system_include_paths"],
+-    includes = ["include"],
++    includes = select({
++        "@llvm//toolchain:linux_complete": [],
++        "//conditions:default": ["include"],
++    }),
++    textual_hdrs = ["include/bits/stab.def"],
+     visibility = ["//visibility:public"],
++    deps = ["@kernel_headers"],
+ )
+ 
+ headers_directory(
+diff --git a/kernel/extension/kernel-headers.BUILD.bazel b/kernel/extension/kernel-headers.BUILD.bazel
+--- a/kernel/extension/kernel-headers.BUILD.bazel
++++ b/kernel/extension/kernel-headers.BUILD.bazel
+@@ -3,10 +3,13 @@
+ 
+ cc_library(
+     name = "kernel_headers",
+-    hdrs = ["include"],
++    hdrs = glob(["include/**/*.h"]),
+     # Any code should always get passed linux UAPI headers as -isystem
+     features = ["system_include_paths"],
+-    includes = ["include"],
++    includes = select({
++        "@llvm//toolchain:linux_complete": [],
++        "//conditions:default": ["include"],
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
