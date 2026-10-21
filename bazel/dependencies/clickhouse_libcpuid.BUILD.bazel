@@ -53,11 +53,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [],
     target_compatible_with = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

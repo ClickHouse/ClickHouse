@@ -492,9 +492,6 @@ ch_cc_library(
         "google/cloud/internal/future_*.h",
         "google/cloud/internal/sha256_*.h",
     ]),
-    additional_compiler_inputs = [
-        ":config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
-    ],
     copts = _GENERATED_COPTS_1,
     implementation_deps = [
         "@clickhouse_openssl//:crypto",

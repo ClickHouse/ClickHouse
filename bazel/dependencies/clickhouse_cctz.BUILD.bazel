@@ -1267,10 +1267,7 @@ ch_cc_library(
             "-w",
             "-std=c++23",
             "--embed-dir=$(GENDIR)/bazel/gen/embedded",
-        ] + select({
-            "@platforms//cpu:x86_64": [],
-            "@platforms//cpu:aarch64": [],
-        }),
+        ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

@@ -1053,9 +1053,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "-fno-sanitize=signed-integer-overflow",
         ],
-    }) + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
     }),
     implementation_deps = [
         ":clickhouse_functions_obj__compile_0",

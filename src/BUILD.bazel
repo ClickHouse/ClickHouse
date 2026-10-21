@@ -2902,9 +2902,6 @@ ch_cc_library(
             "-march=x86-64-v2",
         ],
         "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
     }),
     implementation_deps = select({
         "@platforms//cpu:x86_64": [
@@ -2939,10 +2936,7 @@ ch_cc_library(
     }),
     arches = ["x86_64"],
     clickhouse_code = True,
-    copts = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    copts = [],
     implementation_deps = select({
         "@platforms//cpu:x86_64": [":dbms__compile_0"],
         "@platforms//cpu:aarch64": [
@@ -3720,10 +3714,7 @@ cc_test(
     local_includes = [
         "../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../" + "bazel/gen",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    ],
     deps = ["//bazel/rust:delta_kernel_ffi_headers", "@clickhouse_abseil_cpp//:absl_log_globals"] + [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",

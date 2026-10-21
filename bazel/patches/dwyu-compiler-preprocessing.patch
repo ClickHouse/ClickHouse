@@ -1,5 +1,4 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e..0423f31 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -11,7 +10,7 @@ index 13af75e..0423f31 100644
  load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
  load("//dwyu/cc/cc_info_mapping:providers.bzl", "DwyuCcInfoMappingInfo")
  load("//dwyu/private:utils.bzl", "make_param_file_args", "string_to_bool")
-@@ -28,7 +29,7 @@ _CPLUSPLUS_VERSIONS_MAP = {
+@@ -28,7 +29,7 @@
      "98": "199711",
  }
  
@@ -20,7 +19,7 @@ index 13af75e..0423f31 100644
  
  def _is_verbose(ctx):
      return ctx.attr.dwyu_verbose
-@@ -158,6 +159,11 @@ def _get_includes(ctx, target_cc):
+@@ -158,6 +159,11 @@
              if impl_dep_cc.system_includes:
                  system_includes.append(impl_dep_cc.system_includes)
  
@@ -32,7 +31,7 @@ index 13af75e..0423f31 100644
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -171,6 +177,13 @@ def _process_target(ctx, target, config, output_path, is_target_under_inspection
+@@ -171,6 +177,13 @@
      args.add("--target", str(target.label))
      args.add("--output", processing_output)
      args.add_all("--header_files", header_files, expand_directories = True, omit_if_empty = False)
@@ -46,7 +45,7 @@ index 13af75e..0423f31 100644
      if is_target_under_inspection:
          args.add("--is_target_under_inspection")
      if _is_verbose(ctx):
-@@ -363,7 +376,11 @@ def _dywu_results_from_deps(deps):
+@@ -363,7 +376,11 @@
      """
      We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
      """
@@ -59,7 +58,7 @@ index 13af75e..0423f31 100644
  
  def _gather_transitive_reports(ctx):
      """
-@@ -373,9 +390,29 @@ def _gather_transitive_reports(ctx):
+@@ -373,9 +390,29 @@
      """
      reports = []
      if ctx.attr._recursive:
@@ -92,7 +91,7 @@ index 13af75e..0423f31 100644
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +423,307 @@ def _return_on_skip(ctx):
+@@ -386,12 +423,311 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -196,11 +195,13 @@ index 13af75e..0423f31 100644
 +    # These are the rule's own rules_cc compile inputs, not files inherited
 +    # from deps or additional_compiler_inputs. Preserve explicitly public TU files.
 +    private.update({file.path: file.path for file in srcs if file.path not in public})
++    private_textual_srcs = getattr(ctx.rule.files, "private_textual_srcs", [])
++    private.update({file.path: file.path for file in private_textual_srcs})
 +    manifest = ctx.actions.declare_file("{}{}.dwyu_owned_headers.json".format(prefix, target.label.name))
 +    ctx.actions.write(manifest, json.encode({
 +        "public": public,
 +        "private": private,
-+        "required": {file.path: True for file in textual_files + list(cc.direct_private_headers)}.keys(),
++        "required": {file.path: True for file in textual_files + list(cc.direct_private_headers) + private_textual_srcs}.keys(),
 +        "unchecked_link_inputs": [file.path for file in link_inputs],
 +        "raw_assembly": [file.path for file in raw_assembly],
 +        "raw_link_candidates": link_candidates,
@@ -242,7 +243,9 @@ index 13af75e..0423f31 100644
 +    defines = depset(transitive = [c.defines for c in impl_contexts] + [target_cc.defines, target_cc.local_defines])
 +    private_files = getattr(ctx.rule.files, "srcs", [])
 +    inputs = depset(
-+        direct = files + [header_manifest] + getattr(ctx.rule.files, "additional_compiler_inputs", []),
++        direct = (files + [header_manifest] +
++                  getattr(ctx.rule.files, "additional_compiler_inputs", []) +
++                  getattr(ctx.rule.files, "private_textual_srcs", [])),
 +        transitive = [target_cc.headers, cc_toolchain.all_files] + [c.headers for c in impl_contexts],
 +    )
 +    name = target.label.name if capture == None else "consumer_collect." + target.label.name
@@ -402,7 +405,7 @@ index 13af75e..0423f31 100644
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +772,59 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
+@@ -440,7 +776,59 @@
  
          preprocessor_results.append(pp_output)
  
@@ -463,7 +466,7 @@ index 13af75e..0423f31 100644
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +894,17 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -510,8 +898,17 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -483,7 +486,7 @@ index 13af75e..0423f31 100644
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +922,39 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -529,26 +926,39 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -497,9 +500,10 @@ index 13af75e..0423f31 100644
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "pub",
-+        header_manifest = header_manifest,
-     )
+-    )
 -    preprocessed_private_files = _extract_includes_from_files(
++        header_manifest = header_manifest,
++    )
 +    public_from_srcs, private_from_srcs = _extract_includes_from_files(
          ctx = ctx,
          config = config,
@@ -509,8 +513,9 @@ index 13af75e..0423f31 100644
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "priv",
+-    )
 +        header_manifest = header_manifest,
-     )
++    )
 +    preprocessed_public_files = public_from_headers + public_from_srcs
 +    assembly_outputs = [file for file in private_from_srcs if file.extension == "o"]
 +    preprocessed_private_files = private_from_headers + [file for file in private_from_srcs if file.extension != "o"]
@@ -525,7 +530,7 @@ index 13af75e..0423f31 100644
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +966,20 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,17 +970,20 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -549,7 +554,7 @@ index 13af75e..0423f31 100644
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +993,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -584,3 +997,186 @@
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]

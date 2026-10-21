@@ -11,10 +11,7 @@ ch_cc_library(
         "//bazel:gen/embedded/programs/server/config.xml",
         "//bazel:gen/embedded/programs/server/users.xml",
         "//bazel:gen/embedded/programs/server/users.yaml.example",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    ],
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",

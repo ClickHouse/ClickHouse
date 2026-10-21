@@ -1,7 +1,7 @@
 diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_library.bzl
 --- a/cc/private/rules_impl/cc_library.bzl
 +++ b/cc/private/rules_impl/cc_library.bzl
-@@ -283,6 +283,18 @@
+@@ -283,6 +283,30 @@
  </p>
          """,
          ),
@@ -15,6 +15,18 @@ diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_lib
 +files, such as <code>.c</code> or template files, whose suffix would otherwise
 +be compiled or ignored. Files must not also occur in <code>srcs</code>,
 +<code>hdrs</code>, or <code>textual_hdrs</code>.
++""",
++        ),
++        "private_textual_srcs": attr.label_list(
++            allow_files = True,
++            flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
++            doc = """
++Source C/C++ files included by this library and not compiled separately.
++Files must belong to this library's Bazel package and have a C or C++ source
++extension. Files must not also be in <code>srcs</code>, <code>hdrs</code>,
++<code>textual_hdrs</code>, <code>private_hdrs</code> or
++<code>additional_compiler_inputs</code>. These are compile action inputs;
++dependent libraries do not receive them through <code>CcInfo</code>.
 +""",
 +        ),
          "textual_hdrs": attr.label_list(
@@ -74,3 +86,52 @@ diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/c
              virtual_to_original_headers = depset(virtual_to_original_headers),
              dependent_cc_compilation_contexts = dependent_cc_compilation_contexts + implementation_deps,
              non_code_inputs = additional_inputs,
+diff --git a/cc/private/rules_impl/cc_library_impl.bzl b/cc/private/rules_impl/cc_library_impl.bzl
+--- a/cc/private/rules_impl/cc_library_impl.bzl
++++ b/cc/private/rules_impl/cc_library_impl.bzl
+@@ -22,6 +22,28 @@
+ load("//cc/common:semantics.bzl", "semantics")
+ load(":function_providing_rule.bzl", "wrap_starlark_function")
+ 
++
++def _check_private_textual_srcs(ctx):
++    if not ctx.files.private_textual_srcs:
++        return
++    other_files = {}
++    for name in ["srcs", "hdrs", "textual_hdrs", "private_hdrs", "additional_compiler_inputs"]:
++        for artifact in getattr(ctx.files, name):
++            other_files[artifact] = name
++    allowed = cc_helper.extensions.C_SOURCE + cc_helper.extensions.CC_SOURCE
++    seen = {}
++    for artifact in ctx.files.private_textual_srcs:
++        if artifact.is_directory or not artifact.is_source or "." + artifact.extension not in allowed:
++            fail("Artifact '{}' must be a source C/C++ file, not a header, data file or directory".format(artifact), attr = "private_textual_srcs")
++        owner = artifact.owner
++        if owner == None or owner.workspace_name != ctx.label.workspace_name or owner.package != ctx.label.package:
++            fail("Artifact '{}' must belong to the same Bazel package as '{}'".format(artifact, ctx.label), attr = "private_textual_srcs")
++        if artifact in other_files:
++            fail("Artifact '{}' is also declared in '{}'".format(artifact, other_files[artifact]), attr = "private_textual_srcs")
++        if artifact in seen:
++            fail("Artifact '{}' is declared twice".format(artifact), attr = "private_textual_srcs")
++        seen[artifact] = True
++
+ def _cc_library_impl(ctx):
+     semantics.validate(ctx, "cc_library")
+     cc_helper.check_srcs_extensions(ctx, ALLOWED_SRC_FILES, "cc_library", True)
+@@ -45,6 +67,7 @@
+ 
+     semantics.validate_attributes(ctx)
+     _check_no_repeated_srcs(ctx)
++    _check_private_textual_srcs(ctx)
+ 
+     semantics.check_can_use_implementation_deps(ctx)
+     interface_deps = ctx.attr.deps + cc_helper.get_cc_runtimes(ctx, True)
+@@ -79,7 +102,7 @@
+         textual_hdrs = ctx.files.textual_hdrs,
+         include_prefix = ctx.attr.include_prefix,
+         strip_include_prefix = ctx.attr.strip_include_prefix,
+-        additional_inputs = ctx.files.additional_compiler_inputs,
++        additional_inputs = ctx.files.additional_compiler_inputs + ctx.files.private_textual_srcs,
+     )
+ 
+     precompiled_objects = cc_common.create_compilation_outputs(

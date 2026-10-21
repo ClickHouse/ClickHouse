@@ -212,6 +212,10 @@ ch_cc_library(
     ),
     clickhouse_code = True,
     implementation_deps = [
+        "//base:pcg_random",
+        "//src/AggregateFunctions:headers",
+        "//src/Common/ZooKeeper:headers",
+        "//src/Functions:headers",
         "//rust/workspace:prql_headers",
         "//rust/workspace:polyglot_headers",
         "//base/poco/JSON:_poco_json",
