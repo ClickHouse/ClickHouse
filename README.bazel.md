@@ -135,6 +135,25 @@ ELFs stayed equal. Twelve of these 15 CPP reports pass. Address sorting,
 gRPC++, and the ClickHouse gRPC proto report retain unverified link inputs.
 The check does not cover the whole repository or score source-free wrappers.
 
+The linker check also inventories the actual configured libraries. It credits an
+ordinary strong definition only when its provider and direct dependency are
+unique. Imported static archives can rule out a competing definition but do
+not earn object ownership credit. Known `alwayslink` objects participate in
+that comparison; dependencies required only for `alwayslink` remain held.
+Unknown linker inputs, malformed symbol output and unreadable files remain
+unverified. `link_input_reasons` records the actual file, owner and configured
+dependency for those decisions.
+
+The `1c8eb247a` development-checker verification covered native linker and CPP
+controls and `//src:dbms__compile_0` on both CPUs. The DBMS report retains six
+existing public-header misses and now holds 33 link dependencies instead of
+29: libfiu, LLVM Support, lber and simdjson have ambiguous providers. All
+other real header findings remain unchanged. One old LLVM Support privacy
+recommendation disappears because it depended on the now-unproved symbol
+credit. The configured Arrow helper removed above is absent from both reports.
+This development-only change does not alter the production BUILD files or
+the binary hashes recorded for `e7d519725`. DWYU is not fully clean.
+
 ### Audit the configured C++ owners
 
 On a Linux host configured for BuildBuddy, run from the workspace root:

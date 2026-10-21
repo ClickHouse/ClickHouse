@@ -1,68 +1,129 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(name = "api", hdrs = ["api.h"])
-cc_library(name = "provider", srcs = ["provider.cpp"])
-cc_library(name = "unrelated_with_header", srcs = ["unused.cpp"], hdrs = ["unrelated.h"])
-cc_library(name = "unrelated_without_header", srcs = ["unused.cpp"])
-cc_library(name = "bridge", deps = [":provider"])
-cc_library(name = "api_bridge", deps = [":api"])
-cc_library(name = "weak_provider", srcs = ["weak_provider.cpp"])
-cc_library(name = "other_weak_provider", srcs = ["weak_provider.cpp"])
+cc_library(
+    name = "api",
+    hdrs = ["api.h"],
+)
+
+cc_library(
+    name = "provider",
+    srcs = ["provider.cpp"],
+)
+
+cc_library(
+    name = "unrelated_with_header",
+    srcs = ["unused.cpp"],
+    hdrs = ["unrelated.h"],
+)
+
+cc_library(
+    name = "unrelated_without_header",
+    srcs = ["unused.cpp"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":provider"],
+)
+
+cc_library(
+    name = "api_bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "weak_provider",
+    srcs = ["weak_provider.cpp"],
+)
+
+cc_library(
+    name = "other_weak_provider",
+    srcs = ["weak_provider.cpp"],
+)
+
 cc_library(
     name = "private",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api", ":provider"],
+    implementation_deps = [
+        ":api",
+        ":provider",
+    ],
 )
+
 cc_library(
     name = "negative_public",
     srcs = ["consumer.cpp"],
     implementation_deps = [":api"],
-    deps = [":provider"],
     tags = ["manual"],
+    deps = [":provider"],
 )
+
 cc_library(
     name = "negative_headerless",
     srcs = ["idle.cpp"],
     implementation_deps = [":unrelated_without_header"],
     tags = ["manual"],
 )
+
 cc_library(
     name = "negative_unused_hdrs",
     srcs = ["idle.cpp"],
     implementation_deps = [":unrelated_with_header"],
     tags = ["manual"],
 )
+
 cc_library(
     name = "negative_self_defined",
-    srcs = ["consumer.cpp", "provider.cpp"],
-    implementation_deps = [":api", ":provider"],
+    srcs = [
+        "consumer.cpp",
+        "provider.cpp",
+    ],
+    implementation_deps = [
+        ":api",
+        ":provider",
+    ],
     tags = ["manual"],
 )
+
 cc_library(
     name = "negative_bridge",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api", ":bridge"],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+    ],
     tags = ["manual"],
 )
+
 cc_library(
     name = "negative_missing_header",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api_bridge", ":provider"],
+    implementation_deps = [
+        ":api_bridge",
+        ":provider",
+    ],
     tags = ["manual"],
 )
+
 cc_library(
     name = "negative_weak_undefined",
     srcs = ["weak.cpp"],
     implementation_deps = [":provider"],
     tags = ["manual"],
 )
+
 cc_library(
     name = "negative_weak_duplicate",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api", ":weak_provider", ":other_weak_provider"],
+    implementation_deps = [
+        ":api",
+        ":other_weak_provider",
+        ":weak_provider",
+    ],
     tags = ["manual"],
 )
 
@@ -72,36 +133,485 @@ cc_library(
     srcs = ["idle.cpp"],
     deps = [":provider"],
 )
+
 cc_library(
     name = "negative_partial_bridge",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api", ":partial_bridge", ":unrelated_without_header"],
+    implementation_deps = [
+        ":api",
+        ":partial_bridge",
+        ":unrelated_without_header",
+    ],
     tags = ["manual"],
 )
+
 cc_library(
     name = "direct_with_forwarded",
     srcs = ["provider.cpp"],
     deps = [":unrelated_without_header"],
 )
+
 cc_library(
     name = "private_direct_with_forwarded",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api", ":direct_with_forwarded"],
+    implementation_deps = [
+        ":api",
+        ":direct_with_forwarded",
+    ],
 )
+
 cc_library(
     name = "missing_partial_bridge",
     srcs = ["consumer.cpp"],
-    implementation_deps = [":api", ":unrelated_without_header"],
+    implementation_deps = [
+        ":api",
+        ":unrelated_without_header",
+    ],
     tags = ["manual"],
 )
+
 cc_binary(
     name = "partial_bridge_binary",
     srcs = ["link_main.cpp"],
     deps = [":negative_partial_bridge"],
 )
+
 cc_binary(
     name = "missing_partial_bridge_binary",
     srcs = ["link_main.cpp"],
-    deps = [":missing_partial_bridge"],
     tags = ["manual"],
+    deps = [":missing_partial_bridge"],
+)
+
+cc_library(
+    name = "second_bridge",
+    deps = [":provider"],
+)
+
+cc_library(
+    name = "negative_diamond",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+        ":second_bridge",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_direct_bridge",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "duplicate_provider",
+    srcs = [
+        "duplicate_provider.cpp",
+        "provider.cpp",
+    ],
+)
+
+cc_library(
+    name = "duplicate_bridge",
+    deps = [":duplicate_provider"],
+)
+
+cc_library(
+    name = "negative_same_owner_duplicate",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":duplicate_bridge",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "weak_bridge",
+    deps = [":weak_provider"],
+)
+
+cc_library(
+    name = "negative_forwarded_weak",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":weak_bridge",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_forwarded_self",
+    srcs = [
+        "consumer.cpp",
+        "provider.cpp",
+    ],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "link_flags",
+    linkopts = ["-Wl,--defsym=dwyu_link_function=0"],
+)
+
+cc_library(
+    name = "negative_opaque_flags",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+        ":link_flags",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "always_provider",
+    srcs = ["provider.cpp"],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "always_bridge",
+    deps = [":always_provider"],
+)
+
+cc_library(
+    name = "negative_alwayslink",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":always_bridge",
+        ":api",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_unreferenced_forward",
+    srcs = ["idle.cpp"],
+    implementation_deps = [":bridge"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_forwarded_missing_header",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api_bridge",
+        ":bridge",
+    ],
+    tags = ["manual"],
+)
+
+# Compiles ordinarily. DWYU must fail because a declared private header
+# has not been entered by any source, even though the link witness is valid.
+cc_library(
+    name = "negative_forwarded_bad_cpp",
+    srcs = [
+        "consumer.cpp",
+        "not_entered.h",
+    ],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "selected_provider",
+    srcs = select({
+        "@platforms//cpu:x86_64": ["provider.cpp"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "selected_bridge",
+    deps = [":selected_provider"],
+)
+
+cc_library(
+    name = "negative_empty_selected",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":selected_bridge",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "hdrs_only",
+    hdrs = ["unrelated.h"],
+)
+
+cc_library(
+    name = "negative_hdrs_only_opaque",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+        ":hdrs_only",
+        ":link_flags",
+        ":unrelated_with_header",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_hdrs_only_alwayslink",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":always_bridge",
+        ":api",
+        ":hdrs_only",
+        ":unrelated_with_header",
+    ],
+    tags = ["manual"],
+)
+
+alias(
+    name = "provider_alias",
+    actual = ":provider",
+)
+
+cc_library(
+    name = "negative_alias_direct",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":provider",
+        ":provider_alias",
+        ":unrelated_without_header",
+    ],
+    tags = ["manual"],
+)
+
+# cc_import retains the configured archive without claiming its object Files.
+filegroup(
+    name = "provider_archive",
+    srcs = [":provider"],
+    output_group = "archive",
+)
+
+filegroup(
+    name = "unrelated_archive",
+    srcs = [":unrelated_without_header"],
+    output_group = "archive",
+)
+
+cc_import(
+    name = "imported_provider",
+    static_library = ":provider_archive",
+)
+
+cc_import(
+    name = "imported_unrelated",
+    static_library = ":unrelated_archive",
+)
+
+cc_library(
+    name = "negative_static_collision",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":imported_provider",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_static_disjoint",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":imported_unrelated",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_static_forwarded",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":bridge",
+        ":imported_unrelated",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "always_idle",
+    srcs = ["idle.cpp"],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "provider_with_always_idle",
+    srcs = ["provider.cpp"],
+    deps = [":always_idle"],
+)
+
+# The ordinary object owns the symbol. Its route also forwards alwayslink.
+cc_library(
+    name = "private_with_forwarded_alwayslink",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":provider_with_always_idle",
+    ],
+)
+
+cc_library(
+    name = "negative_alwayslink_disjoint",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":always_idle",
+        ":api",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+genrule(
+    name = "empty_thin_archive",
+    outs = ["dwyu_empty_thin.a"],
+    cmd = "$(location @llvm//tools:llvm-ar) rcsT $@",
+    tools = ["@llvm//tools:llvm-ar"],
+)
+
+cc_import(
+    name = "imported_thin",
+    static_library = ":empty_thin_archive",
+)
+
+cc_library(
+    name = "negative_thin_archive",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":imported_thin",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+genrule(
+    name = "unsupported_archive",
+    outs = ["dwyu_unsupported.a"],
+    cmd = "printf 'this is not an ar archive\\n' > $@",
+)
+
+cc_import(
+    name = "imported_unsupported",
+    static_library = ":unsupported_archive",
+)
+
+cc_library(
+    name = "negative_unsupported_archive",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":imported_unsupported",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+# GNU indirect functions have a named llvm-nm kind outside the proof's strong
+# definition set. An indirect function vetoes only that symbol's proof.
+cc_library(
+    name = "ifunc_provider",
+    srcs = ["ifunc.cpp"],
+    local_defines = ["DWYU_IFUNC_NAME=dwyu_link_function"],
+)
+
+cc_library(
+    name = "ifunc_unrelated",
+    srcs = ["ifunc.cpp"],
+    local_defines = ["DWYU_IFUNC_NAME=dwyu_unrelated_function"],
+)
+
+cc_library(
+    name = "negative_ifunc_collision",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":ifunc_provider",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_ifunc_disjoint",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":ifunc_unrelated",
+        ":provider",
+    ],
+    tags = ["manual"],
+)
+
+# LLVM's POSIX nm format does not escape whitespace in an ELF symbol name.
+# The symbol is not dwyu_link_function and must never prove its use.
+cc_library(
+    name = "spaced_symbol",
+    srcs = ["spaced_symbol.cpp"],
+)
+
+filegroup(
+    name = "spaced_symbol_archive",
+    srcs = [":spaced_symbol"],
+    output_group = "archive",
+)
+
+cc_import(
+    name = "imported_spaced_symbol",
+    static_library = ":spaced_symbol_archive",
+)
+
+cc_library(
+    name = "negative_spaced_symbol",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":spaced_symbol",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_spaced_archive",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api",
+        ":imported_spaced_symbol",
+        ":unrelated_with_header",
+    ],
+    tags = ["manual"],
+)
+
+cc_binary(
+    name = "missing_spaced_symbol_binary",
+    srcs = ["link_main.cpp"],
+    tags = ["manual"],
+    deps = [":negative_spaced_symbol"],
 )

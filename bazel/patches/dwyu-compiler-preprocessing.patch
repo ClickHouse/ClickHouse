@@ -1,4 +1,5 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
+index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..eaae42c18700fe464c51a9ef0cf55b9dc75a31a9 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -10,7 +11,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
  load("//dwyu/cc/cc_info_mapping:providers.bzl", "DwyuCcInfoMappingInfo")
  load("//dwyu/private:utils.bzl", "make_param_file_args", "string_to_bool")
-@@ -28,7 +29,7 @@
+@@ -28,7 +29,7 @@ _CPLUSPLUS_VERSIONS_MAP = {
      "98": "199711",
  }
  
@@ -19,7 +20,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def _is_verbose(ctx):
      return ctx.attr.dwyu_verbose
-@@ -158,6 +159,11 @@
+@@ -158,6 +159,11 @@ def _get_includes(ctx, target_cc):
              if impl_dep_cc.system_includes:
                  system_includes.append(impl_dep_cc.system_includes)
  
@@ -31,7 +32,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -171,6 +177,13 @@
+@@ -171,6 +177,13 @@ def _process_target(ctx, target, config, output_path, is_target_under_inspection
      args.add("--target", str(target.label))
      args.add("--output", processing_output)
      args.add_all("--header_files", header_files, expand_directories = True, omit_if_empty = False)
@@ -45,7 +46,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      if is_target_under_inspection:
          args.add("--is_target_under_inspection")
      if _is_verbose(ctx):
-@@ -363,7 +376,11 @@
+@@ -363,7 +376,11 @@ def _dywu_results_from_deps(deps):
      """
      We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
      """
@@ -58,7 +59,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def _gather_transitive_reports(ctx):
      """
-@@ -373,9 +390,29 @@
+@@ -373,9 +390,29 @@ def _gather_transitive_reports(ctx):
      """
      reports = []
      if ctx.attr._recursive:
@@ -91,7 +92,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +423,311 @@
+@@ -386,12 +423,311 @@ def _return_on_skip(ctx):
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -405,69 +406,116 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +776,60 @@
+@@ -440,7 +776,107 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
  
          preprocessor_results.append(pp_output)
  
 -    return preprocessor_results
 +    return (preprocessor_results, []) if attr_prefix == "pub" else ([], preprocessor_results)
 +
-+def _owned_symbol_inputs(ctx, dep, files, tools, index, is_owner = False):
-+    objects = []
-+    unsupported = []
-+    forwarded = False
++def _link_library_path(file):
++    return file.path if file else ""
++
++def _symbol_route(dep, inventory, interned, objects, archives):
++    route = []
 +    for linker_input in dep.cc_info.linking_context.linker_inputs.to_list():
-+        if linker_input.owner != dep.label:
-+            if (_as_list(linker_input.libraries) or _as_list(linker_input.user_link_flags) or
-+                _as_list(linker_input.additional_inputs) or _as_list(getattr(linker_input, "linkstamps", []))):
-+                forwarded = True
-+            continue
-+        if _as_list(linker_input.user_link_flags) or _as_list(linker_input.additional_inputs) or _as_list(getattr(linker_input, "linkstamps", [])):
-+            unsupported.append("link flags, additional inputs or linkstamps")
++        libraries = []
 +        for lib in _as_list(linker_input.libraries):
-+            own = lib.pic_objects or lib.objects
-+            if lib.alwayslink:
-+                unsupported.append("alwayslink")
-+            if own:
-+                objects.extend(own)
-+            elif lib.pic_static_library or lib.static_library or lib.dynamic_library or lib.interface_library:
-+                unsupported.append("library without owned objects")
-+    # Forwarded symbols are never owned by this direct dependency. A caller's
-+    # own objects remain inspectable even when the caller has normal deps.
-+    if forwarded and (not objects or not is_owner):
-+        unsupported.append("forwarded libraries")
-+    output = None
-+    if objects:
-+        output = ctx.actions.declare_file("{}.dwyu_nm_{}.txt".format(ctx.label.name, index))
-+        argv = ctx.actions.args()
-+        argv.add(output)
-+        argv.add_all(objects)
-+        ctx.actions.run_shell(
-+            inputs = depset(objects),
-+            tools = tools,
-+            outputs = [output],
-+            arguments = [ctx.executable._tool_nm.path, argv],
-+            command = 'nm="$1"; output="$2"; shift 2; "$nm" --format=posix --print-file-name --extern-only --no-demangle "$@" > "$output"',
-+            mnemonic = "DwyuOwnedSymbols",
-+            progress_message = "Read direct owned symbols of {}".format(dep.label),
++            selected = lib.pic_objects or lib.objects or []
++            readable = [f for f in selected if not f.is_directory]
++            for file in readable:
++                objects[file.path] = file
++            archive = lib.pic_static_library or lib.static_library
++            if not selected and archive:
++                archives[archive.path] = archive
++            libraries.append(dict(
++                objects = [f.path for f in readable],
++                unchecked_objects = [f.path for f in selected if f.is_directory],
++                static = _link_library_path(lib.static_library),
++                pic_static = _link_library_path(lib.pic_static_library),
++                dynamic = _link_library_path(lib.dynamic_library),
++                interface = _link_library_path(lib.interface_library),
++                alwayslink = lib.alwayslink,
++            ))
++        record = dict(
++            owner = str(linker_input.owner),
++            libraries = libraries,
++            flags = _as_list(linker_input.user_link_flags),
++            inputs = [f.path for f in _as_list(linker_input.additional_inputs)],
++            linkstamps = [str(s) for s in _as_list(getattr(linker_input, "linkstamps", []))],
 +        )
-+        files.append(output)
-+    return dict(target = str(dep.label), symbols = output.path if output else "", unsupported = unsupported)
++        # File.path includes the Bazel configuration. The ordered library
++        # metadata distinguishes flags and stamp inputs with the same owner.
++        key = json.encode(record)
++        if key not in interned:
++            interned[key] = len(inventory)
++            inventory.append(record)
++        route.append(interned[key])
++    return dict(target = str(dep.label), records = route)
 +
 +def _owned_symbols(ctx, target, deps, implementation_deps):
-+    files = []
++    inventory = []
++    interned = {}
++    objects = {}
++    archives = {}
 +    tool = ctx.attr._tool_nm[DefaultInfo].files_to_run
++    owner = _symbol_route(struct(label = target.label, cc_info = target[CcInfo]), inventory, interned, objects, archives)
++    public = [_symbol_route(dep, inventory, interned, objects, archives) for dep in deps]
++    private = [_symbol_route(dep, inventory, interned, objects, archives) for dep in implementation_deps]
++    nm = ctx.actions.declare_file("{}.dwyu_nm.txt".format(ctx.label.name))
++    if objects:
++        argv = ctx.actions.args()
++        argv.add_all(objects.values())
++        argv.use_param_file("@%s", use_always = True)
++        argv.set_param_file_format("multiline")
++        ctx.actions.run_shell(
++            inputs = depset(objects.values()),
++            tools = [tool],
++            outputs = [nm],
++            arguments = [ctx.executable._tool_nm.path, nm.path, argv],
++            command = '"$1" --format=posix --print-file-name --extern-only --no-demangle "$3" > "$2"',
++            mnemonic = "DwyuOwnedSymbols",
++            progress_message = "Read configured object symbols of {}".format(target.label),
++        )
++    else:
++        ctx.actions.write(nm, "")
++    archive_outputs = []
++    archive_manifest = {}
++    for index, file in enumerate(archives.values()):
++        output = ctx.actions.declare_file("{}.dwyu_archive_{}.nm.txt".format(ctx.label.name, index))
++        status = ctx.actions.declare_file("{}.dwyu_archive_{}.status".format(ctx.label.name, index))
++        ctx.actions.run_shell(
++            inputs = [file],
++            tools = [tool],
++            outputs = [output, status],
++            arguments = [ctx.executable._tool_nm.path, file.path, output.path, status.path],
++            command = """
++if "$1" --format=posix --print-file-name --extern-only --no-demangle "$2" > "$3"; then
++    printf '0\\n' > "$4"
++else
++    printf '%s\\n' "$?" > "$4"
++fi
++""",
++            mnemonic = "DwyuArchiveSymbols",
++            progress_message = "Read configured archive symbols of {}".format(target.label),
++        )
++        archive_manifest[file.path] = dict(symbols = output.path, status = status.path)
++        archive_outputs.extend([output, status, file])
 +    symbols = ctx.actions.declare_file("{}.dwyu_owned_symbols.json".format(target.label.name))
 +    ctx.actions.write(symbols, json.encode(dict(
-+        owner = _owned_symbol_inputs(ctx, struct(label = target.label, cc_info = target[CcInfo]), files, [tool], "owner", is_owner = True),
-+        deps = [_owned_symbol_inputs(ctx, dep, files, [tool], "dep_" + str(i)) for i, dep in enumerate(deps)],
-+        implementation_deps = [_owned_symbol_inputs(ctx, dep, files, [tool], "impl_" + str(i)) for i, dep in enumerate(implementation_deps)],
++        owner = owner,
++        deps = public,
++        implementation_deps = private,
++        inventory = inventory,
++        objects = objects.keys(),
++        symbols = nm.path,
++        archives = archive_manifest,
 +    )))
-+    return [symbols] + files
++    return [symbols, nm] + archive_outputs
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +898,17 @@
+@@ -510,8 +946,17 @@ def dwyu_cc_aspect_impl(target, ctx):
      #
  
      config = _make_dwyu_config(ctx)
@@ -487,7 +535,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +926,39 @@
+@@ -529,26 +974,39 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -501,10 +549,9 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "pub",
--    )
--    preprocessed_private_files = _extract_includes_from_files(
 +        header_manifest = header_manifest,
-+    )
+     )
+-    preprocessed_private_files = _extract_includes_from_files(
 +    public_from_srcs, private_from_srcs = _extract_includes_from_files(
          ctx = ctx,
          config = config,
@@ -514,9 +561,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "priv",
--    )
 +        header_manifest = header_manifest,
-+    )
+     )
 +    preprocessed_public_files = public_from_headers + public_from_srcs
 +    assembly_outputs = [file for file in private_from_srcs if file.extension == "o"]
 +    preprocessed_private_files = private_from_headers + [file for file in private_from_srcs if file.extension != "o"]
@@ -531,7 +577,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +970,20 @@
+@@ -560,17 +1018,20 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -555,7 +601,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +997,186 @@
+@@ -584,3 +1045,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -743,7 +789,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    )
 +    return [DefaultInfo(files = depset([report])), OutputGroupInfo(dwyu_consumer = depset([report]))]
 diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
-index bd8a745..c085215 100644
+index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9959cd1b0 100644
 --- a/dwyu/cc/aspect/factory.bzl
 +++ b/dwyu/cc/aspect/factory.bzl
 @@ -2,7 +2,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
@@ -907,7 +953,7 @@ index bd8a745..c085215 100644
 +    },
 +)
 diff --git a/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp b/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
-index 0453d1b..c213e73 100644
+index 0453d1bf2b60f71343bce8fea6c0e6aa50313706..c213e733ad8b380c374b2c737312b8ad3a0d3539 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
 @@ -4,6 +4,9 @@
@@ -1042,7 +1088,7 @@ index 0453d1b..c213e73 100644
          result.setDepsWhichShouldBePrivate(std::move(deps_which_should_be_private));
      }
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
-index f27d618..0a23cf6 100644
+index f27d618d4fba7a8926f161c77c2e11d7ec759cae..0a23cf6102af83ad1073adafb40e4a6eb1ebcfd6 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 @@ -12,7 +12,8 @@
@@ -1112,7 +1158,7 @@ index f27d618..0a23cf6 100644
 +
  } // namespace dwyu
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.h b/dwyu/cc/aspect/private/analyze_includes/include_statement.h
-index b0697ed..8e619c9 100644
+index b0697ed43d4bf1e536194bb8f32bdb3e38d8fa4e..8e619c9c3517f81ccf5d1ebe8a7cd593765856b9 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/include_statement.h
 @@ -4,6 +4,8 @@
@@ -1145,7 +1191,7 @@ index b0697ed..8e619c9 100644
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-index d062c5b..4e7f045 100644
+index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f205baab56 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
 @@ -6,11 +6,16 @@
@@ -1185,7 +1231,7 @@ index d062c5b..4e7f045 100644
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,101 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+@@ -71,6 +82,305 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
      return options;
  }
  
@@ -1194,14 +1240,38 @@ index d062c5b..4e7f045 100644
 +    std::set<std::string> strong_undefined;
 +    std::set<std::string> weak_definitions;
 +    std::set<std::string> weak_undefined;
-+    std::vector<std::string> unsupported;
++    std::set<std::string> unsupported;
++    bool malformed = false;
 +};
 +
-+OwnedSymbols readOwnedSymbols(const nlohmann::json& input) {
-+    OwnedSymbols result;
-+    result.unsupported = input.at("unsupported").get<std::vector<std::string>>();
++using SymbolOwner = std::pair<std::string, std::string>;
++
++bool readSymbolRecord(const std::string& line, OwnedSymbols& symbols) {
++    std::istringstream record{line};
++    std::string symbol, type, address, size, extra;
++    if (!(record >> symbol >> type >> address >> size) || type.size() != 1 || (record >> extra)) return false;
++    const auto hex = [](const std::string& value) {
++        return !value.empty() && value.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
++    };
++    // LLVM IR does not give llvm-nm object addresses. LLVM prints 8 or 16
++    // dashes instead. Never split an unescaped ELF name at embedded whitespace.
++    const bool ir = (address.size() == 8 || address.size() == 16) && address.find_first_not_of('-') == std::string::npos;
++    if ((!hex(address) && !ir) || !hex(size)) return false;
++    if (type == "U") symbols.strong_undefined.insert(symbol);
++    else if (type == "w" || type == "v") symbols.weak_undefined.insert(symbol);
++    else if (type == "W" || type == "V" || type == "u" || type == "C")
++        symbols.weak_definitions.insert(symbol);
++    else if (std::string("ABDGRST").find(type[0]) != std::string::npos)
++        symbols.strong_definitions.insert(symbol);
++    else symbols.unsupported.insert(symbol);
++    return true;
++}
++
++std::map<std::string, OwnedSymbols> readObjectSymbols(const nlohmann::json& input) {
++    std::map<std::string, OwnedSymbols> result;
++    for (const auto& path : input.at("objects").get<std::vector<std::string>>())
++        if (!result.emplace(path, OwnedSymbols{}).second) abortWithError("Duplicate DWYU nm input: ", path);
 +    const auto file = input.at("symbols").get<std::string>();
-+    if (file.empty()) return result;
 +    std::ifstream stream{file};
 +    if (!stream) abortWithError("Cannot read DWYU owned object symbols ", file);
 +    std::string line;
@@ -1209,72 +1279,252 @@ index d062c5b..4e7f045 100644
 +        // llvm-nm -A -P: "<object>: <mangled-symbol> <type> [value] [size]".
 +        const auto delimiter = line.find(": ");
 +        if (delimiter == std::string::npos) abortWithError("Invalid llvm-nm object record: ", line);
-+        std::istringstream record{line.substr(delimiter + 2)};
-+        std::string symbol, type;
-+        if (!(record >> symbol >> type) || type.size() != 1) abortWithError("Invalid llvm-nm symbol: ", line);
-+        if (type == "U") result.strong_undefined.insert(symbol);
-+        else if (type == "w" || type == "v") result.weak_undefined.insert(symbol);
-+        else if (type == "W" || type == "V" || type == "u") result.weak_definitions.insert(symbol);
-+        else if (std::string("ABCDGRST").find(type[0]) != std::string::npos)
-+            result.strong_definitions.insert(symbol);
-+        else result.unsupported.push_back("unsupported llvm-nm type " + type + " " + symbol);
++        const auto path = line.substr(0, delimiter);
++        auto object = result.find(path);
++        if (object == result.end()) abortWithError("llvm-nm reported an unconfigured object: ", path);
++        if (!readSymbolRecord(line.substr(delimiter + 2), object->second)) object->second.malformed = true;
 +    }
 +    if (!stream.eof()) abortWithError("Could not finish reading DWYU owned symbols ", file);
++    return result;
++}
++
++struct ArchiveSymbols {
++    std::set<std::string> veto;
++    std::string reason;
++};
++
++ArchiveSymbols readArchiveSymbols(const std::string& path, const nlohmann::json& metadata) {
++    // These names prevent unique-symbol proofs. They never prove ownership
++    // of an archive, its members, or a dependency forwarding an archive.
++    ArchiveSymbols result;
++    std::ifstream archive{path, std::ios::binary};
++    char magic[8] = {};
++    if (!archive.read(magic, sizeof(magic))) {
++        result.reason = "unreadable_archive";
++        return result;
++    }
++    const std::string signature(magic, sizeof(magic));
++    if (signature == "!<thin>\n") {
++        result.reason = "thin_archive";
++        return result;
++    }
++    if (signature != "!<arch>\n") {
++        result.reason = "unsupported_archive";
++        return result;
++    }
++    std::ifstream status{metadata.at("status").get<std::string>()};
++    std::string exit_status;
++    if (!std::getline(status, exit_status) || exit_status != "0" || status.peek() != std::char_traits<char>::eof()) {
++        result.reason = "unreadable_archive";
++        return result;
++    }
++    const auto file = metadata.at("symbols").get<std::string>();
++    std::ifstream stream{file};
++    if (!stream) abortWithError("Cannot read DWYU archive symbols ", file);
++    OwnedSymbols symbols;
++    std::string line;
++    while (std::getline(stream, line)) {
++        // llvm-nm -A -P prints "<archive>[<member>]: <symbol> <type> ...".
++        // Accept the GNU parenthesized spelling as well.
++        const auto delimiter = line.find(": ");
++        const bool member = line.size() > path.size() + 2 && line.compare(0, path.size(), path) == 0 &&
++                            delimiter != std::string::npos && delimiter > path.size() + 1 &&
++                            ((line[path.size()] == '[' && line[delimiter - 1] == ']') ||
++                             (line[path.size()] == '(' && line[delimiter - 1] == ')'));
++        if (!member || !readSymbolRecord(line.substr(delimiter + 2), symbols)) {
++            result.reason = "malformed_archive_nm";
++            return result;
++        }
++    }
++    if (!stream.eof()) abortWithError("Could not finish reading DWYU archive symbols ", file);
++    result.veto.insert(symbols.strong_definitions.begin(), symbols.strong_definitions.end());
++    result.veto.insert(symbols.weak_definitions.begin(), symbols.weak_definitions.end());
++    result.veto.insert(symbols.unsupported.begin(), symbols.unsupported.end());
++    result.reason = "static_archive";
 +    return result;
 +}
 +
 +struct LinkEvidence {
 +    std::vector<std::string> unverified;
 +    nlohmann::json proven = nlohmann::json::object();
++    nlohmann::json forwarded = nlohmann::json::object();
++    nlohmann::json input_reasons = nlohmann::json::array();
 +};
 +
-+// Only a strong unique definition in a direct owner's object can prove a link.
-+// Header ownership is checked independently by evaluateIncludes.
++// Prove a requirement of a configured caller object, not that a final linker
++// must extract the object. Header ownership is independent.
 +LinkEvidence useOwnedSymbols(const std::string& manifest, SystemUnderInspection& system) {
 +    LinkEvidence result;
 +    std::ifstream input{manifest};
 +    if (!input) abortWithError("Cannot read DWYU link manifest ", manifest);
 +    const auto data = nlohmann::json::parse(input);
-+    auto owner = readOwnedSymbols(data.at("owner"));
-+    std::map<std::string, OwnedSymbols> deps;
-+    auto collect = [&](const auto& records, const auto& targets) {
-+        for (const auto& record : records) {
++    const auto symbols_by_file = readObjectSymbols(data);
++    const auto& inventory = data.at("inventory");
++    const auto& owner = data.at("owner");
++    const auto owner_name = owner.at("target").get<std::string>();
++    std::set<std::string> own_files;
++    bool owner_forwards = false;
++    for (const auto index : owner.at("records").get<std::vector<size_t>>()) {
++        const auto& entry = inventory.at(index);
++        if (entry.at("owner").get<std::string>() != owner_name) {
++            if (!entry.at("libraries").empty() || !entry.at("flags").empty() ||
++                !entry.at("inputs").empty() || !entry.at("linkstamps").empty()) owner_forwards = true;
++            continue;
++        }
++        for (const auto& library : entry.at("libraries"))
++            for (const auto& path : library.at("objects").get<std::vector<std::string>>())
++                own_files.insert(path);
++    }
++    std::set<std::string> own_defined;
++    std::set<std::string> own_undefined;
++    std::set<std::string> own_weak_undefined;
++    for (const auto& path : own_files) {
++        const auto& symbols = symbols_by_file.at(path);
++        own_defined.insert(symbols.strong_definitions.begin(), symbols.strong_definitions.end());
++        own_defined.insert(symbols.weak_definitions.begin(), symbols.weak_definitions.end());
++        own_defined.insert(symbols.unsupported.begin(), symbols.unsupported.end());
++        own_undefined.insert(symbols.strong_undefined.begin(), symbols.strong_undefined.end());
++        own_weak_undefined.insert(symbols.weak_undefined.begin(), symbols.weak_undefined.end());
++    }
++    // The same owner and File may be forwarded by several direct deps.
++    // Different Files with the same owner still count as separate definitions.
++    std::map<std::string, std::set<SymbolOwner>> definitions;
++    // deps and implementation_deps are separate ordered configured attributes.
++    // Retain each occurrence even when Bazel resolves an alias to the same label.
++    std::map<SymbolOwner, std::set<size_t>> routes;
++    std::vector<std::string> direct_deps;
++    std::vector<nlohmann::json> entry_routes(inventory.size(), nlohmann::json::array());
++    std::set<SymbolOwner> all_defined;
++    std::set<SymbolOwner> alwayslink_objects;
++    std::set<std::string> forwarded_deps;
++    std::set<std::string> linking_deps;
++    std::set<std::string> retained_deps;
++    std::set<std::string> configured_deps;
++    auto collect = [&](const auto& records, const auto& targets, const std::string& attribute) {
++        for (size_t occurrence = 0; occurrence < records.size(); ++occurrence) {
++            const auto& record = records.at(occurrence);
 +            const auto name = record.at("target").template get<std::string>();
 +            if (std::none_of(targets.begin(), targets.end(), [&](const auto& d){ return d->name == name; }))
 +                abortWithError("DWYU link owner is not a configured direct dependency: ", name);
-+            deps.emplace(name, readOwnedSymbols(record));
++            configured_deps.insert(name);
++            const auto route = direct_deps.size();
++            direct_deps.push_back(name);
++            for (const auto index : record.at("records").template get<std::vector<size_t>>()) {
++                const auto& entry = inventory.at(index);
++                entry_routes.at(index).push_back({{"attribute", attribute}, {"index", occurrence}, {"target", name}});
++                const auto input_owner = entry.at("owner").template get<std::string>();
++                if (!entry.at("libraries").empty() || !entry.at("flags").empty() ||
++                    !entry.at("inputs").empty() || !entry.at("linkstamps").empty()) {
++                    linking_deps.insert(name);
++                    if (input_owner != name) forwarded_deps.insert(name);
++                }
++                for (const auto& library : entry.at("libraries")) {
++                    for (const auto& path : library.at("objects").template get<std::vector<std::string>>()) {
++                        const SymbolOwner real_owner{input_owner, path};
++                        routes[real_owner].insert(route);
++                        if (library.at("alwayslink").template get<bool>()) alwayslink_objects.insert(real_owner);
++                        if (!all_defined.insert(real_owner).second) continue;
++                        const auto& symbols = symbols_by_file.at(path);
++                        for (const auto& symbol : symbols.strong_definitions) definitions[symbol].insert(real_owner);
++                        for (const auto& symbol : symbols.weak_definitions) definitions[symbol].insert(real_owner);
++                        for (const auto& symbol : symbols.unsupported) definitions[symbol].insert(real_owner);
++                    }
++                }
++            }
 +        }
 +    };
-+    collect(data.at("deps"), system.public_deps);
-+    collect(data.at("implementation_deps"), system.private_deps);
-+    std::map<std::string, std::set<std::string>> definitions;
-+    for (const auto& [name, symbols] : deps) {
-+        for (const auto& symbol : symbols.strong_definitions) definitions[symbol].insert(name);
-+        for (const auto& symbol : symbols.weak_definitions) definitions[symbol].insert(name);
++    collect(data.at("deps"), system.public_deps, "deps");
++    collect(data.at("implementation_deps"), system.private_deps, "implementation_deps");
++    std::set<std::string> archive_veto;
++    std::map<std::string, ArchiveSymbols> archives;
++    bool opaque = false;
++    for (size_t index = 0; index < inventory.size(); ++index) {
++        const auto& entry = inventory.at(index);
++        auto reason = [&](const std::string& file, const std::string& type, bool unknown) {
++            result.input_reasons.push_back(
++                {{"owner", entry.at("owner")}, {"file", file}, {"reason", type}, {"routes", entry_routes.at(index)}});
++            if (unknown) opaque = true;
++            for (const auto& route : entry_routes.at(index))
++                retained_deps.insert(route.at("target").get<std::string>());
++        };
++        if (!entry.at("flags").empty()) reason("", "user_link_flags", true);
++        if (!entry.at("linkstamps").empty()) reason("", "linkstamps", true);
++        for (const auto& file : entry.at("inputs").get<std::vector<std::string>>())
++            reason(file, "additional_link_input", true);
++        for (const auto& library : entry.at("libraries")) {
++            const auto files = library.at("objects").get<std::vector<std::string>>();
++            const auto directories = library.at("unchecked_objects").get<std::vector<std::string>>();
++            auto path = library.at("pic_static").get<std::string>();
++            if (path.empty()) path = library.at("static").get<std::string>();
++            if (library.at("alwayslink").get<bool>()) {
++                if (!path.empty()) reason(path, "alwayslink", false);
++                else {
++                    for (const auto& object : files) reason(object, "alwayslink", false);
++                }
++            }
++            for (const auto& path : directories) reason(path, "unchecked_object_directory", true);
++            for (const auto& path : files) {
++                const auto& symbols = symbols_by_file.at(path);
++                if (symbols.malformed) reason(path, "malformed_object_nm", true);
++                if (!symbols.unsupported.empty()) reason(path, "unsupported_nm_kind", false);
++            }
++            if (files.empty() && directories.empty()) {
++                if (!path.empty()) {
++                    auto it = archives.find(path);
++                    if (it == archives.end())
++                        it = archives.emplace(path, readArchiveSymbols(path, data.at("archives").at(path))).first;
++                    const auto& symbols = it->second;
++                    reason(path, symbols.reason, symbols.reason != "static_archive");
++                    archive_veto.insert(symbols.veto.begin(), symbols.veto.end());
++                }
++                else {
++                    const auto dynamic = library.at("dynamic").get<std::string>();
++                    const auto interface = library.at("interface").get<std::string>();
++                    if (!dynamic.empty()) reason(dynamic, "dynamic_or_interface_library", true);
++                    if (!interface.empty()) reason(interface, "dynamic_or_interface_library", true);
++                }
++            }
++        }
 +    }
 +    std::set<std::string> ambiguous;
 +    std::map<std::string, std::vector<std::string>> proven;
++    std::map<std::string, nlohmann::json> forwarded;
 +    for (const auto& [symbol, providers] : definitions) {
-+        if (owner.strong_definitions.count(symbol) || owner.weak_definitions.count(symbol)) continue;
-+        if (!owner.strong_undefined.count(symbol) && !owner.weak_undefined.count(symbol)) continue;
-+        if (owner.weak_undefined.count(symbol) || providers.size() != 1) {
-+            ambiguous.insert(providers.begin(), providers.end());
-+            continue;
-+        }
++        if (own_defined.count(symbol)) continue;
++        if (!own_undefined.count(symbol) && !own_weak_undefined.count(symbol)) continue;
 +        const auto& provider = *providers.begin();
-+        if (!deps.at(provider).strong_definitions.count(symbol)) {
-+            ambiguous.insert(provider);
++        const auto& direct = routes.at(provider);
++        if (opaque || archive_veto.count(symbol) || alwayslink_objects.count(provider) ||
++            own_weak_undefined.count(symbol) || providers.size() != 1 || direct.size() != 1 ||
++            !symbols_by_file.at(provider.second).strong_definitions.count(symbol)) {
++            for (const auto& object : providers) {
++                const auto& carrying_deps = routes.at(object);
++                for (const auto route : carrying_deps) ambiguous.insert(direct_deps.at(route));
++            }
 +            continue;
 +        }
-+        proven[provider].push_back(symbol);
++        const auto& dependency = direct_deps.at(*direct.begin());
++        if (provider.first == dependency) proven[dependency].push_back(symbol);
++        else {
++            auto& evidence = forwarded[dependency];
++            if (evidence.is_null()) evidence = nlohmann::json::array();
++            evidence.push_back({{"actual_owner", provider.first}, {"object", provider.second}, {"symbol", symbol}});
++        }
 +    }
 +    auto apply = [&](auto& targets) {
 +        for (auto& dep : targets) {
-+            const auto& symbols = deps.at(dep->name);
++            if (!configured_deps.count(dep->name)) abortWithError("Missing configured DWYU link dependency ", dep->name);
 +            if (proven.count(dep->name)) {
 +                dep->usage.update(TargetUsage::Status::Private);
 +                result.proven[dep->name] = proven.at(dep->name);
-+            } else if (!owner.unsupported.empty() || !symbols.unsupported.empty() || ambiguous.count(dep->name)) {
++            }
++            if (forwarded.count(dep->name)) {
++                dep->usage.update(TargetUsage::Status::Private);
++                result.forwarded[dep->name] = forwarded.at(dep->name);
++            }
++            if (!proven.count(dep->name) && !forwarded.count(dep->name) &&
++                ((opaque && linking_deps.count(dep->name)) || (own_files.empty() && owner_forwards) ||
++                 forwarded_deps.count(dep->name) || retained_deps.count(dep->name) || ambiguous.count(dep->name))) {
 +                result.unverified.push_back(dep->name);
 +            }
 +        }
@@ -1287,7 +1537,7 @@ index d062c5b..4e7f045 100644
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,11 +197,37 @@ int main_impl(const ProgramOptions& options) {
+@@ -91,21 +401,61 @@ int main_impl(const ProgramOptions& options) {
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
@@ -1329,13 +1579,12 @@ index d062c5b..4e7f045 100644
          evaluateIncludes(public_includes, private_includes, system_under_inspection, options.report_missing_direct_deps,
                           options.report_unused_deps, options.ignored_unused_deps, options.optimize_implementation_deps);
  
-@@ -103,9 +235,20 @@ int main_impl(const ProgramOptions& options) {
++    result.markUnverifiedLinkDeps(raw_link_candidates);
++    result.markUnverifiedLinkDeps(link_evidence.unverified);
+     if (!result.isOk() || options.verbose) {
          std::cout << result.toString(options.output) << "\n";
      }
  
-+    result.markUnverifiedLinkDeps(raw_link_candidates);
-+    result.markUnverifiedLinkDeps(link_evidence.unverified);
-+
      std::ofstream output{options.output};
      if (output.is_open()) {
 -        output << result.toJson(options.optimize_implementation_deps);
@@ -1345,14 +1594,18 @@ index d062c5b..4e7f045 100644
 +            if (!evidence.is_open()) abortWithError("Cannot read DWYU consumer evidence ", options.consumer_evidence);
 +            report["consumer_evidence"] = nlohmann::json::parse(evidence);
 +        }
-+        if (!options.owned_symbols.empty()) report["direct_owned_link_symbols"] = link_evidence.proven;
++        if (!options.owned_symbols.empty()) {
++            report["direct_owned_link_symbols"] = link_evidence.proven;
++            report["forwarded_link_symbols"] = link_evidence.forwarded;
++            report["link_input_reasons"] = link_evidence.input_reasons;
++        }
 +        if (!unchecked_link_inputs.empty()) report["unchecked_link_inputs"] = unchecked_link_inputs;
 +        output << report;
          output.close();
      }
      else {
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-index 5d235c1..bcba6a9 100644
+index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c5718100dd22 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
 @@ -39,7 +39,22 @@ Result::Result(std::string target) : target_{std::move(target)} {}
@@ -1406,7 +1659,7 @@ index 5d235c1..bcba6a9 100644
      // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
      // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/private/analyze_includes/result.h
-index 4129d2d..f66f625 100644
+index 4129d2d6190284c2174857a095afbada91b1a1dc..f66f625d3a3735ba6e8efe72f8b0c033950a1b7c 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.h
 @@ -16,6 +16,8 @@ class Result {
@@ -1428,7 +1681,7 @@ index 4129d2d..f66f625 100644
  };
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
-index 1af6179..0a04727 100644
+index 1af61793498719ae0fd145afce0e447203d6ad0b..0a04727dd14a6f85db902e6113dc90266fdff946 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
 @@ -50,14 +50,17 @@ void TargetUsage::update(const Status usage_update) {
@@ -1464,7 +1717,7 @@ index 1af6179..0a04727 100644
              updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_all_deps_map);
          }
 diff --git a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
-index 70a8ae5..522973b 100644
+index 70a8ae5c846b42be40046734cfc8d30fa932cc6e..522973bb928bd55657dfb13cb5ccaef22e5d0670 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
 @@ -34,6 +34,7 @@ struct CcTargetUnderInspection {
@@ -1495,7 +1748,7 @@ index 70a8ae5..522973b 100644
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/preprocessing/BUILD b/dwyu/cc/aspect/private/preprocessing/BUILD
-index e914b98..96a1fc6 100644
+index e914b98d02f0a211ad9ac2aa927771f060d4b47b..96a1fc6dca64be911045c0773c05182fb45145bd 100644
 --- a/dwyu/cc/aspect/private/preprocessing/BUILD
 +++ b/dwyu/cc/aspect/private/preprocessing/BUILD
 @@ -2,7 +2,11 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
@@ -1511,9 +1764,9 @@ index e914b98..96a1fc6 100644
      visibility = ["//visibility:public"],
      deps = [
          "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
-diff --git a/trial/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
+diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
 new file mode 100644
-index 0000000..78ca8be
+index 0000000000000000000000000000000000000000..78ca8bedd7183a8deec34a631df9a710d04169ba
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler.h
 @@ -0,0 +1,215 @@
@@ -1732,9 +1985,9 @@ index 0000000..78ca8be
 +} // namespace dwyu
 +
 +#endif
-diff --git a/trial/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
+diff --git a/dwyu/cc/aspect/private/preprocessing/compiler_search.h b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 new file mode 100644
-index 0000000..53d73ec
+index 0000000000000000000000000000000000000000..53d73ec52808388c94bd01a1cd632a43026bcf25
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler_search.h
 @@ -0,0 +1,205 @@
@@ -1944,7 +2197,7 @@ index 0000000..53d73ec
 +
 +#endif
 diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/private/preprocessing/main.cpp
-index e1818bd..0c4b58b 100644
+index e1818bdf17328b092f32e877d5f7e23128ebc080..0c4b58bb4ed15d4155dd24dbd58ba71a5a4d7bbe 100644
 --- a/dwyu/cc/aspect/private/preprocessing/main.cpp
 +++ b/dwyu/cc/aspect/private/preprocessing/main.cpp
 @@ -1,3 +1,4 @@
@@ -2015,7 +2268,7 @@ index e1818bd..0c4b58b 100644
      std::ofstream output{options.output};
      if (output.is_open()) {
 diff --git a/dwyu/cc/aspect/private/process_target/main.cpp b/dwyu/cc/aspect/private/process_target/main.cpp
-index 0bd71e6..c67b02e 100644
+index 0bd71e67e1a0494ee529fd83bb96fbb973b95f0c..c67b02e8efc1c14f712640121c68035388635113 100644
 --- a/dwyu/cc/aspect/private/process_target/main.cpp
 +++ b/dwyu/cc/aspect/private/process_target/main.cpp
 @@ -17,6 +17,7 @@ struct ProgramOptions {
@@ -2043,7 +2296,7 @@ index 0bd71e6..c67b02e 100644
      std::ofstream output{options.output};
      if (output.is_open()) {
 diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
-index c7eda70..3bd3eb2 100644
+index c7eda7077cd946545308f89c558b1d2e124e2251..3bd3eb24dd02b22ec6186020ef5013a59f690f05 100644
 --- a/dwyu/cc/defs.bzl
 +++ b/dwyu/cc/defs.bzl
 @@ -2,7 +2,7 @@

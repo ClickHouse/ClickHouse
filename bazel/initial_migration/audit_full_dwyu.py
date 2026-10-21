@@ -54,6 +54,67 @@ def identity(label, checksum):
     return canonical(label) + " (" + checksum + ")"
 
 
+def validate_link_evidence(report):
+    """Require compiler-mode result fields; evidence never counts as a finding."""
+    for field in ("unverified_link_deps", "unchecked_link_inputs"):
+        if field in report and (not isinstance(report[field], list) or any(
+            not isinstance(value, str) or not value for value in report[field]
+        )):
+            raise ValueError("invalid " + field)
+    owned = report.get("direct_owned_link_symbols")
+    forwarded = report.get("forwarded_link_symbols")
+    if not isinstance(owned, dict) or not isinstance(forwarded, dict):
+        raise ValueError("missing or invalid DWYU link evidence")
+    for dep, symbols in owned.items():
+        if (not isinstance(dep, str) or not dep or not isinstance(symbols, list) or not symbols or
+            any(not isinstance(symbol, str) or not symbol for symbol in symbols) or len(set(symbols)) != len(symbols)):
+            raise ValueError("invalid owned link evidence")
+    for dep, records in forwarded.items():
+        if not isinstance(dep, str) or not dep or not isinstance(records, list) or not records:
+            raise ValueError("invalid forwarded link dependency")
+        seen = set()
+        for item in records:
+            if (not isinstance(item, dict) or set(item) != {"actual_owner", "object", "symbol"} or any(
+                not isinstance(item[field], str) or not item[field] for field in item
+            ) or canonical(item["actual_owner"]) == canonical(dep)):
+                raise ValueError("invalid forwarded link owner, object or symbol")
+            key = item["actual_owner"], item["object"], item["symbol"]
+            if key in seen:
+                raise ValueError("duplicate forwarded link evidence")
+            seen.add(key)
+    reasons = report.get("link_input_reasons")
+    if not isinstance(reasons, list):
+        raise ValueError("missing or invalid DWYU link input reasons")
+    fileless = {"user_link_flags", "linkstamps"}
+    file_reasons = {
+        "additional_link_input", "unchecked_object_directory", "static_archive",
+        "unreadable_archive", "thin_archive", "unsupported_archive",
+        "malformed_archive_nm", "malformed_object_nm", "dynamic_or_interface_library", "alwayslink",
+        "unsupported_nm_kind",
+    }
+    occurrences = {}
+    for item in reasons:
+        if (not isinstance(item, dict) or set(item) != {"owner", "file", "reason", "routes"} or
+            not isinstance(item["owner"], str) or not item["owner"] or
+            not isinstance(item["file"], str) or not isinstance(item["reason"], str) or
+            item["reason"] not in fileless | file_reasons or
+            (item["reason"] in fileless) != (item["file"] == "") or
+            not isinstance(item["routes"], list)):
+            raise ValueError("invalid DWYU link input reason")
+        seen = set()
+        for route in item["routes"]:
+            if (not isinstance(route, dict) or set(route) != {"attribute", "index", "target"} or
+                route["attribute"] not in ("deps", "implementation_deps") or
+                type(route["index"]) is not int or route["index"] < 0 or
+                not isinstance(route["target"], str) or not route["target"]):
+                raise ValueError("invalid DWYU link input route")
+            key = route["attribute"], route["index"]
+            if key in seen or (key in occurrences and occurrences[key] != route["target"]):
+                raise ValueError("duplicate or inconsistent DWYU link input route")
+            seen.add(key)
+            occurrences[key] = route["target"]
+
+
 def configuration_map(data, field):
     return {str(config["id"]): config for config in data.get(field, [])}
 
@@ -367,6 +428,12 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             report["status"] = "invalid"
             report["reason"] = "invalid original report fields or owner"
             continue
+        try:
+            validate_link_evidence(source)
+        except ValueError as exc:
+            report["status"] = "invalid"
+            report["reason"] = str(exc)
+            continue
         report["findings"] = {field: len(source[field]) for field in FIELDS}
         report["findings"]["unverified_link_deps"] = len(source.get("unverified_link_deps", []))
         candidates = [a["primaryOutput"] for _, a in actions_for_output if a.get("success") and "primaryOutput" in a]
@@ -436,6 +503,7 @@ def read_strict(row, events, path, original_deleted, filesets):
             not isinstance(reason, str) or not reason for reason in report["unverified_compilation_deps"]
         ):
             raise ValueError("invalid compiler directory dependency reasons")
+        validate_link_evidence(report)
         result["findings"] = {field: len(report[field]) for field in FIELDS}
         result["findings"]["unverified_link_deps"] = len(report.get("unverified_link_deps", []))
         if all(e.get("completed", {}).get("success") for e in selected):
