@@ -2691,15 +2691,17 @@ class TestCase:
                 r"\s*--tls-sni-override=[^\s]*", "", testcase_args.client
             )
             if "cloud-no-sticky" in self.tags:
+                self.sticky_client_option = ""
                 os.environ["CLICKHOUSE_CLIENT_OPT"] = os.environ[
                     "CLICKHOUSE_CLIENT_OPT_BASE"
                 ]
             else:
                 sticky_sni = os.environ["CLICKHOUSE_HOST_STICKY_SNI"]
-                testcase_args.client += f" --tls-sni-override={sticky_sni}"
+                self.sticky_client_option = f"--tls-sni-override={sticky_sni}"
+                testcase_args.client += f" {self.sticky_client_option}"
                 os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                     os.environ["CLICKHOUSE_CLIENT_OPT_BASE"]
-                    + f" --tls-sni-override={sticky_sni}"
+                    + f" {self.sticky_client_option}"
                 )
 
         testcase_args.testcase_basename = testcase_basename
@@ -2855,6 +2857,19 @@ class TestCase:
         overrides = self.feature_tag_overrides()
         if overrides:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+
+        # The options above were rebuilt from `base_client_options` or `client_options`,
+        # which do not contain the sticky routing set up by `configure_testcase_args`.
+        # Re-apply it, so that native clients of `.sh` tests are routed like `.sql` tests.
+        if self.sticky_client_option is not None:
+            routing_free_options = re.sub(
+                r"\s*--tls-sni-override=[^\s]*", "", os.environ["CLICKHOUSE_CLIENT_OPT"]
+            )
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                f"{routing_free_options} {self.sticky_client_option}".strip()
+            )
+
+        if overrides:
             return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
@@ -3358,6 +3373,10 @@ class TestCase:
         )
 
         self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+
+        # Native routing option for `CLICKHOUSE_CLIENT_OPT`, set by `configure_testcase_args`
+        # with `--cloud`: the sticky SNI override, or an empty string for `cloud-no-sticky`.
+        self.sticky_client_option = None
 
     def get_timeout(self, args) -> int:
         """Wall-clock budget for one run of this test.
@@ -7150,7 +7169,8 @@ def main(args):
     if args.cloud:
         # Recommended time to wait - 10 minutes
         args.server_check_retries = 1500
-        wait_for_all_cluster_nodes(args)
+        if not wait_for_all_cluster_nodes(args):
+            raise TestException("Not all cluster nodes are accessible")
 
         # When client connects to cloud instance it connects to random node.
         # But some tests do multiple connections and depend on executing queries on a single node.
