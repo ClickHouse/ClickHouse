@@ -231,7 +231,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 ///
 /// This pool never uses the columns cache. Projection parts share the projection name
 /// (e.g. `ailog_rule_count`) as their part name, which is not unique across parent parts,
-/// so `MergeTreeReaderWide` rejects them for both cache reads and cache writes. Turning the
+/// so `IMergeTreeReader::initColumnsCache` rejects them for both cache reads and cache writes. Turning the
 /// cache off here as well makes that invariant explicit at the pool level instead of relying
 /// on a predicate in the reader, and it removes the question of the query-scoped write budget
 /// for this path: the pool builds its tasks in `getTask` rather than in `fillPerPartInfos`,
@@ -305,8 +305,8 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
 /// large factor, and a gate that compared compressed bytes with a cache limit expressed in
 /// uncompressed bytes let a query write several times the size of the cache before it tripped.
 /// Returns 0 when nothing is known about the columns (they are absent from the part), so that
-/// such a read is not charged for the whole part. Compact parts never write to the columns
-/// cache, so their size is only a safety net.
+/// such a read is not charged for the whole part. The sizes of the columns of a compact part are
+/// not known, so the whole part is charged: an overestimate, which only makes the gate stricter.
 static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
 {
     if (part.getType() == MergeTreeDataPartType::Compact)
@@ -342,16 +342,13 @@ static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & 
     return static_cast<double>(getUncompressedSizeOfColumns(part, columns, settings)) / static_cast<double>(total_marks);
 }
 
-/// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`: only wide parts
+/// Mirror the cache-write eligibility predicate in `IMergeTreeReader::initColumnsCache`: only parts
 /// of a table with a non-nil UUID that are not projection parts ever write to the shared columns
-/// cache (compact parts use a reader that never writes to it; projection parts and nil-UUID tables
-/// are rejected there as well). A reader is created per part - the base part and every patch part -
-/// so this has to be evaluated for each of them separately.
+/// cache. A reader is created per part - the base part and every patch part - so this has to be
+/// evaluated for each of them separately.
 static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
 {
-    return part.getType() == MergeTreeDataPartType::Wide
-        && !part.isProjectionPart()
-        && part.storage.getStorageID().uuid != UUIDHelpers::Nil;
+    return canUseColumnsCacheForPart(part.storage.getStorageID().uuid, part.isProjectionPart());
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
@@ -582,9 +579,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
 
     /// Eligibility is a property of every part a reader is created for, not of the task:
     /// the base part and each patch part get their own reader and can have different
-    /// formats. A compact base part can have a wide patch part (which does write to the
-    /// cache), and a wide base part can have a compact patch part (which never does).
-    /// Both parts of the estimate are therefore gated by `partCanWriteToColumnsCache`
+    /// formats and sizes. Both parts of the estimate are therefore gated by `partCanWriteToColumnsCache`
     /// independently, so the accounted bytes match the set of readers that can really
     /// write, and a query is neither allowed to write unaccounted bytes nor charged for
     /// bytes it can never cache.
