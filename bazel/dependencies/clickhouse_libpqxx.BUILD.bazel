@@ -23,7 +23,20 @@ expand_template(
 
 ch_cc_library(
     name = "_libpqxx",
-    srcs = (glob(["src/*.cxx"]) + glob(["src/**/*.hxx"])) + [":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h"],
+    srcs = [
+        ":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+        "include/pqxx/internal/wait.hxx",
+    ] + glob(
+        [
+            "include/pqxx/internal/gates/*.hxx",
+            "src/*.cxx",
+            "src/**/*.hxx",
+        ],
+        exclude = [
+            "include/pqxx/internal/gates/connection-stream_from.hxx",
+            "include/pqxx/internal/gates/result-sql_cursor.hxx",
+        ],
+    ),
     hdrs = [":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h"] + glob(
         ["include/pqxx/*"],
         exclude = ["include/pqxx/*.*"],
@@ -44,7 +57,10 @@ ch_cc_library(
     ],
     textual_hdrs = glob(
         ["include/**/*.hxx"],
-        exclude = ["include/pqxx/internal/gates/result-sql_cursor.hxx"],
-    ),
+        exclude = [
+            "include/pqxx/internal/gates/*.hxx",
+            "include/pqxx/internal/wait.hxx",
+        ],
+    ) + ["include/pqxx/internal/gates/connection-stream_from.hxx"],
     implementation_deps = ["@clickhouse_postgres//:_libpq"],
 )
