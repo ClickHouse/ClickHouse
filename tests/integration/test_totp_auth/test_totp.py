@@ -99,9 +99,37 @@ def test_one_time_password(started_cluster):
         query_text, user="totuser", password=f"aa+bb+{old_password}"
     )
 
-    assert "REQUIRED_SECOND_FACTOR" in node.query_and_get_error(
+    # Without a code the response does not depend on the password, so the error REQUIRED_SECOND_FACTOR
+    # does not confirm a guessed password: a wrong or an empty password gets exactly the same error
+    error_without_code = node.query_and_get_error(
         query_text, user="totuser", password="aa+bb"
     )
+    assert "REQUIRED_SECOND_FACTOR" in error_without_code
+    for password in ["wrongpwd", ""]:
+        assert error_without_code == node.query_and_get_error(
+            query_text, user="totuser", password=password
+        )
+
+    http_responses = [
+        node.http_request(
+            "",
+            params={"query": query_text},
+            headers={"X-ClickHouse-User": "totuser", "X-ClickHouse-Key": password},
+        )
+        for password in ["aa+bb", "wrongpwd"]
+    ]
+    for response in http_responses:
+        assert response.status_code == 403
+        assert response.headers["X-ClickHouse-Exception-Code"] == "767"
+    assert http_responses[0].text == http_responses[1].text
+
+    response = node.http_request(
+        "",
+        params={"query": query_text},
+        headers={"X-ClickHouse-User": "totuser", "X-ClickHouse-Key": "aa+bb+000000000"},
+    )
+    assert response.status_code == 403
+    assert response.headers["X-ClickHouse-Exception-Code"] == "516"
 
     assert "totuser42\n" == node.query(
         query_text, user="totuser", password=f"aa+bb+{get_otp('totuser')}"
@@ -197,13 +225,17 @@ def test_interactive_totp_authentication(started_cluster):
 
         # Then enter wrong TOTP when prompted
         c.expect("TOTP.*:")
-        c.send("000000", eol="\r")
+        c.send("000000000", eol="\r")
         c.expect(expected_error)
 
-    with client(command=f"{client_command(user0)} --password aa+bb+000000") as c:
+    # A wrong code of the configured length (9 digits); a suffix of another length counts as no code
+    with client(command=f"{client_command(user0)} --password aa+bb+000000000") as c:
         c.expect(expected_error)
 
+    # A wrong password without a code is asked for the code like a right one, and fails only after that
     with client(command=f"{client_command(user0)} --password wrongpwd") as c:
+        c.expect("TOTP.*:")
+        c.send(get_otp(user0), eol="\r")
         c.expect(expected_error)
 
     with client(
@@ -427,7 +459,10 @@ def test_one_time_only_no_password(started_cluster):
 
     assert f"{user0}42\n" == node.query(query_text, user=user0, password=get_otp(user0))
 
+    # The client cannot know that the account has no password: it asks for the password first
     with client(command=f"{client_command(user0)}") as c:
+        c.expect("Password.*:")
+        c.send("", eol="\r")
         c.expect("TOTP.*:")
         c.send(get_otp(user0, offset_steps=1), eol="\r")
         c.expect(prompt)
