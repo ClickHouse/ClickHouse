@@ -16,6 +16,7 @@
     "ar/reference/settings/server-settings/settings/background-schedule",
     "ar/reference/settings/server-settings/settings/backup",
     "ar/reference/settings/server-settings/settings/backups",
+    "ar/reference/settings/server-settings/settings/columns-cache",
     "ar/reference/settings/server-settings/settings/compiled-expression",
     "ar/reference/settings/server-settings/settings/concurrent-threads",
     "ar/reference/settings/server-settings/settings/cpu-slot",
