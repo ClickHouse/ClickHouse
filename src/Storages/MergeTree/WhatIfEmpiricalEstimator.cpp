@@ -88,7 +88,7 @@ MarkRanges windowsToScan(
     const size_t count = countWindows(windows, granularity);
     const auto sampled = sampleUnits(count, step, part_name);
     MarkRanges ranges;
-    auto range = windows.begin();
+    const auto * range = windows.begin();
     /// the windows in the ranges before `range`
     size_t windows_before = 0;
     for (size_t i = 0; i < sampled.size(); ++i)
