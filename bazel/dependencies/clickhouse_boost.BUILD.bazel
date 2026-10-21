@@ -102,7 +102,6 @@ ch_cc_library(
     copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":_boost_regex"],
 )
 
 ch_cc_library(
