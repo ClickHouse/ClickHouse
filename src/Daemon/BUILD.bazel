@@ -12,8 +12,8 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Loggers:loggers",
         "//src/Loggers:headers",
-        "//bazel:clickhouse_config_headers",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -83,7 +83,6 @@ ch_cc_library(
         ":headers",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@llvm-project//third-party/siphash",
-        "//src/Loggers:loggers",
         "//src/Common/Config:clickhouse_common_config",
         "//src/Common",
         "//base:common",
