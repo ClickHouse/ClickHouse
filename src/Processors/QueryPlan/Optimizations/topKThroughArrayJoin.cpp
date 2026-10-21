@@ -143,9 +143,7 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     array_join_step->updateInputHeader(sort_node->step->getOutputHeader());
     parent_node->children[0] = first_node_below_sort;
 
-    /// How deep to re-run first-pass optimizations under the `Limit`. Enough for the common
-    /// shape `ArrayJoin -> Sorting -> [emptiness Filter]` (and one pass-through `Expression`
-    /// above the join); deeper expression chains are left for a later full pass.
+    /// the depth of the subtree to optimize again: `ArrayJoin -> Sorting -> [Filter]`, and one `Expression` above
     return 4;
 }
 
