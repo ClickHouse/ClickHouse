@@ -223,7 +223,10 @@ ch_cc_library(
         "include/jemalloc/internal/util.h",
         "include/jemalloc/internal/witness.h",
     ],
-    hdrs = ["@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc.h"],
+    hdrs = [
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc.h",
+        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_defs.h",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -250,7 +253,6 @@ ch_cc_library(
     ],
     strip_include_prefix = "/contrib/jemalloc-cmake/include",
     textual_hdrs = [
-        "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_defs.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_macros.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_protos.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_rename.h",

@@ -37,7 +37,10 @@ ch_cc_library(
             "include/pqxx/internal/gates/result-sql_cursor.hxx",
         ],
     ),
-    hdrs = [":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h"] + glob(
+    hdrs = [
+        ":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+        "include/pqxx/internal/libpq-forward.hxx",
+    ] + glob(
         ["include/pqxx/*"],
         exclude = ["include/pqxx/*.*"],
     ),
@@ -60,6 +63,7 @@ ch_cc_library(
         exclude = [
             "include/pqxx/internal/gates/*.hxx",
             "include/pqxx/internal/wait.hxx",
+            "include/pqxx/internal/libpq-forward.hxx",
         ],
     ) + ["include/pqxx/internal/gates/connection-stream_from.hxx"],
     implementation_deps = ["@clickhouse_postgres//:_libpq"],

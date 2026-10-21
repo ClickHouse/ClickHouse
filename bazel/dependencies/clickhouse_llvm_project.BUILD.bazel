@@ -886,16 +886,13 @@ filegroup(
     name = "llvm_generated_headers",
     srcs = select({
         "@platforms//cpu:x86_64": [
-            ":gen/llvm/include/llvm/Config/llvm-config.h",
             ":gen/llvm/include/llvm/Config/config.h",
-            ":gen/llvm/include/llvm/Config/abi-breaking.h",
             ":gen/llvm/include/llvm/Config/Targets.def",
             ":gen/llvm/include/llvm/Config/AsmPrinters.def",
             ":gen/llvm/include/llvm/Config/AsmParsers.def",
             ":gen/llvm/include/llvm/Config/Disassemblers.def",
             ":gen/llvm/include/llvm/Config/TargetMCAs.def",
             ":gen/llvm/include/llvm/Config/TargetExegesis.def",
-            ":gen/llvm/include/llvm/Support/VCSRevision.h",
             ":gen/llvm/include/llvm/CodeGen/GenVT.inc",
             ":gen/llvm/include/llvm/Analysis/TargetLibraryInfo.inc",
             ":gen/llvm/include/llvm/Frontend/OpenMP/OMP.h.inc",
@@ -939,16 +936,13 @@ filegroup(
             ":gen/llvm/lib/Target/X86/X86GenSubtargetInfo.inc",
         ],
         "@platforms//cpu:aarch64": [
-            ":gen/llvm/include/llvm/Config/llvm-config.h",
             ":gen/llvm/include/llvm/Config/config.h",
-            ":gen/llvm/include/llvm/Config/abi-breaking.h",
             ":gen/llvm/include/llvm/Config/Targets.def",
             ":gen/llvm/include/llvm/Config/AsmPrinters.def",
             ":gen/llvm/include/llvm/Config/AsmParsers.def",
             ":gen/llvm/include/llvm/Config/Disassemblers.def",
             ":gen/llvm/include/llvm/Config/TargetMCAs.def",
             ":gen/llvm/include/llvm/Config/TargetExegesis.def",
-            ":gen/llvm/include/llvm/Support/VCSRevision.h",
             ":gen/llvm/include/llvm/CodeGen/GenVT.inc",
             ":gen/llvm/include/llvm/Analysis/TargetLibraryInfo.inc",
             ":gen/llvm/include/llvm/Frontend/OpenMP/OMP.h.inc",
@@ -1005,7 +999,11 @@ filegroup(
 
 cc_library(
     name = "llvm_headers",
-    hdrs = glob([
+    hdrs = [
+        ":gen/llvm/include/llvm/Config/llvm-config.h",
+        ":gen/llvm/include/llvm/Config/abi-breaking.h",
+        ":gen/llvm/include/llvm/Support/VCSRevision.h",
+    ] + glob([
         "llvm/include/llvm-c/**/*.h",
         "llvm/include/llvm/*.h",
         "llvm/include/llvm/ADT/*.h",
