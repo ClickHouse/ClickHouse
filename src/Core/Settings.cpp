@@ -5163,13 +5163,13 @@ Parts are cut into slices which are handed out to the threads as the merge deman
 At every slice the primary key the part's next rows start at is announced to the merge, so the merge steps past a part whose rows are filtered out as soon as that key is past the rows it needs, without reading the part to its end.
 Requires `read_in_order_use_virtual_row`. Applies to local reading only, and not when the streams are merged in two levels (see `read_in_order_two_level_merge_threshold`). When the pool is used, `read_in_order_use_buffering` is not applied, because the pool buffers rows per part itself.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting: read `MergeTree` tables in the order of the primary key with a shared pool of threads that read slices of parts on demand, instead of one thread per part."}) \
+        {"26.11", false, false, "New setting: read `MergeTree` tables in the order of the primary key with a shared pool of threads that read slices of parts on demand, instead of one thread per part."}) \
     DECLARE(UInt64, read_in_order_virtual_row_block_interval, 8, R"(
 With `read_in_order_use_virtual_row_per_block`, the number of blocks a part reads before it reports its position to the merge again.
 A larger interval means fewer reports and less merge overhead on queries that scan a lot of data; a smaller interval lets the merge move on from filtered-out parts sooner.
 Set to 1 to report after every block. Values below 1 are treated as 1.
 )", 0, \
-        {"26.10", 1, 8, "New setting to emit a virtual row after every N-th block read instead of after every block when `read_in_order_use_virtual_row_per_block` is enabled. Every virtual row passes through the merge, so the previous per-block emission slowed down scan-heavy read-in-order queries with selective filters."}) \
+        {"26.11", 1, 8, "New setting to emit a virtual row after every N-th block read instead of after every block when `read_in_order_use_virtual_row_per_block` is enabled. Every virtual row passes through the merge, so the previous per-block emission slowed down scan-heavy read-in-order queries with selective filters."}) \
     DECLARE(Int64, read_in_order_virtual_row_prefetch_window, -1, R"(
 The number of parts that are read ahead in parallel while a read-in-order merge (`read_in_order_use_virtual_row`) has not reached them yet. It bounds the number of simultaneously open readers and the data read for nothing when a `LIMIT` is satisfied before the merge reaches those parts.
 
@@ -5179,7 +5179,7 @@ Possible values:
 - `0` — no read-ahead; parts are read strictly in the order the merge needs them, one at a time.
 - `N > 0` — at most `N` parts read ahead.
 )", 0, \
-        {"26.10", -1, -1, "New setting to control the read-ahead window for sources deferred behind virtual rows in read-in-order merges."}) \
+        {"26.11", -1, -1, "New setting to control the read-ahead window for sources deferred behind virtual rows in read-in-order merges."}) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 
