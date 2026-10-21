@@ -16,6 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace DB
@@ -471,12 +472,14 @@ bool tryEstimateEmpirical(
         spread += 2.0 * std::max(sample_error, 1.5 / draws) * static_cast<double>(sampled_part_marks);
     }
 
-    const auto estimated = static_cast<UInt64>(std::round(estimated_survivors));
+    /// the sampled windows are exact, so they bound the estimate and the span
+    const UInt64 least = total_data_granules - skipped_data_granules;
+    const UInt64 most = baseline_marks - skipped_data_granules;
+    const auto estimated = std::clamp(static_cast<UInt64>(std::round(estimated_survivors)), least, most);
     const auto by = static_cast<UInt64>(std::ceil(spread));
-    /// the sampled windows are exact, so they bound the span
     result.estimated_marks = estimated;
-    result.estimated_marks_low = std::max(total_data_granules - skipped_data_granules, estimated > by ? estimated - by : 0);
-    result.estimated_marks_high = std::min(baseline_marks - skipped_data_granules, estimated + by);
+    result.estimated_marks_low = std::max(least, estimated > by ? estimated - by : 0);
+    result.estimated_marks_high = std::min(most, estimated + by);
     result.skip_ratio = 1.0 - static_cast<double>(estimated) / static_cast<double>(baseline_marks);
     result.sampled_marks = total_data_granules;
 

@@ -137,16 +137,16 @@ FROM
 DROP TABLE t_uneven;
 DROP TABLE t_uneven_real;
 
--- the baseline keeps every mark of each hundredth window and two marks of each other window. Only the full windows survive
+-- the baseline keeps every mark of each hundredth window and two marks of each other window. Only the full windows have v < 1000
 SELECT '-- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules';
 DROP TABLE IF EXISTS t_mass;
 DROP TABLE IF EXISTS t_mass_real;
-CREATE TABLE t_mass (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
+CREATE TABLE t_mass (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-CREATE TABLE t_mass_real (a UInt64, b UInt64, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
+CREATE TABLE t_mass_real (a UInt64, b UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(19200);
-INSERT INTO t_mass_real SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(19200);
+INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), if(w % 100 = 0, w, 1000 + w) FROM numbers(19200);
+INSERT INTO t_mass_real SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), if(w % 100 = 0, w, 1000 + w) FROM numbers(19200);
 CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 64;
 SELECT
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
@@ -156,12 +156,39 @@ SELECT
 FROM
 (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS report
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v = 1)
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v < 1000)
 ) AS estimated,
 (
     SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
-    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v = 1 SETTINGS use_skip_indexes_on_data_read = 0)
+    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v < 1000 SETTINGS use_skip_indexes_on_data_read = 0)
 ) AS materialized;
+
+-- only the full window 200 has v = 200. The sample reads it, so its 64 marks survive for v = 200 and are skipped for v != 200
+SELECT '-- the sampled windows bound the estimate, so the estimate is in the span';
+SELECT
+    predicate,
+    extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
+    extractGroups(report, 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
+    real,
+    toUInt64(estimate[1]) BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS estimate_in_span,
+    real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
+FROM
+(
+    SELECT 'v = 200' AS predicate, arrayStringConcat(groupArray(explain), '\n') AS report
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v = 200)
+    UNION ALL
+    SELECT 'v != 200', arrayStringConcat(groupArray(explain), '\n')
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v != 200)
+) AS estimated
+INNER JOIN
+(
+    SELECT 'v = 200' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
+    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v = 200 SETTINGS use_skip_indexes_on_data_read = 0)
+    UNION ALL
+    SELECT 'v != 200', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/'))
+    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v != 200 SETTINGS use_skip_indexes_on_data_read = 0)
+) AS materialized USING (predicate)
+ORDER BY predicate;
 
 DROP TABLE t_mass;
 DROP TABLE t_mass_real;
