@@ -1,3 +1,6 @@
+-- Tags: long
+-- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+
 -- Every path type read whole, as subcolumns from disk and extracted from the whole path, in a Wide part, a Compact part
 -- with substream marks and a Compact part without them, compared with a Memory table of the type without SHARED filled
 -- by the same expression. Each line prints the three equality flags and a sample value. The Map serialization versions

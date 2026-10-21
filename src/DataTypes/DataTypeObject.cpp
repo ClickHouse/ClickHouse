@@ -62,7 +62,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_COMPILE_REGEXP;
-    extern const int ILLEGAL_COLUMN;
 }
 
 String DataTypeObject::getCombinedSubcolumnName(const String & key)
@@ -689,142 +688,9 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
 
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
-    /// Check if it's a special subcolumn used for distinct paths calculation.
-    if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
-    {
-        std::vector<String> typed_path_names;
-        typed_path_names.reserve(typed_paths.size());
-        for (const auto & [path, _] : typed_paths)
-            typed_path_names.push_back(path);
-
-        auto res = std::make_unique<SubcolumnInfo>();
-        res->data = SubstreamData(SerializationObjectDistinctPaths::create(typed_path_names));
-        res->data.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-        /// If column was provided, we should create a column for the requested subcolumn.
-        if (data.column)
-        {
-            const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
-            auto result_column = res->data.type->createColumn();
-            if (!object_column.empty())
-            {
-                auto & result_array_column = assert_cast<ColumnArray &>(*result_column);
-                auto & result_paths_column = assert_cast<ColumnString &>(result_array_column.getData());
-                for (const auto & path : typed_path_names)
-                    result_paths_column.insertData(path.data(), path.size());
-                for (const auto & [path, _] : object_column.getDynamicPaths())
-                    result_paths_column.insertData(path.data(), path.size());
-                const auto [shared_data_paths, _] = object_column.getSharedDataPathsAndValues();
-                result_paths_column.insertRangeFrom(*shared_data_paths, 0, shared_data_paths->size());
-                result_array_column.getOffsets().push_back(result_paths_column.size());
-                result_array_column.insertManyDefaults(object_column.size() - 1);
-            }
-            res->data.column = std::move(result_column);
-        }
-
-        res->substreams_path.emplace_back(ISerialization::Substream::ObjectDistinctPaths);
-        res->substreams_path.back().name_of_substream = subcolumn_name;
-        return res;
-    }
-
     const auto & object_serialization = dynamic_cast<const SerializationObject &>(*removeNamedSerialization(data.serialization));
     const auto & typed_paths_serializations = object_serialization.getTypedPathsSerializations();
     const auto & dynamic_path_serialization = object_serialization.getDynamicPathSerialization();
-
-    /// Check if it's sub-object subcolumn.
-    /// In this case we should return JSON column with all paths that are inside specified object prefix.
-    /// For example, if we have {"a" : {"b" : {"c" : {"d" : 10, "e" : "Hello"}, "f" : [1, 2, 3]}}} and subcolumn ^a.b
-    /// we should return JSON column with data {"c" : {"d" : 10, "e" : Hello}, "f" : [1, 2, 3]}
-    if (auto sub_object_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, SUB_OBJECT_SUBCOLUMN_PREFIX))
-    {
-        const String prefix = *sub_object_subcolumn + ".";
-        auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
-            prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-            paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
-
-        auto res = std::make_unique<SubcolumnInfo>();
-        res->data = SubstreamData(sub_object_serialization);
-        res->data.type = sub_object_type;
-
-        if (data.column)
-        {
-            const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
-            res->data.column = extractSubObjectColumn(object_column, prefix, sub_object_type);
-        }
-
-        res->substreams_path.emplace_back(ISerialization::Substream::ObjectSubObject);
-        res->substreams_path.back().name_of_substream = subcolumn_name;
-        return res;
-    }
-
-    /// Check if it's a combined literal+sub-object subcolumn.
-    /// In this case we should return Dynamic column that contains:
-    /// - literal value if the path has one
-    /// - sub-object as JSON if the path has a non-empty sub-object but no literal
-    /// - NULL if literal is null and sub-object is empty
-    if (auto combined_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, COMBINED_SUBCOLUMN_PREFIX))
-    {
-        const String & combined_path = *combined_subcolumn;
-
-        /// For typed paths, return literal value only (typed paths are always considered present).
-        if (auto it = typed_paths.find(combined_path); it != typed_paths.end())
-        {
-            auto res = std::make_unique<SubcolumnInfo>();
-            res->data = SubstreamData(typed_paths_serializations.at(combined_path));
-            res->data.type = it->second;
-            if (data.column)
-            {
-                const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
-                res->data.column = object_column.getTypedPaths().at(combined_path);
-            }
-            if (shared_typed_paths.contains(combined_path))
-                res->data.serialization = createSharedTypedPathSerialization(object_serialization, combined_path, res->data.serialization, "");
-            else
-                res->data.serialization = SerializationObjectTypedPath::create(res->data.serialization, combined_path);
-            res->substreams_path.emplace_back(ISerialization::Substream::ObjectCombinedPath);
-            res->substreams_path.back().name_of_substream = subcolumn_name;
-            return res;
-        }
-
-        /// Non-typed path: merge literal + sub-object.
-        const String prefix = combined_path + ".";
-        auto dynamic_result_type = getDynamicType();
-        auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
-            prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-            paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
-
-        auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
-
-        auto res = std::make_unique<SubcolumnInfo>();
-        res->data = SubstreamData(SerializationObjectCombinedPath::create(
-            literal_serialization, sub_object_serialization, dynamic_result_type, sub_object_type));
-        res->data.type = dynamic_result_type;
-
-        if (data.column)
-        {
-            const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
-            res->data.column = extractCombinedColumn(object_column, combined_path, prefix, sub_object_type, dynamic_result_type, max_dynamic_types);
-        }
-
-        res->substreams_path.emplace_back(ISerialization::Substream::ObjectCombinedPath);
-        res->substreams_path.back().name_of_substream = subcolumn_name;
-        return res;
-    }
-
-    /// If the subcolumn starts with a type hint (.:`Type`), it means this getDynamicSubcolumnInfo
-    /// was reached from IDataType::getSubcolumnInfo after a typed path prefix match in enumerateStreams.
-    /// E.g. for json.a.:`Array(JSON)`.x where a is a typed Array(JSON) path, enumerateStreams found "a"
-    /// as a static subcolumn, then tried to resolve the remaining ":`Array(JSON)`.x" via the typed path's
-    /// type chain, which eventually called this method. We return nullptr here so that the resolution falls
-    /// through to the outer DataTypeObject::getDynamicSubcolumnInfo with the full subcolumn name, where
-    /// the type hint can be properly detected and stripped. That prefix-match probe always passes
-    /// throw_if_null=false; in throw_if_null mode there is no outer attempt to fall through to, so the
-    /// name is unresolvable.
-    if (subcolumn_name.starts_with(":`"))
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
-        return nullptr;
-    }
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
     auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
@@ -858,6 +724,128 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             path = candidate->first;
             path_subcolumn = std::move(candidate_subcolumn);
             break;
+        }
+    }
+
+    /// A typed path wins over the other readings of its name: the special subcolumn of the distinct paths, and a
+    /// sub-object or a combined subcolumn whose prefixed name coincides with a path.
+    if (typed_it == typed_paths.end())
+    {
+        /// Check if it's a special subcolumn used for distinct paths calculation.
+        if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
+        {
+            std::vector<String> typed_path_names;
+            typed_path_names.reserve(typed_paths.size());
+            for (const auto & [typed_path, _] : typed_paths)
+                typed_path_names.push_back(typed_path);
+
+            auto res = std::make_unique<SubcolumnInfo>();
+            res->data = SubstreamData(SerializationObjectDistinctPaths::create(typed_path_names));
+            res->data.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+            /// If column was provided, we should create a column for the requested subcolumn.
+            if (data.column)
+            {
+                const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
+                auto result_column = res->data.type->createColumn();
+                if (!object_column.empty())
+                {
+                    auto & result_array_column = assert_cast<ColumnArray &>(*result_column);
+                    auto & result_paths_column = assert_cast<ColumnString &>(result_array_column.getData());
+                    for (const auto & typed_path : typed_path_names)
+                        result_paths_column.insertData(typed_path.data(), typed_path.size());
+                    for (const auto & [dynamic_path, _] : object_column.getDynamicPaths())
+                        result_paths_column.insertData(dynamic_path.data(), dynamic_path.size());
+                    const auto [shared_data_paths, _] = object_column.getSharedDataPathsAndValues();
+                    result_paths_column.insertRangeFrom(*shared_data_paths, 0, shared_data_paths->size());
+                    result_array_column.getOffsets().push_back(result_paths_column.size());
+                    result_array_column.insertManyDefaults(object_column.size() - 1);
+                }
+                res->data.column = std::move(result_column);
+            }
+
+            res->substreams_path.emplace_back(ISerialization::Substream::ObjectDistinctPaths);
+            res->substreams_path.back().name_of_substream = subcolumn_name;
+            return res;
+        }
+
+        /// Check if it's sub-object subcolumn.
+        /// In this case we should return JSON column with all paths that are inside specified object prefix.
+        /// For example, if we have {"a" : {"b" : {"c" : {"d" : 10, "e" : "Hello"}, "f" : [1, 2, 3]}}} and subcolumn ^a.b
+        /// we should return JSON column with data {"c" : {"d" : 10, "e" : Hello}, "f" : [1, 2, 3]}
+        if (auto sub_object_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, SUB_OBJECT_SUBCOLUMN_PREFIX))
+        {
+            const String prefix = *sub_object_subcolumn + ".";
+            auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
+                prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
+                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
+
+            auto res = std::make_unique<SubcolumnInfo>();
+            res->data = SubstreamData(sub_object_serialization);
+            res->data.type = sub_object_type;
+
+            if (data.column)
+            {
+                const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
+                res->data.column = extractSubObjectColumn(object_column, prefix, sub_object_type);
+            }
+
+            res->substreams_path.emplace_back(ISerialization::Substream::ObjectSubObject);
+            res->substreams_path.back().name_of_substream = subcolumn_name;
+            return res;
+        }
+
+        /// Check if it's a combined literal+sub-object subcolumn.
+        /// In this case we should return Dynamic column that contains:
+        /// - literal value if the path has one
+        /// - sub-object as JSON if the path has a non-empty sub-object but no literal
+        /// - NULL if literal is null and sub-object is empty
+        if (auto combined_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, COMBINED_SUBCOLUMN_PREFIX))
+        {
+            const String & combined_path = *combined_subcolumn;
+
+            /// For typed paths, return literal value only (typed paths are always considered present).
+            if (auto it = typed_paths.find(combined_path); it != typed_paths.end())
+            {
+                auto res = std::make_unique<SubcolumnInfo>();
+                res->data = SubstreamData(typed_paths_serializations.at(combined_path));
+                res->data.type = it->second;
+                if (data.column)
+                {
+                    const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
+                    res->data.column = object_column.getTypedPaths().at(combined_path);
+                }
+                if (shared_typed_paths.contains(combined_path))
+                    res->data.serialization = createSharedTypedPathSerialization(object_serialization, combined_path, res->data.serialization, "");
+                else
+                    res->data.serialization = SerializationObjectTypedPath::create(res->data.serialization, combined_path);
+                res->substreams_path.emplace_back(ISerialization::Substream::ObjectCombinedPath);
+                res->substreams_path.back().name_of_substream = subcolumn_name;
+                return res;
+            }
+
+            /// Non-typed path: merge literal + sub-object.
+            const String prefix = combined_path + ".";
+            auto dynamic_result_type = getDynamicType();
+            auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
+                prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
+                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
+
+            auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
+
+            auto res = std::make_unique<SubcolumnInfo>();
+            res->data = SubstreamData(SerializationObjectCombinedPath::create(
+                literal_serialization, sub_object_serialization, dynamic_result_type, sub_object_type));
+            res->data.type = dynamic_result_type;
+
+            if (data.column)
+            {
+                const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
+                res->data.column = extractCombinedColumn(object_column, combined_path, prefix, sub_object_type, dynamic_result_type, max_dynamic_types);
+            }
+
+            res->substreams_path.emplace_back(ISerialization::Substream::ObjectCombinedPath);
+            res->substreams_path.back().name_of_substream = subcolumn_name;
+            return res;
         }
     }
 

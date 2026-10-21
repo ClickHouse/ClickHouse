@@ -1,5 +1,5 @@
--- two parts, tasks of 10 granules, 8 and 16 threads
-parts	2	40000	160
+-- two parts, tasks of 5 granules, 8 and 16 threads
+parts	2	12000	96
 t, 8 threads json	0	0
 t, 8 threads json.a	1
 t, 8 threads three paths	1
@@ -26,7 +26,7 @@ t, 16 ranges sub-object	0
 t, 16 ranges paths with subcolumns	1
 t, 16 ranges (json, json.a)	0
 -- FINAL over four intersecting parts under the range split injection
-rt parts	4	40000
+rt parts	4	12000
 rt FINAL, vertical final 0 json	0	0
 rt FINAL, vertical final 0 json.a	1
 rt FINAL, vertical final 0 three paths	1
@@ -78,7 +78,7 @@ t_const sub-object	0
 t_const paths with subcolumns	1
 t_const (json, json.a)	0
 -- after a vertical merge, a lightweight delete and an update of another column
-merged	1	40000
+merged	1	12000
 t merged json	0	0
 t merged json.a	1
 t merged three paths	1

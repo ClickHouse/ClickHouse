@@ -85,6 +85,13 @@ SELECT json.a.:`Tuple(b UInt64)`.b, json.a.b FROM keys_compact_marks WHERE x = 3
 SELECT json.a.b, json.a.:`Tuple(b UInt64)`.b, json.a, json.`^.`, json FROM keys_compact_nomarks WHERE x = 3;
 SELECT json.a.:`Tuple(b UInt64)`.b, json.a.b FROM keys_compact_nomarks WHERE x = 3;
 
+SELECT '-- a subcolumn of a path named like another path: the path wins, the subcolumn is reached through the hint';
+DROP TABLE IF EXISTS keys_sizes;
+CREATE TABLE keys_sizes (x UInt64, json JSON(SHARED a Array(UInt64), SHARED a.size0 String)) ENGINE = MergeTree ORDER BY x
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO keys_sizes VALUES (0, '{"a":[1,2]}'), (1, '{"a":{"size0":"s"}}');
+SELECT json.a.size0, json.a.:`Array(UInt64)`.size0, json.a FROM keys_sizes ORDER BY x;
+
 SELECT '-- bracket access is the combined subcolumn of a SHARED path';
 DROP TABLE IF EXISTS br_mixed;
 DROP TABLE IF EXISTS br_mixed_compact;
@@ -122,6 +129,7 @@ DROP TABLE t_deep_plain;
 DROP TABLE keys_wide;
 DROP TABLE keys_compact_marks;
 DROP TABLE keys_compact_nomarks;
+DROP TABLE keys_sizes;
 DROP TABLE br_mixed;
 DROP TABLE br_mixed_compact;
 DROP TABLE br_plain;

@@ -253,22 +253,25 @@ TEST(DataTypeObject, SubcolumnLookup)
         {"@`obj`.x", "UInt16"},
         {"@`missing`", "Dynamic(max_types=5)"},
         {DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "Array(String)"},
-        {":`Int64`", ""},
+        /// A hint without a path in front of it is a dynamic path like any other name.
+        {":`Int64`", "Dynamic(max_types=5)"},
     };
 
     for (const auto & [subcolumn, expected_name] : subcolumns)
         expectSubcolumnType(object, subcolumn, expected_name);
 }
 
-TEST(DataTypeObject, SubcolumnLookupPreservesSerializationPrecedence)
+/// A typed path wins over every other reading of its name: a subcolumn of another typed path, the special subcolumn
+/// of the distinct paths, and a sub-object prefix.
+TEST(DataTypeObject, SubcolumnLookupPrefersTypedPath)
 {
     auto & factory = DataTypeFactory::instance();
 
     auto array_collision = factory.get("JSON(a Array(UInt64), a.size0 String)");
-    expectSubcolumnType(*array_collision, "a.size0", "UInt64");
+    expectSubcolumnType(*array_collision, "a.size0", "String");
 
     auto tuple_collision = factory.get("JSON(a Tuple(size0 String), a.size0 UInt64)");
-    expectSubcolumnType(*tuple_collision, "a.size0", "String");
+    expectSubcolumnType(*tuple_collision, "a.size0", "UInt64");
 
     auto multiple_prefixes = factory.get("JSON(a Array(JSON), a.b Int64)");
     expectSubcolumnType(*multiple_prefixes, "a.b", "Int64");
@@ -303,7 +306,8 @@ TEST(DataTypeObject, SubcolumnLookupUsesCanonicalPathNames)
     expectSubcolumnType(*object, R"(back\slash.x)", "UInt8");
     expectSubcolumnType(*object, "back`tick.x", "UInt8");
     expectSubcolumnType(*object, "spaced path.x", "UInt8");
-    expectSubcolumnType(*object, ".x", "UInt8");
+    /// The typed path `.x` wins over `x` of the typed path with the empty name.
+    expectSubcolumnType(*object, ".x", "UInt16");
 }
 
 TEST(DataTypeObject, SubcolumnLookupDefersToCustomSerialization)

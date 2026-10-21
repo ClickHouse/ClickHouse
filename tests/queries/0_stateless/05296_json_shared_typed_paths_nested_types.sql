@@ -1,3 +1,6 @@
+-- Tags: long
+-- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+
 -- Nested typed shared data and arrays of JSON: a SHARED JSON path with its own SHARED paths, dynamic paths and dynamic
 -- shared data inside a chunk, a shared Dynamic with several types, Array(JSON(SHARED ...)) with empty arrays and
 -- granules without rows, two array levels, sizeN subcolumns. Each line prints the equality flags of the Wide, Compact

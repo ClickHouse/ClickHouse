@@ -37,6 +37,9 @@ equal to the plain type	1
 0	103
 103	0	(0)	203	{"^":{"":203},"a":{"b":0},"a":{"b":103}}
 0	103
+-- a subcolumn of a path named like another path: the path wins, the subcolumn is reached through the hint
+	2	[1,2]
+s	0	[]
 -- bracket access is the combined subcolumn of a SHARED path
 0	0	[]	0	{"p":7,"q":"q"}	(0,0)	1
 1	10	[0]	1	{"p":8,"q":"q"}	(10,10)	11

@@ -1,3 +1,6 @@
+-- Tags: long
+-- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+
 -- The writers through merges and mutations: horizontal and vertical merges in small blocks, mutations that rewrite the
 -- column and mutations that hardlink it, lightweight deletes and updates, indexes and columns materialized from a SHARED
 -- path, rename and drop, FINAL, mixed part types, a materialized view and a projection holding the column. Compared

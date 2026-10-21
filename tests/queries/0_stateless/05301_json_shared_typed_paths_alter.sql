@@ -1,3 +1,6 @@
+-- Tags: long
+-- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+
 -- SHARED added and removed by ALTER MODIFY COLUMN, lazily (a type hint change is metadata only) and by mutation, parts
 -- of both layouts read together and merged, path type changes, a column absent from the part, and the layout of each
 -- part through system.parts_columns. Compared with a Memory table of the target type without SHARED; each line prints

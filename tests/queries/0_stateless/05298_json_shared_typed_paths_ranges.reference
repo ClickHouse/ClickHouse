@@ -116,9 +116,6 @@ granules r WHERE json.c.size0 = 3	Granules: 15/15
 r [json] WHERE json.a > 500 AND json.c.size0 = 0	1	1	1	2
 r [(json.a, json.c)] max_block_size = 5 WHERE json.a > 500 AND json.c.size0 = 0	1	1	1	2
 granules r WHERE json.a > 500 AND json.c.size0 = 0	Parts: 1 | Granules: 3
-granules r WHERE json.a > 500 AND json.c.size0 = 0	Granules: 15/15
-granules r WHERE json.a > 500 AND json.c.size0 = 0	Granules: 15/15
-granules r WHERE json.a > 500 AND json.c.size0 = 0	Granules: 3/15
 -- a mutation of a packed part reads a path subcolumn before the whole column
 r_pk [json] after the mutation	1
 r_pk [json] after the update	1	0

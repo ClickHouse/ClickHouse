@@ -119,8 +119,8 @@ merged rows	1
 patch	1	upd	1
 patched rows	1	1
 -- two parts read by many tasks: the prefetched read pool, tasks starting after mark 0, the cache cold and warm
-s3_tasks	2	24000	190
-s3c_tasks	2	24000	190
+s3_tasks	2	8000	66
+s3c_tasks	2	8000	66
 s3_tasks, prefixes pool 0 (json, json.a)	0	0
 s3_tasks, prefixes pool 0 paths	1
 s3_tasks, prefixes pool 0 sub-object	0

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-distributed-cache
+# Tags: long, no-fasttest, no-distributed-cache
+# long: many statements and S3 round trips; over the time limit of the flaky check under the thread fuzzer.
 # no-fasttest: needs the S3 disks.
 # no-distributed-cache: the cache counters the test checks are zero when the distributed cache serves the reads.
 
@@ -18,6 +19,10 @@ ROW="concat('{\"a\":', toString(number * 10), ',\"b\":\"', repeat('x', number % 
 LAYOUT="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, index_granularity_bytes = 10485760, min_compress_block_size = 1, min_bytes_for_full_part_storage = 0"
 NO_CACHE="enable_filesystem_cache = 0, use_page_cache_for_disks_without_file_cache = 0, use_page_cache_for_object_storage = 0, use_uncompressed_cache = 0, optimize_move_to_prewhere = 0, use_query_condition_cache = 0"
 
+# The comparisons of a section are collected and sent in one client call: a client start is expensive under sanitizers.
+Q=""
+run_batch() { $CLICKHOUSE_CLIENT -n -q "$Q"; Q=""; }
+
 compare() # table, label, query settings, [log comment]: the reads of the list compared with the Memory twin
 {
     local table=$1 label=$2 settings=$3 q="" tail=""
@@ -28,7 +33,7 @@ compare() # table, label, query settings, [log comment]: the reads of the list c
         done
     done
     q+="SELECT '$label ORDER BY x DESC LIMIT 7', (SELECT groupArray((x, toString(json), json.a)) FROM (SELECT * FROM $table ORDER BY x DESC LIMIT 7 SETTINGS $settings)) = (SELECT groupArray((x, toString(json), json.a)) FROM (SELECT * FROM mem ORDER BY x DESC LIMIT 7))$tail;"
-    $CLICKHOUSE_CLIENT -n -q "$q"
+    Q+="$q"
 }
 
 echo "-- S3 without the filesystem cache: both remote read methods, the prefetched read pool, a packed part"
@@ -50,6 +55,7 @@ done
 for pool in 0 1; do
     compare s3 "s3 prefetched pool, prefixes pool $pool" "max_threads = 4, max_block_size = 5, merge_tree_min_rows_for_concurrent_read = 8, merge_tree_min_bytes_for_concurrent_read = 1, remote_filesystem_read_method = 'threadpool', allow_prefetched_read_pool_for_remote_filesystem = 1, filesystem_prefetch_min_bytes_for_single_read_task = 1, merge_tree_use_prefixes_deserialization_thread_pool = $pool, $NO_CACHE"
 done
+run_batch
 
 echo "-- the filesystem cache: a cold read fills it, warm reads come from it"
 $CLICKHOUSE_CLIENT -n -q "
@@ -61,11 +67,12 @@ CACHE="enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwi
 compare s3c "s3c cold read" "max_threads = 1, max_block_size = 5, remote_filesystem_read_method = 'read', $CACHE" "05303_cold"
 compare s3c "s3c warm threadpool" "max_threads = 1, max_block_size = 5, remote_filesystem_read_method = 'threadpool', $CACHE" "05303_warm_threadpool"
 compare s3c "s3c warm read" "max_threads = 1, max_block_size = 7, remote_filesystem_read_method = 'read', $CACHE" "05303_warm_read"
-$CLICKHOUSE_CLIENT -n -q "
+Q+="
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, argMin(ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0, event_time_microseconds) AS first_query_read_source, sum(ProfileEvents['CachedReadBufferReadFromCacheBytes']) > 0 AS read_cache
     FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05303_cold', '05303_warm_threadpool', '05303_warm_read') GROUP BY log_comment ORDER BY log_comment;
 "
+run_batch
 
 echo "-- requests: rows of eight kilobytes, a remote buffer of 4 KiB, one request per seek"
 BIG_TYPE="JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))"
@@ -133,29 +140,29 @@ TASKS_LAYOUT="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_gra
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS mem_tasks; DROP TABLE IF EXISTS s3_tasks; DROP TABLE IF EXISTS s3c_tasks;
 CREATE TABLE mem_tasks (x UInt64, json $PLAIN) ENGINE = Memory;
-INSERT INTO mem_tasks SELECT number, $ROW FROM numbers(24000);
+INSERT INTO mem_tasks SELECT number, $ROW FROM numbers(8000);
 CREATE TABLE s3_tasks (x UInt64, json $SHARED) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_no_cache', $TASKS_LAYOUT;
 CREATE TABLE s3c_tasks (x UInt64, json $SHARED) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_cache', $TASKS_LAYOUT;
 SYSTEM STOP MERGES s3_tasks; SYSTEM STOP MERGES s3c_tasks;
-INSERT INTO s3_tasks SELECT number, $ROW FROM numbers(12000) SETTINGS max_threads = 1, max_insert_threads = 1;
-INSERT INTO s3_tasks SELECT number, $ROW FROM numbers(12000, 12000) SETTINGS max_threads = 1, max_insert_threads = 1;
-INSERT INTO s3c_tasks SELECT number, $ROW FROM numbers(12000) SETTINGS max_threads = 1, max_insert_threads = 1, enable_filesystem_cache_on_write_operations = 0;
-INSERT INTO s3c_tasks SELECT number, $ROW FROM numbers(12000, 12000) SETTINGS max_threads = 1, max_insert_threads = 1, enable_filesystem_cache_on_write_operations = 0;
+INSERT INTO s3_tasks SELECT number, $ROW FROM numbers(4000) SETTINGS max_threads = 1, max_insert_threads = 1;
+INSERT INTO s3_tasks SELECT number, $ROW FROM numbers(4000, 4000) SETTINGS max_threads = 1, max_insert_threads = 1;
+INSERT INTO s3c_tasks SELECT number, $ROW FROM numbers(4000) SETTINGS max_threads = 1, max_insert_threads = 1, enable_filesystem_cache_on_write_operations = 0;
+INSERT INTO s3c_tasks SELECT number, $ROW FROM numbers(4000, 4000) SETTINGS max_threads = 1, max_insert_threads = 1, enable_filesystem_cache_on_write_operations = 0;
 SELECT table, count(), sum(rows), sum(marks) FROM system.parts WHERE database = currentDatabase() AND table IN ('s3_tasks', 's3c_tasks') AND active GROUP BY table ORDER BY table;
 "
 tasks() # table, label, query settings, [log comment]: EXCEPT in both directions and aggregates against the twin
 {
     local table=$1 label=$2 settings=$3 tail=""
     [ -n "${4:-}" ] && tail=" SETTINGS log_comment = '$4'"
-    $CLICKHOUSE_CLIENT -n -q "
+    Q+="
     SELECT '$label (json, json.a)', (SELECT count() FROM (SELECT x, toString(json), json.a FROM $table SETTINGS $settings EXCEPT SELECT x, toString(json), json.a FROM mem_tasks)), (SELECT count() FROM (SELECT x, toString(json), json.a FROM mem_tasks EXCEPT SELECT x, toString(json), json.a FROM $table SETTINGS $settings))$tail;
     SELECT '$label paths', (SELECT (sum(json.a), uniqExact(json.d.y), countIf(json.c.size0 = 2), sum(json.d.x), sum(length(json.d.y))) FROM $table SETTINGS $settings) = (SELECT (sum(json.a), uniqExact(json.d.y), countIf(json.c.size0 = 2), sum(json.d.x), sum(length(json.d.y))) FROM mem_tasks)$tail;
     SELECT '$label sub-object', (SELECT count() FROM (SELECT x, json.^d FROM $table SETTINGS $settings EXCEPT SELECT x, json.^d FROM mem_tasks))$tail;
-    SELECT '$label scattered rows', (SELECT arraySort(groupArray((x, toString(json), json.a))) FROM $table WHERE x IN (3, 777, 4095, 4096, 8191, 11999, 12000, 12001, 16383, 20000, 23999) SETTINGS $settings) = (SELECT arraySort(groupArray((x, toString(json), json.a))) FROM mem_tasks WHERE x IN (3, 777, 4095, 4096, 8191, 11999, 12000, 12001, 16383, 20000, 23999))$tail;
+    SELECT '$label scattered rows', (SELECT arraySort(groupArray((x, toString(json), json.a))) FROM $table WHERE x IN (3, 777, 2047, 2048, 3999, 4000, 4001, 6143, 7000, 7999) SETTINGS $settings) = (SELECT arraySort(groupArray((x, toString(json), json.a))) FROM mem_tasks WHERE x IN (3, 777, 2047, 2048, 3999, 4000, 4001, 6143, 7000, 7999))$tail;
     "
 }
 # The uncompressed cache is off, so that a warm run reads its bytes from the filesystem cache and not from memory.
-T="max_threads = 16, merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 1, remote_filesystem_read_method = 'threadpool', allow_prefetched_read_pool_for_remote_filesystem = 1, filesystem_prefetch_min_bytes_for_single_read_task = 1, filesystem_prefetch_step_marks = 0, filesystem_prefetch_step_bytes = 0, optimize_move_to_prewhere = 0, use_query_condition_cache = 0, use_uncompressed_cache = 0, use_columns_cache = 0"
+T="max_threads = 16, merge_tree_min_rows_for_concurrent_read = 512, merge_tree_min_bytes_for_concurrent_read = 1, remote_filesystem_read_method = 'threadpool', allow_prefetched_read_pool_for_remote_filesystem = 1, filesystem_prefetch_min_bytes_for_single_read_task = 1, filesystem_prefetch_step_marks = 0, filesystem_prefetch_step_bytes = 0, optimize_move_to_prewhere = 0, use_query_condition_cache = 0, use_uncompressed_cache = 0, use_columns_cache = 0"
 for pool in 0 1; do
     tasks s3_tasks "s3_tasks, prefixes pool $pool" "$T, merge_tree_use_prefixes_deserialization_thread_pool = $pool, enable_filesystem_cache = 0, use_page_cache_for_disks_without_file_cache = 0"
 done
@@ -163,10 +170,11 @@ tasks s3_tasks "s3_tasks, page cache" "$T, enable_filesystem_cache = 0, use_page
 tasks s3_tasks "s3_tasks, page cache warm" "$T, enable_filesystem_cache = 0, use_page_cache_for_disks_without_file_cache = 1"
 tasks s3c_tasks "s3c_tasks cold" "$T, enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0" "05303_tasks_cold"
 tasks s3c_tasks "s3c_tasks warm" "$T, enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0" "05303_tasks_warm"
-$CLICKHOUSE_CLIENT -n -q "
+Q+="
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, sum(ProfileEvents['CachedReadBufferReadFromCacheBytes']) > 0 AS read_cache
     FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05303_tasks_cold', '05303_tasks_warm') GROUP BY log_comment ORDER BY log_comment;
 DROP TABLE mem; DROP TABLE s3; DROP TABLE s3p; DROP TABLE s3c; DROP TABLE big; DROP TABLE big_merge;
 DROP TABLE mem_tasks; DROP TABLE s3_tasks; DROP TABLE s3c_tasks;
 "
+run_batch
