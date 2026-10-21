@@ -4513,7 +4513,7 @@ void Reader::addToColumnsCacheWrite(
     write.entries.push_back(entry);
 }
 
-void Reader::withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write)
+void Reader::withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const
 {
     write.active = false;
 
