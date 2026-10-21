@@ -74,7 +74,7 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t e
 {
     Key key = reinterpret_cast<Key>(data);
     if (tasks.contains(key))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task of thread {} with fd {} was already added to task queue", thread_number, fd);
 
     tasks[key] = TaskData{thread_number, data, fd};
     epoll.add(fd, data, events);
@@ -94,7 +94,7 @@ PollingQueue::TaskData PollingQueue::popExpiredDeadlineTask()
 
     auto task_it = tasks.find(expired_key.value());
     if (task_it == tasks.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expired-deadline task {} missing from task map", *expired_key);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expired-deadline task missing from task map: {}", dumpTasks());
 
     auto res = task_it->second;
     tasks.erase(task_it);
@@ -123,9 +123,7 @@ std::string PollingQueue::dumpTasks() const
 
     for (const auto & task : tasks)
     {
-        res << "(id " << task.first << " thread " << task.second.thread_num << " ptr ";
-        writePointerHex(task.second.data, res);
-        res << " fd " << task.second.fd << ")";
+        res << "(thread " << task.second.thread_num << " fd " << task.second.fd << ")";
     }
 
     res << "]";
@@ -181,11 +179,10 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
             continue;
         }
 
-        void * ptr = event.data.ptr;
-        Key key = reinterpret_cast<Key>(ptr);
+        Key key = reinterpret_cast<Key>(event.data.ptr);
         auto it = tasks.find(key);
         if (it == tasks.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} ({}) was not found in task queue: {}", key, ptr, dumpTasks());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task was not found in task queue: {}", dumpTasks());
 
         auto res = it->second;
         tasks.erase(it);
