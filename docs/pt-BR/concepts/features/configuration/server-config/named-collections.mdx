@@ -3,7 +3,7 @@ description: 'Documentação sobre coleções nomeadas'
 sidebarTitle: 'Coleções nomeadas'
 slug: /operations/named-collections
 title: 'Coleções nomeadas'
-doc_type: 'referência'
+doc_type: 'reference'
 ---
 
 Coleções nomeadas oferecem uma forma de armazenar coleções de pares chave-valor para
@@ -22,16 +22,15 @@ As chaves em uma coleção nomeada devem corresponder aos nomes dos parâmetros 
 função, motor de tabela, banco de dados etc. correspondentes. Nos exemplos abaixo, há um link para
 a lista de parâmetros de cada tipo.
 
-Os parâmetros definidos em uma coleção nomeada podem ser sobrescritos em SQL, como mostrado nos exemplos
-abaixo. Essa capacidade pode ser limitada usando as palavras-chave `[NOT] OVERRIDABLE`, atributos XML
-e/ou a opção de configuração `allow_named_collection_override_by_default`.
+Sobrescrever um parâmetro armazenado em uma coleção nomeada exige o privilégio `SHOW NAMED COLLECTIONS SECRETS` nessa coleção, mesmo quando o parâmetro estiver marcado como `OVERRIDABLE`. Chaves marcadas como `NOT OVERRIDABLE` em SQL ou `overridable="false"` em XML não podem ser sobrescritas. Adicionar um parâmetro que não esteja armazenado na coleção não exige esse privilégio adicional. Aliases, como `addresses_expr` para `host`, contam como substituições do parâmetro armazenado.
 
-<Warning>
-  Se a substituição for permitida, pode ser possível que usuários sem acesso administrativo
-  descubram as credenciais que você está tentando ocultar.
-  Se você estiver usando coleções nomeadas com esse propósito, deverá desabilitar
-  `allow_named_collection_override_by_default` (que vem habilitada por padrão).
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+Essa verificação exige apenas o privilégio; ela não depende das configurações que controlam a exibição de segredos. A configuração `allow_named_collection_override_by_default` está obsoleta e não tem efeito.
+
+As fontes de dicionário seguem a mesma regra. O privilégio é verificado quando o dicionário é criado, anexado ou restaurado. Quando o dicionário é carregado, apenas as chaves marcadas como `NOT OVERRIDABLE` são aplicadas.
 
 ## Armazenar coleções nomeadas no banco de dados do sistema {#storing-named-collections-in-the-system-database}
 
@@ -46,9 +45,9 @@ url = 'https://connection.url/'
 
 No exemplo acima:
 
-* `key_1` sempre pode ser sobrescrita.
+* `key_1` pode ser sobrescrita por usuários com `SHOW NAMED COLLECTIONS SECRETS` na coleção.
 * `key_2` nunca pode ser sobrescrita.
-* `url` pode ou não ser sobrescrita, dependendo do valor de `allow_named_collection_override_by_default`.
+* `url` pode ser sobrescrita por usuários com `SHOW NAMED COLLECTIONS SECRETS` na coleção.
 
 ### Permissões para criar coleções nomeadas com DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -128,9 +127,9 @@ Alterar o tipo de armazenamento exige reiniciar o servidor; `SYSTEM RELOAD CONFI
 
 No exemplo acima:
 
-* `key_1` sempre pode ser sobrescrito.
+* `key_1` pode ser sobrescrito por usuários com `SHOW NAMED COLLECTIONS SECRETS` na coleção.
 * `key_2` nunca pode ser sobrescrito.
-* `url` pode ou não ser sobrescrito, dependendo do valor de `allow_named_collection_override_by_default`.
+* `url` pode ser sobrescrito por usuários com `SHOW NAMED COLLECTIONS SECRETS` na coleção.
 
 ## Modificando coleções nomeadas {#modifying-named-collections}
 
@@ -500,12 +499,19 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-### Exemplo de uso de coleções nomeadas com um dicionário com origem no ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
+### Exemplo de uso de coleções nomeadas com um dicionário com fonte de dados no ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -689,7 +695,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -701,5 +707,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  A coleção nomeada define `my_collection` como nome da coleção. Na chamada da função, esse valor é substituído por `collection = 'my_dict'` para selecionar outra coleção.
+  O dicionário usa `my_collection`, conforme definido na coleção nomeada. Para usar outra coleção do MongoDB, defina uma coleção nomeada separada com esse valor.
 </Note>

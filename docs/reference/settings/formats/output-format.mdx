@@ -195,7 +195,7 @@ Use BSON String type instead of Binary for String columns.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Allow to change compression level in the query output"}]}]}/>
 
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](/reference/settings/session-settings/http#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 
@@ -842,6 +842,16 @@ Write bloom filters in parquet files.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "New setting."}]}]}/>
 
 Put crc32 checksums in parquet page headers.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to write a named `Tuple` with fields of the Parquet `FILE` logical type as a `FILE`-annotated group."}]}]}/>
+
+Write a named `Tuple` whose element names are all fields of the Parquet `FILE` logical type (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; any non-empty subset in any order) as a group annotated with the `FILE` logical type, which represents a reference to a range of bytes stored inline or in an external file. The `offset` and `size` elements must be integers (written as `INT64`), the other elements must be `String` or `FixedString` (`inline` is written as `BYTE_ARRAY` without annotation, the others as `STRING`). As the specification requires, every field is written as `OPTIONAL`. Values are written as is, without checking that they form a valid reference.
+
+When reading, a `FILE`-annotated group is always read as such a `Tuple` of `Nullable` elements.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

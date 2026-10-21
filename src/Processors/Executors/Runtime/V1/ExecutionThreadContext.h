@@ -12,8 +12,10 @@ namespace DB
 {
 
 class IProcessor;
+class ISpillable;
 class ReadProgressCallback;
 class StepProfiler;
+class QueryStatus;
 
 namespace Runtime::V1
 {
@@ -35,6 +37,7 @@ private:
 
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
+    QueryStatus * process_list_element = nullptr;
 
     /// EXPLAIN ANALYZE statistics.
     StepProfiler * step_profiler = nullptr;
@@ -70,7 +73,7 @@ public:
     void setTask(IProcessor * task) { processor = task; }
     IProcessor * getTask() const { return processor; }
     IProcessor * popTask() { return std::exchange(processor, nullptr); }
-    bool executeTask();
+    bool executeTask(ISpillable * spill_target = nullptr);
 
     void setException(std::exception_ptr exception_);
     std::exception_ptr getException();
@@ -79,7 +82,8 @@ public:
     /// Hands the recorded intervals to the profiler; called once, after the thread finished.
     void flushWorkIntervals();
 
-    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, StepProfiler * step_profiler_);
+    ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback,
+        StepProfiler * step_profiler_, QueryStatus * process_list_element_);
 };
 
 }

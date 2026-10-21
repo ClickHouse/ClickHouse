@@ -31,9 +31,6 @@ public:
     /// Block ids already in the dedup log: the block is a replay, and nothing is published.
     const std::vector<std::string> & dedupConflicts() const { return dedup_conflicts; }
 
-    /// Names `part` after the allocated block number
-    void assignTo(IMergeTreeDataPart & part) const;
-
     void commit() { committed = true; }
 
 private:
