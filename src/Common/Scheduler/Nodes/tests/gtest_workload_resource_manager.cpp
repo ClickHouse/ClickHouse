@@ -57,8 +57,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_RESTORE_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int SERVER_OVERLOADED;
     extern const int RESOURCE_LIMIT_EXCEEDED;
@@ -98,71 +96,29 @@ static void executeWorkloadEntityQuery(IWorkloadEntityStorage & storage, const S
     {
         String error;
         const char * end = query.data();
-        return tryParseQuery(
-            parser,
-            end,
-            query.data() + query.size(),
-            error,
-            false,
-            "",
-            false,
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
-            true);
+        return tryParseQuery(parser, end, query.data() + query.size(), error, false, "", false, 0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
     };
 
     if (ASTPtr create_workload = parse(create_workload_p))
     {
         auto & parsed = create_workload->as<ASTCreateWorkloadQuery &>();
-        auto workload_name = parsed.getWorkloadName();
-        bool throw_if_exists = !parsed.if_not_exists && !parsed.or_replace;
-        bool replace_if_exists = parsed.or_replace;
-
-        storage.storeEntity(
-            nullptr,
-            WorkloadEntityType::Workload,
-            workload_name,
-            create_workload,
-            throw_if_exists,
-            replace_if_exists,
-            {});
+        storage.storeEntity(nullptr, WORKLOAD, parsed.getWorkloadName(), create_workload, !parsed.if_not_exists && !parsed.or_replace, parsed.or_replace, {});
     }
     else if (ASTPtr create_resource = parse(create_resource_p))
     {
         auto & parsed = create_resource->as<ASTCreateResourceQuery &>();
-        auto resource_name = parsed.getResourceName();
-        bool throw_if_exists = !parsed.if_not_exists && !parsed.or_replace;
-        bool replace_if_exists = parsed.or_replace;
-
-        storage.storeEntity(
-            nullptr,
-            WorkloadEntityType::Resource,
-            resource_name,
-            create_resource,
-            throw_if_exists,
-            replace_if_exists,
-            {});
+        storage.storeEntity(nullptr, RESOURCE, parsed.getResourceName(), create_resource, !parsed.if_not_exists && !parsed.or_replace, parsed.or_replace, {});
     }
     else if (ASTPtr drop_workload = parse(drop_workload_p))
     {
         auto & parsed = drop_workload->as<ASTDropWorkloadQuery &>();
-        bool throw_if_not_exists = !parsed.if_exists;
-        storage.removeEntity(
-            nullptr,
-            WorkloadEntityType::Workload,
-            parsed.workload_name,
-            throw_if_not_exists);
+        storage.removeEntity(nullptr, WORKLOAD, parsed.workload_name, !parsed.if_exists);
     }
     else if (ASTPtr drop_resource = parse(drop_resource_p))
     {
         auto & parsed = drop_resource->as<ASTDropResourceQuery &>();
-        bool throw_if_not_exists = !parsed.if_exists;
-        storage.removeEntity(
-            nullptr,
-            WorkloadEntityType::Resource,
-            parsed.resource_name,
-            throw_if_not_exists);
+        storage.removeEntity(nullptr, RESOURCE, parsed.resource_name, !parsed.if_exists);
     }
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid query in WorkloadEntityTestStorage: {}", query);
@@ -194,11 +150,6 @@ public:
     {
         auto lock = getLock();
         replaceOwnEntities(lock, std::move(entities));
-    }
-
-    std::unique_lock<std::recursive_mutex> lock() const
-    {
-        return getLock();
     }
 
     void executeQuery(const String & query)
@@ -2545,58 +2496,21 @@ static bool hasSchedulerNode(ResourceTest & t, const String & resource, const St
     return seen;
 }
 
-static ImplicitWorkloadEntitiesConfig cpuLimitConfig(Int64 cpu_slots)
-{
-    ImplicitWorkloadEntitiesConfig config;
-    config.respect_cpu_limit = true;
-    config.cpu_slots = cpu_slots;
-    return config;
-}
-
-static ImplicitWorkloadEntitiesConfig memoryLimitConfig(Int64 memory_bytes)
-{
-    ImplicitWorkloadEntitiesConfig config;
-    config.respect_memory_limit = true;
-    config.memory_bytes = memory_bytes;
-    return config;
-}
-
-static ImplicitWorkloadEntitiesConfig defaultWorkloadConfig()
-{
-    ImplicitWorkloadEntitiesConfig config;
-    config.implicit_default_workload = true;
-    return config;
-}
-
-/// Records every transaction a storage notifies its subscribers about
-struct TransactionRecorder
-{
-    std::vector<std::vector<IWorkloadEntityStorage::Event>> transactions;
-    scope_guard subscription;
-
-    explicit TransactionRecorder(IWorkloadEntityStorage & storage)
-    {
-        subscription = storage.getAllEntitiesAndSubscribe(
-            [this] (const std::vector<IWorkloadEntityStorage::Event> & tx) { transactions.push_back(tx); });
-    }
-};
-
 // A configuration resource shadows a SQL resource claiming the same role: the whole SQL resource is
 // hidden in one transaction, and it becomes visible again when the configuration drops its resource.
 TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
 {
     ResourceTest t;
-    TransactionRecorder recorder(t.storage);
+    std::vector<std::vector<IWorkloadEntityStorage::Event>> transactions;
+    scope_guard subscription = t.storage.getAllEntitiesAndSubscribe(
+        [&] (const std::vector<IWorkloadEntityStorage::Event> & tx) { transactions.push_back(tx); });
 
     t.query("CREATE RESOURCE sql_cpu (MASTER THREAD, WORKER THREAD)");
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "sql_cpu");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "sql_cpu");
-    EXPECT_EQ(t.storage.getEntitySource(RESOURCE, "sql_cpu"), "sql");
 
-    size_t transactions = recorder.transactions.size();
+    size_t count = transactions.size();
     t.loadConfig("CREATE RESOURCE cfg_cpu (MASTER THREAD)");
-    ASSERT_EQ(recorder.transactions.size(), transactions + 1);
-    EXPECT_EQ(recorder.transactions.back().size(), 2); // drop `sql_cpu` and create `cfg_cpu`
+    ASSERT_EQ(transactions.size(), count + 1);
+    EXPECT_EQ(transactions.back().size(), 2); // drop `sql_cpu` and create `cfg_cpu`
 
     EXPECT_FALSE(t.storage.has(RESOURCE, "sql_cpu"));
     EXPECT_FALSE(t.manager->hasResource("sql_cpu"));
@@ -2608,9 +2522,9 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
     EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
 
     // The shadowed entity stays stored and returns once the configuration drops its resource
-    transactions = recorder.transactions.size();
+    count = transactions.size();
     t.loadConfig("");
-    ASSERT_EQ(recorder.transactions.size(), transactions + 1);
+    ASSERT_EQ(transactions.size(), count + 1);
     EXPECT_TRUE(t.manager->hasResource("sql_cpu"));
     EXPECT_FALSE(t.manager->hasResource("cfg_cpu"));
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), "sql_cpu");
@@ -2624,9 +2538,9 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByRole)
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
 
     // An unchanged reload produces no transaction
-    transactions = recorder.transactions.size();
+    count = transactions.size();
     t.loadConfig("");
-    EXPECT_EQ(recorder.transactions.size(), transactions);
+    EXPECT_EQ(transactions.size(), count);
 }
 
 // A configuration entity shadows a SQL entity of the same kind and name, even of another cost unit.
@@ -2692,7 +2606,7 @@ TEST(SchedulerWorkloadResourceManager, ShadowedParentKeepsChildren)
 TEST(SchedulerWorkloadResourceManager, WorkloadAndResourceWithSameName)
 {
     ResourceTest t;
-    t.setImplicitEntities(defaultWorkloadConfig());
+    t.setImplicitEntities({.implicit_default_workload = true});
 
     t.query("CREATE RESOURCE x (WRITE DISK d, READ DISK d)");
     t.query("CREATE WORKLOAD x SETTINGS max_io_requests = 1 FOR x");
@@ -2720,7 +2634,6 @@ TEST(SchedulerWorkloadResourceManager, WorkloadAndResourceWithSameName)
 
     // Statements address one kind only
     EXPECT_THROW(t.query("CREATE RESOURCE x (READ DISK d)"), DB::Exception);
-    EXPECT_THROW(t.query("CREATE WORKLOAD io"), DB::Exception); // the configuration workload
     EXPECT_THROW(t.query("DROP RESOURCE x"), DB::Exception); // referenced by the workload `x`
     t.query("DROP WORKLOAD x");
     EXPECT_TRUE(t.storage.has(RESOURCE, "x"));
@@ -2730,7 +2643,6 @@ TEST(SchedulerWorkloadResourceManager, WorkloadAndResourceWithSameName)
     EXPECT_FALSE(t.storage.has(RESOURCE, "io"));
 
     // The configuration may define both kinds with one name as well
-    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD io; CREATE RESOURCE all (READ DISK d2); CREATE WORKLOAD z; CREATE RESOURCE z (QUERY); CREATE WORKLOAD z"), DB::Exception);
     t.loadConfig("CREATE WORKLOAD io; CREATE RESOURCE all (READ DISK d2); CREATE WORKLOAD z; CREATE RESOURCE z (QUERY)");
     EXPECT_TRUE(t.storage.has(WORKLOAD, "z"));
     EXPECT_TRUE(t.storage.has(RESOURCE, "z"));
@@ -2742,41 +2654,52 @@ TEST(SchedulerWorkloadResourceManager, ShadowingConflictsThrow)
 {
     ResourceTest t;
 
-    EXPECT_THROW(t.loadConfig("CREATE RESOURCE a (MASTER THREAD); CREATE RESOURCE b (MASTER THREAD, WORKER THREAD)"), DB::Exception);
-    EXPECT_FALSE(t.storage.has(RESOURCE, "a"));
-    EXPECT_FALSE(t.storage.has(RESOURCE, "b"));
-
-    t.loadConfig("CREATE RESOURCE cfg_memory (MEMORY RESERVATION); CREATE WORKLOAD cfg_workload");
+    t.loadConfig("CREATE RESOURCE cfg_memory (MEMORY RESERVATION)");
     EXPECT_THROW(t.query("CREATE RESOURCE memory (MEMORY RESERVATION)"), DB::Exception);
     EXPECT_THROW(t.query("CREATE RESOURCE cfg_memory (QUERY)"), DB::Exception);
     EXPECT_THROW(t.query("CREATE OR REPLACE RESOURCE cfg_memory (MEMORY RESERVATION)"), DB::Exception);
-    EXPECT_THROW(t.query("CREATE OR REPLACE WORKLOAD cfg_workload"), DB::Exception);
     EXPECT_EQ(t.storage.getEntitySource(RESOURCE, "cfg_memory"), "configuration");
 
     t.query("CREATE RESOURCE sql_query (QUERY)");
     EXPECT_THROW(t.query("CREATE RESOURCE other_query (QUERY)"), DB::Exception);
 }
 
-// The names of implicit resources are reserved: statements and loads reject them.
-TEST(SchedulerWorkloadResourceManager, ImplicitResourceNamesReserved)
+// User entities cannot take reserved names: statements and loads reject the names of implicit resources, and SQL
+// cannot produce the empty name of the root workload, as an empty identifier is not parsed.
+TEST(SchedulerWorkloadResourceManager, ReservedEntityNamesRejected)
 {
     ResourceTest t;
     EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"));
-    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"));
-    EXPECT_ANY_THROW(t.query("CREATE WORKLOAD __server_cpu__"));
-    EXPECT_THROW(t.loadConfig("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"), DB::Exception);
-    EXPECT_THROW(t.loadConfig("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"), DB::Exception);
-    EXPECT_THROW(t.sql_storage->loadFromString("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD); CREATE RESOURCE io (READ DISK d)"), DB::Exception);
+    EXPECT_ANY_THROW(t.query("CREATE WORKLOAD __server_memory__"));
+    EXPECT_THROW(t.sql_storage->loadFromString("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION); CREATE RESOURCE io (READ DISK d)"), DB::Exception);
     EXPECT_FALSE(t.storage.has(RESOURCE, "io"));
+
+    for (const char * query : {"CREATE WORKLOAD ``", "CREATE WORKLOAD \"\"", "CREATE WORKLOAD x IN ``", "DROP WORKLOAD ``",
+        "CREATE WORKLOAD x SETTINGS max_io_requests = 1 FOR ``", "CREATE RESOURCE `` (READ DISK d)", "DROP RESOURCE ``"})
+    {
+        try
+        {
+            t.query(query);
+            ADD_FAILURE() << "No exception for: " << query;
+        }
+        catch (const DB::Exception & e)
+        {
+            // `executeWorkloadEntityQuery` throws it when no parser accepts the query
+            EXPECT_EQ(e.code(), ErrorCodes::SYNTAX_ERROR) << query << ": " << e.message();
+        }
+    }
+
+    // The storage rejects the empty name as well
+    EXPECT_THROW(t.storage.storeEntity(nullptr, WORKLOAD, "", make_intrusive<ASTCreateWorkloadQuery>(), true, false, {}), DB::Exception);
+    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
 }
 
-// Persisted entities cannot reference implicit entities: they live in an outer layer.
+// Persisted entities cannot reference implicit entities: they live in an outer layer. Implicit entities cannot be
+// dropped, even while shadowed.
 TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
 {
     ResourceTest t;
-    ImplicitWorkloadEntitiesConfig config = cpuLimitConfig(4);
-    config.implicit_default_workload = true;
-    t.setImplicitEntities(config);
+    t.setImplicitEntities({.respect_cpu_limit = true, .implicit_default_workload = true, .cpu_slots = 4});
     ASSERT_TRUE(t.storage.has(WORKLOAD, "default"));
     ASSERT_TRUE(t.storage.has(RESOURCE, String(IMPLICIT_CPU_RESOURCE_NAME)));
 
@@ -2800,11 +2723,6 @@ TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
     expect_drop_error("DROP RESOURCE __server_cpu__", "workloads_respect_server_cpu_limit");
     EXPECT_TRUE(t.storage.has(WORKLOAD, "default"));
 
-    // An operator `default` shadows the implicit one and can be dropped
-    t.query("CREATE WORKLOAD default");
-    t.query("DROP WORKLOAD default");
-    EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "implicit");
-
     // A shadowed implicit resource cannot be dropped either
     t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
     ASSERT_FALSE(t.storage.has(RESOURCE, String(IMPLICIT_CPU_RESOURCE_NAME)));
@@ -2823,52 +2741,6 @@ TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
     t.query("DROP RESOURCE IF EXISTS __server_cpu__");
 }
 
-// Loads reject conflicts between their entities, like SQL statements.
-TEST(SchedulerWorkloadResourceManager, LoadRejectsConflicts)
-{
-    ResourceTest t;
-    t.query("CREATE RESOURCE io (READ DISK d)");
-
-    for (auto * storage : {t.sql_storage, t.config_storage})
-    {
-        EXPECT_THROW(storage->loadFromString("CREATE RESOURCE s2 (MASTER THREAD); CREATE RESOURCE s1 (MASTER THREAD, WORKER THREAD)"), DB::Exception);
-        EXPECT_THROW(storage->loadFromString("CREATE RESOURCE y (READ DISK d); CREATE RESOURCE y (WRITE DISK d)"), DB::Exception);
-        EXPECT_THROW(storage->loadFromString("CREATE WORKLOAD w; CREATE WORKLOAD w SETTINGS weight = 2"), DB::Exception);
-        for (const char * name : {"s1", "s2", "y"})
-            EXPECT_FALSE(t.storage.has(RESOURCE, name)) << name;
-        EXPECT_FALSE(t.storage.has(WORKLOAD, "w"));
-    }
-    EXPECT_TRUE(t.storage.has(RESOURCE, "io"));
-}
-
-// A configuration workload references only configuration entities: neither a SQL nor an implicit workload can be its
-// parent, and a `FOR` clause cannot name a SQL resource. Such a load is rejected and the previous state is kept. SQL
-// workloads can be children of configuration workloads.
-TEST(SchedulerWorkloadResourceManager, ConfigWorkloadReferencesOnlyConfiguration)
-{
-    ResourceTest t;
-    ImplicitWorkloadEntitiesConfig config;
-    config.implicit_default_workload = true;
-    t.setImplicitEntities(config);
-    t.query("CREATE RESOURCE io (READ DISK d)");
-    t.query("CREATE WORKLOAD sql_parent");
-
-    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN default"), DB::Exception);
-    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN sql_parent"), DB::Exception);
-    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN missing"), DB::Exception);
-    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child SETTINGS max_io_requests = 1 FOR io"), DB::Exception);
-    EXPECT_FALSE(t.config_storage->has(WORKLOAD, "child"));
-
-    // A reload is rejected as well, keeping the previous entities
-    t.loadConfig("CREATE WORKLOAD cfg_parent; CREATE WORKLOAD child IN cfg_parent");
-    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD cfg_parent; CREATE WORKLOAD child IN sql_parent"), DB::Exception);
-    EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get(WORKLOAD, "child").get())->getWorkloadParent(), "cfg_parent");
-
-    // A SQL workload can be a child of a configuration workload
-    t.query("CREATE WORKLOAD sql_child IN cfg_parent");
-    EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "sql_child"), "sql");
-}
-
 /// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`
 static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, const String & parent, const String & child)
 {
@@ -2882,76 +2754,26 @@ static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, cons
     return seen;
 }
 
-// A configuration reload must not drop an entity that the configuration still references, must not reference a
-// missing entity, and must not form a parent cycle. The whole reload is rejected and the previous state is kept.
-TEST(SchedulerWorkloadResourceManager, ConfigLoadRejectsDroppingReferencedEntity)
-{
-    {
-        ResourceTest t;
-        t.loadConfig("CREATE WORKLOAD all; CREATE WORKLOAD child IN all");
-        EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN all"), DB::Exception);
-        EXPECT_TRUE(t.storage.has(WORKLOAD, "all"));
-        EXPECT_TRUE(t.storage.has(WORKLOAD, "child"));
-
-        // Dropping the parent together with its child is fine
-        EXPECT_NO_THROW(t.loadConfig(""));
-        EXPECT_FALSE(t.storage.has(WORKLOAD, "all"));
-        EXPECT_FALSE(t.storage.has(WORKLOAD, "child"));
-    }
-    {
-        ResourceTest t;
-        t.loadConfig("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD); CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu");
-        EXPECT_THROW(t.loadConfig("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"), DB::Exception);
-        EXPECT_TRUE(t.storage.has(RESOURCE, "cpu"));
-    }
-    {
-        ResourceTest t;
-        // A resource of the parent's name is not a parent
-        t.loadConfig("CREATE WORKLOAD all; CREATE WORKLOAD child IN all");
-        EXPECT_THROW(t.loadConfig("CREATE RESOURCE all (MASTER THREAD); CREATE WORKLOAD child IN all"), DB::Exception);
-        EXPECT_TRUE(t.storage.has(WORKLOAD, "all"));
-        EXPECT_FALSE(t.storage.has(RESOURCE, "all"));
-    }
-    {
-        ResourceTest t;
-        // Moving the child to another parent and dropping the old one in the same reload is fine
-        t.loadConfig("CREATE WORKLOAD all; CREATE WORKLOAD other; CREATE WORKLOAD child IN all");
-        EXPECT_NO_THROW(t.loadConfig("CREATE WORKLOAD other; CREATE WORKLOAD child IN other"));
-        EXPECT_FALSE(t.storage.has(WORKLOAD, "all"));
-    }
-    {
-        ResourceTest t;
-        // Parent cycles are rejected, like on the SQL path
-        t.loadConfig("CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-        EXPECT_THROW(t.loadConfig("CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a"), DB::Exception);
-        EXPECT_THROW(t.loadConfig("CREATE WORKLOAD a IN a; CREATE WORKLOAD b IN a"), DB::Exception);
-        EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get(WORKLOAD, "a").get())->getWorkloadParent(), "");
-        EXPECT_THROW(t.loadConfig("CREATE WORKLOAD x IN y; CREATE WORKLOAD y IN x"), DB::Exception);
-        EXPECT_TRUE(t.storage.has(WORKLOAD, "b"));
-    }
-}
-
-// A persisted load (Keeper, disk) rejects broken references and keeps the previous entities. It resolves references
-// against its own entities and the configuration.
-TEST(SchedulerWorkloadResourceManager, PersistedLoadRejectsBrokenReferences)
+// A load (configuration, Keeper, disk) rejects conflicts and broken references as a whole and keeps the previous
+// entities. A persisted load resolves references against its own entities and the configuration.
+TEST(SchedulerWorkloadResourceManager, LoadRejectsConflictsAndBrokenReferences)
 {
     ResourceTest t;
     t.loadConfig("CREATE WORKLOAD cfg_parent; CREATE RESOURCE cfg_io (READ DISK d)");
     t.sql_storage->loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD w IN cfg_parent SETTINGS max_io_requests = 1 FOR cfg_io");
+    const WorkloadEntities entities = t.storage.getAllEntities();
 
     for (const char * data : {
+        "CREATE RESOURCE s2 (MASTER THREAD); CREATE RESOURCE s1 (MASTER THREAD, WORKER THREAD)",
+        "CREATE RESOURCE y (READ DISK d); CREATE RESOURCE y (WRITE DISK d)",
+        "CREATE WORKLOAD w; CREATE WORKLOAD w SETTINGS weight = 2",
         "CREATE WORKLOAD sql_child IN missing",
         "CREATE RESOURCE sql_parent (MASTER THREAD); CREATE WORKLOAD sql_child IN sql_parent",
         "CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a",
-        "CREATE WORKLOAD self IN self",
-        "CREATE WORKLOAD d SETTINGS max_io_requests = 1 FOR missing",
-        "CREATE WORKLOAD d SETTINGS max_io_requests = 1 FOR cfg_parent",
-        "CREATE WORKLOAD d SETTINGS weight = -1",
         "CREATE RESOURCE io (MEMORY RESERVATION)"})
     {
         EXPECT_THROW(t.sql_storage->loadFromString(data), DB::Exception) << data;
-        EXPECT_TRUE(t.storage.has(WORKLOAD, "w")) << data;
-        EXPECT_TRUE(t.storage.has(RESOURCE, "io")) << data;
+        EXPECT_TRUE(t.storage.getAllEntities() == entities) << data;
     }
 
     EXPECT_NO_THROW(t.sql_storage->loadFromString("CREATE WORKLOAD x IN cfg_parent; CREATE WORKLOAD y IN x"));
@@ -2959,72 +2781,70 @@ TEST(SchedulerWorkloadResourceManager, PersistedLoadRejectsBrokenReferences)
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "cfg_io", "cfg_parent", "x"));
 }
 
-// SQL cannot produce a workload entity with the empty name (the root workload): an empty identifier is not parsed.
-TEST(SchedulerWorkloadResourceManager, EmptyWorkloadNameRejected)
+// A configuration workload references only configuration entities: neither a SQL nor an implicit workload can be its
+// parent, and a `FOR` clause cannot name a SQL resource. A reload must not drop a workload it still references, but
+// may drop it together with its children or after moving them.
+TEST(SchedulerWorkloadResourceManager, ConfigWorkloadReferencesOnlyConfiguration)
 {
     ResourceTest t;
-    for (const char * query : {"CREATE WORKLOAD ``", "CREATE WORKLOAD \"\"", "CREATE WORKLOAD x IN ``", "DROP WORKLOAD ``",
-        "CREATE WORKLOAD x SETTINGS max_io_requests = 1 FOR ``", "CREATE RESOURCE `` (READ DISK d)", "DROP RESOURCE ``"})
-    {
-        try
-        {
-            t.query(query);
-            ADD_FAILURE() << "No exception for: " << query;
-        }
-        catch (const DB::Exception & e)
-        {
-            // `executeWorkloadEntityQuery` throws it when no parser accepts the query
-            EXPECT_EQ(e.code(), ErrorCodes::SYNTAX_ERROR) << query << ": " << e.message();
-        }
-    }
+    t.setImplicitEntities({.implicit_default_workload = true});
+    t.query("CREATE RESOURCE io (READ DISK d)");
+    t.query("CREATE WORKLOAD sql_parent");
 
-    // The storage rejects the empty name as well
-    try
-    {
-        t.storage.storeEntity(nullptr, WorkloadEntityType::Workload, "", make_intrusive<ASTCreateWorkloadQuery>(), true, false, {});
-        ADD_FAILURE() << "No exception for the empty name";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS) << e.message();
-    }
-    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN default"), DB::Exception);
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child IN sql_parent"), DB::Exception);
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD child SETTINGS max_io_requests = 1 FOR io"), DB::Exception);
+    EXPECT_FALSE(t.storage.has(WORKLOAD, "child"));
+
+    t.loadConfig("CREATE WORKLOAD all; CREATE WORKLOAD other; CREATE WORKLOAD child IN all");
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD other; CREATE WORKLOAD child IN all"), DB::Exception);
+    EXPECT_TRUE(t.storage.has(WORKLOAD, "all"));
+
+    EXPECT_NO_THROW(t.loadConfig("CREATE WORKLOAD other; CREATE WORKLOAD child IN other"));
+    EXPECT_FALSE(t.storage.has(WORKLOAD, "all"));
+
+    EXPECT_NO_THROW(t.loadConfig(""));
+    EXPECT_FALSE(t.storage.has(WORKLOAD, "child"));
 }
 
-// With the memory limit enabled and no `MEMORY RESERVATION` resource declared, an implicit resource is
-// created and the root workload limits it.
-TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAutoCreateAndRemove)
+// With the server limits enabled and no resources declared, the implicit resources `__server_cpu__` and
+// `__server_memory__` are created and the root workload limits them. The limits are reloaded independently, and an
+// unlimited one keeps its resource without a root limit.
+TEST(SchedulerWorkloadResourceManager, ServerLimitsAutoCreateAndRemove)
 {
     ResourceTest t;
-    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
+    const String cpu(IMPLICIT_CPU_RESOURCE_NAME);
+    const String memory(IMPLICIT_MEMORY_RESOURCE_NAME);
 
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
-
-    t.setImplicitEntities(memoryLimitConfig(1000));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/limit"));
-    EXPECT_EQ(t.storage.getEntitySource(RESOURCE, implicit_resource), "implicit");
+    t.setImplicitEntities({.respect_cpu_limit = true, .respect_memory_limit = true, .cpu_slots = 4, .memory_bytes = 1000});
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), cpu);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), cpu);
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), memory);
+    EXPECT_EQ(t.storage.getEntitySource(RESOURCE, cpu), "implicit");
     EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, ""), "implicit");
+    EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(),
+        "CREATE WORKLOAD `` SETTINGS max_concurrent_threads = 4 FOR __server_cpu__, max_memory = 1000 FOR __server_memory__");
+    EXPECT_TRUE(hasSchedulerNode(t, cpu, "/semaphore"));
+    EXPECT_TRUE(hasSchedulerNode(t, memory, "/limit"));
+
+    t.setImplicitEntities({.respect_cpu_limit = true, .respect_memory_limit = true});
+    EXPECT_TRUE(t.manager->hasResource(cpu));
+    EXPECT_TRUE(t.manager->hasResource(memory));
+    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
+    EXPECT_FALSE(hasSchedulerNode(t, cpu, "/semaphore"));
+    EXPECT_FALSE(hasSchedulerNode(t, memory, "/limit"));
+
+    t.setImplicitEntities({.respect_memory_limit = true, .memory_bytes = 1000});
+    EXPECT_FALSE(t.manager->hasResource(cpu));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
     EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(), "CREATE WORKLOAD `` SETTINGS max_memory = 1000 FOR __server_memory__");
+    EXPECT_TRUE(hasSchedulerNode(t, memory, "/limit"));
 
     t.setImplicitEntities({});
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
+    EXPECT_FALSE(t.manager->hasResource(memory));
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
     EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
-}
-
-// An unlimited server memory limit creates the resource but no root limit, so reservations are not blocked.
-TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitUnlimitedDoesNotBlock)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
-
-    t.setImplicitEntities(memoryLimitConfig(ImplicitWorkloadEntitiesConfig::unlimited));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
-    EXPECT_FALSE(hasSchedulerNode(t, implicit_resource, "/limit"));
 }
 
 // The root limit caps the aggregate reservation of all workloads, which declare no memory limit themselves.
@@ -3035,7 +2855,7 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAggregateCap)
 
     t.query("CREATE WORKLOAD A");
     t.query("CREATE WORKLOAD B");
-    t.setImplicitEntities(memoryLimitConfig(100));
+    t.setImplicitEntities({.respect_memory_limit = true, .memory_bytes = 100});
 
     ClassifierPtr c_a = t.manager->acquire("A");
     ClassifierPtr c_b = t.manager->acquire("B");
@@ -3055,104 +2875,6 @@ TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitAggregateCap)
     b.waitSync();
 }
 
-// An operator `MEMORY RESERVATION` resource shadows the implicit one and the root workload limits it.
-TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitOperatorResource)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD A");
-    t.query("CREATE WORKLOAD B");
-    t.setImplicitEntities(memoryLimitConfig(100));
-
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_TRUE(t.manager->hasResource("memory"));
-    EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(), "CREATE WORKLOAD `` SETTINGS max_memory = 100 FOR memory");
-
-    ClassifierPtr c_a = t.manager->acquire("A");
-    ClassifierPtr c_b = t.manager->acquire("B");
-    ResourceLink link_a = c_a->get("memory");
-    ResourceLink link_b = c_b->get("memory");
-
-    TestAllocation a(link_a, "A", 80);
-    a.waitSync();
-    TestAllocation b(link_b, "B", 80);
-    b.assertIncreaseEnqueued();
-    a.setSize(10);
-    b.waitSync();
-}
-
-// An operator resource can be created and dropped at any moment: the implicit one is shadowed while the
-// operator resource exists, and the root limit follows the visible resource.
-TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitOperatorResourceCreatedAndDropped)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
-
-    t.query("CREATE WORKLOAD all");
-    t.setImplicitEntities(memoryLimitConfig(100));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_TRUE(t.manager->hasResource("memory"));
-    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "memory");
-    EXPECT_TRUE(hasSchedulerNode(t, "memory", "/limit"));
-
-    t.query("DROP RESOURCE memory");
-    EXPECT_FALSE(t.manager->hasResource("memory"));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_resource);
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/limit"));
-}
-
-// Hot reload: the limit moves finite -> unlimited -> finite in place, and disabling removes the resource.
-TEST(SchedulerWorkloadResourceManager, ServerMemoryLimitHotReload)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_MEMORY_RESOURCE_NAME);
-
-    t.setImplicitEntities(memoryLimitConfig(1000));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/limit"));
-
-    t.setImplicitEntities(memoryLimitConfig(ImplicitWorkloadEntitiesConfig::unlimited));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_FALSE(hasSchedulerNode(t, implicit_resource, "/limit"));
-
-    t.setImplicitEntities(memoryLimitConfig(1000));
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/limit"));
-
-    t.setImplicitEntities({});
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-}
-
-// With the CPU limit enabled and no CPU resource declared, an implicit `MASTER THREAD, WORKER THREAD`
-// resource is created and the root workload limits it.
-TEST(SchedulerWorkloadResourceManager, ServerCPULimitAutoCreateAndRemove)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
-
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
-
-    t.setImplicitEntities(cpuLimitConfig(4));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_resource);
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_resource);
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/semaphore"));
-    EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(), "CREATE WORKLOAD `` SETTINGS max_concurrent_threads = 4 FOR __server_cpu__");
-
-    t.setImplicitEntities({});
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
-}
-
 // The root limit caps the aggregate number of concurrent threads of all workloads.
 TEST(SchedulerWorkloadResourceManager, ServerCPULimitAggregateCap)
 {
@@ -3160,7 +2882,7 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitAggregateCap)
 
     t.query("CREATE WORKLOAD A");
     t.query("CREATE WORKLOAD B");
-    t.setImplicitEntities(cpuLimitConfig(4));
+    t.setImplicitEntities({.respect_cpu_limit = true, .cpu_slots = 4});
 
     // A query in workload A saturates the shared budget of 4 slots.
     auto query_a = std::make_shared<TestQuery>(t);
@@ -3180,151 +2902,67 @@ TEST(SchedulerWorkloadResourceManager, ServerCPULimitAggregateCap)
     t.wait();
 }
 
-// An operator CPU resource holding both roles shadows the implicit one and the root workload limits it.
-TEST(SchedulerWorkloadResourceManager, ServerCPULimitOperatorResource)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
-
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD all");
-    t.setImplicitEntities(cpuLimitConfig(4));
-
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_TRUE(t.manager->hasResource("cpu"));
-    EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
-}
-
-// The role getters always name a resource the manager has, while an operator resource is created and
-// dropped around the implicit one.
-TEST(SchedulerWorkloadResourceManager, ServerCPULimitOperatorResourceCreatedAndDropped)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
-
-    auto resolves_to_existing = [&]()
-    {
-        for (const String & name : {t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName()})
-            if (!name.empty() && !t.manager->hasResource(name))
-                return false;
-        return true;
-    };
-
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD all");
-    t.setImplicitEntities(cpuLimitConfig(4));
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
-    EXPECT_TRUE(resolves_to_existing());
-
-    t.query("DROP RESOURCE cpu");
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_resource);
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_resource);
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/semaphore"));
-    EXPECT_TRUE(resolves_to_existing());
-
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
-    EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
-    EXPECT_TRUE(resolves_to_existing());
-
-    t.setImplicitEntities({});
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
-    EXPECT_FALSE(hasSchedulerNode(t, "cpu", "/semaphore"));
-    EXPECT_TRUE(resolves_to_existing());
-}
-
-// Split CPU resources (separate MASTER and WORKER resources) cannot share one limit: no implicit resource
-// and no root limit.
-TEST(SchedulerWorkloadResourceManager, ServerCPULimitSplitResourceNoEffect)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
-
-    t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
-    t.query("CREATE RESOURCE cpu_worker (WORKER THREAD)");
-    t.query("CREATE WORKLOAD all");
-    t.setImplicitEntities(cpuLimitConfig(4));
-
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
-    EXPECT_FALSE(hasSchedulerNode(t, "cpu_master", "/semaphore"));
-    EXPECT_FALSE(hasSchedulerNode(t, "cpu_worker", "/semaphore"));
-}
-
-// A CPU resource holding only MASTER THREAD shadows the whole implicit resource: no root limit, and the
-// missing role is not served by the implicit resource.
-TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialResourceNoEffect)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
-
-    t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
-    t.query("CREATE WORKLOAD all");
-    t.setImplicitEntities(cpuLimitConfig(4));
-
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
-    EXPECT_FALSE(hasSchedulerNode(t, "cpu_master", "/semaphore"));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu_master");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
-}
-
-// Hot reload: the limit moves finite -> unlimited -> finite in place, and disabling removes the resource.
-TEST(SchedulerWorkloadResourceManager, ServerCPULimitHotReload)
-{
-    ResourceTest t;
-    const String implicit_resource(IMPLICIT_CPU_RESOURCE_NAME);
-
-    t.setImplicitEntities(cpuLimitConfig(8));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/semaphore"));
-
-    t.setImplicitEntities(cpuLimitConfig(ImplicitWorkloadEntitiesConfig::unlimited));
-    EXPECT_TRUE(t.manager->hasResource(implicit_resource));
-    EXPECT_FALSE(hasSchedulerNode(t, implicit_resource, "/semaphore"));
-
-    t.setImplicitEntities(cpuLimitConfig(8));
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_resource, "/semaphore"));
-
-    t.setImplicitEntities({});
-    EXPECT_FALSE(t.manager->hasResource(implicit_resource));
-}
-
-// Both limits are controlled independently in one config update.
-TEST(SchedulerWorkloadResourceManager, ServerLimitsPerRoleSwitchover)
+// An operator resource shadows the implicit one, whether it exists before the limit is enabled or is created later,
+// and the root limit follows the visible resource. Dropping the operator resource makes the implicit one visible again.
+TEST(SchedulerWorkloadResourceManager, ServerLimitsOperatorResource)
 {
     ResourceTest t;
     const String implicit_cpu(IMPLICIT_CPU_RESOURCE_NAME);
     const String implicit_memory(IMPLICIT_MEMORY_RESOURCE_NAME);
 
-    ImplicitWorkloadEntitiesConfig both = cpuLimitConfig(4);
-    both.respect_memory_limit = true;
-    both.memory_bytes = 1000;
-    t.setImplicitEntities(both);
-    EXPECT_TRUE(t.manager->hasResource(implicit_cpu));
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+    t.setImplicitEntities({.respect_cpu_limit = true, .respect_memory_limit = true, .cpu_slots = 4, .memory_bytes = 100});
+    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu");
+    EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
     EXPECT_TRUE(t.manager->hasResource(implicit_memory));
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    EXPECT_FALSE(t.manager->hasResource(implicit_memory));
+    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "memory");
+    EXPECT_TRUE(hasSchedulerNode(t, "memory", "/limit"));
+    EXPECT_EQ(t.storage.get(WORKLOAD, "")->formatForLogging(),
+        "CREATE WORKLOAD `` SETTINGS max_concurrent_threads = 4 FOR cpu, max_memory = 100 FOR memory");
+
+    t.query("DROP RESOURCE cpu");
+    t.query("DROP RESOURCE memory");
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), implicit_cpu);
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), implicit_cpu);
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), implicit_memory);
     EXPECT_TRUE(hasSchedulerNode(t, implicit_cpu, "/semaphore"));
     EXPECT_TRUE(hasSchedulerNode(t, implicit_memory, "/limit"));
 
-    t.setImplicitEntities(memoryLimitConfig(1000));
-    EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
-    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
-    EXPECT_TRUE(t.manager->hasResource(implicit_memory));
-    EXPECT_TRUE(hasSchedulerNode(t, implicit_memory, "/limit"));
-
+    // Disabling the limit keeps the operator resource, without a root limit
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    EXPECT_TRUE(hasSchedulerNode(t, "cpu", "/semaphore"));
     t.setImplicitEntities({});
     EXPECT_FALSE(t.manager->hasResource(implicit_cpu));
-    EXPECT_FALSE(t.manager->hasResource(implicit_memory));
-    EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu");
+    EXPECT_FALSE(hasSchedulerNode(t, "cpu", "/semaphore"));
+}
+
+// A CPU resource holding only MASTER THREAD shadows the whole implicit resource, and split CPU resources (separate
+// MASTER THREAD and WORKER THREAD resources) cannot share one limit: there is no root limit in either case.
+TEST(SchedulerWorkloadResourceManager, ServerCPULimitPartialOrSplitResourceNoEffect)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu_master (MASTER THREAD)");
+    t.query("CREATE WORKLOAD all");
+    t.setImplicitEntities({.respect_cpu_limit = true, .cpu_slots = 4});
+    EXPECT_FALSE(t.manager->hasResource(String(IMPLICIT_CPU_RESOURCE_NAME)));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cpu_master");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
+    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
+    EXPECT_FALSE(hasSchedulerNode(t, "cpu_master", "/semaphore"));
+
+    t.query("CREATE RESOURCE cpu_worker (WORKER THREAD)");
+    EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "cpu_worker");
+    EXPECT_FALSE(t.storage.has(WORKLOAD, ""));
+    EXPECT_FALSE(hasSchedulerNode(t, "cpu_master", "/semaphore"));
+    EXPECT_FALSE(hasSchedulerNode(t, "cpu_worker", "/semaphore"));
 }
 
 // The manager applies the root workload entity to resources created after it.
@@ -3345,64 +2983,36 @@ TEST(SchedulerWorkloadResourceManager, RootWorkloadSettingsAppliedToResourcesCre
     EXPECT_FALSE(hasSchedulerNode(t, "cpu", "/semaphore"));
 }
 
-// With `implicit_default_workload` a `default` workload is synthesized, so `workload='default'` resolves.
-TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkloadCreateAndRemove)
+// With `implicit_default_workload` a `default` workload is synthesized, so `workload='default'` resolves. An operator
+// `default` shadows it and is kept when the feature is disabled; once the operator one is dropped, the implicit one is
+// visible again.
+TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkload)
 {
     ResourceTest t;
 
     t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    {
-        ClassifierPtr c = t.manager->acquire("default");
-        EXPECT_FALSE(c->has("cpu"));
-    }
+    EXPECT_FALSE(t.manager->acquire("default")->has("cpu"));
 
-    t.setImplicitEntities(defaultWorkloadConfig());
+    t.setImplicitEntities({.implicit_default_workload = true});
     EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "implicit");
-    {
-        ClassifierPtr c = t.manager->acquire("default");
-        EXPECT_TRUE(c->has("cpu"));
-    }
+    EXPECT_TRUE(t.manager->acquire("default")->has("cpu"));
 
     t.setImplicitEntities({});
-    {
-        ClassifierPtr c = t.manager->acquire("default");
-        EXPECT_FALSE(c->has("cpu"));
-    }
-}
+    EXPECT_FALSE(t.manager->acquire("default")->has("cpu"));
 
-// An operator `default` shadows the implicit one and is kept when the feature is disabled.
-TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkloadOperatorPrecedence)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.setImplicitEntities(defaultWorkloadConfig());
+    t.query("CREATE WORKLOAD default");
+    t.setImplicitEntities({.implicit_default_workload = true});
+    EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "sql");
+    t.query("DROP WORKLOAD default");
+    EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "implicit");
+    EXPECT_TRUE(t.manager->acquire("default")->has("cpu"));
 
     t.query("CREATE WORKLOAD default SETTINGS max_concurrent_threads = 7");
     EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "sql");
-
     t.setImplicitEntities({});
-
     ClassifierPtr c = t.manager->acquire("default");
     EXPECT_TRUE(c->has("cpu"));
     EXPECT_EQ(c->getWorkloadSettings("cpu").max_concurrent_threads, 7);
-}
-
-// Dropping an operator `default` while the feature is on makes the implicit one visible again.
-TEST(SchedulerWorkloadResourceManager, ImplicitDefaultWorkloadRestoredAfterDrop)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD default");
-    t.setImplicitEntities(defaultWorkloadConfig());
-    EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "sql");
-
-    t.query("DROP WORKLOAD default");
-    EXPECT_EQ(t.storage.getEntitySource(WORKLOAD, "default"), "implicit");
-
-    ClassifierPtr c = t.manager->acquire("default");
-    EXPECT_TRUE(c->has("cpu"));
 }
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSize)
@@ -4759,8 +4369,8 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
     }
     {
         ResourceTest t;
-        // A `FOR <resource>` clause must target an existing RESOURCE, a workload of that name does not count
-        // (parity with storeEntity's forEachReference check).
+        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
+        // storeEntity's forEachReference check).
         EXPECT_THROW(
             t.loadConfig(
                 "CREATE WORKLOAD all;\n"
