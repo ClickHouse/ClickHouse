@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_ARROWFLIGHT
@@ -22,7 +23,7 @@ class ArrowFlightSource final : public ISource
 
 public:
     ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, const Block & virtual_header_, ContextPtr context_);
-    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, VectorWithMemoryTracking<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_);
     ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_, ContextPtr context_);
 
 protected:
@@ -37,7 +38,7 @@ private:
     Block virtual_header;
     ContextPtr context;
     UInt64 request_timeout_sec = 0;
-    std::vector<arrow::flight::FlightEndpoint> endpoints;
+    VectorWithMemoryTracking<arrow::flight::FlightEndpoint> endpoints;
     size_t current_endpoint = 0;
     std::shared_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
     std::shared_ptr<arrow::Schema> schema;
