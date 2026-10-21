@@ -206,7 +206,7 @@ JoinStepLogical::JoinStepLogical(
     for (const auto * node_after_join : actions_after_join)
     {
         if (!all_nodes_set.contains(node_after_join))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A node after join is not in the expression actions dag");
     }
 #endif
 }
@@ -526,7 +526,17 @@ JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_out
         if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
             roots.push_back(&node);
     const auto is_folded_constant = [](const ActionsDAG::Node * node) { return node->column && !node->children.empty(); };
-    const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
+    auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
+
+    /// What the join returns, `actions_after_join`, loses the values that do not survive, such as the input under a
+    /// dropped alias. The join has to return a column still, so if none would survive, the first one stays.
+    if (!plan.adds_dummy_output && !actions_after_join.empty()
+        && std::ranges::none_of(actions_after_join, [&](const auto * action) { return surviving_nodes.contains(action); }))
+    {
+        plan.extra_pruning_roots.push_back(actions_after_join.front());
+        roots.push_back(actions_after_join.front());
+        surviving_nodes = findReachableNodes(roots, is_folded_constant);
+    }
 
     plan.removes_any_action = surviving_nodes.size() < actions_dag.getNodes().size();
 
@@ -669,6 +679,13 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         });
 
     dag_outputs.swap(new_outputs);
+
+    /// Removing the unused actions may remove a value the join returns without outputting it, such as the input under
+    /// a dropped alias.
+    std::unordered_set<const ActionsDAG::Node *> remaining_nodes;
+    for (const auto & node : actions_dag.getNodes())
+        remaining_nodes.insert(&node);
+    std::erase_if(new_actions_after_join, [&](const auto * action) { return !remaining_nodes.contains(action); });
     actions_after_join = std::move(new_actions_after_join);
 
     for (size_t side = 0; side < 2; ++side)
@@ -696,6 +713,23 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         updateInputHeaders({inputs[0].header, inputs[1].header});
 
     return result;
+}
+
+void JoinStepLogical::addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side)
+{
+    const auto * input = expression_actions.addInput(column.name, column.type, side == JoinTableSide::Left ? 0 : 1).getNode();
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
+}
+
+void JoinStepLogical::addInputToOutputs(const ActionsDAG::Node * input)
+{
+    if (input->type != ActionsDAG::ActionType::INPUT
+        || std::ranges::find(expression_actions.getActionsDAG()->getInputs(), input) == expression_actions.getActionsDAG()->getInputs().end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not an input of the join", input->result_name);
+
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
 }
 
 void JoinStepLogical::updateOutputHeader()

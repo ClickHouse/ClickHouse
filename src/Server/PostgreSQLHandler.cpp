@@ -1038,6 +1038,29 @@ bool PostgreSQLHandler::startup()
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
 
+    if (const auto client_encoding_it = start_up_msg->parameters.find("client_encoding");
+        client_encoding_it != start_up_msg->parameters.end())
+    {
+        /// PostgreSQLWire serializes text as UTF8 without transcoding. Accepting another client encoding
+        /// would tell clients to decode those UTF8 bytes using a different encoding.
+        /// Normalize the name like PostgreSQL does: ignore non-alphanumeric characters and case,
+        /// so `UTF8`, `utf-8`, `UTF_8` and the documented alias `UNICODE` are all accepted.
+        String normalized_encoding;
+        for (char c : client_encoding_it->second)
+            if (isAlphaNumericASCII(c))
+                normalized_encoding += toUpperASCII(c);
+        if (normalized_encoding != "UTF8" && normalized_encoding != "UNICODE")
+        {
+            message_transport->send(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR,
+                    "0A000",
+                    "Only UTF8 client_encoding is supported."),
+                true);
+            return false;
+        }
+    }
+
     /// An empty user name means the default session user: the `default_session_user`
     /// server setting, possibly overridden for this listener in the `protocols` section.
     /// If the resolved name is empty too (explicitly configured to prohibit connections
