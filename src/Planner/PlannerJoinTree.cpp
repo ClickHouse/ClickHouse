@@ -2181,6 +2181,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
+                /// In a cacheable logical plan the row policy is an explicit filter step right above the read,
+                /// applied before the `ALIAS` columns are computed: the regular read applies the policy inside
+                /// the storage, so an `ALIAS` expression (e.g. `throwIf(id = 2)`) never sees the excluded rows.
+                std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> row_policy_filter_before_aliases;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -2307,7 +2311,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
                     /// user's conditions never see the excluded rows.
                     /// A table function read directly on that node loses a pushed-down policy whatever its contract.
-                    if (select_query_options.build_logical_plan
+                    if (select_query_options.build_logical_plan && !select_query_options.cacheable_logical_plan
                         && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
                         where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     /// For the query plan cache, `row_level_filter` is only consumed by `storage->read()`, which is
@@ -2323,13 +2327,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
                     else if (can_push_down_filter && !select_query_options.cacheable_logical_plan)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
-                    /// A cacheable logical plan turns an explicit `PREWHERE` into a filter step that is already
-                    /// in `where_filters` (see above), so the policy must go before it: the user's conditions
-                    /// must never see the rows the policy excludes (`PREWHERE throwIf(...)` would otherwise
-                    /// reveal them through an exception).
+                    /// A cacheable logical plan turns an explicit `PREWHERE` into a filter step of `where_filters`
+                    /// (see above), and computes the `ALIAS` columns in a step of its own, so the policy must go
+                    /// before both: neither the user's conditions nor the `ALIAS` expressions may see the rows
+                    /// the policy excludes (`PREWHERE throwIf(...)` or an `ALIAS` column `throwIf(...)` would
+                    /// otherwise reveal them through an exception).
                     else if (select_query_options.cacheable_logical_plan)
                     {
-                        where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_before_aliases.emplace(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                         row_policy_filter_not_pushed = true;
                     }
                     else
@@ -3128,6 +3133,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_plan = std::move(query_plan_no_parallel_replicas);
                         }
                     }
+                }
+
+                if (row_policy_filter_before_aliases && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
+                {
+                    auto & [filter_info, description] = *row_policy_filter_before_aliases;
+                    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
+                        std::move(filter_info.actions),
+                        filter_info.column_name,
+                        filter_info.do_remove_column);
+                    description->setStepDescription(*filter_step);
+                    query_plan.addStep(std::move(filter_step));
                 }
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
