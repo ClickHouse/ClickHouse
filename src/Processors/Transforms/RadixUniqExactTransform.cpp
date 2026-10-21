@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
@@ -19,6 +20,7 @@
 #include <base/getL2CacheSize.h>
 #include <base/unaligned.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/RowsBeforeStepCounter.h>
@@ -1123,16 +1125,10 @@ size_t keySize(const IDataType & type)
 
 }
 
-bool isRadixUniqExactSupported(const IDataType & argument_type)
-{
-    /// The values of `LowCardinality` are not routed yet. It wraps `Nullable`, not the other way round.
-    return !argument_type.lowCardinality();
-}
-
 RadixUniqExactStatePtr createRadixUniqExactState(
     const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params)
 {
-    switch (keySize(*removeNullable(argument_type.shared_from_this())))
+    switch (keySize(*removeNullable(removeLowCardinality(argument_type.shared_from_this()))))
     {
         case sizeof(UInt32): return createState<UInt32>(num_streams, stats_collecting_params);
         case sizeof(UInt64): return createState<UInt64>(num_streams, stats_collecting_params);
@@ -1223,6 +1219,10 @@ void RadixUniqExactRouteTransform::work()
         column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
     }
     column = column->convertToFullIfWrapped();
+    /// Only the distinct values of the dictionary that the rows use are routed: a shared dictionary can be much larger
+    /// than the chunk. They are `Nullable` for `LowCardinality(Nullable)`.
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+        column = column_low_cardinality->getMinimalDictionaryEncodedColumn(0, column_low_cardinality->size()).dictionary;
     {
         RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))

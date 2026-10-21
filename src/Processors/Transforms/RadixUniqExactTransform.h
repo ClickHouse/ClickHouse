@@ -117,11 +117,7 @@ private:
 
 using RadixUniqExactStatePtr = std::shared_ptr<IRadixUniqExactState>;
 
-/// Whether the argument of `uniqExact` has a type the radix partitioned `uniqExact` can compute. It may be `Nullable`,
-/// NULLs are skipped as `uniqExact` does.
-bool isRadixUniqExactSupported(const IDataType & argument_type);
-
-/// The argument type must be supported (see `isRadixUniqExactSupported`).
+/// The argument of `uniqExact` may be `Nullable` and `LowCardinality`: NULLs are skipped as `uniqExact` does.
 RadixUniqExactStatePtr createRadixUniqExactState(
     const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params);
 
