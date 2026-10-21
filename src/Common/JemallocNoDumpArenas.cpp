@@ -13,6 +13,7 @@
 
 #include <Common/PerCPU.h>
 
+#include <memory>
 #include <optional>
 #include <vector>
 #endif
@@ -115,7 +116,7 @@ void * JemallocNoDumpArenas::allocate(size_t bytes, size_t alignment)
 #if USE_JEMALLOC && defined(OS_LINUX)
     if (alloc_flags == 0) [[unlikely]]
     {
-        static const auto * arenas = new std::vector<unsigned>(createArenas());
+        static const auto * arenas = std::make_unique<std::vector<unsigned>>(createArenas()).release();
         Int32 cpu = PerCPU::getCurrentCPU();
         static thread_local ThreadCache tcache(MALLOCX_ARENA((*arenas)[(cpu < 0 ? 0 : cpu) % arenas->size()]));
     }

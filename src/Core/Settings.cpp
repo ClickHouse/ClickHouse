@@ -3918,8 +3918,8 @@ server or user memory limit, the ratio has no effect.
 `max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
 use `max_bytes_before_external_set`, leaving room for additional memory usage.
 )", 0, \
-        {"26.11", 0., 0.5, "Enabled spilling of the set of `IN` with a subquery to disk by default, at half of the available server or user memory."}, \
-        {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+        {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
+        {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
     DECLARE(UInt64, max_bytes_for_external_set_bloom_filter, 128_MiB, R"(
 Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
 filter lets lookups of values that are not in the set skip reading the disk. It does not speed up lookups
@@ -3946,7 +3946,8 @@ The filter counts towards the memory usage of the query, such as `max_memory_usa
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
+        {"26.11", 128_MiB, 128_MiB, "The setting was backported to 26.10."}, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
     DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
 Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
 lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
@@ -3959,7 +3960,8 @@ The budget applies per set. The cache counts towards the memory usage of the que
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
+        {"26.11", 128_MiB, 128_MiB, "The setting was backported to 26.10."}, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
@@ -7851,7 +7853,12 @@ Possible values:
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
-Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, materializes only each two-level bucket's best n groups in that order during the aggregation's final conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
+Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
+
+For ordering by `count`, the optimization can select the best groups during the final conversion. For aggregates whose merged values can be bounded from their partial states, it can instead use a threshold merge (Fagin's Threshold Algorithm), which skips merging groups that cannot reach the top n. This supports `count`, `sum` of unsigned integers whose result is `UInt64` (`UInt8` to `UInt64` arguments; wide unsigned integers such as `UInt128` are excluded), and `uniqExact` in descending order, and `max` in descending and `min` in ascending order for integer, date, date-time, decimal, and enum types (floating point, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString`, and other types are excluded). The `If` and `Null` combinators keep the threshold merge only for `count`, unsigned `sum`, and `uniqExact`, and only when the result is not nullable (for example `countIf`, `sumIf` of a non-`Nullable` argument, or `uniqExact` of a `Nullable` argument); `sum` and `sumIf` of a `Nullable` argument (whose result is `Nullable`), `maxIf`, `minIf`, and `max` or `min` of a `Nullable` argument use the ordinary merge. The algorithm is chosen automatically according to the aggregate, query shape, and distribution of partial states.
+
+A group outside its bucket's best n is neither merged nor finalized, so this is not only a performance toggle: the other aggregates of the query stop being merged and finalized on the groups that cannot reach the top n. A query that raised an exception while merging or finalizing one of those aggregates on such a group can return rows instead. Setting this to 0 keeps the previous behavior.
+
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
@@ -8074,7 +8081,12 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
+    DECLARE(BoolForce, query_plan_read_in_order_through_join, true, R"(
+Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.
+
+For a join other than `LEFT`, the read stays in order only when every part of the left table announces a virtual row (see [`read_in_order_use_virtual_row`](#read_in_order_use_virtual_row)); without the virtual rows the merge after the join may read far more than the limit needs. The value `force` keeps the read in order regardless.
+)", 0, \
+        {"26.10", true, true, "Added the value `force`: keep reading in order through a join even when the parts announce no virtual rows."}, \
         {"25.12", false, true, "New setting"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
@@ -10385,16 +10397,17 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
-    DECLARE(Bool, kill_throw_if_noop, false, R"(
+    DECLARE(Bool, kill_throw_if_noop, true, R"(
 Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
-If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+Enabled by default. `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. Set to `false` to allow empty matches without an exception. `TEST` dry runs return an empty preview without throwing. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 Possible values:
 
 - 1 — Throw an exception.
 - 0 — Do not throw an exception.
 )", 0, \
+        {"26.11", false, true, "Enable `kill_throw_if_noop` by default so that `KILL QUERY` and `KILL MUTATION` report empty matches."}, \
         {"26.10", false, false, "New setting"}) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
@@ -11142,6 +11155,12 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
 )", EXPERIMENTAL, \
         {"25.7", 0, 0, "New experimental setting"}) \
+    DECLARE(Bool, distributed_plan_partial_aggregation_before_shuffle, true, R"(
+Aggregate partially on the nodes that read the data before a distributed aggregation shuffles it by the `GROUP BY` keys, so the shuffle sends one aggregation state per group from each node instead of every input row, and each bucket merges the states of its own keys.
+The rule-based planner keeps shuffling the input rows when column statistics show that partial aggregation would not reduce the data at least twofold. With `enable_cascades_optimizer`, the setting allows the optimizer to choose such a merge per bucket by cost.
+Takes effect only together with `make_distributed_plan = 1`, and not with `distributed_plan_force_shuffle_aggregation`, which shuffles the input rows.
+)", BETA, \
+        {"26.11", false, true, "New experimental setting: a distributed aggregation shuffles partial aggregation states instead of input rows."}) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
