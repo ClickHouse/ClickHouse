@@ -823,7 +823,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
                             && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
     if (!full_built)
     {
-        LOG_TRACE(log, "DPsub: join graph is disconnected!");
+        LOG_TRACE(log, "DPsub: join graph is disconnected");
         return nullptr;
     }
 
