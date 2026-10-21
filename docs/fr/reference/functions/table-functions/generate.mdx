@@ -11,15 +11,16 @@ doc_type: 'reference'
 
 Génère des données aléatoires selon un schéma donné.
 Permet de peupler des tables de test avec ces données.
-Tous les types ne sont pas pris en charge.
+Tous les types de données pouvant être stockés dans une table sont pris en charge, notamment `JSON`, `Dynamic`, `Variant`, `BFloat16`, `Time` et `Time64`.
+Les types `AggregateFunction`, `Interval`, `Nothing` et `QBit` ne sont pas pris en charge.
 
-## Syntaxe
+## Syntaxe {#syntax}
 
 ```sql
-generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
+generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]][, SETTINGS setting = value[, ...]])
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 | Argument            | Description                                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,11 +30,37 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | Longueur maximale de toutes les chaînes générées. La valeur par défaut est `10`.                                                |
 | `max_array_length`  | Nombre maximal d’éléments pour tous les tableaux ou objets Map générés. La valeur par défaut est `10`.                          |
 
-## Valeur renvoyée
+## Paramètres {#settings}
+
+`SETTINGS` est le dernier argument de l’appel. Il détermine comment sont générées les valeurs `Nullable`, `Variant`, `Dynamic` et `JSON`.
+
+| Paramètre                  | Type     | Valeur par défaut | Description                                                                                                                                                                                                                                             |
+| -------------------------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `null_ratio`               | `Float`  | `0.0625`          | Probabilité qu’une valeur `Nullable`, `Variant` ou `Dynamic` soit `NULL`, et probabilité de base qu’une clé `JSON` soit absente d’une ligne : une minorité de clés éparses sont absentes bien plus souvent. La valeur doit être comprise dans `[0, 1]`. |
+| `max_json_depth`           | `UInt64` | `3`               | Profondeur maximale d’imbrication des objets `JSON` générés : `1` correspond à des objets non imbriqués ; les objets contenus dans des tableaux comptent comme un niveau. La valeur doit être comprise dans `[1, 32]`.                                  |
+| `max_json_keys_per_object` | `UInt64` | `8`               | Nombre maximal de clés générées à un même niveau d’un objet `JSON` ; l’objet racine en comporte au moins la moitié. `0` signifie que seuls les chemins typés sont générés. La valeur ne doit pas dépasser `1000`.                                       |
+
+```sql
+SELECT * FROM generateRandom('x JSON', 3, 4, 2, SETTINGS max_json_depth = 1, max_json_keys_per_object = 3) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"cursor":"","id":[],"parent":-3723905664592977020}}
+{"x":{"cursor":"","id":[7037090064212902336]}}
+{"x":{"id":[287913403506346525],"parent":-4417942528676528098}}
+```
+
+`SETTINGS` peut également être le seul argument, auquel cas la structure de la table d’insertion est conservée :
+
+```sql
+INSERT INTO test_table SELECT * FROM generateRandom(SETTINGS null_ratio = 0.5) LIMIT 10;
+```
+
+## Valeur renvoyée {#returned-value}
 
 Un objet de type table avec le schéma demandé.
 
-## Exemple d’utilisation
+## Exemple d’utilisation {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -106,7 +133,41 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` avec une valeur de `max_array_length` suffisamment élevée peut générer une sortie extrêmement volumineuse en raison de la profondeur d&#39;imbrication potentiellement importante (jusqu&#39;à 16) des types complexes (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
 
-## Contenu associé
+## Génération de JSON {#generating-json}
+
+Une colonne `JSON` générée s’apparente à un flux de documents de même schéma : l’ensemble des clés et le type
+de chaque clé sont déterminés par la graine du générateur aléatoire et restent identiques dans toute la colonne, tandis que les valeurs,
+les clés absentes et la longueur des tableaux varient d’une ligne à l’autre. La profondeur des objets est limitée par
+`max_json_depth`, le nombre de clés par niveau par `max_json_keys_per_object`, et chaque clé a une probabilité `null_ratio`
+d’être absente d’une ligne. Les valeurs des feuilles ont les types que l’analyseur JSON déduit de documents réels :
+`Int64`, `UInt64`, `Float64`, `Bool`, `String`, `Date`, `DateTime`, des tableaux de ces types, des tableaux
+d’objets et des tableaux mixtes ; quelques clés changent de type dans une faible proportion des lignes, comme dans
+les données collectées auprès d’une application.
+
+La déclaration du type définit le schéma généré : les chemins typés sont toujours présents avec leur
+type déclaré, les chemins exclus par `SKIP` et `SKIP REGEXP` ne sont jamais générés, et les limites `max_dynamic_paths` et
+`max_dynamic_types` sont respectées. Les chemins au-delà de `max_dynamic_paths` se retrouvent donc dans les données partagées de
+la colonne.
+
+```sql
+SELECT * FROM generateRandom('x JSON', 1) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"product_id":"2050-12-17 01:46:35","stage":"g|(&Ql","started":{"group":-80611897324989285}}}
+{"x":{"product_id":"2013-10-17 22:35:26","stage":"^ipx|,=a5N","started":{"group":-1326235429680389454}}}
+{"x":{"product_id":"1974-11-17 22:22:46","stage":"(U]p'l`","started":{"group":-344141642787805595}}}
+```
+
+La structure peut aussi être déduite de la table d’insertion, ce qui facilite le remplissage d’une table comportant des
+colonnes `JSON`, `Dynamic` ou `Variant` :
+
+```sql
+CREATE TABLE t (x JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
+```
+
+## Contenu associé {#related-content}
 
 * Blog : [Générer des données aléatoires dans ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

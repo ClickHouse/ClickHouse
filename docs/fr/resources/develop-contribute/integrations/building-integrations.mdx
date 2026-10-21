@@ -9,15 +9,11 @@ doc_type: 'guide'
 
 Cette page vous présente le périmètre des intégrations afin de vous aider à cadrer les travaux d’ingestion et de consommation. Pour la validation et la publication, poursuivez avec [Tester votre intégration](/fr/resources/develop-contribute/integrations/testing-your-integration) et [Documenter votre intégration](/fr/resources/develop-contribute/integrations/documenting-your-integration).
 
-<div id="ingestion">
-  ## Ingestion
-</div>
+## Ingestion {#ingestion}
 
 Deux options permettent d’acheminer les données vers ClickHouse. Choisissez selon que votre produit doit assurer lui-même l’ingestion ou la déléguer.
 
-<div id="path-a-clickpipes">
-  ### Option A : ClickPipes (Managed, ClickHouse Cloud uniquement)
-</div>
+### Option A : ClickPipes (Managed, ClickHouse Cloud uniquement) {#path-a-clickpipes}
 
 Si vous préférez ne pas mettre en place ni exploiter d’infrastructure d’ingestion, [ClickPipes](/fr/integrations/clickpipes/home) est le service géré qui récupère les données depuis les sources de votre client vers son service ClickHouse Cloud. ClickPipes gère la mise à l’échelle, la parallélisation, les nouvelles tentatives et le suivi du lag.
 
@@ -27,9 +23,7 @@ Les sources actuellement prises en charge incluent :
 * **Object storage :** Amazon S3 (et les stockages compatibles S3), Google Cloud Storage, Azure Blob Storage
 * **CDC :** PostgreSQL, MySQL, MongoDB, BigQuery
 
-<div id="path-b-language-client">
-  ### Voie B : ingestion autogérée via un client officiel
-</div>
+### Voie B : ingestion autogérée via un client officiel {#path-b-language-client}
 
 Si vous contrôlez le pipeline, utilisez l’un des [clients officiels](/fr/integrations/language-clients/index). Ils gèrent la sérialisation, le batching, TLS, la compression et le pool de connexions. Vous fournissez des types primitifs du runtime ; le client se charge du format de transmission.
 
@@ -41,9 +35,7 @@ Si vous contrôlez le pipeline, utilisez l’un des [clients officiels](/fr/inte
 
 Voir aussi : [Insertions en masse](/fr/concepts/features/operations/insert/bulkinserts).
 
-<div id="consumption">
-  ## Consommation
-</div>
+## Consommation {#consumption}
 
 HTTP et le TCP natif transportent tous deux des requêtes. Le protocole natif est binaire et génère moins de surcharge. HTTP fonctionne avec des répartiteurs de charge et des proxys. Les deux sont pris en charge de façon équivalente ; choisissez en fonction de votre infrastructure, pas d’éventuels écarts de fonctionnalités.
 
@@ -51,23 +43,17 @@ HTTP et le TCP natif transportent tous deux des requêtes. Le protocole natif es
 * **Outils BI et SQL :** ClickHouse fournit un [pilote JDBC v2 officiel](/fr/integrations/language-clients/java/index) (Java) et un [pilote ODBC](/fr/concepts/features/interfaces/odbc). Tableau, Looker, Power BI, Metabase, Apache Superset et Grafana s’intègrent via ces pilotes ou des connecteurs dédiés maintenus par ClickHouse et ses partenaires
 * **Format de résultat :** les clients gèrent généralement eux-mêmes la sérialisation. Vous pouvez demander Arrow, Parquet ou d’autres formats colonnaires pour le transfert si votre produit en a besoin
 
-<div id="result-set-sizing">
-  ### Dimensionnement des ensembles de résultats
-</div>
+### Dimensionnement des ensembles de résultats {#result-set-sizing}
 
 La plupart des requêtes analytiques renvoient de petits ensembles de résultats (agrégats, résumés, top-N), et la transmission sur le réseau constitue rarement le goulot d’étranglement. Les tables ClickHouse peuvent contenir des milliards de lignes, et un `SELECT *` non borné sur une grande table de faits peut déplacer des téraoctets. **Définissez la requête côté application :** utilisez `LIMIT`, la pagination, la lecture en streaming et des listes explicites de colonnes. Si vous créez des fonctionnalités analytiques destinées aux utilisateurs, considérez les ensembles de résultats non bornés comme un problème d’UX, pas comme un problème de transport.
 
 ClickHouse dispose d’un système de types riche : arrays, tuples, maps, JSON, nested, LowCardinality, etc. Les clients officiels convertissent ces types en types idiomatiques du langage. Si votre produit expose des données ClickHouse aux utilisateurs finaux, prévoyez tôt une stratégie de correspondance des types.
 
-<div id="next-steps">
-  ## Prochaines étapes
-</div>
+## Prochaines étapes {#next-steps}
 
-Choisissez une approche et réalisez un prototype avec un essai [ClickHouse Cloud](https://clickhouse.com/cloud), puis enregistrez votre intégration dans le [partner portal](https://clickhouse.com/partners).
+Choisissez une approche et réalisez un prototype avec un essai [ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-building-integrations), puis enregistrez votre intégration dans le [partner portal](https://clickhouse.com/partners).
 
-<div id="user-agent-string-convention">
-  ## Convention de chaîne user-agent
-</div>
+## Convention de chaîne user-agent {#user-agent-string-convention}
 
 Les clients HTTP doivent définir une chaîne `User-Agent` qui identifie votre intégration. ClickHouse l’analyse côté serveur pour suivre son adoption, faire remonter des données de télémétrie d’usage et orienter la feuille de route.
 
@@ -91,8 +77,6 @@ Règles :
 
 Si vous utilisez JDBC, consultez [l’identification du client](/fr/integrations/language-clients/java/jdbc#client-identification) pour savoir comment le pilote définit `User-Agent` et les champs associés.
 
-<div id="sandbox-and-trial-access">
-  ## Accès au sandbox et à l’essai gratuit
-</div>
+## Accès au sandbox et à l’essai gratuit {#sandbox-and-trial-access}
 
-[ClickHouse Cloud](https://clickhouse.com/cloud) propose un essai gratuit pour le développement et la validation d’intégrations. Si vous êtes partenaire House Mate, vous pouvez demander des crédits de développement supplémentaires via le [partner portal](https://clickhouse.com/partners).
+[ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-building-integrations) propose un essai gratuit pour le développement et la validation d’intégrations. Si vous êtes partenaire House Mate, vous pouvez demander des crédits de développement supplémentaires via le [partner portal](https://clickhouse.com/partners).
