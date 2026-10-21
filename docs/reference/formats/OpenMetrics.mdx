@@ -18,7 +18,7 @@ doc_type: 'reference'
 
 Reads and writes [OpenMetrics text](https://openmetrics.io/) (Prometheus-compatible exposition text with OpenMetrics extensions).
 
-Use `FORMAT OpenMetrics` for input (`INSERT`, table functions such as `file` and `format`, and other read paths) and for query output (`SELECT ... FORMAT OpenMetrics`). The registered HTTP content type is `application/openmetrics-text; version=1.0.0; charset=utf-8`, and the writer produces [OpenMetrics 1.0](https://prometheus.io/docs/specs/om/open_metrics_spec/)-conformant exposition (see [OpenMetrics 1.0 conformance](#openmetrics-10-conformance)).
+Use `FORMAT OpenMetrics` for input (`INSERT`, table functions such as `file` and `format`, and other read paths) and for query output (`SELECT ... FORMAT OpenMetrics`). The registered HTTP content type is `application/openmetrics-text; version=1.0.0; charset=utf-8`, and the writer produces exposition that conforms to [OpenMetrics 1.0](https://prometheus.io/docs/specs/om/open_metrics_spec/) (see [OpenMetrics 1.0 conformance](#openmetrics-10-conformance)).
 
 The columns are the outer columns of the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine: one row is one time series (a `metric_name` and its `tags`), and its samples are collected into a `samples` array of `(timestamp, value)` points. A `TimeSeries` table can therefore be exported with `SELECT * ... FORMAT OpenMetrics` and filled with `INSERT INTO ... FORMAT OpenMetrics` (see [Exporting from and importing into a TimeSeries table](#timeseries-table)).
 
