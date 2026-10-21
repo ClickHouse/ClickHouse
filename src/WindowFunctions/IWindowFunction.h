@@ -25,7 +25,7 @@ class IWindowFunction
 public:
     virtual ~IWindowFunction() = default;
 
-    // Must insert the result for current_row.
+    /// Inserts the result for the current row.
     virtual void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
