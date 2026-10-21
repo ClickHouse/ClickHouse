@@ -52,7 +52,8 @@ public:
 
     /// Makes `SELECT <select_list> FROM <tags_table> WHERE <matchers and time bounds>` reading the tags table directly.
     /// The time bounds have the scale `time_scale` and are applied like in makeSelectIDsQuery: to the stored time ranges
-    /// of the series if the table stores them. If no timestamp of the table is in the time range, the WHERE clause is `false`.
+    /// of the series if the table stores them, read over the id ranges of the selected metrics.
+    /// If no timestamp of the table is in the time range, the WHERE clause is `false`.
     /// The query must be executed with the settings set by applySettingsForSelectIDsQuery.
     static ASTPtr makeSelectFromTagsTable(
         ASTs select_list,
@@ -60,6 +61,7 @@ public:
         const StorageID & tags_table_id,
         const TimeSeriesSettings & time_series_settings,
         const DataTypePtr & table_timestamp_type,
+        const DataTypePtr & table_id_type,
         const PrometheusQueryTree::MatcherList & matchers,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,

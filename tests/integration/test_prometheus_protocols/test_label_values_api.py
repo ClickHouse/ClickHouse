@@ -81,6 +81,15 @@ def columns_read_by_last_query(query_pattern):
     ).strip()
 
 
+def last_query_text(query_pattern):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    return node.query(
+        "SELECT query FROM system.query_log WHERE type = 'QueryFinish' "
+        f"AND query LIKE '%{query_pattern}%' AND query NOT LIKE '%query_log%' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1 FORMAT TSVRaw"
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup():
     try:
@@ -248,6 +257,19 @@ def test_label_values_time_range():
     assert get_json_from_api("/api/v1/label/host/values?start=2000&end=3000")["data"] == []
     assert get_json_from_api("/api/v1/label/region/values?start=1030")["data"] == []
     assert get_json_from_api("/api/v1/label/region/values?end=1000")["data"] == ["eu"]
+
+
+def test_label_values_time_range_with_one_metric_reads_the_time_ranges_of_that_metric():
+    # The time ranges table is read over the id range of the metric; series with ids outside the range are kept.
+    data = get_json_from_api("/api/v1/label/host/values?match[]=cpu_usage&start=990&end=1040")["data"]
+    assert data == ["server1", "server2"]
+    query = last_query_text("groupUniqArray(host_column)")
+    time_ranges_subquery, outer_where = query.split(" AS time_ranges_subquery USING (id) WHERE ")
+    assert "lessOrEquals(id, tuple(sipHash64('cpu_usage'), toUUID('ffffffff-ffff-ffff-ffff-ffffffffffff')))" in time_ranges_subquery
+    assert "notEquals(tupleElement(id, 1), sipHash64('cpu_usage'))" in outer_where
+    # Without a `__name__` matcher there is no metric id range to read over.
+    get_json_from_api("/api/v1/label/host/values?start=990&end=1040")
+    assert "sipHash64" not in last_query_text("groupUniqArray(host_column)")
 
 
 def test_label_values_rejects_inverted_time_range():

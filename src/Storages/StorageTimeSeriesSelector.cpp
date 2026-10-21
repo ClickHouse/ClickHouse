@@ -1006,6 +1006,7 @@ ASTPtr StorageTimeSeriesSelector::makeSelectFromTagsTable(
     const StorageID & tags_table_id,
     const TimeSeriesSettings & time_series_settings,
     const DataTypePtr & table_timestamp_type,
+    const DataTypePtr & table_id_type,
     const PrometheusQueryTree::MatcherList & matchers,
     const std::optional<DateTime64> & min_time,
     const std::optional<DateTime64> & max_time,
@@ -1038,8 +1039,10 @@ ASTPtr StorageTimeSeriesSelector::makeSelectFromTagsTable(
         makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type));
 
     /// If there is a time ranges table: LEFT JOIN it and keep the time series with a matching time range (see addTimeRangesTableJoin).
-    applyTimeRangeFilterToSelectIDsQuery(
-        *select_query, time_ranges_table_id, time_range_to_filter_ids, /* metric_id_ranges = */ std::nullopt, table_timestamp_type);
+    auto tags_table_metadata = time_series_storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+    const auto metric_id_ranges = tryGetTimeSeriesIDRanges(
+        matchers, getIDGenerator(time_series_settings, tags_table_metadata->getColumns(), table_id_type), table_id_type);
+    applyTimeRangeFilterToSelectIDsQuery(*select_query, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
 
     return select_query;
 }

@@ -689,7 +689,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeLabelsSourceQuery(
         aggregate->setAlias("labels");
         select_queries.push_back(StorageTimeSeriesSelector::makeSelectFromTagsTable(
             {std::move(aggregate)}, *time_series_storage, params.tags_table_id, *params.time_series_settings, params.table_timestamp_type,
-            matchers, params.min_time, params.max_time, params.time_scale, getContext()));
+            params.table_id_type, matchers, params.min_time, params.max_time, params.time_scale, getContext()));
     }
 
     return makeUnionAll(std::move(select_queries));
