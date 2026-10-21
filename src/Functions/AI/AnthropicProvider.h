@@ -23,6 +23,7 @@ public:
     AnthropicProvider(const String & endpoint_, const String & api_key_, const String & api_version_);
 
     AIResponse call(const AIRequest & request, const ConnectionTimeouts & timeouts) override;
+    HTTPHeaderEntries getHeaders() const override;
 
 private:
     const String endpoint;
