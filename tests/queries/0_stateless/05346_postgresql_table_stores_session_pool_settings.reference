@@ -13,3 +13,5 @@ SETTINGS postgresql_connection_pool_size = 3
 PostgreSQL connection pool size: 3
 --- a RESTORE keeps the definition from the backup
 
+--- a RESTORE of a materialized view keeps the definitions from the backup
+

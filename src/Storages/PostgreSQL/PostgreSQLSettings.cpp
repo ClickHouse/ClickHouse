@@ -88,7 +88,9 @@ void PostgreSQLSettings::loadFromQueryContext(const Context & context, const AST
         Field value = query_settings.get(name);
         impl->set(name, value);
 
-        if (!store_into || value == default_value)
+        /// A value the session sets explicitly is stored even if it equals the default of the engine: without it, the table
+        /// would take the server's value when attached again.
+        if (!store_into || (value == default_value && !query_settings.isChanged(name)))
             continue;
 
         if (!store_into->settings)

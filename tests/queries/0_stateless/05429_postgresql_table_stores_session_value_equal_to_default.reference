@@ -1,0 +1,1 @@
+SETTINGS postgresql_connection_pool_size = 16

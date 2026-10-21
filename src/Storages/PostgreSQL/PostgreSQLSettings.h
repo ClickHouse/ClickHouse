@@ -42,8 +42,9 @@ struct PostgreSQLSettings
 
     /// Take the settings not set yet by a named collection or `settings` from the query-level `postgresql_*` settings of
     /// `context`, except those `settings` resets with `name = DEFAULT`. With `store_into`, add those that differ from the
-    /// defaults of the engine to its SETTINGS, so that the table keeps them when it is attached again. The defaults of the
-    /// engine, unlike the server's settings, are the same on every replica of a `Replicated` database.
+    /// defaults of the engine, or that the session changes, to its SETTINGS, so that the table keeps them when it is
+    /// attached again. The defaults of the engine, unlike the server's settings, are the same on every replica of a
+    /// `Replicated` database, and the changes of the session reach them with the query.
     void loadFromQueryContext(const Context & context, const ASTSetQuery * settings = nullptr, ASTStorage * store_into = nullptr);
 
     static bool hasBuiltin(std::string_view name);

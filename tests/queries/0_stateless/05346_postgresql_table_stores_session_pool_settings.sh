@@ -63,3 +63,12 @@ ${DDL_CLIENT} --query "
     SET postgresql_connection_pool_size = 3;
     RESTORE TABLE t_backup AS t_restored FROM Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;"
 settings_of t_restored
+
+echo "--- a RESTORE of a materialized view keeps the definitions from the backup"
+# The view creates its inner table with the view's `ENGINE` clause, which the two definitions share.
+${DDL_CLIENT} --query "CREATE MATERIALIZED VIEW mv_backup (x Int32) ENGINE = ${ENGINE} AS SELECT 1 AS x"
+${DDL_CLIENT} --query "
+    BACKUP TABLE mv_backup TO Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}_mv') FORMAT Null;
+    SET postgresql_connection_pool_size = 3;
+    RESTORE TABLE mv_backup AS mv_restored FROM Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}_mv') FORMAT Null;"
+settings_of mv_restored
