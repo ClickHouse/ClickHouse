@@ -23,6 +23,7 @@ loser.err does not exist
 OK: logger.level is applied
 777
 1
+OK: config with an unknown setting is reloaded
 Unknown option specified: no_such_server_setting
 Option must not be given more than once: max_thread_pool_size
 OK: --co and --lo resolve

@@ -2426,6 +2426,14 @@ std::vector<std::string> canonicalizeOptions(const std::vector<std::string> & ar
 
 }
 
+std::vector<std::string> ServerSettings::canonicalizeCommandLine(
+    const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options)
+{
+    Poco::Util::OptionSet all_options(builtin_options);
+    addToProgramOptions(all_options);
+    return canonicalizeOptions(argv, all_options);
+}
+
 void ServerSettings::mirrorCommandLineToConfigPaths(
     const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options, Poco::Util::LayeredConfiguration & config)
 {
@@ -2449,12 +2457,9 @@ void ServerSettings::mirrorCommandLineToConfigPaths(
     ///
     /// The options before the separator are canonicalized first (see `canonicalizeOptions`), so that every
     /// spelling `Poco` accepts for an option is recognized below.
-    Poco::Util::OptionSet all_options(builtin_options);
-    addToProgramOptions(all_options);
-
     Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line(new Poco::Util::LayeredConfiguration);
     std::vector<std::pair<std::string, std::string>> ordered_args;
-    argsToConfig(canonicalizeOptions(argv, all_options), *command_line, 0, nullptr, &ordered_args);
+    argsToConfig(canonicalizeCommandLine(argv, builtin_options), *command_line, 0, nullptr, &ordered_args);
 
     /// Both spellings of every affected setting, mapped to the setting's index. Every setting backed by
     /// a config key different from the setting name is affected. This includes `config_file`, whose key

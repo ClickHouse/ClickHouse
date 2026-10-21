@@ -74,6 +74,13 @@ struct ServerSettings
 
     static void addToProgramOptions(Poco::Util::OptionSet & options);
 
+    /// Rewrite every option before the `--` separator into the form `--<full name>=<value>`, resolving it
+    /// against `builtin_options` and the server settings the same way as `Poco` does (case-insensitively,
+    /// by a unique prefix, with `:` or `=` as the separator, ...), so that `argsToConfig` records every
+    /// spelling accepted by `Poco` under the option's own name.
+    static std::vector<std::string> canonicalizeCommandLine(
+        const std::vector<std::string> & argv, const Poco::Util::OptionSet & builtin_options);
+
     /// Mirror the command-line values of the settings backed by a config key different from the setting
     /// name (e.g. `openssl_server_required_tls_v1_2` -> `openSSL.server.requireTLSv1_2`, or `config_file`
     /// -> `config-file`) into that key, so that the components reading the raw configuration and

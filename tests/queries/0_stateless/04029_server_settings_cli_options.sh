@@ -146,6 +146,9 @@ fi
 # actually select the configuration file, also when it is given in a different case after the built-in
 # `--config-file` option, and `system.server_settings` must report the config file the server really runs
 # on. Use a config file with a distinctive `max_connections` value as the marker that it was genuinely loaded.
+# The server is also started with `--SKIP_CHECK_FOR_INCORRECT_SETTINGS:1` - a spelling accepted by `Poco`, but
+# not by `argsToConfig` - and the escape hatch must keep working on a config reload, not only at startup:
+# reloading a config with an unknown top-level key must succeed.
 srv_dir2="${CLICKHOUSE_TMP}/srv2"
 mkdir -p "$srv_dir2"
 cfg2="$srv_dir2/custom_config.xml"
@@ -175,13 +178,16 @@ cat > "$cfg2" <<XML
 </clickhouse>
 XML
 $CLICKHOUSE_BINARY server \
-    --config-file "$srv_dir2/no_such_config.xml" --CONFIG_FILE "$cfg2" \
+    --config-file "$srv_dir2/no_such_config.xml" --CONFIG_FILE "$cfg2" --SKIP_CHECK_FOR_INCORRECT_SETTINGS:1 \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir2/" > "${CLICKHOUSE_TMP}/server2.log" 2>&1 &
 PID=$!
 wait_for_server "${CLICKHOUSE_TMP}/server2.log"
 
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_connections'"
 $CLICKHOUSE_CLIENT --query "SELECT value = '$cfg2' FROM system.server_settings WHERE name = 'config-file'"
+
+sed -i 's|<max_connections>777</max_connections>|<max_connections>777</max_connections><no_such_server_setting>1</no_such_server_setting>|' "$cfg2"
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" && echo "OK: config with an unknown setting is reloaded"
 
 stop_server
 

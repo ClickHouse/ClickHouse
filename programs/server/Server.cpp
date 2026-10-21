@@ -2722,11 +2722,16 @@ try
     /// unknown key would still be skipped — diverging from a fresh startup with the same file,
     /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
     /// populates the command-line layer) reproduces the command-line-only view; the priority is
-    /// irrelevant because the throwaway config has a single layer.
+    /// irrelevant because the throwaway config has a single layer. The arguments are canonicalized
+    /// first, so that every spelling `Poco` accepts for the direct option at startup
+    /// (`--SKIP_CHECK_FOR_INCORRECT_SETTINGS 1`, `--skip_check_for_incorrect_settings:1`, ...) is
+    /// also honored here.
     bool command_line_skip_check = false;
     {
+        Poco::Util::OptionSet builtin_options;
+        defineBuiltinOptions(builtin_options);
         Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
-        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
+        argsToConfig(ServerSettings::canonicalizeCommandLine(argv(), builtin_options), *command_line_config, PRIO_DEFAULT);
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
