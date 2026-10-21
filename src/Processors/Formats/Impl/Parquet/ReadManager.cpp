@@ -939,7 +939,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
             row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
 
         /// The columns of this step served from the columns cache have no task, but forming them
-        /// copies their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
+        /// can copy their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
         /// the subgroup is delivered. Account for them as for the columns that are decoded.
         if (!row_group.cached_columns.empty() && row_subgroup.filter.rows_pass > 0)
         {
