@@ -20,9 +20,8 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
     local_defines = [
         "LZ4_FAST_DEC_LOOP=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

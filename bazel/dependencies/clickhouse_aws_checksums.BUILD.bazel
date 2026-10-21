@@ -67,13 +67,12 @@ ch_cc_library(
     implementation_deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:libcxxabi_headers",
             ":aws_checksums",
             "@clickhouse_aws_c_common//:aws_c_common",
         ],
     }),
     language = "C",
-    llvm_headers = True,
+    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
