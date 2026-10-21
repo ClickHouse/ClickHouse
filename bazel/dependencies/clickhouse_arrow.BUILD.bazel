@@ -407,7 +407,6 @@ ch_cc_library(
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
         ":_arrow__compile_1",
-        "@clickhouse_abseil_cpp//:absl_status",
     ],
 )
 
@@ -839,17 +838,8 @@ cc_library(
     # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
     includes = ["cpp/src"] + ["config/contrib/arrow-cmake/cpp/src"],
     deps = [
-        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
-        ":_arrow__compile_0",
         ":_arrow_flight",
         ":_parquet",
-        "@clickhouse_flatbuffers//:_flatbuffers",
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_grpc//:address_sorting",
-        "@clickhouse_rapidjson//:rapidjson",
-        "@clickhouse_re2//:_re2",
-        "@clickhouse_thrift//:_thrift",
-        "@clickhouse_xsimd//:xsimd",
     ],
 )
 

@@ -196,6 +196,7 @@ CMake hash recorded below.
 | `7e75a6d00` (verification snapshot) | Base public headers in common, Poco XML/Expat ownership, complete REST dependencies and LLVM Atomic owner | [0f4d2fc4](https://app.buildbuddy.io/invocation/0f4d2fc4-61f4-4692-a166-37a9575cadcc) | [30935dd1](https://app.buildbuddy.io/invocation/30935dd1-15e2-4e75-9894-9e26567bb370) |
 | `e70a4f987` (verification snapshot) | Remove unrelated headers and 138 dependencies from the generated System licenses source | [64bfaf5b](https://app.buildbuddy.io/invocation/64bfaf5b-4645-4eb9-a11c-cfa5224cb9d2) | [32f8ffef](https://app.buildbuddy.io/invocation/32f8ffef-e681-414c-b65a-c4a4e72247d0) |
 | `f6b06dbce` (verification snapshot) | Select the 125 ARM-only compiler-rt outline atomic targets on ARM | [4da44d66](https://app.buildbuddy.io/invocation/4da44d66-718e-488a-8fab-12971e70e25e) | [2b778ee0](https://app.buildbuddy.io/invocation/2b778ee0-c6f9-41f5-b6a4-3b4c0a6d1ff5) |
+| `ebef76675` (verification snapshot) | Correct Abseil header ownership and Linux inputs; remove redundant Arrow dependencies | [0f7b59a5](https://app.buildbuddy.io/invocation/0f7b59a5-eb82-4090-affc-c07036ecb7a5) | [b7a72f38](https://app.buildbuddy.io/invocation/b7a72f38-fa50-45af-815f-ec63cce8d946) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
