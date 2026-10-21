@@ -5,5 +5,5 @@ price"usd	Nullable(Float64)
 attrs	Map(String, Nullable(String))					
 t	Map(String, Nullable(Int32))					
 1	x	9.5	{'url':'http://a/b','dir/name':'v','q"k':'w'}	{'a/b':1,'e"f':2}
---- a zero byte in a name
-INCORRECT_DATA
+--- a zero byte in a name is written as \u0000
+{'a\\u0000b':1}

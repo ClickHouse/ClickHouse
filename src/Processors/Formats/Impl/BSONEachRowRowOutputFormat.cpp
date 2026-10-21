@@ -20,7 +20,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <Common/quoteString.h>
 
 #include <Processors/Port.h>
 
@@ -36,17 +35,20 @@ namespace ErrorCodes
 }
 
 /// BSON element names (column names, `Tuple` element names, `Map` keys) are NUL-terminated UTF-8 strings. Write
-/// them as they are, only replacing invalid UTF-8; the input format reads them back verbatim. A NUL byte would end
-/// the name early and corrupt the document, so reject it.
+/// them as they are, only replacing invalid UTF-8; the input format reads them back verbatim. A zero byte would end
+/// the name early and corrupt the document, so it is written as `\u0000`, as before (see `02593_bson_more_types`).
 static String toValidUTF8String(const String & name)
 {
-    if (name.contains('\0'))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot write the name {} in BSON: it contains a zero byte", quoteString(name));
-
     WriteBufferFromOwnString buf;
     {
         WriteBufferValidUTF8 validating_buf(buf);
-        writeString(name, validating_buf);
+        for (const char c : name)
+        {
+            if (c == '\0')
+                writeCString("\\u0000", validating_buf);
+            else
+                writeChar(c, validating_buf);
+        }
         /// The destructor of `WriteBufferValidUTF8` catches and suppresses a failure of the final
         /// flush, which would leave `buf` empty (or partial). Flush explicitly so a failure
         /// propagates as itself.

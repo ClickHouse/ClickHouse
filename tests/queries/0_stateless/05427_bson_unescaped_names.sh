@@ -17,5 +17,6 @@ ${CLICKHOUSE_LOCAL} --query "
 echo "backslashes in the file: $(tr -cd '\\' < "${DATA_FILE}.bson" | wc -c)"
 ${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}.bson', BSONEachRow); SELECT * FROM file('${DATA_FILE}.bson', BSONEachRow)" < /dev/null
 
-echo "--- a zero byte in a name"
-${CLICKHOUSE_LOCAL} --query "SELECT map('a' || char(0) || 'b', 1) AS m FORMAT BSONEachRow" 2>&1 < /dev/null | grep -o 'INCORRECT_DATA' | head -1
+echo "--- a zero byte in a name is written as \\u0000"
+${CLICKHOUSE_LOCAL} --query "SELECT map('a' || char(0) || 'b', 1) AS m FORMAT BSONEachRow" < /dev/null \
+    | ${CLICKHOUSE_LOCAL} --input-format BSONEachRow --table test --structure "m Map(String, UInt32)" --query "SELECT * FROM test"
