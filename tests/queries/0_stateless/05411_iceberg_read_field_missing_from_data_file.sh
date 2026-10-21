@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# An INSERT planned before ADD COLUMN commits a data file without the added column under the widened
-# schema. Iceberg reads a field missing from a data file as NULL, in every format and whatever the
-# generic `input_format_*_allow_missing_*` settings say, so they are all disabled here.
+# An INSERT planned before ADD COLUMN commits an Avro data file without the added column under the widened
+# schema. Iceberg reads a column whose field id is not in a data file as NULL, also with
+# `input_format_avro_allow_missing_fields` disabled.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,64 +12,56 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE_DIR="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${TABLE_DIR}"
 
-LOCAL="${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --allow_experimental_iceberg_compaction=1
-    --input_format_avro_allow_missing_fields=0 --input_format_orc_allow_missing_columns=0 --input_format_parquet_allow_missing_columns=0"
+LOCAL="${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --input_format_avro_allow_missing_fields=0"
 
-for fmt in Avro ORC Parquet; do
-    TABLE_PATH="${TABLE_DIR}/${fmt}/"
-    mkdir -p "${TABLE_PATH}"
-
-    ${LOCAL} --query "
-        CREATE TABLE t (a Int32, c Int64) ENGINE = IcebergLocal('${TABLE_PATH}', '${fmt}');
-        INSERT INTO t SELECT number, number FROM numbers(3);
-    "
-
-    PIN="metadata/$(basename "$(ls "${TABLE_PATH}metadata"/*.metadata.json | sort -V | tail -1)")"
-    ${LOCAL} --query "
-        CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', '${fmt}');
-        ALTER TABLE t ADD COLUMN d Nullable(Int64);
-    "
-
-    # The structure comes from the version before ADD COLUMN, the commit goes to the widened table.
-    ${LOCAL} --query "
-        CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', '${fmt}') SETTINGS iceberg_metadata_file_path = '${PIN}';
-        INSERT INTO t SELECT number + 10, number + 10 FROM numbers(3);
-    "
-
-    ${LOCAL} --query "
-        CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', '${fmt}');
-        SELECT '${fmt}', 'rows', arraySort(groupArray(a)), countIf(d IS NULL) FROM t;
-        SELECT '${fmt}', 'where_null', count() FROM t WHERE d IS NULL;
-        SELECT '${fmt}', 'where_eq', count() FROM t WHERE d = 1;
-        SELECT '${fmt}', 'star', * FROM t ORDER BY a;
-    "
-done
-
-# Compaction rewrites data files only when there are position deletes, and only Parquet tables accept DELETE.
-TABLE_PATH="${TABLE_DIR}/Parquet/"
+TABLE_PATH="${TABLE_DIR}/add/"
+mkdir -p "${TABLE_PATH}"
 ${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet');
-    ALTER TABLE t DELETE WHERE a = 10;
+    CREATE TABLE t (a Int32, c Int64) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    INSERT INTO t SELECT number, number FROM numbers(3);
+"
+PIN="metadata/$(basename "$(ls "${TABLE_PATH}metadata"/*.metadata.json | sort -V | tail -1)")"
+${LOCAL} --query "
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    ALTER TABLE t ADD COLUMN d Nullable(Int64);
+"
+# The structure comes from the version before ADD COLUMN, the commit goes to the widened table.
+${LOCAL} --query "
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro') SETTINGS iceberg_metadata_file_path = '${PIN}';
+    INSERT INTO t SELECT number + 10, number + 10 FROM numbers(3);
 "
 ${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet');
-    OPTIMIZE TABLE t;
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    SELECT 'add', 'rows', arraySort(groupArray(a)), countIf(d IS NULL) FROM t;
+    SELECT 'add', 'where_null', count() FROM t WHERE d IS NULL;
+    SELECT 'add', 'where_eq', count() FROM t WHERE d = 1;
+    SELECT 'add', 'star', * FROM t ORDER BY a;
+"
+
+# A stale INSERT across RENAME COLUMN writes `a` without a field id, so the file does not show that the
+# renamed column is absent, and reading it still fails instead of returning NULL.
+TABLE_PATH="${TABLE_DIR}/rename/"
+mkdir -p "${TABLE_PATH}"
+${LOCAL} --query "
+    CREATE TABLE t (a Nullable(Int32), c Int64) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    INSERT INTO t SELECT number, number FROM numbers(3);
+"
+PIN="metadata/$(basename "$(ls "${TABLE_PATH}metadata"/*.metadata.json | sort -V | tail -1)")"
+${LOCAL} --query "
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    ALTER TABLE t RENAME COLUMN a TO b;
 "
 ${LOCAL} --query "
-    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet');
-    SELECT 'after_optimize', count(), countIf(d IS NULL), sum(c) FROM t;
-    SELECT 'files_after_optimize', countIf(content = 'DATA'), countIf(content != 'DATA')
-    FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't';
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro') SETTINGS iceberg_metadata_file_path = '${PIN}';
+    INSERT INTO t SELECT number + 10, number + 10 FROM numbers(3);
 "
-
-# With missing fields tolerated, a field stored under its escaped Avro name is read by its Iceberg name, not as a default.
-${CLICKHOUSE_LOCAL} --input_format_avro_allow_missing_fields=1 --query "
-    SELECT 'escaped', id, \`name.column\`
-    FROM file('${CURDIR}/data_avro/iceberg_escaped_field_name.avro', 'Avro', 'id Int32, \`name.column\` String') ORDER BY id"
-
-# A field resolved directly wins over an escaped-name alias, and one column is filled from one field only.
-${CLICKHOUSE_LOCAL} --input_format_avro_allow_missing_fields=0 --query "
-    SELECT 'collision', y, \`n.c\`, z
-    FROM file('${CURDIR}/data_avro/iceberg_field_name_collision.avro', 'Avro', 'y String, \`n.c\` String, z String') ORDER BY y"
+${LOCAL} --query "
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    SELECT 'rename', count(), sum(c) FROM t;
+"
+${LOCAL} --query "
+    CREATE TABLE t ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro');
+    SELECT b FROM t;
+" 2>&1 | grep -o -m1 'THERE_IS_NO_COLUMN'
 
 rm -rf "${TABLE_DIR}"

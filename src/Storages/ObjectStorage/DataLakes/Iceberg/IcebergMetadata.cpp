@@ -178,15 +178,6 @@ void checkNoUInt64(const ColumnsDescription & columns)
                 column.name, column.type->getName());
     }
 }
-
-/// A data file may lack an optional field of the schema its manifest names (a column added while the
-/// file was being written); Iceberg reads such a field as NULL.
-void allowFieldsMissingFromDataFile(FormatSettings & format_settings)
-{
-    format_settings.parquet.allow_missing_columns = true;
-    format_settings.orc.allow_missing_columns = true;
-    format_settings.avro.allow_missing_fields = true;
-}
 }
 
 
@@ -590,15 +581,12 @@ bool IcebergMetadata::optimize(
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
-        FormatSettings compaction_format_settings = format_settings ? *format_settings : getFormatSettings(context);
-        /// Compaction reads every data file under the current schema's names, and only Parquet resolves them by field id.
-        compaction_format_settings.parquet.allow_missing_columns = true;
         compactIcebergTable(
             snapshots_info,
             persistent_components,
             object_storage,
             getMetadataLookupSettings(),
-            compaction_format_settings,
+            format_settings,
             sample_block,
             context,
             write_format);
@@ -1573,8 +1561,6 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
-    allowFieldsMissingFromDataFile(format_settings);
-
     if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
         /// data reader and the deletes reader.
@@ -1779,7 +1765,8 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (!iceberg_object_info)
         return nullptr;
     chassert(object_info->getFileFormat().has_value());
-    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
+    const auto file_format = Poco::toLower(*object_info->getFileFormat());
+    if (file_format != "parquet" && file_format != "avro")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
