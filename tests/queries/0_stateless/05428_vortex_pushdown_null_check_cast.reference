@@ -1,0 +1,12 @@
+push_down = 0
+s IS NULL	1
+NOT isNotNull(s)	1
+s IS NOT NULL	1
+isNotNull(s)	1
+i IS NULL	0
+push_down = 1
+s IS NULL	1
+NOT isNotNull(s)	1
+s IS NOT NULL	1
+isNotNull(s)	1
+i IS NULL	0

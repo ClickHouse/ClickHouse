@@ -79,11 +79,16 @@ private:
     enum class TypeMatch
     {
         Required,
-        /// For type-independent atoms: `IS NULL` does not compare values, so the value sets do not
-        /// have to match.
-        NotRequired,
+        /// For null checks: `IS NULL` does not compare values, so the value sets do not have to
+        /// match, but the conversion from the file type must not turn a non-null value into NULL.
+        NullPreserving,
     };
     std::optional<ResolvedColumn> resolveColumn(const RPNBuilderTreeNode & node, TypeMatch type_match) const;
+
+    /// Whether reading a non-null value of `arrow_type` as `cmp_type` always yields a non-null
+    /// value. Not so for a string read as a nullable number, for example: a malformed string is
+    /// cast to NULL, while the scan still sees the original non-null string.
+    bool conversionPreservesNulls(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
 
     /// Whether the two types describe the same set of values. Only then does a comparison mean the
     /// same thing on both sides. `UInt64` in the header against `I64` in the file is the trap: the

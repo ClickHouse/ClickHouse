@@ -188,6 +188,8 @@ VortexExpressionConverter::resolveColumn(const RPNBuilderTreeNode & node, TypeMa
     DataTypePtr cmp_type = removeNullable(recursiveRemoveLowCardinality(header_column->type));
     if (type_match == TypeMatch::Required && !typesMatchForFilterPushdown(cmp_type, *arrow_field->type()))
         return std::nullopt;
+    if (type_match == TypeMatch::NullPreserving && !conversionPreservesNulls(cmp_type, *arrow_field->type()))
+        return std::nullopt;
 
     /// When a nullable file column is read as non-nullable, its nulls become default values. The
     /// scan does not know about that substitution: it evaluates the atom on null and drops the row.
@@ -245,6 +247,33 @@ bool VortexExpressionConverter::typesMatchForFilterPushdown(const DataTypePtr & 
         case arrow::Type::LARGE_BINARY:
         case arrow::Type::BINARY_VIEW: return which.isString();
         default: return false;
+    }
+}
+
+bool VortexExpressionConverter::conversionPreservesNulls(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const
+{
+    if (typesMatchForFilterPushdown(cmp_type, arrow_type))
+        return true;
+
+    /// Any value can be rendered as a string.
+    if (isString(cmp_type))
+        return true;
+
+    /// An integer cast to another integer wraps around, it does not become NULL.
+    switch (arrow_type.id())
+    {
+        case arrow::Type::BOOL:
+        case arrow::Type::INT8:
+        case arrow::Type::INT16:
+        case arrow::Type::INT32:
+        case arrow::Type::INT64:
+        case arrow::Type::UINT8:
+        case arrow::Type::UINT16:
+        case arrow::Type::UINT32:
+        case arrow::Type::UINT64:
+            return isNativeInteger(cmp_type) && !isBool(cmp_type);
+        default:
+            return false;
     }
 }
 
@@ -534,7 +563,7 @@ VortexExpressionPtr VortexExpressionConverter::convertIsNull(const RPNBuilderFun
     if (node.getArgumentsSize() != 1)
         return nullptr;
     /// Null-ness does not compare values, so the value sets do not have to match.
-    auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::NotRequired);
+    auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::NullPreserving);
     if (!column)
         return nullptr;
     return keepUndecodableRows(*column, VortexExpressionPtr(vortex_ffi_expr_is_null(column->expr.get())), allow_widening);
@@ -544,7 +573,7 @@ VortexExpressionPtr VortexExpressionConverter::convertIsNotNull(const RPNBuilder
 {
     if (node.getArgumentsSize() != 1)
         return nullptr;
-    auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::NotRequired);
+    auto column = resolveColumn(node.getArgumentAt(0), TypeMatch::NullPreserving);
     if (!column)
         return nullptr;
     VortexExpressionPtr null_check(vortex_ffi_expr_is_null(column->expr.get()));
