@@ -48,8 +48,7 @@ class RestorerFromBackup;
  * `getMasterThreadResourceName` and friends). READ DISK and WRITE DISK claim nothing.
  *
  * Shadowing. An own entity is shadowed when an inherited entity claims one of its claim keys. A shadowed entity stays
- * stored but is not visible, as a whole; it is visible again once the inherited entity goes away. The children of a
- * shadowed workload attach by name to the inherited workload. Shadowing is the only way an entity is hidden.
+ * stored but is not visible, as a whole; it is visible again once the inherited entity goes away.
  *
  * Conflicts. Two own entities of one layer that share a claim key: the same kind and name, or two resources for one
  * role. A SQL statement also conflicts with an inherited entity sharing a claim key. Statements and loads reject
@@ -67,8 +66,7 @@ class RestorerFromBackup;
  * no workload node for it and applies its settings to the root node of every resource.
  *
  * Events and transactions. Subscribers of a layer receive changes of its visible entities only. Every change in any
- * layer is turned by every outer layer into one transaction: a vector of events that turns the old visible entities
- * into the new ones, ordered so that an entity is created before the entities referencing it and dropped after them.
+ * layer is turned by every outer layer into one transaction that turns the old visible entities into the new ones.
  * An unchanged view produces no transaction. Transactions, including the initial snapshot of a new subscriber, are
  * delivered one at a time in the order they were produced. Handlers are called without the layer's lock, except on
  * the Keeper refresh paths, where `WorkloadEntityKeeperStorage` holds its lock. A handler must not call back into the
@@ -78,16 +76,13 @@ class RestorerFromBackup;
  * resolves references against its own and inherited entities, so the configuration references only its own entities
  * and SQL entities may reference configuration entities, but not implicit ones. Every statement and every load
  * (configuration, Keeper, disk) rejects a missing target and a parent cycle; a configuration reload is then not
- * applied, and a failed Keeper or disk load fails the startup or the refresh. A dropped entity must not be referenced
- * by an own entity. A configuration reload is not checked against the SQL layer: dropping a configuration entity
- * that a SQL entity references breaks the reference, and the next load of the SQL entities fails until it is fixed.
+ * applied, and a failed Keeper or disk load fails the startup or the refresh. A configuration reload is not checked
+ * against the SQL layer: dropping a configuration entity that a SQL entity references breaks the reference, and the
+ * next load of the SQL entities fails until it is fixed.
  *
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL layer: the
  * implicit layer forwards them, and the configuration is read-only. A backup contains the own entities of the SQL
  * layer. A restore recreates them in the SQL layer through `storeEntity`.
- *
- * Source. `getEntitySource` returns the name of the layer that owns a visible entity: `implicit`, `keeper`, `disk` or
- * `configuration`. It is shown in the `source` column of `system.workloads` and `system.resources`.
  */
 
 enum class WorkloadEntityType : uint8_t
