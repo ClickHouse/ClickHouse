@@ -1,0 +1,2 @@
+#pragma once
+#define DWYU_UNUSED_ALLOCATOR_HEADER 29

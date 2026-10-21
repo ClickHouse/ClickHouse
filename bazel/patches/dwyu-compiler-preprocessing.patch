@@ -758,7 +758,7 @@ index bd8a745..f3d1f1c 100644
                     You can change this to recursively analyzing dependencies following the `deps` and `implementation_deps` attributes by setting this to True.<br>
                     This feature is demonstrated in the [recursion example](/examples/recursion).
  
-+        follow_configured_closure: Traverse all rule attributes and the rule's configured C++ toolchain.
++        follow_configured_closure: Traverse all rule attributes and resolved rule toolchains.
 +                                   Only supported native C++ rules are checked. Requires recursive=True.
          recursion_stops_on_skip: If `True`, skipping a target will also stop the recursive analysis of its dependencies.
                                   This does not just influence the behavior of the `skip_*` options, but also skipping to inbuilt logic (e.g. skipping incompatible rule types).
@@ -794,14 +794,14 @@ index bd8a745..f3d1f1c 100644
 -        toolchains = use_cc_toolchain(mandatory = True),
 +        required_providers = [] if follow_configured_closure else [CcInfo],
 +        toolchains = use_cc_toolchain(mandatory = not follow_configured_closure),
-+        toolchains_aspects = ["@bazel_tools//tools/cpp:toolchain_type"] if follow_configured_closure else [],
++        toolchains_aspects = ["*"] if follow_configured_closure else [],
 +        apply_to_generating_rules = follow_configured_closure,
          attrs = {
 +            "_follow_configured_closure": attr.bool(default = follow_configured_closure),
              "dwyu_analysis_ignores_private_headers_from_deps": attr.bool(
                  default = analysis_ignores_private_headers_from_deps,
              ),
-@@ -272,19 +288,25 @@ def dwyu_cc_aspect_factory(
+@@ -272,19 +288,26 @@ def dwyu_cc_aspect_factory(
                  default = aspect_target_mapping,
              ),
              "_tool_analyze_includes": attr.label(
@@ -820,6 +820,7 @@ index bd8a745..f3d1f1c 100644
              ),
 +            "_tool_nm": attr.label(
 +                default = tool_nm,
++                allow_files = True,
 +                executable = True,
 +                cfg = "exec",
 +                doc = "Configured llvm-nm for direct owned object symbol evidence in compiler mode.",
@@ -830,7 +831,7 @@ index bd8a745..f3d1f1c 100644
                  executable = True,
                  cfg = "exec",
                  doc = "Tool for processing the target under inspection and its dependencies. We have to perform this" +
-@@ -292,3 +314,54 @@ def dwyu_cc_aspect_factory(
+@@ -292,3 +315,54 @@ def dwyu_cc_aspect_factory(
              ),
          },
      )
