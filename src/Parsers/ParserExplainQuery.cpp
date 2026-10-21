@@ -861,6 +861,8 @@ The fragments are followed by two sections, which refer to query fragment `<id>`
 
 The sets of `IN` subqueries are not shown yet: the plan names such a set (for example `bid IN subquery1`), but no fragment builds it.
 
+A distributed query without exchanges is printed as one query fragment that sends the result through the `final_result` exchange.
+
 When the query is not distributed, the plan is printed as without `fragments`. If the query could not be distributed and fell back to local execution, the reason is printed after the plan as `Not distributed: <reason>`.
 
 Example:

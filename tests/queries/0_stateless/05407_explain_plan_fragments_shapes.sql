@@ -4,7 +4,8 @@
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 
-CREATE TABLE small(sid UInt64, s Array(Int64)) ENGINE = MergeTree ORDER BY sid;
+-- One granule, so that the plan reading only `small` has no exchanges; the test harness randomizes the granularity.
+CREATE TABLE small(sid UInt64, s Array(Int64)) ENGINE = MergeTree ORDER BY sid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;
 
 INSERT INTO small SELECT number, [number] FROM numbers(0, 1000);
@@ -16,6 +17,8 @@ SET query_plan_join_swap_table = 0;
 SET max_rows_to_group_by = 0;
 -- The test harness randomizes these, and aggregation in order changes the plan.
 SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;
+-- The test harness randomizes these too: a random join order or probe-row threshold changes or drops the runtime filters.
+SET join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
 
 SET
     make_distributed_plan = 1,
@@ -59,6 +62,14 @@ SELECT count()
 FROM big, small
 WHERE small.sid = big.bid
 SETTINGS enable_join_runtime_filters = 1, distributed_plan_join_runtime_filters = 1, distributed_plan_max_rows_to_broadcast = 0;
+
+-- A distributed plan without exchanges is not cut into several fragments, but it is still a cut plan: it is printed
+-- with a fragment header and the send step of the result. `small` fits into one granule, so it is read by one task.
+SELECT '-- no exchanges';
+EXPLAIN fragments = 1
+SELECT sid
+FROM small
+WHERE sid > 5;
 
 DROP TABLE small;
 DROP TABLE big;

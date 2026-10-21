@@ -100,13 +100,13 @@ Exchanges:
 Levels: [F0] -> [F1]
 -- pretty
 Query fragment 2 (main) · tasks=1
-Output: k, sum(bid)
+Output: bid MOD 10, sum(bid)
 
 GatherSend (final_result)
 └──GatherReceive (exchange_1)
 
 Query fragment 1 (stage_1) · tasks=3
-Output: modulo(bid, 10_UInt8), sum(bid)
+Output: bid MOD 10, sum(bid)
 
 GatherSend (exchange_1)
 └──Expression ((Project names + Projection))
@@ -121,7 +121,7 @@ ShuffleSend (exchange_0)
    └──ReadFromMergeTree (default.big)
 
 Exchanges:
-  exchange_0: hash(modulo(bid, 10_UInt8)), streaming, F0 -> F1, buckets 3 -> 3
+  exchange_0: hash(bid MOD 10), streaming, F0 -> F1, buckets 3 -> 3
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
 -- make_distributed_plan = 0

@@ -115,3 +115,11 @@ Exchanges:
   exchange_1: hash(__table2.sid), streaming, F1 -> F2, buckets 3 -> 3
   exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
 Levels: [F0, F1] -> [F2] -> [F3]
+-- no exchanges
+Query fragment 0 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromMergeTree (default.small)
+
+Levels: [F0]
