@@ -405,9 +405,10 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
+    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -917,22 +918,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    const bool is_view_inner = scope.context->isViewInnerQuery();
-    if (!is_view_inner)
-    {
-        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
-        /// already resolved positional arguments in the outer query. View-inner contexts are
-        /// exempt because views are expanded on the local node and were never resolved by the
-        /// initiator.
-        if (scope.context->isPositionalArgumentsAlreadyResolved())
-            return;
-        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
-        /// resolved positional arguments. Do not skip for contexts that never set the kind
-        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
-        /// which must resolve positional arguments itself.
-        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-            return;
-    }
+    if (positional_arguments_already_resolved)
+        return;
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -4932,11 +4919,21 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
         ready_columns.push_back(sort_node->as<SortNode &>().getExpression());
 
+    /// `FillingTransform` pairs each executed `INTERPOLATE` output with one destination column of its
+    /// input header, by position, so a column may be an `INTERPOLATE` output at most once.
+    NameSet interpolate_column_names;
+
     for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
+
+        if (!interpolate_column_names.emplace(column_to_interpolate_name).second)
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Column '{}' can't be an INTERPOLATE output more than once. In scope {}",
+                column_to_interpolate_name,
+                scope.scope_node->formatASTForErrorMessage());
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -7696,8 +7693,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
-    expandLimitByAll(query_node_typed);
-
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7711,11 +7706,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasLimitBy())
-    {
         replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
+    /// After the positional arguments: the projection expressions `ALL` expands to are not positions.
+    expandLimitByAll(query_node_typed);
+
+    if (query_node_typed.hasLimitBy())
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    }
 
     if (query_node_typed.hasLimit())
     {
