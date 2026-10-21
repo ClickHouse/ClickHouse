@@ -19,6 +19,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageTableFunction.h>
 #include <Storages/StorageView.h>
 
 namespace DB
@@ -67,24 +68,26 @@ void collectTableIds(const IAST & ast, const ContextPtr & context, Names & with_
     with_names.resize(enclosing_with_names);
 }
 
-/// The storages which `storage` hands the row policy filter to. Throws unless the user can see all the tables which
-/// the definition of `storage` names for the read, whether they exist or not. Otherwise the answer tells the user
-/// the engine of a table which the user cannot see, or that the table exists.
+/// Throws unless the user can see all the tables which the definition of `storage` names for the read, whether they exist
+/// or not. Otherwise the answer tells the user the engine of a table which the user cannot see, or that the table exists.
+void checkCanSeeReadTables(bool granted, const IStorage & storage)
+{
+    if (!granted)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges to check the engine of the tables which {} reads: a row policy on a table which reads "
+            "a table with an engine that merges rows does not hide the values of the rows it filters out. "
+            "Grant SHOW TABLES on all the tables which it can read, or set allow_suspicious_row_policies_with_blending_engines = 1 "
+            "to continue anyway",
+            storage.getStorageID().getNameForLogs());
+}
+
+/// The storages which `storage` hands the row policy filter to
 std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPtr & context)
 {
     auto access = context->getAccess();
     auto can_see = [&](const StorageID & id) { return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name); };
-    auto check = [&](bool granted)
-    {
-        if (!granted)
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Not enough privileges to check the engine of the tables which {} reads: a row policy on a table which reads "
-                "a table with an engine that merges rows does not hide the values of the rows it filters out. "
-                "Grant SHOW TABLES on all the tables which it can read, or set allow_suspicious_row_policies_with_blending_engines = 1 "
-                "to continue anyway",
-                storage.getStorageID().getNameForLogs());
-    };
+    auto check = [&](bool granted) { checkCanSeeReadTables(granted, storage); };
 
     /// A materialized view, a `Buffer` and a `Merge` table hand the filter to the read of their targets, but do not list
     /// them as underlying storages, because the targets' own policies must not apply to them
@@ -143,6 +146,15 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPt
 /// The visited set terminates the walk if the chain of underlying storages loops
 ConstStoragePtr findBlendingEngineImpl(const IStorage & storage, const ContextPtr & context, NameSet & visited)
 {
+    /// A table function creates its storage with the privileges of the server and can open any table of it.
+    /// A table function which reads data from outside of the server does not read a blending table.
+    if (const auto * table_function = typeid_cast<const StorageTableFunctionProxy *>(&storage))
+    {
+        if (table_function->readsExternalSource())
+            return nullptr;
+        checkCanSeeReadTables(context->getAccess()->isGranted(AccessType::SHOW_TABLES), storage);
+    }
+
     if (storage.isBlendingEngine())
         return storage.shared_from_this();
 
