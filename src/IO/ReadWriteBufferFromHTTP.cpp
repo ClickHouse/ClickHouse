@@ -1016,10 +1016,13 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         /// (Unless the error in transient. Don't want to nondeterministically sometimes
         /// fall back to slow whole-file reads when HEAD is actually supported; that sounds
         /// like a nightmare to debug.)
-        if (e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
+        /// 501 Not Implemented is not transient either: the server does not support HEAD (e.g. Python's
+        /// `BaseHTTPRequestHandler` without `do_HEAD`).
+        if ((e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
+             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS &&
+             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
+             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
+            || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED)
         {
             /// But a HEAD interrupted by a cancellation must not come out as a file without
             /// metadata: the caller would go on making requests - here, the requests for the
