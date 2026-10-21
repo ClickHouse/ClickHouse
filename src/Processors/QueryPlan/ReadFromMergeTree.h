@@ -144,6 +144,7 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        PartitionPrefix,
     };
 
     struct DistributedIndexStat
