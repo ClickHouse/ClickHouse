@@ -279,22 +279,48 @@ void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::u
     /// the other watchers only, and this watcher would lose events that happened after its baseline.
     dispatchQueuedEvents();
 
-    /// `IN_MASK_ADD` keeps the events of the other watchers of the watch. Each watcher filters the events it gets by
-    /// its own mask.
-    const int wd = inotify_add_watch(inotify_fd, watcher.path.c_str(), watcher.watchMask() | IN_MASK_ADD);
-    if (wd == -1)
+    /// Moved into `registrations` before its address is stored in `registrations_by_wd`. If `emplace` throws, the
+    /// registration is destroyed, and no pointer to it is left behind for `dispatchEvent` to read.
+    const auto it = registrations.emplace(&watcher, std::move(registration)).first;
+    WatcherRegistration & new_registration = *it->second;
+    try
     {
-        if (errno == ENOSPC)
-            throw ErrnoException(
-                ErrorCodes::IO_SETUP_ERROR,
-                "Watch directory {} failed: the limit of inotify watches is reached, see `fs.inotify.max_user_watches`",
-                watcher.path);
-        ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, watcher.path, "Watch directory {} failed", watcher.path);
-    }
+        /// `IN_MASK_ADD` keeps the events of the other watchers of the watch. Each watcher filters the events it gets by
+        /// its own mask.
+        const int wd = inotify_add_watch(inotify_fd, watcher.path.c_str(), watcher.watchMask() | IN_MASK_ADD);
+        if (wd == -1)
+        {
+            if (errno == ENOSPC)
+                throw ErrnoException(
+                    ErrorCodes::IO_SETUP_ERROR,
+                    "Watch directory {} failed: the limit of inotify watches is reached, see `fs.inotify.max_user_watches`",
+                    watcher.path);
+            ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, watcher.path, "Watch directory {} failed", watcher.path);
+        }
 
-    registration->wd = wd;
-    registrations_by_wd[wd].push_back(registration.get());
-    registrations.emplace(&watcher, std::move(registration));
+        const bool is_new_watch = !registrations_by_wd.contains(wd);
+        try
+        {
+            registrations_by_wd[wd].push_back(&new_registration);
+        }
+        catch (...)
+        {
+            /// A watch shared with other watchers is kept: its mask may have been widened by `IN_MASK_ADD`, which is
+            /// harmless, as each watcher filters the events by its own mask.
+            if (is_new_watch)
+            {
+                registrations_by_wd.erase(wd);
+                inotify_rm_watch(inotify_fd, wd);
+            }
+            throw;
+        }
+        new_registration.wd = wd;
+    }
+    catch (...)
+    {
+        registrations.erase(it);
+        throw;
+    }
 }
 
 void DirectoryWatchReactor::detachWatcher(WatcherRegistration & registration)
@@ -711,8 +737,19 @@ void DirectoryWatchReactor::removeFailedWatchers()
 
 void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration)
 {
-    registerVnode(*registration, watcher.directoryFd(), watcher.directoryWatchFlags());
-    registrations.emplace(&watcher, std::move(registration));
+    /// Moved into `registrations` before its address is passed to the kqueue as the user data of the events. If
+    /// `emplace` throws, the registration is destroyed, and the kqueue has no pointer to it to return in an event.
+    const auto it = registrations.emplace(&watcher, std::move(registration)).first;
+    try
+    {
+        registerVnode(*it->second, watcher.directoryFd(), watcher.directoryWatchFlags());
+    }
+    catch (...)
+    {
+        /// `kevent` has failed, so the kqueue does not hold the address of the registration.
+        registrations.erase(it);
+        throw;
+    }
 }
 
 void DirectoryWatchReactor::detachWatcher(DirectoryWatcherBase & watcher)
