@@ -2111,15 +2111,12 @@ const VersionToSettingsChangesMap & getServerSettingsChangesHistory()
         VersionToSettingsChangesMap result;
 #define SERVER_SETTING_HISTORY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
-#define SERVER_SETTING_HISTORY_WITH_ALIAS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
+#define SERVER_SETTING_HISTORY_WITH_EXTRA_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, EXTRA, ...) \
     __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
-#define SERVER_SETTING_HISTORY_WITH_PATH_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
-    __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
-        LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(SERVER_SETTING_HISTORY_, SERVER_SETTING_HISTORY_WITH_ALIAS_)
-        LIST_OF_SERVER_SETTINGS_WITH_PATH(SERVER_SETTING_HISTORY_WITH_PATH_, SERVER_SETTING_HISTORY_WITH_PATH_)
+        LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(SERVER_SETTING_HISTORY_, SERVER_SETTING_HISTORY_WITH_EXTRA_)
+        LIST_OF_SERVER_SETTINGS_WITH_PATH(SERVER_SETTING_HISTORY_WITH_EXTRA_, SERVER_SETTING_HISTORY_WITH_EXTRA_)
 #undef SERVER_SETTING_HISTORY_
-#undef SERVER_SETTING_HISTORY_WITH_ALIAS_
-#undef SERVER_SETTING_HISTORY_WITH_PATH_
+#undef SERVER_SETTING_HISTORY_WITH_EXTRA_
         return result;
     }();
     return history;
@@ -2213,6 +2210,20 @@ std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
     for (const auto & setting : impl->all())
         setting_names.emplace_back(setting.getName());
     return setting_names;
+}
+
+std::vector<std::string_view> ServerSettings::getAllAliasNames()
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = ServerSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view ServerSettings::resolveName(std::string_view name)
+{
+    return ServerSettingsImpl::Traits::resolveName(name);
 }
 
 std::string_view ServerSettings::getDescription(std::string_view name) const

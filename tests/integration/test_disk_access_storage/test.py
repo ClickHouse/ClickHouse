@@ -541,14 +541,17 @@ def test_self_authentication_management_setting():
                         )
 
     def stored_bits(subject):
+        # Global grants can be serialized as groups instead of individual privileges.
+        self_types = f"('{privilege}', 'ACCESS MANAGEMENT', 'ALL')"
+        alter_types = "('ALTER USER', 'ACCESS MANAGEMENT', 'ALL')"
         return tuple(
             map(
                 int,
                 instance.query(
-                    f"SELECT countIf(access_type = '{privilege}' AND NOT is_partial_revoke), "
-                    f"maxIf(grant_option, access_type = '{privilege}' AND NOT is_partial_revoke), "
-                    "countIf(access_type = 'ALTER USER' AND NOT is_partial_revoke), "
-                    "maxIf(grant_option, access_type = 'ALTER USER' AND NOT is_partial_revoke) "
+                    f"SELECT countIf(access_type IN {self_types} AND NOT is_partial_revoke) > 0, "
+                    f"maxIf(grant_option, access_type IN {self_types} AND NOT is_partial_revoke), "
+                    f"countIf(access_type IN {alter_types} AND NOT is_partial_revoke) > 0, "
+                    f"maxIf(grant_option, access_type IN {alter_types} AND NOT is_partial_revoke) "
                     f"FROM system.grants WHERE role_name = '{subject}'"
                 )
                 .strip()
@@ -713,7 +716,7 @@ def test_self_authentication_management_setting():
             "FROM system.settings_changes ARRAY JOIN changes AS change "
             f"WHERE type = 'Server' AND change.name = '{setting}'"
         ) == (
-            f"26.10\t{setting}\tfalse\tfalse\t"
+            f"26.10\t{setting}\t0\t0\t"
             "Added an experimental opt-in for granting and revoking ALTER USER SELF AUTHENTICATION.\n"
         )
         instance.query("SET compatibility = '26.9'; SELECT 1")

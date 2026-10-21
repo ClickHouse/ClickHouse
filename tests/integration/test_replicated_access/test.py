@@ -223,7 +223,8 @@ def test_self_authentication_replication_with_management_disabled(started_cluste
         error = node2.query_and_get_error(
             replacement, user=actor, password=password, settings=settings
         )
-        assert "ACCESS_DENIED" in error and privilege in error
+        assert "ACCESS_DENIED" in error
+        assert f"(Missing permissions: {privilege})" in error
         assert node2.query(f"SHOW GRANTS FOR {normalized}") == before
         node1.query(f"GRANT {privilege} TO {actor} WITH GRANT OPTION")
         assert_eq_with_retry(

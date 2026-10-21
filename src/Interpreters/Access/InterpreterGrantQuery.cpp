@@ -275,8 +275,24 @@ namespace
     /// we just don't have the full information about them).
     AccessRightsElements getRequiredAccessForExecutingOnCluster(const AccessRightsElements & elements_to_grant, const AccessRightsElements & elements_to_revoke)
     {
+        static const AccessFlags deprecated_source_flags = []
+        {
+            AccessFlags flags = AccessType::SOURCES;
+#define ADD_DEPRECATED_SOURCE_FLAG(name, aliases) flags |= AccessType::name;
+            APPLY_FOR_SOURCE(ADD_DEPRECATED_SOURCE_FLAG)
+#undef ADD_DEPRECATED_SOURCE_FLAG
+            return flags;
+        }();
+
         auto required_access = elements_to_grant;
-        required_access.insert(required_access.end(), elements_to_revoke.begin(), elements_to_revoke.end());
+        for (auto element : elements_to_revoke)
+        {
+            /// The implicit `ALL` revoke includes obsolete source bits that replication rewrites to `READ`/`WRITE`.
+            /// Those current privileges are already required by `ALL`; keep the actual revoke unchanged.
+            if (element.access_flags == AccessFlags{AccessType::ALL})
+                element.access_flags -= deprecated_source_flags;
+            required_access.push_back(std::move(element));
+        }
         std::for_each(required_access.begin(), required_access.end(), [&](AccessRightsElement & element) { element.grant_option = true; });
         return required_access;
     }
