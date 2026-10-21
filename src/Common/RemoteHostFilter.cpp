@@ -19,8 +19,26 @@ namespace ErrorCodes
     extern const int UNACCEPTABLE_URL;
 }
 
+namespace
+{
+
+/// Name resolution stops at a NUL, so it would connect to a prefix of the checked host.
+bool checkHostHasNoNul(const std::string & host, bool throw_on_error)
+{
+    if (!host.contains('\0'))
+        return true;
+    if (!throw_on_error)
+        return false;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected NUL character in host {}", quoteString(host));
+}
+
+}
+
 bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) const
 {
+    if (!checkHostHasNoNul(uri.getHost(), throw_on_error))
+        return false;
+
     if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
         return true;
     if (!throw_on_error)
@@ -37,9 +55,7 @@ bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) cons
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
-    /// Name resolution stops at a NUL, so it would connect to a prefix of the checked host.
-    if (host.find('\0') != std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected NUL character in host {}", quoteString(host));
+    checkHostHasNoNul(host, /*throw_on_error=*/ true);
 
     if (!checkForDirectEntry(host) &&
         !checkForDirectEntry(host + ":" + port))

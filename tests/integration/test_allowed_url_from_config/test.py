@@ -586,6 +586,16 @@ def test_host_filter_rejects_nul(start_cluster):
     )
     assert "BAD_ARGUMENTS" in error and expected in error, error
 
+    # A URL host is refused too: without it, an Azure backup sends its requests to 127.0.0.1.
+    error = node1.query_and_get_error(
+        "BACKUP TABLE system.one TO AzureBlobStorage("
+        "'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        "BlobEndpoint=http://127.0.0.1\\0x.allowed.example:1/devstoreaccount1;', 'cont', 'backup')"
+    )
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+    assert "Connection refused" not in error, error
+
     # A NUL is refused even without `remote_url_allow_hosts`.
     error = query_redis(node4, "127.0.0.1\\0x.allowed.example")
     assert "BAD_ARGUMENTS" in error and expected in error, error
