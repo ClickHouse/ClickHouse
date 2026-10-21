@@ -1,5 +1,3 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
@@ -14,10 +12,7 @@ exports_files([
     "include_linux_x86_64/jemalloc/internal/jemalloc_internal_defs.h.in",
 ])
 
-cc_library(
+alias(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = [
-        "include",
-    ],
+    actual = "@clickhouse_jemalloc//:_jemalloc",
 )

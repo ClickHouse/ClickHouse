@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -6,6 +7,18 @@ exports_files([
     "Copyright",
     "test/html-tokenizer/NOTICE",
 ])
+
+copy_file(
+    name = "xmlversion",
+    src = "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
+    out = "configured_public/libxml/xmlversion.h",
+)
+
+copy_file(
+    name = "config",
+    src = "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
+    out = "configured_private/config.h",
+)
 
 ch_cc_library(
     name = "_libxml2",
@@ -45,20 +58,40 @@ ch_cc_library(
         "xmlwriter.c",
         "xmlsave.c",
         "debugXML.c",
+        ":config",
+        "libxml.h",
+        "timsort.h",
+    ] + glob(["codegen/*.inc"]) + [
+        "include/private/buf.h",
+        "include/private/cata.h",
+        "include/private/dict.h",
+        "include/private/enc.h",
+        "include/private/entities.h",
+        "include/private/error.h",
+        "include/private/globals.h",
+        "include/private/html.h",
+        "include/private/io.h",
+        "include/private/memory.h",
+        "include/private/parser.h",
+        "include/private/regexp.h",
+        "include/private/save.h",
+        "include/private/string.h",
+        "include/private/threads.h",
+        "include/private/tree.h",
+        "include/private/xinclude.h",
+        "include/private/xpath.h",
     ],
-    hdrs = glob([
-        "**/*.h",
-        "**/*.inc",
-    ]),
+    hdrs = [":xmlversion"] + glob(["include/libxml/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         "include",
+        "configured_public",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -104,8 +137,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse//contrib/libxml2-cmake:libxml2_config_headers",
-    ],
+    local_includes = ["configured_private"],
 )

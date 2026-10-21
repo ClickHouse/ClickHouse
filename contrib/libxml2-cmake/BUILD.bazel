@@ -1,5 +1,3 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
@@ -7,8 +5,7 @@ exports_files([
     "linux_x86_64/include/libxml/xmlversion.h",
 ])
 
-cc_library(
+alias(
     name = "libxml2_config_headers",
-    hdrs = glob(["linux_x86_64/include/**/*.h"]),
-    includes = ["linux_x86_64/include"],
+    actual = "@clickhouse_libxml2//:_libxml2",
 )

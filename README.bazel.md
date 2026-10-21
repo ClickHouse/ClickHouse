@@ -203,6 +203,7 @@ CMake hash recorded below.
 | `35609a001` (verification snapshot) | Give OpenSSL, HDFS and Snappy headers to compiled owners; preserve private crypto assembly and HDFS implementation deps | [06b8e9e4](https://app.buildbuddy.io/invocation/06b8e9e4-9195-4ea8-b2c0-fe6fead6d473) | [55a6e9ae](https://app.buildbuddy.io/invocation/55a6e9ae-c112-44dc-8f29-8db49e64a4de) |
 | `cba24794c` (verification snapshot) | Give libpq only its 49 private Linux headers and three public API headers | [c80af064](https://app.buildbuddy.io/invocation/c80af064-b110-4d96-b39b-77f8b360c97c) | [24f4bb87](https://app.buildbuddy.io/invocation/24f4bb87-4ace-4672-bab1-1be3fb388f3d) |
 | `f05573ccb` (verification snapshot) | Give SASL its two public API headers and eight private Linux headers | [b600961e](https://app.buildbuddy.io/invocation/b600961e-221a-442d-9e7e-440deab28b33) | [fe01e4e0](https://app.buildbuddy.io/invocation/fe01e4e0-0061-4d3f-b172-1701a9714641) |
+| `2cb60420e` (verification snapshot) | Give libxml2 and jemalloc their configured public headers; remove unused private, C++ runtime and disabled zlib inputs | [c6e27cc7](https://app.buildbuddy.io/invocation/c6e27cc7-329a-4937-a305-01903f32574f) | [171dfda4](https://app.buildbuddy.io/invocation/171dfda4-247b-416f-9be2-f0cf93e01788) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
