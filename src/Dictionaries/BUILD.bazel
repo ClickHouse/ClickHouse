@@ -162,8 +162,6 @@ _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_TEXTUAL_HDRS_0 = glob(["*.txx"])
-
 _GENERATED_DEPS_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
@@ -364,7 +362,6 @@ ch_cc_library(
         "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )
 
@@ -461,7 +458,7 @@ ch_cc_library(
         "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
+    private_hdrs = glob(["*.txx"]),
     deps = _GENERATED_DEPS_0,
 )
 
@@ -535,7 +532,6 @@ ch_cc_library(
         "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
-    textual_hdrs = _GENERATED_TEXTUAL_HDRS_0,
     deps = _GENERATED_DEPS_0,
 )
 
@@ -793,6 +789,5 @@ cc_library(
         ],
         exclude = _PRIVATE_DICTIONARIES_0_HEADERS + _PRIVATE_DICTIONARIES_1_HEADERS + _PRIVATE_DICTIONARIES_2_HEADERS,
     ),
-    textual_hdrs = glob(["*.txx"]),
     deps = ["//base/poco/Util:_poco_util"],
 )

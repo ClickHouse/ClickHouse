@@ -4,9 +4,12 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 package(default_visibility = ["//visibility:public"])
 
 _PRIVATE_FUNCTIONS_URL_0_HEADERS = [
+    "ExtractFirstSignificantSubdomain.h",
+    "FirstSignificantSubdomainCustomImpl.h",
     "domain.h",
     "fragment.h",
     "path.h",
+    "protocol.h",
     "queryString.h",
     "queryStringAndFragment.h",
 ]
@@ -31,14 +34,6 @@ _PROTO_LIBRARIES = [
     "@clickhouse_libhdfs3//:_hdfs3",
     "@clickhouse_orc//:_orc",
 ]
-
-_GENERATED_HDRS_0 = [
-] + glob(
-    [
-        "*.h",
-    ],
-    exclude = _PRIVATE_FUNCTIONS_URL_0_HEADERS,
-)
 
 _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES = [
     "AI_SDK_HAS_ANTHROPIC=1",
@@ -283,10 +278,10 @@ ch_cc_library(
         "queryStringAndFragment.cpp",
         "topLevelDomain.cpp",
     ] + _PRIVATE_FUNCTIONS_URL_0_HEADERS),
-    hdrs = _GENERATED_HDRS_0,
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
+        ":clickhouse_functions_url__compile_1",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_re2//:_re2",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
@@ -345,7 +340,7 @@ ch_cc_library(
 ch_cc_library(
     name = "clickhouse_functions_url__compile_1",
     srcs = ["tldLookup.generated.cpp"],
-    hdrs = _GENERATED_HDRS_0,
+    hdrs = ["tldLookup.h"],
     clickhouse_code = True,
     copts = [
         "-g1",
