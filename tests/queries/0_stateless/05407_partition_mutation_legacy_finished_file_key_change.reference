@@ -1,7 +1,0 @@
-1
-(UPDATE n = n + 100 IN PARTITION \'a\' WHERE 1)	1
-(UPDATE n = n WHERE 1)	1
-1	101
-2	2
-1	101
-2	1002
