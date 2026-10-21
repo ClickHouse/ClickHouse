@@ -21,6 +21,7 @@ import socket
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -73,8 +74,21 @@ SAME_REPO_FILE_RE = re.compile(
 )
 
 
+def is_trailing_punctuation(char):
+    return char in TRAILING_PUNCTUATION + ")" or unicodedata.category(char).startswith("P")
+
+
 def trim_url(url):
-    while url and url[-1] in TRAILING_PUNCTUATION + ")":
+    depth = 0
+    for index, char in enumerate(url):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                url = url[:index]
+                break
+            depth -= 1
+    while url and is_trailing_punctuation(url[-1]):
         if url[-1] == ")" and url.count("(") >= url.count(")"):
             break
         url = url[:-1]

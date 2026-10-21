@@ -654,7 +654,7 @@ HDFS は一部の特殊なケースでは正常に動作しない可能性があ
 バージョン 22.3 以降では、ストレージ構成内のディスクに対してローカル cache を設定できます。
 バージョン 22.3 ～ 22.7 では、cache は `s3` ディスクタイプ でのみサポートされます。バージョン &gt;= 22.8 では、cache は S3、Azure、Local、Encrypted など、あらゆるディスクタイプ でサポートされます。
 バージョン &gt;= 23.5 では、cache は S3、Azure、HDFS (非サポート) などのリモートディスクタイプ でのみサポートされます。
-cache のエビクションには `cache_policy` 設定 (デフォルトは `SLRU`) が使用されます。この設定は [`system.filesystem_cache_settings`](/ja/operations/system-tables/filesystem_cache_settings) で確認できます。cache ディスク設定の全一覧も [`system.filesystem_cache_settings`](/ja/operations/system-tables/filesystem_cache_settings) に掲載されています。
+cache のエビクションには `cache_policy` 設定 (デフォルトは `SLRU`) が使用されます。この設定は [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings) で確認できます。cache ディスク設定の全一覧も [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings) に掲載されています。
 
 バージョン 22.8 以降の構成例:
 
@@ -716,7 +716,7 @@ cache のエビクションには `cache_policy` 設定 (デフォルトは `SLR
 
 ファイルcache **ディスク設定** (一般的な設定):
 
-これらの設定は、ディスク設定セクションで定義する必要があります。この表には、よく使用される cache ディスクの設定項目のみを掲載しており、設定ファイルで指定可能なすべてのキーを網羅しているわけではありません。実行時の値および設定の完全な一覧は [`system.filesystem_cache_settings`](/ja/operations/system-tables/filesystem_cache_settings) で確認できます。
+これらの設定は、ディスク設定セクションで定義する必要があります。この表には、よく使用される cache ディスクの設定項目のみを掲載しており、設定ファイルで指定可能なすべてのキーを網羅しているわけではありません。実行時の値および設定の完全な一覧は [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings) で確認できます。
 
 | パラメータ                                       | Type    | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------- | ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
