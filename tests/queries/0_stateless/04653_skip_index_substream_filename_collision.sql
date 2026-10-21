@@ -98,6 +98,10 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_collide SELECT number, number FROM numbers(50);
 SELECT count() FROM t_collide;
+-- The projection must really hold the implicit index, or the arm above exercises nothing.
+SELECT countIf(explain ILIKE '%ReadFromMergeTree (p)%'), countIf(explain ILIKE '%Name: auto_minmax_index_v%')
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT v FROM t_collide WHERE v = 10
+      SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, use_skip_indexes = 1, enable_parallel_replicas = 0);
 DROP TABLE t_collide;
 
 -- Grandfathering applies to ALTER only: on CREATE there is no earlier definition, so every collision

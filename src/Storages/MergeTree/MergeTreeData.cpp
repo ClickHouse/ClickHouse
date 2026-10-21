@@ -6877,7 +6877,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Must run after `checkProperties`: it validates the index descriptions, and the collision check
     /// constructs real index objects whose creators assume a validated description.
     checkSkipIndexFilenamesForCollision(
-        new_metadata, *alter_effective_settings, /*throw_on_error=*/ true, &old_metadata, settings_from_storage.get());
+        new_metadata, *alter_effective_settings, /*throw_on_error=*/ !is_secondary_replay, &old_metadata, settings_from_storage.get());
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
