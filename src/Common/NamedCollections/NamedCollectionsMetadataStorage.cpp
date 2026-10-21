@@ -10,7 +10,10 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <base/defines.h>
 #include <base/sort.h>
+
+#include <mutex>
 #include <boost/algorithm/hex.hpp>
 #include <Common/Hex.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
@@ -232,9 +235,10 @@ class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectio
 {
 private:
     std::string root_path;
-    mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
-    mutable Coordination::EventPtr wait_event;
-    mutable Int32 collections_node_cversion = 0;
+    mutable std::mutex state_mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper_client TSA_GUARDED_BY(state_mutex) {nullptr};
+    mutable Coordination::EventPtr wait_event TSA_GUARDED_BY(state_mutex);
+    mutable Int32 collections_node_cversion TSA_GUARDED_BY(state_mutex) = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -268,13 +272,19 @@ public:
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::waitUpdate");
-        if (!wait_event)
+
+        Coordination::EventPtr event;
         {
-            /// We did not yet made any list() attempt, so do that.
-            return true;
+            std::lock_guard lock{state_mutex};
+            if (!wait_event)
+            {
+                /// We did not yet made any list() attempt, so do that.
+                return true;
+            }
+            event = wait_event;
         }
 
-        if (wait_event->tryWait(timeout))
+        if (event->tryWait(timeout))
         {
             /// Children changed before timeout.
             return true;
@@ -291,17 +301,21 @@ public:
             return false;
         }
 
+        std::lock_guard lock{state_mutex};
         return stat.cversion != collections_node_cversion;
     }
 
     std::vector<std::string> list() const override
     {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::list");
+        auto client = getClient();
+
+        std::lock_guard lock{state_mutex};
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
         Coordination::Stat stat;
-        auto children = getClient()->getChildren(root_path, &stat, wait_event);
+        auto children = client->getChildren(root_path, &stat, wait_event);
         collections_node_cversion = stat.cversion;
         return children;
     }
@@ -375,6 +389,7 @@ public:
 private:
     zkutil::ZooKeeperPtr getClient() const
     {
+        std::lock_guard lock{state_mutex};
         if (!zookeeper_client || zookeeper_client->expired())
         {
             zookeeper_client = getContext()->getZooKeeper();

@@ -551,7 +551,15 @@ struct BackupsWorker::BackupStarter
                     auto access = query_context->getAccess();
                     if (!access->isGranted(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS})
                         || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Not exporting the named collections to the backup: the initiating user has no rights to read "
+                            "their values (`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and "
+                            "`displaySecretsInShowAndSelect`). Set backup_named_collections = 1 to make this an error, or "
+                            "backup_named_collections = 0 to silence this warning");
                         backup_settings.backup_named_collections = false;
+                    }
                 }
             }
         }

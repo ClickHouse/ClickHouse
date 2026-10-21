@@ -750,6 +750,12 @@ void RestorerFromBackup::restoreNamedCollections()
         {
             if (isSystemNamedCollectionsTableName(table_name) && table_info.has_data)
             {
+                if (table_info.partitions)
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot restore the `system.named_collections` table with a PARTITIONS clause: "
+                        "it doesn't support partitions");
+
                 data_path_in_backup = table_info.data_path_in_backup;
                 break;
             }
