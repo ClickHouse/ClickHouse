@@ -1,4 +1,5 @@
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Sources/RecursiveCTESource.h>
 
 #include <Storages/IStorage.h>
@@ -32,7 +33,6 @@
 
 #include <limits>
 #include <string_view>
-#include <unordered_map>
 
 namespace DB
 {
@@ -419,8 +419,8 @@ private:
         MutableColumns columns;
         /// Serialized key columns of the rows produced by the step, owned by `keys_arena`.
         Arena keys_arena;
-        std::vector<std::string_view> row_keys;
-        std::unordered_map<std::string_view, size_t> last_row_for_key;
+        VectorWithMemoryTracking<std::string_view> row_keys;
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> last_row_for_key;
     };
 
     /// Serializes the key columns of the row into a contiguous chunk of the arena. Lookups use the
@@ -533,7 +533,7 @@ private:
             return;
 
         MutableColumns compacted_columns = header->cloneEmptyColumns();
-        std::vector<std::string_view> compacted_row_keys;
+        VectorWithMemoryTracking<std::string_view> compacted_row_keys;
         compacted_row_keys.reserve(accumulated_size - accumulated_dead);
 
         accumulated_index.clear();
@@ -623,8 +623,8 @@ private:
 
     /// USING KEY (keyed recursive CTE) state.
     bool keyed = false;
-    std::vector<size_t> key_column_indices;
-    std::vector<TableNode *> settled_table_nodes;
+    VectorWithMemoryTracking<size_t> key_column_indices;
+    VectorWithMemoryTracking<TableNode *> settled_table_nodes;
     TemporaryTableHolderPtr settled_temporary_table_holder;
     StoragePtr settled_temporary_table_storage;
 
@@ -633,10 +633,10 @@ private:
     /// The serialized key of every distinct key is stored once in `accumulated_keys_arena`.
     MutableColumns accumulated_columns;
     Arena accumulated_keys_arena;
-    std::vector<std::string_view> accumulated_row_keys;
+    VectorWithMemoryTracking<std::string_view> accumulated_row_keys;
     IColumn::Filter accumulated_live;
     size_t accumulated_dead = 0;
-    std::unordered_map<std::string_view, size_t> accumulated_index;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> accumulated_index;
 
     bool keyed_evaluated = false;
     Columns keyed_result_columns;
