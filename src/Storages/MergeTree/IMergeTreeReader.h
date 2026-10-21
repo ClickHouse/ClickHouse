@@ -41,9 +41,12 @@ public:
     /// (<= the last mark of the current read task; equal to it when the task is one
     /// contiguous range). It bounds caching of deserialized columns, which must not
     /// span the gaps between ranges of a multi-range task. 0 means unknown.
+    /// `res_columns` are the columns the reader fills. `shared_columns`, of the same size, are the
+    /// columns it shares with the columns cache instead, which must not be modified: for every
+    /// position at most one of the two is set.
     virtual size_t readRows(size_t from_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
-                            MutableColumns & res_columns) = 0;
+                            MutableColumns & res_columns, Columns & shared_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -52,6 +55,14 @@ public:
     virtual bool mustApplyFilter() const { return false; }
 
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
+
+    /// The number of granules in a stripe of the columns cache for this part, 0 if the reader does
+    /// not use the cache. See `ColumnsCacheStripes`.
+    virtual size_t getColumnsCacheStripeMarks() const { return 0; }
+
+    /// Whether a block of the whole stripe of `mark` takes no memory beyond what the columns cache
+    /// holds anyway: the stripe is served from the cache, or is going to be written to it.
+    virtual bool canReadWholeColumnsCacheStripe(size_t /*mark*/) { return false; }
 
     virtual bool producesFilterOnly() const { return false; }
 
@@ -106,6 +117,11 @@ public:
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
 
+    /// Like `canSkipAnyMark`, but leaving out the marks skipped only because every row of the mark lies beyond a
+    /// running top-K threshold (by the primary key). The `__topKFilter` in PREWHERE drops the rows of such a mark
+    /// anyway, so the mark can still be attributed to a PREWHERE that holds this filter.
+    virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     /// The mark ranges the reader reads until the next call; null = the whole part.
@@ -138,6 +154,11 @@ protected:
 
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
+
+    /// Returns the string value filter to apply during deserialization of the column, or nullptr.
+    /// Takes the column as it is named in the part (an element of `columns_to_read`).
+    /// See `MergeTreeReaderSettings::string_value_filters`.
+    StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -203,6 +224,10 @@ protected:
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
 
+    /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
+    /// building a serialization of it when the part already holds one.
+    bool hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
@@ -210,16 +235,40 @@ private:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
+
+    /// The column and its serialization as they are in the part, both of which can differ from table metadata.
+    struct ColumnAndSerializationInPart
+    {
+        NameAndTypePair column;
+        SerializationPtr serialization;
+    };
+
+    /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
+    /// enumeration of its parent.
+    ColumnAndSerializationInPart getColumnAndSerializationInPart(const NameAndTypePair & required_column) const;
+
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
+
+    /// The column of the part under the given (column name, subcolumn name), or nothing when it has no such
+    /// column or subcolumn.
+    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const;
+
+    /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds
+    /// none for it or when it is not safe to share with the other readers.
+    SerializationPtr tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const;
 
     /// Columns that are requested to read.
     NamesAndTypesList original_requested_columns;
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    /// String value filters from `settings.string_value_filters` for the columns that pass all
+    /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
+    std::unordered_map<String, StringValueFilterPtr> string_value_filters_by_part_column_name;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
@@ -242,11 +291,11 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
-struct MergeTreeIndexWithCondition;
+struct IndexReadTask;
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules);
 }

@@ -1,0 +1,29 @@
+<test>
+    <settings>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
+        <parallel_hash_join_threshold>0</parallel_hash_join_threshold>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>algorithm</name>
+            <values>
+                <value>hash</value>
+                <value>parallel_hash</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>kind</name>
+            <values>
+                <value>RIGHT</value>
+                <value>FULL</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Every right key matched, so there are no unmatched right rows to emit after the probe. -->
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
+    <!-- One right key unmatched. -->
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
+</test>
