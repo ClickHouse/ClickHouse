@@ -21,4 +21,15 @@ ASTPtr makeNoDuplicateSeriesPerStepCheck(ASTPtr values, ASTPtr group);
 /// that at most one of those series has a value at each step.
 ASTPtr makeNoDuplicateSeriesPerStepValues(ASTPtr values);
 
+/// Returns the condition `timeSeriesThrowDuplicateSeriesIf(arrayExists((l, r) -> greatest(l, r) >= 2 AND least(l, r) >= 1,
+/// left_side_value_counts, right_side_value_counts), group) = 0`.
+/// It throws an exception if at some step the matched series of the left and the right sides give more than one pair,
+/// i.e. one side has two or more series with values at that step and the other side has at least one.
+/// `value_counts` of a side are the counts of its series with a value at each step.
+ASTPtr makeNoDuplicateSeriesPerStepCheckMatchingCounts(ASTPtr left_side_value_counts, ASTPtr right_side_value_counts, ASTPtr group);
+
+/// The same for the case when a side has one series per row, so its values are used instead of the counts:
+/// `timeSeriesThrowDuplicateSeriesIf(arrayExists((v, c) -> isNotNull(v) AND c >= 2, values, other_side_value_counts), group) = 0`.
+ASTPtr makeNoDuplicateSeriesPerStepCheckMatchingValuesAndCounts(ASTPtr values, ASTPtr other_side_value_counts, ASTPtr group);
+
 }

@@ -79,8 +79,10 @@ struct ProjectionPartData
     /// sort permutation of key_block
     IColumn::Permutation order;
     size_t rows = 0;
-    /// uncompressed bytes, used for granularity
+    /// uncompressed bytes with the key columns, used for granularity
     size_t bytes = 0;
+    /// uncompressed bytes without the key columns, used for the part format
+    size_t format_bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
     /// some stored column has values of different sizes
@@ -237,15 +239,16 @@ bool buildProjectionPart(
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
 
-        /// measured before the key expression, as the writer does
-        out.bytes += getBlockSizeForGranularity(block);
-        if (need_row_bytes)
-            appendRowSizes(out.row_bytes, out.variable_width, block);
+        /// the writer chooses the part format before the key expression and sizes the granules after it
+        out.format_bytes += block.bytes();
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!block.has(required))
                 block.insert(block.getSubcolumnByName(required));
         proj_key.expression->execute(block);
+        out.bytes += getBlockSizeForGranularity(block);
+        if (need_row_bytes)
+            appendRowSizes(out.row_bytes, out.variable_width, block);
 
         if (key_columns.empty())
             for (const auto & name : proj_key.column_names)
@@ -266,6 +269,7 @@ bool buildProjectionPart(
     if (projection.with_parent_part_offset)
     {
         out.bytes += out.rows * sizeof(UInt64);
+        out.format_bytes += out.rows * sizeof(UInt64);
         for (auto & row_size : out.row_bytes)
             row_size += sizeof(UInt64);
     }
@@ -316,6 +320,7 @@ struct PartFromSample
     }
 
     UInt64 bytes() const { return bytes_before_sample_row.back(); }
+    UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row
@@ -402,7 +407,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
-    const auto part_type = merge_tree.choosePartFormat(whole_part.bytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
+    const auto part_type = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
     /// the writer takes the mark type from the table settings, not from the parent part
     const bool adaptive_marks = MergeTreeIndexGranularityInfo(merge_tree, mt_settings, part_type).mark_type.adaptive;
     /// only adaptive granularity lets block sizes change the layout
