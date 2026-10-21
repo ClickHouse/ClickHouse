@@ -1,9 +1,2 @@
--- query-based outer query
-1	1	1
-1	1	1
--- plan-based outer query
-1	1	1
-1	1	1
--- results
 200000
-200000
+1

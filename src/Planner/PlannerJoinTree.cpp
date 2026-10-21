@@ -2964,10 +2964,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         // (3) if parallel replicas still enabled - replace reading step
                         if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            /// Which implementation reads this table is the whole query's decision, not this
-                            /// table expression's: a subquery naming the other one in its own `SETTINGS` would
-                            /// otherwise build a plain read here that nothing distributes afterwards.
-                            if (!parallelReplicasArePlanBased(query_context))
+                            if (!settings[Setting::parallel_replicas_plan_based])
                             {
                                 till_stage = QueryProcessingStage::WithMergeableState;
                                 QueryPlan query_plan_parallel_replicas;

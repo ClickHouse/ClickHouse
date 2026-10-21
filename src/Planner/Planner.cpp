@@ -3039,7 +3039,7 @@ void Planner::buildPlanForQueryNode()
     /// them and have no serialized form, and the shard decides on parallel replicas on its own.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
         && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
-        && !parallelReplicasArePlanBased(query_context)
+        && !settings[Setting::parallel_replicas_plan_based]
         && !select_query_options.build_logical_plan)
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);

@@ -470,19 +470,6 @@ static const QueryNode * findQueryForParallelReplicas(
     return res;
 }
 
-bool parallelReplicasArePlanBased(const ContextPtr & context)
-{
-    /// One query executes with one implementation of parallel replicas. A subquery carries its own
-    /// context, so its `SETTINGS` clause can name the other implementation - and a planner reading the
-    /// setting from the context it was built with lets the two halves of a query disagree about who
-    /// ships what. The query context answers for the whole query. Planning outside a query (merges,
-    /// mutations, index analysis) has none, and has no parallel replicas either, so the context's own
-    /// value answers there.
-    if (context->hasQueryContext())
-        return context->getQueryContext()->getSettingsRef()[Setting::parallel_replicas_plan_based];
-    return context->getSettingsRef()[Setting::parallel_replicas_plan_based];
-}
-
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
@@ -504,8 +491,8 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// The plan-based implementation chooses the plan fragment to read with replicas while optimizing
     /// the plan, not a query node in the tree, so it has no use for the result of the analysis below -
     /// which clones the whole tree with dummy tables and builds a throwaway plan from it. The only
-    /// reader of the result, `Planner::buildPlanForQueryNode`, ignores it then.
-    if (parallelReplicasArePlanBased(context))
+    /// reader of the result, `Planner::buildPlanForQueryNode`, ignores it with this setting on.
+    if (context->getSettingsRef()[Setting::parallel_replicas_plan_based])
         return nullptr;
 
     /// A shard number shipped for a different cluster cannot scope this read.
