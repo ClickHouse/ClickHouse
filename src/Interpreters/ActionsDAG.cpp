@@ -32,6 +32,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeSet.h>
 
@@ -53,6 +54,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -3925,11 +3927,27 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
+/// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
+/// The serialized data may come from a client, and the deserialization is recursive.
+static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
+
+static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
+{
+    checkStackSize();
+
+    if (nesting_depth > MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep nesting of lambda captures in deserialized ActionsDAG (more than {} levels)",
+            MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH);
+}
+
 static MutableColumnPtr deserializeConstant(
     const IDataType & type,
     ReadBuffer & in,
     DeserializedSetsRegistry & registry,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    size_t nesting_depth)
 {
     if (WhichDataType(type).isSet())
     {
@@ -3960,7 +3978,7 @@ static MutableColumnPtr deserializeConstant(
     {
         LambdaCapture capture;
         deserializeCapture(capture, in);
-        auto capture_dag = ActionsDAG::deserialize(in, registry, context);
+        auto capture_dag = ActionsDAG::deserialize(in, registry, context, nesting_depth + 1);
 
         UInt64 num_captured_columns;
         readVarUInt(num_captured_columns, in);
@@ -3969,7 +3987,7 @@ static MutableColumnPtr deserializeConstant(
         for (auto & captured_column : captured_columns)
         {
             captured_column.type = decodeDataType(in);
-            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context);
+            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, nesting_depth + 1);
         }
 
         auto function_expression = std::make_shared<FunctionExpression>(
@@ -4110,8 +4128,10 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeVarUInt(node_to_id.at(output), out);
 }
 
-ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
+ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t nesting_depth)
 {
+    checkActionsDAGDeserializationDepth(nesting_depth);
+
     size_t nodes_size;
     readVarUInt(nodes_size, in);
 
@@ -4151,7 +4171,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             if ((column_flags & 2) == 0)
                 node.is_deterministic_constant = false;
 
-            node.column = deserializeConstant(*node.result_type, in, registry, context);
+            node.column = deserializeConstant(*node.result_type, in, registry, context, nesting_depth);
         }
 
         if (node.type == ActionType::INPUT)
@@ -4193,7 +4213,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 LambdaCapture capture;
                 deserializeCapture(capture, in);
-                auto capture_dag = ActionsDAG::deserialize(in, registry, context);
+                auto capture_dag = ActionsDAG::deserialize(in, registry, context, nesting_depth + 1);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
