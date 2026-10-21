@@ -37,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -104,6 +105,12 @@ extern const SettingsString iceberg_metadata_compression_method;
 namespace ProfileEvents
 {
     extern const Event IcebergVersionHintUsed;
+    extern const Event IcebergVersionHintReadMicroseconds;
+    extern const Event IcebergMetadataJSONReads;
+    extern const Event IcebergMetadataJSONReadMicroseconds;
+    extern const Event IcebergMetadataJSONParses;
+    extern const Event IcebergMetadataJSONParsedBytes;
+    extern const Event IcebergMetadataJSONParseMicroseconds;
 }
 
 namespace DB::Setting
@@ -643,6 +650,9 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 {
     auto create_fn = [&]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONReads);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONReadMicroseconds);
+
         ObjectInfo object_info(metadata_file_path);
 
         auto read_settings = local_context->getReadSettings();
@@ -672,6 +682,11 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
         metadata_json_str = create_fn();
+
+    /// The cache holds the raw content, so the file is parsed on every call.
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
@@ -1654,6 +1669,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
         auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);

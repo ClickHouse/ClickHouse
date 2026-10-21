@@ -27,6 +27,7 @@
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -52,6 +53,7 @@ namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergManifestFileIteratorCreateMicroseconds;
 };
 
 namespace DB::Iceberg
@@ -264,6 +266,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Int32 table_snapshot_schema_id_,
     const std::atomic<bool> * stop_flag_)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFileIteratorCreateMicroseconds);
+
     insertRowToLogTable(
         context_,
         [&] { return manifest_file_deserializer_->getMetadataContent(); },
