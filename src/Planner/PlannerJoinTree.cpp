@@ -440,6 +440,9 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
             continue;
 
         const auto & storage_id = table_node.getStorageID();
+        if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, query_context))
+            continue;
+
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }

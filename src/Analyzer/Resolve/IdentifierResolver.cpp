@@ -417,6 +417,9 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     if (!storage_id.hasDatabase())
         return;
 
+    if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, context))
+        return;
+
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.

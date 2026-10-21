@@ -544,6 +544,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
         context);
+    returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
 
@@ -1109,6 +1110,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         /*skip_destination_table*/ no_destination,
         insert_threads,
         context);
+    returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     QueryPipeline pipeline
         = buildPushPipelineFromDependencies(
@@ -1523,13 +1525,6 @@ BlockIO InterpreterInsertQuery::execute()
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
 
-        /// The RETURNING query reads the inserted data instead of the table, so the access checks and the row policies
-        /// of the tables a table like `Alias` or `Distributed` reads from would not be applied.
-        if (table->readsFromOtherTables())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "RETURNING is not supported for INSERT into a table with the engine {}, which reads from other tables",
-                table->getName());
-
         if (query.select)
         {
             ASTPtr input_function;
@@ -1561,6 +1556,14 @@ BlockIO InterpreterInsertQuery::execute()
     /// background flush for asynchronous inserts, so the check has to be repeated here.
     if (!query.table_function)
         table->checkInsertIsAllowed(context);
+
+    /// The RETURNING query reads the inserted data instead of the table, so the access checks and the row policies
+    /// of the tables that a table like `Alias`, `Distributed` or a materialized view reads from would not be applied.
+    /// Checked after the access check of the insert, so the engine is not reported to a user without access to the table.
+    if (query.returning && (table->readsFromOtherTables() || dynamic_cast<const StorageMaterializedView *>(table.get())))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RETURNING is not supported for INSERT into a table with the engine {}, which reads from other tables",
+            table->getName());
 
     if (!allow_materialized)
     {
@@ -1741,7 +1744,11 @@ void InterpreterInsertQuery::addReturning(ASTInsertQuery & query, const StorageP
     }
 
     res.pipeline.addResources(std::move(insert_resources));
-    res.pipeline.setNumThreads(std::max(res.pipeline.getNumThreads(), insert_num_threads));
+    /// The pipeline of the insert also pushes to the dependent materialized views, so keep it sequential if it was.
+    if (returning_insert_views_serial)
+        res.pipeline.setNumThreads(insert_num_threads);
+    else
+        res.pipeline.setNumThreads(std::max(res.pipeline.getNumThreads(), insert_num_threads));
 }
 
 

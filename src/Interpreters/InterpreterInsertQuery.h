@@ -127,6 +127,9 @@ private:
 
     /// For INSERT ... RETURNING: the processor with the copy of the data written into the table.
     ProcessorPtr returning_output;
+    /// The insert pushes to dependent materialized views sequentially (`parallel_view_processing = 0`),
+    /// so the combined pipeline with the RETURNING query must not widen it.
+    bool returning_insert_views_serial = false;
     bool explain_only = false;
     void addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res);
 
