@@ -41,6 +41,8 @@ constexpr size_t ALP_ENCODER_VECTOR_SIZE = 1uz << ALP_ENCODER_LOG_VECTOR_SIZE;
 /// constants, the correctly rounded values of the decimal literals (not results of `pow`), in the
 /// precision of the value type. That's why there are separate tables for `float` and `double`
 /// (e.g. `0.1f` is not `float(0.1)` rounded twice, it's the `float` nearest to 1/10).
+/// Unlike `CompressionCodecALP`, `FLOAT` values are not processed in `Float64`: the result would
+/// not be what the other readers decode.
 constexpr float POW10_FLOAT[] = {1e0f, 1e1f, 1e2f, 1e3f, 1e4f, 1e5f, 1e6f, 1e7f, 1e8f, 1e9f, 1e10f};
 constexpr float NEG_POW10_FLOAT[] = {1e0f, 1e-1f, 1e-2f, 1e-3f, 1e-4f, 1e-5f, 1e-6f, 1e-7f, 1e-8f, 1e-9f, 1e-10f};
 constexpr double POW10_DOUBLE[] = {

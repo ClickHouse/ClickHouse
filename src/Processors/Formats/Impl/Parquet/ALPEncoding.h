@@ -14,6 +14,19 @@
 /// which is stored as a bit-packed difference from the minimum (frame of reference) of the vector.
 /// The values that the decoding (`integer * 10^f * 10^-e`) does not reproduce bit-exactly are
 /// stored verbatim as exceptions.
+///
+/// This doesn't reuse the `ALP` compression codec (`CompressionCodecALP.cpp`), which implements the
+/// same idea for a different format:
+/// - The codec bit-packs with FastLanes `FFOR` (`Compression/FFOR.h`), which interleaves 1024 values
+///   across lanes, while Parquet packs the values sequentially, LSB first.
+/// - The codec scales and decodes `Float32` in `Float64` arithmetic, while in Parquet the decoding is
+///   normative and done in the precision of the value type. A value that round-trips with the codec
+///   may decode differently in other Parquet readers.
+/// - For `Float32`, the codec searches the exponents 0..9, the specification allows 0..10.
+/// - The headers of the page and the vectors, and the layout of the exceptions, are different.
+/// - The choice of parameters depends on all of the above. Besides, here the round trip is checked
+///   bit-exactly, and the samples are taken at pseudo-random positions to avoid aliasing with periodic data.
+/// The only common part, the table of powers of ten, does not justify coupling the two implementations.
 
 namespace DB::Parquet
 {
