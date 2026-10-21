@@ -62,6 +62,13 @@ same result
 2
 same result
 50
+-- another cluster read in the query
+0
+same result
+50
+0
+same result
+50
 -- hive partitioning
 1
 same result

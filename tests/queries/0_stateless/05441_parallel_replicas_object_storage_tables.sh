@@ -83,6 +83,11 @@ echo "-- a subquery that the replica plans as a query of its own"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)"
 check "SELECT count() FROM mt WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)" "parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1"
 
+echo "-- another cluster read in the query"
+$CLICKHOUSE_CLIENT -q "CREATE VIEW vc AS SELECT a FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', s3_conn, filename = '${CLICKHOUSE_DATABASE}/*.parquet', format = 'Parquet')"
+check "SELECT count() FROM t WHERE a IN (SELECT a FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', s3_conn, filename = '${CLICKHOUSE_DATABASE}/*.parquet', format = 'Parquet') WHERE a < 50)"
+check "SELECT count() FROM t WHERE a IN (SELECT a FROM vc WHERE a < 50)"
+
 echo "-- hive partitioning"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE th (a UInt64, p UInt8) ENGINE = S3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_hive/', format = 'Parquet', partition_strategy = 'hive')
@@ -108,6 +113,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP DATABASE ${CLICKHOUSE_DATABASE}_lazy;
     DROP VIEW v;
     DROP VIEW vn;
+    DROP VIEW vc;
     DROP TABLE mt;
     DROP USER u_${CLICKHOUSE_DATABASE};
 "

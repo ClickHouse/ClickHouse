@@ -70,6 +70,7 @@
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
@@ -190,6 +191,15 @@ bool isClusterVariantDisabledForQuery(const IdentifierResolveScope & scope)
         scope_to_check = scope_to_check->parent_scope ? scope_to_check->parent_scope->getNearestQueryScope() : nullptr;
     }
     return false;
+}
+
+/// Whether a replica may read `storage` with the initiator's read tasks: a cluster read, or a storage that reads other
+/// tables, which may be one. A table that is not loaded yet is not known.
+bool mayReadInitiatorTasksOnReplica(const StoragePtr & storage)
+{
+    const auto resolved = castStorage<IStorage>(storage, DeferredTable::Skip);
+    return !resolved || dynamic_cast<const StorageProxy *>(resolved.get()) || dynamic_cast<const IStorageCluster *>(resolved.get())
+        || resolved->isView() || resolved->readsFromOtherTables();
 }
 
 /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
@@ -515,7 +525,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
     }
 
-    restoreReplacedTableStoragesIfCorrelated(node);
+    restoreReplacedTableStoragesIfNeeded(node);
     validateCorrelatedSubqueries(node, scope.context);
     inlineMaterializedCTEIfNeeded(node, context);
 }
@@ -562,7 +572,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    restoreReplacedTableStoragesIfCorrelated(node);
+    restoreReplacedTableStoragesIfNeeded(node);
     validateCorrelatedSubqueries(node, scope.context);
 }
 
@@ -5032,13 +5042,15 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
     table_node->replaceStorage(cluster_storage, cluster_storage->getStorageSnapshot(storage_snapshot->metadata, scope.context));
 }
 
-void QueryAnalyzer::restoreReplacedTableStoragesIfCorrelated(const QueryTreeNodePtr & node)
+void QueryAnalyzer::restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node)
 {
     if (replaced_table_storages.empty())
         return;
 
-    /// A remote read does not support correlated subqueries, so such a query reads the tables itself.
+    /// A remote read does not support correlated subqueries, and on a replica another cluster read in the query would
+    /// take this table's read tasks, so such a query reads the tables itself.
     bool is_correlated = false;
+    bool has_other_cluster_source = false;
     std::vector<TableNode *> table_nodes;
     traverseQueryTree(
         node,
@@ -5050,10 +5062,22 @@ void QueryAnalyzer::restoreReplacedTableStoragesIfCorrelated(const QueryTreeNode
             else if (const auto * union_node = current_node->as<UnionNode>(); union_node && union_node->isCorrelated())
                 is_correlated = true;
             else if (auto * table_node = current_node->as<TableNode>())
+            {
                 table_nodes.push_back(table_node);
+                const auto & storage = table_node->getStorage();
+                bool is_replacement = std::ranges::any_of(
+                    replaced_table_storages, [&](const auto & replaced) { return replaced.replacement == storage; });
+                if (!is_replacement && mayReadInitiatorTasksOnReplica(storage))
+                    has_other_cluster_source = true;
+            }
+            else if (const auto * table_function_node = current_node->as<TableFunctionNode>())
+            {
+                if (mayReadInitiatorTasksOnReplica(table_function_node->getStorage()))
+                    has_other_cluster_source = true;
+            }
         });
 
-    if (!is_correlated)
+    if (!is_correlated && !has_other_cluster_source)
         return;
 
     for (auto * table_node : table_nodes)

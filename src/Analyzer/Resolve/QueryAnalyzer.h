@@ -285,7 +285,7 @@ private:
     /// Make the table of a single-table `FROM` read with parallel replicas, if its storage supports that for the query.
     void replaceTableStorageForParallelReplicasReadIfNeeded(const TableNodePtr & table_node, IdentifierResolveScope & scope);
 
-    void restoreReplacedTableStoragesIfCorrelated(const QueryTreeNodePtr & node);
+    void restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node);
 
     void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
