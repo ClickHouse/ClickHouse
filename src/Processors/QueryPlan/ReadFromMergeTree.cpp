@@ -3626,6 +3626,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
     } else
     {
+        result.pk_condition_useful = true;
         ProfileEvents::increment(ProfileEvents::SelectQueriesWithPrimaryKeyUsage);
     }
 
