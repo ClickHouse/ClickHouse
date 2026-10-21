@@ -209,6 +209,7 @@ CMake hash recorded below.
 | `ea65909ca` (verification snapshot) | Shorten default-package labels in migration output and the contrib documentation; keep source verification and canonical dependency identities | [1c20801e](https://app.buildbuddy.io/invocation/1c20801e-08b4-4856-bd08-37b77dac7cfe) | [74ca0038](https://app.buildbuddy.io/invocation/74ca0038-64a2-4b79-935c-892e2a03c1fb) |
 | `56218e4c9` (verification snapshot) | Give Kerberos and librdkafka their included C files as private headers; retain Linux headers and direct implementation dependencies | [2ff05a4e](https://app.buildbuddy.io/invocation/2ff05a4e-67e4-46a5-9d25-c092d1dc5b3a) | [e68724a3](https://app.buildbuddy.io/invocation/e68724a3-9e24-4f7f-bab2-fa62e5002309) |
 | `f130f2e94` (verification snapshot) | Give H3, libarchive, libdeflate and XZ their owned C headers and libarchive its private compression dependencies | [2e5b7a65](https://app.buildbuddy.io/invocation/2e5b7a65-4ab0-409e-8a11-fbc88f6c0713) | [647685df](https://app.buildbuddy.io/invocation/647685df-00ff-4b39-b820-b6a42957ff80) |
+| `d7867522c` (verification snapshot) | Declare OpenSSL's used Linux headers and private included C files; keep the crypto assembly and compiler builtins dependencies | [f78509e7](https://app.buildbuddy.io/invocation/f78509e7-2ebe-4120-9093-7eeb21e3a254) | [01500365](https://app.buildbuddy.io/invocation/01500365-a053-4d91-ac1c-d87d7c523611) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
