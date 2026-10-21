@@ -547,11 +547,16 @@ CREATE ROW POLICY sensitive_filter ON test USING key != 'secret_key' TO accounta
 Do not use a floating-point sorting key column (`Float32`, `Float64`, `BFloat16`, also inside `Tuple`, `Array` or
 `Nullable`) in such a filter. A merge puts `-0.0` and `0.0` into one row, but the filter can tell them apart.
 
+This rule does not apply to `GraphiteMergeTree`. Its rollup rounds the time column and puts rows with different
+times into one row. Filter it by the path column. If the filter uses the time column, it must give the same
+result for all the times that each rollup rule rounds to the same value.
+
 <Note>
 The same check runs in these cases:
 
 - A policy on the whole database (`ON db.*`), if the database holds such a table.
-- A policy on a table which reads such a table, for example an `Alias` table.
+- A policy on a table which reads such a table: an `Alias` table, a materialized view or a `Buffer` table.
+  If the user does not have `SHOW TABLES` on the table which it reads, the check fails with `ACCESS_DENIED`.
 - `CREATE TABLE` and `ATTACH TABLE` with a full definition, if a policy for the table already exists.
 - `RENAME TABLE` and `EXCHANGE TABLES`, if a policy for the new name exists.
 
