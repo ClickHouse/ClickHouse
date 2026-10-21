@@ -76,10 +76,17 @@ for format_version in 2 1; do
     fi
     OWN_METADATA="${TABLE_PATH%/}_own/"
     mkdir -p "${OWN_METADATA}" && mv "${TABLE_PATH}metadata/"*.metadata.json "${OWN_METADATA}"
-    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_other (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_other (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_use_version_hint = 1"
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_other SETTINGS allow_insert_into_iceberg = 1 VALUES (2)"
     cp "${OWN_METADATA}v1.metadata.json" "${TABLE_PATH}metadata/"
     ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC"
+    if [ "${format_version}" = 2 ]; then
+        # Selected by its `table-uuid`, this table deletes its own metadata, and the other table's version hint is kept.
+        OWN_UUID=$(grep -o -m1 '"table-uuid" : "[^"]*"' "${OWN_METADATA}v1.metadata.json" | cut -d'"' -f4)
+        ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "CREATE TABLE ${TABLE}_pinned ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_table_uuid = '${OWN_UUID}'"
+        ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE}_pinned SYNC"
+        [ -f "${TABLE_PATH}metadata/v1.metadata.json" ] || echo "pinned: own metadata deleted"
+    fi
     ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_other"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_other SYNC"
     rm -rf "${OWN_METADATA}"

@@ -1895,17 +1895,26 @@ void IcebergMetadata::drop(
             return;
         }
         /// `metadata-log` can miss versions of the table, e.g. the one written by `CREATE`.
-        if (root_uuid)
+        bool other_metadata = false;
+        for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
         {
-            for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
+            if (reachable.files.contains(path))
+                continue;
+            if (root_uuid)
             {
-                if (reachable.files.contains(path))
-                    continue;
                 auto metadata = read_metadata(path);
                 if (metadata->has(Iceberg::f_table_uuid) && normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid)) == *root_uuid)
+                {
                     reachable.files.insert(path);
+                    continue;
+                }
             }
+            other_metadata = true;
         }
+        /// The version hint belongs to the location: a table whose metadata stays there can read through it.
+        if (other_metadata)
+            reachable.files.erase(
+                std::filesystem::path(persistent_components.path_resolver.getTableRoot()) / "metadata" / "version-hint.text");
         files_to_drop = std::move(reachable.files);
         data_files_to_drop = std::move(reachable.data_files);
     }
