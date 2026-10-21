@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # - no-fasttest: requires MinIO and the Avro library (Iceberg)
+# - long: writing the more than 1000 objects of a full list page runs past the 180s flaky-check cap
 
 # A read of an Iceberg table by path, with no pointer setting, finds the latest metadata file by
 # listing the `metadata/v` key prefix when the table names its metadata files `v<N>...`, so the
