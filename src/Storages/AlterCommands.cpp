@@ -1360,6 +1360,9 @@ void AlterCommand::apply(
         if (metadata.isPartitionKeyDefined())
             rename_visitor.visit(metadata.partition_key.definition_ast);
 
+        if (metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to))
+            metadata.dropImplicitIndicesForColumn(column_name);
+
         for (auto & index : metadata.secondary_indices)
         {
             /// For implicit indices, check the index name rather than column_names because
