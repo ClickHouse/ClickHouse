@@ -48,6 +48,9 @@ enum class TypeKind : UInt8
     List,
     LargeList,
     FixedSizeList,
+    /// Lists described by an offset and a size per row: the ranges can overlap and come in any order.
+    ListView,
+    LargeListView,
     Struct,
     Map,
     Union,
@@ -96,17 +99,6 @@ struct ArrowType
 
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
-
-    /// Physical buffer layout of a `TypeKind::Unsupported` field, when it is known. The reader cannot
-    /// decode these types, but knowing the layout lets `advanceField` advance the node/buffer cursors past an
-    /// unrequested column of such a type (subset-of-columns support), instead of failing a `SELECT` of the
-    /// other columns. `Unknown` means the layout is not known and the column cannot be skipped.
-    enum class SkipLayout : UInt8
-    {
-        Unknown,        /// cannot be skipped
-        ListView,       /// validity + offsets + sizes buffers, then one child (same buffer count for LargeListView)
-    };
-    SkipLayout skip_layout = SkipLayout::Unknown;
 };
 
 struct DictionaryEncoding

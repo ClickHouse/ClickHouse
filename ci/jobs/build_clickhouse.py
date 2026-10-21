@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet
+from ci.jobs.scripts import clang_tidy_changed_files
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.jobs.scripts import relocation_headroom
 from ci.praktika.info import Info
@@ -77,6 +78,15 @@ def flavor_cmake_options(cmake_cmd, official, is_private):
     if not is_private and "ENABLE_THINLTO=1" in cmake_cmd:
         return " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
     return ""
+
+# The limited clang-tidy check (merge queue) uses the full tidy build's cmake
+# configuration verbatim - that is what makes the diagnostics it reports the same
+# ones the full check would report. It differs only in what happens in place of
+# the build: see the `ARM_TIDY_CHANGED_FILES` branch below and
+# ci/jobs/scripts/clang_tidy_changed_files.py.
+BUILD_TYPE_TO_CMAKE[BuildTypes.ARM_TIDY_CHANGED_FILES] = BUILD_TYPE_TO_CMAKE[
+    BuildTypes.ARM_TIDY
+]
 
 # Only the release builds are packaged: their packages are what gets published, and what
 # the `Install packages` and `Compatibility check` jobs install. The debug, sanitizer and
@@ -483,6 +493,27 @@ def main():
 
     # Activate FIPS-permissive config for OpenSSL
     os.environ["OPENSSL_CONF"] = "/etc/ssl/openssl.cnf"
+
+    # The limited clang-tidy check has no build of its own: instead of compiling
+    # the tree it generates only the sources the affected translation units are
+    # built against and runs clang-tidy on those translation units. Everything
+    # after this point - packaging, the unit tests, the profile upload - belongs
+    # to a real build, so the job is completed here. Its verdict depends on the
+    # change's set of files as well as on the checkout, and the cache digest
+    # captures only the latter: two changes can produce the same merged tree with
+    # different files to analyze and report, so the result is not cached.
+    if build_type == BuildTypes.ARM_TIDY_CHANGED_FILES:
+        if res and JobStages.BUILD in stages:
+            results.append(
+                clang_tidy_changed_files.run(
+                    changed_files=clang_tidy_changed_files.changed_files_from_ci(info),
+                    repo_dir=repo_path_normalized,
+                    build_dir=build_dir_normalized,
+                    temp_dir=temp_dir,
+                )
+            )
+        Result.create_from(results=results).complete_job(do_not_cache=True)
+        return
 
     files = []
     if res and JobStages.BUILD in stages:
