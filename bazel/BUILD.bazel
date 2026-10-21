@@ -1582,6 +1582,7 @@ cc_library(
         "gen/contrib/flatbuffers/generated/feather_generated.h",
     ],
     includes = ["gen/contrib/flatbuffers"],
+    deps = ["@clickhouse_flatbuffers//:_flatbuffers"],
 )
 
 cc_library(

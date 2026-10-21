@@ -109,8 +109,25 @@ ch_cc_library(
         "src/s2/util/math/exactfloat/exactfloat.cc",
         "src/s2/util/math/mathutil.cc",
         "src/s2/util/units/length-units.cc",
+        "src/s2/s2random.h",
+        "src/s2/s2testing.h",
     ],
-    hdrs = glob(["src/**/*.h"]),
+    hdrs = glob(
+        ["src/**/*.h"],
+        # These belong to upstream s2_testing_headers; only the two compiled
+        # ClickHouse S2 implementations above need their private headers.
+        exclude = [
+            "src/s2/gmock_matchers.h",
+            "src/s2/s2builderutil_testing.h",
+            "src/s2/s2cell_iterator_testing.h",
+            "src/s2/s2closest_edge_query_testing.h",
+            "src/s2/s2coder_testing.h",
+            "src/s2/s2random.h",
+            "src/s2/s2shapeutil_testing.h",
+            "src/s2/s2testing.h",
+            "src/s2/thread_testing.h",
+        ],
+    ),
     copts = [
         "-w",
         "-std=c++23",

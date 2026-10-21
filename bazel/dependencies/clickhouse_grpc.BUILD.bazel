@@ -3029,10 +3029,13 @@ ch_cc_library(
         "third_party/utf8_range/naive.c",
         "third_party/utf8_range/range2-neon.c",
         "third_party/utf8_range/range2-sse.c",
-    ] + glob(["third_party/utf8_range/*.inc"]),
+    ] + select({
+        "@platforms//cpu:x86_64": ["third_party/utf8_range/utf8_range_sse.inc"],
+        "@platforms//cpu:aarch64": ["third_party/utf8_range/utf8_range_neon.inc"],
+    }),
     hdrs = ["third_party/utf8_range/utf8_range.h"],
     copts = _GRPC_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
+    libcxx_headers = False,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

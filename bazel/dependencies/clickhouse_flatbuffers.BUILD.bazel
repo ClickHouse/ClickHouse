@@ -26,13 +26,18 @@ ch_cc_library(
         "src/file_manager.cpp",
         "src/file_name_manager.cpp",
         "src/idl_gen_text.cpp",
+        "src/idl_gen_text.h",
         "src/reflection.cpp",
         "src/util.cpp",
     ],
-    hdrs = glob([
-        "include/**/*.h",
-        "src/**/*.h",
-    ]),
+    hdrs = glob(
+        ["include/flatbuffers/*.h"],
+        # flatc owns its compiler headers. No ClickHouse build enables flatc --grpc.
+        exclude = [
+            "include/flatbuffers/flatc.h",
+            "include/flatbuffers/grpc.h",
+        ],
+    ),
     copts = [
         "-w",
         "-std=c++23",
@@ -41,9 +46,7 @@ ch_cc_library(
         "include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [
-        "@clickhouse_abseil_cpp//:absl_strings",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 cc_binary(

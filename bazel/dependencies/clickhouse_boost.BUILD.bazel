@@ -26,21 +26,9 @@ ch_cc_library(
         "libs/context/src/fcontext.cpp",
         "libs/context/src/posix/stack_traits.cpp",
     ],
-    hdrs = glob(["libs/context/**/*.hpp"]),
-    additional_compiler_inputs = [
-        "libs/context/src/asm/jump_i386_sysv_elf_gas.S",
-        "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
-        "libs/context/src/asm/make_i386_sysv_elf_gas.S",
-        "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
-        "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
-    ],
-    copts =
-        _BOOST_COPTS,
-    llvm_headers = True,
+    copts = _BOOST_COPTS,
+    implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [] + [
-        ":boost_headers",
-    ],
 )
 
 ch_cc_library(
@@ -49,40 +37,25 @@ ch_cc_library(
         "@platforms//cpu:x86_64": glob(["libs/context/src/asm/*_64_sysv_elf_gas.S"]),
         "@platforms//cpu:aarch64": glob(["libs/context/src/asm/*_arm64_aapcs_elf_gas.S"]),
     }),
-    hdrs = glob(["libs/context/**/*.hpp"]),
-    additional_compiler_inputs = ["libs/context/src/asm/jump_i386_sysv_elf_gas.S"] + select({
+    additional_compiler_inputs = select({
         "@platforms//cpu:x86_64": [
+            "libs/context/src/asm/jump_i386_sysv_elf_gas.S",
             "libs/context/src/asm/make_i386_sysv_elf_gas.S",
         ],
-        "@platforms//cpu:aarch64": [
-            "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
-            "libs/context/src/asm/make_i386_sysv_elf_gas.S",
-            "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
-            "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
-        ],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
-            "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",
-            "libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S",
-        ],
-        "@platforms//cpu:aarch64": [
-        ],
+        "@platforms//cpu:aarch64": [],
     }),
     language = "ASM",
-    llvm_headers = True,
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [] + [
-        ":boost_headers",
-    ],
+    deps = [":boost_headers"],
 )
 
 cc_library(
     name = "_boost_context",
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_boost_context__compile_0",
         ":_boost_context__compile_1",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
 )
 
@@ -93,24 +66,24 @@ ch_cc_library(
         "libs/coroutine/src/exceptions.cpp",
         "libs/coroutine/src/posix/stack_traits.cpp",
     ],
-    hdrs = glob([
-        "libs/coroutine/**/*.h",
-        "libs/coroutine/**/*.hpp",
-    ]),
-    copts =
-        _BOOST_COPTS,
+    copts = _BOOST_COPTS,
+    implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":_boost_context"],
 )
 
 ch_cc_library(
     name = "_boost_filesystem",
-    srcs = glob(["libs/filesystem/src/*.cpp"]),
-    hdrs = glob(["libs/filesystem/**/*.hpp"]),
-    copts = [
-        "-w",
-        "-std=c++23",
+    srcs = glob(["libs/filesystem/src/*.cpp"]) + [
+        "libs/filesystem/src/atomic_ref.hpp",
+        "libs/filesystem/src/atomic_tools.hpp",
+        "libs/filesystem/src/error_handling.hpp",
+        "libs/filesystem/src/platform_config.hpp",
+        "libs/filesystem/src/posix_tools.hpp",
+        "libs/filesystem/src/private_config.hpp",
     ],
+    copts = _BOOST_COPTS,
+    implementation_deps = [":boost_headers"],
     local_defines = [
         "BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -118,10 +91,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        ":boost_headers",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 ch_cc_library(
@@ -130,12 +100,8 @@ ch_cc_library(
         "libs/graph/src/graphml.cpp",
         "libs/graph/src/read_graphviz_new.cpp",
     ],
-    hdrs = glob([
-        "libs/graph/**/*.h",
-        "libs/graph/**/*.hpp",
-    ]),
-    copts =
-        _BOOST_COPTS,
+    copts = _BOOST_COPTS,
+    implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":_boost_regex"],
 )
@@ -149,24 +115,11 @@ ch_cc_library(
         "libs/iostreams/src/zlib.cpp",
         "libs/iostreams/src/zstd.cpp",
     ],
-    hdrs = glob([
-        "libs/iostreams/**/*.h",
-        "libs/iostreams/**/*.hpp",
-        "libs/iostreams/**/*.inc",
-    ]),
-    additional_compiler_inputs = [
-        "libs/iostreams/test/bzip2-1.0.8/libbz2.def",
-        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc10/zlibvc.def",
-        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc11/zlibvc.def",
-        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc12/zlibvc.def",
-        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc14/zlibvc.def",
-        "libs/iostreams/test/zlib-1.2.11/contrib/vstudio/vc9/zlibvc.def",
-        "libs/iostreams/test/zlib-1.2.11/old/os2/zlib.def",
-        "libs/iostreams/test/zlib-1.2.11/win32/zlib.def",
-    ],
-    copts = [
-        "-w",
-        "-std=c++23",
+    copts = _BOOST_COPTS,
+    implementation_deps = [
+        ":boost_headers",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd__compile_0",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -213,26 +166,16 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        ":boost_headers",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_zstd//:_zstd",
-    ],
+    deps = ["@clickhouse_zstd//:_zstd"],
 )
 
 ch_cc_library(
     name = "_boost_program_options",
     srcs = glob(["libs/program_options/src/*.cpp"]),
-    hdrs = glob(["libs/program_options/**/*.hpp"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
+    copts = _BOOST_COPTS,
+    implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":boost_headers",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 ch_cc_library(
@@ -241,14 +184,10 @@ ch_cc_library(
         "libs/regex/src/posix_api.cpp",
         "libs/regex/src/wide_posix_api.cpp",
     ],
-    hdrs = glob(["libs/regex/**/*.hpp"]),
-    copts =
-        _BOOST_COPTS,
+    copts = _BOOST_COPTS,
+    implementation_deps = [":boost_headers"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
-        ":boost_headers",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
 cc_library(

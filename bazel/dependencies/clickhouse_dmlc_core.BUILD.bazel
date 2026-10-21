@@ -36,10 +36,26 @@ ch_cc_library(
         "src/io/line_split.cc",
         "src/io/filesys.cc",
         "src/config.cc",
-    ] + glob(["src/**/*.h"]),
+    ] + glob(
+        ["src/**/*.h"],
+        # DMLC's generated build_config disables Parquet; its default config
+        # disables Azure, HDFS and S3. None of their .cc backends is compiled.
+        exclude = [
+            "src/data/parquet_parser.h",
+            "src/io/azure_filesys.h",
+            "src/io/hdfs_filesys.h",
+            "src/io/s3_filesys.h",
+            # Unused debugging class; production uses ThreadedInputSplit.
+            "src/io/single_threaded_input_split.h",
+        ],
+    ),
     hdrs = [
         ":configure_dmlc_core_dmlc_build_config_h",
-    ] + glob(["include/dmlc/*.h"]),
+    ] + glob(
+        ["include/dmlc/*.h"],
+        # The Lua/Torch integration is not enabled.
+        exclude = ["include/dmlc/lua.h"],
+    ),
     copts = [
         "-w",
         "-std=c++23",
