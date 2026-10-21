@@ -15,6 +15,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
@@ -53,6 +54,12 @@
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+
+namespace ProfileEvents
+{
+    extern const Event JoinNonJoinedHashTableScans;
+    extern const Event JoinNonJoinedHashTableScansSkipped;
+}
 
 namespace DB
 {
@@ -446,7 +453,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
         return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
+    if (all_fixed && keys_bytes <= HashJoin::max_packed_keys_bytes)
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
@@ -753,7 +760,12 @@ bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
-    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+    /// `auto` may switch HashJoin -> MergeJoin (which keeps all left columns), so pruning would
+    /// desync block structure; keep `grace_hash` conservative too. A spill threshold alone only
+    /// switches HashJoin -> GraceHashJoin (same result path), so it must not disable pruning.
+    const bool keep_left_columns = table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return !table_join.hasUsing() && !keep_left_columns && table_join.strictness() != JoinStrictness::RightAny;
 }
 
 bool HashJoin::isUsedByAnotherAlgorithm() const
@@ -966,6 +978,18 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     if (!memory_usage_before_adding_blocks)
         memory_usage_before_adding_blocks = JoinCommon::getCurrentQueryMemoryUsage();
 
+    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
+    ColumnPtrMap all_key_columns(right_key_names.size());
+    for (const auto & column_name : right_key_names)
+    {
+        const auto & column = block.getByName(column_name).column;
+        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
+        if (!isLowCardinalityType(data->type))
+            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = prepared_key_column;
+    }
+
     if (strictness == JoinStrictness::Asof)
     {
         chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
@@ -986,7 +1010,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             }
             else
             {
-                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
+                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).getNullMapData();
 
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();
@@ -1003,17 +1027,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     }
 
     const size_t rows = selector.size();
-    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
-    ColumnPtrMap all_key_columns(right_key_names.size());
-    for (const auto & column_name : right_key_names)
-    {
-        const auto & column = block.getByName(column_name).column;
-        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
-        if (!isLowCardinalityType(data->type))
-            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
-    }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     if (shrink_blocks)
@@ -1094,7 +1107,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             bool has_right_not_joined = false;
-            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
+            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
             {
                 ///  - build mask in the source block row space
                 ///  - set bits only for rows that belong to THIS slot (by selector)
@@ -1153,7 +1166,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 nullmap_stored_for_block = true;
             }
 
-            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
+            if (!flag_per_row && not_joined_map && has_right_not_joined)
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += h.allocatedBytes();
@@ -1383,6 +1396,45 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
+/// Keeps selector-backed probe continuations inside HashJoin so an unprocessed left suffix
+/// is not materialized and resubmitted while preserving the joined-block size limit.
+class HashJoin::ContinuationResult final : public IJoinResult
+{
+public:
+    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+        : join(join_)
+        , current_result(std::move(current_result_))
+    {
+    }
+
+    JoinResultBlock next() override
+    {
+        auto result = current_result->next();
+
+        if (result.is_last)
+        {
+            addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
+
+            if (result.next_block)
+                current_result = join.runJoinDispatch(std::move(*result.next_block));
+            else
+                current_result.reset();
+        }
+
+        return {std::move(result.block), nullptr, !current_result};
+    }
+
+    std::optional<size_t> getMatchedRightRows() const override
+    {
+        return matched_right_rows;
+    }
+
+private:
+    HashJoin & join;
+    JoinResultPtr current_result;
+    std::optional<size_t> matched_right_rows = 0;
+};
+
 JoinResultPtr HashJoin::joinBlock(Block block)
 {
     if (!data)
@@ -1397,7 +1449,8 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    return runJoinDispatch(ScatteredBlock(std::move(block)));
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
@@ -1418,7 +1471,8 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             cond_column_name.second);
     }
 
-    return runJoinDispatch(std::move(block));
+    auto result = runJoinDispatch(std::move(block));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
@@ -1505,53 +1559,40 @@ HashJoin::~HashJoin()
         getTotalRowCount());
 }
 
-bool HashJoin::hasNonJoinedRows()
+namespace
 {
-    if (has_non_joined_rows_checked)
-        return has_non_joined_rows;
 
-    if (!isRightOrFull(kind))
-        return false;
-
-    if (!needUsedFlagsForPerRightTableRow(table_join))
-        return false;
-
-    /// If the right table is empty, we have no non-joined rows.
-    if (data->rows_to_join == 0)
-        return false;
-
-    updateNonJoinedRowsStatus();
-    return has_non_joined_rows;
-}
-
-void HashJoin::updateNonJoinedRowsStatus()
+/// Whether every key in the cells that stream `bucket_idx` of `num_buckets` walks has its used flag set.
+/// A two-level map numbers the cells of bucket `b` from `bucket_cells_prefix[b] + 1`, and its zero key has offset 0.
+/// The walk splits only two-level maps between streams, so a single-level map is checked as a whole.
+template <typename Map>
+bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, size_t bucket_idx, size_t num_buckets)
 {
-    if (has_non_joined_rows_checked)
-        return;
+    if (used_flags.per_offset_flags.size() < map.getBufferSizeInCells() + 1)
+        return false;
 
-    bool found_non_joined = false;
-    if (data->rows_to_join != 0)
+    if constexpr (requires { map.bucket_cells_prefix; })
     {
-        // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
-        if (!data->nullmaps.empty())
-            found_non_joined = true;
-        // 2) Used flags present:
-        //    - If per-row flags are required (mixed ON / multiple disjuncts / RIGHT|FULL), conservatively assume non-joined rows exist
-        //    - For single disjunct with per-offset flags, check allOffsetFlagsSet
-        //    - Otherwise assume non-joined rows may exist
-        else if (used_flags)
+        if constexpr (Map::NUM_BUCKETS > 1)
         {
-            if (needUsedFlagsForPerRightTableRow(table_join))
-                found_non_joined = true;
-            else if (table_join->oneDisjunct())
-                found_non_joined = !used_flags->allOffsetFlagsSet();
-            else
-                found_non_joined = true;
+            if (map.bucket_cells_prefix.size() != Map::NUM_BUCKETS)
+                return false;
+            for (size_t bucket = bucket_idx; bucket < Map::NUM_BUCKETS; bucket += num_buckets)
+            {
+                const auto & impl = map.impls[bucket];
+                const size_t begin = map.bucket_cells_prefix[bucket] + 1;
+                if (countBytesInFilter(used_flags.per_offset_flags.data(), begin, begin + impl.getBufferSizeInCells())
+                    != impl.size() - impl.hasZero())
+                    return false;
+                if (impl.hasZero() && !used_flags.getUsedSafe(0))
+                    return false;
+            }
+            return true;
         }
     }
+    return countBytesInFilter(used_flags.per_offset_flags.data(), 0, map.getBufferSizeInCells() + 1) == map.size();
+}
 
-    has_non_joined_rows = found_non_joined;
-    has_non_joined_rows_checked = true;
 }
 
 /// Appends one hash map cell's not-joined rows as a flat run of encoded ref words. Returns the rows
@@ -1732,7 +1773,12 @@ private:
 
 
             if (!position.has_value())
-                position = std::make_any<Iterator>(map.begin());
+            {
+                const bool all_keys_used = allKeysUsed(map, *parent.used_flags, bucket_idx, num_buckets);
+                ProfileEvents::increment(
+                    all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
+                position = std::make_any<Iterator>(all_keys_used ? map.end() : map.begin());
+            }
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
@@ -2815,7 +2861,6 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
-    updateNonJoinedRowsStatus();
 
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot

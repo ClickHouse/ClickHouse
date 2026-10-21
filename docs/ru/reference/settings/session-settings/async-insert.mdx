@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="async_insert">
-  ## async_insert
-</div>
+## async_insert {#async_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если true, данные из запроса INSERT сохраняются в очереди и позже в фоновом режиме записываются в таблицу. Если wait&#95;for&#95;async&#95;insert равно false, запрос INSERT обрабатывается почти мгновенно, в противном случае клиент будет ждать, пока данные не будут записаны в таблицу
 
-<div id="async_insert_busy_timeout_decrease_rate">
-  ## async_insert_busy_timeout_decrease_rate
-</div>
+## async_insert_busy_timeout_decrease_rate {#async_insert_busy_timeout_decrease_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Скорость экспоненциального уменьшения адаптивного тайм-аута асинхронной вставки
 
-<div id="async_insert_busy_timeout_increase_rate">
-  ## async_insert_busy_timeout_increase_rate
-</div>
+## async_insert_busy_timeout_increase_rate {#async_insert_busy_timeout_increase_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -43,9 +37,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Коэффициент экспоненциального роста, с которым увеличивается адаптивный тайм-аут асинхронной вставки
 
-<div id="async_insert_busy_timeout_max_ms">
-  ## async_insert_busy_timeout_max_ms
-</div>
+## async_insert_busy_timeout_max_ms {#async_insert_busy_timeout_max_ms}
 
 **Псевдонимы**: `async_insert_busy_timeout_ms`
 
@@ -57,9 +49,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию в Cloud: `1000` (1s).
 
-<div id="async_insert_busy_timeout_min_ms">
-  ## async_insert_busy_timeout_min_ms
-</div>
+## async_insert_busy_timeout_min_ms {#async_insert_busy_timeout_min_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
 
@@ -67,9 +57,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если автоматическая настройка включена через async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout, это минимальное время ожидания перед сбросом собранных данных для каждого запроса с момента появления первых данных. Также служит начальным значением для адаптивного алгоритма
 
-<div id="async_insert_deduplicate">
-  ## async_insert_deduplicate
-</div>
+## async_insert_deduplicate {#async_insert_deduplicate}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -77,9 +65,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Этот параметр действует только при значении `backward_compatible_choice` для [`deduplicate_insert`](/ru/reference/settings/session-settings/deduplicate-insert#deduplicate_insert).
 
-<div id="async_insert_max_data_size">
-  ## async_insert_max_data_size
-</div>
+## async_insert_max_data_size {#async_insert_max_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
@@ -89,18 +75,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию в Cloud: `104857600` (100 MiB).
 
-<div id="async_insert_max_query_number">
-  ## async_insert_max_query_number
-</div>
+## async_insert_max_query_number {#async_insert_max_query_number}
 
 <SettingsInfoBlock type="UInt64" default_value="450" />
 
 Максимальное количество запросов на вставку до выполнения вставки.
 Действует только если значение настройки [`async_insert_deduplicate`](/ru/reference/settings/session-settings/async-insert#async_insert_deduplicate) равно 1.
 
-<div id="async_insert_poll_timeout_ms">
-  ## async_insert_poll_timeout_ms
-</div>
+## async_insert_poll_timeout_ms {#async_insert_poll_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="10" />
 
@@ -108,9 +90,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Тайм-аут для опроса данных из очереди асинхронной вставки
 
-<div id="async_insert_use_adaptive_busy_timeout">
-  ## async_insert_use_adaptive_busy_timeout
-</div>
+## async_insert_select_as_async_insert {#async_insert_select_as_async_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Асинхронные вставки для запросов `INSERT ... SELECT` теперь включены по умолчанию."}]}]} />
+
+Определяет, может ли запрос `INSERT ... SELECT`, запущенный пользователем, использовать очередь асинхронных вставок, если включена настройка `async_insert` и запрос удовлетворяет условиям (один небольшой блок, вставляемый в таблицу семейства `MergeTree` без зависимых представлений). Если настройка отключена, `INSERT ... SELECT` всегда выполняется синхронно независимо от значения `async_insert`. Внутренние вставки (refreshable materialized view, `POPULATE`, `CREATE TABLE ... AS SELECT`) всегда выполняются синхронно и эту настройку игнорируют.
+
+## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

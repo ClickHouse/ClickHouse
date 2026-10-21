@@ -214,7 +214,7 @@ public:
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
 
     void serializeAsComparable(size_t n, String & out) const override;
     void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
@@ -224,8 +224,6 @@ public:
     void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    /// Feeds `value` into `hash` as `updateHashWithValue` feeds a row that holds this value.
-    static void updateHashWithStringValue(std::string_view value, SipHash & hash);
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;

@@ -17,6 +17,7 @@
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/MergeJoin.h>
 
@@ -527,6 +528,15 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store] = min_string_column_bytes_for_hash_join_row_store;
+}
+
+bool JoinSettings::canRunGraceHash() const
+{
+    const auto global_context = Context::getGlobalContextInstance();
+    if (!global_context || !global_context->getSharedTempDataOnDisk())
+        return false;
+
+    return legacy_join_size_limits_trigger_spilling || max_bytes_before_external_join > 0 || join_algorithms.size() == 1;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)

@@ -356,8 +356,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
 }
 
-/// Extracts a zookeeper path from a specified CREATE TABLE query.
-std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & local_context)
+std::optional<TableZnodeInfo> extractZnodeInfoFromReplicatedTableDef(
+    const ASTCreateQuery & query, const StorageID & table_id, LoadingStrictnessLevel mode, const ContextPtr & local_context)
 {
     if (!query.storage || !query.storage->engine)
         return {};
@@ -366,22 +366,29 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
     if (!isReplicated(engine_name))
         return {};
 
-    StorageID table_id{query.getDatabase(), query.getTable(), query.uuid};
-
     ASTs engine_args;
     if (query.storage->engine->arguments)
         engine_args = query.storage->engine->arguments->children;
     for (auto & engine_arg : engine_args)
         engine_arg = engine_arg->clone();
 
+    return extractZooKeeperPathAndReplicaNameFromEngineArgs(
+        query, table_id, engine_name, engine_args, mode, local_context,
+        /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
+}
+
+/// Extracts a zookeeper path from a specified CREATE TABLE query.
+std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & local_context)
+{
     try
     {
         /// This only reads back the path of an already-created table, so it must never reject it:
         /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
-        auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
-            /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
-        return res.full_path;
+        auto res = extractZnodeInfoFromReplicatedTableDef(
+            query, StorageID{query.getDatabase(), query.getTable(), query.uuid}, LoadingStrictnessLevel::CREATE, local_context);
+        if (!res)
+            return {};
+        return res->full_path;
     }
     catch (Exception & e)
     {
@@ -949,8 +956,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
+        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
@@ -1025,7 +1032,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =
@@ -1039,19 +1045,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
 
-                    /// Backward compatibility: older versions (before 25.12) stored implicit indices
-                    /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
-                    auto & added = metadata.secondary_indices.back();
+                    /// Backward compatibility: older versions (before 25.12) stored implicit indices on disk
+                    /// as regular indices. Skip one identical to the index generated below, keep any other one.
                     String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
                     if (columns.has(col_name))
                     {
                         const auto & col_type = columns.get(col_name).type;
-                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            added.is_implicitly_created = true;
+                        if (((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                            && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(col_name)->formatWithSecretsOneLine())
+                            continue;
                     }
                 }
+
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
             }
         }
 
@@ -1854,6 +1862,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitive](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8)    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
@@ -2263,6 +2273,7 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
@@ -3771,7 +3782,7 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 The values in the columns with the numeric data type are summed. The set of columns is defined by the parameter `columns`.
 
-If the values were 0 in all of the columns for summation, the row is deleted.
+If the values were 0 in all of the columns for summation, the row is deleted during a merge. A query with the [FINAL](/reference/statements/select/from#final-modifier) modifier sums the rows but does not delete such rows, so the set of rows it returns does not depend on which columns the query reads. Note that `FINAL` merges a [nested structure](#nested-structures) whose name ends with `Map` the same way as a merge only if the query reads all columns of that structure.
 
 If column is not in the primary key and is not summed, an arbitrary value is selected from the existing ones.
 
@@ -3861,7 +3872,7 @@ The same rules apply to the flattened sub-columns as to regular columns:
 - Only numeric sub-columns are summed.
 - Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from summation.
 - If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
-- If all numeric sub-columns of a row are zero after summation, the row is deleted.
+- If all numeric sub-columns of a row are zero after summation, the row is deleted during a merge (but not by a query with `FINAL`).
 
 <Note>
 This setting is immutable and must be specified at table creation time.

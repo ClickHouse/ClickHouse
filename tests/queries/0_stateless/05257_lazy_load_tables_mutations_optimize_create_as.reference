@@ -1,0 +1,7 @@
+stand-in	TableProxy
+lightweight delete	9
+lightweight update	100
+mutation	8
+hypothetical index	ok
+create as	a	a % 2
+clone as	8
