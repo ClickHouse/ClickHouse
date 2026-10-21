@@ -568,9 +568,9 @@ String GlueCatalog::resolveTimestampType(const FieldTypes & field_types, const S
 
 size_t GlueCatalog::FieldTypesWeightFunction::operator()(const FieldTypes & field_types) const
 {
-    size_t result = sizeof(FieldTypes) + field_types.bucket_count() * sizeof(void *);
+    size_t result = 0;
     for (const auto & [name, type] : field_types)
-        result += sizeof(FieldTypes::value_type) + 2 * sizeof(void *) + name.capacity() + type.capacity();
+        result += sizeof(FieldTypes::value_type) + name.size() + type.size();
     return result;
 }
 
