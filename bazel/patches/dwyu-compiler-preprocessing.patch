@@ -1,5 +1,5 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e..cf12ba2 100644
+index 13af75e..99f3f12 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -388,16 +388,68 @@ index 13af75e..cf12ba2 100644
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +765,7 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
+@@ -440,7 +765,59 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
  
          preprocessor_results.append(pp_output)
  
 -    return preprocessor_results
 +    return (preprocessor_results, []) if attr_prefix == "pub" else ([], preprocessor_results)
++
++def _owned_symbol_inputs(ctx, dep, files, tools, index):
++    objects = []
++    unsupported = []
++    forwarded = False
++    for linker_input in dep.cc_info.linking_context.linker_inputs.to_list():
++        if linker_input.owner != dep.label:
++            if (_as_list(linker_input.libraries) or _as_list(linker_input.user_link_flags) or
++                _as_list(linker_input.additional_inputs) or _as_list(getattr(linker_input, "linkstamps", []))):
++                forwarded = True
++            continue
++        if _as_list(linker_input.user_link_flags) or _as_list(linker_input.additional_inputs) or _as_list(getattr(linker_input, "linkstamps", [])):
++            unsupported.append("link flags, additional inputs or linkstamps")
++        for lib in _as_list(linker_input.libraries):
++            own = lib.pic_objects or lib.objects
++            if lib.alwayslink:
++                unsupported.append("alwayslink")
++            if own:
++                objects.extend(own)
++            elif lib.pic_static_library or lib.static_library or lib.dynamic_library or lib.interface_library:
++                unsupported.append("library without owned objects")
++    # A deps-only bridge may forward links, but it does not own those symbols.
++    if not objects and forwarded:
++        unsupported.append("forwarded libraries without owned objects")
++    output = None
++    if objects:
++        output = ctx.actions.declare_file("{}.dwyu_nm_{}.txt".format(ctx.label.name, index))
++        argv = ctx.actions.args()
++        argv.add(output)
++        argv.add_all(objects)
++        ctx.actions.run_shell(
++            inputs = depset(objects),
++            tools = tools,
++            outputs = [output],
++            arguments = [ctx.executable._tool_nm.path, argv],
++            command = 'nm="$1"; output="$2"; shift 2; "$nm" --format=posix --print-file-name --extern-only --no-demangle "$@" > "$output"',
++            mnemonic = "DwyuOwnedSymbols",
++            progress_message = "Read direct owned symbols of {}".format(dep.label),
++        )
++        files.append(output)
++    return dict(target = str(dep.label), symbols = output.path if output else "", unsupported = unsupported)
++
++def _owned_symbols(ctx, target, deps, implementation_deps):
++    files = []
++    tool = ctx.attr._tool_nm[DefaultInfo].files_to_run
++    symbols = ctx.actions.declare_file("{}.dwyu_owned_symbols.json".format(target.label.name))
++    ctx.actions.write(symbols, json.encode(dict(
++        owner = _owned_symbol_inputs(ctx, struct(label = target.label, cc_info = target[CcInfo]), files, [tool], "owner"),
++        deps = [_owned_symbol_inputs(ctx, dep, files, [tool], "dep_" + str(i)) for i, dep in enumerate(deps)],
++        implementation_deps = [_owned_symbol_inputs(ctx, dep, files, [tool], "impl_" + str(i)) for i, dep in enumerate(implementation_deps)],
++    )))
++    return [symbols] + files
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +835,17 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -510,8 +887,17 @@ def dwyu_cc_aspect_impl(target, ctx):
      #
  
      config = _make_dwyu_config(ctx)
@@ -417,7 +469,7 @@ index 13af75e..cf12ba2 100644
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +863,35 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -529,26 +915,39 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -450,12 +502,16 @@ index 13af75e..cf12ba2 100644
 +    preprocessed_private_files = private_from_headers + [file for file in private_from_srcs if file.extension != "o"]
  
      args = make_param_file_args(ctx)
++    symbols = []
 +    if header_manifest != None:
 +        args.add("--owned_headers", header_manifest)
++        if ctx.attr._tool_nm:
++            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps)
++            args.add("--owned_symbols", symbols[0])
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +903,20 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,17 +959,20 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -475,11 +531,11 @@ index 13af75e..cf12ba2 100644
  
      analysis_inputs = depset(
 -        direct = [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files,
-+        direct = [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files + assembly_outputs + ([header_manifest] if header_manifest != None else []),
++        direct = symbols + [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files + assembly_outputs + ([header_manifest] if header_manifest != None else []),
          transitive = [target[CcInfo].compilation_context.headers],
      )
      ctx.actions.run(
-@@ -584,3 +930,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -584,3 +986,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -667,7 +723,7 @@ index 13af75e..cf12ba2 100644
 +    )
 +    return [DefaultInfo(files = depset([report])), OutputGroupInfo(dwyu_consumer = depset([report]))]
 diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
-index bd8a745..edd3c49 100644
+index bd8a745..f3d1f1c 100644
 --- a/dwyu/cc/aspect/factory.bzl
 +++ b/dwyu/cc/aspect/factory.bzl
 @@ -2,7 +2,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
@@ -687,17 +743,18 @@ index bd8a745..edd3c49 100644
          recursion_stops_on_skip = False,
          skip_external_targets = False,
          skip_features = [],
-@@ -44,6 +45,9 @@ def dwyu_cc_aspect_factory(
+@@ -44,6 +45,10 @@ def dwyu_cc_aspect_factory(
          skip_toolchain_features = [],
          skipped_tags = [],
          target_mapping = None,
 +        tool_analyze_includes = None,
 +        tool_preprocessing = None,
 +        tool_process_target = None,
++        tool_nm = None,
          verbose = False):
      """
      Create and configure a "**D**epend on **W**hat **Y**ou **U**se" (DWYU) aspect.
-@@ -131,6 +135,8 @@ def dwyu_cc_aspect_factory(
+@@ -131,6 +136,8 @@ def dwyu_cc_aspect_factory(
                     You can change this to recursively analyzing dependencies following the `deps` and `implementation_deps` attributes by setting this to True.<br>
                     This feature is demonstrated in the [recursion example](/examples/recursion).
  
@@ -706,7 +763,7 @@ index bd8a745..edd3c49 100644
          recursion_stops_on_skip: If `True`, skipping a target will also stop the recursive analysis of its dependencies.
                                   This does not just influence the behavior of the `skip_*` options, but also skipping to inbuilt logic (e.g. skipping incompatible rule types).
  
-@@ -187,15 +193,21 @@ def dwyu_cc_aspect_factory(
+@@ -187,15 +194,21 @@ def dwyu_cc_aspect_factory(
                          For the full details see the `dwyu_make_cc_info_mapping` documentation.<br>
                          This feature is demonstrated in the [target_mapping example](/examples/target_mapping).
  
@@ -729,7 +786,7 @@ index bd8a745..edd3c49 100644
      aspect_ignored_includes = [ignored_includes] if ignored_includes else []
  
      if skip_tags != _DEFAULT_SKIPPED_TAGS and skipped_tags:
-@@ -218,9 +230,12 @@ def dwyu_cc_aspect_factory(
+@@ -218,9 +231,12 @@ def dwyu_cc_aspect_factory(
          implementation = dwyu_cc_aspect_impl,
          attr_aspects = attr_aspects,
          fragments = ["cpp"],
@@ -744,7 +801,7 @@ index bd8a745..edd3c49 100644
              "dwyu_analysis_ignores_private_headers_from_deps": attr.bool(
                  default = analysis_ignores_private_headers_from_deps,
              ),
-@@ -272,19 +287,19 @@ def dwyu_cc_aspect_factory(
+@@ -272,19 +288,25 @@ def dwyu_cc_aspect_factory(
                  default = aspect_target_mapping,
              ),
              "_tool_analyze_includes": attr.label(
@@ -761,13 +818,19 @@ index bd8a745..edd3c49 100644
                  cfg = "exec",
                  doc = "Preprocess the source code under inspection to resolve conditional preprocessor statements and discover include statements.",
              ),
++            "_tool_nm": attr.label(
++                default = tool_nm,
++                executable = True,
++                cfg = "exec",
++                doc = "Configured llvm-nm for direct owned object symbol evidence in compiler mode.",
++            ),
              "_tool_process_target": attr.label(
 -                default = Label("//dwyu/cc/aspect/private/process_target:main"),
 +                default = tool_process_target or Label("//dwyu/cc/aspect/private/process_target:main"),
                  executable = True,
                  cfg = "exec",
                  doc = "Tool for processing the target under inspection and its dependencies. We have to perform this" +
-@@ -292,3 +307,54 @@ def dwyu_cc_aspect_factory(
+@@ -292,3 +314,54 @@ def dwyu_cc_aspect_factory(
              ),
          },
      )
@@ -822,6 +885,53 @@ index bd8a745..edd3c49 100644
 +        ),
 +    },
 +)
+diff --git a/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp b/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
+index 0453d1b..ef65beb 100644
+--- a/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
++++ b/dwyu/cc/aspect/private/analyze_includes/evaluate_includes.cpp
+@@ -68,23 +68,12 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
+ 
+     if (report_unused_deps) {
+         std::set<std::string> unused_deps{};
+-        for (const auto& dep_pair : system_under_inspection.headers_to_public_deps_map) {
+-            for (const auto& dep : dep_pair.second) {
+-                if (!dep->usage.is_used()) {
+-                    std::ignore = unused_deps.insert(dep->name);
+-                }
+-            }
++        for (const auto& dep : system_under_inspection.public_deps) {
++            if (!dep->usage.is_used()) unused_deps.insert(dep->name);
+         }
+         std::set<std::string> unused_impl_deps{};
+-        for (const auto& dep_pair : system_under_inspection.headers_to_all_deps_map) {
+-            for (const auto& dep : dep_pair.second) {
+-                if (!dep->usage.is_used()) {
+-                    // Only add deps which are not yet reported as unused public deps
+-                    if (unused_deps.find(dep->name) == unused_deps.end()) {
+-                        std::ignore = unused_impl_deps.insert(dep->name);
+-                    }
+-                }
+-            }
++        for (const auto& dep : system_under_inspection.private_deps) {
++            if (!dep->usage.is_used()) unused_impl_deps.insert(dep->name);
+         }
+ 
+         for (const auto& ignored : ignored_unused_deps) {
+@@ -98,12 +87,8 @@ Result evaluateIncludes(const std::vector<IncludeStatement>& public_includes,
+ 
+     if (optimize_impl_deps) {
+         std::set<std::string> deps_which_should_be_private{};
+-        for (const auto& dep_pair : system_under_inspection.headers_to_public_deps_map) {
+-            for (const auto& dep : dep_pair.second) {
+-                if (dep->usage.usage() == TargetUsage::Status::Private) {
+-                    std::ignore = deps_which_should_be_private.insert(dep->name);
+-                }
+-            }
++        for (const auto& dep : system_under_inspection.public_deps) {
++            if (dep->usage.usage() == TargetUsage::Status::Private) deps_which_should_be_private.insert(dep->name);
+         }
+         result.setDepsWhichShouldBePrivate(std::move(deps_which_should_be_private));
+     }
 diff --git a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp b/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
 index f27d618..ba3fa79 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/include_statement.cpp
@@ -912,41 +1022,157 @@ index b0697ed..a4703c2 100644
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-index d062c5b..bb76969 100644
+index d062c5b..4e7f045 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-@@ -11,6 +11,7 @@
+@@ -6,11 +6,16 @@
+ #include "dwyu/cc/private/program_options.h"
+ #include "dwyu/cc/private/utils.h"
+ 
++#include <algorithm>
+ #include <exception>
+ #include <fstream>
  #include <ios>
++#include <sstream>
++#include <map>
++#include <set>
  #include <iostream>
  #include <string>
 +#include <unordered_set>
  #include <vector>
  
  namespace dwyu {
-@@ -20,6 +21,8 @@ struct ProgramOptions {
+@@ -20,6 +25,9 @@ struct ProgramOptions {
      std::string output{};
      std::string target_under_inspection{};
      std::string target_under_inspection_info{};
 +    std::string owned_headers{};
++    std::string owned_symbols{};
 +    std::string consumer_evidence{};
      std::vector<std::string> preprocessed_public_files{};
      std::vector<std::string> preprocessed_private_files{};
      std::vector<std::string> deps{};
-@@ -43,6 +46,8 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+@@ -43,6 +51,9 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
      parser.addOptionValue("--target_under_inspection", options.target_under_inspection);
      // Information about target under inspection
      parser.addOptionValue("--target_under_inspection_info", options.target_under_inspection_info);
 +    parser.addOptionValue("--owned_headers", options.owned_headers);
++    parser.addOptionValue("--owned_symbols", options.owned_symbols);
 +    parser.addOptionValue("--consumer_evidence", options.consumer_evidence);
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -92,10 +97,33 @@ int main_impl(const ProgramOptions& options) {
+@@ -71,6 +82,101 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+     return options;
+ }
+ 
++struct OwnedSymbols {
++    std::set<std::string> strong_definitions;
++    std::set<std::string> strong_undefined;
++    std::set<std::string> weak_definitions;
++    std::set<std::string> weak_undefined;
++    std::vector<std::string> unsupported;
++};
++
++OwnedSymbols readOwnedSymbols(const nlohmann::json& input) {
++    OwnedSymbols result;
++    result.unsupported = input.at("unsupported").get<std::vector<std::string>>();
++    const auto file = input.at("symbols").get<std::string>();
++    if (file.empty()) return result;
++    std::ifstream stream{file};
++    if (!stream) abortWithError("Cannot read DWYU owned object symbols ", file);
++    std::string line;
++    while (std::getline(stream, line)) {
++        // llvm-nm -A -P: "<object>: <mangled-symbol> <type> [value] [size]".
++        const auto delimiter = line.find(": ");
++        if (delimiter == std::string::npos) abortWithError("Invalid llvm-nm object record: ", line);
++        std::istringstream record{line.substr(delimiter + 2)};
++        std::string symbol, type;
++        if (!(record >> symbol >> type) || type.size() != 1) abortWithError("Invalid llvm-nm symbol: ", line);
++        if (type == "U") result.strong_undefined.insert(symbol);
++        else if (type == "w" || type == "v") result.weak_undefined.insert(symbol);
++        else if (type == "W" || type == "V" || type == "u") result.weak_definitions.insert(symbol);
++        else if (std::string("ABCDGRST").find(type[0]) != std::string::npos)
++            result.strong_definitions.insert(symbol);
++        else result.unsupported.push_back("unsupported llvm-nm type " + type + " " + symbol);
++    }
++    if (!stream.eof()) abortWithError("Could not finish reading DWYU owned symbols ", file);
++    return result;
++}
++
++struct LinkEvidence {
++    std::vector<std::string> unverified;
++    nlohmann::json proven = nlohmann::json::object();
++};
++
++// Only a strong unique definition in a direct owner's object can prove a link.
++// Header ownership is checked independently by evaluateIncludes.
++LinkEvidence useOwnedSymbols(const std::string& manifest, SystemUnderInspection& system) {
++    LinkEvidence result;
++    std::ifstream input{manifest};
++    if (!input) abortWithError("Cannot read DWYU link manifest ", manifest);
++    const auto data = nlohmann::json::parse(input);
++    auto owner = readOwnedSymbols(data.at("owner"));
++    std::map<std::string, OwnedSymbols> deps;
++    auto collect = [&](const auto& records, const auto& targets) {
++        for (const auto& record : records) {
++            const auto name = record.at("target").template get<std::string>();
++            if (std::none_of(targets.begin(), targets.end(), [&](const auto& d){ return d->name == name; }))
++                abortWithError("DWYU link owner is not a configured direct dependency: ", name);
++            deps.emplace(name, readOwnedSymbols(record));
++        }
++    };
++    collect(data.at("deps"), system.public_deps);
++    collect(data.at("implementation_deps"), system.private_deps);
++    std::map<std::string, std::set<std::string>> definitions;
++    for (const auto& [name, symbols] : deps) {
++        for (const auto& symbol : symbols.strong_definitions) definitions[symbol].insert(name);
++        for (const auto& symbol : symbols.weak_definitions) definitions[symbol].insert(name);
++    }
++    std::set<std::string> ambiguous;
++    std::map<std::string, std::vector<std::string>> proven;
++    for (const auto& [symbol, providers] : definitions) {
++        if (owner.strong_definitions.count(symbol) || owner.weak_definitions.count(symbol)) continue;
++        if (!owner.strong_undefined.count(symbol) && !owner.weak_undefined.count(symbol)) continue;
++        if (owner.weak_undefined.count(symbol) || providers.size() != 1) {
++            ambiguous.insert(providers.begin(), providers.end());
++            continue;
++        }
++        const auto& provider = *providers.begin();
++        if (!deps.at(provider).strong_definitions.count(symbol)) {
++            ambiguous.insert(provider);
++            continue;
++        }
++        proven[provider].push_back(symbol);
++    }
++    auto apply = [&](auto& targets) {
++        for (auto& dep : targets) {
++            const auto& symbols = deps.at(dep->name);
++            if (proven.count(dep->name)) {
++                dep->usage.update(TargetUsage::Status::Private);
++                result.proven[dep->name] = proven.at(dep->name);
++            } else if (!owner.unsupported.empty() || !symbols.unsupported.empty() || ambiguous.count(dep->name)) {
++                result.unverified.push_back(dep->name);
++            }
++        }
++    };
++    apply(system.public_deps);
++    apply(system.private_deps);
++    return result;
++}
++
+ int main_impl(const ProgramOptions& options) {
+     if (options.verbose) {
+         std::cout << "\n";
+@@ -91,11 +197,37 @@ int main_impl(const ProgramOptions& options) {
+ 
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
-         getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps);
+-        getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps);
 -    auto public_includes = getIncludeStatements(options.preprocessed_public_files, ignored_includes);
 -    auto private_includes = getIncludeStatements(options.preprocessed_private_files, ignored_includes);
++        getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps,
++                                 !options.owned_symbols.empty());
 +    std::vector<std::string> unchecked_link_inputs;
 +    std::vector<std::string> raw_link_candidates;
 +    std::unordered_set<std::string> observed;
@@ -974,15 +1200,18 @@ index d062c5b..bb76969 100644
 +    }
  
 -    const auto result =
++    LinkEvidence link_evidence;
++    if (!options.owned_symbols.empty()) link_evidence = useOwnedSymbols(options.owned_symbols, system_under_inspection);
 +    auto result =
          evaluateIncludes(public_includes, private_includes, system_under_inspection, options.report_missing_direct_deps,
                           options.report_unused_deps, options.ignored_unused_deps, options.optimize_implementation_deps);
  
-@@ -103,9 +131,18 @@ int main_impl(const ProgramOptions& options) {
+@@ -103,9 +235,20 @@ int main_impl(const ProgramOptions& options) {
          std::cout << result.toString(options.output) << "\n";
      }
  
 +    result.markUnverifiedLinkDeps(raw_link_candidates);
++    result.markUnverifiedLinkDeps(link_evidence.unverified);
 +
      std::ofstream output{options.output};
      if (output.is_open()) {
@@ -993,13 +1222,14 @@ index d062c5b..bb76969 100644
 +            if (!evidence.is_open()) abortWithError("Cannot read DWYU consumer evidence ", options.consumer_evidence);
 +            report["consumer_evidence"] = nlohmann::json::parse(evidence);
 +        }
++        if (!options.owned_symbols.empty()) report["direct_owned_link_symbols"] = link_evidence.proven;
 +        if (!unchecked_link_inputs.empty()) report["unchecked_link_inputs"] = unchecked_link_inputs;
 +        output << report;
          output.close();
      }
      else {
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-index 5d235c1..a4aee6e 100644
+index 5d235c1..ad684bf 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
 @@ -39,7 +39,16 @@ Result::Result(std::string target) : target_{std::move(target)} {}
@@ -1025,7 +1255,7 @@ index 5d235c1..a4aee6e 100644
      }
  
 +    if (!unverified_link_deps_.empty()) {
-+        content += "\nRaw assembly has no included headers from these dependencies, but they have linker inputs. Validate linking before removing them:\n";
++        content += "\nObject symbols cannot prove whether these unused-header dependencies are needed for linking:\n";
 +        for (const auto& dep : unverified_link_deps_) content += "  " + dep + "\n";
 +    }
 +
@@ -1059,6 +1289,58 @@ index 4129d2d..8696486 100644
 +    std::set<std::string> unverified_link_deps_;
      std::set<std::string> public_dep_which_should_be_private_;
  };
+ 
+diff --git a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
+index 1af6179..40045fd 100644
+--- a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
++++ b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.cpp
+@@ -50,7 +50,7 @@ void TargetUsage::update(const Status usage_update) {
+ 
+ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_inspection,
+                                                const std::vector<std::string>& deps,
+-                                               const std::vector<std::string>& impl_deps) {
++                                               const std::vector<std::string>& impl_deps, bool inspect_headerless) {
+     SystemUnderInspection system{};
+ 
+     system.target_under_inspection = getTargetUnderInspectionFromFile(target_under_inspection);
+@@ -58,6 +58,7 @@ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_i
+     for (const auto& file_path : deps) {
+         const auto data = readJsonFromFile(file_path);
+         auto cc_dep = std::make_shared<CcDependency>(CcDependency{data["target"].get<std::string>(), TargetUsage{}});
++        if (inspect_headerless || !data["header_files"].empty()) system.public_deps.push_back(cc_dep);
+         for (const auto& header_file : data["header_files"].get<std::vector<std::string>>()) {
+             updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_public_deps_map);
+             updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_all_deps_map);
+@@ -67,6 +68,7 @@ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_i
+     for (const auto& file_path : impl_deps) {
+         const auto data = readJsonFromFile(file_path);
+         auto cc_dep = std::make_shared<CcDependency>(CcDependency{data["target"].get<std::string>(), TargetUsage{}});
++        if (inspect_headerless || !data["header_files"].empty()) system.private_deps.push_back(cc_dep);
+         for (const auto& header_file : data["header_files"].get<std::vector<std::string>>()) {
+             updateHeadersToDepsMap(header_file, cc_dep, system.headers_to_all_deps_map);
+         }
+diff --git a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
+index 70a8ae5..a899c6b 100644
+--- a/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
++++ b/dwyu/cc/aspect/private/analyze_includes/system_under_inspection.h
+@@ -42,15 +42,13 @@ struct SystemUnderInspection {
+     CcTargetUnderInspection target_under_inspection;
+     HeadersToDepsMap headers_to_public_deps_map;
+     HeadersToDepsMap headers_to_all_deps_map;
++    std::vector<std::shared_ptr<CcDependency>> public_deps;
++    std::vector<std::shared_ptr<CcDependency>> private_deps;
+ };
+ 
+-// This function will drop dependencies not offering any headers.
+-// Some dependencies contain no headers and provide only libraries to link against. Since our analysis is based on
+-// includes we are not interested in those and throw them away to prevent them raising findings regarding unused
+-// dependencies.
+ SystemUnderInspection getSystemUnderInspection(const std::string& target_under_inspection,
+                                                const std::vector<std::string>& deps,
+-                                               const std::vector<std::string>& impl_deps);
++                                               const std::vector<std::string>& impl_deps, bool inspect_headerless = false);
+ 
+ } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/preprocessing/BUILD b/dwyu/cc/aspect/private/preprocessing/BUILD
 index e914b98..96a1fc6 100644

@@ -2202,10 +2202,11 @@ ch_cc_library(
     copts =
         _LLVM_PROJECT_COPTS,
     implementation_deps = [
+        ":LLVMCore",
         ":llvm_headers",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMCore"],
+    deps = [],
 )
 
 ch_cc_library(

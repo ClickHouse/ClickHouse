@@ -1,0 +1,66 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(name = "api", hdrs = ["api.h"])
+cc_library(name = "provider", srcs = ["provider.cpp"])
+cc_library(name = "unrelated_with_header", srcs = ["unused.cpp"], hdrs = ["unrelated.h"])
+cc_library(name = "unrelated_without_header", srcs = ["unused.cpp"])
+cc_library(name = "bridge", deps = [":provider"])
+cc_library(name = "api_bridge", deps = [":api"])
+cc_library(name = "weak_provider", srcs = ["weak_provider.cpp"])
+cc_library(name = "other_weak_provider", srcs = ["weak_provider.cpp"])
+cc_library(
+    name = "private",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api", ":provider"],
+)
+cc_library(
+    name = "negative_public",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api"],
+    deps = [":provider"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_headerless",
+    srcs = ["idle.cpp"],
+    implementation_deps = [":unrelated_without_header"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_unused_hdrs",
+    srcs = ["idle.cpp"],
+    implementation_deps = [":unrelated_with_header"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_self_defined",
+    srcs = ["consumer.cpp", "provider.cpp"],
+    implementation_deps = [":api", ":provider"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_bridge",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api", ":bridge"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_missing_header",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api_bridge", ":provider"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_weak_undefined",
+    srcs = ["weak.cpp"],
+    implementation_deps = [":provider"],
+    tags = ["manual"],
+)
+cc_library(
+    name = "negative_weak_duplicate",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [":api", ":weak_provider", ":other_weak_provider"],
+    tags = ["manual"],
+)
