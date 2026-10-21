@@ -120,11 +120,17 @@ std::optional<ColumnPtr> convertToDecimalColumnNative(
         return build(to_type.getScaleMultiplier() * ToField(static_cast<typename ToField::NativeType>(v)));
     };
 
-    /// Decimals: mirror `convertDecimalToDecimalType` + the strict `accurateEquals` lossy-reject.
+    /// Decimals: mirror `convertDecimalToDecimalType` + the strict `accurateEquals` lossy-reject. A strict
+    /// conversion that does not fit `to_type` at its scale is not representable rather than `DECIMAL_OVERFLOW`
+    /// (`tryConvertDecimals`, as there), so a literal `IN` set skips such a member instead of failing.
     auto from_decimal = [&]<typename FromField>(const FromField & src, UInt32 from_scale) -> ColumnPtr
     {
         using FromDataType = DataTypeDecimal<FromField>;
-        const ToField converted = convertDecimals<FromDataType, ToDataType>(src, from_scale, to_scale);
+        ToField converted{};
+        if (!strict)
+            converted = convertDecimals<FromDataType, ToDataType>(src, from_scale, to_scale);
+        else if (!tryConvertDecimals<FromDataType, ToDataType>(src, from_scale, to_scale, converted))
+            return ColumnPtr{};
         if (strict
             && !accurateEquals(Field(DecimalField<FromField>(src, from_scale)), Field(DecimalField<ToField>(converted, to_scale))))
             return ColumnPtr{};

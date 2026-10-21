@@ -256,6 +256,11 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         /// use `castColumnAccurateOrNull`, which would round `33.33` to `33.3` instead of rejecting it).
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
+        /// Rescaling that does not fit the target: `strict` -> not representable (an `IN` set skips it), while
+        /// the default mode throws `DECIMAL_OVERFLOW` (null on both sides through the `try` variants).
+        {"Decimal128(0)", Field(DecimalField<Decimal128>(Decimal128(1000000000), 0)), "Decimal128(30)", true},
+        {"Decimal128(0)", Field(DecimalField<Decimal128>(Decimal128(1000000000), 0)), "Decimal128(30)"},
+        {"Decimal128(0)", Field(DecimalField<Decimal128>(Decimal128(170141183), 0)), "Decimal128(30)", true}, // fits
     };
 
     for (const auto & c : cases)
