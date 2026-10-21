@@ -75,14 +75,16 @@ private:
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
     std::mutex deletes_mutex;
     std::condition_variable delete_manifest_parsed;
-    std::unique_ptr<Iceberg::ManifestFilesPrefetcher> delete_manifests TSA_GUARDED_BY(deletes_mutex);
+    /// Delete manifests not yet taken.
+    size_t delete_manifests_left TSA_GUARDED_BY(deletes_mutex) = 0;
     size_t delete_manifests_in_progress TSA_GUARDED_BY(deletes_mutex) = 0;
     bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
 
     std::mutex data_files_mutex;
     std::condition_variable data_manifest_released;
-    std::unique_ptr<Iceberg::ManifestFilesPrefetcher> data_manifests TSA_GUARDED_BY(data_files_mutex);
+    /// The delete manifests, then the data manifests: one read-ahead window for both.
+    std::unique_ptr<Iceberg::ManifestFilesPrefetcher> manifests TSA_GUARDED_BY(data_files_mutex);
     /// Partially read manifests, each used by one thread at a time.
     std::vector<Iceberg::ManifestIteratorPtr> idle_data_manifests TSA_GUARDED_BY(data_files_mutex);
     size_t data_manifests_in_use TSA_GUARDED_BY(data_files_mutex) = 0;

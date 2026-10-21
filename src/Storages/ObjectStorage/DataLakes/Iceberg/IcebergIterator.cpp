@@ -242,10 +242,12 @@ IcebergIterator::IcebergIterator(
         }
     }
 
-    delete_manifests = std::make_unique<Iceberg::ManifestFilesPrefetcher>(
-        object_storage, persistent_components, local_context, logger, std::move(delete_manifest_keys));
-    data_manifests = std::make_unique<Iceberg::ManifestFilesPrefetcher>(
-        object_storage, persistent_components, local_context, logger, std::move(data_manifest_keys));
+    delete_manifests_left = delete_manifest_keys.size();
+    ManifestFileCacheKeys manifest_keys = std::move(delete_manifest_keys);
+    manifest_keys.insert(
+        manifest_keys.end(), std::make_move_iterator(data_manifest_keys.begin()), std::make_move_iterator(data_manifest_keys.end()));
+    manifests = std::make_unique<Iceberg::ManifestFilesPrefetcher>(
+        object_storage, persistent_components, local_context, logger, std::move(manifest_keys));
 }
 
 void IcebergIterator::ensureDeletesReady()
@@ -257,21 +259,9 @@ void IcebergIterator::ensureDeletesReady()
     {
         /// Stored rather than rethrown from a fresh parse, so that every `next` thread sees one error.
         if (deletes_exception)
-            std::rethrow_exception(deletes_exception);
+            std::rethrow_exception(copyMutableException(deletes_exception));
 
-        Iceberg::ManifestFilesPrefetcher::FetchPtr fetch;
-        try
-        {
-            fetch = delete_manifests->take();
-        }
-        catch (...)
-        {
-            deletes_exception = std::current_exception();
-            delete_manifest_parsed.notify_all();
-            throw;
-        }
-
-        if (!fetch)
+        if (delete_manifests_left == 0)
         {
             if (delete_manifests_in_progress != 0)
             {
@@ -290,6 +280,36 @@ void IcebergIterator::ensureDeletesReady()
             break;
         }
 
+        Iceberg::ManifestFilesPrefetcher::FetchPtr fetch;
+        try
+        {
+            /// Lock order: `deletes_mutex`, then `data_files_mutex`.
+            std::lock_guard data_lock(data_files_mutex);
+            fetch = manifests->take();
+        }
+        catch (...)
+        {
+            deletes_exception = std::current_exception();
+            delete_manifest_parsed.notify_all();
+            throw;
+        }
+
+        if (!fetch)
+        {
+            /// Every slot is held by a delete manifest another thread is parsing.
+            if (delete_manifests_in_progress == 0)
+            {
+                /// Stored, so that the other threads waiting here see it too.
+                deletes_exception = std::make_exception_ptr(Exception(
+                    ErrorCodes::LOGICAL_ERROR, "No read-ahead slot is free while no Iceberg delete manifest is being parsed"));
+                delete_manifest_parsed.notify_all();
+                continue;
+            }
+            delete_manifest_parsed.wait(lock.getUnderlyingLock());
+            continue;
+        }
+        chassert(fetch->key().content_type == Iceberg::ManifestFileContentType::DELETE);
+        --delete_manifests_left;
         ++delete_manifests_in_progress;
         lock.unlock();
 
@@ -354,7 +374,7 @@ Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
     while (true)
     {
         if (data_files_exception)
-            std::rethrow_exception(data_files_exception);
+            std::rethrow_exception(copyMutableException(data_files_exception));
 
         Iceberg::ManifestIteratorPtr manifest;
         Iceberg::ManifestFilesPrefetcher::FetchPtr fetch;
@@ -367,7 +387,7 @@ Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
         {
             try
             {
-                fetch = data_manifests->take();
+                fetch = manifests->take();
             }
             catch (...)
             {
