@@ -99,5 +99,40 @@ FROM
 
 DROP TABLE t_tail;
 DROP TABLE t_tail_real;
+
+-- each part has a window of 8 marks and a window of 1 mark, and a step of 2 samples one of them. Only the 8-mark windows survive
+SELECT '-- windows with different marks count with their marks, so the estimate holds the real granules';
+DROP TABLE IF EXISTS t_uneven;
+DROP TABLE IF EXISTS t_uneven_real;
+CREATE TABLE t_uneven (x UInt64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_uneven_real (x UInt64, INDEX idx_x x TYPE minmax GRANULARITY 8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_uneven;
+SYSTEM STOP MERGES t_uneven_real;
+-- 30 parts of 900 rows
+INSERT INTO t_uneven SELECT number % 900 FROM numbers(27000)
+    SETTINGS max_block_size = 900, max_insert_block_size = 900, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+INSERT INTO t_uneven_real SELECT number % 900 FROM numbers(27000)
+    SETTINGS max_block_size = 900, max_insert_block_size = 900, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+CREATE HYPOTHETICAL INDEX idx_x ON t_uneven (x) TYPE minmax GRANULARITY 8;
+SELECT
+    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_uneven' AND active) AS parts,
+    extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
+    extractGroups(report, 'With idx_x [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
+    real,
+    real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
+FROM
+(
+    SELECT arrayStringConcat(groupArray(explain), '\n') AS report
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 13500 SELECT x FROM t_uneven WHERE x < 800)
+) AS estimated,
+(
+    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
+    FROM (EXPLAIN indexes = 1 SELECT x FROM t_uneven_real WHERE x < 800 SETTINGS use_skip_indexes_on_data_read = 0)
+) AS materialized;
+
+DROP TABLE t_uneven;
+DROP TABLE t_uneven_real;
 DROP TABLE t_budget;
 DROP TABLE t_budget_real;

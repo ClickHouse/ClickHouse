@@ -198,7 +198,7 @@ bool tryEstimateEmpirical(
     if (sampled)
         surviving_marks = nullptr;
 
-    /// a sampled part scales its count to its baseline marks, and the sampling error widens the span
+    /// the sampled parts scale their surviving share to their baseline marks, and the sampling error widens the span
     double estimated_survivors = 0;
     UInt64 sampled_part_marks = 0;
     size_t sampled_part_windows = 0;
@@ -234,8 +234,6 @@ bool tryEstimateEmpirical(
         const UInt64 skipped_before = skipped_data_granules;
         const UInt64 rows_before = total_rows_read;
         const size_t window_weights_before = window_weights.size();
-        double part_weighted_marks = 0;
-        double part_weighted_survivors = 0;
 
         /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
@@ -316,13 +314,9 @@ bool tryEstimateEmpirical(
                 {
                     /// every sampled window overlaps the baseline, so the windows flush in the order of the sample
                     chassert(window_weights.size() - window_weights_before < sample_weights[part_idx].size());
-                    const double weight = sample_weights[part_idx][window_weights.size() - window_weights_before]
-                        * static_cast<double>(baseline_marks_in_window);
-                    part_weighted_marks += weight;
-                    if (survives)
-                        part_weighted_survivors += weight;
                     window_survives.push_back(survives);
-                    window_weights.push_back(weight);
+                    window_weights.push_back(sample_weights[part_idx][window_weights.size() - window_weights_before]
+                        * static_cast<double>(baseline_marks_in_window));
                 }
             };
 
@@ -415,9 +409,6 @@ bool tryEstimateEmpirical(
             estimated_survivors += static_cast<double>(part_survivors);
             continue;
         }
-        /// the scan does not count a trailing window with an empty aggregator, so a sampled part can count no marks
-        estimated_survivors
-            += part_weighted_survivors * static_cast<double>(part_baseline_marks) / std::max(part_weighted_marks, 1.0);
         sampled_part_marks += part_baseline_marks;
         sampled_part_windows += part_windows[part_idx];
     }
@@ -440,6 +431,17 @@ bool tryEstimateEmpirical(
         result.estimated_marks = total_data_granules - skipped_data_granules;
         return true;
     }
+
+    /// one share for all sampled parts: a share for each part would drop the marks of its windows when it samples few
+    double weighted_marks = 0;
+    double weighted_survivors = 0;
+    for (size_t i = 0; i < window_survives.size(); ++i)
+    {
+        weighted_marks += window_weights[i];
+        weighted_survivors += window_survives[i] * window_weights[i];
+    }
+    /// the scan does not count a trailing window with an empty aggregator, so the sampled parts can count no marks
+    estimated_survivors += weighted_survivors * static_cast<double>(sampled_part_marks) / std::max(weighted_marks, 1.0);
 
     /// one range that the sample missed, with its ends known only to a step, and two standard errors of the surviving
     /// share (successive differences, which fit a systematic sample)
