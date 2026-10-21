@@ -79,6 +79,9 @@ MergeTreeReadPoolStatelessParts::MergeTreeReadPoolStatelessParts(
     , per_part_task_infos(read_from_parts_info.parts.size())
 {
     is_part_on_remote_disk.assign(read_from_parts_info.parts.size(), read_from_parts_info.disk->isRemote());
+    /// The parts belong to no table, so the columns cache is not used for them, and the cuts of the
+    /// tasks need not be aligned to its stripes.
+    columns_cache_stripe_marks.assign(read_from_parts_info.parts.size(), 0);
     fillPerThreadInfoForBorrowedParts(pool_settings.threads);
 }
 
