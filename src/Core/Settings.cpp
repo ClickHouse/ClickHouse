@@ -3008,7 +3008,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.10", false, false, "New setting to stream sampled query stack traces over the native protocol and HTTP framing formats."}) \
+        {"26.11", false, false, "New setting to stream sampled query stack traces over the native protocol and HTTP framing formats."}) \
     \
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
