@@ -229,6 +229,17 @@ if (OS_DARWIN)
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
+    # Emit chained fixups (`LC_DYLD_CHAINED_FIXUPS`) instead of classic dyld rebase/bind opcodes.
+    # The clickhouse binary has about 1.4 million fixups; with opcodes dyld applies all of them
+    # at launch, touching every data page, while chained fixups are applied lazily as pages are
+    # first touched, which makes startup faster.
+    # Chained fixups need macOS 11, which is already the minimum for arm64, so this is not
+    # enabled for x86_64, where the deployment target is 10.15.
+    # Both lld and the cctools `ld` used for cross-compilation in CI understand the flag.
+    if (ARCH_AARCH64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-fixup_chains")
+    endif ()
+
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -507,16 +518,23 @@ endif()
 # https://stackoverflow.com/questions/63386189/whats-the-difference-between-a-compilers-o0-option-and-og-option/63386263#63386263
 set(DEBUG_O_LEVEL "g" CACHE STRING "The -Ox level used for debug builds")
 
+# x86-64 MSan builds use -O2: their instrumented code must stay within the 2 GiB reach of the small code model.
+if (SANITIZE STREQUAL "memory" AND ARCH_AMD64 AND NOT ENABLE_FUZZING)
+    set (RELWITHDEBINFO_OPT_LEVEL "-O2")
+else ()
+    set (RELWITHDEBINFO_OPT_LEVEL "-O3")
+endif ()
+
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 
 set (CMAKE_ASM_FLAGS                     "${CMAKE_ASM_FLAGS} ${COMPILER_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
-set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 
 if (OS_DARWIN)
