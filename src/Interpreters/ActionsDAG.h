@@ -157,7 +157,8 @@ public:
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
