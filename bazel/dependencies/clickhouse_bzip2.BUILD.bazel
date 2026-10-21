@@ -29,8 +29,10 @@ ch_cc_library(
         "compress.c",
         "decompress.c",
         "bzlib.c",
+        "bzlib_private.h",
+        ":config/contrib/bzip2/bz_version.h",
     ],
-    hdrs = [":config/contrib/bzip2/bz_version.h"] + glob(["**/*.h"]),
+    hdrs = ["bzlib.h"],
     copts = [
         "-w",
         "-std=gnu11",
