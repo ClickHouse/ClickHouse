@@ -2,7 +2,16 @@
     <!-- Performance test for the `query_plan_top_k_through_array_join` optimization.
          The optimization moves the bounded sort below an `ARRAY JOIN` when the sort key does not
          reference any joined column, so both sorting and expansion process bounded input.
-         See issue #115157. -->
+         The setting is off by default, so each query runs with it off and on. See issue #115157. -->
+    <substitutions>
+        <substitution>
+            <name>top_k</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
 
     <create_query>
         CREATE TABLE topk_array_join (id UInt64, k Int64, arr Array(UInt32), payload String)
@@ -19,25 +28,25 @@
     </fill_query>
 
     <query>
-        SELECT k, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k DESC LIMIT 10 FORMAT Null
+        SELECT k, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k DESC LIMIT 10
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
     </query>
 
     <query>
-        SELECT k, arr FROM topk_array_join LEFT ARRAY JOIN arr ORDER BY k DESC LIMIT 10 FORMAT Null
+        SELECT k, arr FROM topk_array_join LEFT ARRAY JOIN arr ORDER BY k DESC LIMIT 10
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
     </query>
 
     <query>
-        SELECT k, payload, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k LIMIT 100 OFFSET 50 FORMAT Null
-    </query>
-
-    <query>
-        SELECT k, payload, arr FROM topk_array_join ARRAY JOIN arr LIMIT 100 FORMAT Null
+        SELECT k, payload, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k LIMIT 100 OFFSET 50
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
     </query>
 
     <!-- Control: the sort key is the joined column itself, so the rewrite must not fire. Guards
          against regressions in the safety check. -->
     <query>
-        SELECT arr FROM topk_array_join ARRAY JOIN arr ORDER BY arr DESC LIMIT 10 FORMAT Null
+        SELECT arr FROM topk_array_join ARRAY JOIN arr ORDER BY arr DESC LIMIT 10
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
     </query>
 
     <drop_query>DROP TABLE IF EXISTS topk_array_join</drop_query>
