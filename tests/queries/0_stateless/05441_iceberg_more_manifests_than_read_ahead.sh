@@ -17,9 +17,9 @@ $CH --query "CREATE TABLE ${TABLE} (id Int64) ENGINE = IcebergLocal('${TABLE_PAT
 # One data manifest per INSERT.
 $CH --query "$(for i in $(seq 70); do echo "INSERT INTO ${TABLE} VALUES ($i);"; done)"
 
-$CH --query "SELECT count() FROM ${TABLE} SETTINGS optimize_trivial_count_query = 1, use_iceberg_metadata_files_cache = 0, max_threads = 1"
-
 $CH --query "ALTER TABLE ${TABLE} DELETE WHERE id = 5; ALTER TABLE ${TABLE} DELETE WHERE id = 40; ALTER TABLE ${TABLE} DELETE WHERE id = 70;"
+# The trivial count reads the 70 data manifests before it meets a delete manifest and falls back to reading the table.
+$CH --query "SELECT count() FROM ${TABLE} SETTINGS optimize_trivial_count_query = 1, use_iceberg_metadata_files_cache = 0, max_threads = 1"
 
 # More than 64 data manifests and at least one delete manifest.
 PREMISE_ID="${CLICKHOUSE_DATABASE}_premise_${RANDOM}${RANDOM}"
