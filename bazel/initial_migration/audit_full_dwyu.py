@@ -43,6 +43,30 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def bep_file_matches(reference, original):
+    """Match BEP metadata against the SHA-256 and size of the original file."""
+    if not isinstance(reference, dict):
+        return False
+    has_metadata = "digest" in reference or "length" in reference
+    if has_metadata and (
+        reference.get("digest") != original["sha256"] or
+        type(reference.get("length")) not in (str, int) or
+        str(reference["length"]) != str(original["bytes"])
+    ):
+        return False
+    if "uri" not in reference:
+        return has_metadata
+    uri = reference["uri"]
+    if not isinstance(uri, str):
+        return False
+    match = re.fullmatch(
+        r"bytestream://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?"
+        r"(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*/blobs/([0-9a-f]{64})/(0|[1-9][0-9]*)",
+        uri,
+    )
+    return bool(match and match[1] == original["sha256"] and match[2] == str(original["bytes"]))
+
+
 def canonical(label):
     # --consistent_labels uses Starlark str(Label) and BEP uses @@ for main.
     if label.startswith("@@//"):
@@ -439,11 +463,7 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         candidates = [a["primaryOutput"] for _, a in actions_for_output if a.get("success") and "primaryOutput" in a]
         if relative in named_files:
             candidates.append(named_files[relative])
-        proved = any(
-            f.get("digest") == report["report"]["sha256"] and
-            int(f.get("length", -1)) == report["report"]["bytes"]
-            for f in candidates
-        )
+        proved = any(bep_file_matches(f, report["report"]) for f in candidates)
         if source.get("unchecked_link_inputs") or configured_headers[0]["contents"]["unchecked_link_inputs"]:
             report["status"] = "unchecked_link_inputs"
         elif source["unverified_compilation_deps"]:
@@ -525,8 +545,7 @@ def read_strict(row, events, path, original_deleted, filesets):
                     relative = Path(*item.get("pathPrefix", [])) / item["name"]
                     if str(path).endswith("/" + str(relative)):
                         matches.append(item)
-            if len(matches) != 1 or matches[0].get("digest") != result["report"]["sha256"] or int(
-                    matches[0].get("length", -1)) != result["report"]["bytes"]:
+            if len(matches) != 1 or not bep_file_matches(matches[0], result["report"]):
                 raise ValueError("fresh report lacks matching successful BEP digest/length")
         if report.get("unchecked_link_inputs"):
             result["status"] = "unchecked_link_inputs"

@@ -170,6 +170,13 @@ matches each original `DwyuAnalyzeTarget` action and BEP to its owner before
 using a report. A clean owner requires the actual report bytes, no missing or
 unused dependency findings, and no unverified assembly or link dependencies.
 Missing reports and untested tool configurations do not pass.
+For successful actions, the auditor accepts either explicit BEP digest/length
+fields or a canonical `bytestream://` blob URI containing SHA-256 and size.
+Both must match the actual report bytes; contradictory or malformed metadata
+is rejected. The report must still satisfy all current CPP and linker checks.
+An earlier x86 full audit ran out of Bazel Java heap. Its 286 recovered URI
+outputs match their recorded bytes, but lack the newer linker fields and
+remain unproved; they do not establish current repository cleanliness.
 
 The default root `//:clickhouse` covers the binary's configured graph. It
 does not cover every target in the repository. Repeat `--seed` for additional
