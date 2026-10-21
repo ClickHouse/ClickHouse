@@ -67,9 +67,9 @@ mkfifo "$FIFO"
 ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CLICKHOUSE_HOST}" \
     "INSERT INTO ${CLICKHOUSE_DATABASE}.t SETTINGS log_comment = '${MARKER}' FORMAT TSV" < "$FIFO" 2>"$SSH_STDERR" &
 SSH_PID=$!
-exec 3>"$FIFO"
+exec {fifo_fd}>"$FIFO"
 # The INSERT starts once its input has data.
-echo 1 >&3
+echo 1 >&"$fifo_fd"
 wait_running 1
 echo "$running"
 
@@ -79,7 +79,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY executable_pool_complex_i
 ${CLICKHOUSE_CLIENT} --query "SELECT dictGet('executable_pool_complex_implicit_key', 'a', ('1', '1'))"
 
 # The end of the input must reach the INSERT although the process started above is still running.
-exec 3>&-
+exec {fifo_fd}>&-
 wait_running 0
 echo "$running"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t"
