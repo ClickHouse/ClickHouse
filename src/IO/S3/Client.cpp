@@ -187,7 +187,8 @@ void Client::RetryStrategy::RequestBookkeeping(
 namespace
 {
 
-/// AWS calls this request's hook before retry sleep, while its shared retry strategy has no request context.
+/// The AWS SDK calls the request's retry handler before waiting for the next attempt.
+/// Check for cancellation there, and restore the original handler when this scope ends.
 class RequestRetryScope
 {
 public:
@@ -1054,7 +1055,7 @@ void Client::slowDownAfterRetryableError() const
         return;
 
     /// Unlike finite per-request backoff, `next_time_to_retry_after_retryable_error` can be extended
-    /// indefinitely by other requests. Poll cancellation during the wait, not just before the next attempt.
+    /// indefinitely by other requests. Poll cancellation during the wait.
     for (;;)
     {
         UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();

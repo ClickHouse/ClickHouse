@@ -83,7 +83,10 @@ struct MergeListElement : boost::noncopyable
 private:
     struct CancellationState : OperationCancellationState
     {
-        /// Published once by merge preparation; the copied blocker retains its counter.
+        /// When `MergeTask` decides to remove expired values, `enableTTLCancellation` copies its TTL blocker here,
+        /// then sets `ttl_enabled`. The cancellation predicate reads the copy only after it sees that flag.
+        /// The copy shares ownership of the original blocker's counter, so it sees later cancellation requests
+        /// and keeps the counter alive while the predicate uses it.
         std::optional<ActionBlocker> ttl_blocker;
         std::atomic_bool ttl_enabled{false};
     };

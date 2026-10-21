@@ -6,9 +6,8 @@
 namespace DB
 {
 
-/// `StopWork` stops ordinary work at cancellation checks. Cleanup uses `QueryCancellationBlocker`
-/// to preserve rollback safety, even when retries must continue indefinitely.
-/// Cancellation does not interrupt a running syscall or guarantee bounded shutdown.
+/// Note that `StopWork` requests cooperative cancellation: the operation stops at its next cancellation check.
+/// It itself remains responsible for rollback and cleanup. If you want to protect a cleanup, use ThreadStatus::QueryCancellationBlocker
 enum class CancellationRequest
 {
     None,

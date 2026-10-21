@@ -50,7 +50,8 @@ public:
 
     void cancel() noexcept override
     {
-        /// `executeHere` cancels the in-flight child; reclaim returned, uncommitted intermediates here.
+        /// If a projection merge fails, `executeHere` cancels that merge.
+        /// Here we undo uncommitted transactions for temporary parts already stored in `level_parts`.
         for (auto & [_, parts] : level_parts)
             for (auto & part : parts)
                 part->getDataPartStorage().undoTransactionIfUncommitted();

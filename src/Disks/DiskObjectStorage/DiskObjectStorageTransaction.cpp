@@ -733,8 +733,9 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 bool DiskObjectStorageTransaction::canUndoBeforeCommit() const
 {
-    /// Local metadata keeps fresh keys unpublished until commit; hardlinks are absent from `written_blobs`.
-    /// Cache metadata delegates these properties. Path-based/eager backends can already reference live data.
+    /// With local metadata, we can delete newly written blobs before commit: no committed file references them yet,
+    /// and their random paths keep them separate from existing blobs. Hardlinks do not add blobs to `written_blobs`.
+    /// Other backends can reuse existing paths or make changes visible before commit, so deletion could remove live data.
     return !commit_started
         && metadata_storage->getType() == MetadataStorageType::Local
         && metadata_storage->areBlobPathsRandom()
