@@ -187,6 +187,8 @@ namespace
         }
         return "";
     }
+    /// The generated `sample_kinds` column of the time ranges table, with `min_time` and `max_time` aggregated.
+    const String AGGREGATED_SAMPLE_KINDS_COLUMN = ", `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)";
 
     /// The generated columns and engines of the inner tables of a table with the default settings.
     const String DEFAULT_ID_TYPE = "Tuple(UInt64, LowCardinality(UUID))";
@@ -200,14 +202,12 @@ namespace
         + ", `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String)" + DEFAULT_TAGS_INDEX;
     const String DEFAULT_TAGS_ENGINE = "ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192";
     const String DEFAULT_TIME_RANGES_COLUMNS = "`id` " + DEFAULT_ID_TYPE
-        + ", `min_time` SimpleAggregateFunction(min, DateTime64(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)), `sample_kinds` UInt8";
+        + ", `min_time` SimpleAggregateFunction(min, DateTime64(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3))" + AGGREGATED_SAMPLE_KINDS_COLUMN;
     const String DEFAULT_TIME_RANGES_ENGINE = "AggregatingMergeTree ORDER BY id";
     const String DEFAULT_METRIC_FAMILIES_COLUMNS = "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String";
     const String DEFAULT_METRIC_FAMILIES_ENGINE = "ReplacingMergeTree ORDER BY metric_family";
     const String DEFAULT_TIMESTAMP_TYPE = "DateTime64(3)";
 
-    /// The generated `sample_kinds` column of the tags table, with `min_time` and `max_time` aggregated or not.
-    const String AGGREGATED_SAMPLE_KINDS_COLUMN = ", `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)";
 
     /// The `version` setting as written in a normalized definition.
     String versionSetting(UInt64 version)
@@ -304,7 +304,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TimeRangesTarget)
         "CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(6)) "
         "TIME RANGES INNER COLUMNS (id UInt64) TIME RANGES INNER ENGINE = AggregatingMergeTree");
     EXPECT_EQ(extractInnerColumns(definition, "TIME RANGES"),
-        "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))");
+        "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))" + AGGREGATED_SAMPLE_KINDS_COLUMN);
     EXPECT_EQ(extractInnerEngine(definition, "TIME RANGES"), DEFAULT_TIME_RANGES_ENGINE);
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64 DEFAULT sipHash64(tags), ")) << definition;
 
@@ -319,7 +319,8 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TimeRangesTarget)
     params.external_target_columns[ViewTarget::TimeRanges] = makeColumns({
         makeColumn("id", "UInt64"),
         makeColumn("min_time", "SimpleAggregateFunction(min, DateTime64(3))"),
-        makeColumn("max_time", "SimpleAggregateFunction(max, DateTime64(3))")});
+        makeColumn("max_time", "SimpleAggregateFunction(max, DateTime64(3))"),
+        makeColumn("sample_kinds", "SimpleAggregateFunction(groupBitOr, UInt8)")});
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries TIME RANGES db.ext_time_ranges", params);
     EXPECT_TRUE(definition.contains(" TIME RANGES db.ext_time_ranges")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "TIME RANGES"), "");
@@ -416,7 +417,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TypesDeclaredInInnerColumns)
         "`id` UInt64, `timestamp` DateTime64(6) CODEC(Delta, T64, ZSTD(3)), `value` Float32 CODEC(ALP, ZSTD(3))");
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64 DEFAULT sipHash64(tags), ")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "TIME RANGES"),
-        "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))");
+        "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))" + AGGREGATED_SAMPLE_KINDS_COLUMN);
 
     /// The same type declared in several places must be the same everywhere.
     EXPECT_EQ(getExceptionCode([]
@@ -563,7 +564,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTargetTablesDefineTypes)
     definition = normalizeNewTable(
         "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES db.ext_samples TAGS db.ext_tags METRIC FAMILIES db.ext_metric_families", params);
     EXPECT_EQ(extractInnerColumns(definition, "TIME RANGES"),
-        "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))");
+        "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))" + AGGREGATED_SAMPLE_KINDS_COLUMN);
 }
 
 
@@ -906,7 +907,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
     /// key as generated, so it is stripped rather than carried over as if it had been declared.
     auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 7"));
-    EXPECT_TRUE(copy.contains("version = 9")) << copy;
+    EXPECT_TRUE(copy.contains(latest_version_setting)) << copy;
     EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), pinned_engine);
 
     static constexpr std::string_view legacy_replicated_engine
@@ -927,7 +928,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
 
     auto replicated_copy = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", replicated_src);
-    EXPECT_TRUE(replicated_copy.contains("version = 9")) << replicated_copy;
+    EXPECT_TRUE(replicated_copy.contains(latest_version_setting)) << replicated_copy;
     EXPECT_EQ(extractInnerEngine(replicated_copy, "RECENT SAMPLES"), pinned_replicated_engine);
 
     /// An explicit custom partition key is preserved on copy even when the engine has arguments.
@@ -1025,7 +1026,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
         "`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), "
         "`min_time` Nullable(DateTime64(6)), `max_time` Nullable(DateTime64(6))" + DEFAULT_TAGS_INDEX);
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
-        "ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time, sample_kinds) "
+        "ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id, min_time, max_time) "
         "SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0, allow_nullable_key = 1");
     EXPECT_FALSE(definition.contains("TIME RANGES")) << definition;
 

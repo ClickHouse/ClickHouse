@@ -105,9 +105,13 @@ bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_
 
 bool isTimeSeriesHistogramsTargetEnabled(const ASTCreateQuery & query, bool for_restore)
 {
-    return hasTimeSeriesTargetDefinition(query, ViewTarget::Histograms)
-        || getTimeSeriesVersion(query) >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET
-        || !for_restore;
+    if (hasTimeSeriesTargetDefinition(query, ViewTarget::Histograms))
+        return true;
+
+    if (for_restore && !hasExplicitTimeSeriesVersion(query))
+        return false;
+
+    return getTimeSeriesVersion(query) >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET;
 }
 
 bool hasTimeSeriesTargetDefinition(const ASTCreateQuery & query, ViewTarget::Kind kind)

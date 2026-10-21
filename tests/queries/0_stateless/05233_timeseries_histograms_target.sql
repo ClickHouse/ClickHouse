@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS ts_hist_copy;
 DROP TABLE IF EXISTS ts_hist_default;
 DROP TABLE IF EXISTS ts_hist_granularity;
 
-CREATE TABLE ts_hist ENGINE = TimeSeries SETTINGS version = 8;
+CREATE TABLE ts_hist ENGINE = TimeSeries SETTINGS version = 10;
 
 SELECT '--- a table of the min histograms supported version has a generated histograms table ---';
 SELECT extract(create_table_query, 'version = (\d+)'),

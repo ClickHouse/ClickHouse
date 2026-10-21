@@ -122,9 +122,10 @@ namespace
     {
         const IColumn & timestamps;
         const ColumnArray::Offsets & offsets;
+        UInt8 sample_kind = TimeSeriesSampleKinds::None;
     };
 
-    /// Fills columns id, min_time and max_time for the "time ranges" table.
+    /// Fills columns id, min_time, max_time and sample_kinds for the "time ranges" table.
     /// Time series without samples are skipped: they have no time range.
     void fillTimeRangesColumns(
         const PaddedPODArray<UInt8> & filter,
@@ -132,73 +133,68 @@ namespace
         std::span<const TimestampsArray> timestamps_arrays,
         IColumn & out_id_column,
         IColumn & out_min_time_column,
-        IColumn & out_max_time_column)
+        IColumn & out_max_time_column,
+        IColumn * out_sample_kinds_column)
     {
+        struct TimeRangeInfo
+        {
+            TimeRangeInfo(Field && min, Field && max, UInt8 sample_kinds_)
+                : min_max(std::move(min), std::move(max)), sample_kinds(sample_kinds_)
+            {}
+
+            std::pair<Field, Field> min_max;
+            UInt8 sample_kinds = TimeSeriesSampleKinds::None;
+        };
+
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
         {
             if (!filter[i])
                 continue;
 
-            std::optional<std::pair<Field, Field>> min_max;
-            for (const auto & [timestamps, offsets] : timestamps_arrays)
+            std::optional<TimeRangeInfo> info;
+            for (const auto & [timestamps, offsets, kind] : timestamps_arrays)
             {
                 const size_t start = (i == 0) ? 0 : offsets[i - 1];
                 const size_t end = offsets[i];
                 if (start == end)
                     continue;
 
+                chassert(kind != TimeSeriesSampleKinds::None);
+
                 auto [min_time, max_time] = findMinMax(timestamps, start, end);
-                if (!min_max)
-                    min_max.emplace(std::move(min_time), std::move(max_time));
+                if (!info)
+                {
+                    info.emplace(std::move(min_time), std::move(max_time), kind);
+                }
                 else
                 {
-                    if (min_time < min_max->first)
-                        min_max->first = std::move(min_time);
-                    if (max_time > min_max->second)
-                        min_max->second = std::move(max_time);
+                    if (min_time < info->min_max.first)
+                        info->min_max.first = std::move(min_time);
+                    if (max_time > info->min_max.second)
+                        info->min_max.second = std::move(max_time);
+
+                    info->sample_kinds |= kind;
                 }
             }
 
-            if (min_max)
+            if (info)
             {
                 out_id_column.insertFrom(id_column, id_index);
-                out_min_time_column.insert(min_max->first);
-                out_max_time_column.insert(min_max->second);
+                out_min_time_column.insert(info->min_max.first);
+                out_max_time_column.insert(info->min_max.second);
+                if (out_sample_kinds_column)
+                    out_sample_kinds_column->insert(info->sample_kinds);
             }
 
             ++id_index;
         }
     }
 
-    /// Fills column sample_kinds for the "tags" table with the kinds of samples of every row with `filter[i]` set,
-    /// see TimeSeriesSampleKinds. `histograms_offsets` is null if no histograms are inserted.
-    void fillSampleKindsColumn(
-        const PaddedPODArray<UInt8> & filter,
-        const ColumnArray::Offsets & samples_offsets,
-        const ColumnArray::Offsets * histograms_offsets,
-        IColumn & out_sample_kinds_column)
-    {
-        const auto has_elements = [](const ColumnArray::Offsets & offsets, size_t row)
-        {
-            return offsets[row] != offsets[row - 1];
-        };
-
-        for (size_t i = 0; i < filter.size(); ++i)
-        {
-            if (!filter[i])
-                continue;
-
-            UInt8 sample_kinds = 0;
-            if (has_elements(samples_offsets, i))
-                sample_kinds |= TimeSeriesSampleKinds::Floats;
-            if (histograms_offsets && has_elements(*histograms_offsets, i))
-                sample_kinds |= TimeSeriesSampleKinds::Histograms;
-            out_sample_kinds_column.insert(sample_kinds);
-        }
-    }
     /// Fills columns min_time and max_time for the "tags" table (tables of earlier versions).
-    /// TODO(kshokhin)
+    /// Kept apart from `fillTimeRangesColumns`: the tags table has a row for every time series,
+    /// with NULL `min_time` and `max_time` for one without samples, and these tables have no sample_kinds column.
+    /// Also the write path for old tables is not expected to change.
     void fillMinMaxTimeColumns(
         const PaddedPODArray<UInt8> & filter,
         const ColumnArray::Offsets & ts_offsets,
@@ -665,12 +661,6 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         tags_header_before_id.insert(ColumnWithTypeAndName{min_max_time_type, TimeSeriesColumnNames::MaxTime});
     }
 
-    if (TimeSeriesSampleKinds::isStored(settings))
-    {
-        const auto & sample_kinds_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
-        tags_header_before_id.insert(ColumnWithTypeAndName{sample_kinds_type, TimeSeriesColumnNames::SampleKinds});
-    }
-
     /// Precompute ExpressionActions for calculating the "id" column.
     ColumnDescription id_column_description{TimeSeriesColumnNames::ID, id_type};
     id_column_description.default_desc.kind = ColumnDefaultKind::Default;
@@ -723,6 +713,11 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         time_ranges_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MinTime});
         time_ranges_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MaxTime});
+        if (TimeSeriesSampleKinds::isStored(settings))
+        {
+            const auto & sample_kinds_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
+            time_ranges_header.insert(ColumnWithTypeAndName{sample_kinds_type, TimeSeriesColumnNames::SampleKinds});
+        }
         time_ranges_pipeline = createTargetPipeline(ViewTarget::TimeRanges, time_ranges_header);
     }
 
@@ -954,39 +949,49 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// The time ranges are pushed before the samples: a time range without samples is harmless (the samples
     /// are filtered by their timestamps anyway), while samples outside of the stored time range of their
     /// time series would be invisible to queries filtering time series by time.
-    if (time_ranges_pipeline && total_samples)
+    if (time_ranges_pipeline && (total_samples || total_histograms))
     {
         auto time_ranges_id_column = id_type->createColumn();
         auto min_time_column_for_time_ranges = timestamp_type->createColumn();
         auto max_time_column_for_time_ranges = timestamp_type->createColumn();
+        MutableColumnPtr sample_kinds_column;
+        if (TimeSeriesSampleKinds::isStored(settings))
+        {
+            sample_kinds_column = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false)->createColumn();
+            sample_kinds_column->reserve(num_time_series);
+        }
         time_ranges_id_column->reserve(num_time_series);
         min_time_column_for_time_ranges->reserve(num_time_series);
         max_time_column_for_time_ranges->reserve(num_time_series);
 
         std::vector<TimestampsArray> timestamps_arrays;
-        timestamps_arrays.push_back({ts_timestamps, ts_offsets});
+        if (total_samples)
+            timestamps_arrays.push_back({ts_timestamps, ts_offsets, TimeSeriesSampleKinds::Float});
+
         if (total_histograms)
         {
             const auto & histograms_timestamps = histograms_arrays[histograms_header.getPositionByName(TimeSeriesColumnNames::Timestamp) - 1]->getData();
-            timestamps_arrays.push_back({histograms_timestamps, *histograms_offsets});
+            timestamps_arrays.push_back({histograms_timestamps, *histograms_offsets, TimeSeriesSampleKinds::Histogram});
         }
 
         fillTimeRangesColumns(
             filter,
-            *id_column, timestamps_arrays,
-            *time_ranges_id_column, *min_time_column_for_time_ranges, *max_time_column_for_time_ranges);
-
-        MutableColumnPtr sample_kinds_column;
-        sample_kinds_column = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false)->createColumn();
-        sample_kinds_column->reserve(num_time_series);
-        fillSampleKindsColumn(filter, ts_offsets, histograms_offsets, *sample_kinds_column);
+            *id_column,
+            timestamps_arrays,
+            *time_ranges_id_column,
+            *min_time_column_for_time_ranges,
+            *max_time_column_for_time_ranges,
+            sample_kinds_column.get());
 
         Block time_ranges_block;
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(time_ranges_id_column), id_type, TimeSeriesColumnNames::ID});
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(min_time_column_for_time_ranges), timestamp_type, TimeSeriesColumnNames::MinTime});
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(max_time_column_for_time_ranges), timestamp_type, TimeSeriesColumnNames::MaxTime});
-        const auto & sample_kinds_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
-        time_ranges_block.insert(ColumnWithTypeAndName{std::move(sample_kinds_column), sample_kinds_type, TimeSeriesColumnNames::SampleKinds});
+        if (sample_kinds_column)
+        {
+            const auto & sample_kinds_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
+            time_ranges_block.insert(ColumnWithTypeAndName{std::move(sample_kinds_column), sample_kinds_type, TimeSeriesColumnNames::SampleKinds});
+        }
 
         time_ranges_pipeline->push(std::move(time_ranges_block));
     }

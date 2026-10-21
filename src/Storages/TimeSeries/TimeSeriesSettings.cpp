@@ -268,9 +268,7 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
             if (reserved_tag_names.contains(tag_name))
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting `tags_to_columns`: tag name `{}` is reserved for the TimeSeries tags table", tag_name);
-            /// The column with the kinds of samples exists in tables with histograms only, an older table may use its name for a tag.
-            if (reserved_column_names.contains(column_name)
-                || (timeSeriesVersionSupportsHistograms(version) && (column_name == TimeSeriesColumnNames::SampleKinds)))
+            if (reserved_column_names.contains(column_name))
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting `tags_to_columns`: column name `{}` is reserved for the TimeSeries tags table", column_name);
             if (!seen_tag_names.insert(tag_name).second)

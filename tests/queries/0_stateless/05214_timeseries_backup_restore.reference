@@ -1,4 +1,5 @@
---- the table has five inner tables ---
+--- the table has six inner tables ---
+1
 1
 1
 1
@@ -8,6 +9,7 @@
 1
 definitions are equal
 --- the restored table has its own inner tables ---
+2
 2
 2
 2

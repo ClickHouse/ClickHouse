@@ -10,14 +10,14 @@ namespace DB
 
 namespace TimeSeriesSetting
 {
-    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_time_ranges;
     extern const TimeSeriesSettingsUInt64 version;
 }
 
 bool TimeSeriesSampleKinds::isStored(const TimeSeriesSettings & settings)
 {
     return timeSeriesVersionSupportsHistograms(settings[TimeSeriesSetting::version])
-        && settings[TimeSeriesSetting::store_min_time_and_max_time];
+        && settings[TimeSeriesSetting::store_time_ranges];
 }
 
 const DataTypePtr & TimeSeriesSampleKinds::getDataType(bool aggregated)

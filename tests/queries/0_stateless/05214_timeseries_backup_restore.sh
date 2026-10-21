@@ -45,7 +45,7 @@ $CLIENT -q "INSERT INTO ts (metric_name, tags, samples, metric_family, type, uni
 $CLIENT -q "INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_spans, histograms.positive_values_int) VALUES
     ('request_duration_seconds', {'job': 'test'}, [toDateTime64('2026-01-01 00:00:00', 3)], [3], [1.5], [[(0, 1)]], [[3]])"
 
-echo '--- the table has five inner tables ---'
+echo '--- the table has six inner tables ---'
 count_inner_tables
 
 BACKUP_NAME="${CLICKHOUSE_TEST_UNIQUE_NAME}"

@@ -36,7 +36,7 @@ CREATE TABLE prometheus ENGINE = TimeSeries SAMPLES samples_table TAGS tags_tabl
 
 INSERT INTO prometheus (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
 INSERT INTO samples_table SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(number, 3), number FROM numbers(720000);
-INSERT INTO time_ranges_table SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(0, 3), toDateTime64(720000, 3);
+INSERT INTO time_ranges_table SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(0, 3), toDateTime64(720000, 3), 1;
 OPTIMIZE TABLE samples_table FINAL;
 
 SELECT max(toUInt64OrNull(extract(explain, '× (\\d+)'))) > 1 AS is_parallel

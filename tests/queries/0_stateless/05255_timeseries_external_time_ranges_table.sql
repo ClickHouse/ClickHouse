@@ -15,7 +15,8 @@ CREATE TABLE ext_time_ranges
 (
     id Tuple(UInt64, LowCardinality(UUID)),
     min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3))
+    max_time SimpleAggregateFunction(max, DateTime64(3)),
+    sample_kinds SimpleAggregateFunction(groupBitOr, UInt8)
 ) ENGINE = AggregatingMergeTree ORDER BY id;
 CREATE TABLE ts_ext ENGINE = TimeSeries TIME RANGES ext_time_ranges;
 INSERT INTO ts_ext (metric_name, tags, samples) VALUES

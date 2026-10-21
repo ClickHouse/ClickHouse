@@ -16,7 +16,7 @@ ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
 CREATE TABLE ts_time_ranges (
     id UUID,
     min_time SimpleAggregateFunction(min, DateTime64(3, 'UTC')),
-    max_time SimpleAggregateFunction(max, DateTime64(3, 'UTC'))),
+    max_time SimpleAggregateFunction(max, DateTime64(3, 'UTC')),
     sample_kinds SimpleAggregateFunction(groupBitOr, UInt8))
 ENGINE = AggregatingMergeTree ORDER BY id;
 CREATE TABLE ts_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;

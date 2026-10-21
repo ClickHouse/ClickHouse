@@ -1170,9 +1170,9 @@ The _time ranges_ table must have columns:
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table) | Identifies a combination of a metric name and tags |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))`, optionally wrapped in `SimpleAggregateFunction(min, ...)` | Minimum timestamp of the time series with that `id` |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))`, optionally wrapped in `SimpleAggregateFunction(max, ...)` | Maximum timestamp of the time series with that `id` |
-| `sample_kinds` | [ ] | `UInt8` | `UInt8` or `SimpleAggregateFunction(groupBitOr, UInt8)` | The kinds of samples of time series with that `id`, a bitmask: 1 - float samples, 2 - [histogram](#histograms-table) samples. Every row has the kinds of the samples written together with it (aggregated like `min_time` and `max_time`), and [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) reads only the target tables of the kinds present. The column is required in tables of [version](#schema-versioning) )DOCS_MD"
+| `sample_kinds` | [ ] | `SimpleAggregateFunction(groupBitOr, UInt8)` | `UInt8` or `SimpleAggregateFunction(groupBitOr, UInt8)` | The kinds of samples of time series with that `id`, a bitmask: 1 - float samples, 2 - [histogram](#histograms-table) samples. Every row has the kinds of the samples written together with it (aggregated like `min_time` and `max_time`), and [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) reads only the target tables of the kinds present. The column is required in tables of [version](#schema-versioning) )DOCS_MD"
         + histograms_version
-        + R"DOCS_MD( and later if [store_min_time_and_max_time](#settings) is `true`.
+        + R"DOCS_MD( and later if [store_time_ranges](#settings) is `true`.
         It has no default: the `TimeSeries` table writes it with every row, and rows written to the time ranges table another way must have the
         right kinds, otherwise their samples may be missed. The engine of the time ranges table must keep the kinds when it merges rows:
         a `MergeTree` engine merging no rows, the column in the sorting key, or `AggregatingMergeTree` with the type
@@ -1180,7 +1180,7 @@ The _time ranges_ table must have columns:
         A customized `MergeTree` engine of the inner time ranges table is checked when the table is created.
         An external time ranges table, and an inner one passing its rows to other tables (e.g. `Distributed`),
         are the responsibility of their owner. See [Adding the `sample_kinds` column to an external time ranges table]
-        (#sample-kinds-external-tags-table) |
+        (#sample-kinds-external-time-ranges-table) |
 
 Every insert writes the time range and the kind of the inserted samples of each time series to this table, and the inner _time ranges_ table
 uses the [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) engine to merge those ranges into one per time series.
@@ -1193,20 +1193,20 @@ match missing labels and do not use this index.
 Explicit indexes declared in `TAGS INNER COLUMNS` replace the default index. Existing tables and external
 tags tables keep their indexes; add and materialize the index on their tags target table to enable it.
 
-#### Adding the `sample_kinds` column to an external tags table {#sample-kinds-external-tags-table}
+#### Adding the `sample_kinds` column to an external time ranges table {#sample-kinds-external-time-ranges-table}
 
 A `TimeSeries` table of version )DOCS_MD"
         + histograms_version
-        + R"DOCS_MD( or later requires the `sample_kinds` column in an external tags table. The rows written by a table of an earlier version
+        + R"DOCS_MD( or later requires the `sample_kinds` column in an external time ranges table. The rows written by a table of an earlier version
 have float samples only, so a `DEFAULT 1` fills the column for them, including the rows the old table writes until it's replaced:
 
 ```sql
-ALTER TABLE ext_tags ADD COLUMN sample_kinds SimpleAggregateFunction(groupBitOr, UInt8) DEFAULT 1;
-CREATE TABLE new_time_series_table ENGINE = TimeSeries SAMPLES ext_samples TAGS ext_tags;
+ALTER TABLE ext_time_ranges ADD COLUMN sample_kinds SimpleAggregateFunction(groupBitOr, UInt8) DEFAULT 1;
+CREATE TABLE new_time_series_table ENGINE = TimeSeries SAMPLES ext_samples TAGS ext_tags TIME RANGES ext_time_ranges;
 ```
 
-Once only the new table writes the tags table, the default can be removed:
-`ALTER TABLE ext_tags MATERIALIZE COLUMN sample_kinds` followed by `ALTER TABLE ext_tags MODIFY COLUMN sample_kinds REMOVE DEFAULT`.
+Once only the new table writes the time ranges table, the default can be removed:
+`ALTER TABLE ext_time_ranges MATERIALIZE COLUMN sample_kinds` followed by `ALTER TABLE ext_time_ranges MODIFY COLUMN sample_kinds REMOVE DEFAULT`.
 
 ### Metric families table {#metric-families-table}
 
@@ -1349,8 +1349,8 @@ TIME RANGES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
-    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)),
+    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)
 )
 TIME RANGES INNER ENGINE = AggregatingMergeTree ORDER BY id
 METRIC FAMILIES INNER COLUMNS
@@ -1441,8 +1441,8 @@ CREATE TABLE default.`.inner_id.timeranges.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
-    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)),
+    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)
 )
 ENGINE = AggregatingMergeTree
 ORDER BY id
@@ -1790,7 +1790,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | )DOCS_MD"
         + histograms_version
-        + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a fifth target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table. The [tags](#tags-table) table got the column `sample_kinds` |
+        + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table. The [time ranges](#time-ranges-table) table got the column `sample_kinds` |
 
 # Functions {#functions}
 

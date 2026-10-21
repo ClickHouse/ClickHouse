@@ -1,5 +1,5 @@
 --- a table of the min histograms supported version has a generated histograms table ---
-8	1	1
+10	1	1
 id	Tuple(UInt64, LowCardinality(UUID))	
 timestamp	DateTime64(3)	CODEC(Delta(8), T64, ZSTD(3))
 is_float	Bool	CODEC(ZSTD(3))

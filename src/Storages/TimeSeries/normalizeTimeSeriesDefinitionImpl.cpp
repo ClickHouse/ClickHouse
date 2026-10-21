@@ -651,11 +651,6 @@ namespace
             remove_column(TimeSeriesColumnNames::MaxTime);
         }
 
-        /// The column "sample_kinds" is not stored. Checked against the old settings: a table without the column may have a tag
-        /// column with this name.
-        if (TimeSeriesSampleKinds::isStored(old_settings) && !TimeSeriesSampleKinds::isStored(new_settings))
-            remove_column(TimeSeriesColumnNames::SampleKinds);
-
         /// The ephemeral column "all_tags" was used in version 0 for calculating identifiers: it contained all the tags,
         /// while the "tags" column contained only the tags without dedicated columns.
         if (old_settings[TimeSeriesSetting::version] == 0)
@@ -1028,11 +1023,15 @@ namespace
         switch (inner_table_kind)
         {
             case ViewTarget::Samples:
+            case ViewTarget::Histograms:
             {
                 engine_is_generated = !has_arguments && (engine_name == "MergeTree");
                 if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
                     inner_engine.reset(inner_engine.order_by);
-                remove_settings({{"index_granularity", settings[TimeSeriesSetting::samples_index_granularity].value}});
+                const auto index_granularity_setting = inner_table_kind == ViewTarget::Samples
+                    ? TimeSeriesSetting::samples_index_granularity
+                    : TimeSeriesSetting::histograms_index_granularity;
+                remove_settings({{"index_granularity", settings[index_granularity_setting].value}});
                 break;
             }
 
@@ -1108,16 +1107,6 @@ namespace
                 engine_is_generated = !has_arguments && (engine_name == "ReplacingMergeTree");
                 if (!inner_engine.primary_key && sorting_key_equals(TimeSeriesColumnNames::getInnerMetricFamily(settings[TimeSeriesSetting::version])))
                     inner_engine.reset(inner_engine.order_by);
-                break;
-            }
-
-            case ViewTarget::Histograms:
-            {
-                if (engine_name != "MergeTree")
-                    return;
-                if (sorting_key_equals("id, timestamp"))
-                    inner_engine.reset(inner_engine.order_by);
-                remove_settings({{"index_granularity", settings[TimeSeriesSetting::histograms_index_granularity].value}});
                 break;
             }
 
@@ -1304,13 +1293,6 @@ namespace
                     }
                 }
 
-                /// Column "sample_kinds", next to "min_time" and "max_time" and aggregated the same way.
-                if (TimeSeriesSampleKinds::isStored(time_series_settings))
-                {
-                    const bool aggregated = time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
-                    add_column_if_missing(TimeSeriesColumnNames::SampleKinds, dataTypeToAST(TimeSeriesSampleKinds::getDataType(aggregated)));
-                }
-
                 break;
             }
 
@@ -1322,6 +1304,10 @@ namespace
                 /// Columns "min_time" and "max_time" are always aggregated: the time range of a time series grows with every insert.
                 add_column_if_missing(TimeSeriesColumnNames::MinTime, makeSimpleAggregateFunctionTypeAST("min", resolved_types.timestamp_type));
                 add_column_if_missing(TimeSeriesColumnNames::MaxTime, makeSimpleAggregateFunctionTypeAST("max", resolved_types.timestamp_type));
+                if (TimeSeriesSampleKinds::isStored(time_series_settings))
+                    add_column_if_missing(TimeSeriesColumnNames::SampleKinds,
+                        dataTypeToAST(TimeSeriesSampleKinds::getDataType(/* aggregated = */ true)));
+
                 break;
             }
 
@@ -1815,10 +1801,6 @@ namespace
                         key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                         key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
 
-                        /// Not aggregated either, so the rows with other kinds of samples aren't replaced.
-                        if (TimeSeriesSampleKinds::isStored(settings))
-                            key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::SampleKinds));
-
                         /// These columns are nullable, so the sorting key needs `allow_nullable_key`.
                         set_engine_setting("allow_nullable_key", 1);
                     }
@@ -1896,11 +1878,11 @@ namespace
         return true;
     }
 
-    /// Checks the type of the column `sample_kinds` of a tags table (see TimeSeriesSampleKinds). It must be `UInt8` or
-    /// `SimpleAggregateFunction(groupBitOr, UInt8)`, and the engine of an inner tags table must keep it when it merges rows:
+    /// Checks the type of the column `sample_kinds` of a time ranges table (see TimeSeriesSampleKinds). It must be `UInt8` or
+    /// `SimpleAggregateFunction(groupBitOr, UInt8)`, and the engine of an inner time ranges table must keep it when it merges rows:
     /// a `MergeTree` engine merging no rows, the column in the sorting key, or `AggregatingMergeTree` with the aggregated type.
     /// Other engines don't merge rows themselves (e.g. `Memory`), or pass them to tables of the user (e.g. `Distributed`),
-    /// whose engines are the responsibility of the user like the engine of an external tags table (`inner_engine` is null then).
+    /// whose engines are the responsibility of the user like the engine of an external time ranges table (`inner_engine` is null then).
     void checkSampleKindsColumn(const IDataType & type, const ASTStorage * inner_engine, ViewTarget::Kind target_kind, const StorageID & table_id)
     {
         const auto & valid_plain_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
@@ -2134,8 +2116,6 @@ namespace
                     check_column_min_max_time(TimeSeriesColumnNames::MinTime, "min");
                     check_column_min_max_time(TimeSeriesColumnNames::MaxTime, "max");
                 }
-
-                check_sample_kinds_column();
                 break;
             }
 
@@ -2144,6 +2124,8 @@ namespace
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_min_max_time(TimeSeriesColumnNames::MinTime, "min");
                 check_column_min_max_time(TimeSeriesColumnNames::MaxTime, "max");
+
+                check_sample_kinds_column();
                 break;
             }
 

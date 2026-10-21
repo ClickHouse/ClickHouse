@@ -48,7 +48,10 @@ SELECT t.metric_name, h.timestamp, h.is_float, h.counter_reset_hint, h.schema, h
     ORDER BY t.metric_name, h.timestamp;
 
 SELECT '--- the time range of a time series covers its histogram samples ---';
-SELECT metric_name, min_time, max_time FROM timeSeriesTags(ts_hist) ORDER BY metric_name, tags['job'];
+SELECT t.metric_name, min(r.min_time), max(r.max_time)
+    FROM timeSeriesTimeRanges(ts_hist) AS r
+    INNER JOIN timeSeriesTags(ts_hist) AS t ON r.id = t.id
+    GROUP BY t.metric_name, t.tags['job'] ORDER BY t.metric_name, t.tags['job'];
 
 SELECT '--- reading the outer columns: a time series with samples of one kind only gets empty arrays for the other kind ---';
 SELECT metric_name, tags, samples, histograms.timestamp, histograms.schema, histograms.count_int, histograms.count_float FROM ts_hist ORDER BY metric_name, tags['job'];

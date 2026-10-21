@@ -96,7 +96,8 @@ def check_histogram_round_trip(histogram, expected_row):
     assert read_histograms() == expected_row + "\n"
     assert node.query("SELECT metric_name, tags['job'], length(histograms.timestamp), length(samples) FROM prometheus") == "hist\tapi\t1\t0\n"
     assert node.query(
-        "SELECT metric_name, toUnixTimestamp64Milli(min_time), toUnixTimestamp64Milli(max_time) FROM timeSeriesTags(prometheus)"
+        "SELECT t.metric_name, toUnixTimestamp64Milli(min(r.min_time)), toUnixTimestamp64Milli(max(r.max_time)) "
+        "FROM timeSeriesTimeRanges(prometheus) AS r INNER JOIN timeSeriesTags(prometheus) AS t ON r.id = t.id GROUP BY t.metric_name"
     ) == f"hist\t{histogram.timestamp}\t{histogram.timestamp}\n"
 
     events_after = get_events()
@@ -191,8 +192,9 @@ def test_samples_and_histograms_together():
         "mixed\t2\t1\n"
     )
     assert node.query(
-        "SELECT metric_name, toUnixTimestamp64Milli(min_time), toUnixTimestamp64Milli(max_time) "
-        "FROM timeSeriesTags(prometheus) ORDER BY metric_name"
+        "SELECT t.metric_name, toUnixTimestamp64Milli(min(r.min_time)), toUnixTimestamp64Milli(max(r.max_time)) "
+        "FROM timeSeriesTimeRanges(prometheus) AS r INNER JOIN timeSeriesTags(prometheus) AS t ON r.id = t.id "
+        "GROUP BY t.metric_name ORDER BY t.metric_name"
     ) == (
         f"float_only\t{TIMESTAMP_MS}\t{TIMESTAMP_MS}\n"
         f"hist_only\t{TIMESTAMP_MS + 2000}\t{TIMESTAMP_MS + 2000}\n"
@@ -364,7 +366,8 @@ def test_table_without_histograms_drops_them():
     assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
     assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
     assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 1
-    assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than 8")
+    # The message ends with the version which introduced the histograms table; it isn't pinned here because it changes with rebases.
+    assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than ")
 
 
 def remote_read(start_ms, end_ms):
