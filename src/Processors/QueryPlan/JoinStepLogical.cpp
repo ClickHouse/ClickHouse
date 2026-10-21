@@ -206,7 +206,7 @@ JoinStepLogical::JoinStepLogical(
     for (const auto * node_after_join : actions_after_join)
     {
         if (!all_nodes_set.contains(node_after_join))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A node after join is not in the expression actions dag");
     }
 #endif
 }
