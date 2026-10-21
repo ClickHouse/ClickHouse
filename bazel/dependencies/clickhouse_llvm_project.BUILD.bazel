@@ -4320,14 +4320,23 @@ ch_cc_library(
     deps = [],
 )
 
-cc_library(
-    name = "LLVMSupport",
-    deps = [
-        ":LLVMDemangle",
+filegroup(
+    name = "_LLVMSupport_compilation_outputs",
+    srcs = [
         ":LLVMSupport__compile_0",
         ":LLVMSupport__compile_1",
         ":LLVMSupport__compile_2",
         ":LLVMSupport__compile_3",
+    ],
+    output_group = "compilation_outputs",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "LLVMSupport",
+    srcs = [":_LLVMSupport_compilation_outputs"],
+    deps = [
+        ":LLVMDemangle",
         ":llvm_headers",
     ],
 )
