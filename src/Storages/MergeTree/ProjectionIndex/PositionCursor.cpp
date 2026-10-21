@@ -377,25 +377,30 @@ UInt32 PositionCursor::nextPosition()
     UInt32 abs_pos = 0;
     if (doc_state.is_first)
     {
+        /// `NO_MORE_POSITIONS` is the end-of-document sentinel for `PhraseCursor`, so a real
+        /// position must be strictly below it.
+        if (delta >= NO_MORE_POSITIONS) [[unlikely]]
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Corrupted projection text index: first phrase position {} is out of range",
+                delta);
         abs_pos = delta;
         doc_state.is_first = false;
     }
     else
     {
-        /// Detect UInt32 overflow before computing `abs_pos`. A corrupt delta would otherwise
-        /// wrap silently and make phrase matching report adjacency for positions that came
-        /// from arbitrary file bytes. The check is on the cold per-position path; it adds two
-        /// scalar comparisons, negligible relative to the per-position arithmetic and decode.
-        /// Both subtractions are computed in UInt64 to avoid wrap in the bound itself.
-        const UInt64 last = doc_state.last_position;
-        const UInt64 d = delta;
-        if (last + d + 1u > std::numeric_limits<UInt32>::max()) [[unlikely]]
+        /// Compute the next absolute position in UInt64 so a corrupt delta cannot wrap around.
+        /// The result is strictly greater than `last_position` by construction; it must also stay
+        /// below the `NO_MORE_POSITIONS` sentinel, otherwise phrase matching would treat it as
+        /// end-of-document or report adjacency for positions that came from arbitrary file bytes.
+        const UInt64 next = static_cast<UInt64>(doc_state.last_position) + static_cast<UInt64>(delta) + 1u;
+        if (next >= NO_MORE_POSITIONS) [[unlikely]]
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Corrupted projection text index: phrase position arithmetic overflows UInt32 "
                 "(last_position={}, delta={})",
                 doc_state.last_position, delta);
-        abs_pos = static_cast<UInt32>(last + d + 1u);
+        abs_pos = static_cast<UInt32>(next);
     }
     doc_state.last_position = abs_pos;
 
