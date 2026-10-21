@@ -2815,10 +2815,10 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
-        MutableColumns result;
-        result.resize(1);
+        MutableColumns result(1);
+        Columns shared_result(1);
 
-        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result, shared_result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -4093,9 +4093,9 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
-    MutableColumns result;
-    result.resize(1);
-    reader->readRows(0, total_mark, false, 0, result);
+    MutableColumns result(1);
+    Columns shared_result(1);
+    reader->readRows(0, total_mark, false, 0, result, shared_result);
     return std::move(result[0]);
 }
 
