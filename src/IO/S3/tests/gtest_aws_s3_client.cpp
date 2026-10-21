@@ -1788,6 +1788,8 @@ void sendHTTPBody(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPRespo
     out.flush();
 }
 
+const std::string FIBER_TEST_CREDENTIALS_JSON = R"({"AccessKeyId": "fiber_access_key", "SecretAccessKey": "fiber_secret_key", "Token": "fiber_session_token", "Expiration": "2030-01-01T00:00:00Z"})";
+
 DB::S3::PocoHTTPClientConfiguration createFiberTestClientConfiguration(const std::string & region)
 {
     static const DB::RemoteHostFilter remote_host_filter;
@@ -2164,6 +2166,63 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
     EXPECT_EQ(sts_requests, sts_requests_before + 1);
     EXPECT_GE(requests_signed_with_refreshed_credentials, fiber_count);
     EXPECT_EQ(other_requests, 0);
+}
+
+/// EC2 IMDS in fibers: concurrent callers wait on the provider's `Silk::FiberMutex` while the first one is suspended in
+/// IMDS I/O, which is held until all fibers have started, and all of them get the credentials of one refresh.
+TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
+{
+    initializeFiberSchedulerForTests();
+
+    Poco::Event release(/* autoReset = */ false);
+    std::atomic<size_t> token_requests = 0;
+    std::atomic<size_t> credentials_requests = 0;
+    std::atomic<size_t> requests_without_token = 0;
+    const std::string credentials_resource = DB::S3::AWSEC2MetadataClient::EC2_SECURITY_CREDENTIALS_RESOURCE;
+
+    FunctionHTTPServer imds([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        const std::string path = Poco::URI(request.getURI()).getPath();
+        if (path == DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE)
+        {
+            ++token_requests;
+            /// Holds the refresh in I/O until all fibers have started.
+            release.wait();
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "imds_token");
+            return;
+        }
+        if (request.get(DB::S3::AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, "") != "imds_token")
+            ++requests_without_token;
+        if (path == credentials_resource)
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, "fiber-role");
+        else if (path == credentials_resource + "/fiber-role")
+        {
+            ++credentials_requests;
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+        }
+        else
+            sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "");
+    });
+
+    /// The configuration of the IMDS client in `S3CredentialsProviderChain`.
+    auto client_configuration = createFiberTestClientConfiguration("");
+    const std::string imds_url = imds.getUrl();
+    auto metadata_client = std::make_shared<DB::S3::AWSEC2MetadataClient>(client_configuration, imds_url.c_str());
+    auto config_loader = std::make_shared<DB::S3::AWSEC2InstanceProfileConfigLoader>(metadata_client, /* use_secure_pull = */ true);
+    DB::S3::AWSInstanceProfileCredentialsProvider provider(config_loader);
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    std::vector<Aws::String> access_keys(fiber_count);
+    runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t i)
+    {
+        access_keys[i] = provider.GetAWSCredentials().GetAWSAccessKeyId();
+    });
+
+    for (const auto & access_key : access_keys)
+        EXPECT_EQ(access_key, "fiber_access_key");
+    EXPECT_EQ(token_requests, 1);
+    EXPECT_EQ(credentials_requests, 1);
+    EXPECT_EQ(requests_without_token, 0);
 }
 
 #endif

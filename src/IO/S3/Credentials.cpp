@@ -638,11 +638,16 @@ AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider(con
 
 Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "EC2 instance metadata credentials are not implemented for fibers");
-    refreshIfExpired();
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
+    if (IsTimeToRefresh(load_frequency_ms))
+        Reload();
     return GetAWSCredentialsImpl();
+}
+
+void AWSInstanceProfileCredentialsProvider::SetNeedRefresh()
+{
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
 }
 
 Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentialsImpl()
@@ -668,22 +673,6 @@ void AWSInstanceProfileCredentialsProvider::Reload()
     auto new_credentials = GetAWSCredentialsImpl();
     LOG_INFO(logger, "Got {}credentials from EC2 Metadata Service",
              new_credentials.IsEmpty() ? "empty " : ((new_credentials == old_credentials) ? "same " : ""));
-}
-
-void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
-{
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsTimeToRefresh(load_frequency_ms))
-    {
-        return;
-    }
-
-    guard.UpgradeToWriterLock();
-    if (!IsTimeToRefresh(load_frequency_ms)) // double-checked lock to avoid refreshing twice
-    {
-        return;
-    }
-    Reload();
 }
 
 void AWSInstanceProfileCredentialsProvider::CacheKey::updateHash(SipHash & hash) const
