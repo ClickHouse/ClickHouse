@@ -61,6 +61,7 @@ doc_type: 'guide'
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ doc_type: 'guide'
 `read_bytes` - Общий объём данных, прочитанных из таблиц для выполнения запроса на всех удалённых серверах.
 
 `written_bytes` - Общий объём записанных данных.
+
+`written_rows` - Общее количество строк, записанных запросами `INSERT`.
 
 `execution_time` – Общее время выполнения запроса в секундах (реальное время).
 

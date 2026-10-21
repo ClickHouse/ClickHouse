@@ -121,6 +121,12 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
     return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
 }
 
+void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
+{
+    bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+}
+
 size_t NativeWriter::write(const Block & block)
 {
     size_t written_before = ostr.count();
@@ -191,8 +197,7 @@ size_t NativeWriter::write(const Block & block)
         /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
         /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
         /// would silently degrade to version 0 on every round trip through local persistence.
-        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        setAggregateFunctionStateVersions(column.type, client_revision);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)

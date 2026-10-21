@@ -17,6 +17,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
+#include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
@@ -368,6 +369,25 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
 namespace
 {
 
+std::string getCredentialString(const Poco::Net::MessageHeader & headers)
+{
+    for (const auto & [header_name, header_value] : headers)
+    {
+        if (header_name == "authorization")
+        {
+            std::vector<String> parts;
+            boost::split(parts, header_value, [](char c){ return c == ' '; });
+            for (const auto & part : parts)
+            {
+                if (part.starts_with("Credential="))
+                    return part;
+            }
+        }
+    }
+
+    return "";
+}
+
 void validateCredential(const std::string_view credential_string, const std::string_view service_name, const std::string_view expected_access_key, const std::string_view expected_region)
 {
     ASSERT_FALSE(credential_string.empty());
@@ -385,9 +405,15 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
+void validateAssumeRoleQueryParams(
+    const Poco::URI::QueryParameters query_params,
+    const std::string_view expected_role_arn,
+    const std::string_view expected_role_session_name,
+    const std::string_view expected_external_id = "",
+    const std::string_view expected_policy = "")
 {
     bool external_id_present = false;
+    bool policy_present = false;
     for (const auto & [param, value] : query_params)
     {
         if (param == "Action")
@@ -401,9 +427,15 @@ void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params
             external_id_present = true;
             ASSERT_EQ(value, expected_external_id);
         }
+        else if (param == "Policy")
+        {
+            policy_present = true;
+            ASSERT_EQ(value, expected_policy);
+        }
     }
-    /// ExternalId is optional and must be sent only when configured.
+    /// ExternalId and Policy are optional and must be sent only when configured.
     ASSERT_EQ(external_id_present, !expected_external_id.empty());
+    ASSERT_EQ(policy_present, !expected_policy.empty());
 }
 
 }
@@ -434,27 +466,6 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsProviderCaching)
 
 TEST(IOTestAwsS3Client, AssumeRole)
 {
-    const auto get_credential_string =  [&](const Poco::Net::MessageHeader & headers) -> std::string
-    {
-        for (const auto & [header_name, header_value] : headers)
-        {
-            if (header_name == "authorization")
-            {
-                std::vector<String> parts;
-                boost::split(parts, header_value, [](char c){ return c == ' '; });
-                for (const auto & part : parts)
-                {
-                    if (part.starts_with("Credential="))
-                    {
-                        return part;
-                    }
-                }
-            }
-        }
-
-        return "";
-    };
-
     TestPocoHTTPServer http;
 
     static constexpr std::string_view role_access_key = "role_access_key";
@@ -462,7 +473,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
     TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
 
-    DB::RemoteHostFilter remote_host_filter;
+    static const DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
@@ -549,10 +560,10 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, role_session_name);
 
-        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name);
     }
 
@@ -563,7 +574,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3("", "");
 
-        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", access_key_id, region);
+        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", access_key_id, region);
         ASSERT_FALSE(sts_http.hasLastRequest());
     }
 
@@ -576,10 +587,10 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, "");
 
-        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
     }
 
@@ -594,12 +605,61 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, role_session_name, external_id);
 
-        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, external_id);
     }
+}
+
+TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
+{
+    static constexpr std::string_view role_access_key = "role_access_key";
+    static constexpr std::string_view role_secret_key = "role_secret_key";
+
+    TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
+
+    const String region = "eu-west-1";
+    const String access_key_id = "ACCESS_KEY_ID";
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        region,
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        "http");
+    /// `ClientFactory::create` normally copies the region into the SDK configuration. This test bypasses it.
+    client_configuration.region = region;
+
+    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id, "SECRET_ACCESS_KEY");
+    auto client = DB::S3::AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_http.getUrl());
+    ASSERT_TRUE(client);
+
+    const std::string role_arn = "arn::role/my_role";
+    const std::string role_session_name = "session_name";
+    const std::string policy
+        = R"({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/table/*"}]})";
+
+    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(role_arn, role_session_name, "", policy));
+    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
+
+    ASSERT_TRUE(sts_http.hasLastRequest());
+    validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+    validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, "", policy);
+
+    const auto & result = outcome.GetResult();
+    ASSERT_EQ(result.getAccessKeyID(), role_access_key);
+    ASSERT_EQ(result.getSecretAccessKey(), role_secret_key);
+    ASSERT_EQ(result.getSessionToken(), "session_token");
+    ASSERT_EQ(result.getExpiration().Millis(), Aws::Utils::DateTime("2030-01-01T00:00:00Z", Aws::Utils::DateFormat::ISO_8601).Millis());
 }
 
 TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)
@@ -922,7 +982,7 @@ private:
 
 std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 {
-    DB::RemoteHostFilter remote_host_filter;
+    static const DB::RemoteHostFilter remote_host_filter;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
         remote_host_filter,

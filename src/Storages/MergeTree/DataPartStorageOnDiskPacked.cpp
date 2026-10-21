@@ -421,7 +421,14 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     }
 
     if (writer)
+    {
+        /// Rewrite an already written file as a disk does. For example, when a vertical merge writes no rows,
+        /// the writers of different subcolumns of `Nested` create the file with their shared offsets each.
+        if (mode == WriteMode::Rewrite)
+            return writer->rewriteFile(name, settings);
+
         return writer->writeFile(name, settings);
+    }
 
     throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 }
@@ -552,10 +559,28 @@ void DataPartStorageOnDiskPacked::commitTransaction()
 
     transaction->commit();
 
+    /// Reset the transaction before loading the reader: it is already committed, so if loading the reader throws,
+    /// `undoTransaction` must not run and remove the blobs of the committed part.
+    transaction.reset();
+    is_precommitted = false;
+
     if (!reader)
         reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
+}
 
+void DataPartStorageOnDiskPacked::undoTransaction()
+{
+    if (!transaction || (!writer && !is_precommitted))
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
+
+    transaction->undo();
     transaction.reset();
+    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
+    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
+    writer.reset();
     is_precommitted = false;
 }
 
@@ -578,31 +603,17 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
 
     if (!mayRetryCommit(options, result))
     {
-        if (!reader && isSuccessfulOutcome(result))
-            reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
-
+        /// Reset the transaction before loading the reader, see `commitTransaction`.
         transaction.reset();
         is_precommitted = false;
+
+        if (!reader && isSuccessfulOutcome(result))
+            reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
     }
 
     return result;
 }
 
-void DataPartStorageOnDiskPacked::undoTransaction()
-{
-    if (!transaction || (!writer && !is_precommitted))
-        return;
-
-    if (has_shared_transaction)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
-
-    transaction->undo();
-    transaction.reset();
-    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
-    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
-    writer.reset();
-    is_precommitted = false;
-}
 #endif
 
 String DataPartStorageOnDiskPacked::getRelativeDataPath() const
