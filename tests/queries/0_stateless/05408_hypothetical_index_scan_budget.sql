@@ -80,7 +80,9 @@ SYSTEM STOP MERGES t_tail_real;
 INSERT INTO t_tail SELECT number FROM numbers(10100);
 INSERT INTO t_tail SELECT number FROM numbers(10100);
 INSERT INTO t_tail SELECT number FROM numbers(10100);
-INSERT INTO t_tail_real SELECT * FROM t_tail;
+INSERT INTO t_tail_real SELECT number FROM numbers(10100);
+INSERT INTO t_tail_real SELECT number FROM numbers(10100);
+INSERT INTO t_tail_real SELECT number FROM numbers(10100);
 CREATE HYPOTHETICAL INDEX idx_x ON t_tail (x) TYPE minmax GRANULARITY 1;
 SELECT
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
