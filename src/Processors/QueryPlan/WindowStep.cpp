@@ -63,11 +63,13 @@ WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
+    bool streams_fan_out_,
+    const SortingStep::Settings & sort_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
+    , sort_settings(sort_settings_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -85,6 +87,13 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     // have resized it.
     if (window_description.full_sort_description.empty())
         pipeline.resize(1);
+
+    /// The sorting step before the window sorts only the main stream, but `WindowTransform` also processes the totals,
+    /// which an `arrayJoin` can expand into several unsorted rows.
+    if (!window_description.full_sort_description.empty())
+        SortingStep::fullSortStreams(
+            pipeline, sort_settings, window_description.full_sort_description, /*limit_=*/0,
+            /*skip_partial_sort=*/false, /*threshold_tracker=*/nullptr, /*sort_totals=*/true);
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & /*header*/)
@@ -280,19 +289,29 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in, UInt64 step_version)
     return frame;
 }
 
-static void serializeWindowFunctions(const std::vector<WindowFunctionDescription> & window_functions, WriteBuffer & out)
+static void serializeWindowFunctions(
+    const std::vector<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
 {
+    WriteBuffer & out = ctx.out;
     writeVarUInt(window_functions.size(), out);
     for (const auto & func : window_functions)
     {
-        writeStringBinary(func.column_name, out);
+        /// `column_name` is the rendered call (`calculateActionNodeName`), not a structural field, and
+        /// normalizing it only erases the table qualifier's index: the shard rewrite also inlines aliases
+        /// and `JOIN USING`, so two equivalent steps can still render it differently. A cache key leaves it
+        /// out and keeps what the call is made of - the arguments, the function and its parameters, all
+        /// written below - which is what the rendered name is a rendering of.
+        if (ctx.for_cache_key)
+            writeStringBinary(String{}, out);
+        else
+            writeStringBinary(func.column_name, out);
 
         /// Argument types are not serialized: they are derived from the input columns on deserialize
         /// (see `deserializeWindowFunctions`), which both avoids trusting client-supplied types and
         /// rebuilds the aggregate exactly as the planner does.
         writeVarUInt(func.argument_names.size(), out);
         for (const auto & argument_name : func.argument_names)
-            writeStringBinary(argument_name, out);
+            ctx.writeColumnName(argument_name);
 
         writeStringBinary(func.aggregate_function->getName(), out);
 
@@ -362,6 +381,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    sort_settings.updatePlanSettings(settings);
+}
+
 void WindowStep::serialize(Serialization & ctx) const
 {
     /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
@@ -378,14 +402,21 @@ void WindowStep::serialize(Serialization & ctx) const
         flags |= 1;
     writeIntBinary(flags, ctx.out);
 
-    writeStringBinary(window_description.window_name, ctx.out);
+    /// `window_name` is the rendered window definition (`calculateWindowNodeActionName`) and is left out of
+    /// a cache key for the same reason as a window function's rendered name: normalizing it erases only the
+    /// qualifier's index, while the shard rewrite also inlines aliases and `JOIN USING`. What it renders -
+    /// the partition, the order and the frame - is serialized structurally right below, so nothing is lost.
+    if (ctx.for_cache_key)
+        writeStringBinary(String{}, ctx.out);
+    else
+        writeStringBinary(window_description.window_name, ctx.out);
 
-    serializeSortDescription(window_description.partition_by, ctx.out, ctx.version);
-    serializeSortDescription(window_description.order_by, ctx.out, ctx.version);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     serializeWindowFrame(window_description.frame, ctx.out, ctx.step_version, ctx.version);
 
-    serializeWindowFunctions(window_functions, ctx.out);
+    serializeWindowFunctions(window_functions, ctx);
 }
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
@@ -426,7 +457,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(),
         window_description,
         window_description.window_functions,
-        streams_fan_out);
+        streams_fan_out,
+        SortingStep::Settings(ctx.settings));
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);

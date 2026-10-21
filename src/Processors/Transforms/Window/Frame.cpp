@@ -20,19 +20,19 @@ int64_t signedOffset(const Field & offset, bool preceding)
     return value;
 }
 
-bool advanceToPartitionEnd(const Partition & partition, RowPoint & bound)
+bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
 {
-    if (!partition.bounds().fully_visible)
+    if (!partition.fully_visible)
         return false;
 
-    bound = partition.bounds().end;
+    bound = partition.end;
     return true;
 }
 
 /// The bound of a ROWS frame at a row index, cut to the partition; under ROWS every row is its own peer group.
-bool advanceToRow(const SlidingBlocks & blocks, const Partition & partition, int64_t target_row_index, RowPoint & bound)
+bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t target_row_index, RowPoint & bound)
 {
-    if (target_row_index >= partition.bounds().end.row_index_in_partition)
+    if (target_row_index >= partition.end.row_index_in_partition)
         return advanceToPartitionEnd(partition, bound);
 
     const int64_t row_index = std::max<int64_t>(target_row_index, 0);
@@ -44,13 +44,13 @@ bool advanceToRow(const SlidingBlocks & blocks, const Partition & partition, int
 }
 
 /// The first row of the peer group, found block by block in the stored peer group indexes; the partition end when the group is past the last one.
-bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partition, int64_t group, RowPoint & bound)
+bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & bound)
 {
     if (bound.peer_group_index_in_partition >= group)
         return true;
 
-    const RowNumber partition_end = partition.bounds().end.location;
-    if (partition.bounds().fully_visible && group >= partition.bounds().end.peer_group_index_in_partition)
+    const RowNumber partition_end = partition.end.location;
+    if (partition.fully_visible && group >= partition.end.peer_group_index_in_partition)
         return advanceToPartitionEnd(partition, bound);
 
     while (bound.location != partition_end)
@@ -75,13 +75,13 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partitio
 }
 
 /// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`.
-bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBlocks & blocks, const Partition & partition, const RowPoint & current, RangeOffsetComparator comparator, const Field & offset, bool frame_preceding, bool past, RowPoint & bound)
+bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RangeOffsetComparator comparator, const Field & offset, bool frame_preceding, bool past, RowPoint & bound)
 {
     const int direction = params.window_description.order_by[0].direction;
     const bool offset_is_preceding = frame_preceding == (direction > 0);
     const size_t key_position = params.order_by_indices[0];
     const IColumn * current_key_column = blocks.blockAt(current.location.block).materialized_columns[key_position].get();
-    const RowNumber partition_end = partition.bounds().end.location;
+    const RowNumber partition_end = partition.end.location;
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
@@ -104,7 +104,7 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     return advanceToPartitionEnd(partition, bound);
 }
 
-bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const Partition & partition, const RowPoint & current, RowPoint & start)
+bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & start)
 {
     const WindowFrame & frame = params.window_description.frame;
     switch (frame.begin_type)
@@ -129,7 +129,7 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
     UNREACHABLE();
 }
 
-bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks & blocks, const Partition & partition, const RowPoint & current, RowPoint & end)
+bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & end)
 {
     const WindowFrame & frame = params.window_description.frame;
     switch (frame.end_type)
@@ -171,7 +171,7 @@ void Frame::enterPartition(RowNumber partition_start)
     frame_bounds = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = false};
 }
 
-void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition)
+void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition)
 {
     frame_bounds.fully_visible = false;
 

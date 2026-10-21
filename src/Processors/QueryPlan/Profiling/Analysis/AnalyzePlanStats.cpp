@@ -4,8 +4,10 @@
 #include <unordered_map>
 #include <variant>
 #include <Processors/Port.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -233,6 +236,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const Query
     const auto & processors = pipeline.getProcessors();
 
     collectIOStats(processors);
+    collectSpillStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(step_profiler, processors);
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts(plan);
@@ -293,6 +297,33 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
             }
         }
     }
+}
+
+void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
+{
+    std::unordered_map<const TemporaryDataOnDiskScope *, const IQueryPlanStep *> steps_by_scope;
+    for (const auto & processor : processors)
+    {
+        const auto * step = processor->getQueryPlanStep();
+        if (!step)
+            continue;
+
+        for (const auto * spillable : processor->getSpillables())
+        {
+            const auto * scope = spillable->getSpillScope();
+            if (!scope)
+                continue;
+
+            /// A set's builder and consumers share its scope. Attribute its lifetime total to
+            /// `CreatingSet` when present; sets built during index analysis have only consumers here.
+            auto [it, inserted] = steps_by_scope.try_emplace(scope, step);
+            if (!inserted && typeid_cast<const CreatingSetStep *>(step))
+                it->second = step;
+        }
+    }
+
+    for (const auto & [scope, step] : steps_by_scope)
+        spilled_bytes_by_step[step] += scope->getSpilledBytes();
 }
 
 AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStats(const StepProfiler & step_profiler, const Processors & processors)
@@ -396,6 +427,10 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
+    StepProcessors step_processors;
+    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+        step_processors = processors_it->second;
+
     StepAnalysisReport raw_report;
     if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
     {
@@ -403,11 +438,15 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     }
     else
     {
-        StepProcessors step_processors;
-        if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-            step_processors = processors_it->second;
-
         raw_report = step->getAnalysisReport(step_processors);
+    }
+
+    if (const auto it = spilled_bytes_by_step.find(step); it != spilled_bytes_by_step.end() && it->second)
+    {
+        auto * spill_group = findGroup(raw_report, MetricGroupKey::Spill);
+        if (!spill_group)
+            spill_group = &raw_report.emplace_back(MetricGroupKey::Spill, MetricList{});
+        spill_group->metrics.emplace_back(MetricKey::Spilled, it->second);
     }
 
     auto context_for_step = makeContext(step);
