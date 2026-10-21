@@ -120,9 +120,10 @@ done
 run "$GW" -q "SET SQL_tenant = 'other'; EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' ${READ}"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${GW}&SQL_tenant=other" --data-binary "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' ${READ}"
 
-echo "-- a value set before EXECUTE AS does not reach a CONST setting"
+echo "-- a value set before EXECUTE AS is kept only where the target user may change it"
 run "$GW" -q "SET SQL_tenant = 'acme'; EXECUTE AS ${QU}; SELECT getSetting('SQL_tenant')"
 run "$GW" -q "EXECUTE AS ${QW} SETTINGS SQL_tenant = 'x'; SELECT currentUser() = '${GW}', getSetting('SQL_gwmark')"
+run "$GW" -q "EXECUTE AS ${QW}; SELECT currentUser() = '${QW}', getSetting('SQL_gwmark')"
 
 echo "-- session form"
 run "$GW" -q "
@@ -161,5 +162,8 @@ run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme'; SELECT arraySort(gr
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' SELECT arraySort(groupArray(v)) FROM (SELECT * FROM d_sec SETTINGS SQL_tenant = 'other')"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' SELECT count(), countIf(v = 3) FROM d_sec2"
 run "$GW" -q "EXECUTE AS ${QU} SETTINGS SQL_tenant = 'acme' SELECT arraySort(groupArray(v)) FROM d_nosec"
+
+echo "-- NULL where the setting may be changed"
+run "$GW" -q "SELECT * FROM (SELECT isNull(getSetting('SQL_gwmark')) SETTINGS SQL_gwmark = NULL)"
 
 cleanup

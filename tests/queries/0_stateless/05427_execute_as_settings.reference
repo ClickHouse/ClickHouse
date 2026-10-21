@@ -30,9 +30,10 @@ SETTING_CONSTRAINT_VIOLATION
 SETTING_CONSTRAINT_VIOLATION
 [1,2]
 [1,2]
--- a value set before EXECUTE AS does not reach a CONST setting
+-- a value set before EXECUTE AS is kept only where the target user may change it
 SETTING_CONSTRAINT_VIOLATION
 SETTING_CONSTRAINT_VIOLATION
+1	g
 1	g
 -- session form
 1	acme
@@ -65,3 +66,5 @@ SETTING_CONSTRAINT_VIOLATION
 [1,1,2,2]
 8	0
 [1,1,2,2]
+-- NULL where the setting may be changed
+1
