@@ -19,11 +19,15 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 يمكن للعملاء الذين يفعّلون تكاملات SAML أيضًا تحديد الدور الافتراضي الذي سيُعيَّن للمستخدمين الجدد وضبط إعدادات مهلة الجلسة.
 
-## قبل أن تبدأ {#before-you-begin}
+<div id="before-you-begin">
+  ## قبل أن تبدأ
+</div>
 
 ستحتاج إلى أذونات Admin في موفّر IdP لديك، وإلى القدرة على إضافة سجل TXT إلى إعدادات DNS الخاصة بنطاقك، وإلى دور **Admin** في مؤسستك على ClickHouse Cloud. نوصي أيضًا بإعداد **رابط مباشر إلى مؤسستك** بالإضافة إلى اتصال SAML الخاص بك لتبسيط عملية تسجيل الدخول. تختلف طريقة تنفيذ ذلك من موفّر IdP إلى آخر. تابع القراءة لمعرفة كيفية القيام بذلك لدى موفّر IdP لديك.
 
-## كيف يعمل {#how-it-works}
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
 
 بمجرد تكوين SAML SSO، يسجّل المستخدمون الدخول عبر تدفّق يبدأه موفّر الخدمة:
 
@@ -34,11 +38,11 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 يغطي باقي هذا الدليل الإعداد لمرة واحدة.
 
-## كيفية إعداد موفّر الهوية (IdP) لديك {#how-to-configure-your-idp}
+<div id="how-to-configure-your-idp">
+  ## كيفية إعداد موفّر الهوية (IdP) لديك
+</div>
 
-إذا كانت مصادقة SAML مفعّلة بالفعل وتحتاج إلى صلاحيات إدارية، فراجع [تهيئة المستخدم الإداري](#configure-your-admin-user) أو [استكشاف الأخطاء وإصلاحها](#troubleshooting).
-
-<Steps titleSize="h3">
+<Steps>
   <Step title="الوصول إلى إعدادات المؤسسة" id="access-organization-settings">
     انقر على اسم مؤسستك في الزاوية السفلية اليسرى، ثم اختر «تفاصيل المؤسسة».
   </Step>
@@ -120,13 +124,15 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Step>
 </Steps>
 
-### إعداد موفّر الهوية لديك {#configure-idp}
+<div id="configure-idp">
+  ### إعداد موفّر الهوية لديك
+</div>
 
 <Tabs>
   <Tab title="Okta" id="okta">
     ستقوم بإعداد تكاملَي تطبيقات في Okta لكل مؤسسة في ClickHouse: تطبيق SAML واحد وتطبيق إشارة مرجعية واحد لاحتواء الرابط المباشر الخاص بك.
 
-#### أنشئ مجموعة لإدارة الوصول {#okta-create-group}
+    #### أنشئ مجموعة لإدارة الوصول
 
     1. سجّل الدخول إلى مثيل Okta الخاص بك بصفتك **Administrator**.
     2. اختر **Groups** من الجهة اليسرى.
@@ -136,7 +142,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     6. انقر على اسم المجموعة التي أنشأتها.
     7. انقر على **Assign people** لتعيين المستخدمين الذين تريد منحهم حق الوصول إلى مؤسسة ClickHouse هذه.
 
-#### أنشئ تطبيق إشارة مرجعية لتمكين المستخدمين من تسجيل الدخول بسلاسة {#okta-bookmark-app}
+    #### أنشئ تطبيق إشارة مرجعية لتمكين المستخدمين من تسجيل الدخول بسلاسة
 
     1. اختر **Applications** من الجهة اليسرى، ثم اختر العنوان الفرعي **Applications**.
     2. انقر على **Browse App Catalog**.
@@ -146,7 +152,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     6. أدخل عنوان URL بالشكل `https://console.clickhouse.cloud/?connection={organizationid}`
     7. انتقل إلى علامة التبويب **Assignments** وأضف المجموعة التي أنشأتها أعلاه.
 
-#### أنشئ تطبيق SAML لتمكين الاتصال {#okta-saml-app}
+    #### أنشئ تطبيق SAML لتمكين الاتصال
 
     1. اختر **Applications** من الجهة اليسرى، ثم اختر العنوان الفرعي **Applications**.
 
@@ -187,7 +193,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   <Tab title="Google" id="google">
     ستُهيِّئ تطبيق SAML واحدًا في Google لكل مؤسسة، ويجب تزويد المستخدمين بالرابط المباشر (`https://console.clickhouse.cloud/?connection={organizationId}`) لإضافته إلى الإشارات المرجعية إذا كنت تستخدم تسجيل الدخول الأحادي متعدد المؤسسات.
 
-#### إنشاء تطبيق ويب في Google {#google-web-app}
+    #### إنشاء تطبيق ويب في Google
 
     1. انتقل إلى وحدة تحكم Google Admin (admin.google.com).
 
@@ -231,7 +237,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   <Tab title="Azure (مايكروسوفت)" id="azure">
     قد يُشار أيضًا إلى Azure (Microsoft) SAML باسم Azure Active Directory (AD) أو Microsoft Entra.
 
-#### أنشئ تطبيق Azure للمؤسسات {#azure-enterprise-app}
+    #### أنشئ تطبيق Azure للمؤسسات
 
     ستُعدّ تكامل تطبيق واحد مع URL تسجيل دخول منفصل لكل organization.
 
@@ -277,7 +283,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Tab>
 
   <Tab title="Duo" id="duo">
-#### أنشئ موفر خدمة SAML عامًا لـ Duo {#duo-saml-provider}
+    #### أنشئ موفر خدمة SAML عامًا لـ Duo
 
     1. اتبع الإرشادات الخاصة بـ [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic).
 
@@ -299,20 +305,11 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Tab>
 </Tabs>
 
-## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
 
 <AccordionGroup>
-  <Accordion title="أذونات Admin مفقودة بعد تسجيل الدخول عبر SAML">
-    **السبب:** يحصل حساب SAML الجديد الخاص بك على دور SAML الافتراضي المُهيّأ. إذا لم يكن هذا الدور هو **Admin**، فلن يمتلك الحساب أذونات Admin، حتى لو كان حسابك الأصلي يمتلك الدور **Admin**. لا تربط ClickHouse Cloud تلقائيًا بين حسابات SAML والحسابات الأخرى غير المرتبطة بـ SAML.
-
-    **الإصلاح:** سجّل الدخول عبر SAML مرة واحدة حتى يظهر المستخدم الجديد في ClickHouse Cloud. ثم سجّل الخروج وسجّل الدخول باستخدام حسابك الإداري الأصلي لتعيين الدور **Admin** لمستخدم SAML:
-
-    * بالنسبة إلى الحسابات التي تستخدم البريد الإلكتروني وكلمة المرور، استخدم [رابط تسجيل الدخول بالبريد الإلكتروني](https://console.clickhouse.cloud/?with=email) لتجاوز إعادة التوجيه التلقائي إلى SAML. إن `email` في `?with=email` قيمة حرفية، وليست عنصرًا نائبًا لعنوان بريدك الإلكتروني.
-    * بالنسبة إلى حسابات Google أو Microsoft، اختر **Continue with Google** أو **Continue with Microsoft**.
-
-    سجّل الخروج ثم سجّل الدخول عبر SAML مرة أخرى للتحقق من امتلاكك صلاحيات الوصول الإدارية قبل إزالة حسابك الإداري الأصلي. راجع [تهيئة المستخدم الإداري](#configure-your-admin-user) للاطلاع على الإجراء كاملًا.
-  </Accordion>
-
   <Accordion title="قد يكون هناك خطأ في تهيئة النظام أو انقطاع في الخدمة">
     **السبب:** تسجيل دخول يبدأ من موفّر الهوية، وهذا غير مدعوم.
 
@@ -325,7 +322,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     **الإصلاح:** اتبع الإرشادات الخاصة بموفّر الهوية أعلاه لتهيئة سمة البريد الإلكتروني للمستخدم، ثم سجّل الدخول مرة أخرى.
   </Accordion>
 
-  <Accordion title="المستخدم غير مُعيَّن لهذا التطبيق">
+  <Accordion title="المستخدم غير مُعيَّن لهذا التطبيق">
     **السبب:** لم يتم تعيين المستخدم لتطبيق ClickHouse في موفّر الهوية.
 
     **الإصلاح:** عيّن المستخدم للتطبيق في موفّر الهوية، ثم سجّل الدخول مرة أخرى.
@@ -344,7 +341,9 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Accordion>
 </AccordionGroup>
 
-## الأسئلة الشائعة {#faq}
+<div id="faq">
+  ## الأسئلة الشائعة
+</div>
 
 <AccordionGroup>
   <Accordion title="هل يدعم ClickHouse Cloud تسجيل الدخول الذي يبدأه موفّر الهوية؟">
@@ -352,13 +351,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Accordion>
 
   <Accordion title="كيف أستخدم SAML SSO مع مؤسسات متعددة؟">
-    يدعم ClickHouse Cloud تسجيل الدخول الأحادي SSO عبر مؤسسات متعددة، مع اتصال منفصل لكل مؤسسة.
-
-    يجب استخدام رابط كل مؤسسة المباشر (`https://console.clickhouse.cloud/?connection={organizationId}`) عند تسجيل الدخول إليها للمرة الأولى. يؤدي تسجيل الدخول الأول هذا إلى إعداد حسابك في تلك المؤسسة. إذا كانت مؤسستك قد فعّلت SCIM، فيمكنك تخطي هذه الخطوة لأن حسابك سيكون مُعدًّا بالفعل.
-
-    في عمليات تسجيل الدخول اللاحقة، سجّل الدخول إلى أيٍّ من مؤسسات SAML التابعة لك. تتوفر مؤسسات SAML الأخرى الخاصة بك في مُبدّل المؤسسات في الشريط الجانبي لـ Console، ويؤدي اختيار إحداها إلى تسجيل دخولك إلى تلك المؤسسة عبر SSO الخاص بها.
-
-    إذا كنت لا تريد توجيه المستخدمين ضمن نطاقك إلى مؤسسة تلقائيًا عند إدخال بريدهم الإلكتروني في `https://console.clickhouse.cloud`، فافتح تذكرة دعم لإيقاف هذا السلوك.
+    يدعم ClickHouse Cloud تسجيل الدخول الأحادي SSO عبر مؤسسات متعددة، مع اتصال منفصل لكل مؤسسة. استخدم الرابط المباشر (`https://console.clickhouse.cloud/?connection={organizationid}`) لتسجيل الدخول إلى كل مؤسسة، وسجّل الخروج من إحداها قبل تسجيل الدخول إلى أخرى. إذا كنت لا تريد توجيه المستخدمين ضمن نطاقك إلى مؤسسة تلقائيًا عند إدخال بريدهم الإلكتروني في `https://console.clickhouse.cloud`، فافتح تذكرة دعم لإيقاف هذا السلوك.
   </Accordion>
 
   <Accordion title="لماذا أرى حسابات متعددة للمستخدم نفسه؟">
@@ -366,7 +359,9 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Accordion>
 </AccordionGroup>
 
-## الخطوات التالية {#next-steps}
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 * [Manage cloud users](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — إدارة أذونات المستخدمين وقصر الوصول على اتصالات SAML فقط.
 * توفير SCIM — أتمتة تهيئة المستخدمين والمجموعات باستخدام [Okta](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) أو [Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra).

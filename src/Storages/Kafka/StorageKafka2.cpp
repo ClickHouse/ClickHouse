@@ -228,9 +228,6 @@ StorageKafka2::StorageKafka2(
 StorageKafka2::~StorageKafka2()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::~StorageKafka2");
-    /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
-    if (!shutdown_called)
-        shutdown(false);
     replica_is_active_node.reset();
 }
 
@@ -548,7 +545,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics!");
 
     cppkafka::Configuration conf = getProducerConfiguration();
 
@@ -591,7 +588,6 @@ void StorageKafka2::startup()
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
-
         /// Pre-size to `num_consumers` so consumer slots are addressable by their original index even
         /// when individual creations fail. Compacting via `push_back` would shift indices and break
         /// the per-slot streaming task in `threadFunc`, which is scheduled by the configured slot index.
@@ -601,7 +597,7 @@ void StorageKafka2::startup()
             try
             {
                 consumers[i] = std::make_shared<KeeperHandlingConsumer>(
-                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, num_consumers, partition_shard_num, shard_count);
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, partition_shard_num, shard_count);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -879,7 +875,7 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
     {
         LOG_ERROR(
             log,
-            "Table was not completely removed from Keeper, {} still exists and may contain some garbage, "
+            "Table was not completely removed from Keeper, {} still exists and may contain some garbage,"
             "but someone is removing it right now.",
             keeper_path);
     }

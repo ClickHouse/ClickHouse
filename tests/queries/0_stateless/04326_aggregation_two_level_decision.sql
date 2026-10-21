@@ -9,6 +9,7 @@ SET max_bytes_before_external_group_by = 1000000000; -- Ensure conversion to two
 SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 100000;
+SET use_aggregation_memory_tracker = 1;
 
 -- Small aggregate state over join stays single-level.
 SELECT r.k AS g, groupArray(l.s)

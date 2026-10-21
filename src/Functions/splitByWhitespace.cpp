@@ -26,7 +26,6 @@ private:
 
 public:
     static constexpr auto name = "splitByWhitespace";
-    static constexpr auto signature = "(String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
@@ -101,9 +100,9 @@ REGISTER_FUNCTION(SplitByWhitespace)
     FunctionDocumentation::Description description = R"(
 Splits a string which is separated by whitespace characters into an array of substrings.
 
-<Note>
+:::note
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "splitByWhitespace(s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
