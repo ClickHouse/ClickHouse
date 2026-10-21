@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -7,7 +8,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -18,11 +18,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
 template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
-class FunctionStringOrArrayToT final : public IFunction
+class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -47,29 +48,17 @@ public:
         return is_suitable_for_short_circuit_arguments_execution;
     }
 
-    /// Whether the Impl opts into handling the QBit data type (returns a constant equal to the vector dimension).
-    static constexpr bool supportsQBit()
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if constexpr (requires { Impl::supports_qbit; })
-            return Impl::supports_qbit;
-        return false;
-    }
+        if (!isStringOrFixedString(arguments[0])
+            && !isArray(arguments[0])
+            && !isMap(arguments[0])
+            && !isUUID(arguments[0])
+            && !isIPv6(arguments[0])
+            && !isIPv4(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-    bool isVolumeReducing() const override
-    {
-        if constexpr (requires { Impl::is_volume_reducing; })
-            return Impl::is_volume_reducing;
-        return false;
-    }
-
-    String getSignatureString() const override
-    {
-        /// `QBit` is accepted only by Impls that opt in (e.g. `length`): there the result is a
-        /// constant equal to the vector dimension, but its type is still the numeric `ResultType`,
-        /// so the same `-> ResultType` return applies and the dimension constant is produced in `executeImpl`.
-        if constexpr (supportsQBit())
-            return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | QBit) -> " + DataTypeNumber<ResultType>{}.getName();
-        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
+        return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -110,10 +99,9 @@ public:
         {
             if (Impl::is_fixed_to_constant)
             {
-                /// Result is derived from N (a type property), not from data, so it is valid even for 0 rows.
-                /// Impls reaching this branch must not read data, hence no bounds risk on an empty buffer.
                 ResultType res = 0;
-                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
+                if (input_rows_count)
+                    Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res, input_rows_count);
 
                 return result_type->createColumnConst(col_fixed->size(), toField(res));
             }
@@ -125,17 +113,6 @@ public:
             Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res, input_rows_count);
 
             return col_res;
-        }
-        if constexpr (supportsQBit())
-        {
-            if (const ColumnQBit * col_qbit = checkAndGetColumn<ColumnQBit>(column.get()))
-            {
-                /// Dimension is a type property, valid even for 0 rows (same reason as the FixedString branch).
-                ResultType res = 0;
-                Impl::qbitToConstant(col_qbit->getDimension(), res);
-
-                return result_type->createColumnConst(col_qbit->size(), toField(res));
-            }
         }
         if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column.get()))
         {

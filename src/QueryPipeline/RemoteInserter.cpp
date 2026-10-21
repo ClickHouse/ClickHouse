@@ -1,7 +1,6 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
-#include <Client/SecondaryQuerySettings.h>
 #include <Common/logger_useful.h>
 
 #include <Common/NetException.h>
@@ -44,15 +43,8 @@ void RemoteInserter::initialize()
 {
     ClientInfo modified_client_info = client_info;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    /// Drop inherited current_roles: a write needs no role scoping.
-    modified_client_info.current_roles.reset();
 
     Settings settings = insert_settings;
-
-    /// Demote the `compatibility`-derived values and force ClickHouse SQL, exactly as the `SELECT`
-    /// senders do. Runs before the overrides below, so they stay changed and are serialized.
-    prepareSecondaryQuerySettings(settings);
-
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,
@@ -100,16 +92,14 @@ void RemoteInserter::initialize()
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
         }
-        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileEvents == packet.type)
+        else if (Protocol::Server::Progress == packet.type)
         {
-            /// A subquery executed while the remote server is still analysing the query reports progress and
-            /// profile events, so these can arrive before the header block. They are ignored.
+            /// Progress packets are ignored
         }
         else
             throw NetException(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected Data, Exception, Log, TableColumns, Progress "
-                "or ProfileEvents, got {})",
+                "Unexpected packet from server (expected Data or Exception, got {})",
                 Protocol::Server::toString(packet.type));
     }
 }

@@ -4,8 +4,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/SipHash.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 
@@ -252,18 +250,11 @@ void ObjectStorageQueueMetadataFactory::remove(
 std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
     std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
-    std::lock_guard lock(mutex);
     for (const auto & [key, metadata] : metadata_by_path)
     {
         result.emplace(key, metadata.metadata);
     }
     return result;
-}
-
-bool ObjectStorageQueueMetadataFactory::isRegistered(const std::string & key)
-{
-    std::lock_guard lock(mutex);
-    return metadata_by_path.contains(key);
 }
 
 }

@@ -14,11 +14,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
 template <typename Impl, typename Name, bool is_injective = false>
-class FunctionStringToString final : public IFunction
+class FunctionStringToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -47,9 +48,13 @@ public:
         return true;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T : StringOrFixedString) -> T";
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+
+        return arguments[0];
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

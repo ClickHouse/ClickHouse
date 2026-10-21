@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -80,8 +81,6 @@ class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>
     size_t duration_microseconds_threshold = 0;
 
 public:
-    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
-
     void setDurationMicrosecondsThreshold(size_t duration_microseconds_threshold_) { duration_microseconds_threshold = duration_microseconds_threshold_; }
     size_t getDurationMicrosecondsThreshold() const { return duration_microseconds_threshold; }
 };

@@ -1,9 +1,0 @@
-{
-  "group": "C#",
-  "icon": "/images/integrations/logos/csharp.svg",
-  "pages": [
-    "zh/integrations/language-clients/csharp/http",
-    "zh/integrations/language-clients/csharp/tcp"
-  ],
-  "root": "zh/integrations/language-clients/csharp/overview"
-}

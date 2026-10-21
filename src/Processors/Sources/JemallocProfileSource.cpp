@@ -1,7 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 
 #if USE_JEMALLOC
@@ -22,12 +18,11 @@
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <QueryPipeline/QueryPipeline.h>
-#    include <Common/Hex.h>
+#    include <base/hex.h>
 #    include <Common/FramePointers.h>
 #    include <Common/MemoryTrackerSwitcher.h>
 #    include <Common/StackTrace.h>
 #    include <Common/StringUtils.h>
-#    include <Common/filesystemHelpers.h>
 #    include <Common/getExecutablePath.h>
 #    include <base/defines.h>
 #    include <Common/SipHash.h>
@@ -71,34 +66,35 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
     return address;
 }
 
-}
-
-VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
+/// Parse stack addresses from a jemalloc profile line starting with '@'.
+/// Returns empty vector if the line doesn't start with '@'.
+/// The first address is kept as-is; subsequent ones are decremented by 1
+/// (they are return addresses, so we subtract 1 to point inside the call instruction).
+std::vector<UInt64> parseStackAddresses(std::string_view line)
 {
-    VectorWithMemoryTracking<UInt64> result;
-    std::string_view sv = line;
-    if (!sv.empty() && sv[0] == '@')
+    std::vector<UInt64> result;
+    if (line.empty() || line[0] != '@')
+        return result;
+
+    std::string_view sv(line.data() + 1, line.size() - 1);
+    bool first = true;
+    while (!sv.empty())
     {
-        sv.remove_prefix(1);
-        bool first = true;
-        while (!sv.empty())
-        {
-            trimLeft(sv);
-            if (sv.empty())
-                break;
-            auto address = parseHexAddress(sv);
-            if (!address.has_value())
-                break;
-            result.push_back(first ? *address : *address - 1);
-            first = false;
-        }
+        trimLeft(sv);
+        if (sv.empty())
+            break;
+        auto address = parseHexAddress(sv);
+        if (!address.has_value())
+            break;
+        result.push_back(first ? *address : *address - 1);
+        first = false;
     }
-    if (fully_parsed)
-        *fully_parsed = sv.empty();
     return result;
 }
 
-UInt64 parseJemallocSamplingInterval(std::string_view header)
+/// Parse the sampling interval from a jemalloc heap_v2 header line ("heap_v2/N").
+/// Returns 0 if the header doesn't match heap_v2 format or the value is not a valid integer.
+UInt64 parseSamplingInterval(std::string_view header)
 {
     static constexpr std::string_view prefix = "heap_v2/";
     if (!header.starts_with(prefix))
@@ -113,9 +109,6 @@ UInt64 parseJemallocSamplingInterval(std::string_view header)
         return 0;
     return result;
 }
-
-namespace
-{
 
 /// Apply Poisson sampling correction as jeprof does for heap_v2 profiles.
 /// Each allocation is sampled with probability 1-exp(-size/interval), so the correction
@@ -156,7 +149,7 @@ UInt64 applySamplingCorrection(UInt64 count, UInt64 bytes, UInt64 sampling_inter
 struct SymbolizationLRUCache
 {
     using Key = std::pair<UInt64, bool>;
-    using Value = std::shared_ptr<const VectorWithMemoryTracking<std::string>>;
+    using Value = std::shared_ptr<const std::vector<std::string>>;
 
     struct KeyHash
     {
@@ -169,7 +162,7 @@ struct SymbolizationLRUCache
         }
     };
 
-    using List = ListWithMemoryTracking<std::pair<Key, Value>>;
+    using List = std::list<std::pair<Key, Value>>;
 
     explicit SymbolizationLRUCache(size_t max_size_) : max_size(max_size_) {}
 
@@ -185,11 +178,10 @@ struct SymbolizationLRUCache
     }
 
     /// Inserts a new entry (or updates existing) and returns the stored shared_ptr.
-    Value put(const Key & key, VectorWithMemoryTracking<std::string> value)
+    Value put(const Key & key, std::vector<std::string> value)
     {
-        /// The cache is shared by all queries, so its entries are charged to the global tracker only.
         MemoryTrackerSwitcher switcher(&total_memory_tracker);
-        auto shared = std::make_shared<const VectorWithMemoryTracking<std::string>>(std::move(value));
+        auto shared = std::make_shared<const std::vector<std::string>>(std::move(value));
         std::lock_guard lock(mutex);
         auto it = index.find(key);
         if (it != index.end())
@@ -199,16 +191,7 @@ struct SymbolizationLRUCache
             return shared;
         }
         lru.emplace_front(key, shared);
-        try
-        {
-            index.emplace(key, lru.begin());
-        }
-        catch (...)
-        {
-            /// Keep `lru` and `index` in step, otherwise the entry would stay in `lru` unreachable.
-            lru.pop_front();
-            throw;
-        }
+        index.emplace(key, lru.begin());
         if (lru.size() > max_size)
         {
             index.erase(lru.back().first);
@@ -222,7 +205,7 @@ private:
 
     mutable std::mutex mutex;
     List lru TSA_GUARDED_BY(mutex);
-    UnorderedMapWithMemoryTracking<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
+    std::unordered_map<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
 };
 
 SymbolizationLRUCache symbolization_cache(/*max_size=*/ 100'000);
@@ -238,7 +221,7 @@ SymbolizationLRUCache::Value resolveAddress(UInt64 address, bool symbolize_with_
 
     FramePointers fp;
     fp[0] = reinterpret_cast<void *>(address);
-    VectorWithMemoryTracking<std::string> frame_symbols;
+    std::vector<std::string> frame_symbols;
     StackTrace::forEachFrame(
         fp, 0, 1,
         [&](const StackTrace::Frame & frame)
@@ -258,22 +241,14 @@ JemallocProfileSource::JemallocProfileSource(
     size_t max_block_size_,
     JemallocProfileFormat mode_,
     bool symbolize_with_inline_,
-    bool collapsed_use_count_,
-    bool remove_file_)
+    bool collapsed_use_count_)
     : ISource(header_)
     , filename(filename_)
     , max_block_size(max_block_size_)
     , mode(mode_)
     , symbolize_with_inline(symbolize_with_inline_)
     , collapsed_use_count(collapsed_use_count_)
-    , remove_file(remove_file_)
 {
-}
-
-JemallocProfileSource::~JemallocProfileSource()
-{
-    if (remove_file)
-        FS::tryDelete(filename, getLogger("JemallocProfileSource"));
 }
 
 Chunk JemallocProfileSource::generate()
@@ -472,7 +447,7 @@ void JemallocProfileSource::collectAddresses()
 {
     ReadBufferFromFile in(filename);
 
-    UnorderedSetWithMemoryTracking<UInt64> unique_addresses;
+    std::unordered_set<UInt64> unique_addresses;
     std::string line;
 
     while (!in.eof())
@@ -487,7 +462,7 @@ void JemallocProfileSource::collectAddresses()
         readStringUntilNewlineInto(line, in);
         in.tryIgnore(1);
 
-        for (UInt64 addr : parseJemallocStackAddresses(line))
+        for (UInt64 addr : parseStackAddresses(line))
             unique_addresses.insert(addr);
     }
 
@@ -506,8 +481,7 @@ Chunk JemallocProfileSource::generateCollapsed()
 
         ReadBufferFromFile in(filename);
         std::string line;
-        VectorWithMemoryTracking<UInt64> current_stack;
-        bool has_stack = false;
+        std::vector<UInt64> current_stack;
         UInt64 sampling_interval = 0;
 
         while (!in.eof())
@@ -528,23 +502,15 @@ Chunk JemallocProfileSource::generateCollapsed()
             /// Parse sampling interval from heap_v2/N header (first non-empty line)
             if (sampling_interval == 0 && line.starts_with("heap_v2/"))
             {
-                sampling_interval = parseJemallocSamplingInterval(line);
+                sampling_interval = parseSamplingInterval(line);
                 continue;
             }
-
-            /// Fragmentation profiling records are not allocation counters;
-            /// skip them without touching the pending stack.
-            std::string_view trimmed(line);
-            trimLeft(trimmed);
-            if (trimmed.starts_with("f:") || trimmed.starts_with("frag_util:"))
-                continue;
 
             if (line[0] == '@')
             {
-                current_stack = parseJemallocStackAddresses(line);
-                has_stack = true;
+                current_stack = parseStackAddresses(line);
             }
-            else if (has_stack && line.contains(':'))
+            else if (!current_stack.empty() && line.contains(':'))
             {
                 /// Each allocation record follows its `@` stack line in the jemalloc heap profile format:
                 ///
@@ -602,9 +568,6 @@ Chunk JemallocProfileSource::generateCollapsed()
                                 writeString(symbol, out);
                             }
                         }
-                        /// jemalloc writes a bare `@` when it could not unwind the stack.
-                        if (current_stack.empty())
-                            writeString("[unknown]", out);
                         out.finalize();
 
                         /// Aggregate metric for same stack
@@ -613,7 +576,6 @@ Chunk JemallocProfileSource::generateCollapsed()
                 }
 
                 current_stack.clear();
-                has_stack = false;
             }
         }
 
@@ -667,9 +629,7 @@ void pullProfileLines(
         std::make_shared<const Block>(std::move(header)),
         DEFAULT_BLOCK_SIZE,
         format,
-        symbolize_with_inline,
-        /* collapsed_use_count= */ false,
-        /* remove_file= */ false);
+        symbolize_with_inline);
 
     QueryPipeline pipeline(std::move(source));
     PullingPipelineExecutor executor(pipeline);

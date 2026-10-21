@@ -16,7 +16,6 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <span>
-#include <Core/UUID.h>
 
 
 namespace DB::ErrorCodes
@@ -106,6 +105,27 @@ private:
     Representation first_half_binary_representation;
 };
 
+void checkArgumentCount(const DB::DataTypes & arguments, const std::string_view function_name)
+{
+    if (const auto argument_count = std::ssize(arguments); argument_count < 1 || argument_count > 2)
+        throw DB::Exception(
+            DB::ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+            function_name,
+            argument_count);
+}
+
+void checkFormatArgument(const DB::DataTypes & arguments, const std::string_view function_name)
+{
+    if (const auto argument_count = std::ssize(arguments);
+        argument_count > 1 && !DB::WhichDataType(arguments[1]).isInt8() && !DB::WhichDataType(arguments[1]).isUInt8())
+        throw DB::Exception(
+            DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of second argument of function {}, expected Int8 or UInt8 type",
+            arguments[1]->getName(),
+            function_name);
+}
+
 UUIDSerializer::Variant parseVariant(const DB::ColumnsWithTypeAndName & arguments)
 {
     if (arguments.size() < 2)
@@ -126,7 +146,7 @@ namespace DB
 constexpr size_t uuid_bytes_length = 16;
 constexpr size_t uuid_text_length = 36;
 
-class FunctionUUIDNumToString final : public IFunction
+class FunctionUUIDNumToString : public IFunction
 {
 public:
     static constexpr auto name = "UUIDNumToString";
@@ -138,16 +158,19 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// `FixedString(16)` (uuid_bytes_length) is the exact width `executeImpl` reads, so a
-        /// wrong-width FixedString is rejected at analysis time. The optional second argument
-        /// selects the UUID variant — `parseVariant` reads it via `getInt` and casts to the
-        /// enum's underlying type, which silently wraps for wider integers (e.g. UInt16(258)
-        /// becomes 2). Narrow to `Int8 | UInt8` to preserve the original validation contract.
-        /// The selector must be `const`: `parseVariant` reads only row 0, so a row-varying
-        /// column would silently serialize every row with the first row's variant.
-        return "(FixedString(16), [const Int8 | UInt8]) -> String";
+        checkArgumentCount(arguments, name);
+
+        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        if (!ptr || ptr->getN() != uuid_bytes_length)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}, expected FixedString({})",
+                            arguments[0]->getName(), getName(), uuid_bytes_length);
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -199,7 +222,7 @@ public:
 };
 
 
-class FunctionUUIDStringToNum final : public IFunction
+class FunctionUUIDStringToNum : public IFunction
 {
 public:
     static constexpr auto name = "UUIDStringToNum";
@@ -207,17 +230,27 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
-    /// Not injective: parsing is case-insensitive, so '61F0C404-...' and '61f0c404-...' give the same result.
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// `FixedString(36)` (uuid_text_length) is the exact width the parser reads, so a
-        /// wrong-width FixedString is rejected at analysis time.
-        /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
-        return "(String | FixedString(36), [const Int8 | UInt8]) -> FixedString(16)";
+        checkArgumentCount(arguments, name);
+
+        /// String or FixedString(36)
+        if (!isString(arguments[0]))
+        {
+            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+            if (!ptr || ptr->getN() != uuid_text_length)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of first argument of function {}, expected FixedString({})",
+                                arguments[0]->getName(), getName(), uuid_text_length);
+        }
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -295,7 +328,7 @@ public:
 };
 
 
-class FunctionUUIDToNum final : public IFunction
+class FunctionUUIDToNum : public IFunction
 {
 public:
     static constexpr auto name = "UUIDToNum";
@@ -309,10 +342,22 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
-        return "(UUID, [const Int8 | UInt8]) -> FixedString(16)";
+        checkArgumentCount(arguments, name);
+
+        if (!isUUID(arguments[0]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected UUID",
+                arguments[0]->getName(),
+                getName());
+        }
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -357,7 +402,7 @@ public:
     }
 };
 
-class FunctionUUIDv7ToDateTime final : public IFunction
+class FunctionUUIDv7ToDateTime : public IFunction
 {
 public:
     static constexpr auto name = "UUIDv7ToDateTime";
@@ -371,15 +416,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
-
-    /// Declarative signature — extracts the timestamp embedded in a UUIDv7
-    /// as a `DateTime64(3)`, optionally tagged with the const-string timezone
-    /// from the second argument.
-    String getSignatureString() const override
-    {
-        return "(UUID) -> DateTime64(3)"
-               " OR (UUID, const tz StringOrFixedString) -> DateTime64(3, tz)";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -487,7 +523,7 @@ SELECT
 
     /// UUIDStringToNum documentation
     FunctionDocumentation::Description description_UUIDStringToNum = R"(
-Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](/reference/data-types/fixedstring) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
     )";
     FunctionDocumentation::Syntax syntax_UUIDStringToNum = "UUIDStringToNum(string[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDStringToNum = {
@@ -531,7 +567,7 @@ SELECT
 
     /// UUIDToNum documentation
     FunctionDocumentation::Description description_UUIDToNum = R"(
-Accepts a [UUID](/reference/data-types/uuid) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default).
 This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
     )";
     FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
@@ -581,7 +617,7 @@ Returns the timestamp component of a UUID version 7.
     FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
     FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
         {"uuid", "A UUID version 7.", {"String"}},
-        {"timezone", "Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
+        {"timezone", "Optional. [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
     FunctionDocumentation::Examples examples_UUIDv7ToDateTime = {
@@ -592,7 +628,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 12:30:29.048 │
+│                                          2024-04-22 15:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -603,8 +639,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                              2024-04-22 08:30:29.048 │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+│                                                             2024-04-22 11:30:29.048 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

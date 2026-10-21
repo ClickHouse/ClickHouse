@@ -14,8 +14,6 @@ class ASTQualifiedAsterisk : public IAST
 {
 public:
     String getID(char) const override { return "QualifiedAsterisk"; }
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
     ASTPtr clone() const override
     {
         auto clone = make_intrusive<ASTQualifiedAsterisk>(*this);

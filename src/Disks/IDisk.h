@@ -40,8 +40,6 @@ namespace Poco
 namespace DB
 {
 
-class ReadPipeline;
-
 #if USE_AWS_S3
 namespace S3
 {
@@ -53,8 +51,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
-class ConfigurationWithUsageTracking;
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -130,9 +126,6 @@ class ISyncGuard
 public:
     ISyncGuard() = default;
     virtual ~ISyncGuard() = default;
-
-    /// Synchronize explicitly, propagating failures instead of logging them in the destructor.
-    virtual void sync();
 };
 
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
@@ -247,19 +240,10 @@ public:
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    /// Convenience wrapper: calls prepareRead() + pipeline.build().
-    std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {}) const;
-
-    /// Populate a ReadPipeline with the stages needed to read from this disk.
-    /// Every disk implementation must override this method.
-    virtual void prepareRead(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const = 0;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.
@@ -481,9 +465,6 @@ public:
 
     virtual bool supportsHardLinks() const { return true; }
 
-    /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
-    virtual bool prefersRecursiveRemoval() const { return false; }
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
@@ -596,22 +577,6 @@ public:
 
     bool isCaseInsensitive();
 
-    /// A disk is created from a section of the configuration, and some of its parts keep a reference
-    /// to that configuration and read it later (see `HDFSObjectStorage`). `DiskFactory` does not pass
-    /// the configuration itself, but a proxy tracking which of its keys are used, and this proxy has
-    /// to live at least as long as the disk created from it.
-    void keepConfigurationAlive(std::shared_ptr<const ConfigurationWithUsageTracking> config)
-    {
-        creation_config = std::move(config);
-    }
-
-    /// The proxy the disk was created from, see `keepConfigurationAlive`. It is used to find out
-    /// which elements of the definition of the disk are read by this disk type.
-    std::shared_ptr<const ConfigurationWithUsageTracking> getCreationConfiguration() const
-    {
-        return creation_config;
-    }
-
 protected:
     const String name;
 
@@ -632,9 +597,6 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
-
-    /// The configuration the disk was created from, see keepConfigurationAlive.
-    std::shared_ptr<const ConfigurationWithUsageTracking> creation_config;
 
     /// True if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.

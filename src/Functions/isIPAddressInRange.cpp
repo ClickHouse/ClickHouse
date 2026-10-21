@@ -17,6 +17,7 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -72,7 +73,7 @@ public:
 
     explicit IPAddressVariant(std::string_view addr_)
     {
-        UInt32 v4 = 0;
+        UInt32 v4;
         if (DB::parseIPv4whole(addr_.data(), addr_.data() + addr_.size(), reinterpret_cast<unsigned char *>(&v4)))
         {
             addr = v4;
@@ -157,17 +158,12 @@ inline bool isAddressInRange(const IPAddressVariant & address, const IPAddressCI
 
 namespace DB
 {
-    class FunctionIsIPAddressContainedIn final : public IFunction
+    class FunctionIsIPAddressContainedIn : public IFunction
     {
     public:
         static constexpr auto name = "isIPAddressInRange";
         String getName() const override { return name; }
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so a function that throws on the default value must not be executed on
-        /// the whole dictionary - it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
-
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         template <IPKind kind>
@@ -217,9 +213,30 @@ namespace DB
             return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            return "(MaybeNullable(String | IPv4 | IPv6), String) -> UInt8";
+            if (arguments.size() != 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                    getName(), arguments.size());
+
+            const DataTypePtr & addr_type = arguments[0];
+            const DataTypePtr & prefix_type = arguments[1];
+
+            WhichDataType type = WhichDataType(addr_type);
+            if (const auto * nullable_type = dynamic_cast<const DataTypeNullable *>(&*addr_type))
+                type = WhichDataType(nullable_type->getNestedType());
+
+            if (!(type.isString() || type.isIPv4() || type.isIPv6()) || !isString(prefix_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The first argument of function {} must be one of: String, IPv4, IPv6, Nullable(String), Nullable(IPv4), or "
+                    "Nullable(IPv6) and the second argument must be String. Type of the first argument: {}, type of the second argument: {}",
+                    getName(),
+                    addr_type->getName(),
+                    prefix_type->getName());
+
+            return std::make_shared<DataTypeUInt8>();
         }
 
         size_t getNumberOfArguments() const override { return 2; }

@@ -6,7 +6,6 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
@@ -80,30 +79,4 @@ TEST(Monotonicity, IfNull)
 TEST(Monotonicity, Coalesce)
 {
     testNullWrapperMonotonicity("coalesce", {std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeUInt8>()});
-}
-
-TEST(Monotonicity, ToNullable)
-{
-    /// `toNullable` only wraps the value, so it is strictly increasing on the whole range of any argument type.
-    const DataTypes argument_types = {
-        std::make_shared<DataTypeUInt8>(),
-        std::make_shared<DataTypeString>(),
-        makeNullable(std::make_shared<DataTypeString>()),
-        std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-    };
-
-    for (const auto & argument_type : argument_types)
-    {
-        SCOPED_TRACE(argument_type->getName());
-
-        auto function_base = buildFunction("toNullable", {argument_type});
-        ASSERT_TRUE(function_base->hasInformationAboutMonotonicity());
-
-        const auto monotonicity = function_base->getMonotonicityForRange(*argument_type, Field{}, Field{});
-
-        ASSERT_TRUE(monotonicity.is_monotonic);
-        ASSERT_TRUE(monotonicity.is_positive);
-        ASSERT_TRUE(monotonicity.is_always_monotonic);
-        ASSERT_TRUE(monotonicity.is_strict);
-    }
 }

@@ -46,6 +46,11 @@ ${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 # should return no records
 ${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset settings stream_like_engine_allow_direct_select=1;"
 
+truncate ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt --size 0
+
+# exception will happen when a file unexpectedly changed the size to zero without changing the inode
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;" 2>&1 | grep -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
