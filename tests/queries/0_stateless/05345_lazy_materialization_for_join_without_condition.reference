@@ -1,0 +1,59 @@
+-- CROSS JOIN
+999	l999	0	r0
+999	l999	1	r1
+999	l999	2	r2
+999	l999	3	r3
+999	l999	4	r4
+999	l999	0	r0
+999	l999	1	r1
+999	l999	2	r2
+999	l999	3	r3
+999	l999	4	r4
+2
+-- a comma join, only the heavy columns in the result
+l0	r29
+l0	r28
+l0	r27
+l0	r26
+l0	r25
+l0	r29
+l0	r28
+l0	r27
+l0	r26
+l0	r25
+2
+-- LEFT JOIN ON 1
+999	l999	r0
+999	l999	r1
+999	l999	r2
+999	l999	r3
+999	l999	r4
+999	l999	r0
+999	l999	r1
+999	l999	r2
+999	l999	r3
+999	l999	r4
+2
+-- nothing of the right side is needed below the LIMIT, so the join keeps its heavy column
+l999
+l999
+l999
+l999
+l999
+l999
+l999
+l999
+l999
+l999
+1
+-- PASTE JOIN
+0	l0	r0
+1	l1	r1
+2	l2	r2
+3	l3	r3
+4	l4	r4
+0	l0	r0
+1	l1	r1
+2	l2	r2
+3	l3	r3
+4	l4	r4
