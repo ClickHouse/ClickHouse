@@ -7,7 +7,6 @@
 
 #include <deque>
 #include <cstdint>
-#include <optional>
 
 namespace DB
 {
@@ -53,7 +52,7 @@ public:
     RowNumber end() const;
     RowNumber next(RowNumber row) const;
     RowNumber prev(RowNumber row) const;
-    std::optional<RowNumber> move(RowNumber row, int64_t offset) const;
+    RowNumber move(RowNumber row, int64_t offset) const;
 
 private:
     std::deque<SlidingBlock> blocks;

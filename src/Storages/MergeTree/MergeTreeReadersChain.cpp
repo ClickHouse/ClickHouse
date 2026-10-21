@@ -36,6 +36,11 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
     , is_initialized(true)
 {
+    for (const auto & range_reader : range_readers)
+    {
+        if (!range_reader.getReader()->producesFilterOnly())
+            columns_cache_readers.push_back(range_reader.getReader());
+    }
     previous_steps_columns.resize(range_readers.size());
     for (size_t i = 1; i < range_readers.size(); ++i)
         for (const auto & column : range_readers[i - 1].getSampleBlock())
@@ -294,7 +299,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb)
+    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
+    size_t max_block_size_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -306,9 +312,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
+    size_t num_attributed_readers = 0;
+    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
+        for (size_t i = 0; i < range_readers.size(); ++i)
+            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
+                num_attributed_readers = i + 1;
+
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -335,6 +347,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
+
+        if (num_attributed_readers != 0)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
@@ -375,6 +390,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         }
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
+
+        if (i < num_attributed_readers)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
