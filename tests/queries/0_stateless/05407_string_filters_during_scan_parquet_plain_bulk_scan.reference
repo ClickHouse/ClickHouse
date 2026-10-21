@@ -24,7 +24,9 @@ C | position(s, '\x01xxx') > 0 | 0 | 0	0	0
 C | position(s, '\x01xxx') > 0 | 1 | 0	0	0
 05407_plain_bulk_scan_applied	197310
 05407_plain_bulk_scan_large_prefix	100000
+05407_plain_bulk_scan_one_eighth	34992
 05407_plain_bulk_scan_other_conditions	198102
 05407_plain_bulk_scan_prefixes	6000
 05407_plain_bulk_scan_prefixes_zero	6000
 05407_ranges_after_prewhere_step	1
+05407_dense_matches	1

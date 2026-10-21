@@ -15,6 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FILE_A="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan.parquet"
 FILE_B="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan_prefixes.parquet"
 FILE_C="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan_large.parquet"
+FILE_D="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan_dense.parquet"
+FILE_E="${CLICKHOUSE_DATABASE}/t_plain_bulk_scan_one_eighth.parquet"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE_A', Parquet, 'k UInt64, s String')
@@ -39,6 +41,14 @@ SELECT number AS k, if(number = 9001, repeat(repeat('x', 1024), (number = 9001) 
 FROM numbers(100000)
 SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 0, output_format_parquet_row_group_size = 100000,
     output_format_parquet_data_page_size = 4096, output_format_parquet_write_page_index = 1;
+
+INSERT INTO FUNCTION file('$FILE_D', Parquet, 's String')
+SELECT if(number % 128 < 17, 'abc needle', 'zz') FROM numbers(40000)
+SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 0, output_format_parquet_row_group_size = 100000;
+
+INSERT INTO FUNCTION file('$FILE_E', Parquet, 's String')
+SELECT if(number % 128 < 16, 'abc needle', 'zz') FROM numbers(40000)
+SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 0, output_format_parquet_row_group_size = 100000;
 "
 
 for cond in "s LIKE '%needle%'" "s LIKE '%needle%' AND s LIKE '%1%'" "s LIKE '%needle%' AND endsWith(s, '7')" "s LIKE '%value%'"; do
@@ -70,6 +80,10 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_B', Parquet) PREWHERE pos
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_C', Parquet) PREWHERE position(s, '\x01xxx') > 0 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_large_prefix' FORMAT Null"
 # With a page index, the second PREWHERE step decodes the rows with an even k one row range at a time, so it checks them one by one.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_C', Parquet) PREWHERE k % 2 = 0 AND position(s, '\x01xxx') > 0 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, input_format_parquet_use_offset_index = 1, enable_multiple_prewhere_read_steps = 1, allow_reorder_prewhere_conditions = 0, log_comment = '05407_ranges_after_prewhere_step' FORMAT Null"
+# 17 of the first 128 values contain the needle, more than 1/8, so the rest of the page is checked one by one and these short
+# values turn the filter off after 8192 checks. With 16 of every 128 values, every value is bulk-scanned and 34992 are replaced.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_D', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, input_format_parquet_max_block_size = 65536, log_comment = '05407_dense_matches' FORMAT Null"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE_E', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05407_plain_bulk_scan_one_eighth' FORMAT Null"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -82,5 +96,10 @@ ORDER BY log_comment;
 SELECT log_comment, sum(ProfileEvents['StringValueFilterValuesChecked']) BETWEEN 8192 AND 40000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05407_ranges_after_prewhere_step'
+GROUP BY log_comment;
+
+SELECT log_comment, sum(ProfileEvents['StringValueFilterValuesChecked']) BETWEEN 8192 AND 16383
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05407_dense_matches'
 GROUP BY log_comment;
 "
