@@ -220,6 +220,7 @@ void BackupCoordinationOnCluster::createRootNodes()
         zk->createIfNotExists(zookeeper_path + "/repl_access", "");
         zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
         zk->createIfNotExists(zookeeper_path + "/repl_workload_entities", "");
+        zk->createIfNotExists(zookeeper_path + "/repl_named_collections", "");
         zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
         zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
         zk->createIfNotExists(zookeeper_path + "/file_infos", "");
@@ -631,9 +632,6 @@ void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & load
             case UserDefinedSQLObjectType::Function:
                 path += "functions";
                 break;
-            case UserDefinedSQLObjectType::NamedCollection:
-                path += "named_collections";
-                break;
         }
 
         zk->createIfNotExists(path, "");
@@ -675,16 +673,6 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
                 for (const String & host_id : zk->getChildren(functions_path))
                 {
                     String dir = zk->get(functions_path + "/" + host_id);
-                    directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
-                }
-            }
-
-            if (String named_collections_path = objects_path + "/named_collections"; zk->exists(named_collections_path))
-            {
-                UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::NamedCollection;
-                for (const String & host_id : zk->getChildren(named_collections_path))
-                {
-                    String dir = zk->get(named_collections_path + "/" + host_id);
                     directories_for_sql_objects.push_back({loader_zk_path, object_type, host_id, dir});
                 }
             }
@@ -784,6 +772,66 @@ void BackupCoordinationOnCluster::prepareReplicatedWorkloadEntities() const
     replicated_workload_entities.emplace();
     for (auto & directory : directories_for_workload_entities)
         replicated_workload_entities->addDirectory(std::move(directory));
+}
+
+void BackupCoordinationOnCluster::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    {
+        std::lock_guard lock{replicated_named_collections_mutex};
+        if (replicated_named_collections)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedNamedCollectionsDir() must not be called after preparing");
+    }
+
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addReplicatedNamedCollectionsDir");
+    auto holder = with_retries.createRetriesControlHolder("addReplicatedNamedCollectionsDir");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zk);
+        String path = zookeeper_path + "/repl_named_collections/" + escapeForFileName(replication_id);
+        zk->createIfNotExists(path, "");
+        path += "/" + current_host;
+        zk->createIfNotExists(path, dir_path);
+    });
+}
+
+Strings BackupCoordinationOnCluster::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getReplicatedNamedCollectionsDirs");
+    std::lock_guard lock{replicated_named_collections_mutex};
+    prepareReplicatedNamedCollections();
+    return replicated_named_collections->getDirectories(replication_id, current_host);
+}
+
+void BackupCoordinationOnCluster::prepareReplicatedNamedCollections() const
+{
+    if (replicated_named_collections)
+        return;
+
+    std::vector<BackupCoordinationReplicatedNamedCollections::DirectoryPathForNamedCollections> directories_for_named_collections;
+    auto holder = with_retries.createRetriesControlHolder("prepareReplicatedNamedCollections");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        directories_for_named_collections.clear();
+        with_retries.renewZooKeeper(zk);
+
+        String path = zookeeper_path + "/repl_named_collections";
+        for (const String & escaped_replication_id : zk->getChildren(path))
+        {
+            String replication_id = unescapeForFileName(escaped_replication_id);
+            String collections_path = path + "/" + escaped_replication_id;
+            for (const String & host_id : zk->getChildren(collections_path))
+            {
+                String dir = zk->get(collections_path + "/" + host_id);
+                directories_for_named_collections.push_back({replication_id, host_id, dir});
+            }
+        }
+    });
+
+    replicated_named_collections.emplace();
+    for (auto & directory : directories_for_named_collections)
+        replicated_named_collections->addDirectory(std::move(directory));
 }
 
 void BackupCoordinationOnCluster::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)

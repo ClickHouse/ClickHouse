@@ -55,6 +55,11 @@ bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireReplicatedNamedCollections(const String &)
+{
+    return true;
+}
+
 bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
 {
     std::lock_guard lock{mutex};

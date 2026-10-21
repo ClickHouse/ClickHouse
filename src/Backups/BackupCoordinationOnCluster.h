@@ -5,6 +5,7 @@
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
+#include <Backups/BackupCoordinationReplicatedNamedCollections.h>
 #include <Backups/BackupCoordinationReplicatedWorkloadEntities.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
@@ -78,6 +79,9 @@ public:
     void addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path) override;
     Strings getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const override;
 
+    void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
+    Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
+
     void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) override;
     String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
 
@@ -108,6 +112,7 @@ private:
     void prepareReplicatedAccess() const TSA_REQUIRES(replicated_access_mutex);
     void prepareReplicatedSQLObjects() const TSA_REQUIRES(replicated_sql_objects_mutex);
     void prepareReplicatedWorkloadEntities() const TSA_REQUIRES(replicated_workload_entities_mutex);
+    void prepareReplicatedNamedCollections() const TSA_REQUIRES(replicated_named_collections_mutex);
     void prepareKeeperMapTables() const TSA_REQUIRES(keeper_map_tables_mutex);
     void prepareRocksDBTables() const TSA_REQUIRES(rocksdb_tables_mutex);
     void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
@@ -135,6 +140,7 @@ private:
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access TSA_GUARDED_BY(replicated_access_mutex);
     mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
     mutable std::optional<BackupCoordinationReplicatedWorkloadEntities> replicated_workload_entities TSA_GUARDED_BY(replicated_workload_entities_mutex);
+    mutable std::optional<BackupCoordinationReplicatedNamedCollections> replicated_named_collections TSA_GUARDED_BY(replicated_named_collections_mutex);
     mutable std::optional<BackupCoordinationFileInfos> file_infos TSA_GUARDED_BY(file_infos_mutex);
     mutable std::optional<BackupCoordinationKeeperMapTables> keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
     mutable std::optional<BackupCoordinationKeeperMapTables> rocksdb_tables TSA_GUARDED_BY(rocksdb_tables_mutex);
@@ -144,6 +150,7 @@ private:
     mutable std::mutex replicated_access_mutex;
     mutable std::mutex replicated_sql_objects_mutex;
     mutable std::mutex replicated_workload_entities_mutex;
+    mutable std::mutex replicated_named_collections_mutex;
     mutable std::mutex file_infos_mutex;
     mutable std::mutex writing_files_mutex;
     mutable std::mutex keeper_map_tables_mutex;

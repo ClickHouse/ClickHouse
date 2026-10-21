@@ -1,0 +1,11 @@
+an implicit selection does not export the collections by default, and needs no rights to read them
+1
+0
+backup_named_collections = 1 exports them, so it requires the rights to read them
+1
+backup_named_collections = 1 exports them for a user holding the rights
+1
+1
+naming the table explicitly exports them without the setting
+1
+1

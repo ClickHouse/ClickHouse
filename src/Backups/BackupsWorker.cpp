@@ -525,7 +525,7 @@ struct BackupsWorker::BackupStarter
         if (!on_cluster)
         {
             backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
-            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements, backup_settings.backup_named_collections);
             query_context->checkAccess(required_access);
         }
 
@@ -761,7 +761,7 @@ void BackupsWorker::doBackup(
         {
             auto elements = backup_query->elements;
             ASTBackupQuery::setCurrentDatabase(elements, effective_database);
-            insertAtEnd(required_access, BackupUtils::getRequiredAccessToBackup(elements));
+            insertAtEnd(required_access, BackupUtils::getRequiredAccessToBackup(elements, backup_settings.backup_named_collections));
         }
 
         /// Send the BACKUP query to other hosts.

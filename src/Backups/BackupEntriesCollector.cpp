@@ -1040,6 +1040,17 @@ bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const Str
     return false;
 }
 
+bool BackupEntriesCollector::isTableExplicitlySelectedForBackup(const QualifiedTableName & table_name) const
+{
+    auto it = database_infos.find(table_name.database);
+    if (it == database_infos.end())
+        return false;
+
+    /// `DatabaseInfo::tables` holds only the tables named by TABLE elements; a DATABASE or ALL
+    /// element selecting the table records itself in `all_tables_elements` instead.
+    return it->second.tables.contains(table_name.table);
+}
+
 bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const
 {
     auto it = database_infos.find(table_name.database);

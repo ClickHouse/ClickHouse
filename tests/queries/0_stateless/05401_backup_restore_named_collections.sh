@@ -47,6 +47,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
 DROP USER IF EXISTS ${backup_user};
 CREATE USER ${backup_user};
 GRANT SHOW NAMED COLLECTIONS ON * TO ${backup_user};
+GRANT displaySecretsInShowAndSelect ON *.* TO ${backup_user};
 GRANT BACKUP ON *.* TO ${backup_user};
 GRANT WRITE ON DISK TO ${backup_user};
 "

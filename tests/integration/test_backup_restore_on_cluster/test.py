@@ -1158,7 +1158,16 @@ def test_system_named_collections_required_privileges():
         user="u1",
     )
 
+    # `SHOW NAMED COLLECTIONS SECRETS` alone does not allow reading the values back:
+    # `displaySecretsInShowAndSelect` is required with it, for the export too.
     node1.query("GRANT SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON * TO u1")
+    expected_error = "necessary to have the grant displaySecretsInShowAndSelect"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+
+    node1.query("GRANT displaySecretsInShowAndSelect ON *.* TO u1")
     node1.query(
         f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
         user="u1",

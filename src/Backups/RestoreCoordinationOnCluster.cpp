@@ -68,6 +68,7 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_workload_entities_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_named_collections_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
@@ -266,9 +267,6 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
                 case UserDefinedSQLObjectType::Function:
                     path += "functions";
                     break;
-                case UserDefinedSQLObjectType::NamedCollection:
-                    path += "named_collections";
-                    break;
             }
 
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
@@ -306,6 +304,38 @@ bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const Strin
 
             /// Record current_host_index as the node value so that a host which creates the node but loses the
             /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// The node already exists - this replica owns the restore only if it is the one that created the node.
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
+}
+
+bool RestoreCoordinationOnCluster::acquireReplicatedNamedCollections(const String & replication_id)
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedNamedCollections");
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireReplicatedNamedCollections");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = zookeeper_path + "/repl_named_collections_acquired/" + escapeForFileName(replication_id);
+
+            /// Record current_host_index as the node value so that a host which creates the node but loses the
+            /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
+            /// With an empty value the owner's retry would deny ownership to every host, and nothing would restore
+            /// the collections.
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
                 throw zkutil::KeeperException::fromPath(code, path);

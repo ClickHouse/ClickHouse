@@ -130,6 +130,15 @@ struct BackupSettings
     /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
 
+    /// Whether `BACKUP ALL` and `BACKUP DATABASE system` export the SQL-created named collections
+    /// (the `system.named_collections` table). Disabled by default: exporting the collections writes
+    /// their values into the backup, so it requires the rights to read the values (`SHOW NAMED
+    /// COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and `displaySecretsInShowAndSelect`), which an
+    /// administrator allowed to back up everything does not necessarily hold, and a backup holding
+    /// them cannot be restored by a server which predates their support. Naming the table explicitly
+    /// (`BACKUP TABLE system.named_collections`) exports it regardless of this setting.
+    bool backup_named_collections = false;
+
 #if CLICKHOUSE_CLOUD
     /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a
     /// barrier: the writer pool drains and waits for the slowest file of the batch before the batch is

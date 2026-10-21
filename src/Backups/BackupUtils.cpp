@@ -62,7 +62,7 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 
 
 /// Returns access required to execute BACKUP query.
-AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, bool backup_named_collections)
 {
     const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
 
@@ -75,6 +75,8 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             case ASTBackupQuery::TABLE:
             {
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
+                /// Naming the table explicitly exports the collections regardless of the
+                /// `backup_named_collections` setting (see `backupNamedCollections`).
                 exports_named_collections |= (element.database_name == system_named_collections.first)
                     && (element.table_name == system_named_collections.second);
                 break;
@@ -90,7 +92,8 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
-                exports_named_collections |= (element.database_name == system_named_collections.first)
+                exports_named_collections |= backup_named_collections
+                    && (element.database_name == system_named_collections.first)
                     && !element.except_tables.contains(system_named_collections);
                 break;
             }
@@ -99,7 +102,8 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP);
-                exports_named_collections |= !element.except_databases.contains(system_named_collections.first)
+                exports_named_collections |= backup_named_collections
+                    && !element.except_databases.contains(system_named_collections.first)
                     && !element.except_tables.contains(system_named_collections);
                 break;
             }
@@ -114,7 +118,12 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
     /// access, so this list is the only check made against the initiating user before the query is
     /// sent to them.
     if (exports_named_collections)
+    {
         required_access.emplace_back(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
+        /// `SHOW NAMED COLLECTIONS SECRETS` alone does not allow reading the values back, reading them
+        /// requires `displaySecretsInShowAndSelect` with it (see `StorageSystemNamedCollections`).
+        required_access.emplace_back(AccessType::displaySecretsInShowAndSelect);
+    }
 
     return required_access;
 }

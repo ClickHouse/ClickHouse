@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_NAMED_COLLECTIONS;
 }
 
 
@@ -312,6 +313,17 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
         loaded_named_collections[query.collection_name] = metadata_storage->createOrReplace(query);
         return;
     }
+
+    /// `max_named_collection_num_to_throw` is enforced here, under the mutex, rather than in
+    /// `InterpreterCreateNamedCollectionQuery`, so that every path adding a new collection is
+    /// covered - in particular RESTORE, which calls this function directly. Only this branch adds
+    /// a collection: the skip and the replacement above do not increase the count and stay allowed
+    /// at the limit.
+    if (UInt64 limit = Context::getGlobalContextInstance()->getMaxNamedCollectionNumToThrow();
+        limit > 0 && loaded_named_collections.size() >= limit)
+        throw Exception(ErrorCodes::TOO_MANY_NAMED_COLLECTIONS,
+                        "Too many named collections. The limit (server configuration parameter `max_named_collection_num_to_throw`) "
+                        "is set to {}, the current number is {}", limit, loaded_named_collections.size());
 
     if (query.or_replace)
         add(query.collection_name, metadata_storage->createOrReplace(query), lock);

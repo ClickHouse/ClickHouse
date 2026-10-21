@@ -31,9 +31,10 @@ echo "corrupt the first ciphertext byte of the entry (after the 64-byte FileEncr
 byte=$(od -An -tu1 -j64 -N1 "${entry_file}" | tr -d ' ')
 printf '%b' "$(printf '\\%03o' $((byte ^ 1)))" | dd of="${entry_file}" bs=1 seek=64 count=1 conv=notrunc 2>/dev/null
 
-echo "the restore fails without leaking the decrypted statement"
+echo "the restore fails without leaking the decrypted statement or the collection name"
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION ${collection}"
 error=$(${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.named_collections FROM ${backup_name}" 2>&1)
-echo "${error}" | grep -m1 -c "Cannot parse the named collection entry"
+echo "${error}" | grep -m1 -c "Cannot parse a named collection entry"
 echo "${error}" | grep -c "${secret}" || true
+echo "${error}" | grep -c "${collection}" || true
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${collection}'"

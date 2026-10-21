@@ -56,6 +56,11 @@ public:
     /// Returns all access entities which can be put into a backup.
     std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
 
+    /// Whether the table was named by a TABLE element of the BACKUP query, as opposed to being
+    /// selected by a DATABASE or ALL element. Can be called by implementations of
+    /// IStorage::backupData() whose behaviour depends on the table being backed up explicitly.
+    bool isTableExplicitlySelectedForBackup(const QualifiedTableName & table_name) const;
+
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
     void addBackupEntry(const String & file_name, BackupEntryPtr backup_entry);

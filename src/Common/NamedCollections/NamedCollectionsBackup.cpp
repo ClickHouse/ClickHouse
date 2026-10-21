@@ -8,9 +8,9 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -51,6 +51,15 @@ constexpr std::string_view encrypted_sql_extension = ".sql.enc";
 
 void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup)
 {
+    /// A DATABASE or ALL element selects this table implicitly; export the collections for such an
+    /// element only when `backup_named_collections` asks for them. Naming the table in the query is
+    /// the explicit opt-in. This runs before the access check below, so that `BACKUP ALL` keeps
+    /// working for a user who may back up everything but may not read the collections' values.
+    if (!backup_entries_collector.getBackupSettings().backup_named_collections
+        && !backup_entries_collector.isTableExplicitlySelectedForBackup(
+            QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"}))
+        return;
+
     auto context = backup_entries_collector.getContext();
     auto & factory = NamedCollectionFactory::instance();
     const auto storage_properties = factory.getMetadataStorageProperties();
@@ -58,12 +67,14 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     /// The entries are the `CREATE NAMED COLLECTION` statements with their values. With an
     /// encrypted storage they are copied as ciphertext, but any server holding the same key
     /// restores them into collections whose values can then be read, so exporting them is
-    /// still equivalent to reading the values and requires `SHOW_NAMED_COLLECTIONS_SECRETS`,
-    /// the same right `system.named_collections` requires to show the values. The same rights
-    /// are also required of the initiating user of a `BACKUP ON CLUSTER` query before it is
-    /// dispatched (see `BackupUtils::getRequiredAccessToBackup`), because the hosts running
-    /// this check may execute the query with full access.
+    /// still equivalent to reading the values and requires the same rights `system.named_collections`
+    /// requires to show the values: `SHOW_NAMED_COLLECTIONS_SECRETS` together with
+    /// `displaySecretsInShowAndSelect` (the former alone does not allow reading the values back).
+    /// The same rights are also required of the initiating user of a `BACKUP ON CLUSTER` query
+    /// before it is dispatched (see `BackupUtils::getRequiredAccessToBackup`), because the hosts
+    /// running this check may execute the query with full access.
     context->checkAccess(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
+    context->checkAccess(AccessType::displaySecretsInShowAndSelect);
 
     auto raw_entries = factory.getRawEntriesForBackup();
 
@@ -88,19 +99,18 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     /// The Keeper storage is shared by all replicas: register the directory with the backup
     /// coordination and emit the entries from a post task so only one host writes them.
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    backup_coordination->addReplicatedSQLObjectsDir(
-        storage_properties.replication_id, UserDefinedSQLObjectType::NamedCollection, data_path_in_backup);
+    backup_coordination->addReplicatedNamedCollectionsDir(storage_properties.replication_id, data_path_in_backup);
 
     // On the stage of running post tasks, all directories will already be added to the backup coordination object.
     // They will only be returned for one of the hosts below, for the rest an empty list.
-    // See also BackupCoordinationReplicatedSQLObjects class.
+    // See also BackupCoordinationReplicatedNamedCollections class.
     backup_entries_collector.addPostTask(
         [my_backup_entries = std::move(backup_entries),
          replication_id = storage_properties.replication_id,
          &backup_entries_collector,
          backup_coordination]
         {
-            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(replication_id, UserDefinedSQLObjectType::NamedCollection);
+            auto dirs = backup_coordination->getReplicatedNamedCollectionsDirs(replication_id);
 
             for (const auto & dir : dirs)
             {
@@ -121,8 +131,7 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     const auto storage_properties = factory.getMetadataStorageProperties();
 
     if (storage_properties.is_replicated
-        && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(
-            storage_properties.replication_id, UserDefinedSQLObjectType::NamedCollection))
+        && !restorer.getRestoreCoordination()->acquireReplicatedNamedCollections(storage_properties.replication_id))
         return; /// Other replica is already restoring named collections.
 
     auto backup = restorer.getBackup();
@@ -139,11 +148,15 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     {
         if (filename.ends_with(encrypted_sql_extension))
             backup_is_encrypted = true;
+        /// The entry file names are the collection names, and seeing those requires a right
+        /// (`SHOW NAMED COLLECTIONS`) which restoring does not: an operator must be able to restore
+        /// a backup without being able to read it. So no error below names an entry.
         else if (!filename.ends_with(sql_extension))
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot restore named collections: File name {} doesn't have the extension {} or {}",
-                String{data_path_in_backup_fs / filename},
+                "Cannot restore named collections: backup {} contains an entry whose file name has neither the {} "
+                "nor the {} extension",
+                backup->getNameForLogging(),
                 sql_extension,
                 encrypted_sql_extension);
     }
@@ -178,9 +191,8 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         catch (Exception & e)
         {
             e.addMessage(
-                "While reading the named collection entry {} from backup {} (SETTINGS restore_named_collections = false "
+                "While reading a named collection entry from backup {} (SETTINGS restore_named_collections = false "
                 "skips restoring named collections)",
-                filepath,
                 backup->getNameForLogging());
             throw;
         }
@@ -200,11 +212,18 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         }
         catch (const Exception &)
         {
+            /// A parser exception embeds the text around the error position, and here that text is the
+            /// statement with the collection's values - for an encrypted entry, decrypted secret material,
+            /// while restoring requires only `CREATE NAMED COLLECTION`, not the rights to read the values.
+            /// The CTR encryption of the storage is not authenticated (`decryptStoredEntry` verifies only
+            /// the key fingerprint of the header), so a corrupted or tampered entry decrypts into garbled
+            /// plaintext and reaches this parser. Report the failure without the original exception and
+            /// without the entry path (which is the collection's name), so that nothing the restoring user
+            /// may not read leaks to them or to the log.
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot parse the named collection entry {} from backup {} as a CREATE NAMED COLLECTION statement, "
+                "Cannot parse a named collection entry from backup {} as a CREATE NAMED COLLECTION statement, "
                 "the entry may be corrupted (SETTINGS restore_named_collections = false skips restoring named collections)",
-                filepath,
                 backup->getNameForLogging());
         }
     }

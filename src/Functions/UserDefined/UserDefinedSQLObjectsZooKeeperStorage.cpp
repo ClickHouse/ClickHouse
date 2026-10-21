@@ -35,7 +35,6 @@ extern const SettingsUInt64 max_parser_depth;
 namespace ErrorCodes
 {
     extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
@@ -48,8 +47,6 @@ namespace
         {
             case UserDefinedSQLObjectType::Function:
                 return "function_";
-            case UserDefinedSQLObjectType::NamedCollection:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Named collections are not stored in the user-defined SQL objects storage");
         }
     }
 
@@ -352,8 +349,6 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 context->getSettingsRef()[Setting::max_parser_backtracks]);
             return ast;
         }
-        case UserDefinedSQLObjectType::NamedCollection:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Named collections are not stored in the user-defined SQL objects storage");
     }
     UNREACHABLE();
 }

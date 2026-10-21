@@ -8,18 +8,8 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric NamedCollection;
-}
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_NAMED_COLLECTIONS;
-}
 
 BlockIO InterpreterCreateNamedCollectionQuery::execute()
 {
@@ -32,12 +22,9 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     if (query.or_replace)
         current_context->checkAccess(AccessType::DROP_NAMED_COLLECTION, query.collection_name);
 
-    UInt64 limit = getContext()->getGlobalContext()->getMaxNamedCollectionNumToThrow();
-    UInt64 count = CurrentMetrics::get(CurrentMetrics::NamedCollection);
-    if (limit > 0 && count >= limit)
-        throw Exception(ErrorCodes::TOO_MANY_NAMED_COLLECTIONS,
-                        "Too many named collections. The limit (server configuration parameter `max_named_collection_num_to_throw`) "
-                        "is set to {}, the current number is {}", limit, count);
+    /// `max_named_collection_num_to_throw` is enforced by `NamedCollectionFactory::createFromSQL`,
+    /// under the factory mutex, so that every path adding a new collection is covered - in
+    /// particular RESTORE, which calls the factory directly.
 
     if (!query.cluster.empty())
     {
