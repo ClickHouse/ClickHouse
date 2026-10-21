@@ -37,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 العدد الافتراضي للحاويات لعملية distributed shuffle-hash-join.
 يستخدمه مخطط موزع قائم على القواعد. يحدد المُحسِّن القائم على التكلفة درجة التشعّب بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "إعداد جديد: يضغط التبادل التدفقي لخطة الاستعلام الموزّع البيانات باستخدام `LZ4` بدلًا من مرمِّز `network_compression_method`."}]}]} />
+
+المرمِّز المستخدم لضغط حزم التبادل التدفقي بين مهام خطة الاستعلام الموزّع. أما عمليات التبادل التي تجري عبر الملفات المؤقتة فتستخدم برنامج الترميز `Default` الخاص بالخادم.
+
+القيم الممكنة:
+
+* `''` — استخدام مرمِّز [network&#95;compression&#95;method](/ar/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — دون ضغط.
+* `LZ4` — استخدام المرمِّز LZ4.
+* `LZ4HC` — استخدام المرمِّز LZ4HC بمستواه الافتراضي 9، وهو أبطأ في الضغط من `LZ4` بأضعاف كثيرة.
+* `ZSTD` — استخدام المرمِّز ZSTD بالمستوى المحدد في [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ar/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لتحديد مستوى ضغط ZSTD للتبادل التدفقي في خطة الاستعلام الموزّع."}]}]} />
+
+مستوى ضغط ZSTD للتبادل التدفقي في خطة الاستعلام الموزّع. لا يُستخدم إلا عند تعيين [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ar/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) إلى `ZSTD`.
+
+القيم الممكنة:
+
+* عدد صحيح من 1 إلى 22. كلما ارتفع المستوى تحسّن الضغط وتباطأ الأداء.
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

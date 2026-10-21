@@ -37,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散 shuffle-hash-join のデフォルトのバケット数。
 ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいてファンアウトを選択するため、この設定は使用しません。
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "新しい設定: 分散クエリプランの streaming エクスチェンジ は、`network_compression_method` のコーデックではなく `LZ4` で圧縮されるようになりました。"}]}]} />
+
+分散クエリプランのタスク間で行われる streaming エクスチェンジ において、パケットの圧縮に使用するコーデックです。一時ファイルを介したエクスチェンジには、サーバーのデフォルトコーデックが使用されます。
+
+設定可能な値:
+
+* `''` — [network&#95;compression&#95;method](/ja/reference/settings/session-settings/network#network_compression_method) のコーデックを使用します。
+* `NONE` — 圧縮しません。
+* `LZ4` — LZ4 コーデックを使用します。
+* `LZ4HC` — LZ4HC コーデックをデフォルトのレベル 9 で使用します。圧縮速度は `LZ4` の数倍以上遅くなります。
+* `ZSTD` — [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level) で指定したレベルで ZSTD コーデックを使用します。
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "分散クエリプランの streaming exchange における ZSTD 圧縮レベルを指定する新しい設定。"}]}]} />
+
+分散クエリプランの streaming exchange で使用する ZSTD 圧縮のレベルです。[distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) が `ZSTD` に設定されている場合にのみ使用されます。
+
+設定可能な値:
+
+* 1 から 22 までの整数。レベルが高いほど圧縮率は高くなりますが、処理速度は低下します。
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

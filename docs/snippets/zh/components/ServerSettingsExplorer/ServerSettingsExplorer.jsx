@@ -1362,7 +1362,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 127,
+      count: 128,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "ai_function_allow_sql_named_collections", path: "/other#ai_function_allow_sql_named_collections", default: "1" },
@@ -1374,6 +1374,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "cache_size_to_ram_max_ratio", path: "/other#cache_size_to_ram_max_ratio", default: "0.5" },
         { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
         { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
+        { name: "collect_connection_metrics", path: "/other#collect_connection_metrics", default: "0" },
         { name: "compression", path: "/other#compression" },
         { name: "config-file", path: "/other#config-file", default: "config.xml" },
         { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },

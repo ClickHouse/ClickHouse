@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري إنشاؤها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## network_compression_method
+## network_compression_method {#network_compression_method}
 
 <SettingsInfoBlock type="String" default_value="ZSTD" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "ZSTD"},{"label": "تم تغيير طريقة الضغط الافتراضية لاتصالات client\/server وserver\/server من `LZ4` إلى `ZSTD` لتقليل حركة مرور الشبكة."}]}]} />
 
-ترميز الضغط المستخدم لاتصالات client/server وserver/server عبر native protocol، ولاستجابة HTTP request المُنفَّذ باستخدام `compress=1`، والذي يستخدم صيغة الـ frame نفسها، وللتبادل التدفقي بين مهام distributed query plan (`make_distributed_plan`). تستخدم عمليات التبادل عبر temporary files ترميز الـ server الافتراضي.
+ترميز الضغط المستخدم لاتصالات client/server وserver/server عبر native protocol، ولاستجابة HTTP request المُنفَّذ باستخدام `compress=1`، والذي يستخدم صيغة الـ frame نفسها. أما التبادل التدفقي بين مهام خطة الاستعلام الموزّع (`make_distributed_plan`) فيستخدم بدلًا من ذلك [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ar/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method).
 
 القيم الممكنة:
 
@@ -32,13 +32,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * [network&#95;zstd&#95;compression&#95;level](/ar/reference/settings/session-settings/network#network_zstd_compression_level)
 
-## network_zstd_compression_level
+## network_zstd_compression_level {#network_zstd_compression_level}
 
 <SettingsInfoBlock type="Int64" default_value="3" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "3"},{"label": "تمت مواءمة مستوى ضغط `ZSTD` الافتراضي للشبكة مع الضغط الافتراضي الجديد `ZSTD(3)` على القرص."}]}]} />
 
-يحدّد مستوى ضغط ZSTD. لا يُستخدم إلا عندما تكون قيمة [network&#95;compression&#95;method](/ar/reference/settings/session-settings/network#network_compression_method) هي `ZSTD`.
+يحدّد مستوى ضغط ZSTD. لا يُستخدم إلا عندما تكون قيمة [network&#95;compression&#95;method](/ar/reference/settings/session-settings/network#network_compression_method) هي `ZSTD`. ولا يستخدمه التبادل التدفقي في خطة الاستعلام الموزّع إلا عندما تكون قيمة [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ar/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) فارغة.
 
 القيم الممكنة:
 

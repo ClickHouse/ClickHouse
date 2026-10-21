@@ -14,6 +14,23 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## min_bytes_before_external_group_by {#min_bytes_before_external_group_by}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração: o tamanho mínimo do estado de agregação de uma thread antes que o `GROUP BY` externo o grave em disco, para que uma consulta que já esteja acima do limiar não grave cada bloco como um arquivo separado."}]}]} />
+
+O tamanho mínimo, em bytes, do estado de agregação de uma thread antes que o `GROUP BY` externo o grave em disco.
+
+Quando a memória da consulta ultrapassa `max_bytes_before_external_group_by` ou `max_bytes_ratio_before_external_group_by` por causa de outros operadores (por exemplo, uma junção hash que mantém uma tabela grande), cada thread acabaria gravando em disco cada bloco que agrega como um pequeno arquivo separado. Ler de volta muitos arquivos pequenos consome mais memória do que a economizada com as gravações. Com esta configuração, a thread continua agregando até que seu próprio estado atinja o tamanho especificado e só então o grava como um único arquivo.
+
+A memória usada acima do limiar fica limitada a este valor multiplicado pelo número de threads.
+
+Valores possíveis:
+
+* Um inteiro positivo, o tamanho em bytes.
+* `0` — sem valor mínimo; o estado é gravado assim que o limiar é atingido.
+
 ## min_bytes_to_spill {#min_bytes_to_spill}
 
 <ExperimentalBadge />

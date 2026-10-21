@@ -14,6 +14,23 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+## min_bytes_before_external_group_by {#min_bytes_before_external_group_by}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置：外部 `GROUP BY` 将单个线程的聚合状态写入磁盘前，该状态需达到的最小大小，以避免已超过阈值的查询将每个块都写成单独的文件。"}]}]} />
+
+外部 `GROUP BY` 将单个线程的聚合状态写入磁盘前，该状态需达到的最小大小 (以字节为单位) 。
+
+当查询内存因其他运算符 (例如持有大表的哈希连接) 而超过 `max_bytes_before_external_group_by` 或 `max_bytes_ratio_before_external_group_by` 时，如果不启用此设置，每个线程都会将其聚合的每个块作为单独的小文件写入磁盘。而读回大量小文件所消耗的内存，比减少写入操作所节省的内存还要多。启用此设置后，线程会持续聚合，直到自身状态达到指定大小，才将其作为单个文件写出。
+
+超出阈值部分的内存用量上限为该值乘以线程数。
+
+可选值：
+
+* 正整数，表示以字节为单位的大小。
+* `0` — 不设最小值，一旦达到阈值即写出状态。
+
 ## min_bytes_to_spill {#min_bytes_to_spill}
 
 <ExperimentalBadge />

@@ -788,6 +788,14 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 用于在 Parquet 元数据中写入 Geo 列信息，并将列编码为 WKB 格式。
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting"}]}]} />
+
+为以 WKB 形式写入的 Geo 列 (参见 `output_format_parquet_geometadata`) 添加 Parquet `GEOMETRY` 逻辑类型注解，并为这些列写入 `GeospatialStatistics` (包围盒和几何类型) ，以取代 min/max 统计信息。支持该逻辑类型的读取器即使没有 GeoParquet `geo` 元数据，也能将此类列识别为几何对象。若 `output_format_parquet_geometadata` 已禁用，则此设置无效。`Geometry` 列也会在 GeoParquet `geo` 元数据中加以描述，其几何类型列表为空。禁用此设置时，这些列将以 `BYTE_ARRAY` 形式写入，不带地理空间注解，并使用 min/max 统计信息，且 `Geometry` 列不会在 `geo` 元数据中描述。此设置默认禁用，因为不识别该逻辑类型的读取器 (例如 Arrow C++ 以及 20 版本之前的 `pyarrow`) 将无法打开整个文件。
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

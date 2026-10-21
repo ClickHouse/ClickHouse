@@ -1962,6 +1962,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее время, затраченное на проверку дублирования блоков, вставленных в таблицы семейства *MergeTree.
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Количество неудачных попыток закрыть Elasticsearch point in time (PIT).
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 Сколько раз байты заголовка шифрования были найдены в кэше заголовков шифрования, благодаря чему чтение заголовка из источника не потребовалось.
@@ -2554,9 +2558,37 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество случаев, когда удаление файлов данных, замещённых в результате компактации Iceberg, было отложено, поскольку компактация или замещённый ею снимок оказались новее порога `iceberg_outdated_snapshot_lifetime_seconds`.
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Общее время, затраченное на определение текущего состояния таблиц Iceberg: поиск актуального файла метаданных (по подсказке версии или путём получения списка файлов), а затем его чтение и разбор.
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Суммарное время, затраченное на синхронную инициализацию итераторов данных Iceberg.
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Общее время, затраченное на подготовку файлов манифеста Iceberg к итерации: разбор заголовков со спецификацией партиций и схемой, а также проверку схемы на соответствие метаданным таблицы. Эти затраты возникают для каждого файла манифеста в каждом запросе — даже если файл манифеста берётся из кэша метаданных Iceberg.
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+Количество файлов манифеста Iceberg, прочитанных из хранилища (а не взятых из кэша метаданных Iceberg).
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+Общий размер файлов манифеста Iceberg, прочитанных из хранилища.
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+Общее время, затраченное на чтение файлов манифеста Iceberg из хранилища и их декодирование.
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+Количество списков манифестов Iceberg, прочитанных из хранилища (а не полученных из кэша метаданных Iceberg).
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+Общее время, затраченное на чтение и декодирование списков манифестов Iceberg из хранилища.
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2573,6 +2605,26 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Приблизительное количество байтов, вытесненных из кэша метаданных Iceberg.
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+Общий размер разобранного содержимого файла Iceberg `metadata.json`.
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Общее время, затраченное на разбор файлов `metadata.json` Iceberg.
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Количество разборов файла Iceberg `metadata.json`. Разбор выполняется при каждом обращении, в том числе когда содержимое файла берётся из кэша метаданных Iceberg.
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+Общее время, затраченное на чтение файлов Iceberg `metadata.json` из хранилища, включая декомпрессию.
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+Количество файлов Iceberg `metadata.json`, прочитанных из хранилища (а не из кэша метаданных Iceberg).
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2609,6 +2661,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 При чтении из Iceberg применена оптимизация тривиального подсчёта
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Общее время, затраченное на чтение и разбор файла `version-hint.text` таблиц Iceberg.
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4034,9 +4090,25 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее количество объектов, возвращённых API перечисления объектов в объектном хранилище до применения какой-либо фильтрации.
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+Количество запросов метаданных объектов (например, S3 HEAD), выполненных при чтении объектов (источником объектного хранилища, его итераторами файлов и механизмом автоматического определения схемы) из‑за того, что размер и ETag объекта не удалось узнать ни при получении списка, ни из метаданных таблицы.
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+Общее время, затраченное на запросы метаданных объектов, учтённые в `ObjectStorageMetadataFetchedForRead`.
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 Объекты, исключённые при фильтрации по предикату виртуальных столбцов &#95;path/&#95;file.
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+Количество объектов, которые источник объектного хранилища пропустил целиком, поскольку, согласно кэшу условий запроса, ни одна из их групп строк не удовлетворяет фильтру.
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+Количество групп строк, пропущенных источником объектного хранилища, так как, согласно кэшу условий запроса, они не соответствуют фильтру.
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4149,6 +4221,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 Количество неуспешных коммитов в Keeper
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+Общее время, которое источники объектного хранилища провели в ожидании считывателя следующего объекта, подготавливаемого в фоновом режиме.
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4354,6 +4430,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество реплик, использованных для выполнения запроса в режиме параллельных реплик на основе задач
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+Общее количество групп строк Parquet, отсечённых bloom-фильтрами.
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 Общее количество столбцов, к которым был применён фильтр
@@ -4366,9 +4446,21 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Задачи, созданные ридером Parquet
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Общий размер несжатых данных страниц Parquet (страниц данных и страниц словаря), распакованных ридером Parquet.
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+Общее количество групп строк Parquet, отсечённых фильтрами по словарю (с переходом на резервный вариант — bloom-фильтр — для столбцов, словарь которых не укладывается в лимит памяти, выделенный для отсечения).
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Время ожидания при чтении файла Parquet потоками декодирования (а не потоками предвыборки)
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Общее время, затраченное на чтение и десериализацию футеров файлов Parquet (без учёта футеров, полученных из кэша метаданных Parquet).
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4382,6 +4474,14 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Примерное количество байтов, вытесненных из кэша метаданных Parquet.
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+Количество страниц данных Parquet, декомпрессия которых была запущена для пропуска строк, отфильтрованных PREWHERE (страница может также содержать строки, которые будут прочитаны позже).
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+Общее количество байтов, прочитанных из файлов Parquet с помощью DB::Parquet::Prefetcher. Это значение превышает `ParquetPrefetcherUsedBytes`, когда чтения объединяются в диапазоны, которые в итоге не используются, например фрагменты столбцов из групп строк, впоследствии отсечённых bloom-фильтрами.
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 Общее количество операций чтения в режиме ReadMode::EntireFileIsInMemory, выполненных DB::Parquet::Prefetcher
@@ -4394,13 +4494,17 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее число операций чтения в режиме ReadMode::SeekAndRead, выполненных DB::Parquet::Prefetcher
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+Общее количество байтов в диапазонах, прочитанных DB::Parquet::Prefetcher и фактически использованных ридером Parquet.
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 Общее количество страниц, отсечённых из данных Parquet с помощью индекса столбца (column index)
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-Общее количество групп строк, исключённых из данных Parquet
+Общее количество групп строк, отсечённых из данных Parquet до их чтения (на основе статистики min/max и выбора групп строк). Группы строк, отсечённые позднее bloom-фильтрами и словарями, учитываются в `ParquetBloomFilterPrunedRowGroups` и `ParquetDictionaryFilterPrunedRowGroups`.
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 

@@ -1118,6 +1118,10 @@ Keeper 更新日志并行启动读取所用线程池中排队或活跃的作业�
 
 待处理请求数
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+启动后等待本地日志条目完成预处理的 Raft 事件循环线程数。Raft 事件循环还负责运行监听器、选举定时器、心跳定时器以及所有 RPC 完成回调，因此该值应保持为 0 或 1。
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper server 读取线程池中的线程数量。
@@ -2289,6 +2293,10 @@ UNIQUE KEY 索引缓存总大小 (字节)
 ### VersionInteger {#versioninteger}
 
 以 1000 为基数、用单个整数表示的 server 版本。例如，版本 11.22.33 会转换为 11022033。
+
+### WaitingQuery {#waitingquery}
+
+正在等待异步加载或启动完成的查询数，其上限由服务器设置 &#39;max&#95;waiting&#95;queries&#39; 控制
 
 ### 写入 {#write}
 

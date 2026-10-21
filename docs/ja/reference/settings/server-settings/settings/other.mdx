@@ -104,6 +104,30 @@ cgroups 内の対応するしきい値に基づいて server の最大許容メ�
 
 cgroup オブザーバーを無効にするには、この値を `0` に設定します。
 
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />`system.connections` テーブル用に接続情報を収集できるようにします。このテーブルには、ネイティブTCP および HTTP のクエリインターフェイスの接続が表示されます。MySQL、PostgreSQL、gRPC などその他のプロトコルの接続は表示されません。
+
+この設定を `true` にすると、サーバーは接続の一覧をメモリ上に保持します。
+
+* ネイティブTCP接続は、認証後に一覧へ追加されます。
+* HTTP 接続は、その接続で最初のクエリを受信した時点で一覧へ追加されます。
+* 接続がクローズされると、その接続は一覧から削除されます。HTTP keep-alive 接続は、リクエスト間ではステータスが `idle` になります。
+
+接続およびクエリごとにわずかな同期コストが発生するため、デフォルト値は `false` です。
+
+`SHOW CONNECTIONS` 権限を持たないユーザーには、自身の接続のみが表示されます。
+
+この設定は再起動なしで変更できます。`false` に変更すると、`system.connections` は空になり、サーバーは新規接続の登録を停止します。`true` に変更すると、既存の接続は次のクエリ実行時に `system.connections` に表示されるようになります。
+
+設定例:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+関連項目: `system.connections`、`system.processes`
+
 ## 圧縮 {#compression}
 
 [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブルに対するデータ圧縮の設定です。

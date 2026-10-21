@@ -1961,6 +1961,10 @@ ReplicatedMergeTree テーブルに INSERT されたブロック内で、重複�
 
 *MergeTree テーブルに INSERT されたブロックの重複チェックに費やされた合計時間。
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Elasticsearch の point in time のクローズ試行が失敗した回数。
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 encryption header のバイト列が encryption header cache 内で見つかり、ヘッダーの source read がスキップされた回数。
@@ -2553,9 +2557,37 @@ Iceberg のコンパクションによって不要になったデータファイ
 
 Iceberg のコンパクションによって置き換えられたデータファイルの削除が、コンパクション自体またはそれによって置き換えられたスナップショットの経過時間が `iceberg_outdated_snapshot_lifetime_seconds` 未満であったために延期された回数。
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Iceberg テーブルの現在の状態の解決に要した合計時間です。これには、現在のメタデータファイルの特定 (バージョンヒントまたは一覧表示による) と、そのファイルの読み取りおよびパースが含まれます。
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Iceberg データイテレーターの同期初期化にかかった合計時間。
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Iceberg のマニフェストファイルをイテレーション用に準備するのに要した合計時間です。この準備には、パーティション spec とスキーマのヘッダーのパース、およびテーブルのメタデータに対するスキーマのチェックが含まれます。このコストはすべてのクエリでマニフェストファイルごとに発生し、マニフェストファイルが Iceberg のメタデータキャッシュから提供される場合も同様に発生します。
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+ストレージから読み込まれた Iceberg マニフェストファイルの数 (Iceberg メタデータキャッシュから取得されたものは含まない) 。
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+ストレージから読み込まれた Iceberg マニフェストファイルの合計サイズ。
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+ストレージから Iceberg のマニフェストファイルを読み取り、デコードするのに要した合計時間。
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+ストレージから読み込まれた Iceberg マニフェストリストの数 (Iceberg メタデータキャッシュから取得されたものは含まない) 。
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+ストレージから Iceberg のマニフェストリストを読み込み、デコードするのに要した合計時間。
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2572,6 +2604,26 @@ Iceberg メタデータファイル が cache 内で見つかったものの、�
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Iceberg メタデータキャッシュから追い出された概算バイト数。
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+パースされた Iceberg の `metadata.json` の内容の合計サイズ (バイト) 。
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Iceberg の `metadata.json` ファイルのパースに要した合計時間。
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Iceberg の `metadata.json` がパースされた回数です。パースはアクセスのたびに実行され、ファイルの内容が Iceberg メタデータキャッシュから提供される場合でも行われます。
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+ストレージから Iceberg の `metadata.json` ファイルを読み取るのに要した合計時間 (解凍処理を含む) 。
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+ストレージから読み取られた Iceberg の `metadata.json` ファイルの数 (Iceberg メタデータキャッシュから取得されたものは含まない) 。
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2608,6 +2660,10 @@ Iceberg のパーティションプルーニングでスキップされたファ
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Iceberg の読み取り時に単純な COUNT 最適化が適用されました
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Iceberg テーブルの `version-hint.text` の読み取りおよび解決に要した合計時間。
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4033,9 +4089,25 @@ glob または regex パターンに一致せず、一覧取得時にスキッ�
 
 フィルタリング前に、オブジェクトストレージの一覧取得APIから返されたオブジェクトの総数。
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+オブジェクトの読み取り時に (オブジェクトストレージのソース、そのファイルイテレータ、およびスキーマ推論によって) 発行されたオブジェクトメタデータリクエスト (例: S3 HEAD) の数です。これらのリクエストは、オブジェクトのサイズと ETag が一覧表示の結果やテーブルメタデータから得られなかった場合に発行されます。
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+`ObjectStorageMetadataFetchedForRead` でカウントされるオブジェクトメタデータリクエストに要した合計時間。
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 仮想カラム `_path`/`_file` に対する述語フィルタリングによって除外されたオブジェクト。
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+クエリ条件キャッシュによって、どの行グループもフィルタに一致しないことが判明したため、オブジェクトストレージのソースで丸ごとスキップされたオブジェクトの数。
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+クエリ条件キャッシュによってフィルタに一致しないことが判明したため、オブジェクトストレージのソースがスキップした行グループの数。
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4148,6 +4220,10 @@ processing リクエストの設定を試みた回数
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 失敗したKeeperコミット数
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+オブジェクトストレージのソースが、バックグラウンドで準備される次のオブジェクト用のリーダーを待機した合計時間。
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4353,6 +4429,10 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 タスクベースの並列レプリカを使用してクエリを実行する際に使用されるレプリカ数
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+ブルームフィルタによるプルーニングで除外されたParquet行グループの総数。
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 フィルタを通過したカラムの総数
@@ -4365,9 +4445,21 @@ Parquet リーダーがスレッドプールに送るタスクグループ
 
 Parquet リーダーによって生成されるタスク
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Parquet リーダーが伸長した Parquet ページ(データページおよび辞書ページ)の非圧縮サイズの合計。
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+辞書フィルタによってプルーニングされた Parquet の行グループの総数です (辞書が枝刈り用のメモリ割り当て量に収まらないカラムでは、ブルームフィルタにフォールバックします) 。
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 デコードスレッド (prefetching スレッドではなく) による Parquet ファイルの読み取りの待機時間
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Parquet ファイルのフッターの読み取りおよびデシリアライズに費やされた合計時間 (Parquet メタデータキャッシュから取得された分は含みません) 。
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4381,6 +4473,14 @@ Parquet メタデータが Parquet メタデータキャッシュで見つから
 
 Parquetメタデータキャッシュから追い出されたバイト数の概算。
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+PREWHERE でフィルタされて除外された行をスキップするために解凍がトリガーされた Parquet データページの数です (このページは、後で読み取られる行にも使用される場合があります) 。
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+DB::Parquet::Prefetcher によって Parquetファイルから読み取られたバイト数の合計です。最終的に使用されない範囲を含めて読み取りが統合された場合 (たとえば、後からブルームフィルタによってプルーニングされた行グループのカラム chunk など) 、この値は `ParquetPrefetcherUsedBytes` よりも大きくなります。
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 DB::Parquet::Prefetcher によって ReadMode::EntireFileIsInMemory で実行された読み取り回数の総数
@@ -4393,13 +4493,17 @@ DB::Parquet::Prefetcher による ReadMode::RandomRead の読み取り総数
 
 DB::Parquet::Prefetcher において ReadMode::SeekAndRead で行われた読み取りの総回数
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+DB::Parquet::Prefetcher が読み込んだ範囲のうち、Parquet リーダーが実際に使用した範囲の合計バイト数。
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 カラム索引によって Parquet データからプルーニングされた pages の総数
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-Parquetデータからプルーニングにより除外された行グループの総数
+読み取り前に (min/max統計情報および行グループの選択によって) Parquetデータからプルーニングにより除外された行グループの総数。その後の段階でブルームフィルタおよびDictionaryによって除外された行グループは、`ParquetBloomFilterPrunedRowGroups` および `ParquetDictionaryFilterPrunedRowGroups` でカウントされます。
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 

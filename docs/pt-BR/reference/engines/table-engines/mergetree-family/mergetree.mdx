@@ -999,9 +999,10 @@ Tags:
 * `disk` — um disco dentro de um volume.
 * `max_data_part_size_bytes` — o tamanho máximo de uma parte que pode ser armazenada em qualquer um dos disks do volume. Se o tamanho estimado de uma parte de dados mesclada for maior que `max_data_part_size_bytes`, essa parte será gravada no próximo volume. Basicamente, esse recurso permite manter partes novas/pequenas em um volume quente (SSD) e movê-las para um volume frio (HDD) quando atingirem um tamanho grande. Não use essa configuração se sua política tiver apenas um volume.
 * `move_factor` — quando a quantidade de espaço disponível fica abaixo desse fator, os dados começam automaticamente a ser movidos para o próximo volume, se houver (por padrão, 0.1). O ClickHouse classifica as partes existentes por tamanho, da maior para a menor (em ordem decrescente), e seleciona partes cujo tamanho total seja suficiente para atender à condição de `move_factor`. Se o tamanho total de todas as partes for insuficiente, todas as partes serão movidas.
+* `backup_metadata_only` — os dados das tabelas nesta política são fornecidos pelo próprio armazenamento, por exemplo, um conjunto de dados read-only compartilhado (por padrão, `false`). Todos os volumes da política devem ser read-only. O `BACKUP` armazena apenas as definições dessas tabelas, e o `RESTORE` as recria sem restaurar os dados, mantendo os UUIDs do backup para que elas voltem a encontrar seus dados no armazenamento. Operações de `BACKUP` e `RESTORE` de partições específicas de uma tabela desse tipo falham. Apenas a família `MergeTree` simples é suportada: uma tabela `MergeTree` replicada ou compartilhada, ou uma visão materializada ou uma tabela `TimeSeries` com uma tabela interna nessa política, passa por backup e restauração normalmente, com um aviso.
 * `perform_ttl_move_on_insert` — Desabilita o TTL move no INSERT de partes de dados. Por padrão (se estiver habilitado), se inserirmos uma parte de dados que já expirou pela regra de TTL move, ela irá imediatamente para um volume/disco declarado na regra de movimentação. Isso pode tornar o insert significativamente mais lento caso o volume/disco de destino seja lento (por exemplo, S3). Se estiver desabilitado, a parte de dados já expirada será gravada em um volume padrão e, logo em seguida, movida para o volume de TTL.
 * `load_balancing` - Política de balanceamento de disks, `round_robin` ou `least_used`.
-* `least_used_ttl_ms` - Configura o timeout (em milissegundos) para a atualização do espaço disponível em todos os disks (`0` - sempre atualizar, `-1` - nunca atualizar, o padrão é `60000`). Observe que, se o disco puder ser usado apenas pelo ClickHouse e não estiver sujeito a redimensionamento/redução online do filesystem, você pode usar `-1`; em todos os outros casos, isso não é recomendado, pois eventualmente levará a uma distribuição incorreta do espaço.
+* `least_used_ttl_ms` - Configura o timeout (em milissegundos) para a atualização do espaço disponível em todos os disks (`0` - sempre atualizar, `-1` - nunca atualizar, o padrão é `60000`). Observe que, se o disco puder ser usado apenas pelo ClickHouse e não estiver sujeito a redimensionamento/redução online do sistema de arquivos, você pode usar `-1`; em todos os outros casos, isso não é recomendado, pois eventualmente levará a uma distribuição incorreta do espaço.
 * `prefer_not_to_merge` — Você não deve usar essa configuração. Desabilita a mesclagem de partes de dados neste volume (isso é prejudicial e leva à degradação de desempenho). Quando essa configuração está habilitada (não faça isso), a mesclagem de dados neste volume não é permitida (o que é ruim). Isso permite (mas você não precisa disso) controlar (se você quiser controlar alguma coisa, está cometendo um erro) como o ClickHouse funciona com disks lentos (mas o ClickHouse sabe mais, então, por favor, não use essa configuração).
 * `volume_priority` — Define a prioridade (ordem) em que os volumes são preenchidos. Um valor menor significa prioridade maior. Os valores do parâmetro devem ser números naturais e, em conjunto, cobrir o intervalo de 1 a N (sendo N a menor prioridade atribuída) sem pular nenhum número.
   * Se *todos* os volumes estiverem marcados, eles serão priorizados na ordem fornecida.
@@ -1015,9 +1016,9 @@ Exemplos de configuração:
 <storage_configuration>
     ...
     <policies>
-        <hdd_in_order> <!-- nome da política -->
+        <hdd_in_order> <!-- policy name -->
             <volumes>
-                <single> <!-- nome do volume -->
+                <single> <!-- volume name -->
                     <disk>disk1</disk>
                     <disk>disk2</disk>
                 </single>

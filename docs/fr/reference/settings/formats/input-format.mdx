@@ -856,7 +856,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser des colonnes géo dans un fichier Parquet"}]}]} />
 
-Utilise le parseur de colonnes géo pour convertir Array(UInt8) en types Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+Lors de la lecture de fichiers Parquet, décode les colonnes géométriques en types géométriques ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). S&#39;applique aux colonnes décrites par les métadonnées `geo` de GeoParquet, ainsi qu&#39;aux colonnes annotées avec le type logique Parquet `GEOMETRY` ou `GEOGRAPHY`. Lorsque ce paramètre est désactivé, ces colonnes sont lues en tant que `String` contenant les octets WKB (ou WKT) bruts, sauf si un type géographique est explicitement demandé.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 

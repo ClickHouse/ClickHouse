@@ -37,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 分布式 shuffle-hash join 的默认桶数。
 由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择扇出，不使用此设置。
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "新增设置：分布式查询计划的流式数据 exchange 改用 `LZ4` 压缩，不再沿用 `network_compression_method` 所指定的编解码器。"}]}]} />
+
+指定分布式查询计划中各任务之间进行流式数据 exchange 时，用于压缩数据包的编解码器。通过临时 File 进行的 exchange 则使用服务器的默认编解码器。
+
+可选值：
+
+* `''` — 使用 [network&#95;compression&#95;method](/zh/reference/settings/session-settings/network#network_compression_method) 所指定的编解码器。
+* `NONE` — 不压缩。
+* `LZ4` — 使用 LZ4 编解码器。
+* `LZ4HC` — 使用 LZ4HC 编解码器，采用其默认级别 9。压缩速度比 `LZ4` 慢数倍。
+* `ZSTD` — 使用 ZSTD 编解码器，压缩级别由 [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/zh/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level) 指定。
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，用于指定分布式查询计划中流式数据 exchange 的 ZSTD 压缩级别。"}]}]} />
+
+分布式查询计划中流式数据 exchange 所使用的 ZSTD 压缩级别。仅当 [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/zh/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) 设置为 `ZSTD` 时生效。
+
+可选值：
+
+* 1 到 22 之间的整数。级别越高，压缩率越高，但压缩速度越慢。
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

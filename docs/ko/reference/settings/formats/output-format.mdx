@@ -788,6 +788,14 @@ FixedString 컬럼에 대해 Binary 대신 Parquet FIXED&#95;LEN&#95;BYTE&#95;AR
 
 Parquet 메타데이터에 Geo 컬럼 정보를 기록하고 컬럼을 WKB 포맷으로 인코딩할 수 있습니다.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+WKB로 기록되는 geo 컬럼(`output_format_parquet_geometadata` 참조)에 Parquet `GEOMETRY` 논리 타입 어노테이션을 지정하고, 해당 컬럼에 대해 min/max 통계 대신 `GeospatialStatistics`(경계 상자 및 Geometry 타입)를 기록합니다. 이 논리 타입을 지원하는 리더는 GeoParquet `geo` 메타데이터가 없어도 해당 컬럼을 기하 도형으로 인식합니다. `output_format_parquet_geometadata`가 비활성화되어 있으면 이 설정은 적용되지 않습니다. `Geometry` 컬럼 역시 GeoParquet `geo` 메타데이터에 기술되며, 이때 Geometry 타입 목록은 비어 있습니다. 이 설정을 비활성화하면 해당 컬럼은 지리 공간 어노테이션 없이 `BYTE_ARRAY`로 기록되고 min/max 통계가 함께 기록되며, `Geometry` 컬럼은 `geo` 메타데이터에 기술되지 않습니다. 이 논리 타입을 인식하지 못하는 리더(예: Arrow C++ 및 버전 20 이전의 `pyarrow`)에서는 파일 전체를 열 수 없으므로 기본적으로 비활성화되어 있습니다.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

@@ -89,6 +89,16 @@ Ne prend effet qu’avec `make_distributed_plan = 1` : ce paramètre n’a à l
 
 Active une optimisation de requête qui analyse les résultats des fonctions et des sous-requêtes, puis réécrit la requête si elle contient des constantes
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre conditionnant l'activation de l'intégration expérimentale Elasticsearch (la table engine `Elasticsearch` et la fonction de table `elasticsearch`)."}]}]} />
+
+Active l&#39;intégration expérimentale Elasticsearch, à savoir la table engine `Elasticsearch` et la fonction de table `elasticsearch`.
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

@@ -1014,9 +1014,9 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 定义锁请求在失败前等待的秒数。
 
-锁超时用于防止对表执行读/写操作时发生死锁。当超时时间到期且锁请求失败时，ClickHouse server 会抛出异常 &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot;，错误代码为 `DEADLOCK_AVOIDED`。
+锁超时用于防止对表执行读/写操作时发生死锁。当超时时间到期且锁请求失败时，ClickHouse server 会抛出异常 &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot;，错误代码为 `DEADLOCK_AVOIDED`。
 
-Possible values:
+可选值:
 
 * 正整数 (单位：秒) 。
 * 0 — 不设置锁超时。

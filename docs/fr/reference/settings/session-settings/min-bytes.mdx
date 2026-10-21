@@ -14,6 +14,23 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## min_bytes_before_external_group_by {#min_bytes_before_external_group_by}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre : taille minimale de l’état d’agrégation d’un fil d’exécution avant que le `GROUP BY` externe ne l’écrive sur le disque, afin qu’une requête ayant déjà dépassé le seuil n’écrive pas chaque bloc dans un fichier distinct."}]}]} />
+
+Taille minimale, en octets, de l’état d’agrégation d’un fil d’exécution avant que le `GROUP BY` externe ne l’écrive sur le disque.
+
+Lorsque la mémoire de la requête dépasse `max_bytes_before_external_group_by` ou `max_bytes_ratio_before_external_group_by` à cause d’autres opérateurs (par exemple une jointure de hachage qui conserve une grande table en mémoire), chaque fil d’exécution écrirait sinon sur le disque chaque bloc agrégé sous la forme d’un petit fichier distinct. Or, relire un grand nombre de petits fichiers consomme davantage de mémoire que les écritures n’en font économiser. Avec ce paramètre, un fil d’exécution poursuit l’agrégation jusqu’à ce que son propre état atteigne la taille indiquée, et ce n’est qu’alors qu’il l’écrit dans un seul fichier.
+
+La mémoire utilisée au-delà du seuil est bornée par cette valeur multipliée par le nombre de fils d’exécution.
+
+Valeurs possibles :
+
+* Un entier positif, correspondant à la taille en octets.
+* `0` — aucun minimum : l’état est écrit dès que le seuil est atteint.
+
 ## min_bytes_to_spill {#min_bytes_to_spill}
 
 <ExperimentalBadge />

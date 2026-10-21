@@ -855,7 +855,7 @@ ORC フォーマットのスキーマ推論時に、サポートされていな�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquetファイルでgeoカラムを使用するための新しい設定"}]}]} />
 
-geoカラムパーサーを使用して、Array(UInt8) を Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon 型に変換します
+Parquetファイルの読み込み時に、ジオメトリ列を ClickHouse の幾何データ型 (`Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString`、`MultiPolygon`、`Geometry` のいずれか) としてデコードします。この設定は、GeoParquet の `geo` メタデータで記述されたカラムと、Parquet の `GEOMETRY` または `GEOGRAPHY` 論理型が付与されたカラムに適用されます。無効にした場合、Geo 型を明示的に指定しない限り、これらのカラムは未加工の WKB (または WKT) バイト列を格納した `String` として読み込まれます。
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 

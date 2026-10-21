@@ -38,7 +38,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 **Псевдонимы**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +62,14 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
       label:
         "Новая настройка, ограничивающая количество delete-файлов манифеста Iceberg, одновременно декодируемых до чтения первой строки. До версии 26.8 манифесты декодировались по одному, а fetch следующего уже был in-flight, поэтому значение `2` ближе всего к прежнему поведению, при котором суммарное время round-trip к объектному хранилищу приходилось на критический путь до чтения первой строки. Тогда настройка называлась `iceberg_delete_manifest_decode_concurrency`; теперь это её псевдоним."
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "Значение по умолчанию для количества одновременно декодируемых файлов манифеста Iceberg увеличено с 4 до 16, чтобы на таблицах с большим числом манифестов параллельно выполнялось больше round-trip к объектному хранилищу." }
   ]
 }
 ]}

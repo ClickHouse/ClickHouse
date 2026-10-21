@@ -855,7 +855,7 @@ ORC 行读取器使用的时区名称，默认时区为 GMT。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "用于在 Parquet 文件中启用 geo 列的新设置"}]}]} />
 
-使用 geo 列解析器将 Array(UInt8) 转换为 Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon 类型
+读取 Parquet 文件时，将几何列解码为 ClickHouse 地理空间类型 (`Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString`、`MultiPolygon` 或 `Geometry`) 。该设置适用于由 GeoParquet `geo` 元数据描述的列，以及标注了 Parquet `GEOMETRY` 或 `GEOGRAPHY` 逻辑类型的列。若禁用此设置，则除非显式指定地理数据类型，否则此类列将以 `String` 类型读取，内容为原始 WKB (或 WKT) 字节。
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 

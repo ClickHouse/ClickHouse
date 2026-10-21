@@ -788,6 +788,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 يسمح بكتابة معلومات عن الأعمدة الجغرافية في البيانات الوصفية لـ Parquet وترميز الأعمدة بتنسيق WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُرفق بالأعمدة الجغرافية المكتوبة بصيغة WKB (راجع `output_format_parquet_geometadata`) تعليقًا توضيحيًا بالنوع المنطقي `GEOMETRY` الخاص بـ Parquet، ويكتب لها `GeospatialStatistics` (مستطيل الإحاطة وأنواع البيانات الهندسية) بدلًا من إحصاءات القيم الدنيا والقصوى. وتتعرّف القارئات التي تدعم هذا النوع المنطقي على هذه الأعمدة بوصفها أشكالًا هندسية حتى في غياب البيانات الوصفية `geo` الخاصة بـ GeoParquet. لا يكون لهذا الإعداد أي أثر إذا كان `output_format_parquet_geometadata` معطّلًا. كذلك يُوصف العمود من النوع `Geometry` في البيانات الوصفية `geo` الخاصة بـ GeoParquet، مع قائمة فارغة من أنواع البيانات الهندسية. أما عند تعطيل هذا الإعداد، فتُكتب هذه الأعمدة بالنوع `BYTE_ARRAY` دون تعليق توضيحي جغرافي مكاني ومع إحصاءات القيم الدنيا والقصوى، ولا يُوصف العمود من النوع `Geometry` في البيانات الوصفية `geo`. هذا الإعداد معطّل افتراضيًا، لأن القارئات التي لا تتعرّف على هذا النوع المنطقي (مثل Arrow C++ و`pyarrow` في الإصدارات السابقة للإصدار 20) تعجز عن فتح الملف بأكمله.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

@@ -37,6 +37,38 @@ Utilisé par le planificateur distribué basé sur des règles. L’optimiseur b
 Nombre de buckets par défaut pour la jointure shuffle-hash distribuée.
 Utilisé par le planificateur distribué basé sur des règles. L’optimiseur basé sur les coûts choisit le fan-out selon le coût estimé et n’utilise pas ce paramètre.
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "Nouveau paramètre : l'échange en streaming d'un plan de requête distribué est compressé avec `LZ4` au lieu du codec défini par `network_compression_method`."}]}]} />
+
+Codec utilisé pour compresser les paquets de l&#39;échange en streaming entre les tâches d&#39;un plan de requête distribué. Les échanges via des fichiers temporaires utilisent le codec par défaut du serveur.
+
+Valeurs possibles :
+
+* `''` — utiliser le codec défini par [network&#95;compression&#95;method](/fr/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — aucune compression.
+* `LZ4` — utiliser le codec LZ4.
+* `LZ4HC` — utiliser le codec LZ4HC avec son niveau par défaut, 9. La compression est nettement plus lente qu&#39;avec `LZ4`.
+* `ZSTD` — utiliser le codec ZSTD avec le niveau défini par [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/fr/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre définissant le niveau de compression ZSTD de l'échange en streaming d'un plan de requête distribué."}]}]} />
+
+Niveau de compression ZSTD de l&#39;échange en streaming d&#39;un plan de requête distribué. Utilisé uniquement lorsque [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/fr/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) est défini sur `ZSTD`.
+
+Valeurs possibles :
+
+* Entier compris entre 1 et 22. Plus le niveau est élevé, meilleure est la compression, mais plus elle est lente.
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

@@ -188,7 +188,7 @@
             "ko/reference/statements/system",
             "ko/reference/statements/truncate",
             "ko/reference/statements/undrop",
-            "reference/statements/update",
+            "ko/reference/statements/update",
             "ko/reference/statements/use"
           ]
         },
@@ -1060,6 +1060,7 @@
         "ko/reference/system-tables/completions",
         "ko/reference/system-tables/constraints",
         "ko/reference/system-tables/contributors",
+        "ko/reference/system-tables/connections",
         "ko/reference/system-tables/crash_log",
         "ko/reference/system-tables/current_roles",
         "ko/reference/system-tables/dashboards",

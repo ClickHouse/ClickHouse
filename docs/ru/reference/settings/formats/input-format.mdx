@@ -856,7 +856,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка для работы с геостолбцами в файле Parquet"}]}]} />
 
-Использовать парсер геостолбцов для преобразования Array(UInt8) в типы Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+При чтении файлов Parquet декодировать геометрические столбцы в гео-типы ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` или `Geometry`). Действует для столбцов, описанных в метаданных GeoParquet `geo`, а также для столбцов с логическим типом Parquet `GEOMETRY` или `GEOGRAPHY`. Если настройка отключена, такие столбцы читаются как `String` с необработанными байтами WKB (или WKT), если только гео-тип не запрошен явно.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 

@@ -37,6 +37,38 @@ Usada pelo planejador distribuído baseado em regras. O otimizador baseado em cu
 Número padrão de buckets para shuffle-hash-join distribuído.
 Usado pelo planejador distribuído baseado em regras. O otimizador baseado em custo escolhe o fan-out com base no custo estimado e não usa essa configuração.
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "Nova configuração: o streaming exchange de um plano de consulta distribuída passa a comprimir com `LZ4` em vez de usar o codec de `network_compression_method`."}]}]} />
+
+O codec usado para comprimir os pacotes do streaming exchange entre as tarefas de um plano de consulta distribuída. Os exchanges feitos por meio de arquivos temporários usam o codec padrão do servidor.
+
+Valores possíveis:
+
+* `''` — usa o codec de [network&#95;compression&#95;method](/pt-BR/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — sem compressão.
+* `LZ4` — usa o codec LZ4.
+* `LZ4HC` — usa o codec LZ4HC com seu nível padrão, 9. A compressão é muitas vezes mais lenta que a do `LZ4`.
+* `ZSTD` — usa o codec ZSTD com o nível definido em [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/pt-BR/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para o nível de compressão ZSTD do streaming exchange de um plano de consulta distribuída."}]}]} />
+
+O nível de compressão ZSTD do streaming exchange de um plano de consulta distribuída. Usado somente quando [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/pt-BR/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) estiver definido como `ZSTD`.
+
+Valores possíveis:
+
+* Inteiro de 1 a 22. Níveis mais altos oferecem melhor compressão, porém são mais lentos.
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

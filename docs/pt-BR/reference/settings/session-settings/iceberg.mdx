@@ -38,7 +38,7 @@ Deve ser maior que zero.
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +62,14 @@ Deve ser maior que zero.
       label:
         "Nova configuração que limita quantos arquivos de manifesto de exclusão do Iceberg são decodificados de forma concorrente antes da leitura da primeira linha. Antes da 26.8, os manifestos eram decodificados um por vez, com o fetch do próximo já em andamento; por isso, `2` é o equivalente mais próximo do comportamento anterior, que colocava a soma dos round-trips ao armazenamento de objetos no caminho crítico antes da primeira linha. Na época, a configuração se chamava `iceberg_delete_manifest_decode_concurrency`, nome que agora é um alias dela."
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "Aumenta de 4 para 16 o número padrão de arquivos de manifesto do Iceberg decodificados de forma concorrente, para sobrepor mais round-trips ao armazenamento de objetos em tabelas com muitos manifestos." }
   ]
 }
 ]}

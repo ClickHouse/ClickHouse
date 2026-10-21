@@ -1962,6 +1962,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إجمالي الوقت المستغرَق في التحقق من ازدواجية الكتل المُدرجة بأمر INSERT في جداول *MergeTree.
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+عدد المحاولات الفاشلة لإغلاق نقطة زمنية (point in time) في Elasticsearch.
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 عدد المرات التي وُجدت فيها بايتات ترويسة التشفير في ذاكرة التخزين المؤقت لترويسات التشفير، ممّا أدى إلى تخطّي قراءة الترويسة من المصدر.
@@ -2554,9 +2558,37 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد المرات التي أُجِّلت فيها إزالة ملفات البيانات التي استُبدلت نتيجة دمج ملفات Iceberg، لأن عملية الدمج أو اللقطة التي استبدلتها كانت أحدث من `iceberg_outdated_snapshot_lifetime_seconds`.
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+إجمالي الوقت المستغرق في تحديد الحالة الحالية لجداول Iceberg، ويشمل ذلك العثور على ملف البيانات الوصفية الحالي (عبر استدلال الإصدار أو السرد)، ثم قراءته وتحليله نحويًا.
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 إجمالي الوقت المستغرَق في التهيئة المتزامنة لمكرِّرات بيانات Iceberg.
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+إجمالي الوقت المستغرق في تجهيز ملفات البيان الخاصة بـ Iceberg للمرور عليها تكراريًا، ويشمل ذلك التحليل النحوي لمواصفة التقسيم وترويسات المخطط فيها، والتحقق من توافق المخطط مع البيانات الوصفية للجدول. تُدفَع هذه الكلفة لكل ملف بيان في كل استعلام، حتى عندما يُجلَب ملف البيان من ذاكرة التخزين المؤقت للبيانات الوصفية لـ Iceberg.
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+عدد ملفات البيان الخاصة بـ Iceberg التي قُرئت من التخزين (أي التي لم تُجلب من ذاكرة التخزين المؤقت للبيانات الوصفية لـ Iceberg).
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+إجمالي حجم ملفات البيان في Iceberg المقروءة من التخزين.
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+إجمالي الوقت المستغرق في قراءة ملفات البيان الخاصة بـ Iceberg من التخزين وفك ترميزها.
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+عدد قوائم ملفات البيان في Iceberg التي قُرئت من التخزين (وليس من ذاكرة التخزين المؤقت للبيانات الوصفية لـ Iceberg).
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+إجمالي الوقت المستغرق في قراءة قوائم ملفات البيان الخاصة بـ Iceberg من التخزين وفك ترميزها.
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2573,6 +2605,26 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 العدد التقريبي للبايتات التي أُخرجت من ذاكرة التخزين المؤقت للبيانات الوصفية في Iceberg.
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+إجمالي حجم محتوى ملف `metadata.json` الخاص بـ Iceberg الذي جرى تحليله.
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+إجمالي الوقت المستغرق في التحليل النحوي لملفات `metadata.json` الخاصة بـ Iceberg.
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+عدد مرات تحليل ملف `metadata.json` الخاص بـ Iceberg. يجري التحليل النحوي عند كل عملية وصول، حتى عندما يُقدَّم محتوى الملف من ذاكرة التخزين المؤقت للبيانات الوصفية لـ Iceberg.
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+إجمالي الوقت المستغرق في قراءة ملفات `metadata.json` الخاصة بـ Iceberg من التخزين، بما في ذلك فك ضغطها.
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+عدد ملفات `metadata.json` الخاصة بـ Iceberg التي قُرئت من التخزين (بدلًا من جلبها من ذاكرة التخزين المؤقت للبيانات الوصفية لـ Iceberg).
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2609,6 +2661,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 تم تطبيق تحسين العدّ البسيط عند القراءة من Iceberg
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+إجمالي الوقت المستغرق في قراءة الملف `version-hint.text` الخاص بجداول Iceberg وتحليله.
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4034,9 +4090,25 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إجمالي الكائنات التي أعادتها واجهة برمجة تطبيقات لسرد كائنات تخزين الكائنات قبل أي عملية تصفية.
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+عدد طلبات البيانات الوصفية للكائنات (مثل طلبات S3 HEAD) المُرسَلة لقراءة الكائنات (من قِبل مصدر التخزين الكائني ومُكرِّرات الملفات التابعة له وعملية استنتاج المخطط)، نظرًا لعدم معرفة حجم الكائن وقيمة ETag الخاصة به من عملية السرد أو من البيانات الوصفية للجدول.
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+إجمالي الوقت المستغرق في طلبات البيانات الوصفية للكائنات، المحتسبة ضمن `ObjectStorageMetadataFetchedForRead`.
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 العناصر التي أزيلت بسبب تصفية الشروط على العمودين الافتراضيين &#95;path/&#95;file.
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+عدد الكائنات التي تجاهلها مصدر التخزين الكائني كليًا، لأن ذاكرة التخزين المؤقت لشروط الاستعلام أظهرت أن أيًّا من مجموعات الصفوف فيها لا يطابق عامل التصفية.
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+عدد مجموعات الصفوف التي تخطّاها مصدر التخزين الكائني لأن ذاكرة التخزين المؤقت لشروط الاستعلام أشارت إلى أنها لا تطابق عامل التصفية.
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4149,6 +4221,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 عدد عمليات التثبيت الفاشلة في Keeper
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+إجمالي الوقت الذي قضته مصادر التخزين الكائني في انتظار قارئ الكائن التالي، الذي يُجهَّز في الخلفية.
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4354,6 +4430,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد النُسخ المتماثلة المستخدمة لتنفيذ استعلام باستخدام النُسخ المتماثلة المتوازية القائمة على المهام
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+إجمالي عدد مجموعات الصفوف في Parquet التي تم استبعادها بواسطة مرشحات بلوم.
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 إجمالي عدد الأعمدة التي مرّت عبر عامل التصفية
@@ -4366,9 +4446,21 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 المهام الصادرة عن قارئ Parquet
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+إجمالي الحجم غير المضغوط لصفحات Parquet (صفحات البيانات وصفحات القاموس) التي فكّ قارئ Parquet ضغطها.
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+إجمالي عدد مجموعات الصفوف في Parquet التي استُبعدت بواسطة عوامل تصفية القاموس (مع اللجوء إلى bloom filter كآلية احتياطية للأعمدة التي لا يتسع قاموسها ضمن ميزانية الذاكرة المخصصة للاستبعاد).
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 زمن انتظار عمليات قراءة ملف Parquet بواسطة خيوط فك الترميز (وليس خيوط الجلب المسبق)
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+إجمالي الوقت المستغرق في قراءة تذييلات ملفات Parquet وإلغاء تسلسلها (أي التذييلات التي لم تُجلب من ذاكرة التخزين المؤقت للبيانات الوصفية لملفات Parquet).
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4382,6 +4474,14 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 العدد التقريبي للبايتات التي أُزيلت من ذاكرة التخزين المؤقت للبيانات الوصفية لـ Parquet.
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+عدد صفحات بيانات Parquet التي جرى فك ضغطها لتخطي الصفوف التي استبعدها عامل التصفية PREWHERE (وقد تُستخدم الصفحة أيضًا لخدمة صفوف تُقرأ لاحقًا).
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+إجمالي البايتات التي يقرؤها DB::Parquet::Prefetcher من ملفات Parquet. وتتجاوز هذه القيمة `ParquetPrefetcherUsedBytes` عند دمج عمليات القراءة عبر نطاقات لا تُستخدم في نهاية المطاف، مثل مقاطع الأعمدة التابعة لمجموعات صفوف تستبعدها مرشحات بلوم لاحقًا.
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 إجمالي عدد مرات القراءة باستخدام `ReadMode::EntireFileIsInMemory` بواسطة `DB::Parquet::Prefetcher`
@@ -4394,13 +4494,17 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إجمالي عدد عمليات القراءة باستخدام ReadMode::SeekAndRead من قِبل DB::Parquet::Prefetcher
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+إجمالي بايتات النطاقات التي قرأها DB::Parquet::Prefetcher واستخدمها قارئ Parquet فعليًا.
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 إجمالي عدد الـ pages التي تم استبعادها (prune) من بيانات Parquet باستخدام الـ column index
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-إجمالي عدد مجموعات الصفوف التي تم استبعادها من بيانات Parquet
+إجمالي عدد مجموعات الصفوف التي تم استبعادها من بيانات Parquet قبل قراءتها (استنادًا إلى إحصائيات القيم الدنيا/القصوى واختيار مجموعات الصفوف). أما مجموعات الصفوف التي تُستبعد لاحقًا بواسطة مرشحات بلوم والقواميس، فتُحتسب في `ParquetBloomFilterPrunedRowGroups` و`ParquetDictionaryFilterPrunedRowGroups`.
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 

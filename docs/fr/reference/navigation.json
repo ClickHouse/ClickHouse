@@ -142,7 +142,7 @@
             "fr/reference/statements/grant",
             "fr/reference/statements/hypothetical-index",
             "fr/reference/statements/hypothetical-projection",
-            "reference/statements/in",
+            "fr/reference/statements/in",
             "fr/reference/statements/insert-into",
             "fr/reference/statements/kill",
             "fr/reference/statements/move",
@@ -188,7 +188,7 @@
             "fr/reference/statements/system",
             "fr/reference/statements/truncate",
             "fr/reference/statements/undrop",
-            "reference/statements/update",
+            "fr/reference/statements/update",
             "fr/reference/statements/use"
           ]
         },
@@ -1060,6 +1060,7 @@
         "fr/reference/system-tables/completions",
         "fr/reference/system-tables/constraints",
         "fr/reference/system-tables/contributors",
+        "fr/reference/system-tables/connections",
         "fr/reference/system-tables/crash_log",
         "fr/reference/system-tables/current_roles",
         "fr/reference/system-tables/dashboards",

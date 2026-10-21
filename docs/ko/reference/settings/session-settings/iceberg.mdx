@@ -38,7 +38,7 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -49,7 +49,7 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
     { label: "4" },
     {
       label:
-        "delete 매니페스트와 데이터 매니페스트 모두에 대해 동시에 디코딩되는 Iceberg 매니페스트 파일 수를 제한하는 새로운 설정입니다. `iceberg_delete_manifest_decode_concurrency`를 대체하며, 기존 이름은 alias로 유지됩니다. `2`는 26.9 이전의 data path 동작과 거의 같습니다. 당시에는 다음 매니페스트의 fetch가 in-flight 상태인 채로 한 번에 하나의 매니페스트만 디코딩했습니다. 따라서 `compatibility`가 26.8 이하이면 delete 디코딩도 릴리스 기본값인 4가 아니라 2로 실행되며, delete 디코딩의 중첩을 일부 포기하는 대신 이전 data path의 메모리 엔벌로프를 그대로 유지합니다."
+        "delete 매니페스트와 데이터 매니페스트 모두에 대해 동시에 디코딩되는 Iceberg 매니페스트 파일 수를 제한하는 새로운 설정입니다. `iceberg_delete_manifest_decode_concurrency`를 대체하며, 기존 이름은 별칭으로 유지됩니다. `2`는 26.9 이전의 data path 동작과 거의 같습니다. 당시에는 다음 매니페스트의 fetch가 in-flight 상태인 채로 한 번에 하나의 매니페스트만 디코딩했습니다. 따라서 `compatibility`가 26.8 이하이면 delete 디코딩도 릴리스 기본값인 4가 아니라 2로 실행되며, delete 디코딩의 중첩을 일부 포기하는 대신 이전 data path의 메모리 엔벌로프를 그대로 유지합니다."
     }
   ]
 },
@@ -63,6 +63,14 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
         "첫 번째 행을 읽기 전에 동시에 디코딩되는 Iceberg delete 매니페스트 파일 수를 제한하는 새로운 설정입니다. 26.8 이전에는 다음 매니페스트의 fetch가 in-flight 상태인 채로 한 번에 하나의 매니페스트만 디코딩했으므로, `2`가 이전 동작과 가장 가깝습니다. 이전 동작에서는 각 매니페스트의 객체 스토리지 round-trip 시간의 합이 첫 번째 행을 읽기 전의 임계 경로(critical path)에 놓였습니다. 당시 이 설정의 이름은 `iceberg_delete_manifest_decode_concurrency`였으며, 현재는 이 설정의 별칭입니다."
     }
   ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "매니페스트가 많은 테이블에서 더 많은 객체 스토리지 round-trip을 겹쳐 처리할 수 있도록, 동시에 디코딩되는 Iceberg 매니페스트 파일 수의 기본값을 4에서 16으로 높였습니다." }
+  ]
 }
 ]}
 />
@@ -71,7 +79,7 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
 
 delete 매니페스트는 데이터 파일을 읽기 전에 모두 디코딩됩니다. 데이터 매니페스트는 쿼리 대상 데이터 파일 목록이 생성되는 동안 디코딩되며, 쿼리가 이미 디코딩된 entry를 소비하는 만큼만 새로운 매니페스트가 디코딩됩니다. 여러 매니페스트를 동시에 디코딩하면 객체 스토리지 round-trip과 entry 단위 프루닝 작업이 서로 겹쳐 처리됩니다.
 
-Iceberg metadata 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 값을 높이면 최대 메모리 사용량이 증가합니다. in-flight 상태인 각 매니페스트가 저마다 디코딩된 내용을 보유하기 때문입니다.
+Iceberg 메타데이터 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 값을 높이면 최대 메모리 사용량이 증가합니다. in-flight 상태인 각 매니페스트가 저마다 디코딩된 내용을 보유하기 때문입니다.
 
 0보다 커야 하며, `1`로 설정하면 매니페스트를 한 번에 하나씩 디코딩합니다.
 

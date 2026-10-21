@@ -38,7 +38,7 @@ Doit être supérieure à zéro.
 
 **Aliases** : `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -49,7 +49,7 @@ Doit être supérieure à zéro.
     { label: "4" },
     {
       label:
-        "Nouveau paramètre limitant le nombre de fichiers manifest Iceberg décodés simultanément, aussi bien pour les manifestes de suppression que pour ceux de données. Il remplace `iceberg_delete_manifest_decode_concurrency` (conservé comme alias). La valeur `2` se rapproche du data path antérieur à la 26.9, qui décodait un manifeste à la fois, la récupération du suivant étant déjà en cours ; avec `compatibility` fixé à 26.8 ou moins, le décodage des suppressions s'exécute donc lui aussi à 2 plutôt qu'à sa valeur par défaut publiée de 4, ce qui préserve l'ancienne enveloppe mémoire du data path au prix d'un moindre recouvrement du décodage des suppressions."
+        "Nouveau paramètre limitant le nombre de fichiers manifest Iceberg décodés simultanément, aussi bien pour les manifests de suppression que pour ceux de données. Il remplace `iceberg_delete_manifest_decode_concurrency` (conservé comme alias). La valeur `2` se rapproche du data path antérieur à la 26.9, qui décodait un manifest à la fois, la récupération du suivant étant déjà en cours ; avec `compatibility` fixé à 26.8 ou moins, le décodage des suppressions s'exécute donc lui aussi à 2 plutôt qu'à sa valeur par défaut publiée de 4, ce qui préserve l'ancienne enveloppe mémoire du data path au prix d'un moindre recouvrement du décodage des suppressions."
     }
   ]
 },
@@ -60,8 +60,16 @@ Doit être supérieure à zéro.
     { label: "4" },
     {
       label:
-        "Nouveau paramètre limitant le nombre de fichiers manifest de suppression Iceberg décodés simultanément avant la lecture de la première ligne. Avant la 26.8, les manifestes étaient décodés un par un, la récupération du suivant étant déjà en cours ; la valeur `2` est donc l'équivalent le plus proche de l'ancien comportement, qui plaçait la somme de leurs allers-retours vers le stockage d’objet sur le chemin critique avant la première ligne. Ce paramètre s'appelait alors `iceberg_delete_manifest_decode_concurrency`, nom désormais conservé comme alias."
+        "Nouveau paramètre limitant le nombre de fichiers manifest de suppression Iceberg décodés simultanément avant la lecture de la première ligne. Avant la 26.8, les manifests étaient décodés un par un, la récupération du suivant étant déjà en cours ; la valeur `2` est donc l'équivalent le plus proche de l'ancien comportement, qui plaçait la somme de leurs allers-retours vers le stockage d’objet sur le chemin critique avant la première ligne. Ce paramètre s'appelait alors `iceberg_delete_manifest_decode_concurrency`, nom désormais conservé comme alias."
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "Relèvement de 4 à 16 de la valeur par défaut du nombre de fichiers manifest Iceberg décodés simultanément, afin de recouvrir davantage d'allers-retours vers le stockage d’objet sur les tables comportant de nombreux manifests." }
   ]
 }
 ]}
@@ -69,11 +77,11 @@ Doit être supérieure à zéro.
 
 Nombre maximal de fichiers manifest Iceberg décodés simultanément lors de la lecture d&#39;une table.
 
-Les manifestes de suppression sont tous décodés avant la lecture du moindre fichier de données ; les manifestes de données, eux, sont décodés pendant la production de la liste des fichiers de données de la requête, et de nouveaux ne sont décodés qu&#39;à mesure que la requête consomme les entrées déjà décodées. Décoder plusieurs manifestes à la fois permet de recouvrir les allers-retours vers le stockage d’objet et le travail de pruning effectué pour chaque entrée.
+Les manifests de suppression sont tous décodés avant la lecture du moindre fichier de données ; les manifests de données, eux, sont décodés pendant la production de la liste des fichiers de données de la requête, et de nouveaux ne sont décodés qu&#39;à mesure que la requête consomme les entrées déjà décodées. Décoder plusieurs manifests à la fois permet de recouvrir les allers-retours vers le stockage d’objet et le travail de pruning effectué pour chaque entrée.
 
-Des valeurs plus élevées augmentent le pic de mémoire lorsque le cache des Iceberg metadata files est désactivé ou plein, car chaque manifeste in-flight conserve alors son propre contenu décodé.
+Des valeurs plus élevées augmentent le pic de mémoire lorsque le cache des Iceberg metadata files est désactivé ou plein, car chaque manifest in-flight conserve alors son propre contenu décodé.
 
-Doit être supérieur à zéro ; `1` décode les manifestes un par un.
+Doit être supérieur à zéro ; `1` décode les manifests un par un.
 
 ## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 

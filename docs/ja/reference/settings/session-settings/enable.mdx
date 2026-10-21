@@ -85,6 +85,16 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 関数やサブクエリの結果を解析し、定数が含まれている場合にクエリを書き換えるクエリ最適化を有効にします
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "実験的な Elasticsearch インテグレーション（`Elasticsearch` テーブルエンジンおよび `elasticsearch` テーブル関数）の利用可否を制御する新しい設定。"}]}]} />
+
+実験的な Elasticsearch インテグレーション (`Elasticsearch` テーブルエンジンおよび `elasticsearch` テーブル関数) を有効化します。
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

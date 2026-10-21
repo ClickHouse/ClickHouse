@@ -37,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 Число бакетов по умолчанию для распределённого shuffle-hash-join.
 Используется распределённым планировщиком на основе правил. Оптимизатор на основе стоимости выбирает степень распараллеливания на основе оценочной стоимости и не использует эту настройку.
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "Новая настройка: при потоковом обмене в плане выполнения распределённого запроса данные сжимаются с помощью `LZ4`, а не кодека, заданного в `network_compression_method`."}]}]} />
+
+Кодек для сжатия пакетов при потоковом обмене между задачами плана выполнения распределённого запроса. При обмене через временные файлы используется кодек сервера по умолчанию.
+
+Возможные значения:
+
+* `''` — использовать кодек, заданный в [network&#95;compression&#95;method](/ru/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — без сжатия.
+* `LZ4` — использовать кодек LZ4.
+* `LZ4HC` — использовать кодек LZ4HC с уровнем по умолчанию 9. Сжимает во много раз медленнее, чем `LZ4`.
+* `ZSTD` — использовать кодек ZSTD с уровнем, заданным в [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ru/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка, задающая уровень сжатия ZSTD для потокового обмена в плане выполнения распределённого запроса."}]}]} />
+
+Уровень сжатия ZSTD для потокового обмена в плане выполнения распределённого запроса. Используется, только если настройка [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ru/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) имеет значение `ZSTD`.
+
+Возможные значения:
+
+* Целое число от 1 до 22. Чем выше уровень, тем сильнее сжатие, но тем медленнее оно выполняется.
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

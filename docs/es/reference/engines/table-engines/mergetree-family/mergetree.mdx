@@ -999,6 +999,7 @@ Etiquetas:
 * `disk` — un disco dentro de un volumen.
 * `max_data_part_size_bytes` — el tamaño máximo de una parte que puede almacenarse en cualquiera de los discos del volumen. Si se estima que el tamaño de una parte fusionada será mayor que `max_data_part_size_bytes`, esa parte se escribirá en el siguiente volumen. Básicamente, esta funcionalidad permite mantener las partes nuevas o pequeñas en un volumen rápido (SSD) y moverlas a un volumen frío (HDD) cuando alcanzan un tamaño grande. No use esta configuración si su política tiene un solo volumen.
 * `move_factor` — cuando la cantidad de espacio disponible cae por debajo de este factor, los datos comienzan a moverse automáticamente al siguiente volumen, si existe (de forma predeterminada, 0.1). ClickHouse ordena las partes existentes por tamaño, de mayor a menor, y selecciona las partes cuyo tamaño total sea suficiente para cumplir la condición de `move_factor`. Si el tamaño total de todas las partes es insuficiente, se moverán todas las partes.
+* `backup_metadata_only` — los datos de las tablas de esta política los proporciona el propio almacenamiento, por ejemplo, un conjunto de datos compartido de solo lectura (de forma predeterminada, `false`). Todos los volúmenes de la política deben ser de solo lectura. `BACKUP` almacena solo las definiciones de dichas tablas, y `RESTORE` las vuelve a crear sin restaurar los datos y conserva los UUID que figuran en la copia de seguridad, de modo que vuelvan a encontrar sus datos en el almacenamiento. Las operaciones `BACKUP` y `RESTORE` sobre particiones específicas de una tabla de este tipo fallan. Solo se admite la familia `MergeTree` simple: una tabla `MergeTree` replicada o compartida, o una vista materializada o una tabla `TimeSeries` con una tabla interna en dicha política, se incluyen en la copia de seguridad y se restauran de la forma habitual, aunque con una advertencia.
 * `perform_ttl_move_on_insert` — Desactiva el movimiento TTL en INSERT de partes de datos. De forma predeterminada (si está habilitado), si insertamos una parte de datos que ya ha expirado según la regla de movimiento TTL, se envía inmediatamente a un volumen/disco declarado en la regla de movimiento. Esto puede ralentizar significativamente la inserción si el volumen/disco de destino es lento (por ejemplo, S3). Si está deshabilitado, la parte de datos ya expirada se escribe en un volumen predeterminado y, acto seguido, se mueve al volumen TTL.
 * `load_balancing` - Política de equilibrio entre discos, `round_robin` o `least_used`.
 * `least_used_ttl_ms` - Configura el tiempo de espera (en milisegundos) para actualizar el espacio disponible en todos los discos (`0` - actualizar siempre, `-1` - no actualizar nunca, el valor predeterminado es `60000`). Tenga en cuenta que, si el disco solo puede ser utilizado por ClickHouse y no está sujeto a un cambio de tamaño o reducción en línea del sistema de archivos, puede usar `-1`; en todos los demás casos no se recomienda, ya que con el tiempo provocará una distribución incorrecta del espacio.
@@ -1015,9 +1016,9 @@ Ejemplos de configuración:
 <storage_configuration>
     ...
     <policies>
-        <hdd_in_order> <!-- nombre de política -->
+        <hdd_in_order> <!-- policy name -->
             <volumes>
-                <single> <!-- nombre de volumen -->
+                <single> <!-- volume name -->
                     <disk>disk1</disk>
                     <disk>disk2</disk>
                 </single>

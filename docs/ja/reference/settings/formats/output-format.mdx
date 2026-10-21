@@ -788,6 +788,14 @@ FixedString 型のカラムでは、Binary ではなく Parquet FIXED&#95;LEN&#9
 
 Geoカラムの情報をParquetメタデータに書き込み、カラムをWKB形式でエンコードできるようにします。
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+WKB として書き込まれる geo カラム (`output_format_parquet_geometadata` を参照) に Parquet の `GEOMETRY` 論理型のアノテーションを付与し、min/max 統計の代わりに `GeospatialStatistics` (バウンディングボックスとジオメトリ型) を書き込みます。この論理型をサポートするリーダーは、GeoParquet の `geo` メタデータがなくても、これらのカラムをジオメトリとして認識します。`output_format_parquet_geometadata` が無効の場合、この設定は効果がありません。また、`Geometry` カラムも GeoParquet の `geo` メタデータに記述され、その際のジオメトリ型のリストは空になります。無効にした場合、これらのカラムは地理空間アノテーションなし、かつ min/max 統計付きの `BYTE_ARRAY` として書き込まれ、`Geometry` カラムは `geo` メタデータに記述されません。この論理型を認識しないリーダー (例: バージョン 20 より前の Arrow C++ や `pyarrow`) ではファイル全体を開けなくなるため、デフォルトでは無効になっています。
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

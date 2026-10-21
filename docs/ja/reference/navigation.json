@@ -188,7 +188,7 @@
             "ja/reference/statements/system",
             "ja/reference/statements/truncate",
             "ja/reference/statements/undrop",
-            "reference/statements/update",
+            "ja/reference/statements/update",
             "ja/reference/statements/use"
           ]
         },
@@ -1060,6 +1060,7 @@
         "ja/reference/system-tables/completions",
         "ja/reference/system-tables/constraints",
         "ja/reference/system-tables/contributors",
+        "ja/reference/system-tables/connections",
         "ja/reference/system-tables/crash_log",
         "ja/reference/system-tables/current_roles",
         "ja/reference/system-tables/dashboards",

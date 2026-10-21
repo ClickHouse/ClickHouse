@@ -787,6 +787,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Позволяет записывать информацию о геопространственных столбцах в метаданные Parquet и кодировать столбцы в формате WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Помечает геопространственные столбцы, записываемые в формате WKB (см. `output_format_parquet_geometadata`), логическим типом Parquet `GEOMETRY` и записывает для них `GeospatialStatistics` (ограничивающий прямоугольник и геометрические типы) вместо статистики min/max. Считыватели, поддерживающие этот логический тип, распознают такие столбцы как геометрические объекты даже без метаданных GeoParquet `geo`. Не действует, если настройка `output_format_parquet_geometadata` отключена. Столбец `Geometry` также описывается в метаданных GeoParquet `geo` с пустым списком геометрических типов. Если настройка отключена, такие столбцы записываются как `BYTE_ARRAY` без геопространственной аннотации и со статистикой min/max, а столбец `Geometry` в метаданных `geo` не описывается. По умолчанию отключено, поскольку считыватели, которые не поддерживают этот логический тип (например, Arrow C++ и `pyarrow` до версии 20), вообще не могут открыть такой файл.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

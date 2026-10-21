@@ -856,7 +856,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Una nueva configuración para usar columnas geo en un archivo Parquet"}]}]} />
 
-Usa el analizador de columnas geo para convertir Array(UInt8) en tipos Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+Al leer archivos Parquet, decodifica las columnas de geometría como tipos geométricos de ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` o `Geometry`). Se aplica a las columnas descritas por la metadata `geo` de GeoParquet y a las columnas anotadas con el tipo lógico `GEOMETRY` o `GEOGRAPHY` de Parquet. Si está deshabilitado, dichas columnas se leen como `String` con los bytes WKB (o WKT) sin procesar, salvo que se solicite explícitamente un tipo geográfico.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 

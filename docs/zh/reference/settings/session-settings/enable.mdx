@@ -85,6 +85,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 启用查询优化：分析函数和子查询的结果，并在其中包含常量时重写查询
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于控制是否启用实验性的 Elasticsearch 集成（`Elasticsearch` 表引擎和 `elasticsearch` 表函数）。"}]}]} />
+
+启用实验性的 Elasticsearch 集成，包括 `Elasticsearch` 表引擎和 `elasticsearch` 表函数。
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

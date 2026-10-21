@@ -14,6 +14,23 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+## min_bytes_before_external_group_by {#min_bytes_before_external_group_by}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定: 外部 `GROUP BY` が 1 スレッド分の集約状態をディスクに書き込むために必要な最小サイズ。すでにしきい値を超えているクエリが、ブロックごとに個別のファイルを書き込むことを防ぎます。"}]}]} />
+
+外部 `GROUP BY` が 1 スレッド分の集約状態をディスクに書き込むために必要な、集約状態の最小サイズ (バイト単位) です。
+
+他の演算子 (たとえば大きなテーブルを保持するハッシュ結合など) の影響でクエリのメモリ使用量が `max_bytes_before_external_group_by` または `max_bytes_ratio_before_external_group_by` を超えている場合、この設定がないと、各スレッドは集約したブロックを 1 つずつ小さな個別ファイルとしてディスクに書き込んでしまいます。多数の小さなファイルを読み戻す際には、書き込みによって節約できたメモリよりも多くのメモリを消費します。この設定を使用すると、各スレッドは自身の状態が指定したサイズに達するまで集約を続け、そこで初めて 1 つのファイルとして書き出します。
+
+しきい値を超えて使用されるメモリの上限は、この値とスレッド数の積になります。
+
+設定可能な値:
+
+* 正の整数 (バイト単位のサイズ)。
+* `0` — 最小値なし。しきい値に達した時点で直ちに状態が書き込まれます。
+
 ## min_bytes_to_spill {#min_bytes_to_spill}
 
 <ExperimentalBadge />

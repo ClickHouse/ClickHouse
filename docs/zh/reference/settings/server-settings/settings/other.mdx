@@ -103,6 +103,30 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 
 要禁用 cgroup 观察器，请将该值设置为 `0`。
 
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />启用后，会为 `system.connections` 表收集连接信息。该表显示原生 TCP 和 HTTP 查询接口的连接，不显示 MySQL、PostgreSQL、gRPC 或其他协议的连接。
+
+将此设置设为 `true` 后，服务器会在内存中维护一个连接列表：
+
+* 原生 TCP 连接在完成身份验证后，由服务器添加到列表中。
+* HTTP 连接在收到第一个查询时，由服务器添加到列表中。
+* 连接关闭时，服务器会将其从列表中移除。在两次请求之间，HTTP keep-alive 连接的状态为 `idle`。
+
+每个连接和每个查询都会带来少量同步开销，因此默认值为 `false`。
+
+没有 `SHOW CONNECTIONS` 特权的用户只能看到自己的连接。
+
+修改此设置无需重启。改为 `false` 时，`system.connections` 会被清空，服务器也不再登记新连接。改为 `true` 时，已打开的连接会在执行下一个查询时出现在 `system.connections` 中。
+
+配置示例：
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+另请参阅：`system.connections`、`system.processes`。
+
 ## 压缩 {#compression}
 
 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎表的数据压缩设置。

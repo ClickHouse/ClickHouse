@@ -103,6 +103,30 @@ Intervalo, em segundos, durante o qual o consumo máximo de memória permitido d
 
 Para desativar o observador de cgroups, defina este valor como `0`.
 
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Habilita a coleta de conexões para a tabela `system.connections`. Essa tabela mostra as conexões das interfaces de consulta TCP nativo e HTTP. Ela não mostra conexões de MySQL, PostgreSQL, gRPC ou outros protocolos.
+
+Quando esta configuração é definida como `true`, o servidor mantém uma lista de conexões em memória:
+
+* O servidor adiciona uma conexão TCP nativa à lista após a autenticação.
+* O servidor adiciona uma conexão HTTP à lista quando a conexão recebe sua primeira consulta.
+* O servidor remove uma conexão da lista quando ela é fechada. Entre as requisições, uma conexão HTTP keep-alive fica com o status `idle`.
+
+Cada conexão e cada consulta têm um pequeno custo de sincronização. Por isso, o valor default é `false`.
+
+Um usuário sem o privilégio `SHOW CONNECTIONS` vê apenas as próprias conexões.
+
+É possível alterar esta configuração sem reiniciar o servidor. Ao alterá-la para `false`, `system.connections` fica vazia e o servidor para de registrar novas conexões. Ao alterá-la para `true`, uma conexão já aberta passa a aparecer em `system.connections` na sua próxima consulta.
+
+Exemplo de configuração:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+Veja também: `system.connections`, `system.processes`.
+
 ## compressão {#compression}
 
 Configurações de compressão de dados para tabelas com o motor [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).

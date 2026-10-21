@@ -103,6 +103,30 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 لتعطيل مراقب cgroup، اضبط هذه القيمة على `0`.
 
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />يفعّل جمع الاتصالات في جدول `system.connections`. يعرض هذا الجدول اتصالات واجهات الاستعلام عبر البروتوكول الأصلي (TCP) وHTTP، ولا يعرض اتصالات MySQL أو PostgreSQL أو gRPC أو غيرها من البروتوكولات.
+
+عند ضبط هذا الإعداد على `true`، يحتفظ الخادم بقائمة بالاتصالات في الذاكرة:
+
+* يضيف الخادم اتصال TCP الأصلي إلى القائمة بعد المصادقة.
+* يضيف الخادم اتصال HTTP إلى القائمة عندما يتلقى الاتصال أول استعلام له.
+* يزيل الخادم الاتصال من القائمة عند إغلاقه. وفي الفترات بين الطلبات، تكون حالة اتصال HTTP من نوع keep-alive هي `idle`.
+
+ينطوي كل اتصال وكل استعلام على تكلفة مزامنة طفيفة، ولذلك تكون القيمة الافتراضية `false`.
+
+لا يرى المستخدم الذي لا يملك امتياز `SHOW CONNECTIONS` إلا اتصالاته الخاصة.
+
+يمكنك تغيير هذا الإعداد دون الحاجة إلى إعادة التشغيل. عند تغييره إلى `false`، يصبح جدول `system.connections` فارغًا ويتوقف الخادم عن تسجيل الاتصالات الجديدة. وعند تغييره إلى `true`، يظهر الاتصال المفتوح في `system.connections` عند تنفيذ استعلامه التالي.
+
+مثال على التهيئة:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+انظر أيضًا: `system.connections`، `system.processes`.
+
 ## الضغط {#compression}
 
 إعدادات ضغط البيانات للجداول التي تستخدم المحرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).

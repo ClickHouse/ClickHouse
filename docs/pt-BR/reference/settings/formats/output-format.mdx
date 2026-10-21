@@ -788,6 +788,14 @@ Use o tipo Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY em vez de Binary para as col
 
 Permite gravar informações sobre colunas geoespaciais nos metadados do Parquet e codificar colunas no formato WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Anota as colunas geoespaciais gravadas como WKB (consulte `output_format_parquet_geometadata`) com o tipo lógico `GEOMETRY` do Parquet e grava `GeospatialStatistics` (caixa delimitadora e tipos geométricos) para elas, em vez de estatísticas de mínimo/máximo. Leitores compatíveis com esse tipo lógico reconhecem essas colunas como geometrias mesmo sem o metadado `geo` do GeoParquet. Não tem efeito se `output_format_parquet_geometadata` estiver desabilitado. Uma coluna `Geometry` também é descrita no metadado `geo` do GeoParquet, com uma lista vazia de tipos geométricos. Quando esta configuração está desabilitada, essas colunas são gravadas como `BYTE_ARRAY`, sem anotação geoespacial e com estatísticas de mínimo/máximo, e a coluna `Geometry` não é descrita no metadado `geo`. Fica desabilitada por padrão porque leitores que não reconhecem esse tipo lógico (por exemplo, Arrow C++ e `pyarrow` em versões anteriores à 20) não conseguem abrir o arquivo inteiro.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

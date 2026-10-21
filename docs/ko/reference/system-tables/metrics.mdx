@@ -1118,6 +1118,10 @@ Keeper changelog 병렬 시작 읽기를 담당하는 스레드 풀에서 큐에
 
 대기 중인 요청 수
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+서버 시작 후 로컬 로그 항목의 전처리가 끝나기를 기다리고 있는 Raft 이벤트 루프 스레드 수입니다. Raft 이벤트 루프는 리스너, 선출 타이머와 하트비트 타이머, 모든 RPC 완료 처리도 함께 실행하므로 이 값은 0 또는 1로 유지되어야 합니다.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper server의 읽기 작업을 위한 스레드 풀의 스레드 수입니다.
@@ -2289,6 +2293,10 @@ vector similarity index cache의 크기(바이트)
 ### VersionInteger {#versioninteger}
 
 서버 버전을 1000진법의 단일 정수로 나타냅니다. 예를 들어, 버전 11.22.33은 11022033으로 변환됩니다.
+
+### WaitingQuery {#waitingquery}
+
+비동기 로딩 또는 시작이 완료되기를 기다리고 있는 쿼리 수입니다. &#39;max&#95;waiting&#95;queries&#39; 서버 설정으로 제한됩니다
 
 ### 쓰기 {#write}
 

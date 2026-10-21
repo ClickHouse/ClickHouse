@@ -1961,6 +1961,10 @@ DNSReverseRequests 统计的反向 DNS 查询总耗时，包括 DNSReverseError 
 
 检查插入到 *MergeTree 表中的块是否重复所花费的总时间。
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+关闭 Elasticsearch 时间点 (point in time) 失败的次数。
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 在 encryption header cache 中命中 encryption header 字节的次数，此时会跳过对该 header 的源端读取。
@@ -2553,9 +2557,37 @@ SQL 常规函数调用次数 (SQL 函数按块调用，因此该数值表示块�
 
 因 Iceberg 压实操作或其所取代的快照的存在时间短于 `iceberg_outdated_snapshot_lifetime_seconds`，而延后移除已被 Iceberg 压实取代的数据文件的次数。
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+确定 Iceberg 表当前状态所花费的总时间，包括查找当前元数据文件 (通过版本提示或列出文件的方式) ，以及随后读取并解析该文件。
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 同步初始化 Iceberg 数据迭代器所花费的总时间。
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+为迭代 Iceberg manifest 文件进行准备所花费的总时间，包括解析其分区规范和 schema 头部，以及将 schema 与表元数据进行比对校验。每个查询都会为其中的每个 manifest 文件产生这部分开销，即使该 manifest 文件来自 Iceberg 元数据缓存也是如此。
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+从存储中读取 (而非从 Iceberg 元数据缓存获取) 的 Iceberg manifest 文件数量。
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+从存储中读取的 Iceberg manifest 文件总大小。
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+从存储中读取并解码 Iceberg manifest 文件所耗费的总时间。
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+从存储中读取 (而非从 Iceberg 元数据缓存中获取) 的 Iceberg 清单列表数量。
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+从存储中读取并解码 Iceberg 清单列表所耗费的总时间。
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2572,6 +2604,26 @@ Iceberg 元数据文件在 Iceberg 元数据缓存中未命中，因此必须从
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 从 Iceberg 元数据缓存中被淘汰的字节数近似值。
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+已解析的 Iceberg `metadata.json` 内容总大小。
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+解析 Iceberg `metadata.json` 文件所耗费的总时间。
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+解析 Iceberg `metadata.json` 的次数。每次访问时都会执行解析，即使文件内容由 Iceberg 元数据缓存提供也不例外。
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+从存储中读取 Iceberg `metadata.json` 文件所耗费的总时间 (含解压缩) 。
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+从存储中读取的 Iceberg `metadata.json` 文件数 (不含命中 Iceberg 元数据缓存的文件) 。
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2608,6 +2660,10 @@ Iceberg 分区剪枝期间跳过的文件数量
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 读取 Iceberg 时应用了简单计数优化
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+读取并解析 Iceberg 表的 `version-hint.text` 文件所花费的总时间。
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4033,9 +4089,25 @@ Move 执行器 任务在 cancel() 中耗费的时间。
 
 应用任何过滤器之前，对象存储列出 API 返回的对象总数。
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+为读取对象而发出的对象元数据请求 (例如 S3 HEAD) 的数量。这些请求由对象存储源、其文件迭代器以及 schema 推断发出，原因是无法从列出结果或表元数据中获知对象的大小和 ETag。
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+`ObjectStorageMetadataFetchedForRead` 所统计的对象元数据请求的总耗时。
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 因对 &#95;path/&#95;file 应用虚拟列谓词过滤而被排除的对象。
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+对象存储源因查询条件缓存表明其所有行组均不匹配过滤器而整体跳过的对象数量。
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+对象存储源因查询条件缓存表明其不匹配过滤器而跳过的行组数量。
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4148,6 +4220,10 @@ StorageS3(Azure)Queue 中已处理行数
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 Keeper 提交失败次数
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+对象存储源等待下一个对象的读取器所花费的总时间，该读取器在后台准备。
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4353,6 +4429,10 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 使用基于任务的并行副本执行查询时使用的副本数
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+被布隆过滤器裁剪掉的 Parquet 行组总数。
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 经过过滤器的列总数
@@ -4365,9 +4445,21 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 由 Parquet 读取器 发起的任务
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Parquet 读取器解压缩的 Parquet 数据页 (包括数据页和字典页) 的未压缩总大小。
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+通过字典过滤器裁剪的 Parquet 行组总数 (若某列的字典超出裁剪内存预算，则回退为使用布隆过滤器) 。
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 解码线程读取 Parquet 文件时的等待时间 (不包括预取线程)
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+读取并反序列化 Parquet 文件 footer 所花费的总时间 (仅统计未命中 Parquet 元数据缓存的情况) 。
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4381,6 +4473,14 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 从 Parquet 元数据缓存中逐出的字节数估计值。
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+为跳过被 PREWHERE 过滤掉的行而触发解压缩的 Parquet 数据页数量 (这些数据页也可能为后续读取的行提供数据) 。
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+DB::Parquet::Prefetcher 从 Parquet 文件中读取的总字节数。当合并读取覆盖了最终未被使用的范围时 (例如之后被布隆过滤器裁剪掉的行组中的列块) ，该值会大于 `ParquetPrefetcherUsedBytes`。
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 DB::Parquet::Prefetcher 以 ReadMode::EntireFileIsInMemory 模式读取的总次数
@@ -4393,13 +4493,17 @@ DB::Parquet::Prefetcher 使用 ReadMode::RandomRead 的读取总次数
 
 DB::Parquet::Prefetcher 以 ReadMode::SeekAndRead 模式进行读取的总次数
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+DB::Parquet::Prefetcher 所读取的范围中，实际被 Parquet 读取器使用的总字节数。
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 借助列索引从 Parquet 数据中裁剪掉的数据页总数
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-从 Parquet 数据中剪枝掉的行组总数
+在读取之前 (基于 min/max 统计信息和行组选择) 从 Parquet 数据中裁剪掉的行组总数。之后由布隆过滤器和字典裁剪掉的行组分别计入 `ParquetBloomFilterPrunedRowGroups` 和 `ParquetDictionaryFilterPrunedRowGroups`。
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 

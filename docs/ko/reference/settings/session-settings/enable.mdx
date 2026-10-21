@@ -85,6 +85,16 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 함수와 서브쿼리의 결과를 분석하고, 여기에 상수가 있으면 쿼리를 재작성하는 쿼리 최적화를 활성화합니다
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "실험적 Elasticsearch 통합(`Elasticsearch` 테이블 엔진 및 `elasticsearch` 테이블 함수)의 사용 여부를 제어하는 새로운 설정입니다."}]}]} />
+
+실험적 Elasticsearch 통합(`Elasticsearch` 테이블 엔진 및 `elasticsearch` 테이블 함수)을 활성화합니다.
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

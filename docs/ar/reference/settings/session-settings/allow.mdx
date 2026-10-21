@@ -189,9 +189,9 @@ Cloud default value: `1`.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد يتيح تقييم `DISTINCT` بشكل مستقل لكل partition عندما يكون تعبير partition دالة حتمية لأعمدة `DISTINCT`."}]}]} />
 
-فعّل التقييم المستقل لـ `DISTINCT` لكل partition على خيوط تنفيذ منفصلة عندما يكون تعبير partition دالة حتمية لأعمدة `DISTINCT`، مع تجاوز الدمج بين التدفقات. يفيد ذلك عندما يكون عدد partitionات قريبًا من عدد الأنوية وتكون partitionات متقاربة الحجم؛ وإلا، تتجاوزه آلية استدلالية للتكلفة. راجع [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ar/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) و[force&#95;distinct&#95;partitions&#95;independently](/ar/reference/settings/session-settings/force#force_distinct_partitions_independently). لا يُطبَّق مع `FINAL` أو النسخ المتماثلة المتوازية.
+فعّل التقييم المستقل لـ `DISTINCT` لكل partition على خيوط تنفيذ منفصلة عندما يكون تعبير partition دالة حتمية لأعمدة `DISTINCT`، مع تجاوز الدمج بين التدفقات. يفيد ذلك عندما يكون عدد partitionات قريبًا من عدد الأنوية وتكون partitionات متقاربة الحجم؛ وإلا، تتجاوزه آلية استدلالية للتكلفة. راجع [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ar/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) و[force&#95;distinct&#95;partitions&#95;independently](/ar/reference/settings/session-settings/force#force_distinct_partitions_independently). لا يُطبَّق مع `FINAL` أو النسخ المتماثلة المتوازية.
 
-لا يُطبَّق عند تعيين [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) أو [max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): إذ تُفرض هذه الحدود بواسطة تحويل `DISTINCT` الواحد الذي يعالج النتيجة المدمجة بالكامل، لذلك يُحتفظ بالدمج بين التدفقات للحفاظ على دلالتها الشاملة.
+يُطبَّق الحدّان [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) و[max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) على الحجم المجمّع لمجموعات partitionات كلها، ما دامت التدفقات منفصلة.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -450,6 +450,20 @@ Cloud default value: `1`.
 يستخدم ClickHouse القيمة المحمّلة لهذا الإعداد عند بدء تشغيل الخادم.
 ولا تؤدي التغييرات التي تُجرى باستخدام `SET` أو `SETTINGS` على مستوى الاستعلام إلى تغيير سلوك الأعمدة الفرعية المستخرجة.
 ولتغيير سلوك الأعمدة الفرعية المستخرجة، حدّث `allow_nullable_tuple_in_extracted_subcolumns` في تهيئة ملف التعريف عند بدء التشغيل (على سبيل المثال، users.xml) ثم أعد تشغيل الخادم.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لتقييم `DISTINCT` النهائي بالتوازي باستخدام التقسيم القائم على التجزئة."}]}]} />
+
+يُقيِّم هذا الإعداد `DISTINCT` النهائي على عدة خيوط تنفيذ عبر تقسيم تدفقات الإدخال وفقًا لتجزئة أعمدة `DISTINCT`. وبذلك تصل المفاتيح المتساوية إلى التدفق نفسه، مما يتيح إزالة التكرارات من كل تقسيم على حدة.
+
+وخلافًا للإعداد [allow&#95;distinct&#95;partitions&#95;independently](/ar/reference/settings/session-settings/allow#allow_distinct_partitions_independently)، لا يشترط هذا الإعداد وجود علاقة بين مفتاح التقسيم في الجدول وأعمدة `DISTINCT`. ويُوضع حدٌّ أقصى لعدد تدفقات الإدخال وتقسيمات التجزئة بمعزل عن `max_threads`، للحدّ من تكلفة تقسيم الكتل وربط التدفقات.
+
+لا يُطبَّق التقسيم القائم على التجزئة على الإدخال المرتّب ترتيبًا شاملًا، لأن `DISTINCT` يحافظ على هذا الترتيب. ويسري كلٌّ من [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) و[max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) على الحجم المجمّع لجميع تقسيمات التجزئة.
+
+لا يوجد ترتيب محدد للصفوف عند استخدام `DISTINCT` دون `ORDER BY`، لذا قد يُعيد هذا التحسين القيم المميزة نفسها بترتيب مختلف. وبالتالي، قد يؤدي استخدام `LIMIT` أو `OFFSET` أو `LIMIT BY` على نتائج `DISTINCT` غير المرتبة إلى اختيار مجموعة جزئية مختلفة من الصفوف.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

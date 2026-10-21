@@ -38,7 +38,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 **الأسماء البديلة**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +62,14 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
       label:
         "إعداد جديد يحدّد عدد ملفات manifest الحذف الخاصة بـ Iceberg التي يجري فك ترميزها بالتوازي قبل قراءة الصف الأول. قبل الإصدار 26.8، كان يُفكّ ترميز manifest واحد في كل مرة بينما يكون جلب التالي قيد الإرسال بالفعل، لذا فإن `2` هي أقرب قيمة مكافئة للسلوك السابق، الذي كان يضع مجموع رحلات الذهاب والعودة إلى تخزين الكائنات لهذه الملفات على المسار الحرج قبل قراءة الصف الأول. كان الإعداد يُسمّى حينها `iceberg_delete_manifest_decode_concurrency`، وهو الآن اسم بديل له."
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "رفع العدد الافتراضي لملفات manifest الخاصة بـ Iceberg التي يجري فك ترميزها بالتوازي من 4 إلى 16 لتحقيق تداخل أكبر بين رحلات الذهاب والعودة إلى تخزين الكائنات في الجداول التي تحتوي على عدد كبير من manifests." }
   ]
 }
 ]}

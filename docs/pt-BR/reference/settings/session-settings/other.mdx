@@ -1038,11 +1038,11 @@ Carrega marcas do MergeTree de forma assíncrona em um pool de threads em segund
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-<SettingsInfoBlock type="Segundos" default_value="120" />
+<SettingsInfoBlock type="Seconds" default_value="120" />
 
-Define quantos segundos uma solicitação de bloqueio aguarda antes de falhar.
+Define quantos segundos uma requisição de bloqueio aguarda antes de falhar.
 
-O tempo limite de bloqueio é usado para evitar deadlocks durante a execução de operações de leitura/gravação em tabelas. Quando o tempo limite se esgota e a solicitação de bloqueio falha, o servidor ClickHouse lança uma exceção &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; com o código de erro `DEADLOCK_AVOIDED`.
+O tempo limite de bloqueio é usado para evitar deadlocks durante a execução de operações de leitura/gravação em tabelas. Quando o tempo limite se esgota e a requisição de bloqueio falha, o servidor ClickHouse lança uma exceção &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; com o código de erro `DEADLOCK_AVOIDED`.
 
 Valores possíveis:
 

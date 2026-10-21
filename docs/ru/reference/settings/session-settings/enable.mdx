@@ -89,6 +89,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Включает оптимизацию запроса: анализируются результаты функций и подзапросов, и при наличии в них констант запрос переписывается
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка, управляющая доступностью экспериментальной интеграции с Elasticsearch (движок таблицы `Elasticsearch` и табличная функция `elasticsearch`)."}]}]} />
+
+Включает экспериментальную интеграцию с Elasticsearch: движок таблицы `Elasticsearch` и табличную функцию `elasticsearch`.
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

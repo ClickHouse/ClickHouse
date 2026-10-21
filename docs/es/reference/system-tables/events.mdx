@@ -1962,6 +1962,10 @@ Número de cálculos de hash de datos por columna realizados al deduplicar bloqu
 
 Tiempo total dedicado a comprobar si había duplicados en los bloques insertados en tablas *MergeTree.
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Número de intentos fallidos de cerrar un point in time (PIT) de Elasticsearch.
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 Número de veces que los bytes del encabezado de cifrado se encontraron en el caché de encabezados de cifrado, por lo que se omitió la lectura del encabezado desde la fuente.
@@ -2554,9 +2558,37 @@ Número de veces que se pospuso la eliminación de archivos de datos reemplazado
 
 Número de veces que se pospuso la eliminación de archivos de datos reemplazados por la compactación de Iceberg porque la compactación, o una instantánea reemplazada por ella, era más reciente que `iceberg_outdated_snapshot_lifetime_seconds`.
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Tiempo total empleado en resolver el estado actual de las tablas Iceberg: localizar el archivo de metadata actual (mediante la pista de versión o la enumeración) y, a continuación, leerlo y analizarlo.
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Tiempo total empleado en la inicialización síncrona de los iteradores de datos de Iceberg.
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Tiempo total dedicado a preparar los archivos de manifiesto de Iceberg para su iteración: analizar sus encabezados de spec de partición y de esquema, y validar el esquema frente a los metadata de la tabla. Este coste se aplica a cada archivo de manifiesto en cada consulta, incluso cuando el archivo de manifiesto se sirve desde la caché de metadata de Iceberg.
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+Número de archivos de manifiesto de Iceberg leídos desde el almacenamiento (es decir, no obtenidos de la caché de metadata de Iceberg).
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+Tamaño total de los archivos de manifiesto de Iceberg leídos desde el almacenamiento.
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+Tiempo total empleado en leer y decodificar los archivos de manifiesto de Iceberg desde el almacenamiento.
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+Número de listas de manifiestos de Iceberg leídas desde el almacenamiento (es decir, que no se obtuvieron de la caché de metadatos de Iceberg).
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+Tiempo total empleado en leer y decodificar las listas de manifiestos de Iceberg desde el almacenamiento.
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2573,6 +2605,26 @@ Número de veces que se encontraron archivos de metadatos de Iceberg en la cach�
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Número aproximado de bytes desalojados de la caché de metadatos de Iceberg.
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+Tamaño total del contenido analizado del archivo `metadata.json` de Iceberg.
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Tiempo total empleado en analizar los archivos `metadata.json` de Iceberg.
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Número de veces que se analizó un archivo `metadata.json` de Iceberg. El análisis se realiza en cada acceso, incluso cuando el contenido del archivo se obtiene de la caché de metadata de Iceberg.
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+Tiempo total empleado en leer los archivos `metadata.json` de Iceberg desde el almacenamiento, incluida la descompresión.
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+Número de archivos `metadata.json` de Iceberg leídos desde el almacenamiento (no obtenidos de la caché de metadatos de Iceberg).
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2609,6 +2661,10 @@ Número de manifest files de Iceberg omitidos sin llegar a leerse, a partir de l
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Optimización de recuento trivial aplicada al leer desde Iceberg
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Tiempo total empleado en leer y resolver el archivo `version-hint.text` de las tablas Iceberg.
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4034,9 +4090,25 @@ Objetos que no coincidieron con el patrón glob o regex y se omitieron durante e
 
 Número total de objetos devueltos por la API de listado del almacenamiento de objetos antes de aplicar cualquier filtro.
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+Número de solicitudes de metadata de objetos (p. ej., S3 HEAD) realizadas para leer objetos (por la fuente de almacenamiento de objetos, sus iteradores de archivos y la inferencia del esquema), porque el tamaño y el ETag del objeto no se conocían a partir de la enumeración ni de la metadata de la tabla.
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+Tiempo total invertido en las solicitudes de metadata de objetos contabilizadas en `ObjectStorageMetadataFetchedForRead`.
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 Objetos descartados por el filtrado mediante predicados en las columnas virtuales &#95;path/&#95;file.
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+Número de objetos que la fuente de almacenamiento de objetos omitió por completo porque la caché de condiciones de consulta indicó que ninguno de sus grupos de filas coincidía con el filtro.
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+Número de grupos de filas que la fuente de almacenamiento de objetos omitió porque la caché de condiciones de consulta indicó que no coinciden con el filtro.
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4149,6 +4221,10 @@ La cantidad de veces que marcamos correctamente el archivo como processing
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 Número de commits fallidos en Keeper
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+Tiempo total que las fuentes de almacenamiento de objetos dedicaron a esperar al lector del siguiente objeto, que se prepara en segundo plano.
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4354,6 +4430,10 @@ Número de réplicas que se eligieron, pero que se encontraron no disponibles du
 
 Número de réplicas usadas para ejecutar una consulta con réplicas paralelas basadas en tareas
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+El número total de grupos de filas Parquet descartados por filtros de bloom.
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 El número total de columnas que pasaron por el filtro
@@ -4366,9 +4446,21 @@ Grupos de tareas que el lector de Parquet envía a un grupo de hilos
 
 Tareas generadas por el lector de Parquet
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Tamaño total sin comprimir de las páginas de Parquet (páginas de datos y de diccionario) descomprimidas por el lector de Parquet.
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+Número total de grupos de filas de Parquet descartados por filtros de diccionario (con un filtro Bloom como alternativa de respaldo para las columnas cuyo diccionario no cabe en el presupuesto de memoria destinado a la poda).
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Tiempo de espera de las lecturas de archivos Parquet por parte de los hilos de decodificación (no de los hilos de precarga)
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Tiempo total empleado en leer y deserializar los pies de los archivos Parquet (que no se obtuvieron de la caché de metadatos de Parquet).
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4382,6 +4474,14 @@ Número de veces que no se encontraron metadatos de Parquet en la caché y fue n
 
 Número aproximado de bytes eliminados de la caché de metadatos de Parquet.
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+Número de páginas de datos de Parquet cuya descompresión se activó por la omisión de filas filtradas por PREWHERE (la página también puede proporcionar filas que se lean posteriormente).
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+Total de bytes leídos de archivos Parquet por DB::Parquet::Prefetcher. Es mayor que `ParquetPrefetcherUsedBytes` cuando las lecturas se consolidan en rangos que al final no se utilizan, p. ej., fragmentos de columna de grupos de filas que posteriormente descartan los filtros de bloom.
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 El número total de lecturas realizadas con ReadMode::EntireFileIsInMemory por DB::Parquet::Prefetcher
@@ -4394,13 +4494,17 @@ El número total de lecturas con ReadMode::RandomRead realizadas por DB::Parquet
 
 El número total de lecturas en modo ReadMode::SeekAndRead realizadas por DB::Parquet::Prefetcher
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+Total de bytes de los rangos leídos por DB::Parquet::Prefetcher que el lector de Parquet utilizó realmente.
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 El número total de pages descartadas de los datos de Parquet mediante el índice de columna
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-El número total de grupos de filas descartados en los datos Parquet
+El número total de grupos de filas descartados en los datos Parquet antes de leerlos (mediante estadísticas min/max y la selección de grupos de filas). Los grupos de filas descartados posteriormente por filtros de bloom y diccionarios se contabilizan en `ParquetBloomFilterPrunedRowGroups` y `ParquetDictionaryFilterPrunedRowGroups`.
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 

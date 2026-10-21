@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify 的生产渲染器在求值导出组件时不会保留模块作用域绑定。
-  // 惰性状态可将生成的数据保留在该求值作用域内，
-  // 同时确保每次挂载仅构造一次。
+  // Mintlify 的生产环境渲染器在求值导出的组件时，不会
+  // 保留模块作用域内的绑定。借助惰性状态，生成的数据可保留在
+  // 该求值作用域中，且每次挂载仅构造一次。
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -51,7 +51,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_*",
-      count: 52,
+      count: 53,
       settings: [
         { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
         { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
@@ -95,6 +95,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_non_metadata_alters", path: "/allow#allow_non_metadata_alters", default: "1" },
         { name: "allow_nonconst_timezone_arguments", path: "/allow#allow_nonconst_timezone_arguments", default: "0" },
         { name: "allow_nullable_tuple_in_extracted_subcolumns", path: "/allow#allow_nullable_tuple_in_extracted_subcolumns", default: "1" },
+        { name: "allow_parallel_distinct", path: "/allow#allow_parallel_distinct", default: "1" },
         { name: "allow_preliminary_distinct_abandoning", path: "/allow#allow_preliminary_distinct_abandoning", default: "1" },
         { name: "allow_rank_dense_rank_arguments", path: "/allow#allow_rank_dense_rank_arguments", default: "0" },
         { name: "allow_reorder_prewhere_conditions", path: "/allow#allow_reorder_prewhere_conditions", default: "1" },
@@ -726,10 +727,12 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 15,
+      count: 17,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
+        { name: "distributed_plan_exchange_compression_method", path: "/distributed-plan#distributed_plan_exchange_compression_method", default: "LZ4" },
+        { name: "distributed_plan_exchange_zstd_compression_level", path: "/distributed-plan#distributed_plan_exchange_zstd_compression_level", default: "1" },
         { name: "distributed_plan_execute_locally", path: "/distributed-plan#distributed_plan_execute_locally", default: "0" },
         { name: "distributed_plan_fallback_to_local_execution", path: "/distributed-plan#distributed_plan_fallback_to_local_execution", default: "1" },
         { name: "distributed_plan_force_exchange_kind", path: "/distributed-plan#distributed_plan_force_exchange_kind", default: '""' },
@@ -777,7 +780,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 59,
+      count: 60,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -786,6 +789,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_automatic_decision_for_merging_across_partitions_for_final", path: "/enable#enable_automatic_decision_for_merging_across_partitions_for_final", default: "1" },
         { name: "enable_cascades_optimizer", path: "/enable#enable_cascades_optimizer", default: "0" },
         { name: "enable_early_constant_folding", path: "/enable#enable_early_constant_folding", default: "1" },
+        { name: "enable_elasticsearch", path: "/enable#enable_elasticsearch", default: "0" },
         { name: "enable_extended_results_for_datetime_functions", path: "/enable#enable_extended_results_for_datetime_functions", default: "0" },
         { name: "enable_full_text_index", path: "/enable#enable_full_text_index", default: "1" },
         { name: "enable_function_early_short_circuit", path: "/enable#enable_function_early_short_circuit", default: "0" },
@@ -1162,7 +1166,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
-        { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "4" },
+        { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "16" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
         { name: "iceberg_orphan_files_min_retention_seconds", path: "/iceberg#iceberg_orphan_files_min_retention_seconds", default: "86400" },
@@ -1890,8 +1894,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_bytes_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "min_bytes_before_external_group_by", path: "/min-bytes#min_bytes_before_external_group_by", default: "0" },
         { name: "min_bytes_to_spill", path: "/min-bytes#min_bytes_to_spill", default: "67108864" },
         { name: "min_bytes_to_use_direct_io", path: "/min-bytes#min_bytes_to_use_direct_io", default: "0" },
         { name: "min_bytes_to_use_mmap_io", path: "/min-bytes#min_bytes_to_use_mmap_io", default: "0" }
@@ -2063,7 +2068,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "optimize_*",
-      count: 30,
+      count: 31,
       settings: [
         { name: "optimize_aggregators_of_group_by_keys", path: "/optimize#optimize_aggregators_of_group_by_keys", default: "1" },
         { name: "optimize_append_index", path: "/optimize#optimize_append_index", default: "0" },
@@ -2093,6 +2098,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "optimize_throw_if_noop", path: "/optimize#optimize_throw_if_noop", default: "0" },
         { name: "optimize_time_filter_with_preimage", path: "/optimize#optimize_time_filter_with_preimage", default: "1" },
         { name: "optimize_truncate_order_by_after_group_by_keys", path: "/optimize#optimize_truncate_order_by_after_group_by_keys", default: "1" },
+        { name: "optimize_uniq_exact_radix_partitioning", path: "/optimize#optimize_uniq_exact_radix_partitioning", default: "1" },
         { name: "optimize_uniq_to_count", path: "/optimize#optimize_uniq_to_count", default: "1" },
         { name: "optimize_using_constraints", path: "/optimize#optimize_using_constraints", default: "0" }
       ],
@@ -2590,7 +2596,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "s3_*",
-      count: 16,
+      count: 17,
       settings: [
         { name: "s3_base", path: "/s3#s3_base", default: '""' },
         { name: "s3_check_objects_after_upload", path: "/s3#s3_check_objects_after_upload", default: "0" },
@@ -2607,7 +2613,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "s3_throw_on_zero_files_match", path: "/s3#s3_throw_on_zero_files_match", default: "0" },
         { name: "s3_truncate_on_insert", path: "/s3#s3_truncate_on_insert", default: "0" },
         { name: "s3_uri_style", path: "/s3#s3_uri_style", default: "auto" },
-        { name: "s3_use_adaptive_timeouts", path: "/s3#s3_use_adaptive_timeouts", default: "1" }
+        { name: "s3_use_adaptive_timeouts", path: "/s3#s3_use_adaptive_timeouts", default: "1" },
+        { name: "s3_use_idempotency_id", path: "/s3#s3_use_idempotency_id", default: "1" }
       ],
       children: []
     },
@@ -3516,7 +3523,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount === 1 ? "" : ""}找到 {matchingCount} 个匹配的设置
+            {matchingCount} 个匹配的{matchingCount === 1 ? "设置项" : "设置项"}
           </span>
         </div>
       )}
@@ -3540,7 +3547,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">未找到匹配的设置</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">无匹配的设置项</div>
         )}
       </div>
     </div>

@@ -89,6 +89,16 @@ Solo surte efecto junto con `make_distributed_plan = 1`: esta configuración por
 
 Habilita la optimización de consultas mediante la cual se analizan los resultados de funciones y subconsultas, y se reescribe la consulta si hay constantes
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para controlar la habilitación de la integración experimental con Elasticsearch (el motor de tabla `Elasticsearch` y la función de tabla `elasticsearch`)."}]}]} />
+
+Activa la integración experimental con Elasticsearch: el motor de tabla `Elasticsearch` y la función de tabla `elasticsearch`.
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

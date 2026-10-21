@@ -1119,6 +1119,10 @@ Número de nós de contêiner atualmente armazenados no Keeper.
 
 Número de solicitações pendentes
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Número de threads do loop de eventos do Raft que aguardam o pré-processamento das entradas de log locais após a inicialização. O loop de eventos do Raft também executa o listener, os temporizadores de eleição e de heartbeat e o tratamento de todas as conclusões de RPC; por isso, esse valor deve permanecer em zero ou um.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Número de threads no pool de threads para leituras do servidor Keeper.
@@ -2290,6 +2294,10 @@ Número de entradas no cache do índice de similaridade vetorial
 ### VersionInteger {#versioninteger}
 
 Versão do servidor em um único número inteiro na base 1000. Por exemplo, a versão 11.22.33 é representada como 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Número de consultas aguardando a conclusão do carregamento assíncrono ou da inicialização, limitado pela configuração do servidor &#39;max&#95;waiting&#95;queries&#39;
 
 ### Escrita {#write}
 

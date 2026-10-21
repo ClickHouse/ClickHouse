@@ -788,6 +788,14 @@ Usa el tipo Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY en lugar de Binary para las
 
 Permite escribir información sobre columnas geo en los metadatos de Parquet y codificar las columnas en formato WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+
+Anota las columnas geo escritas como WKB (véase `output_format_parquet_geometadata`) con el tipo lógico `GEOMETRY` de Parquet y, en lugar de estadísticas min/max, escribe para ellas `GeospatialStatistics` (cuadro delimitador y tipos geométricos). Los lectores compatibles con este tipo lógico reconocen dichas columnas como geometrías aunque no exista la metadata `geo` de GeoParquet. No tiene efecto si `output_format_parquet_geometadata` está deshabilitado. Además, las columnas `Geometry` se describen en la metadata `geo` de GeoParquet con una lista vacía de tipos geométricos. Si está deshabilitado, estas columnas se escriben como `BYTE_ARRAY` sin anotación geoespacial y con estadísticas min/max, y las columnas `Geometry` no se describen en la metadata `geo`. Está deshabilitado de forma predeterminada porque los lectores que no reconocen este tipo lógico (p. ej., Arrow C++ y `pyarrow` en versiones anteriores a la 20) no pueden abrir el archivo en absoluto.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

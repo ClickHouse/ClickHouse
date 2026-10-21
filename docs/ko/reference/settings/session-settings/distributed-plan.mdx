@@ -37,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 분산 shuffle-hash join의 기본 버킷 개수입니다.
 규칙 기반 분산 플래너에서 사용됩니다. 비용 기반 최적화기는 추정 비용에 따라 팬아웃을 선택하므로 이 설정을 사용하지 않습니다.
 
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "새로운 설정: 계획의 스트리밍 exchange는 `network_compression_method`의 코덱 대신 `LZ4`로 압축합니다."}]}]} />
+
+계획에서 작업 간 스트리밍 exchange 패킷을 압축할 때 사용하는 코덱입니다. 임시 파일을 통한 교환에는 서버의 기본 코덱(Default Codec)이 사용됩니다.
+
+가능한 값:
+
+* `''` — [network&#95;compression&#95;method](/ko/reference/settings/session-settings/network#network_compression_method)의 코덱을 사용합니다.
+* `NONE` — 압축하지 않습니다.
+* `LZ4` — LZ4 코덱을 사용합니다.
+* `LZ4HC` — LZ4HC 코덱을 기본 수준인 9로 사용합니다. `LZ4`보다 압축 속도가 몇 배 느립니다.
+* `ZSTD` — [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ko/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level)에 지정된 수준으로 ZSTD 코덱을 사용합니다.
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "계획의 스트리밍 exchange에 적용되는 ZSTD 압축 수준을 지정하는 새로운 설정입니다."}]}]} />
+
+계획의 스트리밍 exchange에 적용되는 ZSTD 압축 수준입니다. [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ko/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method)가 `ZSTD`로 설정된 경우에만 사용됩니다.
+
+가능한 값:
+
+* 1에서 22 사이의 정수(integer). 수준이 높을수록 압축률은 높아지지만 속도는 느려집니다.
+
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />

@@ -1041,7 +1041,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يحدّد عدد الثواني التي ينتظرها طلب القفل قبل أن يفشل.
 
-تُستخدم مهلة القفل للحماية من حالات التوقف المتبادل أثناء تنفيذ عمليات القراءة والكتابة على الجداول. وعند انتهاء المهلة وفشل طلب القفل، يرفع خادم ClickHouse الاستثناء &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; مع رمز الخطأ `DEADLOCK_AVOIDED`.
+تُستخدم مهلة القفل للحماية من حالات التوقف المتبادل أثناء تنفيذ عمليات القراءة والكتابة على الجداول. وعند انتهاء المهلة وفشل طلب القفل، يرفع خادم ClickHouse الاستثناء &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; مع رمز الخطأ `DEADLOCK_AVOIDED`.
 
 القيم الممكنة:
 

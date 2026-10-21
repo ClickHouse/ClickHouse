@@ -103,6 +103,30 @@ cgroups의 해당 임계값에 맞춰 서버의 최대 허용 메모리 사용�
 
 cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오.
 
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />`system.connections` 테이블에 사용할 연결 정보 수집을 활성화합니다. 이 테이블은 네이티브 TCP 및 HTTP 쿼리 인터페이스의 연결을 표시하며, MySQL, PostgreSQL, gRPC 등 다른 프로토콜의 연결은 표시하지 않습니다.
+
+이 설정을 `true`로 지정하면 서버는 연결 목록을 메모리에 유지합니다.
+
+* 네이티브 TCP 연결은 인증이 완료된 후 목록에 추가됩니다.
+* HTTP 연결은 해당 연결에서 첫 번째 쿼리를 받을 때 목록에 추가됩니다.
+* 연결이 종료되면 해당 연결은 목록에서 제거됩니다. HTTP keep-alive 연결은 요청과 요청 사이에 `idle` 상태가 됩니다.
+
+연결과 쿼리마다 약간의 동기화 비용이 발생하므로 기본값은 `false`입니다.
+
+`SHOW CONNECTIONS` 권한(privilege)이 없는 사용자는 자신의 연결만 볼 수 있습니다.
+
+이 설정은 재시작 없이 변경할 수 있습니다. `false`로 변경하면 `system.connections`가 비워지고 서버는 새 연결을 더 이상 등록하지 않습니다. `true`로 변경하면 이미 열려 있는 연결은 다음 쿼리가 실행될 때 `system.connections`에 표시됩니다.
+
+구성 예시:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+관련 항목: `system.connections`, `system.processes`.
+
 ## 압축 {#compression}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)-엔진 테이블의 데이터 압축 설정입니다.

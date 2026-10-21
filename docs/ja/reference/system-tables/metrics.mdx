@@ -1118,6 +1118,10 @@ Keeper の changelog の起動時並列 reads 用 スレッドプール にお�
 
 処理待ちのリクエスト数
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+起動後、ローカルのログエントリの前処理が完了するのを待機している Raft イベントループのスレッド数です。Raft イベントループはリスナー、リーダー選出およびハートビートのタイマー、さらにすべての RPC の完了処理も実行するため、この値は通常 0 または 1 にとどまるはずです。
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper サーバーの読み取りを処理するスレッドプール内のスレッド数。
@@ -2289,6 +2293,10 @@ UNIQUE KEY 索引キャッシュの総サイズ (バイト)
 ### VersionInteger {#versioninteger}
 
 1000進数の単一の整数で表したサーバーのバージョンです。たとえば、バージョン 11.22.33 は 11022033 に変換されます。
+
+### WaitingQuery {#waitingquery}
+
+非同期読み込みまたは起動の完了を待機しているクエリの数。上限は &#39;max&#95;waiting&#95;queries&#39; サーバー設定で指定します
 
 ### 書き込み {#write}
 

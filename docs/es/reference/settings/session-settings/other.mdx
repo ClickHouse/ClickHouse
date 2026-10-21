@@ -1039,11 +1039,11 @@ Carga las marks de MergeTree de forma asíncrona en un thread pool en segundo pl
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-<SettingsInfoBlock type="Segundos" default_value="120" />
+<SettingsInfoBlock type="Seconds" default_value="120" />
 
 Define cuántos segundos espera una solicitud de bloqueo antes de fallar.
 
-El tiempo de espera de bloqueo se usa para proteger frente a interbloqueos al ejecutar operaciones de lectura/escritura con tablas. Cuando el tiempo de espera expira y la solicitud de bloqueo falla, el servidor de ClickHouse lanza una excepción &quot;¡El intento de bloqueo excedió el tiempo de espera! Se evitó un posible interbloqueo. El cliente debería reintentar.&quot; con el código de error `DEADLOCK_AVOIDED`.
+El tiempo de espera de bloqueo se usa para proteger frente a interbloqueos al ejecutar operaciones de lectura/escritura con tablas. Cuando el tiempo de espera expira y la solicitud de bloqueo falla, el servidor de ClickHouse lanza una excepción &quot;El intento de bloqueo excedió el tiempo de espera. Se evitó un posible interbloqueo. El cliente debería reintentar.&quot; con el código de error `DEADLOCK_AVOIDED`.
 
 Valores posibles:
 

@@ -998,6 +998,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 * `disk` — 卷中的一个磁盘。
 * `max_data_part_size_bytes` — 该卷中任一磁盘可存储的数据分区片段的最大大小。如果估算出的合并后分区片段大小超过 `max_data_part_size_bytes`，则该分区片段会写入下一个卷。该功能主要用于将新的或较小的parts保存在热 (SSD) 卷上，并在其变大后移动到冷 (HDD) 卷上。如果你的策略只有一个卷，请不要使用此设置。
 * `move_factor` — 当可用空间低于该系数时，数据会自动开始移动到下一个卷 (如果存在，默认值为 0.1) 。ClickHouse 会按大小从大到小 (降序) 对现有parts进行排序，并选择总大小足以满足 `move_factor` 条件的parts。如果所有parts的总大小仍不足，则会移动全部parts。
+* `backup_metadata_only` — 使用该策略的表，其数据由存储本身提供，例如共享的只读数据集 (默认值为 `false`) 。该策略下的所有卷都必须为只读。`BACKUP` 仅保存此类表的定义；`RESTORE` 会重新创建这些表但不恢复数据，并沿用备份中的 UUID，使其能够在存储上重新找到自己的数据。对此类表的特定分区执行 `BACKUP` 和 `RESTORE` 会失败。仅支持普通的 `MergeTree` 家族：对于 replicated 或 shared `MergeTree` 表，以及内部表位于此类策略上的 materialized view 或 `TimeSeries` 表，仍会照常备份和恢复，但会给出警告。
 * `perform_ttl_move_on_insert` — 禁止在数据分区片段 INSERT 时执行 TTL 移动。默认情况下 (启用时) ，如果插入的数据分区片段按照 TTL 移动规则已经过期，它会立即进入移动规则中声明的卷/磁盘。如果目标卷/磁盘较慢 (例如 S3) ，这可能会显著拖慢插入速度。如果禁用，则已过期的数据分区片段会先写入默认卷，然后立即移动到 TTL 卷。
 * `load_balancing` - 磁盘均衡策略，`round_robin` 或 `least_used`。
 * `least_used_ttl_ms` - 配置所有磁盘可用空间更新的超时时间 (毫秒)  (`0` - 始终更新，`-1` - 从不更新，默认值为 `60000`) 。注意，如果该磁盘仅供 ClickHouse 使用，且不会发生在线文件系统扩容/缩容，可以使用 `-1`；其他情况下不建议这样做，因为最终会导致空间分布不正确。
@@ -1014,7 +1015,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 <storage_configuration>
     ...
     <policies>
-        <hdd_in_order> <!-- 策略名称 -->
+        <hdd_in_order> <!-- policy name -->
             <volumes>
                 <single> <!-- volume name -->
                     <disk>disk1</disk>
@@ -1051,7 +1052,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 </storage_configuration>
 ```
 
-在给定示例中，`hdd_in_order` 策略采用了 [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) 方法。因此，该策略只定义了一个卷 (`single`) ，parts 会按循环顺序存储到该卷的所有磁盘上。如果系统挂载了多个性能相近的磁盘，但未配置 RAID，这种策略会非常有用。请注意，单个磁盘本身并不可靠，你可能需要通过将复制因子设为 3 或更高来弥补这一点。
+在给定示例中，`hdd_in_order` 策略采用了 [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) 方法。因此，该策略只定义了一个卷 (`single`) ，数据分区片段 会按循环顺序存储到该卷的所有磁盘上。如果系统挂载了多个性能相近的磁盘，但未配置 RAID，这种策略会非常有用。请注意，单个磁盘本身并不可靠，你可能需要通过将复制因子设为 3 或更高来弥补这一点。
 
 如果系统中有不同类型的磁盘，则可以改用 `moving_from_ssd_to_hdd` 策略。卷 `hot` 由一个 SSD 磁盘 (`fast_ssd`) 组成，且可存储在该卷上的单个分片最大为 1GB。所有大于 1GB 的 parts 都会直接存储到 `cold` 卷上，该卷包含一个 HDD 磁盘 `disk1`。
 此外，一旦 `fast_ssd` 磁盘的使用率超过 80%，后台进程就会将数据转移到 `disk1`。
@@ -1076,7 +1077,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 `default` 存储策略表示只使用一个卷，而该卷仅包含 `<path>` 中指定的一个磁盘。
 你可以在创建表后使用 [ALTER TABLE ... MODIFY SETTING] 查询更改存储策略；新策略应包含所有旧磁盘和卷，且名称必须保持不变。
 
-执行数据 parts 后台移动的线程数可以通过 [background&#95;move&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_move_pool_size) 设置进行调整。
+执行数据分区片段 后台移动的线程数可以通过 [background&#95;move&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_move_pool_size) 设置进行调整。
 
 ### 详细说明 {#details}
 

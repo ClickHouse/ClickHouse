@@ -1031,7 +1031,7 @@ true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제�
 
 잠금 요청이 실패하기 전까지 몇 초 동안 대기할지 정의합니다.
 
-잠금 타임아웃은 테이블에 대해 읽기/쓰기 작업을 수행하는 동안 교착 상태를 방지하는 데 사용됩니다. 타임아웃이 만료되어 잠금 요청이 실패하면 ClickHouse 서버는 오류 코드 `DEADLOCK_AVOIDED`와 함께 &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; 예외를 발생시킵니다.
+잠금 타임아웃은 테이블에 대해 읽기/쓰기 작업을 수행하는 동안 교착 상태를 방지하는 데 사용됩니다. 타임아웃이 만료되어 잠금 요청이 실패하면 ClickHouse 서버는 오류 코드 `DEADLOCK_AVOIDED`와 함께 &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; 예외를 발생시킵니다.
 
 가능한 값:
 

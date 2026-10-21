@@ -300,7 +300,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 114,
+      count: 115,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
@@ -368,6 +368,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_parquet_enum_as_byte_array", path: "/output-format#output_format_parquet_enum_as_byte_array", default: "1" },
         { name: "output_format_parquet_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_parquet_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_parquet_geometadata", path: "/output-format#output_format_parquet_geometadata", default: "1" },
+        { name: "output_format_parquet_geometry_logical_type", path: "/output-format#output_format_parquet_geometry_logical_type", default: "0" },
         { name: "output_format_parquet_max_dictionary_size", path: "/output-format#output_format_parquet_max_dictionary_size", default: "1048576" },
         { name: "output_format_parquet_parallel_encoding", path: "/output-format#output_format_parquet_parallel_encoding", default: "1" },
         { name: "output_format_parquet_row_group_size", path: "/output-format#output_format_parquet_row_group_size", default: "1000000" },

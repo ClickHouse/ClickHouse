@@ -38,7 +38,7 @@ Iceberg データマニフェストのデコードタスクとクエリの間の
 
 **別名**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +62,14 @@ Iceberg データマニフェストのデコードタスクとクエリの間の
       label:
         "最初の行が読み取られる前に同時実行でデコードされる Iceberg 削除マニフェストファイルの数を制限する新しい設定です。26.8 より前は、次のマニフェストの fetch を転送中にしたまま、マニフェストを 1 つずつデコードしていました。そのため、以前の動作に最も近い同等の値は `2` です。以前の動作では、各マニフェストの object storage へのラウンドトリップの合計が、最初の行を読み取るまでのクリティカルパスに含まれていました。当時この設定は `iceberg_delete_manifest_decode_concurrency` という名前でしたが、現在はこの設定の別名となっています。"
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "マニフェストを多数持つテーブルで、より多くの object storage へのラウンドトリップを重ね合わせられるよう、同時実行でデコードされる Iceberg マニフェストファイル数の既定値を 4 から 16 に引き上げました。" }
   ]
 }
 ]}

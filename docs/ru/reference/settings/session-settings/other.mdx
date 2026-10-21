@@ -1042,7 +1042,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 Определяет, сколько секунд запрос на блокировку ожидает, прежде чем завершиться ошибкой.
 
-Тайм-аут блокировки используется для защиты от взаимных блокировок при выполнении операций чтения и записи в таблицах. Когда время ожидания истекает и запрос на блокировку завершается ошибкой, сервер ClickHouse генерирует исключение &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; с кодом ошибки `DEADLOCK_AVOIDED`.
+Тайм-аут блокировки используется для защиты от взаимных блокировок при выполнении операций чтения и записи в таблицах. Когда время ожидания истекает и запрос на блокировку завершается ошибкой, сервер ClickHouse генерирует исключение &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; с кодом ошибки `DEADLOCK_AVOIDED`.
 
 Возможные значения:
 

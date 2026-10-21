@@ -1038,13 +1038,13 @@ Charge les marks MergeTree de façon asynchrone dans un thread pool d&#39;arriè
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-<SettingsInfoBlock type="Secondes" default_value="120" />
+<SettingsInfoBlock type="Seconds" default_value="120" />
 
 Définit le nombre de secondes pendant lequel une demande de verrouillage attend avant d’échouer.
 
-Le délai d’expiration du verrouillage est utilisé pour éviter les interblocages lors de l’exécution d’opérations de lecture/écriture sur des tables. Lorsque ce délai expire et que la demande de verrouillage échoue, le serveur ClickHouse lève une exception &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; avec le code d’erreur `DEADLOCK_AVOIDED`.
+Le délai d’expiration du verrouillage est utilisé pour éviter les interblocages lors de l’exécution d’opérations de lecture/écriture sur des tables. Lorsque ce délai expire et que la demande de verrouillage échoue, le serveur ClickHouse lève une exception &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; avec le code d’erreur `DEADLOCK_AVOIDED`.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * Entier positif (en secondes).
 * 0 — Aucun délai d’expiration du verrouillage.

@@ -36,9 +36,9 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
-**Aliases**: `iceberg_delete_manifest_decode_concurrency`
+**别名**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +62,14 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
       label:
         "新增设置，用于限制在读取第一行之前并发解码的 Iceberg delete manifest 文件数量。在 26.8 之前，一次只解码一个 manifest，同时下一个 manifest 的拉取已在进行中，因此 `2` 最接近之前的行为；在之前的行为下，这些 manifest 的对象存储往返耗时总和都落在读取第一行之前的关键路径上。当时该设置名为 `iceberg_delete_manifest_decode_concurrency`，现已成为该设置的别名。"
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "将并发解码 Iceberg manifest 文件数量的默认值从 4 提高到 16，以便在包含大量 manifest 的表上让更多对象存储往返请求重叠进行。" }
   ]
 }
 ]}

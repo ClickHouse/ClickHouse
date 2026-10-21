@@ -855,7 +855,7 @@ ORC 포맷에서 스키마 추론 시 지원되지 않는 타입의 컬럼을 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일의 geo 컬럼을 사용하기 위한 새로운 설정"}]}]} />
 
-geo 컬럼 파서를 사용해 Array(UInt8)을 Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon 타입으로 변환합니다
+Parquet 파일을 읽을 때 지오메트리 컬럼을 ClickHouse 기하 데이터 타입(geo types)(`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` 또는 `Geometry`)으로 디코딩합니다. GeoParquet `geo` 메타데이터에 기술된 컬럼과 Parquet `GEOMETRY` 또는 `GEOGRAPHY` 논리 타입이 지정된 컬럼에 적용됩니다. 비활성화하면 지리 데이터 타입(geo type)을 명시적으로 요청하지 않는 한 이러한 컬럼은 원시 WKB(또는 WKT) 바이트를 담은 `String`으로 읽힙니다.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 

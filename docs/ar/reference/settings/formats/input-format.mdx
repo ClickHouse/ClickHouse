@@ -856,7 +856,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد لاستخدام الأعمدة الجغرافية في ملف Parquet"}]}]} />
 
-استخدم محلّل الأعمدة الجغرافية لتحويل Array(UInt8) إلى أنواع Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+عند قراءة ملفات Parquet، يُفَك ترميز أعمدة البيانات الهندسية إلى أنواع البيانات الهندسية في ClickHouse (`Point` أو `MultiPoint` أو `LineString` أو `Polygon` أو `MultiLineString` أو `MultiPolygon` أو `Geometry`). ينطبق ذلك على الأعمدة الموصوفة في البيانات الوصفية `geo` الخاصة بـ GeoParquet، وعلى الأعمدة المُعلَّمة بالنوع المنطقي `GEOMETRY` أو `GEOGRAPHY` في Parquet. إذا كان هذا الإعداد معطّلًا، فتُقرأ هذه الأعمدة بنوع `String` يحتوي على بايتات WKB (أو WKT) الخام، ما لم يُطلب نوع بيانات جغرافي صراحةً.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
