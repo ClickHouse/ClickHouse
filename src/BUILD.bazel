@@ -2638,7 +2638,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = ["//src/Parsers:clickhouse_parsers"] + [
         "//bazel/rust:delta_kernel_ffi_headers",
-        "@clickhouse_arrow//:arrow_generated_config_headers",
         "@clickhouse_avro//:_avrocpp",
         "@clickhouse_capnproto//:_capnp",
         "@clickhouse_capnproto//:_capnpc",

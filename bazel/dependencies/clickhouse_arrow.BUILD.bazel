@@ -433,6 +433,12 @@ ch_cc_library(
 
 cc_library(
     name = "_arrow",
+    hdrs = [":configure_cpp_src_arrow_util_config_h"],
+    features = [
+        "-external_include_paths",
+        "-system_include_paths",
+    ],
+    strip_include_prefix = "config/contrib/arrow-cmake/cpp/src",
     deps = [
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_boost//:_boost_filesystem",
@@ -823,15 +829,4 @@ cc_binary(
         "@clickhouse//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
     ],
-)
-
-cc_library(
-    name = "arrow_generated_config_headers",
-    hdrs = [":configure_cpp_src_arrow_util_config_h"],
-    features = [
-        "-external_include_paths",
-        "-system_include_paths",
-    ],
-    strip_include_prefix = "config/contrib/arrow-cmake/cpp/src",
-    visibility = ["@clickhouse//src:__pkg__"],
 )
