@@ -32,7 +32,7 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
     : MergeTreeReaderTextIndex(main_reader_, std::move(index_read_task_), columns_, nullptr)
     , projection_granule(std::move(index_granule_))
 {
-    auto index_format = index_read_task.index.index->getPhysicalFormat(*data_part_info_for_read, index_read_task.index.index->getFileName());
+    auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part_info_for_read, index_read_task.index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state{
@@ -430,7 +430,7 @@ size_t MergeTreeReaderTextProjectionIndex::readRows(
     size_t /*current_range_last_mark*/,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    MutableColumns & res_columns, Columns & /* shared_columns */)
 {
     ensureInitialized();
 

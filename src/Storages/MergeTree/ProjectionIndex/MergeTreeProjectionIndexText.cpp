@@ -138,7 +138,7 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
 
     for (const auto & [name, proj_part] : state.part_info.getDataPart()->getProjectionParts())
     {
-        if (name == projection_name)
+        if (name == projection_name && !proj_part->is_broken)
         {
             projection_part = proj_part;
             break;
@@ -324,13 +324,21 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
         reader->matched_row_indices_for_posting.reset();
         MutableColumns result;
         result.resize(cols.size());
+        Columns shared_result(cols.size());
         /// The columns cache is not used for projection parts, so the range end is not needed.
         size_t rows_read = reader->readRows(
             mark,
             /*current_range_last_mark=*/ 0,
             prev_mark && *prev_mark == mark - 1,
             rows_to_read,
-            result);
+            result,
+            shared_result);
+
+        /// For every position at most one of `result` and `shared_result` is set.
+        auto get_result_column = [&](size_t i) -> const IColumn &
+        {
+            return result[i] ? *result[i] : *shared_result[i];
+        };
 
         chassert(rows_read > 0);
         prev_mark = mark;
@@ -341,9 +349,9 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
             return;
         }
 
-        const ColumnAggregateFunction & posting_column = assert_cast<const ColumnAggregateFunction &>(*result[1]);
+        const ColumnAggregateFunction & posting_column = assert_cast<const ColumnAggregateFunction &>(get_result_column(1));
         const auto & data = posting_column.getData();
-        const auto & tokens_column = assert_cast<const ColumnString &>(*result[0]);
+        const auto & tokens_column = assert_cast<const ColumnString &>(get_result_column(0));
 
         if (data.empty())
             continue;
@@ -643,6 +651,14 @@ MergeTreeIndexFormat MergeTreeProjectionIndexText::getPhysicalFormat(
         return {1, getSubstreams()};
 
     return {0 /*unknown*/, {}};
+}
+
+bool MergeTreeProjectionIndexText::isUsableInPart(const IMergeTreeDataPart & part) const
+{
+    /// A broken projection subpart keeps its `.proj` entry in the parent checksums, so the physical
+    /// format check alone would route reads into it. Treat it as not materialized instead, so the
+    /// query evaluates the original predicate on the parent part's columns.
+    return !part.hasBrokenProjection(index.name);
 }
 
 MergeTreeIndexGranulePtr MergeTreeProjectionIndexText::createIndexGranule() const

@@ -310,6 +310,8 @@ const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part)
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
+const IMergeTreeDataPart & getPart(const IMergeTreeDataPart & part) { return part; }
+const IMergeTreeDataPart & getPart(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPart(); }
 
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
@@ -410,6 +412,9 @@ MergeTreeIndexFormat getDeserializedFormatImpl(
     /// under the new types reads garbage. Report the index as not materialized in this part; the
     /// query then answers correctly without it.
     if (!isPartTypeCompatibleImpl(skip_index, part))
+        return {0 /*unknown*/, {}};
+
+    if (!skip_index.isUsableInPart(getPart(part)))
         return {0 /*unknown*/, {}};
 
     return format;

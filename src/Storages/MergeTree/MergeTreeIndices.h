@@ -313,6 +313,11 @@ struct IMergeTreeIndex
     MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
     MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
 
+    /// Index-specific usability check of a part's copy of the index, consulted by
+    /// getDeserializedFormat() after the physical format was found. For example, a projection
+    /// text index is not usable when its projection subpart failed to load (is broken).
+    virtual bool isUsableInPart(const IMergeTreeDataPart & /* part */) const { return true; }
+
     /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
     /// override. Reimplement getPhysicalFormat() instead.
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;

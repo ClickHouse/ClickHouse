@@ -96,6 +96,7 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
         const std::string & relative_path_prefix) const override;
+    bool isUsableInPart(const IMergeTreeDataPart & part) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
