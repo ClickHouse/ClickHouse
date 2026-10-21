@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <Common/StringUtils.h>
 
 #if USE_SSL
 #    include <Common/OpenSSLHelpers.h>
@@ -205,7 +206,7 @@ namespace
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
                 const auto & password_plaintext = authentication_method.getPasswordHashBinary();
-                return Util::stringToDigest(password) == password_plaintext ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return constantTimeEquals(Util::stringToDigest(password), password_plaintext) ? on_success : Authentication::CredentialsCheckResult::Fail;
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
