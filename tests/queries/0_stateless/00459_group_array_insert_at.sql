@@ -9,6 +9,10 @@ SELECT k, groupArrayInsertAt('-', 10)(toString(x), x) FROM (SELECT number AS k, 
 SELECT finalizeAggregation(materialize(CAST(unhex('04000000000000000000000100000000000000000200000000000000000300000000000000')
     AS AggregateFunction(groupArrayInsertAt(0, 3), UInt64, UInt64)))); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
+-- Reject an oversized count before trying to read missing elements.
+SELECT finalizeAggregation(materialize(CAST(unhex('04')
+    AS AggregateFunction(groupArrayInsertAt(0, 3), UInt64, UInt64)))); -- { serverError TOO_LARGE_ARRAY_SIZE }
+
 -- An exact-length state remains valid, and shorter states are padded.
 SELECT finalizeAggregation(materialize(CAST(unhex('03000000000000000000000100000000000000000200000000000000')
     AS AggregateFunction(groupArrayInsertAt(0, 3), UInt64, UInt64))));
