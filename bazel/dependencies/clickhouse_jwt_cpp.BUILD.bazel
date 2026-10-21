@@ -9,10 +9,15 @@ exports_files([
 cc_library(
     name = "jwt_cpp",
     hdrs = glob([
-        "include/jwt-cpp/**/*.h",
+        "include/jwt-cpp/*.h",
+        "include/jwt-cpp/traits/kazuho-picojson/*.h",
         "include/picojson/**/*.h",
     ]),
     includes = [
         "include",
+    ],
+    deps = [
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
     ],
 )
