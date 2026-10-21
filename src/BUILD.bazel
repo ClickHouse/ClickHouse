@@ -2675,7 +2675,7 @@ ch_cc_library(
         "@clickhouse_libstemmer_c//:_stemmer",
         "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_sha3iuf//:_sha3iuf",
-    ] + ["@clickhouse_libpqxx//:_libpqxx"] + ["//src/Common/ZooKeeper:clickhouse_common_zookeeper_base"] + [
+    ] + ["@clickhouse_libpqxx//:_libpqxx"] + [
         "@clickhouse_abseil_cpp//:absl_log_globals",
         "@clickhouse_abseil_cpp//:absl_log_initialize",
         "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set",
@@ -2724,7 +2724,7 @@ ch_cc_library(
         "Core/YTsaurus/YTsaurusQueries.h",
         "Storages/YTsaurus/YTsaurusSettings.h",
     ],
-    deps = ["//src/Common:memory_tracking_api", "//src/Access/Common:headers", "@clickhouse_nuraft//:_nuraft"] + ([
+    deps = ["//src/Common/ZooKeeper:clickhouse_common_zookeeper_base", "//src/Common:memory_tracking_api", "//src/Access/Common:headers", "@clickhouse_nuraft//:_nuraft"] + ([
         "@clickhouse_llvm_project//:LLVMPasses",
         "@clickhouse_llvm_project//:LLVMSupport",
         "@llvm-project//third-party/siphash",
