@@ -198,3 +198,13 @@ Do not try/catch exceptions to fall back to a less-optimized case. Let the excep
 Prefer functional (.sql/.sh) tests over unit (gtest) tests whenever possible. Unit tests are larger, too specific, and they are difficult to maintain.
 
 When you want to test changes in the CI scripts, you can write and run a throwaway test, but you don't need to commit it to the repository, because we don't have automated CI tests.
+
+## Cursor Cloud specific instructions
+
+The Cloud Agent image provides Clang 22 as `clang` and `clang++` on `PATH`. Login shells set `CC` and `CXX`. ClickHouse does not build with a compiler older than Clang 21. The Rust toolchain is `nightly-2026-03-22`.
+
+Third-party code is in git submodules. Populate it with `./contrib/update-submodules.sh --max-procs 8`. The script checks out shallow submodules and deletes upstream `CMakeLists.txt` files under `contrib/`. `git status` then shows those submodules as modified. That is expected; do not restore the deleted files. ClickHouse builds those libraries through the `contrib/*-cmake` wrappers.
+
+A current `clickhouse` binary is on `PATH`. On boot the environment starts `clickhouse server` and keeps data in `~/.clickhouse-server`. `clickhouse client --host 127.0.0.1 --query "SELECT 1"` checks that the server is accepting queries.
+
+From the repository root, configure a source build with `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug`, then compile with `ninja -C build clickhouse`. Do not pass `-j` to `ninja`.
