@@ -23,8 +23,10 @@ CREATE TABLE t_merge_width_group_by_ttl (k UInt64, d DateTime, c1 UInt64, c2 UIn
     c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64)
 ENGINE = MergeTree ORDER BY k TTL d GROUP BY k SET c1 = sum(c1)
 SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
-    min_parts_to_merge_at_once = 100,
+    min_parts_to_merge_at_once = 2,
     merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
+    merge_selector_algorithm = 'Simple',
+    merge_selector_base = 1000,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
@@ -36,7 +38,8 @@ SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
 "
 
-# `min_parts_to_merge_at_once = 100` keeps the regular selector from merging the parts while they are inserted.
+# `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
+# parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously.
 for i in {0..7}
 do
     $CLICKHOUSE_CLIENT --query "
@@ -48,7 +51,6 @@ done
 
 $CLICKHOUSE_CLIENT --query "
 SELECT 'before', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_width_group_by_ttl' AND active;
-ALTER TABLE t_merge_width_group_by_ttl MODIFY SETTING min_parts_to_merge_at_once = 2;
 OPTIMIZE TABLE t_merge_width_group_by_ttl;
 "
 

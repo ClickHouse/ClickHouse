@@ -163,6 +163,16 @@ NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext 
     if (!params.version_column.empty())
         key_columns.insert(params.version_column);
 
+    /// With an empty key (`ORDER BY tuple()`) the merge forces the first physical column onto the horizontal stage
+    /// before it adds the columns of the skip indexes, the min-max index, the projections and the TTL expressions,
+    /// so that column is merged there even when those other columns are.
+    if (key_columns.empty())
+    {
+        const auto physical_columns = metadata.getColumns().getAllPhysical();
+        if (!physical_columns.empty())
+            key_columns.insert(physical_columns.front().name);
+    }
+
     for (const auto & index : metadata.getSecondaryIndices())
     {
         /// A skip index over a single column is computed on the vertical stage along with the column.
@@ -249,11 +259,6 @@ bool tableCanMergeVertically(const ChooseContext & ctx, size_t num_key_columns, 
     const auto & metadata = ctx.metadata_snapshot;
 
     if (ctx.merge_forced_horizontal || settings[MergeTreeSetting::enable_vertical_merge_algorithm] == 0)
-        return false;
-
-    /// A vertical merge of compact source parts is possible, but whether the source parts are compact is
-    /// not known here; if compact sources rule the algorithm out, take the pessimistic answer.
-    if (!settings[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
         return false;
 
     using Mode = MergeTreeData::MergingParams;
@@ -359,7 +364,8 @@ bool rangeRemovesExpiredValues(const ChooseContext & ctx, PartsRangeView range)
 /// has to be a wide part in full storage, and the range has to carry enough rows and bytes. The bytes are
 /// the uncompressed sizes of the columns, the same as `MergeTask` and `FutureMergedMutatedPart` decide by,
 /// not the sizes on disk: those include marks and indexes and can exceed the uncompressed size of tiny or
-/// poorly compressed parts, which would predict a vertical merge that then runs horizontally.
+/// poorly compressed parts, which would predict a vertical merge that then runs horizontally. Without
+/// `allow_vertical_merges_from_compact_to_wide_parts` every source part has to be wide as well.
 /// `removes_expired_values` is `rangeRemovesExpiredValues` of the range.
 bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values)
 {
@@ -368,12 +374,16 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
     if (range.size() > RowSourcePart::MAX_PARTS)
         return false;
 
+    const bool allow_compact_sources = settings[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts];
+
     size_t sum_rows = 0;
     size_t sum_bytes = 0;
     UInt32 max_level = 0;
     MergeTreeDataPartType part_type;
     for (const auto & part : range)
     {
+        if (!allow_compact_sources && part.part_type != MergeTreeDataPartType::Wide)
+            return false;
         sum_rows += part.rows;
         sum_bytes += part.size_uncompressed;
         max_level = std::max(max_level, part.info.level);
@@ -541,7 +551,6 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
 
     if (projection.type == ProjectionDescription::Type::Aggregate || ctx.merge_forced_horizontal
         || settings[MergeTreeSetting::enable_vertical_merge_algorithm] == 0
-        || !settings[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts]
         || range.size() > RowSourcePart::MAX_PARTS)
         return affordable_horizontal;
 
@@ -553,7 +562,9 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
         return affordable_horizontal;
 
     /// Like `FutureMergedMutatedPart::assign` on the projection parts: by their own levels and types, not those
-    /// of the parent parts.
+    /// of the parent parts. Without `allow_vertical_merges_from_compact_to_wide_parts` every projection part has to
+    /// be wide as well.
+    const bool allow_compact_sources = settings[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts];
     size_t sum_rows = 0;
     size_t sum_bytes = 0;
     UInt32 max_level = 0;
@@ -562,6 +573,8 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
     {
         auto it = part.projection_sizes.find(projection.name);
         if (it == part.projection_sizes.end())
+            return affordable_horizontal;
+        if (!allow_compact_sources && it->second.part_type != MergeTreeDataPartType::Wide)
             return affordable_horizontal;
         sum_rows += it->second.rows;
         sum_bytes += it->second.size_uncompressed;
@@ -784,6 +797,16 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
         /// Aggressive selection (`OPTIMIZE` without `FINAL`) is an explicit user request that ignores
         /// part novelty, so the background anti-churn gate for fresh small parts must not apply to it.
         simple_merge_settings.small_parts_min_count = 0;
+    }
+
+    /// The memory-derived cap (see `capRangesByAffordableMemory`) rejects every range wider than it unless the
+    /// range merges vertically, and the minimums reject every range narrower than them: a minimum above the cap
+    /// would stop the table from compacting at all, or, for `small_parts_min_count`, until the small parts age.
+    /// A range of `affordable` parts always passes the cap, so lower the minimums to it.
+    if (const size_t affordable = getAffordablePartsToMergeAtOnce(ctx))
+    {
+        simple_merge_settings.min_parts_to_merge_at_once = std::min(simple_merge_settings.min_parts_to_merge_at_once, affordable);
+        simple_merge_settings.small_parts_min_count = std::min(simple_merge_settings.small_parts_min_count, affordable);
     }
 
     return simple_merge_settings;
