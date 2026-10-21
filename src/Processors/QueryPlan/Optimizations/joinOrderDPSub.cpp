@@ -103,6 +103,10 @@ private:
     /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
     bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
+    /// The join kind as the query wrote it (`Left` or `Right`) of the semi/anti join step applied where
+    /// `left_mask` and `right_mask` are joined, if there is one.
+    std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
+
     /// True when a column equivalence ties the two sides together: some equivalence class has a
     /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
     bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
@@ -561,6 +565,17 @@ bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_
     return false;
 }
 
+std::optional<JoinKind> DPSubJoinOrderOptimizer::writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const
+{
+    const auto & operators = dpsub_data.conflict_operators;
+    for (size_t i = 0; i < operators.size(); ++i)
+    {
+        if (operators[i].strictness == strictness && operators[i].isAppliedAt(left_mask, right_mask))
+            return query_graph.conflict_ops[i].kind;
+    }
+    return std::nullopt;
+}
+
 bool DPSubJoinOrderOptimizer::areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const
 {
     for (const UInt32 relations : dpsub_data.class_relations)
@@ -719,6 +734,21 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
+
+    /// A semi/anti join leaves the search in whichever orientation the enumeration reached first:
+    /// mirroring it changes neither its cost nor its result. Emit it the way the query wrote it, so the
+    /// join algorithms that execute the query as written also execute the reordered plan (partial merge
+    /// join runs `LEFT SEMI` but not `RIGHT SEMI`). Which reorderings are valid is decided by the conflict
+    /// detector alone; the orientation is a physical detail that must not make a query fail.
+    if (entry.strictness == JoinStrictness::Semi || entry.strictness == JoinStrictness::Anti)
+    {
+        if (auto written_kind = writtenSemiAntiKind(entry.left, entry.right, entry.strictness);
+            written_kind && *written_kind != join_operator.kind)
+        {
+            left.swap(right);
+            join_operator.kind = reverseJoinKind(join_operator.kind);
+        }
+    }
 
     /// The search costs a join the same whichever way round its inputs go, so `entry.right` is just
     /// the side the enumeration reached first. The right side builds the hash table, so give that
