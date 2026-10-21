@@ -27,7 +27,8 @@ namespace FailPoints
 
 void ParallelGzipDeflatingWriteBuffer::nextImpl()
 {
-    if (!offset())
+    /// After a failed pass the output is already broken, so the remaining data is discarded.
+    if (!offset() || compression_failed)
         return;
 
     auto * in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
@@ -69,6 +70,11 @@ void ParallelGzipDeflatingWriteBuffer::cancelImpl() noexcept
 void ParallelGzipDeflatingWriteBuffer::finalFlushBefore()
 {
     next();
+
+    /// A compression pass has failed: do not emit a trailer, because it would advertise a CRC-32 and a
+    /// length of data that was never written. A truncated stream is detected by any decompressor.
+    if (compression_failed)
+        return;
 
     /// No data was ever compressed: with `compress_empty = false` produce no output at all, rather than
     /// an empty gzip member. Callers such as the HTTP response path rely on this to keep an empty
@@ -196,8 +202,19 @@ size_t ParallelGzipDeflatingWriteBuffer::calcCheck(const unsigned char * buf, si
 
 void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
 {
-    ulen += in_len;
+    try
+    {
+        compressAndWriteImpl(in_buf, in_len, final_compression_flag);
+    }
+    catch (...)
+    {
+        compression_failed = true;
+        throw;
+    }
+}
 
+void ParallelGzipDeflatingWriteBuffer::compressAndWriteImpl(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
+{
     const size_t def_block = BLOCK_SIZE;
     const size_t cnt_blocks = in_len / def_block + static_cast<size_t>(in_len % def_block != 0);
 
@@ -257,10 +274,11 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
         exception = std::current_exception();
     }
 
-    /// Update the running CRC-32 over the whole input on the calling thread,
-    /// concurrently with the block deflations scheduled above.
+    /// Compute the CRC-32 of this pass on the calling thread, concurrently with the block deflations
+    /// scheduled above. It is folded into the running checksum only after the pass has been written.
+    size_t pass_check = 0;
     if (!exception)
-        check = crc32_combine(check, calcCheck(in_buf, in_len), static_cast<z_off_t>(in_len));
+        pass_check = calcCheck(in_buf, in_len);
 
     /// Collect results in order. Every scheduled task must be awaited before leaving this function,
     /// even on error, because the tasks reference memory owned by this buffer.
@@ -293,6 +311,9 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
     for (size_t i = 0; i < scheduled; ++i)
         out->write(results[i].mem->data(), results[i].len);
 
+    /// The trailer must describe only the data whose compressed form has reached the nested buffer.
+    check = crc32_combine(check, pass_check, static_cast<z_off_t>(in_len));
+    ulen += in_len;
     ++passes_written;
 }
 

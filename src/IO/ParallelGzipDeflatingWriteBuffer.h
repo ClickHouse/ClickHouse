@@ -71,10 +71,13 @@ private:
     CompressedBuf compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag);
     static size_t calcCheck(const unsigned char * buf, size_t len);
     void compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag);
+    void compressAndWriteImpl(unsigned char * in_buf, size_t in_len, bool final_compression_flag);
 
     int compression_level;
     bool compress_empty = true;
     bool header_written = false;
+    /// Set when a compression pass has thrown: no further output, including the trailer, is produced.
+    bool compression_failed = false;
     /// `out->count()` right before the gzip header was written, to know how many bytes of the nested
     /// buffer belong to this one.
     size_t nested_start_count = 0;
