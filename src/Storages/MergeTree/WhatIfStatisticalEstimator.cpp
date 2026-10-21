@@ -4,6 +4,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -48,12 +51,15 @@ bool tryEstimateWithStatistics(
         metadata, (*read_step->getMergeTreeData().getSettings())[MergeTreeSetting::auto_statistics_assume_floats_distinct]);
     bool has_any_stats = false;
 
+    auto statistics_cache = context->getStatisticsCache();
     for (const auto & part : parts)
     {
-        auto stats = part.data_part->loadStatistics();
+        /// Every analyzed part counts towards the baseline row count, like in `getConditionSelectivityEstimator`,
+        /// even if it has no statistics for the filter columns: `analysis.selected_marks` covers all parts.
+        builder.incrementRowCount(part.data_part->rows_count);
+        auto stats = part.data_part->loadStatistics(filter_input_columns, statistics_cache.get());
         if (!stats.empty())
         {
-            builder.markDataPart(part.data_part);
             for (const auto & [column_name, stat] : stats)
                 builder.addStatistics(column_name, stat);
             has_any_stats = true;

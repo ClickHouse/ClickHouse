@@ -2262,6 +2262,9 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
+A writable disk holds the data of only one table: the other tables over the same path,
+or over a path inside or above it, have to use a read-only disk.
+`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.
@@ -2467,7 +2470,7 @@ value, and a column with equal minimum and maximum has one value.
 - Existing parts are rebuilt with the new set of statistics on their next merge, or with
   `ALTER TABLE ... MATERIALIZE STATISTICS`.
 )", 0, \
-        {"26.10", false, true, "Do not build implicit uniq statistics for Float columns; assume distinct values instead"}) \
+        {"26.11", false, true, "Do not build implicit uniq statistics for Float columns; assume distinct values instead"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
@@ -2737,6 +2740,12 @@ memory usage by not loading useless columns of the primary key.
     prewarmed by saving marks to mark cache on inserts, merges, fetches and on
     startup of server
 )", 0) \
+    DECLARE(Bool, prewarm_statistics_cache, false, R"(If true the statistics cache
+    will be prewarmed by loading the column statistics of data parts on inserts,
+    merges, fetches and on startup of server. Without it the statistics of a part
+    are loaded into the cache by the first query that needs them.
+)", 0, \
+        {"26.11", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
@@ -2823,11 +2832,6 @@ Possible values:
 - none - empty scope, do not search
 )", 0, \
         {"25.8", "any", "any", "New setting"}) \
-    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
-The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
-)", 0, \
-        {"26.2", 0, 300, "Enable statistics cache"}, \
-        {"25.11", 0, 0, "New setting"}) \
     DECLARE(UniqueKeyConflictAction, unique_key_conflict_action, UniqueKeyConflictAction::Overwrite, R"(
 For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
 
@@ -2867,7 +2871,6 @@ but had not started, and the parts that remain unloaded are loaded once the sett
 before the `ALTER` that enables the setting commits it, so no cleanup or part load starts on a table that is already durably read-only. Other
 operations already in progress, including the loading of the parts that had already started, may finish.
 
-The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
 Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
 
 The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
@@ -2899,6 +2902,9 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
 #define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. */ \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_relative_delay_to_yield_leadership, 120) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, refresh_statistics_interval, 300, \
+        {"26.2", 0, 300, "Enable statistics cache"}, \
+        {"25.11", 0, 0, "New setting"}) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, check_delay_period, 60) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends_for_table, 0) \

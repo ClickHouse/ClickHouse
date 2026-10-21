@@ -204,7 +204,6 @@ ORDER BY column;
 -- The optimizer uses the assumed cardinality, e.g. to order PREWHERE conditions.
 SET explain_query_plan_default = 'legacy';
 SET use_statistics = 1;
-SET use_statistics_cache = 1;
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
@@ -220,16 +219,14 @@ SETTINGS
     auto_statistics_types = 'basic, uniq_v2',
     auto_statistics_assume_floats_distinct = 1,
     materialize_statistics_on_merge = 1,
-    refresh_statistics_interval = 1,
     -- Compact parts: column sizes are not measured, so the order depends on the estimated selectivity only.
     min_bytes_for_wide_part = 1000000000,
     min_rows_for_wide_part = 1000000000;
 
 INSERT INTO t_floats_prewhere SELECT number + 0.5, number % 1000 FROM numbers(10000);
 
--- Give the statistics cache a chance to be filled, the setting change below has to reset it.
-SELECT sleep(2) FORMAT Null;
-
+-- The first query caches the statistics of the part. The policy is applied on top of them for every query,
+-- so the setting change below takes effect although the cached statistics stay the same.
 -- `f = 100.5` is assumed to match one row, `i = 10` matches about ten: `f` is evaluated first.
 SELECT 'prewhere, assumed';
 SELECT replaceRegexpAll(explain, '__table1\.', '')

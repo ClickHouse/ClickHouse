@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
 
-<div id="storing-dictionaries-in-memory">
-  ## Типы структур словаря
-</div>
+## Типы структур словаря {#storing-dictionaries-in-memory}
 
 Словари можно хранить в памяти разными способами, и каждый из них предполагает компромисс между использованием CPU и оперативной памяти.
 
@@ -43,9 +41,11 @@ import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
   Структуры с кэшированием не рекомендуются из-за потенциально низкой производительности и сложности подбора параметров — подробнее см. в разделе [cache](/ru/reference/statements/create/dictionary/layouts/cache).
 </Tip>
 
-<div id="specify-dictionary-layout">
-  ## Укажите структуру словаря
-</div>
+<Note>
+  Структуры на основе кэша не подходят для надёжного обогащения данных во время вставки: прогретые записи хранятся локально на каждом сервере и теряются при его перезапуске или замене. В ClickHouse Cloud автомасштабирование и управляемая замена узлов делают такую ситуацию более вероятной. Вместо них используйте структуру с полной загрузкой данных; см. [Кэш-словари в конвейере ингестии](/ru/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
+
+## Укажите структуру словаря {#specify-dictionary-layout}
 
 <CloudDetails />
 
@@ -139,9 +139,7 @@ import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
   </Tab>
 </Tabs>
 
-<div id="improve-performance">
-  ## Как повысить производительность словаря
-</div>
+## Как повысить производительность словаря {#improve-performance}
 
 Есть несколько способов повысить производительность словаря:
 
