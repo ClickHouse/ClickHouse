@@ -49,9 +49,12 @@ void InterpreterRenameQuery::resolveHierarchicalNames(ASTRenameQuery & rename, b
 
         /// The destination is placed the same way as a created table. On a cluster, the database may exist on the other
         /// hosts only: then the name is shipped as written, and every host resolves it against its own catalog.
+        /// The second operand of `EXCHANGE TABLES` is an existing table, resolved like the source.
         StorageID to_as_written(elem.to.database ? elem.to.getDatabase() : "", elem.to.getTable());
         std::optional<StorageID> to;
-        if (is_on_cluster)
+        if (rename.exchange)
+            to = catalog.resolveHierarchicalName(to_as_written, getContext());
+        else if (is_on_cluster)
             to = catalog.tryResolveHierarchicalNameForCreation(to_as_written, getContext());
         else
             to = catalog.resolveHierarchicalNameForCreation(to_as_written, getContext());
