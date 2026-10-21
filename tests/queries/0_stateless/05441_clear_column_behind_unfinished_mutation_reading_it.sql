@@ -57,6 +57,11 @@ ALTER TABLE t_clear_mt UPDATE w = w + 1 WHERE t_clear_mt.b > 0 SETTINGS mutation
 ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
 
+-- An ALTER DELETE rewrites every column of a part it changes, so it writes `e` and `d2` from `b`.
+ALTER TABLE t_clear_mt DELETE WHERE id = 3 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_mt CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_mt' AND NOT is_done SYNC FORMAT Null;
+
 -- A later ALTER must not make the pending reader read a column that a pending CLEAR clears.
 ALTER TABLE t_clear_mt MATERIALIZE COLUMN d2 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_mt CLEAR COLUMN a SETTINGS alter_sync = 0;
@@ -99,6 +104,19 @@ ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
 
 ALTER TABLE t_clear_ttl CLEAR COLUMN w SETTINGS alter_sync = 0;
+ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
+
+-- An UPDATE of a TTL input executes every TTL: a GROUP BY TTL aggregates `b`.
+ALTER TABLE t_clear_ttl MODIFY TTL toDateTime(946684800) + toIntervalSecond(w) GROUP BY id SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_clear_ttl UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
+
+-- It also rewrites every column, so it writes the unstored `d` from `b`.
+ALTER TABLE t_clear_ttl ADD COLUMN d UInt64 DEFAULT b * 2;
+ALTER TABLE t_clear_ttl MODIFY TTL toDateTime(4102444800) + toIntervalSecond(w) SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_clear_ttl UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 0;
 ALTER TABLE t_clear_ttl CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_ttl' AND NOT is_done SYNC FORMAT Null;
 

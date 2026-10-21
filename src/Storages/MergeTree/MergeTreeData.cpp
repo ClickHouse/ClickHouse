@@ -14251,7 +14251,8 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
 }
 
 NameSet MergeTreeData::getColumnsReadByMutationCommand(
-    const MutationCommand & command, const StorageInMemoryMetadata & metadata, ContextPtr local_context) const
+    const MutationCommand & command, const StorageInMemoryMetadata & metadata,
+    std::unordered_map<String, NameSet> & default_sources, ContextPtr local_context) const
 {
     const auto & columns = metadata.getColumns();
     const auto table_id = getStorageID();
@@ -14281,12 +14282,17 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
         return name;
     };
 
-    auto expression_sources = [&](const ASTPtr & expression)
+    auto default_sources_of = [&](const String & column_name, const ASTPtr & expression) -> const NameSet &
     {
-        NameSet sources;
-        for (const auto & name : expressionSourceColumns(expression->clone(), columns, local_context))
-            sources.insert(to_storage_name(name));
-        return sources;
+        auto it = default_sources.find(column_name);
+        if (it == default_sources.end())
+        {
+            NameSet sources;
+            for (const auto & name : expressionSourceColumns(expression->clone(), columns, local_context))
+                sources.insert(to_storage_name(name));
+            it = default_sources.emplace(column_name, std::move(sources)).first;
+        }
+        return it->second;
     };
 
     NameSet read;
@@ -14322,6 +14328,8 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
         for (const auto & column : columns.getAllPhysical())
             updated.insert(column.name);
 
+    bool executes_ttl = command.type == MutationCommand::MATERIALIZE_TTL;
+
     /// The mutation recomputes the MATERIALIZED columns and TTLs that depend on the columns it changes.
     if (!updated.empty())
     {
@@ -14330,7 +14338,7 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
         std::vector<std::pair<String, NameSet>> materialized_sources;
         for (const auto & column : columns)
             if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
-                materialized_sources.emplace_back(column.name, expression_sources(column.default_desc.expression));
+                materialized_sources.emplace_back(column.name, default_sources_of(column.name, column.default_desc.expression));
 
         NameSet recomputed;
         for (bool changed = true; changed;)
@@ -14347,8 +14355,13 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
             }
 
             for (const auto & dependency : metadata.getColumnDependencies(updated, /*include_ttl_target=*/ true, any_dependency))
-                if (dependency.kind == ColumnDependency::TTL_TARGET && updated.insert(dependency.column_name).second)
+            {
+                if (dependency.kind != ColumnDependency::TTL_TARGET)
+                    continue;
+                executes_ttl = true;
+                if (updated.insert(dependency.column_name).second)
                     changed = true;
+            }
         }
 
         for (const auto & [name, sources] : materialized_sources)
@@ -14382,16 +14395,15 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
             add_ttl(ttl);
         for (const auto & [_, ttl] : metadata.getColumnTTLs())
             add_ttl(ttl);
-
-        /// A `GROUP BY` TTL aggregates every column that is not a key.
-        if (metadata.hasAnyGroupByTTL())
-            for (const auto & column : columns.getAllPhysical())
-                read.insert(column.name);
     }
 
-    /// A full rewrite writes a column the part does not store from its default.
-    if (command.type == MutationCommand::REWRITE_PARTS || command.type == MutationCommand::APPLY_DELETED_MASK
-        || command.type == MutationCommand::MATERIALIZE_TTL)
+    /// A pass that executes TTL runs every `GROUP BY` TTL, which aggregates every column.
+    if (executes_ttl && metadata.hasAnyGroupByTTL())
+        for (const auto & column : columns.getAllPhysical())
+            read.insert(column.name);
+
+    /// A pass that rewrites every column writes a column the part does not store from its default.
+    if (command.affectsAllColumns() || executes_ttl)
     {
         for (const auto & column : columns)
             if (column.default_desc.expression
@@ -14413,7 +14425,7 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
 
         auto default_desc = columns.getDefault(name);
         if (default_desc && default_desc->expression)
-            for (const auto & source : expression_sources(default_desc->expression))
+            for (const auto & source : default_sources_of(name, default_desc->expression))
                 if (!result.contains(source))
                     to_expand.push_back(source);
     }
@@ -14464,12 +14476,14 @@ void MergeTreeData::checkAlterDoesntReorderInProgressMutationReads(
         return share_nested_offsets && dot != String::npos && std::string_view(read_column).substr(0, dot) == column;
     };
 
+    std::unordered_map<String, NameSet> old_default_sources;
+    std::unordered_map<String, NameSet> new_default_sources;
     for (const auto & [mutation_name, mutation_commands] : unfinished_mutations)
     {
         for (const MutationCommand & mutation_command : mutation_commands)
         {
-            auto old_read = getColumnsReadByMutationCommand(mutation_command, old_metadata, local_context);
-            auto new_read = getColumnsReadByMutationCommand(mutation_command, new_metadata, local_context);
+            auto old_read = getColumnsReadByMutationCommand(mutation_command, old_metadata, old_default_sources, local_context);
+            auto new_read = getColumnsReadByMutationCommand(mutation_command, new_metadata, new_default_sources, local_context);
 
             for (const auto & column : dropped_columns)
                 for (const auto * read : {&old_read, &new_read})
