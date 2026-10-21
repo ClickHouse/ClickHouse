@@ -447,10 +447,12 @@ bool tryEstimateEmpirical(
 
     /// one share for all sampled parts: a share for each part would drop the marks of its windows when it samples few
     double weighted_marks = 0;
+    double squared_weights = 0;
     double weighted_survivors = 0;
     for (size_t i = 0; i < window_survives.size(); ++i)
     {
         weighted_marks += window_weights[i];
+        squared_weights += window_weights[i] * window_weights[i];
         weighted_survivors += window_survives[i] * window_weights[i];
     }
     /// the scan does not count a trailing window with an empty aggregator, so the sampled parts can count no marks
@@ -460,12 +462,13 @@ bool tryEstimateEmpirical(
     /// share (successive differences, which fit a systematic sample)
     const double window_marks = static_cast<double>(sampled_part_marks) / static_cast<double>(sampled_part_windows);
     double spread = 2.0 * static_cast<double>(step) * window_marks;
-    if (window_survives.size() > 1)
+    if (!window_survives.empty())
     {
-        /// a sample with no change has no spread, so take the rule of three: the other outcome is under 3 in the count
-        const double sample_error = standardErrorOfSample(window_survives, window_weights);
-        const double standard_error = sample_error != 0 ? sample_error : 1.5 / static_cast<double>(window_survives.size());
-        spread += 2.0 * standard_error * static_cast<double>(sampled_part_marks);
+        /// the rule of three is the least error, also for a sample with no change and no spread: the other outcome is under 3
+        /// in the count of draws. Draws of unequal weights count as fewer draws: the squared sum of the weights over the sum of squares
+        const double draws = weighted_marks * weighted_marks / squared_weights;
+        const double sample_error = window_survives.size() > 1 ? standardErrorOfSample(window_survives, window_weights) : 0;
+        spread += 2.0 * std::max(sample_error, 1.5 / draws) * static_cast<double>(sampled_part_marks);
     }
 
     const auto estimated = static_cast<UInt64>(std::round(estimated_survivors));

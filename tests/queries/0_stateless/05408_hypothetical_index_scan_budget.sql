@@ -165,5 +165,54 @@ FROM
 
 DROP TABLE t_mass;
 DROP TABLE t_mass_real;
+
+-- 30 parts of two windows, one draw in each part. The first part keeps its 128 marks, and only its first window has v = 2.
+-- each other part keeps 4 marks, and one window of the last part has v = 1
+SELECT '-- draws of unequal weights count as fewer draws, so the span holds the real granules';
+-- part statistics on v would remove the parts with no surviving window from the baseline
+SET use_statistics_for_part_pruning = 0;
+DROP TABLE IF EXISTS t_weight;
+DROP TABLE IF EXISTS t_weight_real;
+CREATE TABLE t_weight (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_weight_real (a UInt64, b UInt64, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_weight;
+SYSTEM STOP MERGES t_weight_real;
+INSERT INTO t_weight SELECT intDiv(number, 64), 0, if(number < 64, 2, 0) FROM numbers(128);
+INSERT INTO t_weight_real SELECT intDiv(number, 64), 0, if(number < 64, 2, 0) FROM numbers(128);
+INSERT INTO t_weight SELECT intDiv(number % 128, 64), number % 64, 0 FROM numbers(3584)
+    SETTINGS max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+INSERT INTO t_weight_real SELECT intDiv(number % 128, 64), number % 64, 0 FROM numbers(3584)
+    SETTINGS max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+INSERT INTO t_weight SELECT intDiv(number, 64), number % 64, number = 0 FROM numbers(128);
+INSERT INTO t_weight_real SELECT intDiv(number, 64), number % 64, number = 0 FROM numbers(128);
+CREATE HYPOTHETICAL INDEX idx_v ON t_weight (v) TYPE minmax GRANULARITY 64;
+SELECT
+    predicate,
+    extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
+    extractGroups(report, 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
+    real,
+    real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
+FROM
+(
+    SELECT 'v = 2' AS predicate, arrayStringConcat(groupArray(explain), '\n') AS report
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_weight WHERE b = 0 AND v = 2)
+    UNION ALL
+    SELECT 'v >= 1', arrayStringConcat(groupArray(explain), '\n')
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_weight WHERE b = 0 AND v >= 1)
+) AS estimated
+INNER JOIN
+(
+    SELECT 'v = 2' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
+    FROM (EXPLAIN indexes = 1 SELECT a FROM t_weight_real WHERE b = 0 AND v = 2 SETTINGS use_skip_indexes_on_data_read = 0)
+    UNION ALL
+    SELECT 'v >= 1', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/'))
+    FROM (EXPLAIN indexes = 1 SELECT a FROM t_weight_real WHERE b = 0 AND v >= 1 SETTINGS use_skip_indexes_on_data_read = 0)
+) AS materialized USING (predicate)
+ORDER BY predicate;
+
+DROP TABLE t_weight;
+DROP TABLE t_weight_real;
 DROP TABLE t_budget;
 DROP TABLE t_budget_real;
