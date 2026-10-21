@@ -196,13 +196,21 @@ def run_tests(
     global_time_limit_arg = (
         f" --global_time_limit {global_time_limit}" if global_time_limit > 0 else ""
     )
+    test_list_arg = ""
+    if tests:
+        # A file, not argv: `bash -c` gets the whole command as one argument, which Linux caps at 128 KiB.
+        test_list_file = f"{temp_dir}/test_list.txt"
+        Path(test_list_file).write_text(
+            "".join(f"{test}\n" for test in tests), encoding="utf-8"
+        )
+        test_list_arg = f'--test-list-file "{test_list_file}"'
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} {test_list_arg} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
