@@ -79,6 +79,10 @@ struct MergeTreeReaderSettings
     double query_condition_cache_time_condition_grid_factor = 1.0;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
+    /// If we should use the partial aggregate cache for caching per-part aggregation results.
+    bool use_partial_aggregate_cache = false;
+    /// Plan-time probe already called `PartialAggregateCache::get` for these reads and missed; skip redundant execution-time `get`.
+    bool skip_partial_aggregate_execution_cache_lookup = false;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
     /// Identity of the schema the read runs with: a hash of the column list of the metadata

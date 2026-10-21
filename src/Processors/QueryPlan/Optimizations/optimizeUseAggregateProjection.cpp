@@ -1676,6 +1676,13 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     if (aggregating)
     {
+        /// The query hash of the partial aggregate cache describes the original aggregation over the raw parts.
+        /// Neither `AggregatingProjectionStep` nor an only-merge `AggregatingStep` consumes plan-time hits,
+        /// so a hit chunk for a raw part would be dropped.
+        reading->disablePartialAggregateCache();
+        if (auto * projection_merge_tree_reading = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
+            projection_merge_tree_reading->disablePartialAggregateCache();
+
         if (has_parent_parts)
             node.step = aggregating->convertToAggregatingProjection(projection_header);
         else

@@ -1,0 +1,13 @@
+--- warm
+0	100	100
+1	100	100
+0	100	100
+1	100	100
+--- after UPDATE applied on fly
+0	325	100
+1	325	100
+0	325	100
+1	325	100
+--- after DELETE applied on fly
+0	300	75
+1	300	75

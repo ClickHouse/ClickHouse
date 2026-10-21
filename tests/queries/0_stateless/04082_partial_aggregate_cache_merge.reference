@@ -1,0 +1,17 @@
+--- Merge: warm cache on two parts
+1	49995000	10000
+2	49995000	10000
+0	2
+1	49995000	10000
+2	49995000	10000
+2	0
+--- Merge: single active part after OPTIMIZE FINAL
+1
+--- Merge: first query after merge (new part identity, expect no hits)
+1	49995000	10000
+2	49995000	10000
+0	1
+--- Merge: second query after merge (warm new part)
+1	49995000	10000
+2	49995000	10000
+1	0

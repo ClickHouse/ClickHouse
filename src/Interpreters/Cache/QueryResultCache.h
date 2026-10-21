@@ -45,6 +45,9 @@ bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskP
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check = false);
 
+/// Does the AST contain non-deterministic functions like `rand` and `now`?
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
+
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated

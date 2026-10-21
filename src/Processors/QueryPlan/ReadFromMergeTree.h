@@ -323,7 +323,7 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_pipeline_settings) override;
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
@@ -528,6 +528,10 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    /// Neither probe the partial aggregate cache at plan time nor attach the per-part identity to the read chunks.
+    /// Used when the aggregation above this read is not a plain `AggregatingStep` (e.g. it was rewritten to
+    /// `AggregatingProjectionStep`), so it would not recognize plan-time hits.
+    void disablePartialAggregateCache() { reader_settings.use_partial_aggregate_cache = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.

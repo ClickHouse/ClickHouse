@@ -1870,6 +1870,9 @@ void LocalServer::processConfig()
     global_context->setQueryResultCache(
         0, 0, server_settings[ServerSetting::query_cache_max_entry_size_in_bytes], server_settings[ServerSetting::query_cache_max_entry_size_in_rows]);
 
+    /// Do not initialize `PartialAggregateCache` in clickhouse-local: each process typically runs a single query,
+    /// so the cache is unused. Tests that need it run against clickhouse-server (stateless integration).
+
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
 
