@@ -3,8 +3,8 @@
   "group": "Java",
   "icon": "/images/integrations/logos/java.svg",
   "pages": [
-    "ar/integrations/language-clients/java/client",
-    "ar/integrations/language-clients/java/jdbc",
+    "integrations/language-clients/java/client",
+    "integrations/language-clients/java/jdbc",
     "ar/integrations/language-clients/java/r2dbc",
     "ar/integrations/language-clients/java/date-time-guide"
   ],

@@ -188,7 +188,7 @@
             "ar/reference/statements/system",
             "ar/reference/statements/truncate",
             "ar/reference/statements/undrop",
-            "ar/reference/statements/update",
+            "reference/statements/update",
             "ar/reference/statements/use"
           ]
         },
