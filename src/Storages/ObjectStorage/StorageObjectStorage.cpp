@@ -1197,6 +1197,8 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context_);
+
     /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
     /// storage snapshot contains the `datalake_table_state`. Without this the mutation
     /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
@@ -1216,6 +1218,7 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
