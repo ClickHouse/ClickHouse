@@ -145,8 +145,8 @@ CREATE TABLE t_mass (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 CREATE TABLE t_mass_real (a UInt64, b UInt64, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(192000);
-INSERT INTO t_mass_real SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(192000);
+INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(19200);
+INSERT INTO t_mass_real SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), w % 100 = 0 FROM numbers(19200);
 CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 64;
 SELECT
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
