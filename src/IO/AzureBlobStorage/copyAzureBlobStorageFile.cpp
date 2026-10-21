@@ -446,16 +446,11 @@ void copyAzureBlobStorageFile(
                 }
                 else
                 {
-                    /// The service reads the source of a server-side copy itself, and the credential of the
-                    /// destination authorizes that read only for a source in the same storage account. `Copy Blob`,
-                    /// the asynchronous request used here, takes a credential for the source only in a shared access
-                    /// signature of its URL, which a copy between the accounts of two services does not have, so the
-                    /// service refuses such a copy with 401. `Put Blob From URL` is a server-side copy too and it is
-                    /// accepted for the same source, so an object of up to `max_put_blob_from_url_size` is copied
-                    /// with it before giving up on the server-side copy: the fallback at the end of this function
-                    /// reads the whole object through the server and holds `max_inflight_parts_for_one_file` of its
-                    /// parts in memory, which is what exhausts the memory of a server that restores many large objects
-                    /// at once. That limit is 0 by default, because `Put Blob From URL` is synchronous.
+                    /// `Copy Blob`, the asynchronous request used here, takes a credential for the source only in a
+                    /// shared access signature of its URL, which a copy between two storage accounts does not have, so
+                    /// the service refuses it with 401. `Put Blob From URL` is accepted for the same source, so an
+                    /// object of up to `max_put_blob_from_url_size` (0, off, by default) is retried with it before the
+                    /// fallback below reads it through the server.
                     try
                     {
                         Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
