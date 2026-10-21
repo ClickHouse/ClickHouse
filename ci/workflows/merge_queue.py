@@ -35,6 +35,11 @@ workflow = Workflow.Config(
         # cannot break them together. Cheap enough to run unconditionally - see
         # `JobConfigs.docs_examples_mq_job`.
         JobConfigs.docs_examples_mq_job,
+        # clang-tidy on the merge group state, limited to the translation units
+        # the pull request touches. It reports only the diagnostics located in
+        # the changed files, while the `arm_tidy` shards above check the whole
+        # tree.
+        JobConfigs.tidy_changed_files_job,
     ],
     artifacts=[
         *[

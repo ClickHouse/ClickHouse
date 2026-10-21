@@ -1,0 +1,83 @@
+-- LIMIT -4
+24
+28
+32
+36
+24
+28
+32
+36
+Expression (Project names)
+  NegativeLimit
+    Offset
+      GatherExchange
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          Sorting
+            ReadFromMergeTree (ParallelRead default.t_cascades_neg_limit)
+-- LIMIT 2 OFFSET -3
+0
+4
+0
+4
+-- LIMIT 0.3
+0
+4
+8
+0
+4
+8
+-- LIMIT 2 OFFSET 0.5
+20
+24
+20
+24
+-- LIMIT -1 BY a % 3
+28
+32
+36
+28
+32
+36
+-- WITH FILL LIMIT -4
+30
+32
+34
+36
+30
+32
+34
+36
+-- WITH FILL LIMIT 2 OFFSET -3
+0
+2
+0
+2
+-- WITH FILL LIMIT 0.3
+0
+2
+4
+6
+8
+10
+0
+2
+4
+6
+8
+10
+-- WITH FILL LIMIT 2 OFFSET 0.5
+20
+22
+20
+22
+-- WITH FILL LIMIT -1 BY a % 3
+28
+30
+32
+34
+36
+28
+30
+32
+34
+36
