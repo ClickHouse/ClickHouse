@@ -1072,8 +1072,14 @@ void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr l
     /// view itself, so forward the refresh to the target (e.g. `IcebergLocal`). In particular, `ALTER ... UPDATE/DELETE`
     /// has to validate the mutation against the same state of the target that `mutate` executes it against.
     /// A lazy-load stand-in forwards the refresh only to a table that is already materialized, so resolve it.
+    /// The target is accessed on behalf of the view, so use the same `SQL SECURITY` context as `read` does:
+    /// e.g. the definer may be allowed to use server credentials for an `IcebergS3` target while the invoker is not.
     if (auto target = tryGetTargetTable())
-        resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(local_context);
+    {
+        auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+        auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
+        resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(context);
+    }
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
