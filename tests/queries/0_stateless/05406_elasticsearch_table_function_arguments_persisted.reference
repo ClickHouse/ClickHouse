@@ -1,0 +1,4 @@
+CREATE TABLE default.es_arguments
+(
+    `document` JSON
+) AS elasticsearch('http://localhost:1', 'logs')

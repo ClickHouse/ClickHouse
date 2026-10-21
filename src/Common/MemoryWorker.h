@@ -283,6 +283,7 @@ private:
 
     Jemalloc::NumericPathCache<uint64_t> epoch_numeric_path{"epoch"};
     Jemalloc::NumericPathCache<size_t> resident_numeric_path{"stats.resident"};
+    Jemalloc::NumericPathCache<size_t> allocated_numeric_path{"stats.allocated"};
     Jemalloc::NumericPathCache<size_t> pagesize_numeric_path{"arenas.page"};
     Jemalloc::NumericPathCache<size_t> dirty_decay_ms_numeric_path{"arenas.dirty_decay_ms"};
 
