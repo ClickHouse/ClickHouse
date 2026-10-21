@@ -9,8 +9,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -44,8 +42,6 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 
-#include <Storages/StorageProxy.h>
-
 namespace DB
 {
 
@@ -62,8 +58,9 @@ namespace Setting
 extern const SettingsJoinAlgorithm join_algorithm;
 extern const SettingsBool join_use_nulls;
 extern const SettingsBool rewrite_in_to_join;
-extern const SettingsBool make_distributed_plan;
-extern const SettingsBool distributed_plan_fallback_to_local_execution;
+extern const SettingsBool legacy_join_size_limits_trigger_spilling;
+extern const SettingsUInt64 max_bytes_before_external_join;
+extern const SettingsDouble max_bytes_ratio_before_external_join;
 
 }
 
@@ -178,27 +175,6 @@ bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWit
     return false;
 }
 
-/// Whether a worker of `make_distributed_plan` can run every read of the subquery.
-bool canDistributeSubquery(const QueryTreeNodePtr & subquery)
-{
-    for (const auto & table_expression : extractTableExpressions(std::static_pointer_cast<ITableExpressionNode>(subquery), /*add_array_join=*/ false, /*recursive=*/ true))
-    {
-        StoragePtr storage;
-        if (const auto * table = table_expression->as<TableNode>())
-            storage = table->getStorage();
-        else if (const auto * table_function = table_expression->as<TableFunctionNode>())
-            storage = table_function->getStorage();
-        else
-            continue;
-
-        storage = unwrapStorageProxy(storage);
-        if (!storage->isMergeTree() && !storage->isObjectStorage() && storage->getName() != "SystemOne")
-            return false;
-    }
-
-    return true;
-}
-
 /// The expressions the join keys on: the left argument of the `IN`, or its elements.
 QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
 {
@@ -296,11 +272,15 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     if (!settings[Setting::rewrite_in_to_join])
         return false;
 
+    /// `grace_hash` is passed over without a spill threshold.
+    const bool grace_hash_can_spill = settings[Setting::legacy_join_size_limits_trigger_spilling]
+        || JoinSettings::getMaxBytesBeforeExternalJoin(settings[Setting::max_bytes_before_external_join], settings[Setting::max_bytes_ratio_before_external_join]) > 0;
+
     const std::vector<JoinAlgorithm> join_algorithms = settings[Setting::join_algorithm];
-    if (!std::ranges::any_of(join_algorithms, [](JoinAlgorithm algorithm)
+    if (!std::ranges::any_of(join_algorithms, [&](JoinAlgorithm algorithm)
         {
             return algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
-                || algorithm == JoinAlgorithm::GRACE_HASH || algorithm == JoinAlgorithm::AUTO
+                || (algorithm == JoinAlgorithm::GRACE_HASH && grace_hash_can_spill) || algorithm == JoinAlgorithm::AUTO
                 || algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
         }))
         return false;
@@ -313,13 +293,8 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     if (subquery_columns.empty())
         return false;
 
-    /// A set is built on the initiator, but a join is sent to the workers with the reads of the subquery.
-    if (settings[Setting::make_distributed_plan] && !settings[Setting::distributed_plan_fallback_to_local_execution]
-        && !canDistributeSubquery(arguments[1]))
-        return false;
-
     /// A set ignores the `WITH TOTALS` row of its subquery, but a join would add it to the query.
-    // A view or a remote table may produce such a row as well.
+    /// A view or a remote table may produce such a row as well.
     if (queryTreeHasWithTotalsInAnySubqueryInJoinTree(arguments[1].get()) || readsViewOrRemoteStorage(arguments[1]))
         return false;
 
