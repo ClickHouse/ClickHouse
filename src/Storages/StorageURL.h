@@ -158,7 +158,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
+    virtual std::function<void(WriteBuffer &)> getReadPOSTDataCallback(
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
@@ -257,7 +257,7 @@ public:
         const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
-        std::function<void(std::ostream &)> callback,
+        std::function<void(WriteBuffer &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
@@ -295,7 +295,7 @@ public:
         ContextPtr context,
         const URIParams & params,
         const String & http_method,
-        std::function<void(std::ostream &)> callback,
+        std::function<void(WriteBuffer &)> callback,
         const ConnectionTimeouts & timeouts,
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
@@ -473,6 +473,9 @@ public:
     /// The resolution is done by string manipulation to allow malformed URLs.
     /// `base_setting_name` is the name of the setting the base came from, used in error messages.
     static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
+
+    /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
+    static bool isAbsoluteURL(const String & url);
 
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.

@@ -70,6 +70,16 @@ public:
     /// Returns true if the slot is still acquired (possibly after a preemption period).
     /// Returns false if the slot is released and holder should stop using it (e.g. thread should be stopped).
     virtual bool renew() = 0;
+
+    /// Park the slot during a non-CPU wait, so it does not count against the CPU concurrency limit.
+    /// Never blocks. Returns true if parked; then `unpark` must be called once.
+    [[nodiscard]] virtual bool park() { return false; }
+
+    /// Take the slot back after a successful `park`. Borrows a slot and never blocks.
+    virtual void unpark() {}
+
+    /// Whether parking is enabled (`cpu_slot_parking` server setting)
+    virtual bool isParkingEnabled() const { return false; }
 };
 
 using SlotLeasePtr = std::shared_ptr<ISlotLease>;

@@ -1,7 +1,7 @@
 -- Verify that a query plan containing a Filling step (ORDER BY ... WITH FILL) is considered "simple enough"
 -- for the automatic parallel replicas optimization, so that runtime dataflow statistics are collected for it.
 -- Before the Filling step supported dataflow statistics collection, any plan with WITH FILL was rejected
--- outright (`optimizeTree: Some steps in the plan don't support dataflow statistics collection ...
+-- outright (`AutoParallelReplicas: Some steps in the plan don't support dataflow statistics collection ...
 -- Unsupported steps: Filling_...`) and no statistics were gathered.
 
 DROP TABLE IF EXISTS t;
