@@ -1230,7 +1230,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext(), mode);
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before inferring the structure from it: the inference opens and
@@ -2818,7 +2818,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQL SECURITY is not supported for tables created from a table function");
 
         auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext(), mode);
 
         /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
         /// from the function; a definition with an explicit column list skips that inference and is

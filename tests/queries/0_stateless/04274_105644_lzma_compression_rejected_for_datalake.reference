@@ -22,3 +22,7 @@ not supported by data lake engines
 0
 3	6
 3	6
+attach	3	6
+attach	0
+reload	3	6
+reload	0

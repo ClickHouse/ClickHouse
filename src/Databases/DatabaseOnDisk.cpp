@@ -146,7 +146,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     {
         const auto & factory = TableFunctionFactory::instance();
         auto table_function_ast = ast_create_query.as_table_function->ptr();
-        auto table_function = factory.get(table_function_ast, context);
+        auto table_function = factory.get(table_function_ast, context, mode);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);

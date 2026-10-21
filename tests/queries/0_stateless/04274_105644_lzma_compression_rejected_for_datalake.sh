@@ -47,6 +47,7 @@ TABLES=(
     "${TABLE_PREFIX}_nc_azure_clean"
     "${TABLE_PREFIX}_kv_replay_src"
     "${TABLE_PREFIX}_kv_replay"
+    "${TABLE_PREFIX}_tf_replay"
 )
 
 for table in "${TABLES[@]}"; do
@@ -298,6 +299,31 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(c0) FROM ${TABLE_PREFIX}_kv_re
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(c0) FROM s3('${KV_REPLAY_URL}data/*.parquet', 'clickhouse', 'clickhouse', 'Parquet', compression = 'gzip')
 "
+
+# 23. A `CREATE TABLE ... AS <data lake table function>(...)` definition is replayed with the same
+#     exemption, for the `compression_method` and the `format` check: by a full-definition `ATTACH`
+#     and by the reload of its database, which takes the server startup path.
+TF_REPLAY_DB="${CLICKHOUSE_DATABASE}_tf_replay"
+TF_REPLAY_PATH="${USER_FILES_PATH}/${TABLE_PREFIX}_tf_replay"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${TF_REPLAY_DB}"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${TF_REPLAY_DB} ENGINE = Atomic"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TF_REPLAY_DB}.src (c0 Int32) ENGINE = IcebergLocal('${TF_REPLAY_PATH}')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TF_REPLAY_DB}.src VALUES (1), (2), (3)"
+${CLICKHOUSE_CLIENT} --send_logs_level=error --query "
+    ATTACH TABLE ${TF_REPLAY_DB}.tf_none UUID '$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")' (c0 Int32)
+    AS icebergLocal('${TF_REPLAY_PATH}', 'Parquet', 'c0 Int32', 'none')
+"
+${CLICKHOUSE_CLIENT} --send_logs_level=error --query "
+    ATTACH TABLE ${TF_REPLAY_DB}.tf_csv UUID '$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")' (c0 Int32)
+    AS icebergLocal('${TF_REPLAY_PATH}', 'CSV', 'c0 Int32')
+"
+${CLICKHOUSE_CLIENT} --query "SELECT 'attach', count(), sum(c0) FROM ${TF_REPLAY_DB}.tf_none"
+${CLICKHOUSE_CLIENT} --query "SELECT 'attach', count() FROM (SELECT * FROM ${TF_REPLAY_DB}.tf_csv LIMIT 0)"
+${CLICKHOUSE_CLIENT} --query "DETACH DATABASE ${TF_REPLAY_DB}"
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${TF_REPLAY_DB}"
+${CLICKHOUSE_CLIENT} --query "SELECT 'reload', count(), sum(c0) FROM ${TF_REPLAY_DB}.tf_none"
+${CLICKHOUSE_CLIENT} --query "SELECT 'reload', count() FROM (SELECT * FROM ${TF_REPLAY_DB}.tf_csv LIMIT 0)"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${TF_REPLAY_DB}"
 
 # Cleanup.
 for table in "${TABLES[@]}"; do

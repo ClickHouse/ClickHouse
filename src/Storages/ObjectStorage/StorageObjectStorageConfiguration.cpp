@@ -234,8 +234,8 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
 
-        /// Reject only a fresh user-supplied definition: `CREATE TABLE` or a table function
-        /// (which always loads with `CREATE`). Every other mode replays metadata that was
+        /// Reject only a fresh user-supplied definition: `CREATE TABLE` (also `... AS f(...)`) or a
+        /// table function in a query. Every other mode replays metadata that was
         /// already accepted when the table was originally created, and is deliberately exempt
         /// as a compatibility path so pre-fix tables still load after an upgrade:
         ///  - every `ATTACH` form (`ATTACH`/`FORCE_ATTACH`/`FORCE_RESTORE`), including a
