@@ -1,7 +1,5 @@
 #pragma once
 
-#include <list>
-
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
