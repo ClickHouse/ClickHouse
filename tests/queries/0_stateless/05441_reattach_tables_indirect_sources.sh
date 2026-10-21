@@ -18,7 +18,6 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ind_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ind_dim"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_src (x UInt64, unused UInt64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_dim (y UInt64) ENGINE = MergeTree ORDER BY y"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_alias ENGINE = Alias('t_reattach_ind_dim')"
 
 # 1. A qualified column named like a CTE does not reference the CTE, so the table of its definition stays attached.
 check_if_not_detached "WITH unused AS (SELECT * FROM t_reattach_ind_dim) SELECT t_reattach_ind_src.unused FROM t_reattach_ind_src" "t_reattach_ind_dim"
@@ -26,11 +25,12 @@ check_if_detached "WITH used AS (SELECT * FROM t_reattach_ind_dim) SELECT t_reat
 
 # 2. A generator table function reads nothing, so the hook still runs; a table function that resolves
 # its sources while it runs skips the hook.
-check_if_detached "SELECT count() FROM t_reattach_ind_src, numbers(1)" "t_reattach_ind_src"
-check_if_not_detached "SELECT count() FROM t_reattach_ind_src, merge(currentDatabase(), '^t_reattach_ind_dim\$')" "t_reattach_ind_src"
+check_if_detached "SELECT count() FROM t_reattach_ind_src, numbers(1) AS n" "t_reattach_ind_src"
+check_if_not_detached "SELECT count() FROM t_reattach_ind_src, merge(currentDatabase(), '^t_reattach_ind_dim\$') AS m" "t_reattach_ind_src"
 
 # 3. The read through an `Alias` checks the access to its target only when it runs, so a query referencing
 # an `Alias` skips the hook: the user may read `t_reattach_ind_src` and the alias, but not its target.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_alias ENGINE = Alias('t_reattach_ind_dim')"
 ALIAS_USER="user_reattach_ind_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ALIAS_USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${ALIAS_USER} IDENTIFIED WITH no_password"

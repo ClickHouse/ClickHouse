@@ -260,14 +260,14 @@ else
 fi
 
 # Even a succeeding statement with an external `SAMPLES`/`TAGS` target is suppressed conservatively:
-# the target itself must not be detached either.
+# the target itself must not be detached either. Only a table of version 9 or earlier can have one.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts_samples"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ts_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)"
 
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
     --reattach_tables_before_query_execution=1 \
     --enable_time_series_table=1 \
-    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_samples" 2>&1)
+    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SETTINGS version = 9 SAMPLES t_reattach_ts_samples" 2>&1)
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -ne 0 ]; then
     echo "FAIL (client error: $REATTACH_OUTPUT)"
