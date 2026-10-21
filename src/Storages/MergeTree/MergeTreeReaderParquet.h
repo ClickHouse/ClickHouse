@@ -41,9 +41,11 @@ public:
 
     size_t readRows(size_t from_mark, size_t current_range_last_mark,
                     bool continue_reading, size_t max_rows_to_read,
-                    MutableColumns & res_columns) override;
+                    MutableColumns & res_columns, Columns & shared_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
+
+    void updateAllMarkRanges(const MarkRanges & ranges) override;
 
 private:
     /// How to obtain the requested column (an element of `columns_to_read`) from the columns read from the file.

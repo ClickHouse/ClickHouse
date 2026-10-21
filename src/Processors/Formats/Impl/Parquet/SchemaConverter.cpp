@@ -322,7 +322,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         /// A column that is not in the data lake schema is never requested, and its physical name
         /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
         /// later re-added `x` have different field ids), so it must not be matched by name.
-        if (sample_block && !not_in_schema)
+        if (sample_block && !not_in_schema && (!options.match_only_top_level_columns || recursion_depth == 1))
         {
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:

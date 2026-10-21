@@ -335,38 +335,45 @@ void MergeTreeReaderParquet::initState()
     options.format.defaults_for_omitted_fields = false;
     options.dictionary_filter_limit_bytes = 0;
     options.columns_cache = getColumnsCacheOptions();
+    /// The columns of the part are the top-level fields of the file, e.g. a column `m.value` is not the field
+    /// `value` of the map `m`.
+    options.match_only_top_level_columns = true;
 
     auto & reader = state->reader;
     reader.prefetcher.init(state->data_buffer.get(), options, /*parser_shared_resources_=*/ nullptr);
 
-    auto load_metadata = [&] { return Parquet::Reader::readFileMetaData(reader.prefetcher, /*footer_read_size=*/ 0); };
+    auto load_footer = [&] { return Parquet::Reader::readFileFooter(reader.prefetcher, /*footer_read_size=*/ 0); };
 
     auto metadata_cache = data_part_info_for_read->getContext()->getParquetMetadataCache();
     const auto & checksums = data_part_info_for_read->getChecksums();
     auto checksum_it = checksums.files.find(data_file_name);
+    std::optional<ParquetMetadataCacheKey> cache_key;
+    ParquetMetadataCache::MappedPtr cache_cell;
+    bool cache_hit = false;
     if (metadata_cache && checksum_it != checksums.files.end())
     {
         /// The files of data parts are immutable, and their checksum identifies the content.
-        auto key = ParquetMetadataCache::createKey(
+        cache_key = ParquetMetadataCache::createKey(
             data_part_storage->getDiskName() + ":" + data_part_storage->getFullPath() + data_file_name,
             getHexUIntLowercase(checksum_it->second.file_hash.high64) + getHexUIntLowercase(checksum_it->second.file_hash.low64));
-        reader.file_metadata = metadata_cache->getOrSetMetadata(key, load_metadata);
+        std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(*cache_key, load_footer);
+        reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
     }
     else
     {
-        reader.file_metadata = load_metadata();
+        reader.setFileFooter(load_footer());
     }
 
     if (sample_block.empty())
     {
-        auto names_in_file = getTopLevelColumnNames(reader.file_metadata);
+        auto names_in_file = getTopLevelColumnNames(reader.file_metadata());
         size_t num_columns_in_part = data_part_info_for_read->getColumns().size();
         if (names_in_file.size() != num_columns_in_part)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Parquet file {} has {} columns, but the part has {} columns",
                 data_file_name, names_in_file.size(), num_columns_in_part);
 
-        auto binary_columns = getBinaryColumns(reader.file_metadata, names_in_file.size());
+        auto binary_columns = getBinaryColumns(reader.file_metadata(), names_in_file.size());
 
         for (auto & column : columns_in_file)
         {
@@ -385,10 +392,13 @@ void MergeTreeReaderParquet::initState()
         for (size_t mark = range.begin; mark < range.end; ++mark)
             row_groups_to_read.insert(mark);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
+    /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
+    if (cache_hit)
+        metadata_cache->addColumnChunks(*cache_key, cache_cell, reader.getColumnChunks());
 
     /// All row groups are read (there are no filters), so they correspond to the marks one to one.
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-    size_t num_row_groups = reader.file_metadata.row_groups.size();
+    size_t num_row_groups = reader.file_metadata().row_groups.size();
     if (num_row_groups != index_granularity.getMarksCountWithoutFinal())
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Parquet file {} has {} row groups, but the part has {} marks",
@@ -396,7 +406,7 @@ void MergeTreeReaderParquet::initState()
 
     for (size_t i = 0; i < num_row_groups; ++i)
     {
-        size_t rows_in_row_group = static_cast<size_t>(reader.file_metadata.row_groups[i].num_rows);
+        size_t rows_in_row_group = static_cast<size_t>(reader.file_metadata().row_groups[i].num_rows);
         if (rows_in_row_group != index_granularity.getMarkRows(i))
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Row group {} of Parquet file {} has {} rows, but the mark has {} rows",
@@ -466,7 +476,7 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     {
         size_t compressed_bytes = 0;
         for (const auto & column_info : reader.primitive_columns)
-            compressed_bytes += static_cast<size_t>(row_group_state.meta->columns.at(column_info.column_idx).meta_data.total_compressed_size);
+            compressed_bytes += static_cast<size_t>(reader.getColumnChunk(row_group, column_info.column_idx).meta_data.total_compressed_size);
         ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, compressed_bytes);
     }
 
@@ -586,12 +596,23 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     }
 }
 
+void MergeTreeReaderParquet::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    IMergeTreeReader::updateAllMarkRanges(ranges);
+
+    /// The row groups that are looked up in the columns cache and written to it are the ones of the mark ranges
+    /// at the time the state is created, so it is created anew for the ranges of the next task.
+    if (state && state->reader.options.columns_cache)
+        state.reset();
+}
+
 size_t MergeTreeReaderParquet::readRows(
     size_t from_mark,
     size_t /* current_range_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    MutableColumns & res_columns,
+    Columns & /* shared_columns */)
 try
 {
     if (!state)
