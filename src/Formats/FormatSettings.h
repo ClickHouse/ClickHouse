@@ -35,6 +35,7 @@ struct FormatSettings
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
     bool precise_float_parsing = true;
+    bool check_integer_text_overflow = false;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -432,6 +433,7 @@ struct FormatSettings
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
+        bool use_alp_encoding = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
