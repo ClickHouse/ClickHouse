@@ -185,6 +185,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const AggregatingTransformParamsPtr & transform_params,
         size_t max_threads,
+        size_t new_temporary_data_merge_threads,
         const StatsCollectingParams & stats_collecting_params) const;
 
     Aggregator::Params params;
