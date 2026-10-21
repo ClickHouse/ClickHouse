@@ -143,6 +143,19 @@ that comparison; dependencies required only for `alwayslink` remain held.
 Unknown linker inputs, malformed symbol output and unreadable files remain
 unverified. `link_input_reasons` records the actual file, owner and configured
 dependency for those decisions.
+`unverified_link_reasons` also records why each direct dependency remains
+held: ambiguous definitions, a forwarded input, multiple configured routes,
+retained `alwayslink` inputs, or unverified linker inputs. The auditor validates
+each reported reason against the dependency and configured input. A duplicate
+route does not by itself prove the declared dependency is a Bazel alias.
+
+Scoped development-checker verification on `70b583641` → `c551c5f34`
+preserved every pre-existing field for 25 genuine CPP/link reports per CPU
+and passed 68 schema checks per CPU. Fresh canonical-label Boost checks
+replaced two incorrectly labelled ineligible checks; the ineligible checks
+remain unscored. All 33 DBMS link holds remain: none was cleared merely by
+classifying an `alwayslink` input. This checker change leaves the production
+BUILD files and normalized binary hashes unchanged.
 
 The `1c8eb247a` development-checker verification covered native linker and CPP
 controls and `//src:dbms__compile_0` on both CPUs. The DBMS report retains six

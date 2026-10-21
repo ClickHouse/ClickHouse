@@ -139,6 +139,47 @@ def validate_link_evidence(report):
             occurrences[key] = route["target"]
 
 
+    holds = report.get("unverified_link_deps", [])
+    details = report.get("unverified_link_reasons")
+    if (not isinstance(details, dict) or set(details) != set(holds)
+            or len(holds) != len(set(holds))):
+        raise ValueError("missing or inconsistent DWYU link hold reasons")
+    nonopaque = {"alwayslink", "static_archive", "unsupported_nm_kind"}
+    symbol_causes = {
+        "opaque_input", "archive_veto", "alwayslink_provider", "weak_undefined",
+        "multiple_definitions", "multiple_routes", "duplicate_resolved_route", "non_strong_definition",
+    }
+    for dep, entry in details.items():
+        if (not isinstance(entry, dict) or set(entry) != {
+            "forwarded_inputs", "source_free_forwarder", "input_reasons",
+            "opaque_input_reasons", "ambiguous_symbols", "raw_link_candidate",
+        } or any(type(entry[key]) is not bool for key in
+                 ("forwarded_inputs", "source_free_forwarder", "raw_link_candidate"))):
+            raise ValueError("invalid DWYU link hold reason")
+        for key in ("input_reasons", "opaque_input_reasons"):
+            indices = entry[key]
+            if (not isinstance(indices, list) or any(type(index) is not int or
+                    not 0 <= index < len(reasons) for index in indices) or len(set(indices)) != len(indices)):
+                raise ValueError("invalid DWYU link hold input indices")
+            for index in indices:
+                reason = reasons[index]
+                if key == "input_reasons" and not any(route["target"] == dep for route in reason["routes"]):
+                    raise ValueError("DWYU link hold cites another dependency's input")
+                if key == "opaque_input_reasons" and reason["reason"] in nonopaque:
+                    raise ValueError("DWYU opaque link hold cites a scannable input")
+        symbols = entry["ambiguous_symbols"]
+        if not isinstance(symbols, dict):
+            raise ValueError("invalid DWYU ambiguous link symbols")
+        for symbol, causes in symbols.items():
+            if (not isinstance(symbol, str) or not symbol or not isinstance(causes, list) or not causes or any(
+                not isinstance(cause, str) or cause not in symbol_causes for cause in causes
+            ) or len(set(causes)) != len(causes) or
+                    ("duplicate_resolved_route" in causes and "multiple_routes" not in causes)):
+                raise ValueError("invalid DWYU ambiguous link symbol causes")
+        if not any(entry.values()):
+            raise ValueError("unexplained DWYU link hold")
+
+
 def configuration_map(data, field):
     return {str(config["id"]): config for config in data.get(field, [])}
 

@@ -1231,7 +1231,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,305 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+@@ -71,6 +82,343 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
      return options;
  }
  
@@ -1349,6 +1349,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +    nlohmann::json proven = nlohmann::json::object();
 +    nlohmann::json forwarded = nlohmann::json::object();
 +    nlohmann::json input_reasons = nlohmann::json::array();
++    nlohmann::json hold_reasons = nlohmann::json::object();
 +};
 +
 +// Prove a requirement of a configured caller object, not that a final linker
@@ -1399,6 +1400,9 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +    std::set<std::string> forwarded_deps;
 +    std::set<std::string> linking_deps;
 +    std::set<std::string> retained_deps;
++    std::map<std::string, std::vector<size_t>> retained_inputs;
++    std::vector<size_t> opaque_inputs;
++    nlohmann::json ambiguous_symbols = nlohmann::json::object();
 +    std::set<std::string> configured_deps;
 +    auto collect = [&](const auto& records, const auto& targets, const std::string& attribute) {
 +        for (size_t occurrence = 0; occurrence < records.size(); ++occurrence) {
@@ -1441,11 +1445,18 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +    for (size_t index = 0; index < inventory.size(); ++index) {
 +        const auto& entry = inventory.at(index);
 +        auto reason = [&](const std::string& file, const std::string& type, bool unknown) {
++            const auto reason_index = result.input_reasons.size();
 +            result.input_reasons.push_back(
 +                {{"owner", entry.at("owner")}, {"file", file}, {"reason", type}, {"routes", entry_routes.at(index)}});
 +            if (unknown) opaque = true;
-+            for (const auto& route : entry_routes.at(index))
-+                retained_deps.insert(route.at("target").get<std::string>());
++            if (unknown) opaque_inputs.push_back(reason_index);
++            for (const auto& route : entry_routes.at(index)) {
++                const auto dep = route.at("target").get<std::string>();
++                retained_deps.insert(dep);
++                auto& indices = retained_inputs[dep];
++                // Alias occurrences may carry the same input more than once.
++                if (indices.empty() || indices.back() != reason_index) indices.push_back(reason_index);
++            }
 +        };
 +        if (!entry.at("flags").empty()) reason("", "user_link_flags", true);
 +        if (!entry.at("linkstamps").empty()) reason("", "linkstamps", true);
@@ -1497,9 +1508,28 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +        if (opaque || archive_veto.count(symbol) || alwayslink_objects.count(provider) ||
 +            own_weak_undefined.count(symbol) || providers.size() != 1 || direct.size() != 1 ||
 +            !symbols_by_file.at(provider.second).strong_definitions.count(symbol)) {
++            std::vector<std::string> causes;
++            if (opaque) causes.push_back("opaque_input");
++            if (archive_veto.count(symbol)) causes.push_back("archive_veto");
++            if (alwayslink_objects.count(provider)) causes.push_back("alwayslink_provider");
++            if (own_weak_undefined.count(symbol)) causes.push_back("weak_undefined");
++            if (providers.size() != 1) causes.push_back("multiple_definitions");
++            if (direct.size() != 1) {
++                std::set<std::string> resolved;
++                for (const auto route : direct) resolved.insert(direct_deps.at(route));
++                causes.push_back("multiple_routes");
++                if (resolved.size() < direct.size()) causes.push_back("duplicate_resolved_route");
++            }
++            if (!symbols_by_file.at(provider.second).strong_definitions.count(symbol))
++                causes.push_back("non_strong_definition");
 +            for (const auto& object : providers) {
 +                const auto& carrying_deps = routes.at(object);
-+                for (const auto route : carrying_deps) ambiguous.insert(direct_deps.at(route));
++                for (const auto route : carrying_deps) {
++                    const auto& dep = direct_deps.at(route);
++                    ambiguous.insert(dep);
++                    // A duplicate resolved label does not prove an alias's spelling.
++                    ambiguous_symbols[dep][symbol] = causes;
++                }
 +            }
 +            continue;
 +        }
@@ -1526,6 +1556,14 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +                ((opaque && linking_deps.count(dep->name)) || (own_files.empty() && owner_forwards) ||
 +                 forwarded_deps.count(dep->name) || retained_deps.count(dep->name) || ambiguous.count(dep->name))) {
 +                result.unverified.push_back(dep->name);
++                result.hold_reasons[dep->name] = {
++                    {"forwarded_inputs", bool(forwarded_deps.count(dep->name))},
++                    {"source_free_forwarder", own_files.empty() && owner_forwards},
++                    {"input_reasons", retained_inputs[dep->name]},
++                    {"opaque_input_reasons", (opaque && linking_deps.count(dep->name)) ? opaque_inputs : std::vector<size_t>{}},
++                    {"ambiguous_symbols", ambiguous_symbols.contains(dep->name)
++                        ? ambiguous_symbols.at(dep->name) : nlohmann::json::object()},
++                };
 +            }
 +        }
 +    };
@@ -1537,7 +1575,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +401,61 @@ int main_impl(const ProgramOptions& options) {
+@@ -91,21 +439,75 @@ int main_impl(const ProgramOptions& options) {
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
@@ -1598,6 +1636,20 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +            report["direct_owned_link_symbols"] = link_evidence.proven;
 +            report["forwarded_link_symbols"] = link_evidence.forwarded;
 +            report["link_input_reasons"] = link_evidence.input_reasons;
++            // Emit explanations only for final holds, after CPP has checked
++            // direct headers and selected unused dependencies.
++            auto reasons = nlohmann::json::object();
++            for (const auto& dep : report.value("unverified_link_deps", std::vector<std::string>{})) {
++                auto detail = link_evidence.hold_reasons.contains(dep)
++                    ? link_evidence.hold_reasons.at(dep)
++                    : nlohmann::json{{"forwarded_inputs", false}, {"source_free_forwarder", false},
++                        {"input_reasons", std::vector<size_t>{}}, {"opaque_input_reasons", std::vector<size_t>{}},
++                        {"ambiguous_symbols", nlohmann::json::object()}};
++                detail["raw_link_candidate"] = std::find(raw_link_candidates.begin(), raw_link_candidates.end(), dep)
++                    != raw_link_candidates.end();
++                reasons[dep] = std::move(detail);
++            }
++            report["unverified_link_reasons"] = std::move(reasons);
 +        }
 +        if (!unchecked_link_inputs.empty()) report["unchecked_link_inputs"] = unchecked_link_inputs;
 +        output << report;
