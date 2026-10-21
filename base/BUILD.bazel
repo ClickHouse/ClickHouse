@@ -91,7 +91,6 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_includes = ["."],
-    deps = ["@llvm-project//compiler-rt:headers"],
 )
 
 cc_library(
