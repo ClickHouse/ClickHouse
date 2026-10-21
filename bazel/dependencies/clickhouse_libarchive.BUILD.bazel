@@ -105,19 +105,41 @@ ch_cc_library(
         "libarchive/filter_fork_posix.c",
         "libarchive/filter_fork_windows.c",
         "libarchive/xxhash.c",
+    ] + glob(
+        ["libarchive/*.h"],
+        exclude = [
+            "libarchive/archive.h",
+            "libarchive/archive_blake2_impl.h",
+            "libarchive/archive_crc32.h",
+            "libarchive/archive_entry.h",
+            "libarchive/archive_openssl_evp_private.h",
+            "libarchive/archive_openssl_hmac_private.h",
+            "libarchive/archive_platform_xattr.h",
+            "libarchive/archive_windows.h",
+            "libarchive/config_freebsd.h",
+        ],
+    ),
+    hdrs = [
+        "libarchive/archive.h",
+        "libarchive/archive_entry.h",
     ],
-    hdrs = glob(["libarchive/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
         "-Wno-reserved-macro-identifier",
     ],
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse//contrib/libarchive-cmake:headers",
+        "@clickhouse_bzip2//:_bzip2",
+        "@clickhouse_xz//:_liblzma",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_zstd//:_zstd__compile_1",
     ],
     includes = ["libarchive"],
     language = "C",
+    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -178,11 +200,5 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [
-        "@clickhouse_bzip2//:_bzip2",
-        "@clickhouse_xz//:_liblzma",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_zstd//:_zstd",
     ],
 )

@@ -15,17 +15,30 @@ ch_cc_library(
         "lib/*.c",
         "lib/arm/*.c",
         "lib/x86/*.c",
-    ]),
-    hdrs = glob(["**/*.h"]),
+    ]) + [
+        "common_defs.h",
+        "lib/arm/cpu_features.h",
+        "lib/x86/cpu_features.h",
+    ] + glob(["lib/*.h"]) + select({
+        "@platforms//cpu:x86_64": glob(
+            ["lib/x86/*.h"],
+            exclude = ["lib/x86/cpu_features.h"],
+        ),
+        "@platforms//cpu:aarch64": glob(
+            ["lib/arm/*.h"],
+            exclude = ["lib/arm/cpu_features.h"],
+        ),
+    }),
+    hdrs = ["libdeflate.h"],
     copts = [
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
     includes = [
         ".",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
