@@ -43,7 +43,12 @@ size_t maxRowsByOffsets(const IColumn::Offsets & offsets, size_t begin, size_t e
 /// allows only fixed-width types, `String` and `FixedString`, and of those only the two string types reach
 /// a 32-bit-offset buffer.
 size_t maxRowsForLowCardinality(
-    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool fixed_string_as_fixed_byte_array)
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t begin,
+    size_t end,
+    bool fixed_string_as_fixed_byte_array,
+    UInt64 max_batch_bytes)
 {
     const size_t num_rows = end - begin;
     const DataTypePtr values_type = removeNullable(removeLowCardinality(type));
@@ -55,7 +60,7 @@ size_t maxRowsForLowCardinality(
         if (fixed_string_as_fixed_byte_array)
             return num_rows;
         const size_t n = assert_cast<const ColumnFixedString &>(values_column).getN();
-        return n == 0 ? num_rows : std::min<size_t>(num_rows, MAX_ARROW_BUFFER_SIZE / n);
+        return n == 0 ? num_rows : std::min<size_t>(num_rows, max_batch_bytes / n);
     }
 
     if (!isString(values_type))
@@ -68,7 +73,7 @@ size_t maxRowsForLowCardinality(
     for (size_t i = 0; i != values.size(); ++i)
         max_value_size = std::max(max_value_size, value_offsets[i] - value_offsets[static_cast<ssize_t>(i) - 1]);
     /// Scanning the indexes is only needed when the largest value repeated on every row could overflow.
-    if (max_value_size == 0 || num_rows <= MAX_ARROW_BUFFER_SIZE / max_value_size)
+    if (max_value_size == 0 || num_rows <= max_batch_bytes / max_value_size)
         return num_rows;
 
     const auto & indexes = low_cardinality.getIndexes();
@@ -77,7 +82,7 @@ size_t maxRowsForLowCardinality(
     {
         const auto index = static_cast<ssize_t>(indexes.getUInt(row));
         total += value_offsets[index] - value_offsets[index - 1];
-        if (total > MAX_ARROW_BUFFER_SIZE)
+        if (total > max_batch_bytes)
             return row - begin;
     }
     return num_rows;
@@ -86,7 +91,12 @@ size_t maxRowsForLowCardinality(
 /// A `Variant` becomes an Arrow dense union, whose own buffers are bounded by the row count; only its
 /// children, holding one alternative's rows each, can overflow.
 size_t maxRowsForVariant(
-    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool fixed_string_as_fixed_byte_array)
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t begin,
+    size_t end,
+    bool fixed_string_as_fixed_byte_array,
+    UInt64 max_batch_bytes)
 {
     const size_t num_rows = end - begin;
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
@@ -121,7 +131,7 @@ size_t maxRowsForVariant(
             variant_type.getVariant(global_discr),
             nested_begin[local_discr],
             nested_begin[local_discr] + nested_rows[local_discr],
-            fixed_string_as_fixed_byte_array);
+            fixed_string_as_fixed_byte_array, max_batch_bytes);
         all_fit &= nested_rows_that_fit[local_discr] == nested_rows[local_discr];
     }
     if (all_fit)
@@ -144,17 +154,25 @@ size_t maxRowsForVariant(
 }
 
 size_t maxRowsFittingOneArrowBatch(
-    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool fixed_string_as_fixed_byte_array)
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t begin,
+    size_t end,
+    bool fixed_string_as_fixed_byte_array,
+    UInt64 max_batch_bytes)
 {
     const size_t num_rows = end - begin;
     if (num_rows == 0)
         return 0;
 
+    /// Arrow cannot address more than this however the caller was configured.
+    max_batch_bytes = std::min(max_batch_bytes, MAX_ARROW_BUFFER_SIZE);
+
     if (type->lowCardinality())
-        return maxRowsForLowCardinality(column, type, begin, end, fixed_string_as_fixed_byte_array);
+        return maxRowsForLowCardinality(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes);
 
     if (isVariant(type))
-        return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array);
+        return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes);
 
     /// A null row is written as a zero-length slot, so measuring the nested column only overestimates.
     if (type->isNullable())
@@ -164,21 +182,21 @@ size_t maxRowsFittingOneArrowBatch(
             removeNullable(type),
             begin,
             end,
-            fixed_string_as_fixed_byte_array);
+            fixed_string_as_fixed_byte_array, max_batch_bytes);
     }
 
     switch (WhichDataType(type).idx)
     {
         case TypeIndex::String:
         {
-            return maxRowsByOffsets(assert_cast<const ColumnString &>(column).getOffsets(), begin, end, MAX_ARROW_BUFFER_SIZE);
+            return maxRowsByOffsets(assert_cast<const ColumnString &>(column).getOffsets(), begin, end, max_batch_bytes);
         }
         case TypeIndex::FixedString:
         {
             if (fixed_string_as_fixed_byte_array)
                 return num_rows;
             const size_t n = assert_cast<const ColumnFixedString &>(column).getN();
-            return n == 0 ? num_rows : std::min<size_t>(num_rows, MAX_ARROW_BUFFER_SIZE / n);
+            return n == 0 ? num_rows : std::min<size_t>(num_rows, max_batch_bytes / n);
         }
         case TypeIndex::Array:
         {
@@ -190,8 +208,8 @@ size_t maxRowsFittingOneArrowBatch(
                 assert_cast<const DataTypeArray &>(*type).getNestedType(),
                 nested_begin,
                 offsets[end - 1],
-                fixed_string_as_fixed_byte_array);
-            return maxRowsByOffsets(offsets, begin, end, std::min<UInt64>(nested_rows, MAX_ARROW_BUFFER_SIZE));
+                fixed_string_as_fixed_byte_array, max_batch_bytes);
+            return maxRowsByOffsets(offsets, begin, end, std::min<UInt64>(nested_rows, max_batch_bytes));
         }
         case TypeIndex::Map:
         {
@@ -201,7 +219,7 @@ size_t maxRowsFittingOneArrowBatch(
                 assert_cast<const DataTypeMap &>(*type).getNestedType(),
                 begin,
                 end,
-                fixed_string_as_fixed_byte_array);
+                fixed_string_as_fixed_byte_array, max_batch_bytes);
         }
         case TypeIndex::Tuple:
         {
@@ -213,7 +231,7 @@ size_t maxRowsFittingOneArrowBatch(
                 rows = std::min(
                     rows,
                     maxRowsFittingOneArrowBatch(
-                        tuple.getColumn(i), elements[i], begin, begin + rows, fixed_string_as_fixed_byte_array));
+                        tuple.getColumn(i), elements[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes));
             }
             return rows;
         }

@@ -439,7 +439,8 @@ void ArrowIPCBlockOutputFormat::writeChunk(Chunk chunk)
                     column_types[i],
                     offset,
                     offset + rows,
-                    format_settings.arrow.output_fixed_string_as_fixed_byte_array));
+                    format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+                    format_settings.arrow.output_max_record_batch_bytes));
         }
         /// A row that does not fit on its own cannot be represented at all; let the encoder reject it.
         rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
