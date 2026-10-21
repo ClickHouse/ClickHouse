@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-ClickPipes поддерживает интеграцию с реестром схем для декодирования значений записей, закодированных в Avro и Protobuf, а также [структурированных ключей Kafka](/ru/integrations/clickpipes/kafka/reference#structured-message-keys).
+ClickPipes поддерживает интеграцию с реестром схем для декодирования value записей, закодированных в Avro и Protobuf. Kafka ClickPipes также поддерживают [структурированные ключи Kafka](/ru/integrations/clickpipes/kafka/reference#structured-message-keys).
 
-Для значений записей в формате Protobuf вы также можете [загрузить схему напрямую](/ru/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic), не настраивая реестр схем.
+Для value записей в формате Protobuf вы также можете [загрузить схему напрямую](/ru/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic), не настраивая реестр схем.
 
-## Поддерживаемые реестры схем для Kafka ClickPipes {#supported-schema-registries}
+## Поддерживаемые реестры схем для стриминговых ClickPipes {#supported-schema-registries}
 
-Kafka ClickPipes поддерживает два типа реестров схем:
+Kafka ClickPipes поддерживают два типа реестров схем:
 
 * [Реестры, совместимые с Confluent](#confluent-compatible-registries): любые реестры, API которых совместим с Confluent Schema Registry, включая сам Confluent Schema Registry и Redpanda Schema Registry. Поддерживаются Avro и Protobuf.
 * [AWS Glue Schema Registry](#aws-glue-schema-registry): для данных Avro, сериализованных с помощью AWS Glue SerDe, обычно поступающих из Amazon MSK.
+
+Kinesis ClickPipes поддерживают AWS Glue Schema Registry для данных Avro и Protobuf.
 
 ClickPipes пока не поддерживает Azure Schema Registry. Если вам нужна его поддержка, [свяжитесь с нашей командой](https://clickhouse.com/company/contact?loc=clickpipes).
 
@@ -63,15 +65,15 @@ ClickPipes динамически получает и применяет схе�
 
 Если ваши producer сериализуют Avro с помощью AWS Glue SerDe (например, `AWSKafkaAvroSerializer` для топика Amazon MSK), ClickPipes может получать эти схемы непосредственно из AWS Glue Schema Registry. Glue использует другой формат передачи данных и другой API, чем реестры, совместимые с Confluent, поэтому настраивается отдельно.
 
-Настройка AWS Glue Schema Registry в настоящее время доступна только в консоли ClickHouse Cloud. Через API ClickPipes или Terraform-провайдер она не поддерживается.
+Настроить AWS Glue Schema Registry можно в консоли ClickHouse Cloud, через API ClickPipes или с помощью Terraform-провайдера.
 
 <Note>
-  **Только Avro.** Реестры AWS Glue поддерживаются только для формата Avro. Glue SerDe также может формировать JSON и Protobuf, но ClickPipes их не поддерживает и отклоняет при создании пайпа.
+  **Kafka:** реестры AWS Glue поддерживают только формат Avro. **Kinesis:** реестры AWS Glue поддерживают `AvroConfluent` и `Protobuf`. JSON через Glue SerDe не поддерживается.
 </Note>
 
 ### Конфигурация {#glue-configuration}
 
-В мастере создания ClickPipe на шаге подключения Kafka включите **Реестр схем** и установите для параметра **Тип реестра** значение **AWS Glue**:
+В мастере создания ClickPipe на шаге подключения Kafka или Kinesis включите **Реестр схем** и установите для параметра **Тип реестра** значение **AWS Glue**:
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Панель реестра схем с выбранным AWS Glue" size="lg" border />
 
@@ -82,7 +84,7 @@ ClickPipes динамически получает и применяет схе�
 | Имя реестра  | Да          | Имя реестра Glue. Схемы из другого реестра отклоняются, поэтому опечатка будет выявлена при разрешении ClickPipes версии схемы.      | `my-glue-registry`                                         |
 | ARN роли IAM | Условно     | Выделенная роль для доступа к реестру. Необязательна, если ваш брокер использует аутентификацию IAM; в противном случае обязательна. | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-URL реестра настраивать не требуется. Каждая запись, созданная Glue SerDe, содержит идентификатор своей версии схемы, который ClickPipes получает с помощью `glue:GetSchemaVersion` и кэширует; для каждой уникальной версии схемы выполняется один вызов API. Изменение схемы обрабатывается автоматически: если записи в потоке переключаются на новую версию схемы, она будет получена при первом обращении.
+URL реестра настраивать не требуется. Каждая запись, созданная Glue SerDe, содержит идентификатор своей версии схемы, который ClickPipes получает с помощью `glue:GetSchemaVersion` и кэширует; для каждой уникальной версии схемы выполняется один вызов API. Изменение схемы обрабатывается автоматически: если записи в потоке переключаются на новую версию схемы, она будет получена при первом обращении. Для Kinesis те же поля настраиваются через [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) или [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
 ### Настройка IAM {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ URL реестра настраивать не требуется. Каждая 
 
 ### Ограничения {#glue-limitations}
 
-* Поддерживается только Avro. JSON Schema и Protobuf через Glue SerDe не поддерживаются.
-* Поддерживаются только источники Kafka. ClickPipes для Kinesis не могут использовать реестр Glue.
+* Kafka поддерживает только Avro. JSON Schema и Protobuf через Glue SerDe не поддерживаются.
+* Kinesis поддерживает `AvroConfluent` и `Protobuf` через AWS Glue Schema Registry. Загруженную схему Protobuf нельзя использовать совместно с реестром схем.
 
 ## Сопоставление схемы {#schema-mapping}
 

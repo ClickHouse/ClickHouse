@@ -136,6 +136,10 @@ Le format des URL varie selon le target.
 
 #### File {#file}
 
+<Important>
+  Le schéma `file://` n&#39;est pas pris en charge sur ClickHouse Cloud.
+</Important>
+
 Doit être un chemin absolu sur le serveur Postgres. Un chemin relatif provoque une
 erreur. L&#39;utilisateur Postgres doit être membre du rôle `pg_read_server_files` ou
 `pg_write_server_files`, selon le cas. L&#39;utilisateur système Postgres doit
@@ -315,6 +319,18 @@ Format de compression du fichier. À utiliser lorsque la compression ne peut pas
 Timeout de requête en millisecondes. S&#39;applique aux URL HTTP, S3, GCS et Azure.
 Valeur par défaut : `30000` (30 s).
 
+#### `encoding_check` {#encoding_check}
+
+Définit le traitement des caractères invalides au regard de l&#39;[encodage de la base de données][database encoding] lors de
+la conversion des valeurs String et JSON de chDB. Valeurs possibles :
+
+* `fail` (par défaut) : lève une erreur
+* `remove` supprime les octets invalides
+* `replace` : avec l&#39;encodage UTF-8, remplace les octets invalides par le
+  caractère de remplacement Unicode (`�`) ; équivaut à `remove` pour les autres
+  encodages
+* `truncate` tronque le texte au premier octet invalide
+
 ### Débogage {#debugging}
 
 En cas d&#39;erreur, la commande `COPY` de chdb&#95;hook inclut la requête [chDB] qu&#39;elle
@@ -351,10 +367,12 @@ chdb&#95;hook s&#39;accroche également à [CREATE TABLE], ce qui permet à une 
 colonnes et de charger ses lignes depuis une URL.
 
 Pour créer une table dont la structure est dérivée d&#39;une URL, passez l&#39;URL dans
-l&#39;option `structure_from` et laissez la liste de colonnes vide :
+l&#39;option `structure_from` et laissez la liste de colonnes vide (attention : ce fichier de données
+public contient 41 millions de lignes) :
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -363,12 +381,13 @@ Utilisez `copy_from` pour charger les lignes ainsi que les colonnes :
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
 
 `copy_from` n&#39;infère les colonnes que lorsque le statement n&#39;en nomme aucune
-lui-même. Une column list, une clause `INHERITS`, un type `OF` ou une partition
+lui-même. Une liste de colonnes, une clause `INHERITS`, un type `OF` ou une partition
 définissent chacun des colonnes : `copy_from` ne copie alors que :
 
 ```sql
@@ -379,18 +398,21 @@ CREATE TABLE times (
 ) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
 ```
 
+Lorsque `copy_from` infère les colonnes, il utilise le schéma source renvoyé par `DESCRIBE`.
+Les valeurs `Map`, `Tuple` et `Nested` sont ainsi chargées sous forme de colonnes de tableaux de texte,
+qui ne conservent pas leurs types ClickHouse d&#39;origine.
+
 Les deux options prennent en charge les mêmes [schémas d’URL](#url-schemes) et
 [options](#options) que `COPY` : credentials, format, compression, timeout et
 même une [structure](#structure) explicite, tout s&#39;applique. Postgres conserve
 les paramètres de stockage restants :
 
 ```sql
-CREATE TABLE users () WITH (
-    copy_from     = 's3://my-bucket/users.csv',
-    access_key    = 'AKIAIOSFODNN7EXAMPLE',
-    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    format        = 'CSVWithNames',
-    fillfactor    = 90
+CREATE TABLE logs () WITH (
+    copy_from  = 's3://chdb-lakedata-public/logs/logs-2026-08-26.csv',
+    format     = 'CSVWithNames',
+    timeout    = 60000,
+    fillfactor = 90
 );
 ```
 
@@ -405,6 +427,11 @@ entre Postgres et chDB, chdb&#95;hook présente les limitations suivantes :
 * Impossible d&#39;effectuer un `COPY` sur des relations dont les politiques de [row-level security] s&#39;appliquent
   au rôle effectuant la copie. Postgres applique ces politiques en réécrivant `COPY TO` sous forme de
   requête, ce que chdb&#95;hook ne prend pas en charge.
+* Impossible d&#39;effectuer un `COPY FROM` depuis une URL avec une clause `WHERE`.
+* chDB ne dispose pas de tableau NULL : `COPY TO` stocke donc un tableau vide (`[]`) pour un
+  NULL.
+* chDB représente les équivalents de `lseg`, `path` ou `polygon` sous forme de tableaux ;
+  les valeurs NULL de ces types sont donc elles aussi converties par `COPY TO` en tableau vide (`[]`).
 * ClickHouse ne dispose pas de tableau NULL : `COPY TO` stocke donc un tableau vide (`[]`) pour
   un `NULL`.
 * ClickHouse représente les équivalents de `lseg`, `path` ou `polygon` sous forme de
@@ -437,8 +464,6 @@ entre Postgres et chDB, chdb&#95;hook présente les limitations suivantes :
 * La sortie Protobuf ne prend pas en charge les dates antérieures au 1970-01-01. Configurez les colonnes `time`
   comme des `String` dans une [structure](#structure) explicite pour préserver
   leurs valeurs. (ClickHouse/ClickHouse#111860)
-* Les formats CSVWithNames et CSVWithNamesAndTypes ne peuvent actuellement pas importer
-  de valeurs box ou circle `NULL`. (ClickHouse/ClickHouse#115523)
 
 ## Types de données {#data-types}
 
@@ -446,65 +471,59 @@ entre Postgres et chDB, chdb&#95;hook présente les limitations suivantes :
 tandis que [CREATE TABLE](#create-table-overloading) fait correspondre les types chDB d&#39;une URL
 aux types Postgres.
 
-### Postgres vers chDB {#postgres-to-chdb}
+### De Postgres vers chDB {#postgres-to-chdb}
 
-En l&#39;absence d&#39;une option [structure](#structure) explicite, chdb&#95;hook fait
-correspondre les types Postgres à des équivalents chDB raisonnables. Lorsque ceux-ci ne
-conviennent pas à votre cas d&#39;usage, précisez la [structure](#structure) afin de remplacer les types générés par
+En l&#39;absence d&#39;option [structure](#structure) explicite, chdb&#95;hook fait correspondre
+les types Postgres à des équivalents chDB adaptés. S&#39;ils ne conviennent pas à votre cas
+d&#39;usage, spécifiez la [structure](#structure) pour remplacer les types générés par
 ceux dont vous avez besoin.
 
-| Postgres    | chDB                                     | Notes                                                                               |
-| ----------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| boolean     | Bool                                     |                                                                                     |
-| name        | String                                   |                                                                                     |
-| text        | String                                   |                                                                                     |
-| inet        | String                                   | Remplacez par `IPv4` ou `IPv6` si les données ne contiennent que l&#39;un des deux. |
-| cidr        | String                                   |                                                                                     |
-| macaddr     | String                                   |                                                                                     |
-| macaddr8    | String                                   |                                                                                     |
-| interval    | String                                   | Remplacez par une unité `Interval` telle que `IntervalDay`.                         |
-| tsvector    | String                                   |                                                                                     |
-| tsquery     | String                                   |                                                                                     |
-| jsonpath    | String                                   |                                                                                     |
-| money       | String                                   |                                                                                     |
-| enum        | String                                   |                                                                                     |
-| varchar     | String                                   |                                                                                     |
-| varbit      | String                                   |                                                                                     |
-| char        | FixedString                              |                                                                                     |
-| bit         | FixedString                              |                                                                                     |
-| bpchar      | String                                   |                                                                                     |
-| int2        | Int16                                    |                                                                                     |
-| int4        | Int32                                    |                                                                                     |
-| int8        | Int64                                    |                                                                                     |
-| oid         | UInt32                                   |                                                                                     |
-| oid8        | UInt64                                   |                                                                                     |
-| xid8        | UInt64                                   |                                                                                     |
-| json        | String                                   | Remplacez par `JSON` si les données ne contiennent que des objets.                  |
-| jsonb       | String                                   | Remplacez par `JSON` si les données ne contiennent que des objets.                  |
-| float4      | Float32                                  |                                                                                     |
-| float8      | Float64                                  |                                                                                     |
-| date        | Date32                                   |                                                                                     |
-| time        | Time64(6)                                | Remplacez par `String` pour les formats qui ne prennent pas en charge les heures.   |
-| timetz      | String                                   |                                                                                     |
-| timestamp   | DateTime64(6)                            | Déclaré avec la time zone `UTC`, converti depuis la session time zone.              |
-| timestamptz | DateTime64(6)                            | Déclaré avec la time zone `UTC`.                                                    |
-| numeric     | Decimal                                  |                                                                                     |
-| uuid        | UUID                                     |                                                                                     |
-| point       | `Point`                                  | Les deux mêmes coordonnées que dans Postgres.                                       |
-| lseg        | `LineString`                             | Une line composée d&#39;exactement deux points.                                     |
-| path        | `LineString`                             | Un path fermé répète son premier point.                                             |
-| polygon     | `Ring`                                   | Un ring se ferme implicitement, comme un polygon.                                   |
-| box         | `Tuple(high Point, low Point)`           | Les deux coins, triés comme le fait Postgres.                                       |
-| circle      | `Tuple(center Point, radius Float64)`    |                                                                                     |
-| line        | `Tuple(a Float64, b Float64, c Float64)` | L&#39;équation `Ax + By + C = 0`.                                                   |
+| PostgreSQL       | chDB                                   | Remarques                                                                                 |
+| ---------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| boolean          | Bool                                   |                                                                                           |
+| smallint         | Int16                                  |                                                                                           |
+| integer          | Int32                                  |                                                                                           |
+| bigint           | Int64                                  |                                                                                           |
+| oid              | UInt32                                 |                                                                                           |
+| xid8             | UInt64                                 |                                                                                           |
+| oid8             | UInt64                                 |                                                                                           |
+| real             | Float32                                |                                                                                           |
+| double precision | Float64                                |                                                                                           |
+| numeric          | Decimal256(38)                         | Également lorsque la précision dépasse 76 chiffres.                                       |
+| numeric(12,6)    | Decimal(12,6)                          | La précision et la scale sont conservées.                                                 |
+| text             | String                                 |                                                                                           |
+| bytea            | String                                 |                                                                                           |
+| date             | Date32                                 |                                                                                           |
+| time             | Time64(6)                              | Remplacez par `String` pour les formats qui ne prennent pas en charge les heures.         |
+| timestamp        | DateTime64(6, &#39;UTC&#39;)           | Converti à partir du fuseau horaire de la session.                                        |
+| timestamptz      | DateTime64(6, &#39;UTC&#39;)           |                                                                                           |
+| interval         | String                                 | Remplacez par une unité `Interval` telle que `IntervalDay`.                               |
+| uuid             | UUID                                   |                                                                                           |
+| json             | String                                 | Remplacez par `JSON` si les données ne contiennent que des objets.                        |
+| jsonb            | String                                 | Remplacez par `JSON` si les données ne contiennent que des objets.                        |
+| inet             | String                                 | Remplacez par `IPv4` ou `IPv6` si les données ne contiennent que l&#39;un ou l&#39;autre. |
+| point            | Point                                  | Les deux mêmes coordonnées que dans Postgres.                                             |
+| lseg             | LineString                             | Une ligne composée d&#39;exactement deux points.                                          |
+| path             | LineString                             | Un chemin fermé répète son premier point.                                                 |
+| polygon          | Ring                                   | Un anneau se ferme implicitement, comme un polygone.                                      |
+| box              | Tuple(high Point, low Point)           | Les deux coins, triés selon l&#39;ordre de Postgres.                                      |
+| circle           | Tuple(center Point, radius Float64)    |                                                                                           |
+| line             | Tuple(a Float64, b Float64, c Float64) | L&#39;équation `Ax + By + C = 0`.                                                         |
 
-Les types Array correspondent à des `Array` du type d&#39;élément associé. ClickHouse contraint
-la nullabilité par column, tandis que Postgres la contraint par array : les elements sont
-donc toujours `Nullable`.
+Les types absents de ce tableau, tels que `name`, `varchar`, `char`, `bit`,
+`timetz`, `money` et les enums, correspondent à `String`.
 
-Aucun type Postgres ne correspond à `Map` ou `Tuple`, mais la [structure](#structure) peut
-en désigner un. Un `Map` peut être converti en array de paires clé-valeur, et un `Tuple`
-en array. Utilisez `text[]` pour une prise en charge hétérogène.
+Les types tableau correspondent à des `Array` du type d&#39;élément correspondant. ClickHouse définit
+la nullabilité par colonne, tandis que Postgres la définit par tableau ; les éléments sont donc
+toujours `Nullable`.
+
+Aucun type Postgres ne correspond directement à `Map`, `Tuple` ou `Nested`, mais une
+[structure](#structure) ou un fichier source peut en spécifier un. Un `Tuple` peut être lu
+dans `text[]`, avec un élément par champ du tuple, ou dans un [type
+composite] correspondant afin de conserver les types des champs. Un `Map` ou un `Nested` peut être lu dans
+`text[][]`, avec un tableau interne par paire clé-valeur ou par tuple imbriqué, ou dans
+un tableau d&#39;un type composite correspondant. Consultez [Correspondances de types
+manuelles](#manual-type-mappings) pour des exemples.
 
 ### Conversion des timestamps {#timestamp-conversion}
 
@@ -540,82 +559,145 @@ Exemple de l&#39;effet du paramètre `timezone` sur le timestamp
 | `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
 | `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
 
-### chDB vers Postgres {#chdb-to-postgres}
+### De chDB vers Postgres {#chdb-to-postgres}
 
-chdb&#95;hook fait correspondre les types ClickHouse renvoyés par [`DESCRIBE`] aux types
-Postgres suivants :
+Pour les tables existantes, les valeurs sont converties dans les types de colonne déclarés.
+Les autres types scalaires utilisent les conversions explicites de PostgreSQL lorsqu&#39;elles existent, et
+les éléments de tableau sont convertis dans le type d&#39;élément déclaré. Les conversions
+non prises en charge et les valeurs hors plage déclenchent des erreurs.
 
-{/* TYPE-TABLE-BEGIN généré par `make type-table` */}
+Associez les types chDB `Interval` à `smallint`, `integer` ou `bigint` pour lire et
+écrire le nombre de leurs unités. Par exemple, une valeur `IntervalDay` de `3` correspond
+à l&#39;entier `3`. Associer `IntervalNanosecond` à `bigint` conserve les
+nanosecondes, tandis que l&#39;associer à `interval` tronque la valeur à la microseconde.
 
-| chDB                | Postgres                    | Notes                                                           |
-| ------------------- | --------------------------- | --------------------------------------------------------------- |
-| Array(T)            | T[]                         | Un type tableau PG par niveau de profondeur                     |
-| BFloat16            | real                        | L&#39;écriture supprime les bits de poids faible de la mantisse |
-| Bool                | boolean                     |                                                                 |
-| Date                | date                        |                                                                 |
-| Date32              | date                        |                                                                 |
-| DateTime            | timestamp with time zone    |                                                                 |
-| DateTime64(P)       | timestamp(P) with time zone | Un P supérieur à 6 est plafonné à 6                             |
-| Decimal(P,S)        | numeric(P,S)                |                                                                 |
-| Decimal32(S)        | numeric(9,S)                |                                                                 |
-| Decimal64(S)        | numeric(18,S)               |                                                                 |
-| Decimal128(S)       | numeric(38,S)               |                                                                 |
-| Decimal256(S)       | numeric(76,S)               |                                                                 |
-| Enum8               | text                        |                                                                 |
-| Enum16              | text                        |                                                                 |
-| FixedString(N)      | text                        | N compte des octets côté CH, des caractères côté PG             |
-| Float32             | real                        |                                                                 |
-| Float64             | double precision            |                                                                 |
-| IPv4                | inet                        |                                                                 |
-| IPv6                | inet                        |                                                                 |
-| Int8                | smallint                    |                                                                 |
-| Int16               | smallint                    |                                                                 |
-| Int32               | integer                     |                                                                 |
-| Int64               | bigint                      |                                                                 |
-| Int128              | numeric(39,0)               |                                                                 |
-| Int256              | numeric(77,0)               |                                                                 |
-| IntervalDay         | interval                    |                                                                 |
-| IntervalHour        | interval                    |                                                                 |
-| IntervalMicrosecond | interval                    |                                                                 |
-| IntervalMillisecond | interval                    |                                                                 |
-| IntervalMinute      | interval                    |                                                                 |
-| IntervalMonth       | interval                    |                                                                 |
-| IntervalNanosecond  | interval                    | Tronqué à la microseconde                                       |
-| IntervalQuarter     | interval                    |                                                                 |
-| IntervalSecond      | interval                    |                                                                 |
-| IntervalWeek        | interval                    |                                                                 |
-| IntervalYear        | interval                    |                                                                 |
-| JSON                | jsonb                       |                                                                 |
-| LineString          | path                        |                                                                 |
-| LowCardinality(T)   | T                           |                                                                 |
-| Map(K,V)            | text[][]                    | Une ligne d&#39;éléments text par paire                         |
-| MultiLineString     | path[]                      |                                                                 |
-| MultiPolygon        | polygon[][]                 |                                                                 |
-| Nullable(T)         | T                           | Rend la colonne nullable                                        |
-| Point               | point                       |                                                                 |
-| Polygon             | polygon[]                   |                                                                 |
-| Ring                | polygon                     |                                                                 |
-| String              | text                        |                                                                 |
-| Time                | time without time zone      |                                                                 |
-| Time64(P)           | time(P) without time zone   | Un P supérieur à 6 est plafonné à 6                             |
-| Tuple(...)          | text[]                      | Les champs deviennent des éléments text                         |
-| UInt8               | smallint                    |                                                                 |
-| UInt16              | integer                     |                                                                 |
-| UInt32              | bigint                      |                                                                 |
-| UInt64              | numeric(20,0)               |                                                                 |
-| UInt128             | numeric(39,0)               |                                                                 |
-| UInt256             | numeric(78,0)               |                                                                 |
-| UUID                | uuid                        |                                                                 |
+chdb&#95;hook utilise les types Postgres par défaut ci-dessous lorsqu&#39;il crée des tables à partir des
+types ClickHouse renvoyés par [`DESCRIBE`]. Les cibles de lecture supplémentaires s&#39;appliquent aux
+colonnes déclarées explicitement et incluent des conversions qui vont au-delà des conversions explicites
+de PostgreSQL. Lorsque la cellule est vide, ces conversions restent possibles. Ces cibles concernent uniquement les lectures ;
+les écritures obéissent à des règles de conversion distinctes.
 
-{/* TYPE-TABLE-END */}
+| chDB                         | PostgreSQL par défaut       | Cibles de lecture supplémentaires               | Remarques                                                                        |
+| ---------------------------- | --------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| Array(T)                     | T[]                         |                                                 | Un type tableau PG par niveau d&#39;imbrication                                  |
+| BFloat16                     | real                        |                                                 |                                                                                  |
+| Bool                         | boolean                     |                                                 |                                                                                  |
+| Date                         | date                        |                                                 |                                                                                  |
+| Date32                       | date                        |                                                 |                                                                                  |
+| DateTime                     | timestamp with time zone    | time                                            |                                                                                  |
+| DateTime64(P)                | timestamp(P) with time zone | time                                            | Toute valeur de P supérieure à 6 est ramenée à 6                                 |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                                      |                                                                                  |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                                      |                                                                                  |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                                      |                                                                                  |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                                      |                                                                                  |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                                      |                                                                                  |
+| Enum8                        | text                        | bytea ; types compatibles en entrée             | Décode le libellé ; les enums PG ayant des libellés correspondants sont acceptés |
+| Enum16                       | text                        | bytea ; types compatibles en entrée             | Décode le libellé ; les enums PG ayant des libellés correspondants sont acceptés |
+| FixedString(N)               | text                        | bytea ; types compatibles en entrée             | Seul bytea conserve les NUL de fin                                               |
+| Float32                      | real                        |                                                 |                                                                                  |
+| Float64                      | double precision            |                                                 |                                                                                  |
+| IPv4                         | inet                        |                                                 |                                                                                  |
+| IPv6                         | inet                        |                                                 |                                                                                  |
+| Int8                         | smallint                    | boolean                                         | Zéro correspond à false ; toute valeur non nulle à true                          |
+| Int16                        | smallint                    | boolean                                         | Zéro correspond à false ; toute valeur non nulle à true                          |
+| Int32                        | integer                     |                                                 |                                                                                  |
+| Int64                        | bigint                      |                                                 |                                                                                  |
+| Int128                       | numeric(39,0)               | xid8, oid8                                      |                                                                                  |
+| Int256                       | numeric(77,0)               | xid8, oid8                                      |                                                                                  |
+| IntervalDay                  | interval                    | smallint, integer, bigint                       | Les entiers contiennent le nombre d&#39;unités                                   |
+| IntervalHour                 | interval                    | smallint, integer, bigint                       | Les entiers contiennent le nombre d&#39;unités                                   |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint                       | Les entiers contiennent le nombre d&#39;unités                                   |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint                       | Les entiers contiennent le nombre d&#39;unités                                   |
+| IntervalMinute               | interval                    | smallint, integer, bigint                       | Les entiers contiennent le nombre d&#39;unités                                   |
+| IntervalMonth                | interval                    | smallint, integer, bigint                       | Les entiers reçoivent le nombre d&#39;unités                                     |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint                       | Les entiers conservent les ns ; interval tronque à la µs                         |
+| IntervalQuarter              | interval                    | smallint, integer, bigint                       | Les entiers reçoivent le nombre d&#39;unités                                     |
+| IntervalSecond               | interval                    | smallint, integer, bigint                       | Les entiers reçoivent le nombre d&#39;unités                                     |
+| IntervalWeek                 | interval                    | smallint, integer, bigint                       | Les entiers reçoivent le nombre d&#39;unités                                     |
+| IntervalYear                 | interval                    | smallint, integer, bigint                       | Les entiers reçoivent le nombre d&#39;unités                                     |
+| JSON                         | jsonb                       | json, text, bytea ; types compatibles en entrée | jsonb normalise le document                                                      |
+| LineString                   | path                        | lseg                                            | lseg nécessite exactement deux points                                            |
+| LowCardinality(T)            | T                           |                                                 |                                                                                  |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                        | Une ligne d&#39;éléments texte par paire                                         |
+| MultiLineString              | path[]                      |                                                 |                                                                                  |
+| MultiPolygon                 | polygon[][]                 |                                                 |                                                                                  |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                        | Une ligne d&#39;éléments texte par ligne imbriquée                               |
+| Nullable(T)                  | T                           |                                                 | Rend la colonne nullable                                                         |
+| Point                        | point                       |                                                 |                                                                                  |
+| Polygon                      | polygon[]                   |                                                 |                                                                                  |
+| Ring                         | polygon                     | lseg                                            | lseg nécessite exactement deux points                                            |
+| SimpleAggregateFunction(f,T) | T                           |                                                 | Stocke les valeurs sous forme de T                                               |
+| String                       | text                        | bytea ; types compatibles en entrée             | bytea conserve les octets bruts                                                  |
+| Time                         | time without time zone      |                                                 |                                                                                  |
+| Time64(P)                    | time(P) without time zone   |                                                 | Toute valeur de P supérieure à 6 est ramenée à 6                                 |
+| Tuple(...)                   | text[]                      | composite, T[], text ; box, circle, line        | Les champs deviennent des éléments texte                                         |
+| UInt8                        | smallint                    | boolean                                         | Zéro vaut false ; toute valeur non nulle vaut true                               |
+| UInt16                       | integer                     |                                                 |                                                                                  |
+| UInt32                       | bigint                      |                                                 |                                                                                  |
+| UInt64                       | numeric(20,0)               | xid8, oid8                                      |                                                                                  |
+| UInt128                      | numeric(39,0)               | xid8, oid8                                      |                                                                                  |
+| UInt256                      | numeric(78,0)               | xid8, oid8                                      |                                                                                  |
+| UUID                         | uuid                        |                                                 |                                                                                  |
 
-Tout type chDB absent de ce tableau lève une erreur, notamment `Nested`,
-`Variant` et `Dynamic`. Utilisez une [structure](#structure) qui les associe à
+Les types compatibles en entrée peuvent lire des chaînes de caractères à l&#39;aide de leur fonction d&#39;entrée PostgreSQL.
+Les types composites doivent avoir des champs correspondants, dans le même ordre. Pour lire un tuple
+sous forme de tableau, chaque champ doit pouvoir être converti vers le type d&#39;élément du tableau, et aucun champ
+ne peut lui-même être un tableau.
+
+Lorsqu&#39;ils sont lus sous forme de tableau, `Map` utilise une ligne par paire clé-valeur et `Nested`
+une ligne par ligne imbriquée. Pour lire un tuple en tant que `box`, fournissez deux points ; pour
+`circle`, fournissez un point et un rayon ; pour `line`, fournissez trois coefficients.
+
+Tout type chDB absent de ce tableau lève une erreur, notamment `Variant`,
+`Dynamic` et `AggregateFunction`. Utilisez une [structure](#structure) qui les associe à
 `String` pour les lire sous forme de texte.
 
 Pour certains de ces types, Postgres couvre une plage plus étroite que chDB ; la copie
 lève donc une erreur sur un `Time` ou un `Time64` dépassant 24 heures, ainsi que sur un `Date32`
 situé en dehors de la plage de dates de Postgres.
+
+### Correspondances de types manuelles {#manual-type-mappings}
+
+L&#39;inférence des colonnes utilise `text` pour les enums et des tableaux de texte pour les valeurs `Tuple`, `Map`
+et `Nested`. Pour conserver les types des champs ou restreindre les valeurs d&#39;enum, créez
+des types enum et des types composites PostgreSQL, puis déclarez les colonnes avec ces types.
+Spécifiez les types chDB avec [structure](#structure), ou utilisez `structure 'auto'`
+pour les inférer à partir des données sources plutôt qu&#39;à partir de la table Postgres. Par
+exemple, utilisez ces types pour charger des statuts d&#39;événements, des coordonnées, des labels et
+des éléments imbriqués :
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE TABLE events (
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+);
+
+COPY events FROM 's3://chdb-lakedata-public/examples/events.parquet' (
+    structure $$
+        status Enum8('new' = 1, 'done' = 2),
+        point  Tuple(Int32, Int32),
+        labels Map(String, Int64),
+        items  Array(Tuple(id Int32, name String))
+    $$
+);
+```
+
+Déclarez les champs composites dans l&#39;ordre des champs de chDB, avec des types PostgreSQL
+compatibles. Pour les valeurs `Map`, déclarez un champ clé suivi d&#39;un champ valeur. Chaque
+`Tuple` devient une valeur composite ; chaque paire `Map` ou ligne `Nested` devient
+un élément d&#39;un tableau composite.
+
+Dans une `structure` explicite, chDB découpe un `Nested` en une colonne `Array` par
+champ. Utilisez `Array(Tuple(...))` pour lire les lignes imbriquées dans une seule colonne
+de type tableau composite, comme illustré ci-dessus, ou utilisez `structure 'auto'` avec un format source
+chDB qui inclut des informations de type.
 
 ### Encodage du texte {#text-encoding}
 
@@ -628,18 +710,19 @@ pour les données qui ne peuvent pas être représentées :
 ERROR:  invalid byte sequence for encoding "UTF8": 0x00
 ```
 
-Chaque encoding rejette les caractères NUL, que Postgres ne peut pas stocker dans `text`.
+Chaque encodage rejette les caractères NUL, que Postgres ne peut pas stocker dans `text`.
 
 Copiez dans `bytea` pour conserver les octets tels que chDB les a écrits. Nommez-les ainsi, car
 [CREATE TABLE](#create-table-overloading) dérive `text` pour ces types :
 
 ```sql
-CREATE TABLE logs (id bigint, payload bytea) WITH (
-    copy_from = 's3://my-bucket/logs.parquet'
+CREATE TABLE logs (req_id numeric(20,0), resource bytea) WITH (
+    copy_from = 's3://chdb-lakedata-public/logs/logs-2026-08-26.parquet'
 );
 ```
 
-`FixedString(N)` complète les valeurs plus courtes avec des octets NUL. La copie vers `text` supprime les NUL de fin, tandis que `bytea` conserve la totalité des N octets.
+`FixedString(N)` complète les valeurs plus courtes avec des octets NUL. La copie vers `text` supprime
+les NUL de fin, tandis que `bytea` conserve la totalité des N octets.
 
 ## Paramètres {#settings}
 
@@ -763,12 +846,16 @@ Copyright (c) 2026, ClickHouse
 
 [ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs : types de données dans ClickHouse"
 
+[composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "Documentation PostgreSQL : déclaration de types composites"
+
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "Documentation PostgreSQL : log_min_messages"
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia : pg_get_loaded_modules()"
 
-[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs : session settings max_memory_usage_*"
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs : paramètres de session max_memory_usage_*"
 
-[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs : session settings max_threads_*"
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs : paramètres de session max_threads_*"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs : paramètre de session max_parsing_threads"
+
+[encodage de la base de données]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs : prise en charge des jeux de caractères"

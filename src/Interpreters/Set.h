@@ -10,6 +10,7 @@
 #include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -39,8 +40,7 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 /// The defaults keep the set in memory.
 struct SetSpillSettings
 {
-    /// This is the threshold of tracked query memory for spilling. With 0, the set stays in memory
-    /// and needs no other setting.
+    /// The threshold of tracked query memory for automatic spilling. With 0, only explicit requests spill.
     size_t max_bytes_before_external_set = 0;
 
     /// Holds the runs of the external sort and the finished set.
@@ -49,6 +49,14 @@ struct SetSpillSettings
 
     /// This is the number of rows in the blocks that the external sort merges and in the moved key columns.
     size_t max_block_size = 0;
+
+    /// The Bloom filters of the blocks of the set on disk take at most this many bytes, as
+    /// `createDiskSetBuilder` describes.
+    size_t max_bytes_for_bloom_filter = 0;
+
+    /// The cache of the blocks of the set on disk takes at most this many bytes, as
+    /// `createDiskSetBuilder` describes.
+    size_t max_bytes_for_cache = 0;
     QueryStatusPtr process_list_element;
 };
 
@@ -75,14 +83,23 @@ public:
     /// Once on disk, the size limits apply to the distinct keys and to the memory of the set when the keys
     /// are merged into the file, so the set receives every chunk. In the `break` overflow mode, it then keeps
     /// the keys that come first in the order of their disk keys rather than the first ones to arrive. Disk
-    /// keys compare as unsigned integers, so this order matches the order of values only for a single key
-    /// stored as an unsigned integer, such as `UInt64`, `Date` or `DateTime`.
+    /// keys keep the order of the keys that the set packs into integers in memory, numbers and `FixedString`
+    /// values of at most 32 bytes in total, with `NULL` after the values, so these are the smallest keys.
+    /// Other keys, such as `String`, are stored as 128-bit hashes, whose order is arbitrary.
+    /// The memory of the set does not include its Bloom filters, which have a budget of their own.
     /// A set that stays in memory while it is filled is usually built before the rest of the query takes its
-    /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold
-    /// and the keys large enough to spill, the keys are written to a `DiskSet` while other lookups keep
-    /// reading the table, and the disk set then replaces the table. The keys are final by then, so no size
-    /// limit applies, and explicit elements stay, because their consumers read them without locking the set.
+    /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold,
+    /// counting the directory and the Bloom filters that the disk set will take, and the keys large enough to
+    /// spill, the keys are written to a `DiskSet` while other lookups keep reading the table, and the disk
+    /// set then replaces the table. The keys are final by then, so no size limit applies, and explicit
+    /// elements stay, because their consumers read them without locking the set.
+    /// With temporary storage configured, `spill` also accepts explicit scheduler requests in either phase,
+    /// independently of the automatic threshold.
     void setSpillSettings(SetSpillSettings spill_settings_);
+
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+    const TemporaryDataOnDiskScope * getSpillScope() const { return spill_settings.tmp_data.get(); }
 
     bool transformNullIn() const { return transform_null_in; }
 
@@ -126,6 +143,9 @@ public:
     bool empty() const;
     size_t getTotalRowCount() const;
     size_t getTotalByteCount() const;
+    /// Bytes of the stored elements (see `fillSetElements`), including string data. Valid while the set
+    /// is being filled.
+    size_t getSetElementsBytes() const;
 
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
@@ -222,12 +242,16 @@ private:
 
     /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
     /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
+    /// Scheduler spills also take it exclusively while building, including explicit-element updates.
     /// `spillAfterBuild` takes it exclusively to replace the table with the disk set.
     mutable SharedMutex rwlock;
 
     /// A cache for cast functions (if any) to avoid rebuilding cast functions
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
+
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     template <typename Method>
     void insertFromBlockImpl(
@@ -279,26 +303,48 @@ private:
     bool isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const;
 
     /// Returns whether the set in memory has to spill now: query memory exceeds the spill threshold, and the
-    /// set is large enough to spill. The set checks it after inserting a chunk and after each lookup in
-    /// memory. Call it under `rwlock`.
+    /// set is large enough to spill. The set checks it after inserting a chunk. Call it under `rwlock`.
     bool isSpillNeeded() const;
 
-    /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
-    void spill(std::string_view reason);
+    /// Returns whether the set in memory has to spill while it is used, which `execute` checks after each
+    /// lookup in memory: the set is large enough to spill, and query memory exceeds the spill threshold with
+    /// the directory and the Bloom filters of the disk set (see `estimateMemoryOfDiskSet`), which the set
+    /// takes besides the table until the disk set is complete. Call it under `rwlock`.
+    bool isSpillNeededAfterBuild() const;
 
-    /// Writes the keys of the table to a `DiskSet` while lookups keep reading the table, then replaces the
-    /// table with the disk set under the exclusive lock. Only the first caller spills, and the others return.
-    /// Call it without holding `rwlock`.
-    void spillAfterBuild() const;
+    /// Returns the memory that the directory and Bloom filters of the set on disk take for the table's exact
+    /// key count (see `estimateDiskSetMemory`).
+    size_t estimateMemoryOfDiskSet() const;
+
+    /// Spills the set while it is built: moves the keys of the table to a `DiskSetBuilder`, which takes
+    /// later insertions, and frees the table. `requested` tells whether the scheduler requested the spill
+    /// (see `getBuilderSpillThreshold`). Call it under the exclusive `rwlock`.
+    void spillWhileBuilding(std::string_view reason, bool requested = false);
+
+    /// Spills the set while it is used: writes the keys of the table to a `DiskSet` while lookups keep
+    /// reading the table, then replaces the table with the disk set under the exclusive lock. Only the first
+    /// caller spills, and the others return 0. Returns the bytes of the table that the spill frees.
+    /// `requested` is as for `spillWhileBuilding`. Call it without holding `rwlock`.
+    size_t spillAfterBuild(std::string_view reason, bool requested = false) const;
 
     /// Logs that the set switches to disk, at which `stage` ("while it is built" or "while it is used") and why.
     void logSpill(std::string_view stage, std::string_view reason) const;
 
-    size_t getDiskSetKeyBytes() const;
+    /// Returns the spill threshold of the builder of a spill. A spill that the scheduler requested must free
+    /// memory now, so its builder gets 0 and writes its runs to disk whatever the query memory. Other spills
+    /// pass the threshold of the set, under which the builder keeps its runs in memory.
+    size_t getBuilderSpillThreshold(bool requested) const;
+
+    /// Returns the memory that spilling takes while the table still exists: converting each batch of its
+    /// keys to disk keys, and the builder that takes them until it writes its first run. The builder depends
+    /// on whether the scheduler requested the spill (see `getBuilderSpillThreshold`).
+    size_t estimateMemoryToSpill(bool requested = false) const;
 
     /// Creates a `DiskSetBuilder` with the spill settings of the set and adds the keys of the table to it.
+    /// The threshold of the builder depends on `requested` (see `getBuilderSpillThreshold`).
     template <typename Method>
-    std::unique_ptr<DiskSetBuilder> createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const;
+    std::unique_ptr<DiskSetBuilder> createDiskSetBuilderWithKeys(
+        const Method & method, const SizeLimits & builder_limits, bool requested) const;
 
     void executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const;
 };
