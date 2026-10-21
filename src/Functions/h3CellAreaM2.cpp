@@ -113,9 +113,9 @@ Returns the exact area of a specific cell in square meters corresponding to the 
             "Get area of an H3 cell",
             "SELECT h3CellAreaM2(579205133326352383) AS area",
             R"(
-┌───────────────area─┐
-│ 4106166334463.9375 │
-└────────────────────┘
+┌──────────────area─┐
+│ 4106166334463.919 │
+└───────────────────┘
             )"
         }
     };

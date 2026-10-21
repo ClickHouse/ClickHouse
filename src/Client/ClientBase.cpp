@@ -217,6 +217,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int FILE_DOESNT_EXIST;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int CANNOT_APPEND_TO_FILE;
 }
 
 }
@@ -1215,6 +1216,7 @@ try
         /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
         /// format, it must not be overridden by the `default_format` setting fallback below.
         bool outfile_format_from_extension = false;
+        String non_empty_appended_file;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -1299,6 +1301,8 @@ try
                     });
 
                     auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file_fd, out_file, DBMS_DEFAULT_BUFFER_SIZE);
+                    if ((flags & O_APPEND) && out_file_write_buf->size() > 0)
+                        non_empty_appended_file = out_file;
 
                 /// Keep the primary `INTO OUTFILE` sink responsive to cancellation, just like the
                 /// `std_out` result-set path and the `AND STDOUT` mirror below. A non-regular target
@@ -1424,6 +1428,14 @@ try
             format_settings.pretty.squash_max_wait_ms = 0;
         }
 
+        if (!non_empty_appended_file.empty()
+            && !FormatFactory::instance().checkIfFormatSupportAppend(current_format, client_context, format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to file {} because the {} format doesn't support appends. "
+                "Use TRUNCATE instead of APPEND, or write into a new file",
+                non_empty_appended_file, current_format);
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -1433,6 +1445,10 @@ try
         else
             output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+
+        /// The file already starts with the prefix of the format, e.g. the header of `CSVWithNames`.
+        if (!non_empty_appended_file.empty())
+            output_format->doNotWritePrefix();
 
         output_format->setAutoFlush();
 
