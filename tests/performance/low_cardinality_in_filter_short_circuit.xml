@@ -6,6 +6,11 @@
         gets materialized into a full column and the other columns of the block get filtered row by row,
         even though nothing in the block actually passes (or everything does).
 
+        The queries aggregate `cityHash64(pad)` rather than `length(pad)`: `length` of a `String` column is read
+        from its `size` subcolumn only, so the data of `pad` would not be read nor filtered at all, and the
+        cost this optimization saves would not show up. The `count()` queries read nothing but the filter
+        column, which exposes the cost of processing the filter itself.
+
         Columns of `lc_filter_short_circuit`, and what each one exercises:
         - `s`: two values, `'a'` and `'b'`, alternating on every row. `s IN ('z')` is constant-false in every
           block, `s IN ('a', 'b')` is constant-true in every block (both are decided from the dictionary of the
@@ -46,26 +51,31 @@
     </fill_query>
 
     <!-- Constant-false in every block. -->
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('z') SETTINGS use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s_many IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE n IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('z') SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_many IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE n IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
 
     <!-- Constant-true in every block. -->
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s IN ('a', 'b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('a', 'b') SETTINGS use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s_many NOT IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s IN ('a', 'b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('a', 'b') SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_many NOT IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
 
     <!-- Mixed, mostly true: the overhead of the detection when it only sometimes pays off. -->
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s_rare IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit PREWHERE s_rare IN ('a') SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_rare IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s_rare IN ('a') SETTINGS use_query_condition_cache = 0</query>
 
     <!-- Mixed, mostly false: the same, for a filter that rejects almost every row. -->
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s_rare IN ('b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s_rare IN ('b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+
+    <!-- Only the filter column is read: the cost of the filter itself. -->
+    <query>SELECT count() FROM lc_filter_short_circuit WHERE s IN ('z') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT count() FROM lc_filter_short_circuit WHERE s IN ('a', 'b') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT count() FROM lc_filter_short_circuit WHERE s_rare IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
 
     <!-- Never constant: a control that should show no change. -->
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit WHERE s IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
-    <query>SELECT sum(length(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('a') SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit WHERE s IN ('a') SETTINGS optimize_move_to_prewhere = 0, use_query_condition_cache = 0</query>
+    <query>SELECT sum(cityHash64(pad)) FROM lc_filter_short_circuit PREWHERE s IN ('a') SETTINGS use_query_condition_cache = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS lc_filter_short_circuit</drop_query>
 </test>
