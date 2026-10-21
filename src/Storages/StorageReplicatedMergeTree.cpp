@@ -7382,6 +7382,18 @@ void StorageReplicatedMergeTree::alter(
         bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
         bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
+        auto maybe_mutation_commands
+            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+
+        /// Validate the mutation author before the local setting/comment change below is committed:
+        /// `getMutationAuthor` can throw, and throwing after that commit would leave the local change
+        /// persisted without the replicated `ALTER` and its mutation.
+        /// An empty author keeps the mutation entry format byte-for-byte identical
+        /// to the one used by servers that do not know about the `author` field.
+        String mutation_author;
+        if (!maybe_mutation_commands.empty())
+            mutation_author = getMutationAuthor(query_context);
+
         if (settings_are_changed || comment_is_changed)
         {
             StorageInMemoryMetadata metadata_copy = *current_metadata;
@@ -7434,9 +7446,6 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands
-            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
-
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
 
@@ -7454,9 +7463,7 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
-            /// An empty author keeps the mutation entry format byte-for-byte identical
-            /// to the one used by servers that do not know about the `author` field.
-            mutation_entry.author = getMutationAuthor(query_context);
+            mutation_entry.author = std::move(mutation_author);
 
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
