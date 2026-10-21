@@ -27,7 +27,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE busy (v String) ENGINE = FileLog('${b
 # Keeps both the files and the directory of `busy` changing, so the watcher always has events.
 (
     n=0
-    while true; do
+    while clickhouse_test_time_left; do
         for i in {1..8}; do
             echo "x" >> "${busy_dir}/${i}.tsv"
         done
