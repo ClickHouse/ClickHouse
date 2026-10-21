@@ -1,4 +1,4 @@
--- Tests that `hasPhrase` with an `Array(String)` phrase on a JSON path.
+-- Tests `hasPhrase`, `hasAnyTokens`, and `hasAllTokens` on JSON paths covered by a `JSONAllValues` text index.
 -- See issue https://github.com/ClickHouse/ClickHouse/issues/123427.
 
 SET enable_analyzer = 1;
@@ -50,11 +50,31 @@ CREATE TABLE tab_typed
 ENGINE = MergeTree
 ORDER BY id;
 
+CREATE TABLE tab_array_path_array
+(
+  id UInt32,
+  data JSON(key Array(String)),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE tab_array_path_split_by_string
+(
+  id UInt32,
+  data JSON(key Array(String)),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByString([' ']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
 INSERT INTO tab_split_by_string VALUES (1, '{"key": "the quick brown fox"}'), (2, '{"key": "lazy dog"}'), (3, '{"key": "brown quick"}');
 INSERT INTO tab_split_by_non_alpha SELECT * FROM tab_split_by_string;
 INSERT INTO tab_array SELECT * FROM tab_split_by_string;
 INSERT INTO tab_ngrams SELECT * FROM tab_split_by_string;
 INSERT INTO tab_typed SELECT * FROM tab_split_by_string;
+INSERT INTO tab_array_path_array VALUES (1, '{"key": ["the quick brown fox", "cat"]}'), (2, '{"key": ["lazy", "dog"]}');
+INSERT INTO tab_array_path_split_by_string SELECT * FROM tab_array_path_array;
 
 SELECT 'splitByString';
 SELECT groupArray(id) FROM (SELECT id FROM tab_split_by_string WHERE hasPhrase(data.key::String, ['quick', 'brown']) ORDER BY id);
@@ -92,8 +112,34 @@ SELECT 'typed path';
 SELECT groupArray(id) FROM (SELECT id FROM tab_typed WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_typed WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
 
+SELECT 'array-valued path, array';
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasPhrase(data.key, ['the quick brown fox'], 'array') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasPhrase(data.key, ['the quick brown fox'], 'array') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasPhrase(data.key, 'dog', 'array') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasPhrase(data.key, 'dog', 'array') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, ['dog', 'bird']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, ['dog', 'bird']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAllTokens(data.key, ['fox', 'cat']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAllTokens(data.key, ['fox', 'cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, 'dog') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_array WHERE hasAnyTokens(data.key, 'dog') ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+SELECT 'array-valued path, splitByString';
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasPhrase(data.key, 'quick brown') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasPhrase(data.key, 'quick brown') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAnyTokens(data.key, ['dog', 'bird']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAnyTokens(data.key, ['dog', 'bird']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAllTokens(data.key, ['quick', 'cat']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAllTokens(data.key, ['quick', 'cat']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAllTokens(data.key, 'quick cat') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_split_by_string WHERE hasAllTokens(data.key, 'quick cat') ORDER BY id) SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_split_by_string;
 DROP TABLE tab_split_by_non_alpha;
 DROP TABLE tab_array;
 DROP TABLE tab_ngrams;
 DROP TABLE tab_typed;
+DROP TABLE tab_array_path_array;
+DROP TABLE tab_array_path_split_by_string;

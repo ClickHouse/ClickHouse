@@ -1233,10 +1233,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
+        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
+
+        /// `JSONAllValues` stores an array value as a single serialized string, while these functions search inside its elements.
+        if (is_special_text_index_function
+            && !WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString())
+            return false;
+
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
-        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
