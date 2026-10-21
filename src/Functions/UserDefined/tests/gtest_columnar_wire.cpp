@@ -46,6 +46,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <cmath>
+
 #include <Functions/UserDefined/UserDefinedWebAssemblyColumnarCodec.h>
 #include <Functions/UserDefined/tests/columnar_wire_fixtures.gen.hpp>
 
@@ -980,7 +982,8 @@ TEST(ColumnarWire, LowCardinalityDictionaryCompactedToReferencedRows)
     ColumnPtr filtered = makeFilteredLowCardinality();
     ASSERT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(*filtered)), 3u);
 
-    ColumnPtr compacted = compactLowCardinalityDictionaries(filtered);
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    ColumnPtr compacted = compactLowCardinalityDictionaries(filtered, lowcard_type);
     auto buf = encodeCHColumn(compacted.get(), 1);
     ColDescriptor desc = readDesc(buf);
     ASSERT_EQ(desc.type, COL_LOWCARD);
@@ -988,11 +991,10 @@ TEST(ColumnarWire, LowCardinalityDictionaryCompactedToReferencedRows)
     std::memcpy(&dict_row_count, buf.data() + desc.data_offset, 4);
     EXPECT_EQ(dict_row_count, 2u);
 
-    auto decoded = readColumnarOutput(
-        {buf.data(), buf.size()}, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), 1);
+    auto decoded = readColumnarOutput({buf.data(), buf.size()}, lowcard_type, 1);
     EXPECT_EQ(decoded->getDataAt(0), "public");
 
-    ColumnPtr const_compacted = compactLowCardinalityDictionaries(ColumnConst::create(filtered, 5));
+    ColumnPtr const_compacted = compactLowCardinalityDictionaries(ColumnConst::create(filtered, 5), lowcard_type);
     const auto & const_data = assert_cast<const ColumnConst &>(*const_compacted).getDataColumn();
     EXPECT_EQ(const_compacted->size(), 5u);
     EXPECT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(const_data)), 2u);
@@ -1004,11 +1006,57 @@ TEST(ColumnarWire, VariantLowCardinalityAlternativeDictionaryCompacted)
     discriminators->insertValue(0);
     ColumnPtr variant = ColumnVariant::create(ColumnPtr(std::move(discriminators)), Columns{makeFilteredLowCardinality()});
 
-    ColumnPtr compacted = compactLowCardinalityDictionaries(variant);
+    DataTypePtr variant_type = std::make_shared<DataTypeVariant>(DataTypes{std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
+    ColumnPtr compacted = compactLowCardinalityDictionaries(variant, variant_type);
     ASSERT_NE(compacted.get(), variant.get());
     const auto & alternative = assert_cast<const ColumnVariant &>(*compacted).getVariantByLocalDiscriminator(0);
     EXPECT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(alternative)), 2u);
     EXPECT_EQ(alternative.getDataAt(0), "public");
+}
+
+/// A dictionary may legally hold both `+0.0` and `-0.0`. Compaction must keep the referenced bytes:
+/// inserting the values again would merge `-0.0` into the default `+0.0`.
+TEST(ColumnarWire, LowCardinalityCompactionKeepsNegativeZero)
+{
+    auto float_type = std::make_shared<DataTypeFloat64>();
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(float_type);
+    auto keys = ColumnFloat64::create();
+    keys->insertValue(0.0); /// default
+    keys->insertValue(1.5);
+    keys->insertValue(-0.0);
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*float_type, std::move(keys));
+    auto index_column = ColumnUInt8::create();
+    index_column->insertValue(2);
+    MutableColumnPtr indexes = std::move(index_column);
+    ColumnPtr lc_col = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+    ASSERT_TRUE(std::signbit(lc_col->getFloat64(0)));
+
+    ColumnPtr compacted = compactLowCardinalityDictionaries(lc_col, lowcard_type);
+    EXPECT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(*compacted)), 2u);
+    EXPECT_TRUE(std::signbit(compacted->getFloat64(0)));
+
+    auto buf = encodeCHColumn(compacted.get(), 1);
+    auto decoded = readColumnarOutput({buf.data(), buf.size()}, lowcard_type, 1);
+    EXPECT_TRUE(std::signbit(decoded->getFloat64(0)));
+}
+
+/// `LowCardinality(Nullable)` keeps NULL and the default in slots 0 and 1 even when unreferenced.
+TEST(ColumnarWire, NullableLowCardinalityCompactionKeepsSpecialSlots)
+{
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(makeNullable(std::make_shared<DataTypeString>()));
+    auto lc_col = lowcard_type->createColumn();
+    lc_col->insert(Field("public"));
+    lc_col->insert(Field("secret"));
+    lc_col->insert(Field());
+    IColumn::Filter keep_first{1, 0, 0};
+    ColumnPtr filtered = lc_col->filter(keep_first, 1);
+    ASSERT_EQ(dictionaryRows(assert_cast<const ColumnLowCardinality &>(*filtered)), 4u);
+
+    ColumnPtr compacted = compactLowCardinalityDictionaries(filtered, lowcard_type);
+    const auto & compacted_lc = assert_cast<const ColumnLowCardinality &>(*compacted);
+    EXPECT_EQ(dictionaryRows(compacted_lc), 3u);
+    EXPECT_EQ(compacted_lc.getIndexAt(0), 2u);
+    EXPECT_EQ(compacted->getDataAt(0), "public");
 }
 
 // ── Bounds check: wrapped offset must not bypass the check via integer overflow ──

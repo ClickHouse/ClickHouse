@@ -34,11 +34,12 @@ using PaddingGaps = VectorWithMemoryTracking<std::pair<uint64_t, uint64_t>>;
 /// Throw INCORRECT_DATA unless `type` can be encoded. Called at CREATE FUNCTION time.
 void validateColumnarWireSupportedType(const DataTypePtr & type, bool is_nested = false);
 
-/// Rebuild every COL_LOWCARD dictionary in `col` (top level, inside `Const`, or a `Variant`
-/// alternative) to only the entries its indexes reference. `filter` and `cut` keep the whole
-/// dictionary, so without this the guest could read values from rows it was not given, such as
-/// rows a row policy removed. Nested LowCardinality is materialized row by row and needs no help.
-ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col);
+/// Rebuild every COL_LOWCARD dictionary in `col` of type `type` (top level, inside `Const`, or a
+/// `Variant` alternative) to only the entries its indexes reference, copied byte for byte. `filter`
+/// and `cut` keep the whole dictionary, so without this the guest could read values from rows it
+/// was not given, such as rows a row policy removed. Nested LowCardinality is materialized row by
+/// row and needs no help. Returns `col` itself when every entry is referenced.
+ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col, const DataTypePtr & type);
 
 /// Data block of a COL_COMPLEX column's `n` rows, written at `dst`.
 void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst);

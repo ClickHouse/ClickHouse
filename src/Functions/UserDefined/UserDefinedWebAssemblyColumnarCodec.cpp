@@ -146,26 +146,90 @@ void validateColumnarWireSupportedType(const DataTypePtr & type, bool is_nested)
         "COLUMNAR_V1: type is not supported: {}", type->getName());
 }
 
-ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col)
+namespace
+{
+
+/// Remap `src` indexes in place to positions in a dictionary holding only the referenced rows, in
+/// order of first reference, and return the old position of each new row. The special slots
+/// (NULL and the default) keep their positions even when unreferenced.
+template <typename T>
+PaddedPODArray<UInt64> remapLowCardinalityIndexes(PaddedPODArray<T> & indexes, size_t dictionary_size, size_t num_special)
+{
+    PaddedPODArray<UInt64> old_positions;
+    PaddedPODArray<T> new_position(dictionary_size, 0);
+    for (size_t i = 0; i < num_special; ++i)
+    {
+        old_positions.push_back(i);
+        new_position[i] = static_cast<T>(i);
+    }
+    for (auto & index : indexes)
+    {
+        if (index >= num_special && new_position[index] == 0)
+        {
+            new_position[index] = static_cast<T>(old_positions.size());
+            old_positions.push_back(index);
+        }
+        index = new_position[index];
+    }
+    return old_positions;
+}
+
+/// Unlike `ColumnLowCardinality::cutAndCompact`, which inserts the referenced values again and so
+/// merges values that compare equal but differ in bytes (`-0.0` becomes `+0.0`), copy them byte for
+/// byte. It also skips hashing them.
+ColumnPtr compactLowCardinality(const ColumnLowCardinality & lc_col, const ColumnPtr & col, const DataTypeLowCardinality & lc_type)
+{
+    const IColumnUnique & dictionary = lc_col.getDictionary();
+    const size_t num_special = dictionary.nestedColumnIsNullable() ? 2 : 1;
+    MutableColumnPtr indexes = IColumn::mutate(lc_col.getIndexesPtr());
+    PaddedPODArray<UInt64> old_positions;
+    auto remap = [&]<typename T>(ColumnVector<T> & column)
+    {
+        old_positions = remapLowCardinalityIndexes(column.getData(), dictionary.size(), num_special);
+    };
+    if (auto * u8 = typeid_cast<ColumnUInt8 *>(indexes.get()))
+        remap(*u8);
+    else if (auto * u16 = typeid_cast<ColumnUInt16 *>(indexes.get()))
+        remap(*u16);
+    else if (auto * u32 = typeid_cast<ColumnUInt32 *>(indexes.get()))
+        remap(*u32);
+    else
+        remap(assert_cast<ColumnUInt64 &>(*indexes));
+
+    if (old_positions.size() == dictionary.size())
+        return col;
+
+    auto positions = ColumnUInt64::create();
+    positions->getData().swap(old_positions);
+    MutableColumnPtr keys = IColumn::mutate(dictionary.getNestedNotNullableColumn()->index(*positions, 0));
+    MutableColumnPtr new_dictionary = DataTypeLowCardinality::createColumnUnique(*lc_type.getDictionaryType(), std::move(keys));
+    return ColumnLowCardinality::create(std::move(new_dictionary), std::move(indexes), /*is_shared=*/false);
+}
+
+}
+
+ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col, const DataTypePtr & type)
 {
     if (const auto * const_col = typeid_cast<const ColumnConst *>(col.get()))
     {
-        ColumnPtr data = compactLowCardinalityDictionaries(const_col->getDataColumnPtr());
+        ColumnPtr data = compactLowCardinalityDictionaries(const_col->getDataColumnPtr(), type);
         if (data == const_col->getDataColumnPtr())
             return col;
         return ColumnConst::create(std::move(data), const_col->size());
     }
     if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col.get()))
-        return lc_col->cutAndCompact(0, lc_col->size());
+        return compactLowCardinality(*lc_col, col, assert_cast<const DataTypeLowCardinality &>(*type));
     if (const auto * var_col = typeid_cast<const ColumnVariant *>(col.get()))
     {
+        const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
         Columns variants;
         variants.reserve(var_col->getNumVariants());
         bool changed = false;
         for (size_t local = 0; local < var_col->getNumVariants(); ++local)
         {
             const ColumnPtr & variant = var_col->getVariantPtrByLocalDiscriminator(local);
-            variants.push_back(compactLowCardinalityDictionaries(variant));
+            const auto & variant_type = variant_types[var_col->globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local))];
+            variants.push_back(compactLowCardinalityDictionaries(variant, variant_type));
             changed |= variants.back() != variant;
         }
         if (!changed)

@@ -603,7 +603,7 @@ private:
                 : declared_arg_type;
             casted_columns[ci] = compactLowCardinalityDictionaries(cols[ci].type->equals(*target_type)
                 ? cols[ci].column
-                : castColumn(cols[ci], target_type));
+                : castColumn(cols[ci], target_type), target_type);
             const IColumn * col = casted_columns[ci].get();
             bool is_const = false;
 
