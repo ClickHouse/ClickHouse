@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "daemon",
-    hdrs = glob(["*.h"]),
     srcs = [
         "BaseDaemon.cpp",
         "GraphiteWriter.cpp",
@@ -13,6 +12,7 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Loggers:headers",
         "//bazel:clickhouse_config_headers",
     ],
     local_defines = select({
@@ -80,16 +80,10 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
-        "@clickhouse_llvm_project//:LLVMDebugInfoDWARF",
-        "@clickhouse_llvm_project//:LLVMExecutionEngine",
-        "@clickhouse_llvm_project//:LLVMPasses",
+        ":headers",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@clickhouse_llvm_project//:LLVMXRay",
         "@llvm-project//third-party/siphash",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
         "//src/Loggers:loggers",
-        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
         "//src/Common/Config:clickhouse_common_config",
         "//src/Common",
         "//base:common",
