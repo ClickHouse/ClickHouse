@@ -324,11 +324,11 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-<div id="h3polygontocells">
-  ## h3PolygonToCells
-</div>
+## h3PolygonToCells {#h3polygontocells}
 
-Возвращает шестиугольники (с указанным разрешением), содержащиеся в заданной геометрии: ring или (multi-)polygon.
+Возвращает шестиугольники (с указанным разрешением), содержащиеся в заданной геометрии: ring или (multi-)polygon. Шестиугольник считается содержащимся, если геометрия содержит его центр; это соответствует режиму включения `0` функции [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+
+Каждая вершина геометрии должна находиться на сфере: долгота в диапазоне `[-180, 180]` и широта в диапазоне `[-90, 90]` градусов. Порядок возвращаемых ячеек не гарантируется, поэтому сортируйте массив, если порядок важен.
 
 **Синтаксис**
 
@@ -338,7 +338,7 @@ h3PolygonToCells(geometry, resolution)
 
 **Аргументы**
 
-* `geometry` может быть одним из следующих [гео-типов данных](/ru/reference/data-types/geo) или соответствующих примитивных типов:
+* `geometry` может быть одним из следующих [гео-типов данных](/ru/reference/data-types/geo) или соответствующих базовых примитивных типов:
   * [Ring](/ru/reference/data-types/geo#ring)
   * [Polygon](/ru/reference/data-types/geo#polygon)
   * [MultiPolygon](/ru/reference/data-types/geo#multipolygon)
@@ -356,23 +356,23 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
 
-<div id="h3polygontocellswithcontainment">
-  ## h3PolygonToCellsWithContainment
-</div>
+## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
 
-Возвращает шестиугольники (с указанным разрешением), покрывающие переданную геометрию — Ring или (multi-)polygon, — с использованием экспериментальных режимов покрытия H3.
+Возвращает шестиугольники (с указанным разрешением), покрывающие переданную геометрию — Ring или (multi-)polygon, — с использованием экспериментальных режимов включения H3.
 
-Эта функция сопоставляет `flags` с режимами покрытия H3:
+Каждая вершина геометрии должна находиться на сфере: долгота в диапазоне `[-180, 180]`, а широта — в диапазоне `[-90, 90]` градусов. Порядок возвращаемых ячеек не гарантируется, поэтому сортируйте массив, если порядок важен.
+
+Эта функция сопоставляет `flags` с режимами включения H3:
 
 * `0` — `CONTAINMENT_CENTER`
 * `1` — `CONTAINMENT_FULL`
@@ -392,11 +392,11 @@ h3PolygonToCellsWithContainment(geometry, resolution, flags)
   * [Polygon](/ru/reference/data-types/geo#polygon)
   * [MultiPolygon](/ru/reference/data-types/geo#multipolygon)
 * `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
-* `flags` — режим покрытия. Диапазон: `[0, 3]`. Используйте целочисленные литералы, такие как `0`, `1`, `2` и `3`, или значения [UInt32](/ru/reference/data-types/int-uint) (например, `toUInt32(2)`). Значения передаются в H3 API как `UInt32`. Другие встроенные целочисленные типы преобразуются с помощью точного приведения типов.
+* `flags` — режим включения. Диапазон: `[0, 3]`. Используйте целочисленные литералы, такие как `0`, `1`, `2` и `3`, или значения [UInt32](/ru/reference/data-types/int-uint) (например, `toUInt32(2)`). Значения передаются в H3 API как `UInt32`. Другие встроенные целочисленные типы преобразуются с помощью точного приведения типов.
 
 **Возвращаемые значения**
 
-* Массив индексов H3 в соответствии с выбранным режимом покрытия. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+* Массив индексов H3 в соответствии с выбранным режимом включения. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
 
 **Пример**
 
@@ -897,9 +897,7 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
 └────────────────────┘
 ```
 
-<div id="h3exactedgelengthm">
-  ## h3ExactEdgeLengthM
-</div>
+## h3ExactEdgeLengthM {#h3exactedgelengthm}
 
 Возвращает точную длину однонаправленного ребра, представленного входным индексом H3, в метрах.
 
@@ -929,9 +927,7 @@ SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 └──────────────────┘
 ```
 
-<div id="h3exactedgelengthkm">
-  ## h3ExactEdgeLengthKm
-</div>
+## h3ExactEdgeLengthKm {#h3exactedgelengthkm}
 
 Возвращает точную длину однонаправленного ребра, представленного переданным индексом H3, в километрах.
 
@@ -961,9 +957,7 @@ SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 └───────────────────┘
 ```
 
-<div id="h3exactedgelengthrads">
-  ## h3ExactEdgeLengthRads
-</div>
+## h3ExactEdgeLengthRads {#h3exactedgelengthrads}
 
 Возвращает точную длину однонаправленного ребра, представленного входным индексом H3, в радианах.
 
@@ -1025,9 +1019,7 @@ SELECT h3NumHexagons(3) AS numHexagons;
 └─────────────┘
 ```
 
-<div id="h3pointdistm">
-  ## h3PointDistM
-</div>
+## h3PointDistM {#h3pointdistm}
 
 Возвращает расстояние в метрах по &quot;дуге большого круга&quot; или по формуле &quot;гаверсинуса&quot; между парами точек GeoCoord (широта/долгота).
 
@@ -1058,9 +1050,7 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 └────────────────────┘
 ```
 
-<div id="h3pointdistkm">
-  ## h3PointDistKm
-</div>
+## h3PointDistKm {#h3pointdistkm}
 
 Возвращает расстояние в километрах между парами точек GeoCoord (широта/долгота), вычисленное по &quot;дуге большого круга&quot; или по формуле &quot;гаверсинуса&quot;.
 
@@ -1217,9 +1207,7 @@ h3Line(start,end)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3distance">
-  ## h3Distance
-</div>
+## h3Distance {#h3distance}
 
 Возвращает расстояние между двумя указанными индексами в ячейках сетки.
 
@@ -1287,9 +1275,7 @@ h3HexRing(index, k)
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3getunidirectionaledge">
-  ## h3GetUnidirectionalEdge
-</div>
+## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
 
 Возвращает индекс H3 однонаправленного ребра для двух соседних индексов ячеек H3 (исходной и целевой). Генерирует исключение, если хотя бы один из входных индексов не является допустимой ячейкой H3 (это поведение регулируется настройкой `functions_h3_default_if_invalid`). Для допустимых ячеек H3, не являющихся соседними (в том числе при указании одной и той же ячейки дважды), возвращает `0`.
 
@@ -1320,9 +1306,7 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 └─────────────────────┘
 ```
 
-<div id="h3unidirectionaledgeisvalid">
-  ## h3UnidirectionalEdgeIsValid
-</div>
+## h3UnidirectionalEdgeIsValid {#h3unidirectionaledgeisvalid}
 
 Проверяет, является ли указанный H3Index корректным индексом однонаправленного ребра. Возвращает 1, если это однонаправленное ребро, и 0 в противном случае.
 
@@ -1353,9 +1337,7 @@ h3UnidirectionalEdgeIsValid(index)
 └────────────┘
 ```
 
-<div id="h3getoriginindexfromunidirectionaledge">
-  ## h3GetOriginIndexFromUnidirectionalEdge
-</div>
+## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
 
 Возвращает индекс исходного шестиугольника по H3Index однонаправленного ребра. Генерирует исключение, если входное значение не является допустимым направленным ребром (управляется настройкой `functions_h3_default_if_invalid`); возвращает `0`, только если эта настройка включена.
 
@@ -1386,9 +1368,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-<div id="h3getdestinationindexfromunidirectionaledge">
-  ## h3GetDestinationIndexFromUnidirectionalEdge
-</div>
+## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
 
 Возвращает индекс шестиугольника пункта назначения по однонаправленному ребру H3Index. Генерирует исключение, если входное значение не является допустимым ориентированным ребром (поведение определяется настройкой `functions_h3_default_if_invalid`); возвращает `0`, только если эта настройка включена.
 
@@ -1419,9 +1399,7 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-<div id="h3getindexesfromunidirectionaledge">
-  ## h3GetIndexesFromUnidirectionalEdge
-</div>
+## h3GetIndexesFromUnidirectionalEdge {#h3getindexesfromunidirectionaledge}
 
 Возвращает индексы исходного шестиугольника и шестиугольника в пункте назначения для указанного H3Index однонаправленного ребра.
 
@@ -1456,9 +1434,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 └─────────────────────────────────────────┘
 ```
 
-<div id="h3getunidirectionaledgesfromhexagon">
-  ## h3GetUnidirectionalEdgesFromHexagon
-</div>
+## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
 
 Возвращает все однонаправленные рёбра для указанного H3Index. Генерирует исключение, если входное значение не является допустимой ячейкой H3 (это регулируется настройкой `functions_h3_default_if_invalid`); возвращает пустой массив только при включённой настройке.
 
@@ -1489,9 +1465,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="h3getunidirectionaledgeboundary">
-  ## h3GetUnidirectionalEdgeBoundary
-</div>
+## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
 
 Возвращает координаты, задающие однонаправленное ребро. Генерирует исключение, если входное значение не является допустимым направленным ребром (это регулируется настройкой `functions_h3_default_if_invalid`); возвращает пустой массив только при включённой настройке.
 

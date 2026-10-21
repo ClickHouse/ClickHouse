@@ -2,6 +2,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -10,8 +11,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
@@ -125,6 +126,15 @@ static std::string getOrCreateCustomDisk(
     return disk_name;
 }
 
+template <typename Matcher>
+static void visitBottomUp(ASTPtr & ast, typename Matcher::Data & data)
+{
+    checkStackSize();
+    for (auto & child : ast->children)
+        visitBottomUp<Matcher>(child, data);
+    Matcher::visit(ast, data);
+}
+
 class DiskConfigurationFlattener
 {
 public:
@@ -134,8 +144,6 @@ public:
         bool attach;
         bool for_system_database;
     };
-
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
     static void visit(ASTPtr & ast, Data & data)
     {
@@ -164,8 +172,6 @@ public:
         bool for_system_database;
     };
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
-
     static void visit(ASTPtr & ast, Data & data)
     {
         if (!isDiskFunction(ast))
@@ -180,7 +186,7 @@ public:
         auto is_marker = [](const ASTPtr & arg)
         {
             const auto * eq = arg->as<ASTFunction>();
-            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() != 2)
+            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() < 2)
                 return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
             return key && key->name() == "_server_credentials_allowed";
@@ -226,16 +232,14 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     if (!attach)
     {
         ASTPtr to_mark = disk_function_ast;
-        using MarkerInjector = InDepthNodeVisitor<ServerCredentialMarkerInjector, false>;
-        MarkerInjector::Data inject_data{context, for_system_database};
-        MarkerInjector{inject_data}.visit(to_mark);
+        ServerCredentialMarkerInjector::Data inject_data{context, for_system_database};
+        visitBottomUp<ServerCredentialMarkerInjector>(to_mark, inject_data);
     }
 
     auto ast = disk_function_ast->clone();
 
-    using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
-    FlattenDiskConfigurationVisitor::Data data{context, attach, for_system_database};
-    FlattenDiskConfigurationVisitor{data}.visit(ast);
+    DiskConfigurationFlattener::Data data{context, attach, for_system_database};
+    visitBottomUp<DiskConfigurationFlattener>(ast, data);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }

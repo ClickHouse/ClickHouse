@@ -13,27 +13,23 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_statistics">
-  ## allow_statistics
-</div>
+## allow_statistics {#allow_statistics}
 
 **Aliases**: `allow_experimental_statistics`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Las estadísticas de columnas ahora son GA"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Las estadísticas de columnas ahora son GA. Esto también se aplica al alias `allow_experimental_statistics`."}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "Se cambió el nombre de la configuración. El nombre anterior es `allow_experimental_statistic`. En ese momento, la configuración se llamaba `allow_experimental_statistics`, que ahora es un alias de este último."}]}]} />
 
 Permite definir columnas con [estadísticas](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) y [manipular las estadísticas](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
 
-<div id="allow_statistics_optimize">
-  ## allow_statistics_optimize
-</div>
+## allow_statistics_optimize {#allow_statistics_optimize}
 
 **Alias**: `allow_statistic_optimize`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Habilita esta optimización de forma predeterminada."}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "La configuración pasó a llamarse así. El nombre anterior es `allow_statistic_optimize`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Habilita esta optimización de forma predeterminada. Esto también se aplica al alias `allow_statistic_optimize`."}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "0"},{"label": "La configuración pasó a llamarse así. El nombre anterior es `allow_statistic_optimize`."}]}]} />
 
 Permite usar estadísticas para optimizar consultas
 
