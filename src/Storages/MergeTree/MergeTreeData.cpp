@@ -7168,6 +7168,49 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 }
 
+bool MergeTreeData::canUseParquetPartFormat(const StorageInMemoryMetadata & table_metadata, ProjectionDescriptionRawPtr projection) const
+{
+    /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
+    /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
+    /// The same for the `Quantized` codec, which provides subcolumns with the quantized values.
+    /// The codecs of the columns without explicit codecs are resolved against all default codecs that
+    /// may apply to the part: the `default_compression_codec` setting or any codec of the `<compression>`
+    /// section of the server config (whichever size of the part and its share in the table it is chosen for,
+    /// or inherited from the parent part of a projection), and the codecs of `RECOMPRESS` TTL rules.
+    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    const auto & columns = projection ? projection->metadata->getColumns() : table_metadata.getColumns();
+    auto & codec_factory = CompressionCodecFactory::instance();
+
+    std::vector<CompressionCodecPtr> default_codecs;
+    if (const auto & codec_setting = (*settings)[MergeTreeSetting::default_compression_codec].value; !codec_setting.empty())
+        default_codecs.push_back(codec_factory.get(codec_setting));
+    else
+        default_codecs = getContext()->getAllCompressionCodecsFromConfig();
+    for (const auto & ttl : table_metadata.getRecompressionTTLs())
+        default_codecs.push_back(codec_factory.get(ttl.recompression_codec, {}));
+
+    for (const auto & default_codec : default_codecs)
+        if (default_codec->isEncryption())
+            return false;
+
+    for (const auto & column : columns)
+    {
+        if (!column.codec)
+            continue;
+
+        if (tryExtractQuantizedCodecParams(column.codec))
+            return false;
+
+        /// Only the generic and encryption codecs matter here, and the type-specific codecs apply to the values
+        /// of the column (not e.g. to the whole `Nullable` or `Tuple`), so they are not validated against the type.
+        for (const auto & default_codec : default_codecs)
+            if (codec_factory.get(column.codec, nullptr, default_codec, /*only_generic=*/ true)->isEncryption())
+                return false;
+    }
+
+    return true;
+}
+
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
 {
@@ -7191,49 +7234,8 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     if (isParquetPartFormatEnabled(*settings)
         && !satisfies((*settings)[MergeTreeSetting::min_bytes_for_parquet_part], (*settings)[MergeTreeSetting::min_rows_for_parquet_part], (*settings)[MergeTreeSetting::min_level_for_parquet_part]))
     {
-        /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
-        /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
-        /// The same for the `Quantized` codec, which provides subcolumns with the quantized values.
-        /// The codecs of the columns without explicit codecs are resolved against all default codecs that
-        /// may apply to the part: the `default_compression_codec` setting or the `<compression>` section of
-        /// the server config, and the codecs of `RECOMPRESS` TTL rules.
         auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
-        const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
-        auto & codec_factory = CompressionCodecFactory::instance();
-
-        std::vector<CompressionCodecPtr> default_codecs;
-        if (const auto & codec_setting = (*settings)[MergeTreeSetting::default_compression_codec].value; !codec_setting.empty())
-            default_codecs.push_back(codec_factory.get(codec_setting));
-        else
-            default_codecs.push_back(getContext()->chooseCompressionCodec(bytes_uncompressed, 0.0));
-        for (const auto & ttl : table_metadata->getRecompressionTTLs())
-            default_codecs.push_back(codec_factory.get(ttl.recompression_codec, {}));
-
-        bool has_unsupported_codecs = false;
-        for (const auto & default_codec : default_codecs)
-            has_unsupported_codecs |= default_codec->isEncryption();
-
-        for (const auto & column : columns)
-        {
-            if (has_unsupported_codecs)
-                break;
-
-            if (column.codec && tryExtractQuantizedCodecParams(column.codec))
-            {
-                has_unsupported_codecs = true;
-                break;
-            }
-
-            if (!column.codec)
-                continue;
-
-            /// Only the generic and encryption codecs matter here, and the type-specific codecs apply to the values
-            /// of the column (not e.g. to the whole `Nullable` or `Tuple`), so they are not validated against the type.
-            for (const auto & default_codec : default_codecs)
-                has_unsupported_codecs |= codec_factory.get(column.codec, nullptr, default_codec, /*only_generic=*/ true)->isEncryption();
-        }
-
-        if (!has_unsupported_codecs)
+        if (canUseParquetPartFormat(*table_metadata, projection))
             part_type = PartType::Parquet;
     }
 

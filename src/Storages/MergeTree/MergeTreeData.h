@@ -375,6 +375,9 @@ public:
     MergeTreeDataPartFormat
     choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
 
+    /// Whether the codecs of the table (or of the projection) allow to write its parts in `Parquet` format.
+    bool canUseParquetPartFormat(const StorageInMemoryMetadata & table_metadata, ProjectionDescriptionRawPtr projection) const;
+
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
     /// return pair <exists, pointer to part>. Sometimes we may fail to load existing part (network issues, oom and so on),
