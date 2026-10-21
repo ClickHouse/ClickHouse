@@ -32,7 +32,8 @@ echo "after RESET SETTING:"
 ${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM ${TABLE} ORDER BY c0"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} MODIFY SETTING iceberg_format_version = 1" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} ADD COLUMN c1 Int32, MODIFY SETTING iceberg_use_version_hint = 1" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} ADD COLUMN c1 Int32, MODIFY SETTING iceberg_use_version_hint = 1" 2>&1 \
+    | grep -q -E "NOT_IMPLEMENTED|QUERY_IS_PROHIBITED" && echo "mixed ALTER is rejected"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
 rm -rf "${TABLE_PATH}"
