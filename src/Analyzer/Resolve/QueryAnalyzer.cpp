@@ -177,8 +177,7 @@ void checkMaterializedCTESubqueryIsNotCorrelated(
             scope_node->formatASTForErrorMessage());
 }
 
-/// Whether the query of `scope` or an enclosing query disabled `parallel_replicas_for_cluster_engines` for itself
-/// (`resolveQuery` does that when the cluster alternatives are not applicable).
+/// Whether `resolveQuery` disabled `parallel_replicas_for_cluster_engines` for the query of `scope` or an enclosing query.
 bool isClusterVariantDisabledForQuery(const IdentifierResolveScope & scope)
 {
     const IdentifierResolveScope * scope_to_check = scope.getNearestQueryScope();
@@ -5088,7 +5087,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
     struct JoinTreeNodeToProcess
     {
         QueryTreeNodePtr * node_ptr;
-        /// The node is the whole join tree, apart from `ARRAY JOIN`s.
         bool is_single_table_expression;
     };
 

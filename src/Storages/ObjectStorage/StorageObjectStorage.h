@@ -83,7 +83,6 @@ public:
     /// Requires `updateExternalDynamicMetadataIfExists` to have run for `context` before `storage_snapshot` was taken.
     StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override;
 
-    /// Set for a table of an engine that has a `-Cluster` table function.
     void setHasClusterVariant() { has_cluster_variant = true; }
 
     SinkToStoragePtr write(

@@ -282,7 +282,6 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    /// Make the table of a single-table `FROM` read with parallel replicas, if its storage supports that for the query.
     void replaceTableStorageForParallelReplicasReadIfNeeded(const TableNodePtr & table_node, IdentifierResolveScope & scope);
 
     void restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node);
@@ -325,7 +324,6 @@ private:
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
-    /// Storages of table nodes replaced by `replaceTableStorageForParallelReplicasReadIfNeeded`.
     struct ReplacedTableStorage
     {
         StoragePtr replacement;
