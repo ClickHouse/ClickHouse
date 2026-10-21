@@ -16,8 +16,10 @@ BLOCKS="&max_block_size=65536&max_threads=4&group_by_two_level_threshold=1000000
 QUERY="SELECT DISTINCT c FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k)"
 
 # `threshold` 10 GiB never spills; 1 byte spills at the first real chunk, after the previews.
+# The parallel final `DISTINCT` (`allow_parallel_distinct`) scatters the stream by hash, across which
+# previews stay dormant, so it is disabled to exercise a single `ExternalDistinctTransform`.
 for threshold in 10737418240 1; do
-    EXTERNAL="&max_bytes_before_external_distinct=${threshold}&max_bytes_ratio_before_external_distinct=0"
+    EXTERNAL="&max_bytes_before_external_distinct=${threshold}&max_bytes_ratio_before_external_distinct=0&allow_parallel_distinct=0"
     echo "--- max_bytes_before_external_distinct = ${threshold}"
 
     # The step is only meaningful if the final `DISTINCT` is the external one.
