@@ -99,9 +99,10 @@ def _contrib_impl(module_ctx):
             type = "tar.gz",
             build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
             files = _openssl_configured_files(module_ctx) if repository["name"] == "clickhouse_openssl" else {},
-            # The upstream ../config.h lookup relies on an empty CMake auxdir.
-            # Use the declared configuration include root in Bazel instead.
-            patches = [Label("//bazel/patches:librdkafka-config-include.patch")] if repository["name"] == "clickhouse_librdkafka" else [],
+            patches = {
+                "clickhouse_librdkafka": [Label("//bazel/patches:librdkafka-config-include.patch")],
+                "clickhouse_mongo_cxx_driver": [Label("//bazel/patches:mongo-bsoncxx-enum-compatibility.patch")],
+            }.get(repository["name"], []),
             patch_args = ["-p1"],
             patch_cmds = commands,
         )
