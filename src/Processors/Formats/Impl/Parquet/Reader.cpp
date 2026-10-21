@@ -977,7 +977,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
     /// geo type resolution entirely (it will not re-parse).
     SchemaConverter schemer(
-        file_metadata(),
+        *file_footer,
         options,
         &extended_sample_block,
         options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
