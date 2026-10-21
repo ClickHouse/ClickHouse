@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-ClickPipes permite la integración con un registro de esquemas para decodificar valores de registros codificados con Avro y Protobuf y [claves estructuradas de Kafka](/es/integrations/clickpipes/kafka/reference#structured-message-keys).
+ClickPipes permite la integración con un registro de esquemas para decodificar valores de registros codificados con Avro y Protobuf. Los Kafka ClickPipes también admiten [claves estructuradas de Kafka](/es/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 Para valores de registros en Protobuf, también puedes [subir un esquema directamente](/es/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) sin configurar un registro de esquemas.
 
-## Registros compatibles con Kafka ClickPipes {#supported-schema-registries}
+## Registros compatibles con ClickPipes de streaming {#supported-schema-registries}
 
 Kafka ClickPipes admite dos familias de registros de esquemas:
 
 * [Registros compatibles con Confluent](#confluent-compatible-registries): cualquier registro compatible con la API de Confluent Schema Registry, como el propio Confluent Schema Registry y Redpanda Schema Registry. Admite Avro y Protobuf.
 * [AWS Glue Schema Registry](#aws-glue-schema-registry): para datos Avro serializados con AWS Glue SerDe, normalmente procedentes de Amazon MSK.
+
+Kinesis ClickPipes admite AWS Glue Schema Registry para datos Avro y Protobuf.
 
 ClickPipes aún no admite Azure Schema Registry. Si necesita compatibilidad con este servicio, [póngase en contacto con nuestro equipo](https://clickhouse.com/company/contact?loc=clickpipes).
 
@@ -63,15 +65,15 @@ Cuando se configuran correspondencias para campos como `_key.id`, ClickPipes res
 
 Si sus productores serializan datos Avro con AWS Glue SerDe (por ejemplo, `AWSKafkaAvroSerializer` en un topic de Amazon MSK), ClickPipes puede resolver esos esquemas directamente desde AWS Glue Schema Registry. Glue utiliza un formato wire y una API distintos de los registros compatibles con Confluent, por lo que se configura por separado.
 
-Actualmente, la configuración de AWS Glue Schema Registry solo está disponible a través de la consola de ClickHouse Cloud. No es compatible con la API de ClickPipes ni con el Terraform provider.
+La configuración de AWS Glue Schema Registry está disponible a través de la consola de ClickHouse Cloud, la API de ClickPipes y el Terraform provider.
 
 <Note>
-  **Solo Avro.** Los registros de AWS Glue solo son compatibles con el formato Avro. Glue SerDe también puede encapsular JSON y Protobuf, pero ClickPipes no los admite y se rechazan al crear el pipe.
+  **Kafka:** Los registros de AWS Glue solo admiten el formato Avro. **Kinesis:** Los registros de AWS Glue admiten `AvroConfluent` y `Protobuf`. JSON no es compatible a través de Glue SerDe.
 </Note>
 
 ### Configuración {#glue-configuration}
 
-En el asistente para crear un ClickPipe, habilite **Registro de esquemas** en el paso de conexión de Kafka y establezca **Tipo de registro** en **AWS Glue**:
+En el asistente para crear un ClickPipe, habilite **Registro de esquemas** en el paso de conexión de Kafka o Kinesis y establezca **Tipo de registro** en **AWS Glue**:
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Panel de registro de esquemas con AWS Glue seleccionado" size="lg" border />
 
@@ -80,9 +82,9 @@ En el asistente para crear un ClickPipe, habilite **Registro de esquemas** en el
 | Tipo de registro    | Sí          | Seleccione **AWS Glue**                                                                                                                                                                                 | `AWS Glue`                                                 |
 | Región de AWS       | Sí          | Región donde se encuentra el registro de Glue. Debe coincidir exactamente con la región del registro.                                                                                                   | `us-east-1`                                                |
 | Nombre del registro | Sí          | Nombre del registro de Glue. Se rechazan los esquemas que se resuelven en un registro diferente, por lo que cualquier error tipográfico se detectará cuando ClickPipes resuelva una versión de esquema. | `my-glue-registry`                                         |
-| ARN del rol de IAM  | Condicional | Un rol dedicado para acceder al registro. Es opcional si su broker usa autenticación de IAM; de lo contrario, es obligatorio.                                                                           | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
+| ARN del rol de IAM  | Condicional | Un rol dedicado para acceder al registro. Es opcional si su bróker usa autenticación de IAM; de lo contrario, es obligatorio.                                                                           | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-No hay ninguna URL de registro que configurar. Cada registro generado por Glue SerDe incluye el ID de su propia versión de esquema, que ClickPipes resuelve mediante `glue:GetSchemaVersion` y almacena en caché, con una llamada a la API por cada versión de esquema distinta. La evolución del esquema se gestiona automáticamente: cuando los registros cambian a una nueva versión de esquema a mitad del flujo, esta se resuelve la primera vez que se encuentra.
+No hay ninguna URL de registro que configurar. Cada registro generado por Glue SerDe incluye el ID de su propia versión de esquema, que ClickPipes resuelve mediante `glue:GetSchemaVersion` y almacena en caché, con una llamada a la API por cada versión de esquema distinta. La evolución del esquema se gestiona automáticamente: cuando los registros cambian a una nueva versión de esquema a mitad del flujo, esta se resuelve la primera vez que se encuentra. Para Kinesis, configure los mismos campos mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) o [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
 ### Configuración de IAM {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ Use esta opción si su broker no se autentica con IAM (SASL/SCRAM, SASL/PLAIN, m
 
 ### Limitaciones {#glue-limitations}
 
-* Solo se admite Avro. JSON Schema y Protobuf a través de Glue SerDe no son compatibles.
-* Solo fuentes de Kafka. Los ClickPipes de Kinesis no pueden usar un registro de Glue.
+* Kafka solo admite Avro. JSON Schema y Protobuf a través de Glue SerDe no son compatibles.
+* Kinesis admite `AvroConfluent` y `Protobuf` a través de AWS Glue Schema Registry. No se puede combinar un esquema Protobuf cargado con un registro de esquemas.
 
 ## Mapeo de esquemas {#schema-mapping}
 

@@ -24,6 +24,7 @@
 
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/IdentifierNode.h>
@@ -51,7 +52,6 @@ namespace ProfileEvents
 {
     extern const Event QueryAnalysisMicroseconds;
     extern const Event QueryPipelineBuildMicroseconds;
-    extern const Event AutomaticParallelReplicasProbePlansBuilt;
 }
 
 namespace DB
@@ -147,7 +147,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
     const auto & settings = result_context->getSettingsRef();
     // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
-    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false while it is set, so
+    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false on the initiator while it is set, so
     // `enable_parallel_replicas` is not an enforcement for them. It is kept as is, because cluster engines are not
     // covered by the heuristic and still follow it (see `canReplaceClusterEngineWithClusterVariant`). Code that asks
     // whether parallel replicas are enabled uses `Context::isParallelReplicasEnabled`, which accounts for the automatic mode.
@@ -174,36 +174,35 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 }
 
 template <typename... Args>
-QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
+PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     const ASTPtr & ast,
     const ContextMutablePtr & ctx,
     const SelectQueryOptions & select_options,
     const QueryTreeNodePtr & single_node_query_tree,
     const BuiltSetsByHashPtr & built_sets,
+    const LoggerPtr & logger,
     Args &&... interpreter_args)
 {
-    const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
-    if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
-    {
-        LOG_TRACE(
-            logger,
-            "Setting 'enable_parallel_replicas' is disabled. Skipping building query plan with parallel "
-            "replicas.");
-        return QueryPlanPtr{};
-    }
+    /// Every early return is logged, and says which kind of reason it is: the caller counts the two kinds
+    /// apart, and relies on the log for the specific reason.
+    /// With `enable_parallel_replicas` disabled, `buildContext` has turned the optimization off, so it never asks.
+    chassert(ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]);
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
-        return QueryPlanPtr{};
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
-        LOG_DEBUG(logger, "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
-        return QueryPlanPtr{};
+        LOG_TRACE(logger, "Setting 'cluster_for_parallel_replicas' is empty. Skipping building query plan with parallel replicas.");
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        return QueryPlanPtr{};
+    {
+        LOG_TRACE(logger, "The query is a secondary query. Skipping building query plan with parallel replicas.");
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
+    }
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
@@ -225,10 +224,16 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
         eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
         eligibility_context->setSetting("enable_parallel_replicas", Field{1});
 
+        if (!eligibility_context->canUseParallelReplicasOnInitiator())
+        {
+            LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        }
+
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
         {
             LOG_TRACE(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");
-            return QueryPlanPtr{};
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
         }
     }
 
@@ -248,9 +253,6 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     };
     removeSettingsFromQueryTopLevel(ast, settings_overridden_for_this_plan);
 
-    /// Counted here rather than on return: everything below is the cost the eligibility check above
-    /// exists to avoid, and the plan is built whether or not it ends up being used.
-    ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasProbePlansBuilt);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
 
     /// This plan exists to be costed and is usually thrown away. Shipping a `GLOBAL IN` / `GLOBAL JOIN`
@@ -275,8 +277,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// and could answer no for a query that does materialize.
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
-        LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
-        return QueryPlanPtr{};
+        LOG_TRACE(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
+        return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
     }
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
@@ -296,7 +298,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// just to plan a candidate that might be thrown away.
     reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
-    return std::make_unique<QueryPlan>(std::move(plan));
+    return PlanWithParallelReplicas{
+        .plan = std::make_unique<QueryPlan>(std::move(plan)), .skip_reason = PlanWithParallelReplicas::SkipReason::None};
 }
 }
 
@@ -405,16 +408,23 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+    addQueryTreePasses(
+        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+        /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
+        DisableParallelReplicasPass{}.run(query_tree, context);
+    }
     else
+    {
         query_tree_pass_manager.run(query_tree);
+    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
@@ -440,8 +450,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -464,8 +474,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            storage = storage_,
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -484,9 +494,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
-           select_options = select_query_options_,
-           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets); })
+           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
+           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
