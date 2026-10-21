@@ -67,9 +67,16 @@ ch_cc_library(
         "snappy-sinksource.cc",
         "snappy-stubs-internal.cc",
         "snappy.cc",
+        "snappy-internal.h",
+        "snappy-stubs-internal.h",
         ":configure_config_h",
     ],
-    hdrs = [":configure_snappy_stubs_public_h"] + glob(["**/*.h"]),
+    hdrs = [
+        "snappy-c.h",
+        "snappy-sinksource.h",
+        "snappy.h",
+        ":configure_snappy_stubs_public_h",
+    ],
     copts = [
         "-w",
         "-std=c++23",
