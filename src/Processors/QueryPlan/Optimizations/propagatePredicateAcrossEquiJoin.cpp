@@ -96,22 +96,32 @@ std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target
     return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
-/// A comparison of a fixed-size key of at most 32 bytes costs a fraction of what any join algorithm
-/// spends per row, so a copy that filters nothing is a rounding error. A wider key or a set lookup
+/// Bytes a comparison reads from this argument per row, `std::nullopt` when they are not bounded
+std::optional<size_t> comparedWidth(const ActionsDAG::Node * node)
+{
+    const auto type = removeNullable(removeLowCardinality(node->result_type));
+    if (type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return type->getSizeOfValueInMemory();
+    /// a `String` constant against a `FixedString` key is compared up to its own length
+    if (node->type == ActionsDAG::ActionType::COLUMN && isString(type) && node->column && isColumnConst(*node->column))
+        return node->column->getDataAt(0).size();
+    return {};
+}
+
+/// A comparison of fixed-size values of at most 32 bytes costs a fraction of what any join algorithm
+/// spends per row, so a copy that filters nothing is a rounding error. A wider argument or a set lookup
 /// costs more, so it has to earn its place by pruning the primary key instead of being evaluated
 /// over the whole target
 bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
 {
     if (atom->function_base->getName() == "in")
         return false;
-    /// Check only the key: the constants that `atomSafelySubstitutable` accepts compare at the key's cost
+    /// The constant counts too: a `FixedString` key is compared against all of a wider constant
     for (const auto * child : atom->children)
     {
-        if (child->type != ActionsDAG::ActionType::INPUT)
-            continue;
-        const auto key_type = removeNullable(removeLowCardinality(child->result_type));
+        const auto width = comparedWidth(child);
         /// a nonselective copy on a `FixedString(256)` probe side costs 18%, on `FixedString(32)` 9%, on `UInt64` 7%
-        if (!key_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() || key_type->getSizeOfValueInMemory() > 32)
+        if (!width || *width > 32)
             return false;
     }
     return true;

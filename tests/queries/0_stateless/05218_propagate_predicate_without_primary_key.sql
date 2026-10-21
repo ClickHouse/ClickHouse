@@ -109,6 +109,25 @@ FROM (
     INNER JOIN prop_nopk_types_big AS b ON s.wfs = b.wfs
 );
 
+-- a narrow key is compared against all of the constant, so a wide constant is not cheap either
+SELECT 'wide FixedString constant',
+       countIf(explain LIKE '%ilter column:%fs = %042%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE fs = toFixedString('042', 33)) AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.fs = b.fs
+);
+
+SELECT 'long String constant',
+       countIf(explain LIKE '%ilter column:%fs < %zzz%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE fs < repeat('z', 33)) AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.fs = b.fs
+);
+
 SELECT 'Nullable',
        countIf(explain LIKE '%ilter column:%n = 42%')
 FROM (

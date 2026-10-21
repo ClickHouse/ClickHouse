@@ -7876,10 +7876,11 @@ on the other side can use them.
 Applies when the filter and the `MergeTree` read are separated from the join only by expression
 and filter steps, and when the copied conjunct compares the equi-key with a constant. A comparison
 on a fixed-size equi-key of at most 32 bytes (a number, a date or time, `UUID`, an IP address,
-`FixedString(N)` with `N` at most 32, or `Nullable` of one of these) is copied even when the
-equi-key is not in the target's primary key, since it costs less than the join work it saves. A
-comparison on any other equi-key, such as `String` or a wider `FixedString`, and `IN` with a
-constant set are copied only onto a primary key column, where the pruning pays for them. A
+`FixedString(N)` with `N` at most 32, or `Nullable` of one of these) with a constant of at most
+32 bytes is copied even when the equi-key is not in the target's primary key, since it costs less
+than the join work it saves. A comparison on any other equi-key, such as `String` or a wider
+`FixedString`, a comparison with a wider constant, and `IN` with a constant set are copied only onto
+a primary key column, where the pruning pays for them. A
 predicate below a nested join or below `DISTINCT`, or a comparison between two key columns, is left
 alone: neither could prune or shrink anything.
 
