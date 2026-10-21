@@ -785,16 +785,13 @@ Union
         Expression
           Join
             Expression
-              Expression
-                ReadFromMergeTree
+              ReadFromMergeTree
             Expression
               BuildRuntimeFilter
                 Expression
-                  Expression
-                    ReadFromMergeTree
+                  ReadFromMergeTree
         Expression
-          Expression
-            ReadFromMergeTree
+          ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -835,18 +832,15 @@ Expression
           Expression
             Join
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 BuildRuntimeFilter
                   Expression
                     Join
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --
