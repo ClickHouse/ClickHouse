@@ -2895,6 +2895,15 @@ def test_an_exclusion_of_a_field_of_a_document_collection(started_cluster):
     with pytest.raises(pymongo.errors.OperationFailure):
         list(collection.aggregate([{"$unset": "profile"}]))
 
+    # A later stage wraps the exclusion in a subquery, which must not hide it.
+    assert list(collection.aggregate([{"$project": {"_id": 0}}, {"$match": {"id": 1}}])) == [
+        {"id": 1, "profile": {"name": "alpha"}}
+    ]
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$unset": "profile"}, {"$match": {"id": 1}}]))
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$project": {"profile": 0}}, {"$match": {"id": 1}}]))
+
     collection.drop()
 
 

@@ -66,6 +66,15 @@ bool selectsEveryDocument(const ASTAsterisk & asterisk)
     return excluded->empty() || (excluded->size() == 1 && excluded->front() == OBJECT_ID_COLUMN);
 }
 
+[[noreturn]] void throwCannotExcludeFieldOfDocument()
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "A collection created by this endpoint keeps whole documents in one column, and a field of a stored document cannot be left "
+        "out of it: ask for the fields to keep instead of the ones to remove, or keep the collection in a table created in "
+        "ClickHouse, whose fields are columns of their own");
+}
+
 /// Whether the select list is the one asterisk that hands the stored document on unchanged, so that
 /// a field of a document is still a path of the `json` column of the rows the select produces.
 bool selectsEveryColumn(const ASTSelectQuery & select)
@@ -474,9 +483,10 @@ void rewriteSelect(ASTSelectQuery & select)
       * column, so the result would be that column and the new fields next to it rather than one
       * document with the fields replaced or added in it, which is refused rather than answered.
       */
-    if (const auto select_list = select.select(); select_list && select_list->children.size() > 1)
+    const auto select_expressions = select.select();
+    if (select_expressions && select_expressions->children.size() > 1)
     {
-        for (const auto & child : select_list->children)
+        for (const auto & child : select_expressions->children)
         {
             if (child->as<ASTAsterisk>())
                 throw Exception(
@@ -486,6 +496,20 @@ void rewriteSelect(ASTSelectQuery & select)
                     "return in a '$project' instead, or keep the collection in a table created in ClickHouse, whose fields are columns "
                     "of their own");
         }
+    }
+
+    /** An asterisk that removes fields - what an exclusion projection, a `$unset` and a `$project`
+      * of nothing but exclusions are lowered into - cannot leave a path of the stored document out
+      * of the column that holds it, and only the object id is a column of its own. This is checked
+      * on every select that reads the stored documents rather than only on the outermost one: a
+      * later stage - `[{$unset: "secret"}, {$match: ...}]` - wraps the exclusion in a subquery,
+      * and the result would be the physical columns of the collection with the field still in.
+      */
+    if (select_expressions && select_expressions->children.size() == 1)
+    {
+        const auto * asterisk = select_expressions->children.front()->as<ASTAsterisk>();
+        if (asterisk && !selectsEveryDocument(*asterisk))
+            throwCannotExcludeFieldOfDocument();
     }
 
     /** The fields of a document are paths of the `json` column, which no alias of the select list
@@ -663,11 +687,7 @@ bool selectDocumentsOfCollection(const ASTPtr & query)
       */
     const auto excluded = excludedFieldsOfAsterisk(*asterisk);
     if (!excluded || !selectsEveryDocument(*asterisk))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "A collection created by this endpoint keeps whole documents in one column, and a field of a stored document cannot be left "
-            "out of it: ask for the fields to keep instead of the ones to remove, or keep the collection in a table created in "
-            "ClickHouse, whose fields are columns of their own");
+        throwCannotExcludeFieldOfDocument();
 
     /// The object id is also gone when a stage below has excluded it already.
     const bool keeps_object_id = excluded->empty() && inputKeepsObjectId(*select);
