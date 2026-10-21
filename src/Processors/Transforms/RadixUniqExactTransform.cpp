@@ -124,6 +124,27 @@ ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
     return (UInt128(high) << 64) | low;
 }
 
+/// A string of up to 15 bytes as its bytes in the low bytes and its size in the high byte, so that distinct strings
+/// stay distinct without `SipHash`, which costs more than half of the routing of short strings. The data is followed by
+/// at least 15 readable bytes (`PaddedPODArray`).
+ALWAYS_INLINE inline UInt128 packShortString(const char * data, size_t size)
+{
+    auto low_bytes = [](size_t n) { return (1ULL << (n * 8)) - 1; };
+    UInt64 low = unalignedLoadLittleEndian<UInt64>(data);
+    UInt64 high = unalignedLoadLittleEndian<UInt64>(data + 8);
+    if (size < 8)
+    {
+        low &= low_bytes(size);
+        high = 0;
+    }
+    else
+    {
+        high &= low_bytes(size - 8);
+    }
+    high |= static_cast<UInt64>(size) << 56;
+    return (UInt128(high) << 64) | low;
+}
+
 /// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
 /// so that the cache misses of the inserts overlap.
 constexpr size_t PREFETCH_DISTANCE = 32;
@@ -696,11 +717,15 @@ private:
             }
             else
             {
+                /// Only the new keys take room, so with frequent keys, the set has room for chunks of the batch long
+                /// before it has room for the whole batch.
                 auto & set = stream.local_set;
-                if ((set.numCellsInUse() + num_keys - i) * 2 <= set.capacity())
+                const size_t num_inserted = std::min(set.capacity() / 2 - set.numCellsInUse(), num_keys - i);
+                if (num_inserted)
                 {
-                    set.insertMany(keys + i, num_keys - i);
-                    return;
+                    set.insertMany(keys + i, num_inserted);
+                    i += num_inserted;
+                    continue;
                 }
             }
 
@@ -991,10 +1016,12 @@ void RadixUniqExactState<UInt256>::route(size_t stream, const IColumn & column, 
     routeFixed<UInt256, UInt256>(*this, stream, column, null_map);
 }
 
-/// The fixed-size values of 9 to 16 bytes are represented by a bijection of themselves (zero-padded), strings by the 128-bit `SipHash` of their bytes, the
-/// same key as in `uniqExact`, and the values of the other types by the 128-bit `SipHash` of `updateHashWithValue`, as in
-/// `uniqExact`. Consecutive duplicates are compared by their bytes before they are hashed. The values of the other types
-/// are not compared: `compareAt` can find equal the values with different hashes (e.g. -0.0 and 0.0 in a `Tuple`).
+/// The fixed-size values of 9 to 16 bytes are represented by a bijection of themselves (zero-padded), the strings of up
+/// to 15 bytes by a bijection of their bytes and size (see `packShortString`), the longer strings by the 128-bit
+/// `SipHash` of their bytes, the same key as in `uniqExact`, and the values of the other types by the 128-bit `SipHash`
+/// of `updateHashWithValue`, as in `uniqExact`. Consecutive duplicates are compared by their bytes before they are
+/// hashed. The values of the other types are not compared: `compareAt` can find equal the values with different hashes
+/// (e.g. -0.0 and 0.0 in a `Tuple`).
 template <>
 void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
@@ -1026,6 +1053,8 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             {
                 const size_t size = size_of(row);
                 routed_empty_string |= size == 0;
+                if (size < sizeof(UInt128))
+                    return mixKey(packShortString(chars + start_of(row), size));
                 return sipHash128Padded(chars + start_of(row), size);
             },
             [&](size_t lhs, size_t rhs)
@@ -1033,7 +1062,11 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
                 const size_t size = size_of(rhs);
                 if (size == 0)
                     return routed_empty_string || size_of(lhs) == 0;
-                return size == size_of(lhs) && memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
+                if (size != size_of(lhs))
+                    return false;
+                if (size < sizeof(UInt128))
+                    return packShortString(chars + start_of(lhs), size) == packShortString(chars + start_of(rhs), size);
+                return memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
             });
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))

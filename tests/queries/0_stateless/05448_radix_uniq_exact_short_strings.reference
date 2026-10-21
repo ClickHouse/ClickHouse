@@ -1,0 +1,4 @@
+only zero bytes, by length	21	21
+lengths 14 to 17	300000	300000
+with and without a trailing zero byte	600002	600002
+empty and lengths 1 to 15	159666	159666
