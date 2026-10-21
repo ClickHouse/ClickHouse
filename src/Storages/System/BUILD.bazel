@@ -125,42 +125,6 @@ _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GENERATED_DEPS_0 = select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
-        "@clickhouse_llvm_project//:LLVMAArch64Info",
-        "@clickhouse_llvm_project//:LLVMAArch64Desc",
-    ],
-}) + [
-    "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
-    "@clickhouse_llvm_project//:LLVMBitReader",
-    "@clickhouse_llvm_project//:LLVMBitWriter",
-    "@clickhouse_llvm_project//:LLVMBitstreamReader",
-    "@clickhouse_llvm_project//:LLVMCFGuard",
-    "@clickhouse_llvm_project//:LLVMCodeGenTypes",
-    "@clickhouse_llvm_project//:LLVMHipStdPar",
-    "@clickhouse_llvm_project//:LLVMIRPrinter",
-    "@clickhouse_llvm_project//:LLVMIRReader",
-    "@clickhouse_llvm_project//:LLVMInstCombine",
-    "@clickhouse_llvm_project//:LLVMMCDisassembler",
-    "@clickhouse_llvm_project//:LLVMObjCARCOpts",
-    "@clickhouse_llvm_project//:LLVMSandboxIR",
-    "@clickhouse_llvm_project//:LLVMSupport",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "@clickhouse_llvm_project//:LLVMX86CodeGen",
-        "@clickhouse_llvm_project//:LLVMX86Info",
-        "@clickhouse_llvm_project//:LLVMX86Desc",
-    ],
-    "@platforms//cpu:aarch64": [],
-}) + [
-    "//base/glibc-compatibility",
-    "//base:common",
-    "//src:headers",
-    "//src/Common",
-]
-
 ch_cc_library(
     name = "clickhouse_storages_system__compile_0",
     srcs = ["//bazel:gen/src/Storages/System/StorageSystemLicenses.generated.cpp"],
@@ -337,7 +301,27 @@ ch_cc_library(
         "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
     ],
-    deps = ["//bazel:clickhouse_config_headers"] + _GENERATED_DEPS_0,
+    deps = [
+        "//bazel:clickhouse_config_headers",
+        "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
+        "@clickhouse_llvm_project//:LLVMBitReader",
+        "@clickhouse_llvm_project//:LLVMBitWriter",
+        "@clickhouse_llvm_project//:LLVMBitstreamReader",
+        "@clickhouse_llvm_project//:LLVMCFGuard",
+        "@clickhouse_llvm_project//:LLVMCodeGenTypes",
+        "@clickhouse_llvm_project//:LLVMHipStdPar",
+        "@clickhouse_llvm_project//:LLVMIRPrinter",
+        "@clickhouse_llvm_project//:LLVMIRReader",
+        "@clickhouse_llvm_project//:LLVMInstCombine",
+        "@clickhouse_llvm_project//:LLVMMCDisassembler",
+        "@clickhouse_llvm_project//:LLVMObjCARCOpts",
+        "@clickhouse_llvm_project//:LLVMSandboxIR",
+        "@clickhouse_llvm_project//:LLVMSupport",
+        "//base/glibc-compatibility",
+        "//base:common",
+        "//src:headers",
+        "//src/Common",
+    ],
 )
 
 cc_library(
