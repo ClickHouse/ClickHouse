@@ -20,6 +20,7 @@ class WorkflowYaml:
         artifacts_gh_provides: List["WorkflowYaml.ArtifactYaml"]
         gh_app_auth: bool
         always_run: bool
+        continue_on_error: bool
         parameter: Any
         secret_names_gh: List[str] = dataclasses.field(default_factory=list)
         variable_names_gh: List[str] = dataclasses.field(default_factory=list)
@@ -129,6 +130,7 @@ class WorkflowConfigParser:
                 runs_on=[],
                 gh_app_auth=False,
                 always_run=job.always_run,
+                continue_on_error=job.continue_on_error,
                 parameter=None,
             )
             self.workflow_yaml_config.jobs.append(job_yaml_config)

@@ -35,9 +35,12 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     gh_auth_lambda_name=GH_AUTH_TRUSTED_LAMBDA_NAME,
     jobs=[
-        arm_binary_build,
-        JobConfigs.reference_snapshot_job,
-        JobConfigs.publish_reference_snapshot_job,
+        # Publishing docs is best-effort. It must be visible when it fails, but
+        # must not turn the shared Nightly workflow red or hold up its
+        # housekeeping jobs. PR snapshot validation remains required.
+        arm_binary_build.set_allow_failure().set_continue_on_error(),
+        JobConfigs.reference_snapshot_job.set_allow_failure().set_continue_on_error(),
+        JobConfigs.publish_reference_snapshot_job.set_allow_failure().set_continue_on_error(),
         Job.Config(
             name="Prepare changelog",
             command="python3 ./ci/jobs/changelog_nightly.py",
@@ -56,6 +59,10 @@ workflow = Workflow.Config(
         ArtifactConfigs.reference_snapshot,
     ],
     dockers=DOCKERS,
+    # The docs pipeline can use the already-published builder images. Avoid
+    # injecting Docker build jobs into this shared Nightly workflow: they are
+    # prerequisites only for the best-effort docs path, not for maintenance.
+    disable_dockers_build=True,
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
