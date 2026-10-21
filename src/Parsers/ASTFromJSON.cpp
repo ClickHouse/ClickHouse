@@ -397,22 +397,24 @@ ASTPtr IAST::createFromJSON(const String & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
     }
 
-    Poco::JSON::Object::Ptr obj;
-    try
-    {
-        obj = result.extract<Poco::JSON::Object::Ptr>();
-    }
-    catch (const Poco::Exception &)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
-    }
-
-    if (!obj)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
-
+    /// Every exit after a successful parse must go through `dismantleJSON`, including the checks of
+    /// the root type: a deeply nested array at the root would otherwise be destroyed recursively.
     ASTPtr ast;
     try
     {
+        Poco::JSON::Object::Ptr obj;
+        try
+        {
+            obj = result.extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
+        }
+
+        if (!obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
+
         ast = createFromJSON(*obj);
     }
     catch (...)
