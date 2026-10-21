@@ -2813,9 +2813,10 @@ class TestCase:
             # `randomize_detach` makes `new_options` non-empty for almost every test, so this branch is taken
             # nearly always; dropping `client_options` here would stop them reaching `$CLICKHOUSE_CLIENT`.
             # Put it last so user-supplied `--client-option` values win (last wins with --allow_repeated_settings).
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                new_options + " " + self.base_client_options + " " + client_options + " "
-            )
+            # `client_options` comes from `get_additional_client_options`, which already includes the original
+            # `CLICKHOUSE_CLIENT_OPT` (`self.base_client_options`), so it is not added again: a repeated
+            # non-setting option such as `--secure` is rejected by the client.
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = new_options + " " + client_options + " "
         elif client_options:
             client_options += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (

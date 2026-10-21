@@ -124,6 +124,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/IStorage.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -1399,6 +1400,10 @@ struct CollectTablesData
     /// The whole statement being walked. Used to find which CTE definitions are referenced (see
     /// `collectReferencedNames`).
     const IAST * root_query = nullptr;
+
+    /// Whether the statement reads through a table function whose sources and grants the preflights cannot
+    /// validate (see `tableFunctionReadsNoSource`). Such a statement skips the hook altogether.
+    bool has_unvalidated_table_function = false;
 
     /// The database an unqualified table name is completed with while walking the children of a mutation
     /// carrier (`UPDATE`, `ALTER`, and the rewritten forms of `DELETE`): their interpreters run
@@ -2814,24 +2819,44 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
     return Context::ResolveAll;
 }
 
-/// Collects the names of all identifiers in `ast` except the subtree `skip`: the full name, the short name,
-/// and the first part, which is the one that names a CTE in a compound identifier. The result over-approximates
-/// the names a subtree can reference a CTE by, which is what the reachability of CTE definitions needs.
+/// Collects the full names of all identifiers in `ast` except the subtree `skip`. The analyzer looks a CTE up
+/// only by the full name of an identifier in a table-expression position (`QueryAnalyzer::tryResolveIdentifierFromCTE`),
+/// so a compound identifier never references a CTE by one of its parts: `real_table.unused` is a column even when
+/// a CTE is named `unused`, and `cte.x` refers to a column of `cte` only when `cte` itself also occurs in `FROM`.
+/// Any position counts, so the result still over-approximates the names a subtree can reference a CTE by,
+/// which errs toward walking a definition, never toward missing the tables of a used one.
 void collectReferencedNames(const IAST & ast, const IAST * skip, std::unordered_set<String> & names)
 {
     if (&ast == skip)
         return;
 
     if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast))
-    {
         names.insert(identifier->name());
-        names.insert(identifier->shortName());
-        if (!identifier->name_parts.empty())
-            names.insert(identifier->name_parts.front());
-    }
 
     for (const auto & child : ast.children)
         collectReferencedNames(*child, skip, names);
+}
+
+/// Whether the table function in a table expression only generates its rows: it reads no table or other source
+/// and checks no grant when it runs in `FROM` (it is `allow_readonly`, so not even `CREATE TEMPORARY TABLE`).
+/// Any other table function resolves its sources from strings while it runs (`merge('db', '^t$')`, `remote`,
+/// `file`, ...), and checks grants the preflights of the hook do not see.
+bool tableFunctionReadsNoSource(const IAST & table_function)
+{
+    const auto * function = table_function.as<ASTFunction>();
+    if (!function)
+        return false;
+
+    static const std::unordered_set<std::string_view> generators{
+        "numbers", "numbers_mt", "generate_series", "generateSeries", "values", "null", "generateRandom", "primes"};
+
+    const auto & factory = TableFunctionFactory::instance();
+    const auto & name = factory.getCanonicalNameIfAny(function->name);
+    if (!generators.contains(name))
+        return false;
+
+    const auto properties = factory.tryGetProperties(name);
+    return properties && properties->allow_readonly;
 }
 
 /// Collect the expression aliases declared in one alias scope: the aliases an expression of the query level
@@ -3057,6 +3082,8 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// references, which defeats the CTE-name check: a CTE shadows only unqualified table references.
         for (const auto * table_expression : getTableExpressions(*select))
         {
+            if (table_expression && table_expression->table_function && !tableFunctionReadsNoSource(*table_expression->table_function))
+                data.has_unvalidated_table_function = true;
             if (!table_expression || !table_expression->database_and_table_name)
                 continue;
             if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
@@ -3286,6 +3313,11 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
     collectTablesInQuery(query, data, /* active_ctes */ {}, /* active_aliases */ root_aliases);
 
+    /// The sources a table function reads, and the grants it checks, are resolved only when it runs, so they
+    /// escape the preflights below: a query that fails on them would still detach its other tables.
+    if (data.has_unvalidated_table_function)
+        return;
+
     /// Deduplicate: the same table can appear multiple times (e.g. self-joins), possibly in contexts
     /// requiring different access (e.g. `INSERT INTO t SELECT ... FROM t`) — merge the required access.
     {
@@ -3359,7 +3391,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// View preflight — the body of a view is expanded only when the query is analyzed, and the tables it
     /// reads never appear in the AST walked above, so they escape both the existence and the access preflight:
     /// an `SQL SECURITY INVOKER` view checks the caller's access to them, and any view fails on a missing one.
-    /// Like for SQL UDFs, skip the hook for the whole query when it references a view, instead of first
+    /// The same holds for every other storage that reads from other tables (`Alias`, `Merge`, `Distributed`,
+    /// `Buffer`): e.g. `StorageAlias::read` checks the caller's access to the target only then.
+    /// Like for SQL UDFs, skip the hook for the whole query when it references such a storage, instead of first
     /// `DETACH`/`ATTACH`-ing its other tables. Only databases that support detaching tables are probed, for the
     /// same reasons as in the reattach loop below, which also skips the references to dictionaries.
     for (const auto & table : data.tables)
@@ -3369,7 +3403,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
         if (!database || !database->supportsDetachingTables())
             continue;
-        if (const auto storage = DatabaseCatalog::instance().tryGetTable(table.id, context); storage && storage->isView())
+        if (const auto storage = DatabaseCatalog::instance().tryGetTable(table.id, context); storage && (storage->isView() || storage->readsFromOtherTables()))
             return;
     }
 
