@@ -1429,6 +1429,9 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// optimizer (and the CNF conversion that feeds it) off.
     oracle_context->setSetting("optimize_using_constraints", Field(false));
     oracle_context->setSetting("convert_query_to_cnf", Field(false));
+    /// A hash join compares a `Dynamic` key with a non-`Dynamic` one by type, unlike `equals`,
+    /// so moving an equality between WHERE and the JOIN keys would change the result.
+    oracle_context->setSetting("allow_dynamic_type_in_join_keys", Field(false));
     /// Neutralize session-leaked read/result caps (a seed's `SET
     /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
     /// oracle sub-queries asymmetrically — see `truncatingSettings`).
