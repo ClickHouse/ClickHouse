@@ -230,7 +230,7 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
                 parser,
                 statement.data(),
                 statement.data() + statement.size(),
-                /* query_description= */ "",
+                /* description= */ "",
                 0,
                 context->getSettingsRef()[Setting::max_parser_depth],
                 context->getSettingsRef()[Setting::max_parser_backtracks]);
