@@ -165,16 +165,30 @@ darwin_fast_test_digest_config = Job.CacheDigestConfig(
     + ["./ci/jobs/scripts/fast_test_darwin.sh"],
 )
 
-# The limited clang-tidy check is configured exactly like the full tidy build, so
-# it shares the build digest, and adds the files that decide what it reports or
-# whether it runs: its own selection logic, the config-time skip in
-# `filter_job.py`, the definitions of the job and of the merge-queue workflow,
-# and the clang-tidy configuration itself. These are the
-# `TIDY_CONFIG_PATHS` of `clang_tidy_changed_files.py` that the build digest does
-# not already cover, so a change to any of them is validated on the merge-group
-# state instead of reusing an older result.
-tidy_changed_files_digest_config = Job.CacheDigestConfig(
+# The full clang-tidy build analyzes everything the build digest covers, plus the
+# root clang-tidy configuration and the utilities under `utils`, which the build
+# digest does not include. Without them, a change confined to these inputs would
+# reuse an older successful result instead of being checked.
+tidy_build_digest_config = Job.CacheDigestConfig(
     include_paths=build_digest_config.include_paths
+    + [
+        "./.clang-tidy",
+        # An analyzed root the build digest does not cover.
+        "./utils",
+    ],
+    exclude_paths=build_digest_config.exclude_paths,
+    with_git_submodules=True,
+)
+
+# The limited clang-tidy check is configured exactly like the full tidy build, so
+# it shares its digest, and adds the files that decide what it reports or
+# whether it runs: its own selection logic, the config-time skip in
+# `filter_job.py`, and the definitions of the job and of the merge-queue
+# workflow. These are the `TIDY_CONFIG_PATHS` of `clang_tidy_changed_files.py`
+# that the full tidy digest does not already cover, so a change to any of them is
+# validated on the merge-group state instead of reusing an older result.
+tidy_changed_files_digest_config = Job.CacheDigestConfig(
+    include_paths=tidy_build_digest_config.include_paths
     + [
         "./ci/jobs/scripts/clang_tidy_changed_files.py",
         "./ci/jobs/scripts/workflow_hooks/filter_job.py",
@@ -185,10 +199,8 @@ tidy_changed_files_digest_config = Job.CacheDigestConfig(
         "./ci/defs/job_configs.py",
         "./ci/workflows/merge_queue.py",
         "./.github/workflows/merge_queue.yml",
-        "./.clang-tidy",
-        # An analyzed root the build digest does not cover.
-        "./utils",
     ],
+    exclude_paths=tidy_build_digest_config.exclude_paths,
     with_git_submodules=True,
 )
 
@@ -395,7 +407,9 @@ class JobConfigs:
     )
     # The clang-tidy build does not link anything, so its object files are split
     # across independent shards, see `write_tidy_shard_targets` in `build_clickhouse.py`.
-    tidy_build_arm_jobs = common_build_job_config.parametrize(
+    tidy_build_arm_jobs = common_build_job_config.set_digest_config(
+        tidy_build_digest_config
+    ).parametrize(
         *[
             Job.ParamSet(
                 parameter=f"{BuildTypes.ARM_TIDY}, {i}/{TIDY_SHARDS}",
@@ -406,7 +420,9 @@ class JobConfigs:
             for i in range(1, TIDY_SHARDS + 1)
         ]
     )
-    tidy_build_amd_jobs = common_build_job_config.parametrize(
+    tidy_build_amd_jobs = common_build_job_config.set_digest_config(
+        tidy_build_digest_config
+    ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
