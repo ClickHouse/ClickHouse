@@ -1253,7 +1253,6 @@ ch_cc_library(
         "include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":tzdata"],
 )
 
 ch_cc_library(
