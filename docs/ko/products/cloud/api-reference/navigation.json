@@ -225,6 +225,7 @@
       "ko/products/cloud/api-reference/clickstack/click-stack-delete-alert",
       "ko/products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "ko/products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "ko/products/cloud/api-reference/clickstack/click-stack-validate-webhook",
       "ko/products/cloud/api-reference/clickstack/click-stack-update-webhook",
       "ko/products/cloud/api-reference/clickstack/click-stack-delete-webhook",
       "ko/products/cloud/api-reference/clickstack/click-stack-list-roles",

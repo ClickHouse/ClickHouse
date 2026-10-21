@@ -225,6 +225,7 @@
       "ru/products/cloud/api-reference/clickstack/click-stack-delete-alert",
       "ru/products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "ru/products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "ru/products/cloud/api-reference/clickstack/click-stack-validate-webhook",
       "ru/products/cloud/api-reference/clickstack/click-stack-update-webhook",
       "ru/products/cloud/api-reference/clickstack/click-stack-delete-webhook",
       "ru/products/cloud/api-reference/clickstack/click-stack-list-roles",

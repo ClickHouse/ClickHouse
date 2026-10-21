@@ -8076,7 +8076,12 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
+    DECLARE(BoolForce, query_plan_read_in_order_through_join, true, R"(
+Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.
+
+For a join other than `LEFT`, the read stays in order only when every part of the left table announces a virtual row (see [`read_in_order_use_virtual_row`](#read_in_order_use_virtual_row)); without the virtual rows the merge after the join may read far more than the limit needs. The value `force` keeps the read in order regardless.
+)", 0, \
+        {"26.10", true, true, "Added the value `force`: keep reading in order through a join even when the parts announce no virtual rows."}, \
         {"25.12", false, true, "New setting"}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
@@ -10387,16 +10392,17 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"25.12", false, true, "New setting. Add optimization to remove unused columns in query plan."}) \
-    DECLARE(Bool, kill_throw_if_noop, false, R"(
+    DECLARE(Bool, kill_throw_if_noop, true, R"(
 Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
-If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+Enabled by default. `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. Set to `false` to allow empty matches without an exception. `TEST` dry runs return an empty preview without throwing. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 Possible values:
 
 - 1 — Throw an exception.
 - 0 — Do not throw an exception.
 )", 0, \
+        {"26.11", false, true, "Enable `kill_throw_if_noop` by default so that `KILL QUERY` and `KILL MUTATION` report empty matches."}, \
         {"26.10", false, false, "New setting"}) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
