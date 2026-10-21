@@ -59,20 +59,31 @@ ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_new"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_new SYNC"
 
 # Setting on: the latest metadata file at the path is another table's, written by another writer under a name this
-# table used before, and that table keeps its files.
-rm -rf "${TABLE_PATH}"
-create_table
-${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}"
-OWN_METADATA="${TABLE_PATH%/}_own/"
-mkdir -p "${OWN_METADATA}" && mv "${TABLE_PATH}metadata/"*.metadata.json "${OWN_METADATA}"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_other (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_other SETTINGS allow_insert_into_iceberg = 1 VALUES (2)"
-cp "${OWN_METADATA}v1.metadata.json" "${TABLE_PATH}metadata/"
-${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_other"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_other SYNC"
-rm -rf "${OWN_METADATA}"
+# table used before, and that table keeps its files. Also when this table is a format version 1 one without `table-uuid`.
+for format_version in 2 1; do
+    rm -rf "${TABLE_PATH}"
+    create_table "SETTINGS iceberg_format_version = ${format_version}"
+    if [ "${format_version}" = 1 ]; then
+        # The format version 1 metadata written by ClickHouse has no `schema`, which is logged as a warning.
+        ${CLICKHOUSE_CLIENT} --send_logs_level=error --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+        sed -i -z 's/,\n *"table-uuid" : "[^"]*"//' "${TABLE_PATH}metadata/"*.metadata.json
+        ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE} PERMANENTLY"
+        ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
+        ${CLICKHOUSE_CLIENT} --send_logs_level=error --use_iceberg_metadata_files_cache=0 --query "SELECT x FROM ${TABLE}"
+    else
+        ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} SETTINGS allow_insert_into_iceberg = 1 VALUES (1)"
+        ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}"
+    fi
+    OWN_METADATA="${TABLE_PATH%/}_own/"
+    mkdir -p "${OWN_METADATA}" && mv "${TABLE_PATH}metadata/"*.metadata.json "${OWN_METADATA}"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_other (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}')"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_other SETTINGS allow_insert_into_iceberg = 1 VALUES (2)"
+    cp "${OWN_METADATA}v1.metadata.json" "${TABLE_PATH}metadata/"
+    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC"
+    ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_other"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_other SYNC"
+    rm -rf "${OWN_METADATA}"
+done
 
 # Setting on: a table not read since it was attached is dropped after its files are deleted, as by another replica.
 rm -rf "${TABLE_PATH}"

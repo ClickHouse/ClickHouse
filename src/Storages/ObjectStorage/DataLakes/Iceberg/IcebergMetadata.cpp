@@ -1884,7 +1884,7 @@ void IcebergMetadata::drop(
         if (root->has(Iceberg::f_table_uuid))
             root_uuid = normalizeUuid(root->getValue<String>(Iceberg::f_table_uuid));
         /// The latest metadata file at a location shared with other tables can be theirs.
-        if (!catalog && persistent_components.table_uuid && root_uuid != persistent_components.table_uuid)
+        if (!catalog && root_uuid != persistent_components.table_uuid)
         {
             LOG_WARNING(
                 log,
