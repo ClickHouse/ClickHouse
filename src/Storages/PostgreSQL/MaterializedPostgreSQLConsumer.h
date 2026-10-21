@@ -119,7 +119,10 @@ private:
 
     void updateLsn();
 
-    String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
+    String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx, const String & target_lsn);
+
+    /// Returns the flushed WAL position if the replication slot can be moved there after an empty batch, otherwise nullopt.
+    std::optional<String> getSafeEmptyBatchLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     void processReplicationMessage(const char * replication_message, size_t size);
 

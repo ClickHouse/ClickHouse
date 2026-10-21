@@ -78,7 +78,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 {
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
-        current_lsn = advanceLSN(tx);
+        current_lsn = advanceLSN(tx, final_lsn);
         tx->commit();
     }
 
@@ -1195,7 +1195,7 @@ void MaterializedPostgreSQLConsumer::updateLsn()
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
-        current_lsn = advanceLSN(tx);
+        current_lsn = advanceLSN(tx, final_lsn);
         tables_to_sync.clear();
         tx->commit();
     }
@@ -1205,15 +1205,39 @@ void MaterializedPostgreSQLConsumer::updateLsn()
     }
 }
 
-String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
+String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx, const String & target_lsn)
 {
-    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance({}, {})", quoteStringPostgreSQL(replication_slot_name), quoteStringPostgreSQL(final_lsn));
+    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance({}, {})", quoteStringPostgreSQL(replication_slot_name), quoteStringPostgreSQL(target_lsn));
     pqxx::result result{tx->exec(query_str)};
 
     final_lsn = result[0][0].as<std::string>();
     LOG_TRACE(log, "Advanced LSN up to: {}", getLSNValue(final_lsn));
     committed = false;
     return final_lsn;
+}
+
+/// Without a published change to read, the slot stays where it was, and PostgreSQL keeps all WAL after that position.
+/// That happens when the WAL is only made of changes outside the publication, for example on a database with no
+/// traffic on the replicated tables. The flush position is read before the checks and the checks run before the
+/// peek. A transaction that was open at the flush position still holds an xid when the checks run, otherwise it
+/// committed before the peek and the peek decoded it. A transaction that starts later writes WAL past the position.
+/// Prepared transactions are treated as open. The checks need superuser or `pg_read_all_stats`, since otherwise
+/// `pg_stat_activity` hides other sessions. Without it the slot is not moved.
+std::optional<String> MaterializedPostgreSQLConsumer::getSafeEmptyBatchLSN(std::shared_ptr<pqxx::nontransaction> tx)
+{
+    pqxx::result flush_result{tx->exec("SELECT pg_current_wal_flush_lsn()")};
+    String flush_lsn = flush_result[0][0].as<std::string>();
+
+    pqxx::result check_result{tx->exec(
+        "SELECT (rolsuper OR pg_has_role(current_user, 'pg_read_all_stats', 'MEMBER')) "
+        "AND NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND backend_xid IS NOT NULL) "
+        "AND NOT EXISTS (SELECT 1 FROM pg_prepared_xacts) "
+        "FROM pg_roles WHERE rolname = current_user")};
+
+    if (!check_result[0][0].as<bool>())
+        return std::nullopt;
+
+    return flush_lsn;
 }
 
 /// Sync for some table might not be allowed if:
@@ -1358,6 +1382,9 @@ bool MaterializedPostgreSQLConsumer::consume()
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
 
+        /// Must run before the peek below, see getSafeEmptyBatchLSN.
+        std::optional<String> safe_empty_batch_lsn = getSafeEmptyBatchLSN(tx);
+
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.
         /// Returns less than max_block_changes, if reached end of wal. Sync to table in this case.
@@ -1384,6 +1411,11 @@ bool MaterializedPostgreSQLConsumer::consume()
 
                 if (slot_empty)
                 {
+                    /// Nothing to sync, so the replica can move forward to the verified position without losing changes.
+                    if (safe_empty_batch_lsn && tables_to_sync.empty() && getLSNValue(*safe_empty_batch_lsn) > getLSNValue(final_lsn))
+                    {
+                        current_lsn = advanceLSN(tx, *safe_empty_batch_lsn);
+                    }
                     tx->commit();
                     return false;
                 }
