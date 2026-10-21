@@ -27,9 +27,15 @@ public:
     void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);
 
-    /// Removes a lock for a table if it exists
+    /// Removes a lock for a table if it exists.
+    /// Also removes the locks of the same type held on the storage the lock resolved to, when it was taken
+    /// through a forwarding storage (`Alias`, a materialized view with an inner table), and the locks taken
+    /// through forwarding storages that resolved to the specified table.
+    /// With `resolve_forwarding_target`, a forwarding storage that holds no lock of this type is resolved
+    /// to its current target, whose locks are removed as well. This reaches the target's database, so it is
+    /// meant for a `SYSTEM START` of one explicitly named table, not for the loop over all tables.
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
-    void remove(const StoragePtr & table, StorageActionBlockType action_type);
+    void remove(const StoragePtr & table, StorageActionBlockType action_type, bool resolve_forwarding_target = false);
 
     /// Checks whether there is a lock for specified table and action_type.
     /// Also counts a lock taken through a forwarding storage (`Alias`, a materialized view with an inner table)
@@ -46,25 +52,31 @@ public:
 
 private:
     using StorageRawPtr = const IStorage *;
-    using Locks = std::unordered_map<size_t, ActionLock>;
 
-    struct StorageLocksEntry
+    struct LockEntry
     {
-        /// The storage that owns the blockers behind `locks`: differs from the key when the locks
-        /// were taken through a forwarding storage. Only compared, never dereferenced.
+        ActionLock lock;
+        /// The storage that owns the blocker behind `lock`: differs from the storage the lock is kept for
+        /// when it was taken through a forwarding storage. Only compared, never dereferenced.
         StorageRawPtr owner = nullptr;
         /// The same storage, recorded when the lock was taken, to notify it on removal without
         /// resolving the forwarding storage again (its target may be remote and unavailable).
         std::weak_ptr<IStorage> owner_storage;
-        Locks locks;
     };
 
-    using StorageLocks = std::unordered_map<StorageRawPtr, StorageLocksEntry>;
-    /// The keys of `storage_locks` grouped by `StorageLocksEntry::owner`.
-    using OwnedStorages = std::unordered_map<StorageRawPtr, std::unordered_set<StorageRawPtr>>;
+    /// The locks of one storage by action type. Each lock keeps its own owner: the target of a forwarding
+    /// storage can change between two `SYSTEM STOP`s, while the earlier lock still blocks the earlier target.
+    using Locks = std::unordered_map<size_t, LockEntry>;
+    using StorageLocks = std::unordered_map<StorageRawPtr, Locks>;
+    /// For every owner, the storages other than the owner itself that keep locks owned by it, with the number
+    /// of such locks. An entry with a zero count (left by an `add` that threw) is allowed and means nothing.
+    using OwnedStorages = std::unordered_map<StorageRawPtr, std::unordered_map<StorageRawPtr, size_t>>;
 
     bool hasImpl(StorageRawPtr table, std::optional<StorageActionBlockType> action_type) const;
-    void eraseEntry(StorageLocks::iterator it);
+    bool hasRecordedLock(StorageRawPtr table, StorageActionBlockType action_type) const;
+    void unlinkOwner(StorageRawPtr storage, StorageRawPtr owner) noexcept;
+    void eraseLock(StorageLocks::iterator it, Locks::iterator it_lock) noexcept;
+    void removeOwnedLocks(StorageRawPtr owner, StorageActionBlockType action_type);
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;

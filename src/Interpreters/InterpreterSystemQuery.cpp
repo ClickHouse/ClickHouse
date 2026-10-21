@@ -339,7 +339,9 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         {
             if (start)
             {
-                manager->remove(table, action_type);
+                /// The table is named explicitly, so a forwarding storage (`Alias`, ...) also releases a lock
+                /// taken directly on its target. The loop over all tables below reaches the target by itself.
+                manager->remove(table, action_type, /* resolve_forwarding_target */ true);
                 table->onActionLockRemove(action_type);
             }
             else

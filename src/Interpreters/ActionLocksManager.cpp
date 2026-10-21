@@ -7,6 +7,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/typeid_cast.h>
 
+#include <vector>
+
 
 namespace DB
 {
@@ -69,29 +71,31 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 {
     ActionLock action_lock = table->getActionLock(action_type);
 
-    if (!action_lock.expired())
-    {
-        auto owner = resolveActionLockOwner(table);
-        if (!owner)
-            owner = table;
+    if (action_lock.expired())
+        return;
 
-        std::lock_guard lock(mutex);
-        auto & entry = storage_locks[table.get()];
-        if (entry.owner != owner.get())
-        {
-            if (entry.owner)
-            {
-                auto it_owned = owned_storages.find(entry.owner);
-                it_owned->second.erase(table.get());
-                if (it_owned->second.empty())
-                    owned_storages.erase(it_owned);
-            }
-            entry.owner = owner.get();
-            owned_storages[entry.owner].insert(table.get());
-        }
-        entry.owner_storage = owner;
-        entry.locks[action_type] = std::move(action_lock);
-    }
+    auto owner = resolveActionLockOwner(table);
+    if (!owner)
+        owner = table;
+
+    std::lock_guard lock(mutex);
+
+    /// Allocate every node first. An exception here leaves at most empty nodes, which every reader skips
+    /// and `cleanExpired` removes, so both indexes stay consistent.
+    auto & locks = storage_locks[table.get()];
+    size_t * owned_count = owner != table ? &owned_storages[owner.get()][table.get()] : nullptr;
+    auto [it_lock, inserted] = locks.try_emplace(action_type);
+
+    /// Nothing below throws. Count the new owner before unlinking the replaced one: when they are the same,
+    /// the count does not drop to zero and `owned_count` stays valid.
+    if (owned_count)
+        ++*owned_count;
+    if (!inserted)
+        unlinkOwner(table.get(), it_lock->second.owner);
+
+    it_lock->second.lock = std::move(action_lock);
+    it_lock->second.owner = owner.get();
+    it_lock->second.owner_storage = owner;
 }
 
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
@@ -100,12 +104,21 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
         remove(table, action_type);
 }
 
-void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
+void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type, bool resolve_forwarding_target)
 {
     /// The blocker behind a lock taken through a forwarding storage belongs to the storage it resolved to,
-    /// so `SYSTEM START` on either of them has to release it: remove every lock with the same owner.
-    /// The owner is the one recorded when the lock was taken, so a forwarding storage is not resolved
-    /// again here: its target may be unavailable, and nothing is resolved when no lock is held.
+    /// so `SYSTEM START` on either of them has to release it. The owner is the one recorded when the lock
+    /// was taken, so a forwarding storage that holds a lock is not resolved again here: its target may be
+    /// unavailable. Only a forwarding storage without a lock of this type is resolved, and only on request:
+    /// `SYSTEM STOP MERGES t` followed by `SYSTEM START MERGES alias_to_t` has to release the lock on `t`.
+    StoragePtr resolved_target;
+    if (resolve_forwarding_target && !hasRecordedLock(table.get(), action_type))
+    {
+        resolved_target = resolveActionLockOwner(table);
+        if (resolved_target == table)
+            resolved_target.reset();
+    }
+
     StoragePtr owner;
 
     {
@@ -114,14 +127,31 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
         StorageRawPtr owner_ptr = table.get();
         if (auto it = storage_locks.find(table.get()); it != storage_locks.end())
         {
-            owner_ptr = it->second.owner;
-            owner = it->second.owner_storage.lock();
-            it->second.locks.erase(action_type);
+            if (auto it_lock = it->second.find(action_type); it_lock != it->second.end())
+            {
+                owner_ptr = it_lock->second.owner;
+                owner = it_lock->second.owner_storage.lock();
+                eraseLock(it, it_lock);
+            }
         }
 
-        if (auto it_owned = owned_storages.find(owner_ptr); it_owned != owned_storages.end())
-            for (StorageRawPtr storage : it_owned->second)
-                storage_locks.at(storage).locks.erase(action_type);
+        if (owner_ptr == table.get() && resolved_target)
+        {
+            owner_ptr = resolved_target.get();
+            owner = resolved_target;
+        }
+
+        /// The locks taken through forwarding storages that resolved to this table.
+        removeOwnedLocks(table.get(), action_type);
+
+        if (owner_ptr != table.get())
+        {
+            /// The lock held on the owner itself, and the ones taken through other forwarding storages.
+            if (auto it = storage_locks.find(owner_ptr); it != storage_locks.end())
+                if (auto it_lock = it->second.find(action_type); it_lock != it->second.end())
+                    eraseLock(it, it_lock);
+            removeOwnedLocks(owner_ptr, action_type);
+        }
     }
 
     /// The callers notify the storage they were given; when the blocker belongs to another storage,
@@ -158,36 +188,79 @@ bool ActionLocksManager::hasImpl(StorageRawPtr table, std::optional<StorageActio
 {
     std::lock_guard lock(mutex);
 
-    auto has_lock = [&](StorageRawPtr storage)
+    /// With `owner`, only the locks owned by it count.
+    auto has_lock = [&](StorageRawPtr storage, StorageRawPtr owner)
     {
         auto it = storage_locks.find(storage);
         if (it == storage_locks.end())
             return false;
 
-        for (const auto & [type, action_lock] : it->second.locks)
-            if ((!action_type || type == *action_type) && !action_lock.expired())
+        for (const auto & [type, entry] : it->second)
+            if ((!action_type || type == *action_type) && (!owner || entry.owner == owner) && !entry.lock.expired())
                 return true;
         return false;
     };
 
-    if (has_lock(table))
+    if (has_lock(table, nullptr))
         return true;
 
     if (auto it_owned = owned_storages.find(table); it_owned != owned_storages.end())
-        for (StorageRawPtr storage : it_owned->second)
-            if (has_lock(storage))
+        for (const auto & [storage, count] : it_owned->second)
+            if (count && has_lock(storage, table))
                 return true;
 
     return false;
 }
 
-void ActionLocksManager::eraseEntry(StorageLocks::iterator it)
+bool ActionLocksManager::hasRecordedLock(StorageRawPtr table, StorageActionBlockType action_type) const
 {
-    auto it_owned = owned_storages.find(it->second.owner);
-    it_owned->second.erase(it->first);
+    std::lock_guard lock(mutex);
+    auto it = storage_locks.find(table);
+    return it != storage_locks.end() && it->second.contains(action_type);
+}
+
+void ActionLocksManager::unlinkOwner(StorageRawPtr storage, StorageRawPtr owner) noexcept
+{
+    if (owner == storage)
+        return;
+
+    auto it_owned = owned_storages.find(owner);
+    if (it_owned == owned_storages.end())
+        return;
+
+    if (auto it_count = it_owned->second.find(storage); it_count != it_owned->second.end() && --it_count->second == 0)
+        it_owned->second.erase(it_count);
+
     if (it_owned->second.empty())
         owned_storages.erase(it_owned);
-    storage_locks.erase(it);
+}
+
+void ActionLocksManager::eraseLock(StorageLocks::iterator it, Locks::iterator it_lock) noexcept
+{
+    unlinkOwner(it->first, it_lock->second.owner);
+    it->second.erase(it_lock);
+}
+
+void ActionLocksManager::removeOwnedLocks(StorageRawPtr owner, StorageActionBlockType action_type)
+{
+    auto it_owned = owned_storages.find(owner);
+    if (it_owned == owned_storages.end())
+        return;
+
+    /// `eraseLock` modifies the index being iterated, so take the storages out of it first.
+    std::vector<StorageRawPtr> storages;
+    storages.reserve(it_owned->second.size());
+    for (const auto & [storage, count] : it_owned->second)
+        storages.push_back(storage);
+
+    for (StorageRawPtr storage : storages)
+    {
+        auto it = storage_locks.find(storage);
+        if (it == storage_locks.end())
+            continue;
+        if (auto it_lock = it->second.find(action_type); it_lock != it->second.end() && it_lock->second.owner == owner)
+            eraseLock(it, it_lock);
+    }
 }
 
 void ActionLocksManager::cleanExpired()
@@ -196,19 +269,29 @@ void ActionLocksManager::cleanExpired()
 
     for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end();)
     {
-        auto & locks = it_storage->second.locks;
+        auto & locks = it_storage->second;
         for (auto it_lock = locks.begin(); it_lock != locks.end();)
         {
-            if (it_lock->second.expired())
-                it_lock = locks.erase(it_lock);
+            if (it_lock->second.lock.expired())
+                eraseLock(it_storage, it_lock++);
             else
                 ++it_lock;
         }
 
         if (locks.empty())
-            eraseEntry(it_storage++);
+            it_storage = storage_locks.erase(it_storage);
         else
             ++it_storage;
+    }
+
+    /// The empty nodes an `add` that threw may have left.
+    for (auto it_owned = owned_storages.begin(); it_owned != owned_storages.end();)
+    {
+        std::erase_if(it_owned->second, [](const auto & storage_and_count) { return storage_and_count.second == 0; });
+        if (it_owned->second.empty())
+            it_owned = owned_storages.erase(it_owned);
+        else
+            ++it_owned;
     }
 }
 
