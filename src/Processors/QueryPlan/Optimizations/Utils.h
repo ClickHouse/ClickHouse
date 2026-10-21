@@ -11,9 +11,7 @@ namespace DB
 {
 
 class ActionsDAG;
-class ArrayJoinStep;
 class ReadFromMergeTree;
-class SortingStep;
 
 struct IDescriptionHolder
 {
@@ -108,33 +106,6 @@ enum class FilterResult
 /// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used by top-K
 /// pushdowns that must cooperate with parallel replicas and `optimizeReadInOrder`.
 const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
-
-/// True when inserting a materializing `Sort + Limit` above `input_node` must be abandoned:
-/// parallel-replica coordination would conflict with a local top-n, or (when
-/// `defer_to_read_in_order`) the second-pass `optimizeReadInOrder` can already stream the
-/// requested order - including the `FINAL` + descending-key case that pass 2 rejects even
-/// when `wouldReadInOrderBeUseful` says yes.
-[[nodiscard]] bool shouldSkipTopKAboveMergeTreeInput(
-    const QueryPlan::Node & input_node,
-    const SortingStep & sort_step,
-    const SortDescription & description,
-    size_t limit,
-    bool defer_to_read_in_order);
-
-/// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
-/// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`: an unaligned `ARRAY JOIN` drops a row only
-/// when all its arrays are empty.
-///
-/// Must be built on the immediate input of `array_join`: joined columns are present there under
-/// the names in `array_join.getColumns()`, and constant arrays are folded by `ActionsDAG` itself.
-///
-/// `input_node` is updated to point to the inserted filter. If the condition is constant, no node
-/// is added because limiting the input cannot change whether a constant `ARRAY JOIN` emits rows.
-/// Returns false only if the condition cannot be constructed.
-[[nodiscard]] bool addArrayJoinEmptinessFilter(
-    ArrayJoinStep & array_join,
-    QueryPlan::Node *& input_node,
-    QueryPlan::Nodes & nodes);
 
 struct NoOp
 {

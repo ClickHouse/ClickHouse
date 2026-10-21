@@ -157,7 +157,7 @@ SELECT count(), sum(x), min(x), max(x) FROM (SELECT x FROM t_aj_ragged LEFT ARRA
 DROP TABLE t_aj_ragged;
 
 -- Arrays of unequal size under an aligned inner ARRAY JOIN must still throw. The emptiness
--- guard spans every joined column (`length(arr) > 0 OR length(arr2) > 0`) rather than just the
+-- guard spans every joined column (`notEmpty(arr) OR notEmpty(arr2)`) rather than just the
 -- first one, precisely so that a row like `([1], [7, 8])` reaches the step instead of being filtered.
 -- Select the joined columns so the size check is not elided by lazy column replication.
 DROP TABLE IF EXISTS t_aj_mismatch;
