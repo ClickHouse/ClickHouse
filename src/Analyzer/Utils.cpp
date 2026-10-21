@@ -74,9 +74,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool transform_null_in;
 }
 
@@ -559,11 +561,17 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
+        {
             result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_size);
+        }
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
+        {
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_offset);
+        }
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
@@ -899,6 +907,14 @@ TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tr
     buildTableExpressionsStackImpl(join_tree_node, result);
 
     return result;
+}
+
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
 }
 
 namespace
