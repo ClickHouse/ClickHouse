@@ -32,8 +32,19 @@ ch_cc_library(
         "src/unix/procfs-exepath.c",
         "src/unix/random-getrandom.c",
         "src/unix/random-sysctl-linux.c",
-    ] + glob(["src/**/*.h"]),
-    hdrs = glob(["include/**/*.h"]),
+        "include/uv/tree.h",
+        "src/unix/internal.h",
+    ] + glob(["src/*.h"]),
+    hdrs = [
+        "include/uv.h",
+        "include/uv/errno.h",
+        "include/uv/linux.h",
+        "include/uv/version.h",
+    ],
+    textual_hdrs = [
+        "include/uv/threadpool.h",
+        "include/uv/unix.h",
+    ],
     copts = [
         "-w",
         "-std=gnu11",

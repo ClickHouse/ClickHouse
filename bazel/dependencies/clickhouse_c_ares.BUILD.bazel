@@ -54,19 +54,30 @@ ch_cc_library(
         "src/lib/event/ares_event_wake_pipe.c",
         "src/lib/inet_net_pton.c",
         "src/lib/inet_ntop.c",
-    ] + glob(["src/lib/legacy/*.c"]) + glob(["src/lib/record/*.c"]) + glob(["src/lib/str/*.c"]) + glob(["src/lib/util/*.c"]),
-    hdrs = glob([
-        "include/**/*.h",
-        "src/lib/**/*.h",
-        "src/lib/**/*.inc",
+    ] + glob(["src/lib/legacy/*.c"]) + glob(["src/lib/record/*.c"]) + glob(["src/lib/str/*.c"]) + glob(["src/lib/util/*.c"]) + [
+        "src/lib/ares_conn.h",
+        "src/lib/ares_data.h",
+        "src/lib/ares_inet_net_pton.h",
+        "src/lib/ares_ipv6.h",
+        "src/lib/ares_private.h",
+        "src/lib/ares_setup.h",
+        "src/lib/ares_socket.h",
+        "src/lib/event/ares_event.h",
+    ] + glob([
+        "src/lib/dsa/*.h",
+        "src/lib/include/*.h",
+        "src/lib/record/*.h",
+        "src/lib/str/*.h",
+        "src/lib/util/*.h",
     ]),
+    hdrs = glob(["include/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = ["@clickhouse_llvm_project//:libcxxabi_headers"],
-    includes = [
-        "include",
+    includes = ["include"],
+    local_includes = [
         "src/lib",
         "src/lib/include",
     ],
