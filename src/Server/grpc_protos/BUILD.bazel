@@ -70,10 +70,6 @@ ch_cc_library(
     ],
     source_headers = False,
     strip_include_prefix = "/bazel/gen/src/Server/grpc_protos",
-    textual_hdrs = [
-        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
-        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
-    ],
     deps = [
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_google_protobuf//:_libprotobuf",

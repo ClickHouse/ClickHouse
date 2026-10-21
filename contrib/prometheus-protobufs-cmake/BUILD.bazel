@@ -9,6 +9,11 @@ ch_cc_library(
         "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
         "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
     ],
+    hdrs = [
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h",
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.h",
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.h",
+    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -60,12 +65,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    textual_hdrs = [
-        "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
-        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
-        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
-    ],
-    deps = ["//bazel:prometheus_proto_headers"] + [
+    strip_include_prefix = "/bazel/gen/contrib/prometheus-protobufs-cmake",
+    deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_abseil_cpp//:absl_base",

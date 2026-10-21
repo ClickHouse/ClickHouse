@@ -155,9 +155,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["config/contrib/orc/c++/include", "c++/src"],
-    textual_hdrs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
-    ],
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse//contrib/lz4-cmake:_lz4",

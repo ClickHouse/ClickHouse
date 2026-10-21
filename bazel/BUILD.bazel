@@ -1549,18 +1549,6 @@ cc_library(
 )
 
 cc_library(
-    name = "prometheus_proto_headers",
-    hdrs = [
-        "gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h",
-        "gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.h",
-        "gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.h",
-    ],
-    includes = ["gen/contrib/prometheus-protobufs-cmake"],
-    visibility = ["//contrib/prometheus-protobufs-cmake:__pkg__"],
-    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
-)
-
-cc_library(
     name = "orc_proto_headers",
     hdrs = ["gen/contrib/arrow-cmake/orc_proto.pb.h"],
     includes = ["gen/contrib/arrow-cmake"],
