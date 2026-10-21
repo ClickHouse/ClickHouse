@@ -6,12 +6,13 @@ import io
 import json
 import os
 import random
+import re
 import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .event import Event
@@ -129,6 +130,7 @@ class Result(MetaClasses.Serializable):
         with_info_from_results=False,
         links=None,
         labels=None,
+        info_extractor: Optional[Callable[[str], Optional[str]]] = None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.OK if status else Result.Status.FAIL
@@ -180,6 +182,23 @@ class Result(MetaClasses.Serializable):
             for result in results:
                 if result.info:
                     infos.append(f"{result.name}: {result.info}")
+        # A fabric method like create_from has no command output of its own. When an
+        # info_extractor is given and the result is failing, run it over the whole job
+        # log (Settings.RUN_LOG) so the same text -> info extractor used by
+        # from_commands_run can still surface the error here.
+        if info_extractor is not None and result_status not in (
+            Result.Status.OK,
+            Result.Status.SKIPPED,
+            Result.Status.XFAIL,
+        ):
+            try:
+                with open(Settings.RUN_LOG, "r", encoding="utf-8", errors="ignore") as f:
+                    job_output = f.read()
+                extracted = info_extractor(job_output)
+            except FileNotFoundError:
+                extracted = None
+            if extracted:
+                infos.append(extracted)
         result = Result(
             name=name,
             status=result_status,
@@ -937,6 +956,7 @@ class Result(MetaClasses.Serializable):
         retries=1,
         retry_errors: Union[List[str], str] = "",
         env=None,
+        info_extractor: Optional[Callable[[str], Optional[str]]] = None,
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
@@ -954,6 +974,12 @@ class Result(MetaClasses.Serializable):
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
         :param env: Optional environment dict for shell commands (e.g. the job
             python env so PYTHONPATH carries the checkout root for `ci.*` imports).
+        :param info_extractor: Optional callable that condenses the raw command output
+            into Result.info. It receives the full captured output as a single string
+            and returns the condensed text to store, or None to fall back to the
+            generic head+tail truncation. Use a native extractor such as
+            `Result.cpp_build_info_extractor`, or supply your own. The extractor is a
+            plain function, so it can also be called standalone on any log string.
         :return: Result object with status and optional log file.
         """
 
@@ -978,7 +1004,6 @@ class Result(MetaClasses.Serializable):
         print(f"> Start execution for [{name}]")
         res = True  # Track success/failure status
         info_lines = []
-        MAX_LINES_IN_INFO = 300
         with ContextManager.cd(workdir):
             for command_ in command:
                 if callable(command_):
@@ -1027,40 +1052,18 @@ class Result(MetaClasses.Serializable):
                     print(f"Execution stopped due to failure in [{command_}]")
                     break
 
-        # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
-        truncated = False
-        if len(info_lines) > MAX_LINES_IN_INFO:
-            # For clang-tidy and similar builds, find the first error/warning
-            # and show context around it instead of just the last lines
-            first_error_idx = None
-            for idx, line in enumerate(info_lines):
-                # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
-                if ": error:" in line or ": warning:" in line:
-                    first_error_idx = idx
-                    break
-
-            if first_error_idx is not None:
-                # Show context around the first error (lines before and after)
-                CONTEXT_BEFORE = 50
-                CONTEXT_AFTER = MAX_LINES_IN_INFO - CONTEXT_BEFORE - 1
-                start_idx = max(0, first_error_idx - CONTEXT_BEFORE)
-                end_idx = min(len(info_lines), first_error_idx + CONTEXT_AFTER + 1)
-
-                truncated_before = start_idx
-                truncated_after = len(info_lines) - end_idx
-
-                new_info_lines = []
-                if truncated_before > 0:
-                    new_info_lines.append(f"~~~~~ truncated {truncated_before} lines at the beginning ~~~~~")
-                new_info_lines.extend(info_lines[start_idx:end_idx])
-                if truncated_after > 0:
-                    new_info_lines.append(f"~~~~~ truncated {truncated_after} lines at the end ~~~~~")
-                info_lines = new_info_lines
-            else:
-                # Default behavior: keep the last MAX_LINES_IN_INFO lines
-                truncated_count = len(info_lines) - MAX_LINES_IN_INFO
-                info_lines = [f"~~~~~ truncated {truncated_count} lines ~~~~~"] + info_lines[-MAX_LINES_IN_INFO:]
+        # Condense the collected output into Result.info. A caller-supplied
+        # info_extractor (e.g. the native Result.cpp_build_info_extractor) gets first
+        # chance to pull out the meaningful part; when it is absent or declines
+        # (returns None), fall back to the generic, format-agnostic head+tail trim.
+        output = "\n".join(info_lines)
+        extracted = info_extractor(output) if info_extractor is not None else None
+        if extracted is not None:
+            # The extractor condensed the output; the full log stays attached as a file.
+            info_lines = extracted.splitlines()
             truncated = True
+        else:
+            info_lines, truncated = Result._truncate_info_head_tail(info_lines)
 
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
@@ -1070,6 +1073,135 @@ class Result(MetaClasses.Serializable):
             info=info_lines,
             files=([log_file] if (with_log or truncated) and log_file else None),
         )
+
+    # Budget for the generic, format-agnostic fallback used when no info_extractor
+    # handles the output: keep the first HEAD and last TAIL lines so that the error,
+    # whether printed first or summarized last, survives. The full log is attached.
+    INFO_HEAD_LINES = 20
+    INFO_TAIL_LINES = 100
+
+    @staticmethod
+    def _truncate_info_head_tail(info_lines: List[str]):
+        """
+        Generic fallback trimming for command/job output with no dedicated extractor.
+        Keeps the first INFO_HEAD_LINES and last INFO_TAIL_LINES lines with a marker in
+        between. Returns (lines, truncated).
+        """
+        budget = Result.INFO_HEAD_LINES + Result.INFO_TAIL_LINES
+        if len(info_lines) <= budget:
+            return info_lines, False
+        omitted = len(info_lines) - budget
+        trimmed = (
+            info_lines[: Result.INFO_HEAD_LINES]
+            + [f"~~~~~ truncated {omitted} lines ~~~~~"]
+            + info_lines[-Result.INFO_TAIL_LINES :]
+        )
+        return trimmed, True
+
+    # --- Native info extractors (text -> condensed info text, or None to defer) ---
+
+    # Optional leading timestamp token, e.g. "[2026-10-16 13:20:17] ", that the job
+    # log (Settings.RUN_LOG) prefixes to every line but the raw per-command log does not.
+    _LINE_TS_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s?")
+    # A ninja progress line, "[123/4567] Building ...", after stripping the timestamp.
+    _NINJA_PROGRESS_RE = re.compile(r"^\[\d+/\d+\]")
+    # A clang/gcc diagnostic, "path:line:col: error:" or "... fatal error:".
+    _CC_DIAG_RE = re.compile(r":\d+:\d+:\s+(?:fatal\s+)?error:")
+    # Linker diagnostics that carry no file:line:col prefix.
+    _LINK_ERR_RE = re.compile(
+        r"(?:\bld(?:\.lld|\.gold|\.bfd)?\b.*\berror:|undefined (?:symbol|reference)|duplicate symbol)"
+    )
+
+    @staticmethod
+    def cpp_build_info_extractor(output: str) -> Optional[str]:
+        """
+        Native info_extractor for ninja/clang/gcc C/C++ builds.
+
+        Anchors on ninja's authoritative ``FAILED:`` markers - the line ninja prints
+        immediately before a failed edge's output - and keeps each failed block (the
+        compiler diagnostics) while dropping the huge compiler command line. If there is
+        no ``FAILED:`` marker (e.g. a clang-tidy run), it falls back to the clang/gcc
+        ``error:``/``fatal error:`` diagnostics and linker errors with a little context.
+
+        Tolerant of an optional leading ``[timestamp]`` prefix, so it works both on the
+        raw per-command build log and on the whole job log (Settings.RUN_LOG).
+
+        Returns the condensed text, or None when it recognizes nothing (so the caller
+        falls back to the generic head+tail trim).
+        """
+        MAX_BLOCKS = 5
+        MAX_CMD_LINE_LEN = 1000
+        MAX_INFO_LINES = 300
+
+        lines = output.splitlines()
+
+        def content(line: str) -> str:
+            return Result._LINE_TS_RE.sub("", line)
+
+        def is_block_boundary(line: str) -> bool:
+            c = content(line)
+            return (
+                c.startswith("FAILED:")
+                or c.startswith("ninja:")
+                or bool(Result._NINJA_PROGRESS_RE.match(c))
+            )
+
+        selected: List[str] = []
+
+        # 1) ninja FAILED: blocks - the reliable anchor for a ninja build.
+        blocks: List[List[str]] = []
+        i = 0
+        n = len(lines)
+        while i < n and len(blocks) < MAX_BLOCKS:
+            if content(lines[i]).startswith("FAILED:"):
+                block = [lines[i]]
+                j = i + 1
+                while j < n and not is_block_boundary(lines[j]):
+                    if len(lines[j]) > MAX_CMD_LINE_LEN:
+                        block.append("<... compiler command line omitted ...>")
+                    else:
+                        block.append(lines[j])
+                    j += 1
+                blocks.append(block)
+                i = j
+            else:
+                i += 1
+
+        if blocks:
+            total_failed = sum(1 for line in lines if content(line).startswith("FAILED:"))
+            header = f"Found {total_failed} failed build step(s)"
+            if total_failed > len(blocks):
+                header += f"; showing first {len(blocks)}"
+            selected.append(header + ":")
+            for block in blocks:
+                selected.append("")
+                selected.extend(block)
+        else:
+            # 2) No FAILED: marker - fall back to clang/gcc diagnostics and linker errors.
+            diag_idx = [
+                k
+                for k, line in enumerate(lines)
+                if Result._CC_DIAG_RE.search(content(line)) or Result._LINK_ERR_RE.search(content(line))
+            ]
+            if not diag_idx:
+                return None
+            start = max(0, diag_idx[0] - 5)
+            end = min(n, diag_idx[-1] + 6)
+            selected.append(f"Found {len(diag_idx)} compiler/linker error line(s):")
+            selected.extend(lines[start:end])
+
+        # Always surface ninja's final verdict if present.
+        stopped = [line for line in lines if content(line).startswith("ninja: build stopped")]
+        if stopped:
+            selected.append("")
+            selected.append(stopped[-1])
+
+        # Cap the extractor's own output; the first failures matter most, so keep the head.
+        if len(selected) > MAX_INFO_LINES:
+            omitted = len(selected) - MAX_INFO_LINES
+            selected = selected[:MAX_INFO_LINES] + [f"~~~~~ truncated {omitted} lines ~~~~~"]
+
+        return "\n".join(selected)
 
     def do_not_block_pipeline_on_failure(self):
         return self.ext.get("do_not_block_pipeline_on_failure", False)

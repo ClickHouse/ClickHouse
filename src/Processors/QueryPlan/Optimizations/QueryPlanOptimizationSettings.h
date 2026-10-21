@@ -99,6 +99,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool parallel_distinct;
+    bool force_distinct_partitions_independently;
     bool window_partitions_independently;
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
@@ -157,7 +159,8 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache_for_top_k;
     bool use_query_condition_cache_for_time_conditions;
     double query_condition_cache_time_condition_grid_factor;
-    bool read_in_order_through_join;
+    /// 0 - off, 1 - on, 2 - on even when the parts have no virtual rows (`force`).
+    UInt64 read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
@@ -257,6 +260,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     bool collect_hash_table_stats_during_aggregation;
+    bool optimize_uniq_exact_radix_partitioning;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
