@@ -977,7 +977,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
     /// geo type resolution entirely (it will not re-parse).
     SchemaConverter schemer(
-        file_metadata(),
+        *file_footer,
         options,
         &extended_sample_block,
         options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
@@ -4429,7 +4429,9 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
         /// Give back the capacity beyond the rows: the cache is bounded by the memory an entry retains.
         column->shrinkToFit();
 
-        auto entry = std::make_shared<ColumnsCacheEntry>();
+        auto entry = makeColumnsCacheEntry();
+        /// The copy was never charged to the query, so there is nothing to hand over to the server, see `setMany`.
+        entry->owned_by_server.store(true, std::memory_order_relaxed);
         entry->table_uuid = cache_options.table_uuid;
         entry->part_name = cache_options.file_path;
         /// Kept also for an entry of a table: once the table is dropped, its entries can stay in the
