@@ -534,8 +534,6 @@ struct BackupsWorker::BackupStarter
 
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
-        if (!on_cluster)
-            query_context->onQueryExecutionStarted();
 
         backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
                                 on_cluster, cluster);
@@ -758,6 +756,7 @@ void BackupsWorker::doBackup(
     }
     else
     {
+        context->onQueryExecutionStarted();
         backup_query->setCurrentDatabase(context->getCurrentDatabase());
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
