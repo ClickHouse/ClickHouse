@@ -10,7 +10,7 @@ class IStorage;
 struct StorageID;
 
 /// `storage` itself or a storage it reads through (see IStorage::getUnderlyingStorages, also the target of a
-/// materialized view or a `Buffer`) whose merges blend rows, or nullptr.
+/// materialized view or a `Buffer` and the sources of a `Merge` table) whose merges blend rows, or nullptr.
 /// Throws if the user of `context` cannot see a table which `storage` reads through.
 ConstStoragePtr findBlendingEngine(const IStorage & storage, const ContextPtr & context);
 

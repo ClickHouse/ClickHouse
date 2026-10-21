@@ -11,6 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
 
 namespace DB
 {
@@ -29,14 +30,24 @@ namespace ErrorCodes
 namespace
 {
 
-/// A materialized view and a `Buffer` hand the row policy filter to the read of their target, but do not list it
-/// as an underlying storage, because the target's own policies must not apply to them
+/// A materialized view, a `Buffer` and a `Merge` table hand the row policy filter to the read of their targets, but do
+/// not list them as underlying storages, because the targets' own policies must not apply to them
 std::vector<StoragePtr> getReadTargets(const IStorage & storage)
 {
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&storage))
         return {view->tryGetTargetTable()};
     if (const auto * buffer = typeid_cast<const StorageBuffer *>(&storage))
         return {buffer->getDestinationTable()};
+    if (const auto * merge = typeid_cast<const StorageMerge *>(&storage))
+    {
+        std::vector<StoragePtr> sources;
+        merge->hasChildTable([&](const StoragePtr & source)
+        {
+            sources.push_back(source);
+            return false;
+        });
+        return sources;
+    }
     return storage.getUnderlyingStorages();
 }
 
