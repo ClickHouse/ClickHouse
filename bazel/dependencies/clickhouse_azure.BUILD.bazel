@@ -65,11 +65,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_libxml2//:_libxml2",
-        "@clickhouse_openssl//:ssl",
-    ],
     implementation_deps = [
+        "@clickhouse_libxml2//:_libxml2",
         "@clickhouse//contrib/libxml2-cmake:libxml2_config_headers",
         "@clickhouse_openssl//:crypto",
     ],

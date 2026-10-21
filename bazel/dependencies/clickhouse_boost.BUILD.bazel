@@ -40,13 +40,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": glob(["libs/context/src/asm/*_64_sysv_elf_gas.S"]),
         "@platforms//cpu:aarch64": glob(["libs/context/src/asm/*_arm64_aapcs_elf_gas.S"]),
     }),
-    additional_compiler_inputs = select({
-        "@platforms//cpu:x86_64": [
-            "libs/context/src/asm/jump_i386_sysv_elf_gas.S",
-            "libs/context/src/asm/make_i386_sysv_elf_gas.S",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
     language = "ASM",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,

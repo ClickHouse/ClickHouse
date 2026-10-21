@@ -744,8 +744,6 @@ ch_cc_library(
     copts = _GENERATED_COPTS_1,
     implementation_deps = [
         "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
-        "@clickhouse//base/poco/NetSSL_OpenSSL:secure_socket",
-        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_1",
         "@clickhouse//base/poco/Foundation:_poco_foundation",
         "@clickhouse//base/poco/Net:_poco_net",
         "@clickhouse_abseil_cpp//:absl_time",
