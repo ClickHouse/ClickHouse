@@ -192,27 +192,41 @@ void forEachReference(
     }
 }
 
-/// Throws if workloads of `entities` form a parent cycle. Every workload has at most one parent, so a walk up from
-/// any workload either leaves `entities`, reaches a parentless one or makes more steps than there are entities.
+/// Throws if workloads of `entities` form a parent cycle. Every workload has at most one parent, so a walk up from a
+/// workload ends outside `entities`, at a parentless workload, at a workload checked by an earlier walk, or on its own
+/// path, which is a cycle. Every workload is walked over once.
 void checkParentCycles(const WorkloadEntities & entities)
 {
+    enum class State : uint8_t { OnPath, Checked };
+    std::unordered_map<std::string_view, State> states;
+    std::vector<std::string_view> path;
     for (const auto & [key, entity] : entities)
     {
         if (key.type != WorkloadEntityType::Workload)
             continue;
+        path.clear();
         String current = key.name;
-        for (size_t steps = 0;; ++steps)
+        while (true)
         {
+            if (auto state = states.find(current); state != states.end())
+            {
+                if (state->second == State::OnPath)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed: workload '{}' is on a parent cycle", current);
+                break;
+            }
             auto it = entities.find({WorkloadEntityType::Workload, current});
             if (it == entities.end())
                 break;
+            // Views point to the names of keys in `entities`, which outlive `states` and `path`
+            states.emplace(it->first.name, State::OnPath);
+            path.push_back(it->first.name);
             auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(it->second.get());
             if (!workload->hasParent())
                 break;
-            if (steps == entities.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed: workload '{}' is on a parent cycle", current);
             current = workload->getWorkloadParent();
         }
+        for (std::string_view name : path)
+            states[name] = State::Checked;
     }
 }
 

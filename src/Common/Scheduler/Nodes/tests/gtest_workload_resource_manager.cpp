@@ -2770,6 +2770,8 @@ TEST(SchedulerWorkloadResourceManager, LoadRejectsConflictsAndBrokenReferences)
         "CREATE WORKLOAD sql_child IN missing",
         "CREATE RESOURCE sql_parent (MASTER THREAD); CREATE WORKLOAD sql_child IN sql_parent",
         "CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a",
+        "CREATE WORKLOAD c IN a; CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN c; CREATE WORKLOAD d IN a",
+        "CREATE WORKLOAD self IN self",
         "CREATE RESOURCE io (MEMORY RESERVATION)"})
     {
         EXPECT_THROW(t.sql_storage->loadFromString(data), DB::Exception) << data;
@@ -2779,6 +2781,13 @@ TEST(SchedulerWorkloadResourceManager, LoadRejectsConflictsAndBrokenReferences)
     EXPECT_NO_THROW(t.sql_storage->loadFromString("CREATE WORKLOAD x IN cfg_parent; CREATE WORKLOAD y IN x"));
     EXPECT_FALSE(t.storage.has(WORKLOAD, "w"));
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "cfg_io", "cfg_parent", "x"));
+
+    // A deep chain is checked in linear time
+    String chain = "CREATE WORKLOAD w0;";
+    for (size_t i = 1; i < 2000; ++i)
+        chain += fmt::format(" CREATE WORKLOAD w{} IN w{};", i, i - 1);
+    EXPECT_NO_THROW(t.sql_storage->loadFromString(chain));
+    EXPECT_TRUE(t.storage.has(WORKLOAD, "w1999"));
 }
 
 // A configuration workload references only configuration entities: neither a SQL nor an implicit workload can be its
