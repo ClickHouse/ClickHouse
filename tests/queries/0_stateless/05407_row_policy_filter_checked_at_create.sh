@@ -11,6 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB_LAZY="${CLICKHOUSE_DATABASE}_lazy"
 U="u_${CLICKHOUSE_DATABASE}"
 FIN="fin_${CLICKHOUSE_DATABASE}"
+FDICT="fdict_${CLICKHOUSE_DATABASE}"
 FPART="fpart_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT <<EOF
@@ -70,6 +71,19 @@ USE ${CLICKHOUSE_DATABASE};
 SELECT 'lookup policies', count() FROM t_src;
 DROP ROW POLICY p_sub ON t_src;
 DROP ROW POLICY p_in ON t_src;
+
+-- So is one that reads a dictionary through an ALIAS column: qualified ALIAS chains, one through a subcolumn.
+CREATE DICTIONARY d_val (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 't_src' DB '${CLICKHOUSE_DATABASE}')) LAYOUT(HASHED()) LIFETIME(0);
+CREATE TABLE t_alias (id UInt64, val String ALIAS dictGet(concat('d_val', ''), 'val', id), val2 String ALIAS val, tup Tuple(val String) ALIAS tuple(val))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias SELECT number FROM numbers(10);
+CREATE ROW POLICY p_alias ON t_alias USING wrong.val2 = '3' TO ALL; -- { serverError UNKNOWN_IDENTIFIER }
+USE default;
+CREATE ROW POLICY p_alias ON ${CLICKHOUSE_DATABASE}.t_alias USING t_alias.val2 = '3' TO ALL;
+CREATE ROW POLICY p_alias_db ON ${CLICKHOUSE_DATABASE}.t_alias USING ${CLICKHOUSE_DATABASE}.t_alias.tup.val = '3' TO ALL;
+USE ${CLICKHOUSE_DATABASE};
+SELECT 'alias policy', count() FROM t_alias;
+DROP ROW POLICY p_alias, p_alias_db ON t_alias;
 EOF
 
 # Nothing is checked against a table whose columns the creator cannot see, so nothing about them is disclosed.
@@ -134,6 +148,13 @@ CREATE ROW POLICY p_udf ON t_src USING ${FIN}(id, (1, 2)) TO ALL;
 SELECT 'udf', count() FROM t_src;
 DROP ROW POLICY p_udf ON t_src;
 DROP FUNCTION ${FIN};
+CREATE FUNCTION ${FDICT} AS (d, i) -> dictGet(d, 'val', i);
+USE default;
+CREATE ROW POLICY p_udf ON ${CLICKHOUSE_DATABASE}.t_src USING ${FDICT}('d_val', id) = '3' TO ALL;
+USE ${CLICKHOUSE_DATABASE};
+SELECT 'udf dictionary', count() FROM t_src;
+DROP ROW POLICY p_udf ON t_src;
+DROP FUNCTION ${FDICT};
 
 -- A column on the right of IN belongs to the table.
 CREATE ROW POLICY p_arr ON t_arr USING nosuch IN allowed TO ALL; -- { serverError UNKNOWN_IDENTIFIER }

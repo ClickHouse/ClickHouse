@@ -50,11 +50,33 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Tables and dictionaries named in a filter are resolved against the reader's current database.
-    bool readsOtherObjects(const IAST & ast, const ColumnsDescription & columns)
+    /// Tables and dictionaries named in a filter, or in an ALIAS column it reads, are resolved against the reader's current database.
+    bool readsOtherObjects(const IAST & ast, const ColumnsDescription & columns, const StorageID & table_id, NameSet & followed_aliases)
     {
         if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectQuery>())
             return true;
+
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+        {
+            /// A column can be qualified with the table, or with the database and the table, and followed by a subcolumn.
+            const auto & parts = identifier->name_parts;
+            for (size_t qualifier = 0; qualifier < std::min<size_t>(parts.size(), 3); ++qualifier)
+            {
+                if ((qualifier == 1 && parts[0] != table_id.table_name)
+                    || (qualifier == 2 && (parts[0] != table_id.database_name || parts[1] != table_id.table_name)))
+                    continue;
+                String name;
+                for (size_t i = qualifier; i < parts.size(); ++i)
+                {
+                    name += (i == qualifier ? "" : ".") + parts[i];
+                    const auto * column = columns.tryGet(name);
+                    if (column && column->default_desc.kind == ColumnDefaultKind::Alias && column->default_desc.expression
+                        && followed_aliases.insert(name).second
+                        && readsOtherObjects(*column->default_desc.expression, columns, table_id, followed_aliases))
+                        return true;
+                }
+            }
+        }
 
         if (const auto * function = ast.as<ASTFunction>())
         {
@@ -75,9 +97,15 @@ namespace
         }
 
         for (const auto & child : ast.children)
-            if (child && readsOtherObjects(*child, columns))
+            if (child && readsOtherObjects(*child, columns, table_id, followed_aliases))
                 return true;
         return false;
+    }
+
+    bool readsOtherObjects(const IAST & ast, const ColumnsDescription & columns, const StorageID & table_id)
+    {
+        NameSet followed_aliases;
+        return readsOtherObjects(ast, columns, table_id, followed_aliases);
     }
 
     /// Nothing is disclosed about a table whose columns the user cannot see.
@@ -116,7 +144,7 @@ namespace
             {
                 const auto metadata = storage->getInMemoryMetadataPtr(context, false);
                 const auto & columns = metadata->getColumns();
-                if (columns.empty() || readsOtherObjects(*expanded, columns))
+                if (columns.empty() || readsOtherObjects(*expanded, columns, storage->getStorageID()))
                     return;
                 if (referencesOnlyDeclaredColumns(*expanded, columns))
                     table_node = std::make_shared<TableNode>(std::make_shared<StorageDummy>(storage->getStorageID(), columns), context);
@@ -134,7 +162,7 @@ namespace
                 storage->updateExternalDynamicMetadataIfExists(context);
                 auto metadata = storage->getInMemoryMetadataPtr(context, false);
                 const auto & columns = metadata->getColumns();
-                if (columns.empty() || readsOtherObjects(*expanded, columns))
+                if (columns.empty() || readsOtherObjects(*expanded, columns, storage->getStorageID()))
                     return;
                 auto snapshot = storage->getStorageSnapshot(metadata, context);
                 table_node = std::make_shared<TableNode>(storage, std::move(lock), std::move(snapshot));
