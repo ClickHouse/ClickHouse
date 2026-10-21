@@ -519,6 +519,7 @@ def run_fuzz_job(check_name: str):
     # Written by run-fuzzer.sh only when the liveness probes found the server hung.
     hung_server_log = WORKSPACE_PATH / "hung_server.log"
     paths.append(hung_server_log)
+    server_hung = hung_server_log.exists()
 
     server_died = False
     server_exit_code = 0
@@ -616,9 +617,11 @@ def run_fuzz_job(check_name: str):
     # The OOM checks explain a dead server; a finding came from a live one
     if is_failed and not finding:
         if is_sanitized:
-            sanitizer_oom = Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
-            )
+            # On a hung server the SIGKILL is the harness's own stop, not the kernel's.
+            oom_pattern = "Sanitizer:? (out-of-memory|out of memory|failed to allocate)"
+            if not server_hung:
+                oom_pattern += "|Child process was terminated by signal 9"
+            sanitizer_oom = Shell.get_output(f"rg --text '{oom_pattern}' {server_log}")
             # Sanitizer shadow memory is invisible to the server's memory tracker,
             # so the kernel OOM killer may SIGKILL the server before any limit
             # fires. It may also kill the watchdog, losing the "terminated by
@@ -629,7 +632,7 @@ def run_fuzz_job(check_name: str):
                 server_died
                 and server_exit_code == 137
                 and not has_sanitizer_report
-                and not hung_server_log.exists()
+                and not server_hung
             )
             if sanitizer_oom or kernel_oom_kill:
                 print("Sanitizer OOM")
@@ -673,10 +676,14 @@ def run_fuzz_job(check_name: str):
             ),
         )
         parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
-        # Nothing in the logs explains a hung server; "Received signal 15" is the harness's own stop.
-        if hung_server_log.exists() and (
+        # Nothing in the logs explains a hung server; the SIGTERM and SIGKILL records are the harness's own stop.
+        if server_hung and (
             parsed_name == FuzzerLogParser.UNKNOWN_ERROR
-            or parsed_name.startswith("Received signal 15 ")
+            or parsed_name == "Received signal 15 (STID: None)"
+            or (
+                parsed_name.startswith("Child process was terminated by signal 9 ")
+                and parsed_name.endswith(" (STID: None)")
+            )
         ):
             parsed_name = "Server liveness check failed"
             parsed_info = (
