@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-random-settings, no-parallel-replicas
 # Tag no-random-settings: relies on predictable per-row execution timing of `sleepEachRow`
+# Tag no-parallel-replicas: a remote replica would run the sleeping read, and `KILL QUERY` on the initial query does not stop it
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
