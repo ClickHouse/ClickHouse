@@ -599,7 +599,6 @@ ch_cc_library(
     deps = [
         ":_arrow",
         ":_arrow__compile_0",
-        "@clickhouse_boost//:_boost_regex",
         "@clickhouse_thrift//:_thrift",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
     ],
@@ -829,17 +828,6 @@ cc_binary(
         "@clickhouse_llvm_project//:cxxabi",
         "@clickhouse//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
-    ],
-)
-
-cc_library(
-    name = "arrow_headers",
-    hdrs = [":configure_cpp_src_arrow_util_config_h"],
-    # Match contrib/arrow-cmake/CMakeLists.txt: generated IPC, CMake, then source.
-    includes = ["cpp/src"] + ["config/contrib/arrow-cmake/cpp/src"],
-    deps = [
-        ":_arrow_flight",
-        ":_parquet",
     ],
 )
 

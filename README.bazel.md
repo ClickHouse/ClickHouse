@@ -197,6 +197,7 @@ CMake hash recorded below.
 | `e70a4f987` (verification snapshot) | Remove unrelated headers and 138 dependencies from the generated System licenses source | [64bfaf5b](https://app.buildbuddy.io/invocation/64bfaf5b-4645-4eb9-a11c-cfa5224cb9d2) | [32f8ffef](https://app.buildbuddy.io/invocation/32f8ffef-e681-414c-b65a-c4a4e72247d0) |
 | `f6b06dbce` (verification snapshot) | Select the 125 ARM-only compiler-rt outline atomic targets on ARM | [4da44d66](https://app.buildbuddy.io/invocation/4da44d66-718e-488a-8fab-12971e70e25e) | [2b778ee0](https://app.buildbuddy.io/invocation/2b778ee0-c6f9-41f5-b6a4-3b4c0a6d1ff5) |
 | `ebef76675` (verification snapshot) | Correct Abseil header ownership and Linux inputs; remove redundant Arrow dependencies | [0f7b59a5](https://app.buildbuddy.io/invocation/0f7b59a5-eb82-4090-affc-c07036ecb7a5) | [b7a72f38](https://app.buildbuddy.io/invocation/b7a72f38-fa50-45af-815f-ec63cce8d946) |
+| `21fc69dbe` (verification snapshot) | Remove Arrow header aggregate, give DBMS direct Arrow/Parquet owners, and remove unused Parquet Boost regex | [6fa26f91](https://app.buildbuddy.io/invocation/6fa26f91-ddda-4b63-8f04-8d123608ba19) | [c824f631](https://app.buildbuddy.io/invocation/c824f631-dc12-4dec-97be-fcab22810c16) |
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`

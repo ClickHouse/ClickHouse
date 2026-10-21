@@ -344,7 +344,6 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_common",
         "@clickhouse_grpc//:address_sorting",
         "@clickhouse_libssh//:_ssh",
@@ -455,7 +454,6 @@ ch_cc_library(
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
     ] + [
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
@@ -526,7 +524,6 @@ ch_cc_library(
         "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
@@ -590,7 +587,6 @@ ch_cc_library(
         "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,

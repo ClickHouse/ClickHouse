@@ -331,7 +331,6 @@ ch_cc_library(
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
     ] + [
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
@@ -394,7 +393,6 @@ ch_cc_library(
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,

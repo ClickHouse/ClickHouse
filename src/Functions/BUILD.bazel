@@ -1114,7 +1114,6 @@ ch_cc_library(
     implementation_deps = [
         "//contrib/murmurhash:functions_hashing_headers",
         "@clickhouse_amqp_cpp//:_amqp-cpp",
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_cld2//:_cld2",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_common",
         "@clickhouse_google_protobuf//:_libprotobuf",
@@ -1207,7 +1206,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["//contrib/murmurhash:functions_hashing_headers"],
         "@platforms//cpu:aarch64": [
             "@clickhouse_amqp_cpp//:_amqp-cpp",
-            "@clickhouse_arrow//:arrow_headers",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_common",
             "@clickhouse_google_protobuf//:_libprotobuf",
             "@clickhouse_grpc//:address_sorting",
@@ -1455,7 +1453,6 @@ ch_cc_library(
     implementation_deps = select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_amqp_cpp//:_amqp-cpp",
-            "@clickhouse_arrow//:arrow_headers",
             "@clickhouse_google_cloud_cpp//:google_cloud_cpp_common",
             "@clickhouse_google_protobuf//:_libprotobuf",
             "@clickhouse_grpc//:address_sorting",

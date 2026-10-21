@@ -193,7 +193,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_amqp_cpp//:_amqp-cpp",
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_common",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_grpc//:address_sorting",
@@ -524,7 +523,6 @@ ch_cc_library(
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_sha3iuf//:_sha3iuf",
     ] + [
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_libpqxx//:_libpqxx",
     ],
     local_defines = select({

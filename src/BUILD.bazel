@@ -800,7 +800,7 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_google_benchmark//:google_benchmark",
         "//bazel:clickhouse_config_headers",
-    ] + ["@clickhouse_arrow//:arrow_headers"],
+    ] + [],
     link_runtime = True,
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
@@ -2714,7 +2714,6 @@ ch_cc_library(
         "//bazel/rust:delta_kernel_ffi_headers",
         "@clickhouse_arrow//:arrow_generated_config_headers",
         "@clickhouse_amqp_cpp//:_amqp-cpp",
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_avro//:_avrocpp",
         "@clickhouse_aws//:_aws__compile_0",
         "@clickhouse_azure//:_azure_sdk",
@@ -2797,7 +2796,10 @@ ch_cc_library(
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//src/Common/Config:clickhouse_common_config",
         "//src:clickhouse_common_io__compile_0",
-    ] + ["@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-core"] + ["//bazel:clickhouse_config_headers"],
+    ] + ["@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-core"] + ["//bazel:clickhouse_config_headers"] + [
+        "@clickhouse_arrow//:_arrow__compile_0",
+        "@clickhouse_arrow//:_parquet",
+    ],
 )
 
 ch_cc_library(
@@ -2987,7 +2989,6 @@ ch_cc_library(
             "@clickhouse_lemmagen_c//:_lemmagen",
             "@clickhouse_ulid_c//:_ulid",
             "@clickhouse_sha3iuf//:_sha3iuf",
-            "@clickhouse_arrow//:arrow_headers",
             "@clickhouse_libpqxx//:_libpqxx",
             "@clickhouse_mongo_cxx_driver//:_bsoncxx",
             "@clickhouse_mongo_cxx_driver//:_mongocxx",
@@ -4004,7 +4005,6 @@ cc_test(
     ] + [
         "//bazel:clickhouse_config_headers",
     ] + [
-        "@clickhouse_arrow//:arrow_headers",
         "@clickhouse_heks//:heks",
         "//base/poco/Foundation:thread_pool",
         "//base/poco/NetSSL_OpenSSL:secure_socket",
