@@ -417,7 +417,7 @@ void optimizeUsePartAggregationCache(
     bool enable_reads = settings[Setting::enable_reads_from_part_aggregation_cache];
 
     RangesInDataParts uncached_parts;
-    std::vector<PartAggregationCache::EntryPtr> cached_entries;
+    VectorWithMemoryTracking<PartAggregationCache::EntryPtr> cached_entries;
 
     for (const auto & part : parts)
     {

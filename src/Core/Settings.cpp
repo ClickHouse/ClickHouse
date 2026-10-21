@@ -7255,7 +7255,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0, \
-        {"26.10", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."}) \
+        {"26.11", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."}) \
     DECLARE(Bool, enable_reads_from_part_aggregation_cache, true, R"(
 If turned on, results of `GROUP BY` queries are retrieved from the part aggregation cache.
 
@@ -7264,7 +7264,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0, \
-        {"26.10", true, true, "New setting."}) \
+        {"26.11", true, true, "New setting."}) \
     DECLARE(Bool, enable_writes_to_part_aggregation_cache, true, R"(
 If turned on, intermediate per-part aggregation states are stored in the part aggregation cache.
 
@@ -7273,7 +7273,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0, \
-        {"26.10", true, true, "New setting."}) \
+        {"26.11", true, true, "New setting."}) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

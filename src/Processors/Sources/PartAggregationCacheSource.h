@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Processors/ISource.h>
 
@@ -13,7 +14,7 @@ class PartAggregationCacheSource : public ISource
 public:
     PartAggregationCacheSource(
         const Block & header,
-        std::vector<PartAggregationCache::EntryPtr> entries_)
+        VectorWithMemoryTracking<PartAggregationCache::EntryPtr> entries_)
         : ISource(std::make_shared<const Block>(header))
         , entries(std::move(entries_))
     {
@@ -39,7 +40,7 @@ protected:
     }
 
 private:
-    std::vector<PartAggregationCache::EntryPtr> entries;
+    VectorWithMemoryTracking<PartAggregationCache::EntryPtr> entries;
     size_t current = 0;
 };
 
