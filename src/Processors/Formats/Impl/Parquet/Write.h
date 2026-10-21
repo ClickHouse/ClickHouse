@@ -72,6 +72,13 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
+    /// Annotate the WKB-encoded geo columns (only written if `write_geometadata`) with the
+    /// `GEOMETRY` logical type and write `GeospatialStatistics` instead of min/max statistics.
+    bool write_geometry_logical_type = false;
+
+    /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
+    /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
+    bool write_file_logical_type = false;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
@@ -87,6 +94,7 @@ struct IcebergOptionality
     bool owned_by_enclosing_nullable = false;
 
     bool isOptional(const String & path) const;
+    bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
@@ -102,6 +110,10 @@ struct ColumnChunkIndexes
     /// Set to false when a non-null page has stats dropped (e.g. value exceeded max_statistics_size).
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
+    /// Set to false when a page had to start in the middle of a record, which the offset index
+    /// cannot describe: its first_row_index addresses whole rows. Only a record too large to fit
+    /// the format's 32-bit page size does that.
+    bool offset_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
     BloomFilterData bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
@@ -119,6 +131,10 @@ struct ColumnChunkWriteState
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
+    /// WKB values of a column with the `GEOMETRY` logical type. Its sort order is undefined, so no
+    /// min/max statistics (and hence no column index) are written; `GeospatialStatistics` are
+    /// written instead.
+    bool is_geometry = false;
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.
