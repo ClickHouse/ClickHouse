@@ -266,6 +266,28 @@ CMake hash recorded below.
 | `139d2b400` (verification snapshot) | Declare Wasmtime and Sparsehash ordinary public headers in hdrs, exclude unused Sparsehash test headers, and remove zstd's duplicate textual xxhash.c declaration. Required compiled consumer CPP and ClickHouse/DBMS links verified; Mongo's two unavailable CPP reports remain unresolved | [ddcbd179](https://app.buildbuddy.io/invocation/ddcbd179-7ebe-42ab-9e29-c2e636865752) | [14e24e59](https://app.buildbuddy.io/invocation/14e24e59-326c-4853-99b9-efc45029a21f) |
 | `fe4a2c681` (verification snapshot) | Remove unused ZooKeeper deps and use real public/private owners. The three libraries retain 2/5/2 unused-dependency findings; none has a missing-include or private-placement finding. Ordinary ZooKeeper tests, consumer CPP, positive and negative controls, and eight link comparisons pass on both CPUs. Both Bazel ELF hashes equal the recorded Bazel hashes; normalized stripped hashes equal native CMake. | [3ad00fc7](https://app.buildbuddy.io/invocation/3ad00fc7-151a-476a-bf02-f9122c50e9d5) | [60f305a0](https://app.buildbuddy.io/invocation/60f305a0-5430-4b44-bf87-c2b7868a9cf4) |
 | `0abc83ebf` (verification snapshot) | Keep generated GRPC and Prometheus protobufs in their compiled owners; remove 160 verified unused deps. Both owners have clean compiler-backed DWYU reports, original DBMS links and all five controls pass; other measured findings remain unchanged | [04fde681](https://app.buildbuddy.io/invocation/04fde681-8bf0-4dea-9143-b05c78186897) | [9432a7d5](https://app.buildbuddy.io/invocation/9432a7d5-630e-47c4-8cbd-54e55e1fb1b2) |
+| `15296f36c` (verification snapshot) | Make System implementation headers private; remove 128 unused deps and make 15 implementation-only deps private. Publish cppkafka and libdivide dependencies from their real //src:headers owner. Scoped compiler and ordinary DBMS link checks pass on both CPUs with no new current dependency findings; four System DWYU findings remain per CPU | [b085ea1f](https://app.buildbuddy.io/invocation/b085ea1f-ed9d-46e7-b5a2-1e24922f9635) | [2c6805a8](https://app.buildbuddy.io/invocation/2c6805a8-1b2d-46e1-8738-31173e91816f) |
+
+System retains four measured DWYU findings per CPU:
+`@clickhouse_llvm_project//:LLVMX86CodeGen`,
+`@clickhouse_llvm_project//:LLVMX86Desc`,
+`@clickhouse_llvm_project//:LLVMX86Info` on x86, the corresponding
+`@clickhouse_llvm_project//:LLVMAArch64CodeGen`,
+`@clickhouse_llvm_project//:LLVMAArch64Desc`,
+`@clickhouse_llvm_project//:LLVMAArch64Info` on ARM, and
+`@clickhouse_nuraft//:_nuraft` on both.
+The CodeGen findings were already present in both current before and after
+compiler reports; the earlier three-finding System audit preceded the LLVM
+CodeGen private-header cleanup. Unchecked and untested repository targets are
+still unknown. Replacing the remaining System public header target with its
+compiled owner still creates a dependency cycle.
+
+The ordinary `//src:unit_tests_dbms` links on both CPUs. It has different
+normal ELF hashes after the dependency reordering; it is not the ClickHouse
+hash comparison below. Its before and after global, dynamic and undefined
+symbol sets match; the ARM-only local-symbol differences are AArch64 thunks
+and their mapping symbols. Ten existing BloomFilter and Storage gtests pass
+before and after on both CPUs.
 
 The DWYU cleanup rebuilds above reproduced both normalized CMake hashes:
 `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585`
