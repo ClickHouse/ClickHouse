@@ -1,7 +1,9 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Allocator.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -42,6 +44,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <algorithm>
+#include <numeric>
 #include <bit>
 #include <mutex>
 #include <fmt/ranges.h>
@@ -68,12 +71,32 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetFooterReadMicroseconds;
+    extern const Event ParquetDecompressedBytes;
+    extern const Event ParquetPagesDecompressedToSkipRows;
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
 }
 
 namespace DB::Parquet
 {
+
+/// parquet-cpp before Arrow 3.0 wrote `DataPageV2` pages compressed but set their `is_compressed` flag to false
+/// (ARROW-10353). Such files carry the application name `parquet-cpp` with a version below 2.0.0; later versions
+/// call themselves `parquet-cpp-arrow`. Arrow C++ decompresses their pages anyway (ARROW-17100), and so do we.
+static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
+{
+    static constexpr std::string_view prefix = "parquet-cpp version ";
+    if (!created_by.starts_with(prefix))
+        return false;
+    created_by.remove_prefix(prefix.size());
+    if (created_by.empty() || !isNumericASCII(created_by.front()))
+        return false;
+    UInt64 major = 0;
+    for (size_t i = 0; i < created_by.size() && isNumericASCII(created_by[i]) && major < 2; ++i)
+        major = major * 10 + static_cast<UInt64>(created_by[i] - '0');
+    return major < 2;
+}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
@@ -165,6 +188,7 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
+    ProfileEvents::increment(ProfileEvents::ParquetDecompressedBytes, uncompressed_size);
     CompressionMethod method = CompressionMethod::None;
     switch (codec)
     {
@@ -254,8 +278,12 @@ void Reader::init(const ReadOptions & options_, const Block & sample_block_, For
     format_filter_info = format_filter_info_;
 }
 
-parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size)
+const parq::FileMetaData Reader::empty_file_metadata{};
+
+std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher, size_t footer_read_size)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParquetFooterReadMicroseconds);
+
     /// Parquet file ends with:
     ///  * serialized FileMetaData struct,
     ///  * [4 bytes] size of serialized FileMetaData struct,
@@ -284,33 +312,31 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
         throw Exception(ErrorCodes::INCORRECT_DATA, "Bad metadata size in parquet file: {} bytes", metadata_size_i32);
 
     size_t metadata_size = size_t(metadata_size_i32);
-    size_t buf_offset = 0;
+    auto footer = std::make_shared<FileFooter>();
     if (metadata_size + 8 > initial_read_size)
     {
         size_t remaining_bytes_to_read = metadata_size + 8 - initial_read_size;
-        buf.resize(metadata_size);
-        memmove(buf.data() + remaining_bytes_to_read, buf.data(), initial_read_size - 8);
-        prefetcher.readSync(buf.data(), remaining_bytes_to_read, file_size - metadata_size - 8);
+        footer->serialized.resize(metadata_size);
+        memcpy(footer->serialized.data() + remaining_bytes_to_read, buf.data(), initial_read_size - 8);
+        prefetcher.readSync(footer->serialized.data(), remaining_bytes_to_read, file_size - metadata_size - 8);
     }
     else
     {
-        buf_offset = initial_read_size - 8 - metadata_size;
+        footer->serialized.assign(buf.data() + initial_read_size - 8 - metadata_size, metadata_size);
     }
 
-    parq::FileMetaData file_metadata = {};
-    deserializeThriftStruct(file_metadata, buf.data() + buf_offset, metadata_size);
-    checkSchemaElementEnums(file_metadata);
+    deserializeFileMetaDataWithoutColumnChunks(
+        footer->metadata, footer->serialized.data(), footer->serialized.size(), footer->column_chunk_offsets);
+    checkSchemaElementEnums(footer->metadata);
+    return footer;
+}
 
+void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb)
+{
     /// Some writers incorrectly set dictionary_page_offset offset to 0 when there's no dictionary
     /// page at offset 0 in the file. Work around it.
-    for (auto & rg : file_metadata.row_groups)
-    {
-        for (auto & col : rg.columns)
-        {
-            if (col.meta_data.__isset.dictionary_page_offset && col.meta_data.dictionary_page_offset == 0)
-                col.meta_data.__isset.dictionary_page_offset = false;
-        }
-    }
+    if (column.meta_data.__isset.dictionary_page_offset && column.meta_data.dictionary_page_offset == 0)
+        column.meta_data.__isset.dictionary_page_offset = false;
 
     /// Consider two quirks:
     ///  (1) Some versions of spark didn't write dictionary_page_offset even when dictionary page is
@@ -323,26 +349,76 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
     ///   dictionary_page_offset.reset()
     /// Note: newer versions of DuckDB include version number in the `created_by` string, so this
     /// `if` only applies to relatively old versions. Newer versions don't have this bug.
-    if (file_metadata.created_by == "DuckDB")
+    if (written_by_old_duckdb && !column.__isset.offset_index_offset && column.meta_data.__isset.dictionary_page_offset)
     {
-        for (auto & rg : file_metadata.row_groups)
-        {
-            for (auto & col : rg.columns)
-            {
-                if (!col.__isset.offset_index_offset && col.meta_data.__isset.dictionary_page_offset)
-                {
-                    col.meta_data.data_page_offset = col.meta_data.dictionary_page_offset;
-                    col.meta_data.__isset.dictionary_page_offset = false;
-                    col.meta_data.dictionary_page_offset = 0;
-                }
-            }
-        }
+        column.meta_data.data_page_offset = column.meta_data.dictionary_page_offset;
+        column.meta_data.__isset.dictionary_page_offset = false;
+        column.meta_data.dictionary_page_offset = 0;
     }
-
-    return file_metadata;
 }
 
-void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
+void Reader::setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_)
+{
+    file_footer = std::move(footer);
+    cached_column_chunks = std::move(cached_column_chunks_);
+}
+
+size_t Reader::numColumnChunks(size_t row_group_idx) const
+{
+    return file_footer->numColumnChunks(row_group_idx);
+}
+
+const parq::ColumnChunk & Reader::getColumnChunk(size_t row_group_idx, size_t column_idx) const
+{
+    if (column_idx >= column_chunks.size() || !column_chunks[column_idx] || column_idx >= numColumnChunks(row_group_idx))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column chunk {} of Parquet row group {} was not parsed", column_idx, row_group_idx);
+    return column_chunks[column_idx]->chunks[row_group_idx];
+}
+
+void Reader::parseColumnChunks()
+{
+    std::vector<size_t> column_indices;
+    column_indices.reserve(primitive_columns.size());
+    for (const PrimitiveColumnInfo & column_info : primitive_columns)
+        column_indices.push_back(column_info.column_idx);
+    std::sort(column_indices.begin(), column_indices.end());
+    column_indices.erase(std::unique(column_indices.begin(), column_indices.end()), column_indices.end());
+
+    column_chunks.clear();
+    ensureColumnChunks(column_indices);
+}
+
+void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
+{
+    if (!column_indices.empty() && column_indices.back() >= column_chunks.size())
+        column_chunks.resize(column_indices.back() + 1);
+    std::vector<size_t> indices_to_parse;
+    for (size_t column_idx : column_indices)
+    {
+        if (column_chunks[column_idx])
+            continue;
+        if (column_idx < cached_column_chunks.size() && cached_column_chunks[column_idx])
+            column_chunks[column_idx] = cached_column_chunks[column_idx];
+        else
+            indices_to_parse.push_back(column_idx);
+    }
+
+    if (!indices_to_parse.empty())
+    {
+        std::vector<FileColumnChunks> parsed;
+        deserializeColumnChunks(
+            file_footer->serialized.data(), file_footer->serialized.size(), file_footer->column_chunk_offsets, indices_to_parse, parsed);
+        const bool written_by_old_duckdb = file_metadata().created_by == "DuckDB";
+        for (size_t k = 0; k < indices_to_parse.size(); ++k)
+        {
+            for (auto & column : parsed[k].chunks)
+                fixUpColumnChunk(column, written_by_old_duckdb);
+            column_chunks[indices_to_parse[k]] = std::make_shared<const FileColumnChunks>(std::move(parsed[k]));
+        }
+    }
+}
+
+void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
@@ -352,9 +428,9 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             continue;
         if (!column_info.decoder.allow_stats)
             continue;
+        const auto & column_meta = getColumnChunk(row_group_idx, column_info.column_idx).meta_data;
         try
         {
-            const auto & column_meta = meta->columns.at(column_info.column_idx).meta_data;
             if (!column_meta.__isset.statistics)
                 continue;
 
@@ -368,7 +444,7 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             /// Without arrays a valid chunk has num_values == num_rows.
             bool always_null = column_meta.statistics.__isset.null_count &&
                             column_meta.statistics.null_count == column_meta.num_values &&
-                            (column_info.levels.back().rep > 0 || column_meta.num_values == meta->num_rows);
+                            (column_info.levels.back().rep > 0 || column_meta.num_values == file_metadata().row_groups.at(row_group_idx).num_rows);
             bool can_be_null = !column_meta.statistics.__isset.null_count ||
                             column_meta.statistics.null_count != 0;
             bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -417,14 +493,14 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
-std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta) const
+std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
 {
     if (!top_k_primitive_idx.has_value())
         return std::nullopt;
     const PrimitiveColumnInfo & column_info = primitive_columns[*top_k_primitive_idx];
+    const auto & column_meta = getColumnChunk(row_group_idx, column_info.column_idx).meta_data;
     try
     {
-        const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
         if (!column_meta.__isset.statistics)
             return std::nullopt;
 
@@ -558,8 +634,8 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
         if (!column_info.decoder.allow_stats || column_info.levels.back().rep > 0)
             return std::nullopt;
         /// Without the `TYPE_ORDER` column order, `min_value` / `max_value` have no defined meaning (parquet.thrift).
-        if (!file_metadata.__isset.column_orders || column_info.column_idx >= file_metadata.column_orders.size()
-            || !file_metadata.column_orders[column_info.column_idx].__isset.TYPE_ORDER)
+        if (!file_metadata().__isset.column_orders || column_info.column_idx >= file_metadata().column_orders.size()
+            || !file_metadata().column_orders[column_info.column_idx].__isset.TYPE_ORDER)
             return std::nullopt;
 
         /// Statistics of these types are the exact extremes in `min` / `max` order; strings may be truncated, floats
@@ -577,10 +653,10 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
     std::vector<Field> mins(num_columns);
     std::vector<Field> maxs(num_columns);
     bool has_rows = false;
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
-        const auto & meta = file_metadata.row_groups[row_group_idx];
-        if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
+        const auto & meta = file_metadata().row_groups[row_group_idx];
+        if (meta.num_rows < 0 || numColumnChunks(row_group_idx) != total_primitive_columns_in_file)
             return std::nullopt;
         if (meta.num_rows == 0 || (row_groups_to_read.has_value() && !row_groups_to_read->contains(row_group_idx)))
             continue;
@@ -589,7 +665,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
         for (size_t i = 0; i < num_columns; ++i)
         {
             const PrimitiveColumnInfo & column_info = *columns_info[i];
-            const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+            const auto & column_meta = getColumnChunk(row_group_idx, column_info.column_idx).meta_data;
             if (!column_meta.__isset.statistics)
                 return std::nullopt;
             const auto & statistics = column_meta.statistics;
@@ -695,13 +771,13 @@ void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) c
         row_group.top_k_best_value = column.cut(best_row, 1);
 }
 
-bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
+bool Reader::spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const
 {
     for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
     {
         if (bbox_pc_idx == SIZE_MAX)
             return false;
-        const auto & stats = meta.columns.at(primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
+        const auto & stats = getColumnChunk(row_group_idx, primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
         if (!stats.__isset.null_count || stats.null_count != 0)
             return false;
     }
@@ -729,7 +805,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         || options.format.parquet.spatial_filter_push_down)
     {
         geo_meta.emplace(); // Mark as "parsed" upfront; filled in on success, left empty on failure.
-        for (const auto & kv : file_metadata.key_value_metadata)
+        for (const auto & kv : file_metadata().key_value_metadata)
         {
             if (kv.key != "geo")
                 continue;
@@ -822,7 +898,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
         std::unordered_set<String> schema_leaf_paths;
         {
-            const auto & schema = file_metadata.schema;
+            const auto & schema = file_metadata().schema;
             if (schema.size() >= 2 && schema.at(0).num_children > 0)
             {
                 size_t schema_idx = 1;
@@ -919,7 +995,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
     /// geo type resolution entirely (it will not re-parse).
     SchemaConverter schemer(
-        file_metadata,
+        *file_footer,
         options,
         &extended_sample_block,
         options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
@@ -938,6 +1014,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     primitive_columns = std::move(schemer.primitive_columns);
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
+    parseColumnChunks();
 
     /// Precalculate some column index mappings.
 
@@ -1099,15 +1176,15 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     std::vector<RowGroupCandidate> candidates;
     bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
-        const auto * meta = &file_metadata.row_groups[row_group_idx];
+        const auto * meta = &file_metadata().row_groups[row_group_idx];
         if (meta->num_rows < 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
         if (meta->num_rows == 0)
             continue; /// Empty row groups are valid in Parquet; skip them.
-        if (meta->columns.size() != total_primitive_columns_in_file)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
+        if (numColumnChunks(row_group_idx) != total_primitive_columns_in_file)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, numColumnChunks(row_group_idx), total_primitive_columns_in_file);
 
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
@@ -1131,7 +1208,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
             /// hyperrectangle from the four bbox primitives only.
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
-            getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
+            getHyperrectangleForRowGroup(row_group_idx, hyperrectangle, only_spatial_bbox);
         }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -1152,7 +1229,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             bool prune_by_spatial = false;
             for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
             {
-                if (!spatialBboxStatsHaveNoNulls(*meta, sci))
+                if (!spatialBboxStatsHaveNoNulls(row_group_idx, sci))
                     continue;
                 if (!spatial_key_conditions[sci]->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
                 {
@@ -1166,7 +1243,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         /// Fallback: geospatial_statistics on the geometry column itself.
         if (!geostats_spatial_filters.empty()
-            && rowGroupFailsSpatialFilters(*meta, primitive_columns, geostats_spatial_filters))
+            && rowGroupFailsSpatialFilters(*this, row_group_idx, geostats_spatial_filters))
             continue;
 
         candidates.push_back(RowGroupCandidate{
@@ -1175,7 +1252,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             .start_global_row_idx = total_rows - size_t(meta->num_rows),
             .requested_rows_slice = requested_rows_slice,
             .hyperrectangle = std::move(hyperrectangle),
-            .top_k_sort_column_range = getTopKSortColumnRange(*meta)});
+            .top_k_sort_column_range = getTopKSortColumnRange(row_group_idx)});
         if (candidates.back().top_k_sort_column_range.has_value()
             && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
             some_top_k_range_to_read = true;
@@ -1215,7 +1292,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             ColumnChunk & column = row_group.columns[column_idx];
             size_t parquet_column_idx = primitive_columns[column_idx].column_idx;
-            column.meta = &meta->columns.at(parquet_column_idx);
+            column.meta = &getColumnChunk(candidate.row_group_idx, parquet_column_idx);
 
             /// Whether the innermost array element type is nullable.
             /// E.g. Nullable(String) or Array(Nullable(String)).
@@ -1293,6 +1370,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     initColumnsCache();
     initializePrefetches();
+    cached_column_chunks.clear();
 }
 
 /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
@@ -1353,7 +1431,7 @@ void Reader::prepareBloomFilterCondition()
         if (!any_row_group_eligible)
             continue;
 
-        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata(), column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
@@ -1565,7 +1643,7 @@ void Reader::initializePrefetches()
             /// But leave `data_pages_bytes` unchanged because it's used to check whether there are any
             /// more pages to read, and we don't want to start reading a page inside these 100 bytes.
             size_t data_pages_extra_bytes = 0;
-            if (file_metadata.created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
+            if (file_metadata().created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
                 data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
 
             column.data_pages_prefetch = prefetcher.registerRange(
@@ -1582,12 +1660,24 @@ void Reader::initializePrefetches()
         /// reads if it's small.
         /// Bloom filter ends when something else starts (or earlier). So we list all possible
         /// "something else" offsets and do binary search for each bloom filter to find where it ends.
+        /// Needs all column chunks, not only the ones we read.
+        size_t max_column_chunks = 0;
+        for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
+            max_column_chunks = std::max(max_column_chunks, numColumnChunks(row_group_idx));
+        std::vector<size_t> all_column_indices(max_column_chunks);
+        std::iota(all_column_indices.begin(), all_column_indices.end(), 0);
+        ensureColumnChunks(all_column_indices);
+
         std::vector<size_t> all_offsets;
-        all_offsets.reserve(file_metadata.row_groups.size() * file_metadata.schema.size() * 6);
-        for (const auto & rg : file_metadata.row_groups)
+        all_offsets.reserve(file_metadata().row_groups.size() * file_metadata().schema.size() * 6);
+        for (size_t column_idx = 0; column_idx < max_column_chunks; ++column_idx)
         {
-            for (const auto & col : rg.columns)
+            const auto & chunks = column_chunks[column_idx]->chunks;
+            for (size_t row_group_idx = 0; row_group_idx < chunks.size(); ++row_group_idx)
             {
+                if (column_idx >= numColumnChunks(row_group_idx))
+                    continue;
+                const auto & col = chunks[row_group_idx];
                 all_offsets.push_back(col.file_offset);
                 if (col.__isset.offset_index_offset)
                     all_offsets.push_back(col.offset_index_offset);
@@ -2457,7 +2547,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     if (!computed)
     {
-        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, reservation, reserved_bytes);
+        value_hashes = hashDictionaryValues(reader.file_metadata(), reader.options, column, column_info, reservation, reserved_bytes);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
@@ -2616,7 +2706,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     /// omits `null_counts` or contradicts itself with an all-null page).
                     if (c.spatial_key_condition_idx != SIZE_MAX
                         && (can_be_null || always_null
-                            || !spatialBboxStatsHaveNoNulls(*row_group.meta, c.spatial_key_condition_idx)))
+                            || !spatialBboxStatsHaveNoNulls(row_group.row_group_idx, c.spatial_key_condition_idx)))
                         return true;
                     return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
                 });
@@ -3485,7 +3575,8 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
         encoded_rep_size = size_t(header.data_page_header_v2.repetition_levels_byte_length);
 
         if (header.data_page_header_v2.__isset.is_compressed &&
-            !header.data_page_header_v2.is_compressed)
+            !header.data_page_header_v2.is_compressed &&
+            !writesCompressedV2PagesAsUncompressed(file_metadata().created_by))
         {
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
@@ -3508,7 +3599,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
         /// There's a dictionary page, but there was no dictionary_page_offset in ColumnMetaData.
         /// This is probably not allowed, but we have to support it because some writers wrote such
-        /// files, see comment in readFileMetaData.
+        /// files, see comment in fixUpColumnChunk.
         decodeDictionaryPageImpl(header, page.data, column, column_info);
         return false;
     }
@@ -3635,6 +3726,8 @@ bool Reader::skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk
 
     if (encoded_values_to_skip > 0)
     {
+        if (page.codec != parq::CompressionCodec::UNCOMPRESSED)
+            ProfileEvents::increment(ProfileEvents::ParquetPagesDecompressedToSkipRows);
         decompressPageIfCompressed(page);
         if (!page.decoder)
             createPageDecoder(page, column, column_info);
@@ -4355,7 +4448,9 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
         /// Give back the capacity beyond the rows: the cache is bounded by the memory an entry retains.
         column->shrinkToFit();
 
-        auto entry = std::make_shared<ColumnsCacheEntry>();
+        auto entry = makeColumnsCacheEntry();
+        /// The copy was never charged to the query, so there is nothing to hand over to the server, see `setMany`.
+        entry->owned_by_server.store(true, std::memory_order_relaxed);
         entry->table_uuid = cache_options.table_uuid;
         entry->part_name = cache_options.file_path;
         /// Kept also for an entry of a table: once the table is dropped, its entries can stay in the
