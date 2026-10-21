@@ -1,0 +1,14 @@
+-- loaded with the old role
+a	a	a
+-- direct lookup uses the new role
+b
+-- periodic updates use the new role
+b	b
+-- no failed source or invalidate queries
+0
+-- no more roles than a new session: DEFAULT ROLE NONE
+ACCESS_DENIED
+-- DEFAULT ROLE ALL
+b
+-- role revoked
+ACCESS_DENIED

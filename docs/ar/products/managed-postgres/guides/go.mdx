@@ -1,0 +1,379 @@
+---
+slug: /cloud/managed-postgres/guides/go
+sidebarTitle: 'Go (pgx)'
+title: 'استخدام Go (pgx) مع ClickHouse Managed Postgres'
+description: 'اربط خدمة Go بـ ClickHouse Managed Postgres باستخدام pgx وpgxpool عبر اتصال TLS مُتحقَّق منه، ونفّذ عمليات الترحيل باستخدام golang-migrate، وقدّم واجهة برمجة تطبيقات CRUD مبنية على net/http'
+keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate', 'net/http', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
+يُعدّ [pgx](https://github.com/jackc/pgx) مشغّل PostgreSQL الأكثر استخدامًا في لغة Go، ويمثّل `pgxpool` مجمّع الاتصالات الخاص به. ستتعلّم في هذا الدليل كيفية ربط خدمة مكتوبة بلغة Go بـ ClickHouse Managed Postgres عبر اتصال TLS مع التحقق من الشهادة، وإنشاء جدول `todos` من خلال عملية ترحيل باستخدام [golang-migrate](https://github.com/golang-migrate/migrate)، ثم معالجة طلبات الإنشاء والقراءة والتحديث والحذف عبر خادم `net/http`.
+
+## المتطلبات الأساسية {#prerequisites}
+
+* [Go](https://go.dev/dl/) الإصدار 1.25 أو أحدث. اختُبر هذا الدليل باستخدام Go 1.27.1 وpgx 5.11.0 وgolang-migrate 4.20.1.
+* حساب على ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/)، لإنشاء قاعدة البيانات. ويمكنك أيضًا تنفيذ عبارة `CREATE DATABASE` في [SQL console](/ar/integrations/connectors/sql-clients/sql-console).
+
+## إنشاء خدمة ClickHouse Managed Postgres {#create-service}
+
+في وحدة تحكم ClickHouse Cloud، انقر على **New service** ثم اختر **Postgres**. سيكون المثيل جاهزًا في غضون بضع دقائق. راجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart) للاطلاع على شرح مفصّل للخطوات.
+
+## الحصول على بيانات الاتصال {#connection-details}
+
+انقر على **Connect** في الشريط الجانبي الأيسر لخدمتك. أبقِ الخيار **Directly** محددًا وفعّل **Use SSL**. سيصبح عنوان URL للاتصال في علامة التبويب **url** مستخدمًا للمنفذ `5432` ومنتهيًا بـ `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`. انقر على **Download CA certificate**. ويمكنك أيضًا تنزيلها لاحقًا من **Settings → CA Certificate**. هذه الشهادة فريدة لمثيلك، ولذلك يستطيع pgx استخدامها للتحقق من أنه يتصل بالخادم الخاص بك فعلًا.
+
+يتصل هذا الدليل **مباشرةً** بـ Postgres عبر المنفذ `5432`، سواء لعمليات الترحيل أو للتطبيق. فخدمة Go عملية طويلة الأمد، وتحتفظ `pgxpool` فيها أصلًا بمجمّع اتصالات، لذا لا حاجة إلى وسيط تجميع اتصالات ثانٍ. أما إذا كنت تشغّل مثيلات عديدة من الخدمة وتحتاج إلى عدد من اتصالات العملاء يتجاوز ما يسمح به Postgres، فاستخدم PgBouncer المضمّن (**via PgBouncer**، المنفذ `6432`) للتطبيق؛ راجع [استخدام PgBouncer](#pgbouncer)، إذ يتطلب ذلك إعداد اتصال إضافيًا واحدًا.
+
+## إعداد المشروع {#project-setup}
+
+أنشئ وحدة Go، وأضف pgx، ثم ثبّت واجهة سطر الأوامر `migrate` مع مشغّل pgx:
+
+```bash
+mkdir todo-api && cd todo-api
+go mod init example.com/todo-api
+go get github.com/jackc/pgx/v5
+go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
+
+تعمل العلامة `-tags 'pgx5'` على تصريف واجهة سطر الأوامر `migrate` مع مشغّل pgx v5 الخاص بها، والذي يستخدم مخطط URL ‏`pgx5://`. يضع الأمر `go install` الملف التنفيذي في `$GOBIN`، أو في `$(go env GOPATH)/bin` إذا لم يكن `GOBIN` معيّنًا، لذا تأكد من إضافة هذا الدليل إلى `PATH` لديك.
+
+<Tip>
+  **هل تضيفه إلى تطبيق قائم؟**
+
+  تخطَّ الأمرين `mkdir` و`go mod init`. شغّل في الوحدة الخاصة بك الأمر `go get github.com/jackc/pgx/v5` وأمر `go install` المذكور أعلاه، ثم انتقل إلى [تهيئة الاتصال](#configure-connection). إذا كانت شيفرتك تستخدم `database/sql`، فإن [`stdlib.OpenDBFromPool`](https://pkg.go.dev/github.com/jackc/pgx/v5/stdlib#OpenDBFromPool) تغلّف مجمّع الاتصالات نفسه في صورة `*sql.DB`، مما يتيح لك ترحيل الاستعلامات الحالية تدريجيًا؛ مع استبدال العناصر النائبة `?` بـ `$1` و`$2` وهكذا.
+</Tip>
+
+## تهيئة الاتصال {#configure-connection}
+
+انقل شهادة CA التي نزّلتها إلى دليل المشروع، ثم أعد تسميتها إلى `ca-certificate.pem`.
+
+أنشئ قاعدة بيانات للتطبيق، ثم استبدل `<PASSWORD>` والمضيف بالقيم الظاهرة في النافذة المنبثقة **Connect**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_go;"
+```
+
+```text
+CREATE DATABASE
+```
+
+عيّن متغيرَي بيئة في الـ shell. يشير كلاهما إلى قاعدة البيانات `guide_go` نفسها، ولا يختلفان إلا في مخطط URL؛ إذ يقرأ التطبيق المتغير `DATABASE_URL`، بينما تستخدم واجهة سطر الأوامر `migrate` المتغير `MIGRATE_URL`:
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+export MIGRATE_URL="pgx5://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+يحلّل pgx عنوان URL بالطريقة نفسها التي يتبعها `libpq`. فعند ضبط `sslmode=verify-full`، يحمّل ملف CA من `sslrootcert` ويتحقق من سلسلة الشهادات واسم المضيف معًا، لذا لا حاجة إلى كتابة أي شيفرة خاصة بـ TLS. يُحسب مسار `sslrootcert` نسبةً إلى الدليل الذي تشغّل منه الأوامر. وإذا احتوت كلمة المرور على محارف خاصة مثل `@` أو `/` أو `#`، فرمّزها بترميز URL.
+
+<Warning>
+  **اضبط دائمًا `sslmode=verify-full`**
+
+  عند عدم تحديد `sslmode`، يستخدم pgx القيمة `prefer` التي لا تتحقق من شهادة الخادم حتى لو ضبطت `sslrootcert`. أما عند ضبط `sslmode=verify-full` مع ملف CA غير صحيح، فيفشل pgx بالخطأ `x509: certificate signed by unknown authority`، وإذا لم يكن الملف موجودًا، يفشل بالخطأ `unable to read CA file`. وإذا اتصلت باستخدام عنوان IP بدلًا من اسم المضيف، يفشل بالخطأ `x509: cannot validate certificate for <IP> because it doesn't contain any IP SANs`.
+</Warning>
+
+## إنشاء المخطط باستخدام الترحيل {#migrations}
+
+أنشئ ملفات الترحيل:
+
+```bash
+migrate create -ext sql -dir migrations -seq create_todos
+```
+
+```text
+/Users/you/todo-api/migrations/000001_create_todos.up.sql
+/Users/you/todo-api/migrations/000001_create_todos.down.sql
+```
+
+أكمِل محتوى ملف الترحيل `up`:
+
+```sql title="migrations/000001_create_todos.up.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+وإليك عملية الترحيل `down` التي تُلغي هذه التغييرات:
+
+```sql title="migrations/000001_create_todos.down.sql"
+DROP TABLE todos;
+```
+
+طبّق الترحيل:
+
+```bash
+migrate -path migrations -database "$MIGRATE_URL" up
+```
+
+```text
+1/u create_todos (480.890916ms)
+```
+
+تسجّل أداة `migrate` الإصدار الحالي في جدول `schema_migrations`، ولا تطبّق في المرات اللاحقة إلا عمليات الترحيل الأحدث. ثبّت دليل `migrations` مع الشيفرة الخاصة بك.
+
+<Note>
+  شغّل `migrate` دائمًا عبر الاتصال المباشر (المنفذ `5432`)، إذ تحتفظ الأداة طوال تشغيلها بقفل استشاري على مستوى الـ session، كي لا تنفّذ عمليتا نشر الترحيل في الوقت نفسه. أما عبر PgBouncer، فقد يُنفَّذ القفل وفكّ القفل على اتصالَي Postgres مختلفين، فيظل القفل قائمًا، وتتوقف عمليات تشغيل `migrate` اللاحقة عن الاستجابة أو تفشل مع الخطأ `timeout: can't acquire database lock`.
+</Note>
+
+## الاستعلام من قاعدة البيانات {#query}
+
+أنشئ الملف `db.go`. يُنشئ هذا الملف مجمّع الاتصالات انطلاقًا من `DATABASE_URL`، ويتحقق من الاتصال عند بدء التشغيل بالاستعلام من Postgres عن إصدار TLS الذي تستخدمه الـ session:
+
+```go title="db.go"
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// newPool creates a connection pool from DATABASE_URL and verifies that it can connect.
+func newPool(ctx context.Context) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return nil, err
+	}
+
+	var tlsVersion string
+	err = pool.QueryRow(ctx,
+		"SELECT coalesce(version, 'none') FROM pg_stat_ssl WHERE pid = pg_backend_pid()",
+	).Scan(&tlsVersion)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("connect to Postgres: %w", err)
+	}
+	log.Printf("Connected to Postgres (TLS: %s)", tlsVersion)
+	return pool, nil
+}
+```
+
+أنشئ الملف `todos.go` الذي يتضمن معالجات HTTP. ينفّذ كل معالج استعلامًا واحدًا ذا معلمات عبر مجمّع الاتصالات، وتتولى الدالتان `pgx.CollectRows` و`pgx.CollectExactlyOneRow` فحص الصفوف وتعبئتها في البنية `Todo` بحسب اسم العمود:
+
+```go title="todos.go"
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Todo struct {
+	ID        int64     `json:"id" db:"id"`
+	Title     string    `json:"title" db:"title"`
+	Done      bool      `json:"done" db:"done"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+const todoColumns = "id, title, done, created_at"
+
+// registerTodoRoutes adds the CRUD endpoints for todos to mux.
+func registerTodoRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
+	// Read
+	mux.HandleFunc("GET /todos", func(w http.ResponseWriter, r *http.Request) {
+		rows, _ := pool.Query(r.Context(), "SELECT "+todoColumns+" FROM todos ORDER BY id")
+		todos, err := pgx.CollectRows(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todos, err)
+	})
+
+	// Create
+	mux.HandleFunc("POST /todos", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Title string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
+			http.Error(w, "expected a JSON body with a title", http.StatusBadRequest)
+			return
+		}
+		rows, _ := pool.Query(r.Context(),
+			"INSERT INTO todos (title) VALUES ($1) RETURNING "+todoColumns, in.Title)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusCreated, todo, err)
+	})
+
+	// Update: toggle the done flag
+	mux.HandleFunc("PATCH /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		rows, _ := pool.Query(r.Context(),
+			"UPDATE todos SET done = NOT done WHERE id = $1 RETURNING "+todoColumns, id)
+		todo, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Todo])
+		writeJSON(w, http.StatusOK, todo, err)
+	})
+
+	// Delete
+	mux.HandleFunc("DELETE /todos/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		tag, err := pool.Exec(r.Context(), "DELETE FROM todos WHERE id = $1", id)
+		if err == nil && tag.RowsAffected() == 0 {
+			err = pgx.ErrNoRows
+		}
+		writeJSON(w, http.StatusNoContent, nil, err)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any, err error) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		http.Error(w, "not found", http.StatusNotFound)
+	case err != nil:
+		log.Println(err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+	case status == http.StatusNoContent:
+		w.WriteHeader(status)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		enc.Encode(body)
+	}
+}
+```
+
+يؤدي تمرير القيم كوسائط (`$1`) بدلاً من دمجها داخل string الـ SQL إلى منع هجمات حقن SQL، إذ يرسلها pgx بمعزل عن نص الاستعلام. ولا حاجة إلى التحقق من error الذي تُعيده `pool.Query` على حدة، لأن `pgx.CollectRows` و`pgx.CollectExactlyOneRow` تُعيدانه.
+
+أنشئ الملف `main.go`. يُنشئ هذا الملف مجمّع اتصالات واحداً للعملية بأكملها، ويخدم المسارات على المنفذ `3114`، ويُغلق مجمّع الاتصالات عند الضغط على <kbd>Ctrl</kbd>+<kbd>C</kbd>. أما إذا كان لديك تطبيق قائم، فاستدعِ `newPool` مرة واحدة عند بدء التشغيل، ثم استدعِ `registerTodoRoutes` على `http.ServeMux` الخاص بك بدلاً من ذلك:
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := newPool(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	mux := http.NewServeMux()
+	registerTodoRoutes(mux, pool)
+	srv := &http.Server{Addr: ":3114", Handler: mux}
+
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	log.Println("Listening on http://localhost:3114/todos")
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+	log.Println("Shutting down")
+}
+```
+
+## التشغيل والتحقق {#verify}
+
+أضف التبعيات المتبقية الخاصة بـ `pgxpool` إلى الملفين `go.mod` و`go.sum`، ثم شغّل الخادم:
+
+```bash
+go mod tidy
+go run .
+```
+
+```text
+2026/10/01 09:44:25 Connected to Postgres (TLS: TLSv1.3)
+2026/10/01 09:44:25 Listening on http://localhost:3114/todos
+```
+
+تأتي القيمة `TLSv1.3` من `pg_stat_ssl` على الخادم، ما يؤكد أن الـ session مشفّرة. وإذا وجّهت `sslrootcert` إلى أي شهادة أخرى، فلن يبدأ الخادم وسيسجّل الخطأ `x509: certificate signed by unknown authority`، ما يُثبت أن الشهادة تخضع للتحقق فعلًا.
+
+في طرفية ثانية، أنشئ مهمتين، ثم علّم الأولى على أنها مكتملة، واحذف الثانية:
+
+```bash
+curl -X POST localhost:3114/todos -d '{"title": "Try pgx"}'
+curl -X POST localhost:3114/todos -d '{"title": "Write a migration"}'
+curl -X PATCH localhost:3114/todos/1
+curl -X DELETE localhost:3114/todos/2
+```
+
+يُعيد طلب `PATCH` الصفَّ المُحدَّث:
+
+```json
+{
+  "id": 1,
+  "title": "Try pgx",
+  "done": true,
+  "created_at": "2026-10-01T09:44:25.896031-05:00"
+}
+```
+
+افتح `http://localhost:3114/todos` في متصفحك لعرض المهام المتبقية. تُعيد pgx قيم `timestamptz` وفق المنطقة الزمنية المحلية لديك. وتبدو الاستجابة كما يلي:
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try pgx",
+    "done": true,
+    "created_at": "2026-10-01T09:44:25.896031-05:00"
+  }
+]
+```
+
+أوقف الخادم بالضغط على <kbd>Ctrl</kbd>+<kbd>C</kbd>. سيسجّل الرسالة `Shutting down` ثم يُغلق مجمّع الاتصالات.
+
+لعرض البيانات في وحدة التحكم، افتح **SQL console** من الشريط الجانبي الأيسر لخدمتك، ووسّع `guide_go` ثم `public`، ثم انقر على جدول `todos`. أما جدول `schema_migrations` المجاور له، فيحتفظ بإصدار الترحيل. ويحتوي جدول `todos` على الصف المتبقي:
+
+| id | title   | done | created&#95;at                |
+| -- | ------- | ---- | ----------------------------- |
+| 1  | Try pgx | true | 2026-10-01 14:44:25.896031+00 |
+
+## استخدام PgBouncer {#pgbouncer}
+
+لتمرير استعلامات التطبيق عبر [PgBouncer](/ar/products/managed-postgres/connection#pgbouncer) المضمَّن، اختر **via PgBouncer** في نافذة Connect، وغيّر المنفذ في `DATABASE_URL` إلى `6432`، ثم أضف `default_query_exec_mode=cache_describe`. واحرص على إبقاء `MIGRATE_URL` على المنفذ `5432`:
+
+```bash
+export DATABASE_URL="postgres://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_go?sslmode=verify-full&sslrootcert=ca-certificate.pem&default_query_exec_mode=cache_describe"
+```
+
+تقرأ pgx المعامل `default_query_exec_mode` من URL ولا ترسله إلى الخادم. لا حاجة إلى أي تغييرات في الشيفرة، وتظل شهادة CA نفسها صالحة. يعرض سجل بدء التشغيل الآن `TLS: none`، لأن `pg_stat_ssl` يُبلغ عن اتصال PgBouncer نفسه بـ Postgres. أما اتصال تطبيقك بـ PgBouncer فلا يزال يخضع للتحقق، إذ يفشل الاتصال بالطريقة نفسها عند استخدام شهادة CA خاطئة.
+
+<Warning>
+  **لا تستخدم وضع الاستعلام الافتراضي في pgx عبر PgBouncer**
+
+  تُحضّر pgx افتراضيًا كل استعلام كعبارة مُسمّاة مرة واحدة لكل اتصال، ثم تعيد استخدام أنواع الأعمدة التي حصلت عليها. ويُحضّر PgBouncer هذه العبارات على أي اتصال Postgres يتولى تنفيذ الاستعلام، ويشاركها بين العملاء. لذا بعد أن تُغيّر عملية ترحيل نوع عمود، أو تضيف عمودًا إلى جدول يُستعلم عنه باستخدام `SELECT *`، قد تظل الاستعلامات عبر PgBouncer تفشل مع الخطأ `cached plan must not change result type` حتى بعد إعادة تشغيل التطبيق، أو قد تُعيد، في pgx 5.9 والإصدارات الأحدث، قيمًا خاطئة دون ظهور أي خطأ. فمثلًا، يُعاد عمود من النوع `bigint` غُيّر إلى `double precision` على هيئة البتات الخام لقيمة `float64`، مثل `4631178160564600832` بدلًا من `42.5`.
+
+  أما الوضع `cache_describe` فلا يُخزّن مؤقتًا سوى أنواع المعلمات والأعمدة، ويُنفّذ كل استعلام كعبارة غير مُسمّاة في رحلة ذهاب وإياب واحدة، ويفك ترميز الصفوف باستخدام أنواع الأعمدة التي يُعيدها الخادم مع كل نتيجة، لذا لا يتأثر بهذه المشكلة. ويعمل الوضع `exec` أيضًا. لا تستخدم `describe_exec` عبر PgBouncer، فهو يُقسّم كل استعلام على رحلتي ذهاب وإياب قد يُرسلهما PgBouncer إلى اتصالي Postgres مختلفين. ولا حاجة إلى ضبط `statement_cache_capacity=0`.
+</Warning>
+
+يعمل PgBouncer في وضع تجميع المعاملات، لذا قد تُنفَّذ كل معاملة على اتصال Postgres مختلف:
+
+* تعمل المعاملات المُنشأة باستخدام `pool.Begin` أو `pgx.BeginFunc` كالمعتاد.
+* لا تبقى إعدادات session المضبوطة باستخدام `SET` مرتبطة باتصالك، وقد تتسرّب إلى عملاء آخرين. استخدم `SET LOCAL` داخل معاملة بدلًا من ذلك. كما يرفض PgBouncer المعامل `search_path` في URL الاتصال مع الخطأ `unsupported startup parameter: search_path`؛ لذا اكتب أسماء الجداول مسبوقة باسم المخطط بدلًا من ذلك.
+* لا تعمل الأوامر `PREPARE` و`EXECUTE` على مستوى SQL، ولا `LISTEN`، ولا الأقفال الاستشارية على مستوى session.
+
+## الخطوات التالية {#next-steps}
+
+* [الاتصال](/ar/products/managed-postgres/connection): سلاسل الاتصال، وPgBouncer، وTLS
+* [الإعدادات](/ar/products/managed-postgres/settings): معلمات Postgres وPgBouncer، مثل `max_connections`
+* [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas): وجّه الاستعلامات المخصصة للقراءة فقط إلى نسخة متماثلة باستخدام `pgxpool.Pool` ثانٍ
+* [الأمان](/ar/products/managed-postgres/security): قوائم التحكم في الوصول حسب عناوين IP، والشبكات الخاصة

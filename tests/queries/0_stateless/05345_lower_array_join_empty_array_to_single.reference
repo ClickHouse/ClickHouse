@@ -1,0 +1,56 @@
+-- plan
+1
+-- rows
+1	a
+1	b
+2	
+3	c
+1	1
+1	\N
+2	\N
+3	3
+1	x	LowCardinality(String)
+2		LowCardinality(String)
+3	y	LowCardinality(String)
+3	z	LowCardinality(String)
+1	a
+2	
+3	c
+1	a	1
+1	a	\N
+1	b	1
+1	b	\N
+2		\N
+3	c	3
+1	['a','b']	a
+1	['a','b']	b
+2	['']	
+3	['c']	c
+0
+-- the same rows from the function
+1	a
+1	b
+2	
+3	c
+1	1
+1	\N
+2	\N
+3	3
+1	x	LowCardinality(String)
+2		LowCardinality(String)
+3	y	LowCardinality(String)
+3	z	LowCardinality(String)
+1	a
+2	
+3	c
+1	a	1
+1	a	\N
+1	b	1
+1	b	\N
+2		\N
+3	c	3
+1	['a','b']	a
+1	['a','b']	b
+2	['']	
+3	['c']	c
+0

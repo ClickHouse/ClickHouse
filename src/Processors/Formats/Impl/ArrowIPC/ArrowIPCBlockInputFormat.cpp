@@ -373,36 +373,6 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
     return from;
 }
 
-/// Contiguous dictionary values must be unique across the base batch and all its deltas.
-void checkDictionaryUnique(const ArrowIPC::DictionaryRegistry::Dictionary & dictionary)
-{
-    UnorderedSetWithMemoryTracking<std::string_view> seen;
-    bool null_seen = false;
-    for (const auto & segment : dictionary.segments)
-    {
-        const auto * constant = typeid_cast<const ColumnConst *>(segment.column.get());
-        const IColumn & values = constant ? constant->getDataColumn() : *segment.column;
-        const auto * nullable = typeid_cast<const ColumnNullable *>(&values);
-        const IColumn & inner = nullable ? nullable->getNestedColumn() : values;
-        if (!(inner.isFixedAndContiguous() || typeid_cast<const ColumnString *>(&inner)))
-            return;
-
-        seen.reserve(seen.size() + values.size());
-        for (size_t i = 0; i < values.size(); ++i)
-        {
-            if (nullable && nullable->getNullMapData()[i])
-            {
-                if (null_seen)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-                null_seen = true;
-            }
-            else if (!seen.emplace(inner.getDataAt(i)).second)
-            {
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
-            }
-        }
-    }
-}
 }
 
 void ArrowIPCBlockInputFormat::prepareReader()
@@ -617,8 +587,9 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         if (use.hint)
             reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
 
+        /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
+        /// builds a `LowCardinality` by inserting the values into its own unique dictionary and remapping the indexes.
         dictionaries.set(id, use.position, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
-        checkDictionaryUnique(dictionaries.get(id, use.position));
     }
 }
 
@@ -680,11 +651,20 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
 /// The schema field of the `i`-th child, or null when the field is unknown or does not have that child.
 /// Walking the fields alongside the types lets a leaf read its own metadata; a null field simply means no
 /// metadata is available and the leaf behaves as it did before.
+/// A `RunEndEncoded` field decodes to a column of its values field's shape, so metadata walks look through it.
+const ArrowIPC::ArrowField * skipRunEndEncoded(const ArrowIPC::ArrowField * field)
+{
+    while (field && !field->dictionary && field->type.kind == ArrowIPC::TypeKind::RunEndEncoded)
+        field = &field->type.children.at(1);
+    return field;
+}
+
 const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size_t i)
 {
+    field = skipRunEndEncoded(field);
     if (!field || i >= field->type.children.size())
         return nullptr;
-    return &field->type.children[i];
+    return skipRunEndEncoded(&field->type.children[i]);
 }
 
 /// Recursively rewrite the raw-byte leaves (fixed_size_binary / binary) of a decoded column into the
@@ -706,6 +686,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const NullMap * ancestor_nulls, bool case_insensitive, const ArrowIPC::ArrowField * field,
     const FormatSettings & format_settings)
 {
+    field = skipRunEndEncoded(field);
     const DataTypePtr from_no_null = removeNullable(from_type);
 
     const auto * from_arr = typeid_cast<const DataTypeArray *>(from_no_null.get());

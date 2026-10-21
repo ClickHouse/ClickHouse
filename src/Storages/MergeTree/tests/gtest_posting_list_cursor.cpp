@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <config.h>
 
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -72,7 +72,7 @@ PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
     auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
     std::copy(info.embedded_postings.begin(), info.embedded_postings.end(), flat->begin());
-    return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
+    return std::make_shared<PostingListCursor>(PaddedPODArrayPtr(std::move(flat)));
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}

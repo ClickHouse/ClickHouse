@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
@@ -23,6 +24,8 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
@@ -255,6 +258,12 @@ void PrettyBlockOutputFormat::calculateWidths(
                     serialized_value.resize(max_byte_size);
             }
 
+            /// The widths have to be calculated on the same text that `writeValueWithPadding` prints,
+            /// so the replacement happens here as well: a Control Picture takes one visible position,
+            /// while the raw control character takes none.
+            if (format_settings.pretty.display_control_characters)
+                serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value));
+
             size_t start_from_offset = 0;
             size_t next_offset = 0;
             while (start_from_offset < serialized_value.size())
@@ -294,7 +303,14 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         /// Also, calculate the widths for the names of columns.
         {
-            auto [name, width] = truncateName(elem.name,
+            /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<CR>b``), and
+            /// the header is a single line, so a line feed in a name is replaced as well.
+            String elem_name = elem.name;
+            if (format_settings.pretty.display_control_characters)
+                elem_name = replaceControlCharactersWithPictures(
+                    std::move(elem_name), /*highlight_trailing_whitespace=*/ false, /*replace_line_feeds=*/ true);
+
+            auto [name, width] = truncateName(elem_name,
                 format_settings.pretty.max_column_name_width_cut_to
                     ? std::max<UInt64>(max_padded_widths[i], format_settings.pretty.max_column_name_width_cut_to)
                     : 0,
@@ -311,6 +327,8 @@ void PrettyBlockOutputFormat::calculateWidths(
 
 void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
+    rethrowBackgroundExceptionIfAny();
+
     if (total_rows >= format_settings.pretty.max_rows)
     {
         total_rows += chunk.getNumRows();
@@ -349,14 +367,55 @@ void PrettyBlockOutputFormat::writingThread()
 {
     std::unique_lock lock(writing_mutex);
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    while (!finish)
+    try
     {
-        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-            || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+        while (!finish)
         {
-            writeMonoChunkIfNeeded();
-            watch.restart();
+            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
+                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            {
+                writeMonoChunkIfNeeded();
+                watch.restart();
+            }
         }
+    }
+    catch (...)
+    {
+        /// A write error (for example, the client has gone away and the pipe is broken) has to reach
+        /// the query: otherwise the thread just exits, and the query keeps reading and accumulating
+        /// chunks that are never written. Passed to the writing methods, which run under the same mutex.
+        background_exception = std::current_exception();
+        has_background_exception = true;
+        auto exception = background_exception;
+        lock.unlock();
+
+        /// The writing methods are called only when the query produces more output. A query that has
+        /// already produced all of its output and keeps reading (for example, `SELECT DISTINCT` over a
+        /// huge table) would not notice the error until it finishes, so cancel it with this exception.
+        /// In the client the format outlives the query, so its process list element may be gone already.
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto process_list_element = query_context->getProcessListElementSafe())
+                process_list_element->cancelQuery(DB::CancelReason::CANCELLED_BY_ERROR, exception);
+    }
+}
+
+void PrettyBlockOutputFormat::rethrowBackgroundExceptionIfAny()
+{
+    if (background_exception)
+        std::rethrow_exception(background_exception);
+}
+
+void PrettyBlockOutputFormat::checkBackgroundError()
+{
+    /// The remote `clickhouse-client` formats the result itself, and there is no query in its process
+    /// list for `writingThread` to cancel. A query that has already produced all of its output does not
+    /// call the writing methods anymore, so the client calls this while it waits for packets from the
+    /// server. Not waiting for the mutex: if it is busy, the next call will do.
+    if (has_background_exception)
+    {
+        std::unique_lock lock(writing_mutex, std::try_to_lock);
+        if (lock)
+            rethrowBackgroundExceptionIfAny();
     }
 }
 
@@ -388,7 +447,16 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     Strings group_names;
     group_names.reserve(flattened.groups.size());
     for (const auto & group : flattened.groups)
-        group_names.push_back(group.name);
+    {
+        /// The name of a Tuple column is written into the single-line header just like the name of
+        /// any other column (see `calculateWidths`), so its control characters, including the line
+        /// feed, are replaced the same way.
+        if (format_settings.pretty.display_control_characters)
+            group_names.push_back(replaceControlCharactersWithPictures(
+                group.name, /*highlight_trailing_whitespace=*/ false, /*replace_line_feeds=*/ true));
+        else
+            group_names.push_back(group.name);
+    }
 
     /// The name of a Tuple column is displayed above the combined span of its subcolumns and must
     /// fit into it; widen the subcolumns if it does not. The groups are processed in reverse
@@ -1006,6 +1074,9 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     bool is_continuation = start_from_offset > 0 && start_from_offset < serialized_value->size();
 
     String serialized_fragment;
+    /// Whether the width of the fragment has to be computed here, because it is one line of a
+    /// multi-line value rather than the whole value that `calculateWidths` measured.
+    bool fragment_is_one_line = false;
     if (start_from_offset == serialized_value->size())
     {
         /// Only padding, nothing remains.
@@ -1017,8 +1088,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         const char * next_nl = find_first_symbols<'\n'>(serialized_value->data() + start_from_offset, end);
         size_t fragment_end_offset = next_nl - serialized_value->data();
         serialized_fragment = serialized_value->substr(start_from_offset, fragment_end_offset - start_from_offset);
-        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
         start_from_offset = fragment_end_offset;
+        fragment_is_one_line = true;
     }
     else
     {
@@ -1026,12 +1097,25 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         start_from_offset = serialized_value->size();
     }
 
+    /// Make non-printable control characters visible instead of being silently swallowed by the
+    /// terminal. Trailing whitespace is highlighted in the same pass: it must be detected on the
+    /// pre-replacement bytes, because the replacement turns a trailing carriage return into a
+    /// Control Picture that `highlightTrailingSpaces` would not recognize.
+    /// The line feed is never replaced, so splitting the value into lines and replacing the control
+    /// characters commute: the fragments are the same ones `calculateWidths` measured.
+    if (format_settings.pretty.display_control_characters)
+        serialized_fragment = replaceControlCharactersWithPictures(
+            std::move(serialized_fragment), color && format_settings.pretty.highlight_trailing_spaces);
+
+    if (fragment_is_one_line)
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
+
     /// Highlight groups of thousands.
     if (color && is_number && format_settings.pretty.highlight_digit_groups)
         serialized_fragment = highlightDigitGroups(serialized_fragment);
 
-    /// Highlight trailing spaces.
-    if (color && format_settings.pretty.highlight_trailing_spaces)
+    /// Highlight trailing spaces (unless the replacement above already did it in one pass).
+    if (color && format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.display_control_characters)
         serialized_fragment = highlightTrailingSpaces(serialized_fragment);
 
     const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
@@ -1127,6 +1211,17 @@ void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
     {
         writeChunk(mono_chunk, PortKind::Main);
         mono_chunk.clear();
+
+        /// The squashed chunk is written by the background thread, long after `work` has taken its
+        /// packet boundary and done its own `auto_flush`. Without doing it here, the rendered table
+        /// stays in the output buffer (or, under framing, in the payload buffer without a packet of
+        /// its own) until the query finishes - which is exactly what the squashing is supposed to
+        /// avoid. This runs under `writing_mutex` (held by `writingThread`), same as `work`, so the
+        /// framing format still sees serialized calls.
+        if (framing)
+            writeFramingPayloadBoundary(FramedPacketKind::Data);
+        else if (auto_flush)
+            flushImpl();
     }
 }
 
@@ -1150,6 +1245,7 @@ PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
 
 void PrettyBlockOutputFormat::writeSuffix()
 {
+    rethrowBackgroundExceptionIfAny();
     stopThread();
     writeMonoChunkIfNeeded();
     writeSuffixImpl();
@@ -1274,17 +1370,30 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Rows are not escaped in any of the `Pretty` formats. The following example is shown for the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format:
+Rows are not escaped in any of the `Pretty` formats. Instead, non-printable control characters (C0 controls `0x00`-`0x1F` and `DEL` `0x7F`) in the values and in the column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`-`U+2421`) by default, so that they stay visible and do not deform the table. For example, a NUL is shown as `␀`:
 
 ```sql title="Query"
-SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 ```
 
 ```response title="Response"
-┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and      character │
-└──────────────────────────────────────┘
+┌─Escaping_test─────────────────┐
+│ String with a NUL ␀ character │
+└───────────────────────────────┘
 ```
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
+
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+
+```sql title="Query"
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SETTINGS output_format_pretty_display_control_characters = 0
+```
+
+The response then contains the raw `NUL` byte instead. A terminal swallows it, so the character
+is invisible and the row is one position wider than the border that was measured for it - the
+deformed table that displaying the Control Picture avoids.
 
 To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 
 If the number of rows is greater than or equal to `10,000`, the message "Showed first 10 000" is printed.

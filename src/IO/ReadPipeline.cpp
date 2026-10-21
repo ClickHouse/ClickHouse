@@ -147,9 +147,11 @@ void ReadPipeline::needMemoryCache(
         .custom_file_version = std::move(custom_file_version)};
 }
 
-void ReadPipeline::needDistributedCache(bool include_credentials_in_cache_key)
+void ReadPipeline::needDistributedCache(bool include_credentials_in_cache_key, bool include_etag_in_cache_key)
 {
-    distributed_cache = DistributedCacheStage{.include_credentials_in_cache_key = include_credentials_in_cache_key};
+    distributed_cache = DistributedCacheStage{
+        .include_credentials_in_cache_key = include_credentials_in_cache_key,
+        .include_etag_in_cache_key = include_etag_in_cache_key};
 }
 
 void ReadPipeline::needAsyncPrefetch(
@@ -486,7 +488,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
             *dc_obj_source->storage,
             use_external_buffer,
             std::move(fallback_creator),
-            distributed_cache->include_credentials_in_cache_key);
+            distributed_cache->include_credentials_in_cache_key,
+            distributed_cache->include_etag_in_cache_key);
         chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
         return impl;
     }
@@ -579,7 +582,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             *dc_obj_source->storage,
             use_ext_buf,
             std::move(fallback_creator),
-            distributed_cache->include_credentials_in_cache_key);
+            distributed_cache->include_credentials_in_cache_key,
+            distributed_cache->include_etag_in_cache_key);
         chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
         return impl;
     }

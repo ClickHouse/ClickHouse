@@ -29,6 +29,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -726,13 +727,18 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             matcher->formatForErrorMessage(),
             filter_expression->formatForErrorMessage());
 
-    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
+    auto filter_context = Context::withUnresolvedPositionalArguments(query_context);
+    auto filter_query_tree = buildQueryTree(filter_expression, filter_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
-    query_analysis_pass.run(filter_query_tree, query_context);
+    query_analysis_pass.run(filter_query_tree, filter_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
+
+    /// The inner query of an ordinary view reads the table itself, not the inserted block.
+    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+        replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
 
     return filter_query_tree;
 }

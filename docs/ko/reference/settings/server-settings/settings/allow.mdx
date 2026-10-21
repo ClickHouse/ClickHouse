@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하는 항목이며, ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
@@ -27,6 +25,14 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이는 모든 `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` 기능에 `readonly` 제약을 설정하는 것과 같습니다.
 
+사용자, 역할 또는 설정 프로필에 대한 SQL 문이 이러한 설정을 해당 SQL 문을 실행하는 세션에 적용된 값과
+다른 값으로 지정하면 거부됩니다. 또한 설정 이름을 명시하지 않더라도 특정 사용자에 대한 이러한 설정 값을 바꾸게 되는 경우에도
+거부됩니다. 이러한 설정을 포함한 역할을 부여하거나 회수하는 경우, 설정 프로필을 할당하는 경우,
+역할이나 프로필을 삭제하는 경우, 설정을 생략하여 재정의를 삭제하는 경우가 이에 해당합니다. SQL로 정의된 사용자는 자체 설정
+또는 할당된 역할의 설정에 이러한 값이 포함되어 있으면 로그인할 수 없습니다. 서버가 설정 파일을 통해
+직접 적용하는 설정과 설정 파일에 정의된 사용자는 어떤 경우에도 거부되지 않습니다. `compatibility` 설정은 비활성화된 티어의 설정에
+이전 버전의 기본값을 적용하지 않고 해당 설정을 기본값 그대로 유지합니다.
+
 <Note>
   값이 `0`이면 모든 설정을 변경할 수 있음을 의미합니다.
 </Note>
@@ -35,15 +41,11 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   이전에는 `2`가 &quot;프로덕션 설정만&quot;을 의미했습니다. 이제는 베타 설정도 허용하므로 프로덕션 설정만 허용하도록 `2`를 고정한 구성은 `3`을 사용해야 합니다.
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />IMPERSONATE 기능(EXECUTE AS target&#95;user)을 활성화하거나 비활성화합니다. 이 설정은 더 이상 사용을 권장하지 않습니다.
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 `IDENTIFIED WITH no_password`를 명시적으로 지정하지 않는 한 비밀번호 없는 사용자의 생성을 금지합니다.
 
@@ -53,9 +55,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 안전하지 않은 비밀번호 유형인 no&#95;password의 허용 여부를 설정합니다.
 
@@ -65,9 +65,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 평문 비밀번호 타입(안전하지 않음)의 허용 여부를 설정합니다.
 
@@ -77,9 +75,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />jemalloc 메모리를 사용할 수 있도록 허용합니다.
 

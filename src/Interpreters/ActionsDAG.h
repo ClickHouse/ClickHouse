@@ -119,10 +119,22 @@ public:
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
+        /// Follows alias nodes to the expression they name.
+        const Node * getWithoutAlias() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
+        /// `build_independent` leaves out what differs between two builds of the same query: the composed
+        /// names of derived nodes and prepared-set values, and the index of the analyzer-generated table
+        /// qualifier in an INPUT name. See the comment on the definition.
+        /// `input_header`, when given, is the header the DAG reads: an INPUT is then identified by where
+        /// it sits in it as well as by its normalized name, which tells `__table1.id` and `__table2.id`
+        /// apart after the qualifier index is erased. See `writeCacheKeyColumnName`.
         /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values`.
-        void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+        void updateHash(
+            SipHash & hash_state,
+            bool build_independent = false,
+            const Block * input_header = nullptr,
+            bool with_variable_size_constant_values = true) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -150,6 +162,14 @@ public:
     static Nodes detachNodes(ActionsDAG && dag);
     const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
+
+    /// Build-independent identity of the output named `name` - what that output computes, with the
+    /// names this plan build composed left out (see `Node::updateHash`). A step that refers to one of
+    /// its DAG's outputs by name (a filter column, say) writes this instead of the name when
+    /// serializing for a cache key: the name reads `greater(__table1.x, 5_UInt8)` in a shipped fragment
+    /// and `greater(__table2.x, 5_UInt8)` in the plan enclosing it, while this is equal in both. Output
+    /// position is not usable here - the same expression can sit at a different index in the two builds.
+    UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
@@ -165,7 +185,7 @@ public:
     std::vector<const Node *> getIdToNode() const;
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
-    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header = nullptr) const;
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
@@ -281,10 +301,12 @@ public:
     /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
     /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
     /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched
-    void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
-    /// The same for the filter at `filter_output_position` of the outputs.
-    void foldFilterPredicateThroughMaterialize(size_t filter_output_position);
+    /// representation-observing parents elsewhere in the DAG are never touched.
+    /// A removed filter column is replaced by the constant. A kept one stays an output as it is, for whoever reads
+    /// it, and the constant becomes a new output under a new name that clashes with no output and no column of
+    /// `input_header`: the filter column from now on, which the filter removes. So the filter always reads the
+    /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
+    void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
@@ -350,7 +372,9 @@ public:
     void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
-    /// Special handling for logical AND: non-computable children are replaced with constant true.
+    /// The result only ever widens the filter: a non-computable child of a logical AND is replaced with
+    /// constant true where that AND is read with positive polarity, and a filter that cannot be expressed
+    /// at all becomes constant true.
     /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
     ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
 
@@ -507,12 +531,23 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
+    ///
+    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows
     std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
-        bool allow_non_deterministic_functions);
+        bool allow_non_deterministic_functions,
+        bool allow_index_hints = true);
+
+    /// The same, for conjuncts the caller has chosen rather than those computable from some inputs. Each of
+    /// `conjunctions_to_push` is one of the atoms `extractConjunctionAtoms` finds in the filter column.
+    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
+        const std::string & filter_name,
+        bool removes_filter,
+        const NodeRawConstPtrs & conjunctions_to_push,
+        const ColumnsWithTypeAndName & all_inputs);
 
     struct ActionsForJOINFilterPushDown;
 
@@ -573,6 +608,10 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
+    /// `build_independent` leaves out anything that differs between two builds of the same query -
+    /// column names and prepared-set values - so the result identifies what the DAG computes rather
+    /// than how this particular plan named it. See `Node::updateHash`.
+    ///
     /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
     /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
     /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
@@ -581,7 +620,11 @@ public:
     /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
     /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
     /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
-    void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+    void updateHash(
+        SipHash & hash_state,
+        bool build_independent = false,
+        const Block * input_header = nullptr,
+        bool with_variable_size_constant_values = true) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 
@@ -602,6 +645,14 @@ public:
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
+
+    /// See `restrictFilterDAGToInputs`; `walk_or` also weakens an `AND` under an `OR`, and `substitutes` receives
+    /// the constants that replace a conjunct.
+    ActionsDAG restrictFilterDAGToInputsImpl(
+        const Node * filter_node,
+        const NameSet & available_inputs,
+        bool walk_or,
+        std::unordered_set<const Node *> * substitutes = nullptr) const;
 
     Node & addNode(Node node);
 

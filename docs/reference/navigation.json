@@ -78,6 +78,7 @@
                         "reference/statements/create/dictionary/layouts/range-hashed",
                         "reference/statements/create/dictionary/layouts/hierarchical",
                         "reference/statements/create/dictionary/layouts/naive-bayes",
+                        "reference/statements/create/dictionary/layouts/xgboost",
                         "reference/statements/create/dictionary/layouts/polygon",
                         "reference/statements/create/dictionary/layouts/ip-trie",
                         "reference/statements/create/dictionary/layouts/regexp-tree"
@@ -777,6 +778,7 @@
             "reference/functions/table-functions/timeSeriesSamples",
             "reference/functions/table-functions/timeSeriesSelector",
             "reference/functions/table-functions/timeSeriesTags",
+            "reference/functions/table-functions/timeSeriesTimeRanges",
             "reference/functions/table-functions/url",
             "reference/functions/table-functions/urlCluster",
             "reference/functions/table-functions/values",

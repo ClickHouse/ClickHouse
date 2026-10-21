@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -1173,7 +1174,8 @@ static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPl
     /// exists to re-parallelize downstream work on a single node; in the distributed shape that
     /// parallelism comes from the buckets themselves.
     auto bucket_window = std::make_unique<WindowStep>(
-        sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false);
+        sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false,
+        window_step->getSortSettings());
     bucket_window->setStepDescription(*window_step);
 
     /// Move the gather above the window; the children links already form the target chain.
@@ -1423,6 +1425,23 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
     validateDistributedPlanBucketCounts(optimization_settings);
 
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+    {
+        /// Stamp build-side row estimates before the cut. After the cut a build that is another
+        /// stage's output ends at an exchange source and has nothing to estimate from.
+        std::vector<QueryPlan::Node *> annotation_stack{root};
+        while (!annotation_stack.empty())
+        {
+            auto * node = annotation_stack.back();
+            annotation_stack.pop_back();
+            if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !node->children.empty())
+                build_step->setEstimatedBuildRows(
+                    estimateReadRowsCount(*node->children.front(), nullptr, /*for_runtime_filter_transport=*/true).estimated_rows);
+            for (auto * child : node->children)
+                annotation_stack.push_back(child);
+        }
+    }
+
     size_t exchange_id = 0;
 
     DistributedQueryPlan distributed_plan;
@@ -1590,11 +1609,18 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     const String stage_name = "stage_" + std::to_string(exchange_id);
                     ExchangeDescription exchange_description;
                     exchange_description.name = "exchange_" + std::to_string(exchange_id);
+                    exchange_description.id = static_cast<UInt32>(exchange_id);
                     ++exchange_id;
                     exchange_description.kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ?
                         ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming;
                     exchange_description.source_bucket_count = frame.list_of_shards.size();
                     exchange_description.destination_bucket_count = exchange_step->getResultBucketCount();
+                    exchange_description.exchange_step_name = exchange_step->getName();
+                    if (const auto * shuffle_step = typeid_cast<const ShuffleExchangeStep *>(exchange_step))
+                        exchange_description.keys = shuffle_step->getKeys();
+                    else if (const auto * scatter_step = typeid_cast<const ScatterExchangeStep *>(exchange_step))
+                        exchange_description.keys = scatter_step->getKeys();
+                    exchange_description.sort_description = exchange_step->getMaintainSortDescription();
 
                     distributed_plan.exchange_descriptions[exchange_description.name] = exchange_description;
 
@@ -1616,6 +1642,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// Create stage with the current plan fragment
                     {
                         DistributedQueryStage stage;
+                        stage.id = exchange_description.id;
 
                         /// Create a task for each of the current shards
                         for (auto & [source_shard, source_task] : frame.list_of_shards)
@@ -1732,6 +1759,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 }
             }
 
+            /// The rebuilt node has no estimate, so carry over the one of the original node. For an exchange the
+            /// root is the receive step: it outputs the rows of the exchange.
+            current_plan->getRootNode()->cost_estimation = frame.node->cost_estimation;
+
             current_stage_depends_on = std::move(frame.depends_on_stages);
             current_list_of_shards = std::move(frame.list_of_shards);
             current_shards_are_copies = frame.shards_are_copies;
@@ -1757,6 +1788,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// Add last plan fragment as the main stage
     {
         DistributedQueryStage stage;
+        /// The initiator stage takes the number after the last worker stage.
+        stage.id = static_cast<UInt32>(exchange_id);
         stage.query_plan_fragment = std::move(plan_fragment);
 
         main_task.task_id = "main";
@@ -1765,6 +1798,14 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stages["main"] = std::move(stage);
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
+
+    /// Add exchanges for runtime filters whose build and apply sites are in different stages.
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+        wireRuntimeFilterExchangeTopology(
+            distributed_plan,
+            exchange_id,
+            optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted
+                                                                                      : ExchangeDescription::Kind::Streaming);
 
     return distributed_plan;
 }

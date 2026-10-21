@@ -24,6 +24,13 @@
         ]
       },
       {
+        "group": "Уведомления",
+        "pages": [
+          "products/cloud/api-reference/notifications/notification-get-list",
+          "products/cloud/api-reference/notifications/notification-types-get-list"
+        ]
+      },
+      {
         "group": "Оплата",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
@@ -95,9 +102,9 @@
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
           "PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
-          "products/cloud/api-reference/service/scaling-schedule-get",
-          "products/cloud/api-reference/service/scaling-schedule-upsert",
-          "products/cloud/api-reference/service/scaling-schedule-delete",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
           "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
@@ -105,7 +112,9 @@
           "products/cloud/api-reference/service/service-clickhouse-settings-update",
           "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
           "products/cloud/api-reference/service/service-clickhouse-setting-get",
-          "products/cloud/api-reference/service/service-clickhouse-setting-delete"
+          "products/cloud/api-reference/service/service-clickhouse-setting-delete",
+          "products/cloud/api-reference/service/replica-aware-routing-get",
+          "products/cloud/api-reference/service/replica-aware-routing-update"
         ]
       },
       {
@@ -122,7 +131,7 @@
         ]
       },
       {
-        "group": "Snapshot",
+        "group": "Снимок",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -131,7 +140,7 @@
         ]
       },
       {
-        "group": "Query API endpoints",
+        "group": "Эндпоинты Query API",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -141,13 +150,13 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "Сохранённые запросы",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-list",
-          "products/cloud/api-reference/saved-queries/saved-query-create",
-          "products/cloud/api-reference/saved-queries/saved-query-delete",
-          "products/cloud/api-reference/saved-queries/saved-query-get",
-          "products/cloud/api-reference/saved-queries/saved-query-update"
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/saved-queries/{queryId}"
         ]
       }
     ]
