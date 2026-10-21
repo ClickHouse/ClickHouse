@@ -617,18 +617,17 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
         if (in.available() < size_of_value_if_fixed)
             throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
 
-        if (column_holder->isNumeric())
+        if constexpr (endian_serialize<ColumnType> && std::endian::native != std::endian::little)
         {
-            auto temp_col = column_holder->cloneEmpty();
-            temp_col->deserializeAndInsertFromArena(in, settings);
-            return uniqueInsertFrom(*temp_col, 0);
-        }
-        else
-        {
-            size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+            char buffer[sizeof(typename ColumnType::ValueType)];
+            reverseMemcpy(buffer, in.position(), size_of_value_if_fixed);
             in.ignore(size_of_value_if_fixed);
-            return ret;
+            return uniqueInsertData(buffer, size_of_value_if_fixed);
         }
+
+        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+        in.ignore(size_of_value_if_fixed);
+        return ret;
     }
 
     /// String
