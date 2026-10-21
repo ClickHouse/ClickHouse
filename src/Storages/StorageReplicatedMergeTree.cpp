@@ -470,8 +470,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// without it on the next unrelated `ALTER`, silently dropping the lookup indexes for the whole
     /// cluster. Until the replicated metadata carries a version that lets replicas refuse metadata
     /// they do not understand, reject the experimental feature on replicated tables, so that such
-    /// metadata never reaches ZooKeeper. `FORCE_ATTACH`/`FORCE_RESTORE` (server startup, restore
-    /// from a backup) are still allowed to load a table created before this check.
+    /// metadata never reaches ZooKeeper. `FORCE_ATTACH`/`FORCE_RESTORE` (server startup) are still
+    /// allowed to load a table created before this check. `RESTORE` from a backup is rejected like
+    /// `CREATE` (it uses `SECONDARY_CREATE`), because it writes fresh metadata into ZooKeeper.
     if (mode <= LoadingStrictnessLevel::ATTACH && !metadata_.getLookupIndices().empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Experimental `LOOKUP INDEX` is not supported for `ReplicatedMergeTree`");
