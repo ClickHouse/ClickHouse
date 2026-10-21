@@ -425,6 +425,8 @@ private:
 
     /// Serializes the key columns of the row into a contiguous chunk of the arena. Lookups use the
     /// serialized key itself rather than its hash, so distinct keys are never merged.
+    /// Keys are compared by their binary representation, like `GROUP BY` and `DISTINCT` do:
+    /// for floating point keys `0.0` and `-0.0` are distinct keys, and NaNs with different payloads too.
     std::string_view serializeKey(const Columns & columns, size_t row, Arena & arena) const
     {
         const char * begin = nullptr;
