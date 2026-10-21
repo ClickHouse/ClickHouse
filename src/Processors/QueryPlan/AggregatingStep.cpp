@@ -57,7 +57,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 group_by_two_level_threshold;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_group_by;
-    extern const QueryPlanSerializationSettingsUInt64 min_bytes_before_external_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -78,7 +77,6 @@ namespace QueryPlanSerializationSetting
 namespace Setting
 {
     extern const SettingsBool use_aggregation_memory_tracker;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
 }
 
 namespace ErrorCodes
@@ -1166,9 +1164,6 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER)
         settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker] = params.use_aggregation_memory_tracker;
 
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY)
-        settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by] = params.min_bytes_before_external_group_by;
-
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.
     settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
@@ -1449,9 +1444,6 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
-        ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY
-            ? size_t(ctx.settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by])
-            : size_t(ctx.context->getSettingsRef()[Setting::min_bytes_before_external_group_by]),
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
         Context::getGlobalContextInstance()->getTempDataOnDisk(),
         0, //settings[QueryPlanSerializationSetting::max_threads],
