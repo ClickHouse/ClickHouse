@@ -30,15 +30,9 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(LowCardinality) -> UInt64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -78,23 +72,23 @@ CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
 
-SELECT s, lowCardinalityIndices(s) FROM test;
+-- the order the blocks are read in is not defined, so sort the result to make it reproducible:
+
+SELECT s, lowCardinalityIndices(s) AS index FROM test ORDER BY s, index;
         )",
         R"(
-┌─s──┬─lowCardinalityIndices(s)─┐
-│ ab │                        1 │
-│ cd │                        2 │
-│ ab │                        1 │
-│ ab │                        1 │
-│ df │                        3 │
-└────┴──────────────────────────┘
-┌─s──┬─lowCardinalityIndices(s)─┐
-│ ef │                        1 │
-│ cd │                        2 │
-│ ab │                        3 │
-│ cd │                        2 │
-│ ef │                        1 │
-└────┴──────────────────────────┘
+┌─s──┬─index─┐
+│ ab │     1 │
+│ ab │     1 │
+│ ab │     1 │
+│ ab │     3 │
+│ cd │     2 │
+│ cd │     2 │
+│ cd │     2 │
+│ df │     3 │
+│ ef │     1 │
+│ ef │     1 │
+└────┴───────┘
         )"
     }
     };

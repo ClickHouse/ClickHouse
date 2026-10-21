@@ -46,6 +46,8 @@ to a table. You can also specify this setting in the global settings
 setting). The value specified when the table is created overrides the global
 value for this setting.
 
+For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -97,6 +99,100 @@ at a query / session / profile level.
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 The maximum number of merge tree projections.
+
+## max_row_mask_update_coalescing_ast_bytes {#max_row_mask_update_coalescing_ast_bytes}
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1048576"},{"label": "New setting"}]}]}/>
+
+Maximum sum of the original commands' `ast_text` bytes eligible for row-mask
+update coalescing. The command-count limit alone cannot bound this copy when
+commands contain large literals. Set to 0 to disable coalescing.
+
+## max_row_mask_update_coalescing_commands {#max_row_mask_update_coalescing_commands}
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "New setting"}]}]}/>
+
+Maximum number of part-local mutation commands eligible for row-mask update
+coalescing. This bounds the extra command-list copy made by the optimization;
+the value is a resource guard, not a semantic limit. Values below 2 disable
+coalescing.
+
+## max_row_mask_update_coalescing_key_bytes {#max_row_mask_update_coalescing_key_bytes}
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "65536"},{"label": "New setting"}]}]}/>
+
+Maximum total number of key-literal bytes in one coalesced row-mask update.
+This bounds the size of the generated `IN` predicate. Set to 0 to disable
+coalescing.
+
+## max_row_mask_update_coalescing_keys {#max_row_mask_update_coalescing_keys}
+<SettingsInfoBlock type="UInt64" default_value="256" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "256"},{"label": "New setting"}]}]}/>
+
+Maximum number of keys in one coalesced row-mask update. The effective limit
+also respects `max_rows_in_set` in the background query settings. Values below
+2 disable coalescing.
+
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+<SettingsInfoBlock type="UInt64" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."}]}]}/>
+
+If the total number of compressed bytes (the size on disk) across all active
+and inactive data parts of the table exceeds this value, an `INSERT` is
+interrupted with the `Table size limit exceeded` exception. Inactive parts
+are counted as well because the purpose of this setting is to limit disk
+usage. Note that inactive parts are removed in the background (see the
+`old_parts_lifetime` setting), so the observed size can decrease over time.
+The limit is checked at the beginning of `INSERT` and when new data parts
+are committed to the working set, including the results of background merges
+and mutations. Inserts done by materialized views are also checked. The
+limit is not checked on replicated fetches, which permits a race condition
+when parallel inserts into multiple replicas overdraft the limit. Committing
+empty data parts is always allowed, so the data can be removed from a table
+that exceeds the limit, e.g. with `TRUNCATE` or `ALTER TABLE ... DROP
+PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+<SettingsInfoBlock type="UInt64" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."}]}]}/>
+
+The same as `max_table_size_bytes_compressed`, but the limit is applied to
+the total number of uncompressed bytes across all active and inactive data
+parts of the table.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+
+## max_table_size_rows {#max_table_size_rows}
+<SettingsInfoBlock type="UInt64" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to limit the total number of rows in active data parts of the table."}]}]}/>
+
+If the total number of rows in active data parts of the table exceeds this
+value, an `INSERT` is interrupted with the `Table size limit exceeded`
+exception. The limit is checked at the beginning of `INSERT` and when new
+data parts are committed to the working set, including the results of
+background merges and mutations (so a mutation that increases the table size
+beyond the limit will be retried without finishing). Inserts done by
+materialized views are also checked. The limit is not checked on replicated
+fetches, which permits a race condition when parallel inserts into multiple
+replicas overdraft the limit. Committing empty data parts is always allowed,
+so the data can be removed from a table that exceeds the limit, e.g. with
+`TRUNCATE` or `ALTER TABLE ... DROP PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
 
 ## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />

@@ -2,6 +2,9 @@
 
 #include <Poco/Net/StreamSocket.h>
 
+#include <functional>
+#include <memory>
+
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
@@ -53,6 +56,10 @@ class Connection : public IServerConnection
     friend class MultiplexedConnections;
 
 public:
+    using SocketFactory = std::function<std::unique_ptr<Poco::Net::StreamSocket>(bool secure)>;
+
+    static std::unique_ptr<Poco::Net::StreamSocket> defaultSocketFactory(bool secure);
+
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
@@ -70,6 +77,7 @@ public:
 #if USE_JWT_CPP && USE_SSL
         , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
 #endif
+        , SocketFactory socket_factory_ = &Connection::defaultSocketFactory
     );
 
     ~Connection() override;
@@ -218,6 +226,9 @@ public:
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
     UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
+    /// Frees the buffers of the last query, so that the query that allocated them frees them, not the next one.
+    void releaseQueryBuffers() noexcept;
+
 private:
     String host;
     UInt16 port;
@@ -287,6 +298,7 @@ private:
     Protocol::Secure secure;             /// Enable data encryption for communication.
     String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
+    SocketFactory socket_factory;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;
@@ -353,6 +365,7 @@ private:
 
     void cancel() noexcept;
     void reset() noexcept;
+    void resetQueryBuffers();
 
 #if USE_SSH
     void performHandshakeForSSHAuth();

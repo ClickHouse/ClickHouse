@@ -84,6 +84,11 @@ public:
     time_t getValidUntil() const { return valid_until; }
     void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
 
+    /// If not empty, the access rights of a user authenticated with this method
+    /// are limited to the intersection with these elements (the GRANTS clause).
+    const AccessRightsElements & getGrants() const { return grants; }
+    void setGrants(AccessRightsElements grants_) { grants = std::move(grants_); }
+
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
@@ -114,6 +119,8 @@ public:
     };
 
 private:
+    static AuthenticationData fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now);
+
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;
     std::optional<OneTimePasswordSecret> otp_secret;
@@ -132,6 +139,7 @@ private:
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
     time_t valid_until = 0;
+    AccessRightsElements grants;
 };
 
 }

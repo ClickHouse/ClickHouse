@@ -44,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -69,7 +68,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
 
 void StorageAzureConfiguration::check(ContextPtr context)
 {
-    auto url = Poco::URI(connection_params.getConnectionURL());
+    auto url = Poco::URI(connection_params.getConnectionURLWithoutQuery());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
     StorageObjectStorageConfiguration::check(context);
 }
@@ -92,13 +91,13 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
 ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) /// NOLINT
 {
     assertInitialized();
+    check(context);
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
-        connection_params.auth_method,
         std::move(client),
         std::move(settings),
         connection_params,
@@ -165,9 +164,9 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
 
     if (pos_container != std::string::npos)
     {
-        String container_blob_path = connection_url.substr(pos_container+5);
-        connection_url = connection_url.substr(0,pos_container+4);
-        container_name = connection_url.substr(pos_container+4);
+        size_t host_end = pos_container + suffix.size();
+        String container_blob_path = host_end < connection_url.size() ? connection_url.substr(host_end + 1) : "";
+        connection_url.resize(host_end);
         auto pos_blob_path = container_blob_path.find('/');
 
         if (pos_blob_path != std::string::npos)
@@ -187,9 +186,9 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
         auto pos_net = connection_url.find(suffix);
 
         if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
-            || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
+            || pos_at <= pos_slash + 3 || pos_dot <= pos_at + 1)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect url format for a abfss url {}", connection_url);
         }
         auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
         auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
@@ -251,6 +250,7 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (collection.has("partition_columns_in_data_file"))
@@ -467,6 +467,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             {
                 partition_strategy_type
                     = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_was_set = true;
             }
             else
             {
@@ -513,6 +514,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             }
 
             partition_strategy_type = partition_strategy_type_opt.value();
+            partition_strategy_was_set = true;
 
             /// If it's of type String, then it is not `partition_columns_in_data_file`
             if (const auto seventh_arg = tryGetLiteralArgument<String>(engine_args[6], "structure/partition_columns_in_data_file"))
@@ -571,6 +573,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             }
 
             partition_strategy_type = partition_strategy_type_opt.value();
+            partition_strategy_was_set = true;
             partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
             partition_columns_in_data_file_was_set = true;
             structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
@@ -590,6 +593,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             {
                 partition_strategy_type
                     = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_was_set = true;
             }
             else
             {
@@ -621,6 +625,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
         }
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
         /// If it's of type String, then it is not `partition_columns_in_data_file`
         if (const auto nineth_arg = tryGetLiteralArgument<String>(engine_args[8], "structure/partition_columns_in_data_file"))
         {
@@ -658,6 +663,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
         }
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
         partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
         partition_columns_in_data_file_was_set = true;
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
@@ -671,9 +677,10 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     const String & structure_,
     const String & format_,
     ContextPtr context,
-    bool with_structure)
+    bool with_structure,
+    bool is_replayed_definition)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -845,9 +852,30 @@ void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorage
     connection_params = parsed_arguments.connection_params;
 }
 
+std::string StorageAzureConfiguration::getMetadataLocationURI() const
+{
+    /// `abfss://` is served by the Data Lake Storage endpoint of the same account, both for
+    /// Fabric (`onelake.dfs.fabric.microsoft.com`) and for regular storage accounts
+    /// (`account.dfs.core.windows.net`), so the Blob label of the configured endpoint is rewritten.
+    static constexpr std::string_view blob_label = ".blob.";
+    static constexpr std::string_view dfs_label = ".dfs.";
+
+    std::string host = Poco::URI(connection_params.endpoint.storage_account_url).getHost();
+    if (const auto blob_label_pos = host.find(blob_label); blob_label_pos != std::string::npos)
+        host.replace(blob_label_pos, blob_label.size(), dfs_label);
+
+    return fmt::format("abfss://{}@{}/{}", getNamespace(), host, getRawPath().path);
+}
+
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
+    /// The OneLake signature is a single storage URL: the account and the container are
+    /// derived from it, and the format is dictated by the data lake metadata, so the
+    /// `azureBlobStorage` signatures do not apply and there is nothing to add.
+    if (is_onelake)
+        return;
+
     if (disk)
     {
         if (format == "auto")
@@ -864,7 +892,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
         }
         return;
     }
-    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure);
+    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure, is_replayed_definition);
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)

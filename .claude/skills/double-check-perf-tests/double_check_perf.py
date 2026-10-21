@@ -53,11 +53,19 @@ from typing import Optional
 REPO = "ClickHouse/ClickHouse"
 
 # Public S3 layout used by CI:
-#   PRs:     clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/<build_type>/clickhouse
-#   master:  clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/<sha>/<build_type>/clickhouse
+#   PRs:     clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/pr/<build_type>/clickhouse
+#   master:  clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/<sha>/masterci/<build_type>/clickhouse
 BUILDS_BUCKET_PR = "https://clickhouse-builds.s3.amazonaws.com"
 BUILDS_BUCKET_MASTER = "https://clickhouse-builds.s3.us-east-1.amazonaws.com"
 REPORTS_BUCKET = "https://s3.amazonaws.com/clickhouse-test-reports"
+
+# The S3 layout inserts the normalized workflow name as a path segment between
+# <sha> and the per-job result/artifact directory (Utils.normalize_string of the
+# workflow name; see get_s3_prefix_static in ci/praktika/_environment.py). The
+# perf comparison and its PR builds run in the "PR" workflow; reference binaries
+# are built by the "MasterCI" workflow.
+PR_WORKFLOW_SEGMENT = "pr"
+MASTER_WORKFLOW_SEGMENT = "masterci"
 
 # Ports — must match performance_tests.py so config files we copy work.
 LEFT_TCP = 9001
@@ -295,7 +303,7 @@ SUPPORTED_BASELINE = "master_head"
 
 
 def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
-    pr_json_url = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/result_pr.json"
+    pr_json_url = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/{PR_WORKFLOW_SEGMENT}/result_pr.json"
     pr_json = json.loads(http_get(pr_json_url))
     shards: list[PerfShard] = []
 
@@ -316,7 +324,7 @@ def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
                     total_shards = int(m.group(4))
 
                     dir_name = normalize_job_name(name)
-                    base_dir = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/{dir_name}"
+                    base_dir = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/{PR_WORKFLOW_SEGMENT}/{dir_name}"
 
                     tsv_link = None
                     for link in r.get("links", []) or []:
@@ -963,13 +971,14 @@ def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
 # into a false CONFIRMED. JSON round-trips the raw string exactly.
 HISTORICAL_THRESHOLDS_QUERY = """\
 SELECT test, query_index, quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-    any(query_display_name) AS query_display_name
+    query_display_name
 FROM query_metrics_v2
 WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
         AND toDate('{day}') - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
-GROUP BY test, query_index
+    AND workflow_name = 'MasterCI'
+GROUP BY test, query_index, query_display_name
 HAVING count() > 100
 FORMAT JSONEachRow"""
 
@@ -1051,7 +1060,7 @@ def fetch_run_day(pr_number: int, pr_sha: str, perf_arch: str) -> Optional[str]:
     out = play_query(
         "SELECT toString(toDate(max(event_time))) FROM query_metrics_v2 "
         f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
-        f"AND pr_number = {pr_number} FORMAT TSV",
+        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') FORMAT TSV",
         "find the run date",
     )
     if not out:
@@ -1097,7 +1106,7 @@ def fetch_reference_sha(
         # another run (a master-track run uses pr_number = 0) would otherwise
         # be eligible, and "newest row wins" would then hand back a baseline
         # from a different comparison than the report being checked.
-        f"AND pr_number = {pr_number} "
+        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') "
         "GROUP BY old_sha ORDER BY max(event_time) DESC FORMAT TSV"
     )
     try:
@@ -1181,11 +1190,11 @@ def download_binaries(
     left_identity = f"{ref_sha} {build_type}"
 
     # Right binary (patched / PR)
-    right_url = f"{BUILDS_BUCKET_PR}/PRs/{pr_number}/{pr_sha}/{build_type}/clickhouse"
+    right_url = f"{BUILDS_BUCKET_PR}/PRs/{pr_number}/{pr_sha}/{PR_WORKFLOW_SEGMENT}/{build_type}/clickhouse"
     # Fallback for master-tip commits (no PR): same path under REFs/<branch>/<sha>
     candidate_right_urls = [right_url]
     candidate_right_urls.append(
-        f"{BUILDS_BUCKET_MASTER}/REFs/master/{pr_sha}/{build_type}/clickhouse"
+        f"{BUILDS_BUCKET_MASTER}/REFs/master/{pr_sha}/{MASTER_WORKFLOW_SEGMENT}/{build_type}/clickhouse"
     )
     if cached_identity(right_bin) == right_identity:
         log(f"reusing cached patched binary for {pr_sha[:12]}")
@@ -1203,7 +1212,7 @@ def download_binaries(
         record_identity(right_bin, right_identity)
 
     # Left binary (reference / baseline) — always built off master
-    left_url = f"{BUILDS_BUCKET_MASTER}/REFs/master/{ref_sha}/{build_type}/clickhouse"
+    left_url = f"{BUILDS_BUCKET_MASTER}/REFs/master/{ref_sha}/{MASTER_WORKFLOW_SEGMENT}/{build_type}/clickhouse"
     if cached_identity(left_bin) == left_identity:
         log(f"reusing cached reference binary for {ref_sha[:12]}")
     else:
@@ -1737,12 +1746,15 @@ def rebuild_table(h: ServerHandle, source: str, destination: str) -> None:
     log(f"{h.name}: rebuilding {destination} from {source}")
     populate_query(h, f"DROP TABLE IF EXISTS {target} SYNC")
     populate_query(h, f"CREATE TABLE {target} AS {source}")
+    populate_query(h, f"ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600")
+    populate_query(h, f"ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1")
     populate_query(
         h,
         f"INSERT INTO {target} SELECT * FROM {source} "
         f"SETTINGS {POPULATE_INSERT_SETTINGS}",
     )
-    populate_query(h, f"OPTIMIZE TABLE {target} FINAL")
+    populate_query(h, f"OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1")
+    populate_query(h, f"ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity")
     if target != destination:
         old = f"{destination}_old"
         populate_query(h, f"DROP TABLE IF EXISTS {old} SYNC")

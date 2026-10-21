@@ -74,9 +74,9 @@ namespace
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        String getSignatureString() const override
         {
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+            return "() -> Array(String)";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -113,9 +113,9 @@ Returns an array of the setting profiles for the current user.
 SELECT currentProfiles();
         )",
         R"(
-┌─currentProfiles()─────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics'] │
-└───────────────────────────────────────────────┘
+┌─currentProfiles()─┐
+│ ['default']       │
+└───────────────────┘
         )"
     }
     };
@@ -136,9 +136,9 @@ Returns an array of setting profile names which are enabled for the current user
 SELECT enabledProfiles();
         )",
         R"(
-┌─enabledProfiles()─────────────────────────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
-└───────────────────────────────────────────────────────────────────┘
+┌─enabledProfiles()─┐
+│ ['default']       │
+└───────────────────┘
         )"
     }
     };

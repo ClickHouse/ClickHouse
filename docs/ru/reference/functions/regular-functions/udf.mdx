@@ -18,14 +18,12 @@ ClickHouse поддерживает несколько типов пользов
 * [Экспериментальные пользовательские функции WebAssembly](#webassembly-user-defined-functions) выполняют код, скомпилированный в WebAssembly, внутри песочницы в процессе сервера. Они обеспечивают меньшие накладные расходы на каждый вызов, чем внешние исполняемые файлы, и лучшую изоляцию, чем нативные расширения, что делает их подходящими для пользовательских алгоритмов, написанных на языках, которые можно компилировать в WASM (например, C/C++/Rust).
 * [Экспериментальные исполняемые UDF на базе драйверов](#driver-based-executable-user-defined-functions) позволяют предоставляемому оператором &quot;драйверу&quot; преобразовывать фрагмент кода, указанный в `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`, в исполняемый UDF при создании функции (например, путём компиляции). Они основаны на исполняемых UDF и требуют серверной конфигурации драйвера.
 
-<div id="executable-user-defined-functions">
-  ## Исполняемые пользовательские функции
-</div>
+## Исполняемые пользовательские функции {#executable-user-defined-functions}
 
 <BetaBadge />
 
 <Note>
-  В ClickHouse Cloud исполняемые UDF находятся в публичной бета-версии и создаются через интерфейс консоли Cloud. См. [Пользовательские функции в Cloud](/ru/products/cloud/features/sql-console-features/user-defined-functions), чтобы ознакомиться со специальным процессом для Cloud.
+  В ClickHouse Cloud исполняемые UDF общедоступны и создаются через консоль Cloud, Cloud API или Terraform. См. [Пользовательские функции в Cloud](/ru/products/cloud/features/sql-console-features/user-defined-functions), чтобы ознакомиться со специальным процессом для Cloud, включая среду выполнения Native для скомпилированных бинарных файлов.
 </Note>
 
 ClickHouse может вызывать любую внешнюю исполняемую программу или скрипт для обработки данных.
@@ -58,17 +56,11 @@ ClickHouse может вызывать любую внешнюю исполня�
 
 Команда должна читать аргументы из `STDIN` и выводить результат в `STDOUT`. Команда должна обрабатывать аргументы итеративно. То есть после обработки одного фрагмента аргументов она должна ждать следующий.
 
-<div id="executable-user-defined-functions">
-  ## Исполняемые пользовательские функции
-</div>
+## Исполняемые пользовательские функции {#executable-user-defined-functions}
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
-<div id="udf-inline">
-  ### UDF из встроенного скрипта
-</div>
+### UDF из встроенного скрипта {#udf-inline}
 
 Создайте `test_function_sum`, вручную задав `execute_direct` значение `0`, с помощью конфигурации XML или YAML.
 
@@ -132,9 +124,7 @@ SELECT test_function_sum(2, 2);
 └─────────────────────────┘
 ```
 
-<div id="udf-python">
-  ### UDF из скрипта Python
-</div>
+### UDF из скрипта Python {#udf-python}
 
 В этом примере мы создаём UDF, которая считывает значение из `STDIN` и возвращает его в виде строки.
 
@@ -203,9 +193,7 @@ SELECT test_function_python(toUInt64(2));
 └─────────────────────────┘
 ```
 
-<div id="udf-stdin">
-  ### Прочитайте два значения из `STDIN` и верните их сумму в виде объекта JSON
-</div>
+### Прочитайте два значения из `STDIN` и верните их сумму в виде объекта JSON {#udf-stdin}
 
 Создайте `test_function_sum_json` с именованными аргументами и форматом [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow), используя конфигурацию в XML или YAML.
 
@@ -285,9 +273,7 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
-<div id="udf-parameters-in-command">
-  ### Использование параметров в настройке `command`
-</div>
+### Использование параметров в настройке `command` {#udf-parameters-in-command}
 
 Пользовательские функции типа `executable` могут принимать константные параметры, заданные в настройке `command` (это работает только для пользовательских функций типа `executable`).
 Также требуется параметр `execute_direct`, чтобы исключить уязвимость, связанную с подстановкой аргументов командной оболочкой.
@@ -355,9 +341,7 @@ SELECT test_function_parameter_python(1)(2);
 └──────────────────────────────────────┘
 ```
 
-<div id="udf-shell-script">
-  ### UDF из shell-скрипта
-</div>
+### UDF из shell-скрипта {#udf-shell-script}
 
 В этом примере мы создаём shell-скрипт, который умножает каждое значение на 2.
 
@@ -430,26 +414,20 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
-<div id="error-handling">
-  ## Обработка ошибок
-</div>
+## Обработка ошибок {#error-handling}
 
 Некоторые функции могут сгенерировать исключение, если данные некорректны.
 В этом случае запрос отменяется, а клиенту возвращается текст ошибки.
 При распределённой обработке, если исключение возникает на одном из серверов, остальные серверы также пытаются прервать запрос.
 
-<div id="evaluation-of-argument-expressions">
-  ## Вычисление выражений аргументов
-</div>
+## Вычисление выражений аргументов {#evaluation-of-argument-expressions}
 
 Почти во всех языках программирования для некоторых операторов один из аргументов может не вычисляться.
 Обычно это операторы `&&`, `||` и `?:`.
 В ClickHouse аргументы функций (операторов) вычисляются всегда.
 Это связано с тем, что вычисляются сразу целые части столбцов, а не каждая строка отдельно.
 
-<div id="performing-functions-for-distributed-query-processing">
-  ## Выполнение функций при распределённой обработке запросов
-</div>
+## Выполнение функций при распределённой обработке запросов {#performing-functions-for-distributed-query-processing}
 
 При распределённой обработке запросов на удалённых серверах выполняется как можно больше этапов обработки запроса, а остальные этапы (слияние промежуточных результатов и всё последующее) — на сервере-инициаторе запроса.
 
@@ -465,15 +443,11 @@ SELECT test_shell(number) FROM numbers(10);
 
 Если функция в запросе выполняется на сервере-инициаторе запроса, но её нужно выполнить на удалённых серверах, можно обернуть её в агрегатную функцию &#39;any&#39; или добавить в ключ `GROUP BY`.
 
-<div id="sql-user-defined-functions">
-  ## Пользовательские функции SQL
-</div>
+## Пользовательские функции SQL {#sql-user-defined-functions}
 
 Пользовательские функции на основе лямбда-выражений можно создавать с помощью оператора [CREATE FUNCTION](/ru/reference/statements/create/function). Для удаления этих функций используйте оператор [DROP FUNCTION](/ru/reference/statements/drop#drop-function).
 
-<div id="webassembly-user-defined-functions">
-  ## Пользовательские функции WebAssembly
-</div>
+## Пользовательские функции WebAssembly {#webassembly-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -481,9 +455,7 @@ SELECT test_shell(number) FROM numbers(10);
 
 Пользовательские функции WebAssembly (WASM UDF) позволяют выполнять пользовательский код, скомпилированный в WebAssembly, внутри процесса сервера ClickHouse.
 
-<div id="quick-start">
-  ### Быстрый старт
-</div>
+### Быстрый старт {#quick-start}
 
 Включите экспериментальную поддержку WebAssembly в конфигурации ClickHouse:
 
@@ -517,15 +489,11 @@ RETURNS UInt32;
 SELECT my_function(10, 20);
 ```
 
-<div id="more-information">
-  ### Дополнительная информация
-</div>
+### Дополнительная информация {#more-information}
 
 Подробнее см. в документации [Пользовательские функции WebAssembly](/ru/reference/functions/regular-functions/wasm_udf).
 
-<div id="driver-based-executable-user-defined-functions">
-  ## Исполняемые UDF на базе драйверов
-</div>
+## Исполняемые UDF на базе драйверов {#driver-based-executable-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -539,9 +507,7 @@ SELECT my_function(10, 20);
 
 Это позволяет администраторам дать пользователям безопасный и строго ограниченный способ определять функции на произвольном языке (например, на C, компилируемом внутри изолированного контейнера), не предоставляя им доступ к конфигурационным файлам или файловой системе сервера. Набор доступных драйверов полностью контролируется оператором.
 
-<div id="enabling-drivers">
-  ### Включение драйверов
-</div>
+### Включение драйверов {#enabling-drivers}
 
 Исполняемые UDF на базе драйверов по умолчанию отключены. Чтобы их включить:
 
@@ -564,9 +530,7 @@ SELECT my_function(10, 20);
 
 Реестр драйверов загружается при запуске сервера и обновляется командой `SYSTEM RELOAD CONFIG`, поэтому драйверы можно добавлять, изменять или удалять без перезапуска сервера.
 
-<div id="driver-configuration">
-  ### Конфигурация драйвера
-</div>
+### Конфигурация драйвера {#driver-configuration}
 
 Драйвер описывается XML- или YAML-файлом с корневым элементом `<driver>`. Поддерживаются следующие поля:
 
@@ -597,9 +561,7 @@ SELECT my_function(10, 20);
 </clickhouse>
 ```
 
-<div id="driver-invocation-contract">
-  #### Контракт вызова драйвера
-</div>
+#### Контракт вызова драйвера {#driver-invocation-contract}
 
 При выполнении `CREATE FUNCTION` вызывается `create_command` с заданными переменными `env` и следующими аргументами:
 
@@ -612,9 +574,7 @@ SELECT my_function(10, 20);
 
 `drop_command`, если он указан, вызывается таким же образом (без тела кода в stdin) при удалении функции.
 
-<div id="creating-a-function-with-a-driver">
-  ### Создание FUNCTION
-</div>
+### Создание FUNCTION {#creating-a-function-with-a-driver}
 
 ```sql
 CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
@@ -625,9 +585,7 @@ CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 
 ClickHouse выполняет `create_command` драйвера, записывает сгенерированную конфигурацию в [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path), после чего её подхватывает существующий загрузчик исполняемых UDF. После этого функцию можно вызывать как и любую другую функцию.
 
-<div id="dropping-a-function-with-a-driver">
-  ### Удаление функции
-</div>
+### Удаление функции {#dropping-a-function-with-a-driver}
 
 ```sql
 DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
@@ -635,23 +593,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 `DROP FUNCTION` вызывает `drop_command` драйвера (если она задана), удаляет сгенерированную динамическую конфигурацию и отдельный рабочий каталог функции, перезагружает загрузчик исполняемых UDF и удаляет сохранённый запрос.
 
-<div id="driver-persistence-and-restart">
-  ### Сохранение и перезапуск
-</div>
+### Сохранение и перезапуск {#driver-persistence-and-restart}
 
 Исходный запрос сохраняется в виде оператора `ATTACH FUNCTION ...` в каталоге пользовательских SQL-объектов, поэтому функция сохраняется после перезапуска сервера. При запуске сгенерированные конфигурации из [`dynamic_user_defined_executable_functions_path`](/ru/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) загружаются напрямую, без повторного запуска драйвера. Если для сохранённого `ATTACH FUNCTION` нет соответствующей сгенерированной конфигурации (например, если динамический каталог был утерян), драйвер запускается повторно, чтобы создать её заново.
 
-<div id="driver-limitations">
-  ### Ограничения
-</div>
+### Ограничения {#driver-limitations}
 
 * Эта возможность экспериментальная и доступна только при включении `allow_experimental_executable_udf_drivers`.
 * Исполняемые UDF на базе драйверов не поддерживаются с реплицируемым хранилищем пользовательских функций (`ON CLUSTER` и `<user_defined_zookeeper_path>`), поскольку реплицируется только исходный запрос, а не сгенерированные артефакты.
 * `RESTORE` исполняемого UDF на базе драйверов из резервной копии сохраняет запрос, но не запускает драйвер повторно; сгенерированная конфигурация материализуется позже в процессе восстановления при перезапуске.
 
-<div id="example-c-drivers">
-  ### Пример драйверов на C
-</div>
+### Пример драйверов на C {#example-c-drivers}
 
 В дереве исходного кода есть демонстрационные драйверы в `programs/server/user_defined_executable_function_drivers_config.d/`, которые компилируют и выполняют тело функции на C. Это лишь примеры, и **пакеты их не устанавливают**:
 
@@ -661,8 +613,6 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 Эти драйверы-примеры служат отправной точкой; прежде чем открывать к ним доступ недоверенным пользователям, проверьте и при необходимости усильте изоляцию для вашей среды.
 
-<div id="related-content">
-  ## См. также
-</div>
+## См. также {#related-content}
 
 * [Пользовательские функции в ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

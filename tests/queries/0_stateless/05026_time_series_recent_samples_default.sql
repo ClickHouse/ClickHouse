@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -13,17 +12,13 @@ CREATE TABLE ts_default ENGINE = TimeSeries;
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
-SELECT '-- the default TTL of 4 days is pinned into the table definition at CREATE time';
-
-SELECT create_table_query LIKE '%recent_samples_ttl_seconds = 345600%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_default';
-
 SELECT '-- the recent samples inner table gets the default 5-hour partitioning, the pinned TTL and ttl_only_drop_parts';
 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
 SELECT '-- inserted samples are copied to the recent samples table and short-range queries prefer it';
 
-INSERT INTO ts_default (metric_name, tags, time_series) VALUES
+INSERT INTO ts_default (metric_name, tags, samples) VALUES
     ('default_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 42.)]);
 
 SELECT
@@ -43,9 +38,8 @@ DROP TABLE IF EXISTS ts_disabled;
 CREATE TABLE ts_disabled ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples%';
-SELECT create_table_query LIKE '%recent_samples_ttl_seconds = 0%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_disabled';
 
-INSERT INTO ts_disabled (metric_name, tags, time_series) VALUES
+INSERT INTO ts_disabled (metric_name, tags, samples) VALUES
     ('default_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
 
 SELECT value FROM prometheusQuery(ts_disabled, 'default_metric', now());

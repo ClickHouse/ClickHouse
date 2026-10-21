@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
@@ -84,6 +85,7 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -99,6 +101,9 @@ public:
     MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+
+    /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
+    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, getGlobalMemoryPressureMonitor()};
 
     struct SharedData
     {
@@ -126,6 +131,9 @@ public:
         return shared_data;
     }
 
+    /// Must be called before any thread attaches to the group: threads copy the predicates on attach.
+    void setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
+
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
@@ -134,13 +142,19 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
-    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
     static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
+
+    /// For work a query only triggers but that outlives it (e.g. loading a dictionary): memory is accounted in the
+    /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
+    static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
+
+    /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
+    bool isNested() const { return parent != nullptr; }
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -169,7 +183,7 @@ private:
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 
-    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
@@ -182,8 +196,9 @@ private:
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    /// Linux's PID (or TGID) (the same id is shown by ps util)
-    const UInt64 thread_id = 0;
+    static constexpr UInt64 NO_OS_THREAD = 0;
+
+    const UInt64 thread_id = NO_OS_THREAD;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -267,8 +282,17 @@ protected:
 
     LoggerPtr log = nullptr;
 
+private:
+    explicit ThreadStatus(UInt64 thread_id_);
+
+    /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
+    bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
+
 public:
-    explicit ThreadStatus();
+    struct NoOSThreadTag {};
+
+    ThreadStatus();
+    explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
@@ -306,6 +330,21 @@ public:
     /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
     void throwIfQueryCanceled() const;
 
+    /// While alive, `isQueryCanceled` returns false and `throwIfQueryCanceled` does nothing in the current thread.
+    /// For code that must not be interrupted, like the finalization of a committed transaction.
+    class QueryCancellationBlocker : private boost::noncopyable
+    {
+    public:
+        QueryCancellationBlocker();
+        ~QueryCancellationBlocker();
+
+        /// Whether a blocker is alive in the current thread. `ThreadPool` carries it into the jobs scheduled under it.
+        static bool isActive();
+
+    private:
+        bool previous;
+    };
+
     /// Proper cal for fatal_error_callback
     void onFatalError();
 
@@ -322,6 +361,7 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+    void publishUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 

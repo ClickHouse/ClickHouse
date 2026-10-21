@@ -95,17 +95,16 @@ namespace
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         size_t getNumberOfArguments() const override { return 0; }
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so a function that throws on the default value must not be executed on
+        /// the whole dictionary - it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
+
         bool useDefaultImplementationForConstants() const override { return true; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        String getSignatureString() const override
         {
-            FunctionArgumentDescriptor variadic_args{
-                "json1",isString, nullptr, "String"
-            };
-            FunctionArgumentDescriptors mandatory_args{variadic_args};
-
-            validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
-            return std::make_shared<DataTypeString>();
+            return "(String, ...) -> String";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

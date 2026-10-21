@@ -1,0 +1,21 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>atan</value>
+                <value>cbrt</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>arg</name>
+            <values>
+                <value>toFloat64(number)</value>
+                <value>toFloat32(number)</value>
+                <value>number</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore({func}({arg}))</query>
+</test>

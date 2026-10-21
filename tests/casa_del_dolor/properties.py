@@ -116,6 +116,9 @@ possible_properties = {
     ),
     "asynchronous_metrics_enable_heavy_metrics": true_false_lambda,
     "asynchronous_metrics_keeper_metrics_only": true_false_lambda,
+    "asynchronous_metrics_key_values_mode": lambda: random.choice(
+        ["key_values", "legacy_names", "both"]
+    ),
     "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30, 5),
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,
@@ -148,6 +151,8 @@ possible_properties = {
     #     0.2, 0.2, 0.0, 0.001
     # ),
     "cgroups_memory_usage_observer_wait_time": threshold_generator(0.2, 0.2, 0, 60, 6),
+    "columns_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "columns_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     # In bytes (default 128Mi), unlike the element count above
     "compiled_expression_cache_size": threshold_generator(
@@ -210,7 +215,7 @@ possible_properties = {
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "enable_webterminal": true_false_lambda,
-    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "encryption_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "encryption_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -229,7 +234,7 @@ possible_properties = {
     "iceberg_compaction_threadpool_pool_size": threads_lambda,
     "iceberg_compaction_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "iceberg_scheduler_compaction_threadpool_pool_size": threads_lambda,
@@ -237,11 +242,11 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "ignore_empty_sql_security_in_create_view_query": true_false_lambda,
-    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "index_mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "index_mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "interserver_tables_status_require_auth": true_false_lambda,
@@ -273,7 +278,7 @@ possible_properties = {
     "load_marks_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     # DiskLocal reads this at the config root, not under the disk
     "local_disk_check_period_ms": threshold_generator(0.2, 0.2, 0, 60000, 16),
-    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -416,15 +421,15 @@ possible_properties = {
     "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "page_cache_min_size": threshold_generator(0.2, 0.2, 0, 2097152),
-    "page_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "page_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "page_cache_shards": threshold_generator(0.2, 0.2, 0, 10),
     "page_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "paimon_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "paimon_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "paimon_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parquet_metadata_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "parquet_metadata_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "parquet_metadata_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parts_kill_delay_period": threshold_generator(0.2, 0.2, 0, 60),
@@ -443,7 +448,7 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "prepare_system_log_tables_on_startup": true_false_lambda,
-    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -459,7 +464,7 @@ possible_properties = {
     "query_cache_max_entry_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1048576),
     "query_cache_max_entry_size_in_rows": threshold_generator(0.2, 0.2, 0, 30000000),
     "query_cache_max_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1073741824),
-    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "query_condition_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
@@ -499,15 +504,15 @@ possible_properties = {
     "tables_loader_foreground_pool_size": threads_lambda,
     "temporary_data_in_distributed_cache": true_false_lambda,
     "text_index_header_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "text_index_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "text_index_postings_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "text_index_postings_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_postings_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "text_index_tokens_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_tokens_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_tokens_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "text_index_tokens_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_tokens_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -532,13 +537,13 @@ possible_properties = {
         "fault_probability_after_commit": threshold_generator(0.2, 0.2, 0.0, 1.0),
         "fault_probability_before_commit": threshold_generator(0.2, 0.2, 0.0, 1.0),
     },
-    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "unique_key_bitmap_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "unique_key_bitmap_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "unique_key_bitmap_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_bitmap_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "unique_key_index_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_separate_cache_arena": true_false_lambda,
@@ -546,7 +551,7 @@ possible_properties = {
     "user_profile_events_per_cpu": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
     "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "wait_dictionaries_load_at_startup": true_false_lambda,
@@ -1509,13 +1514,15 @@ class LogTablePropertiesGroup(PropertiesGroup):
             # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         if self.log_table == "text_log":
-            log_table_properties["level"] = lambda: random.choice(
-                ["trace", "debug", "information", "warning", "error"]
-            )
-        if self.log_table == "trace_log":
+            # Pinned to the most verbose level, and written directly because
+            # `apply_properties_recursively` samples: at `error` the health check's `Warning`
+            # patterns never reach the table and it under-reports without saying so.
+            level_xml = ET.SubElement(property_element, "level")
+            level_xml.text = "test"
+        elif self.log_table == "trace_log":
             log_table_properties["symbolize"] = true_false_lambda
-        if self.log_table == "transposed_metric_log":
-            # Created only with this `schema_type`; the default ("wide") makes the section a no-op
+        elif self.log_table == "transposed_metric_log":
+            # Created only with this `schema_type`; the default ("bucketed") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
         # Can't use this without the engine parameter?
@@ -1754,6 +1761,7 @@ def modify_server_settings(
         selected_properties["distributed_query"] = DistributedQueryPropertiesGroup()
 
     # Add log tables
+    all_log_entries = []
     if args.add_log_tables:
         all_log_entries = [
             ("aggregated_zookeeper_log", 1048576, 8192),
@@ -1774,16 +1782,13 @@ def modify_server_settings(
             ("iceberg_metadata_log", 1048576, 8192),
             ("metric_log", 1048576, 8192),
             ("opentelemetry_span_log", 1048576, 8192),
-            ("part_log", 1048576, 8192),
             ("predicate_statistics_log", 1048576, 8192),
             ("processors_profile_log", 1048576, 8192),
-            ("query_log", 1048576, 8192),
             ("query_metric_log", 1048576, 8192),
             ("query_thread_log", 1048576, 8192),
             ("query_views_log", 1048576, 8192),
             ("s3queue_log", 1048576, 8192),
             ("session_log", 1048576, 8192),
-            ("text_log", 1048576, 8192),
             ("trace_log", 1048576, 8192),
             ("transactions_info_log", 1048576, 8192),
             ("transposed_metric_log", 1048576, 8192),
@@ -1794,12 +1799,22 @@ def modify_server_settings(
             all_log_entries = random.sample(
                 all_log_entries, random.randint(1, len(all_log_entries))
             )
-        random.shuffle(all_log_entries)
-        for entry in all_log_entries:
-            if root.find(entry[0]) is None:
-                selected_properties[entry[0]] = LogTablePropertiesGroup(
-                    entry[0], entry[1], entry[2]
-                )
+
+    # The oracles read these: the health check needs `part_log` and `text_log`, and its whole
+    # query throws `UNKNOWN_TABLE` if either is missing; BuzzHouse reads `query_log` to compare
+    # performance. Sampling them away silently turns those checks into no-ops.
+    if args.add_log_tables or args.with_monitoring:
+        all_log_entries += [
+            ("part_log", 1048576, 8192),
+            ("query_log", 1048576, 8192),
+            ("text_log", 1048576, 8192),
+        ]
+    random.shuffle(all_log_entries)
+    for entry in all_log_entries:
+        if root.find(entry[0]) is None:
+            selected_properties[entry[0]] = LogTablePropertiesGroup(
+                entry[0], entry[1], entry[2]
+            )
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (

@@ -26,6 +26,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    String getSignatureString() const override
+    {
+        return "(T : Array) -> Array(innermostArrayElement(T))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isArray(arguments[0]))
@@ -137,7 +142,7 @@ The flattened array contains all the elements from all source arrays.
         {"arr", "A multidimensional array.", {"Array(Array(T))"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a flattened array from the multidimensional array", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1, 2, 3]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1,2,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
