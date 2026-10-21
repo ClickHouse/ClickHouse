@@ -365,6 +365,9 @@ public:
     /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 
+    /// Same, with the credentials given as strings (no header is sent when the user is empty).
+    ReadWriteBufferFromHTTPPtr createWithBasicCredentials(std::string_view user_, std::string_view password_);
+
     /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
     ReadWriteBufferFromHTTPPtr createWithBearerToken(std::string_view bearer_token_);
 

@@ -8,6 +8,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Storages/IStorage.h>
@@ -21,6 +23,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
+}
+
+static ASTPtr parseCreateQuery(std::string_view query)
+{
+    ParserCreateQuery parser;
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -61,7 +69,7 @@ void DatabaseMemory::createTable(
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 
-    create_queries.emplace(table_name, query_to_store);
+    create_queries.emplace(table_name, query_to_store ? query_to_store->formatWithSecretsOneLine<SecretString>() : SecretString());
 }
 
 void DatabaseMemory::dropTable(
@@ -124,13 +132,13 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     ensurePopulated();
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
-    if (it == create_queries.end() || !it->second)
+    if (it == create_queries.end() || it->second.empty())
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
         return {};
     }
-    return it->second->clone();
+    return parseCreateQuery(it->second);
 }
 
 void DatabaseMemory::checkMetadataFilenameAvailability(const String & table_name) const
@@ -187,10 +195,10 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
 
         auto it_query = create_queries.find(table_id.table_name);
-        if (it_query == create_queries.end() || !it_query->second)
+        if (it_query == create_queries.end() || it_query->second.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-        create_query = it_query->second->clone();
+        create_query = parseCreateQuery(it_query->second);
     }
 
     /// Apply metadata changes to the cloned AST without holding a lock to avoid possible deadlock
@@ -204,7 +212,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     {
         std::lock_guard lock{mutex};
-        create_queries[table_id.table_name] = create_query;
+        create_queries[table_id.table_name] = create_query->formatWithSecretsOneLine<SecretString>();
     }
 
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});

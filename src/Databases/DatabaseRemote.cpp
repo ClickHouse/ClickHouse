@@ -77,7 +77,7 @@ DatabaseRemote::DatabaseRemote(
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , remote_database(remote_database_)
     , log(getLogger("DatabaseRemote(" + database_name_ + ")"))
     , metadata_path(metadata_path_)
@@ -940,7 +940,7 @@ ASTPtr DatabaseRemote::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define->clone());
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -998,7 +998,7 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
     /// definition (`Remote('addresses', 'remote_db'[, 'user'[, 'password']])`) into a table engine by
     /// inserting the remote table name right after the remote database name.
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);

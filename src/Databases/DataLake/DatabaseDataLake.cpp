@@ -202,7 +202,7 @@ DatabaseDataLake::DatabaseDataLake(
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
-    , database_engine_definition(database_engine_definition_)
+    , database_engine_definition(database_engine_definition_->formatWithSecretsOneLine<SecretString>())
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
@@ -1592,7 +1592,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_definition);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_definition));
     create_query->uuid = db_uuid;
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -1629,7 +1629,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     ASTPtr new_engine_definition;
     {
         std::lock_guard lock(mutex);
-        new_engine_definition = database_engine_definition->clone();
+        new_engine_definition = parseDatabaseEngineDefinition(database_engine_definition);
     }
     auto * storage = new_engine_definition->as<ASTStorage>();
     if (!storage)
@@ -1693,7 +1693,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     database_settings.set(std::move(new_settings));
     {
         std::lock_guard lock(mutex);
-        database_engine_definition = new_engine_definition;
+        database_engine_definition = new_engine_definition->formatWithSecretsOneLine<SecretString>();
     }
     if (!local_catalog_snapshot)
     {
@@ -1873,6 +1873,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
 
         auto engine_for_tables = database_engine_define->clone();
+        /// The clone is retained for the lifetime of the database, its SETTINGS may hold credentials, and no reader needs them.
+        auto & engine_for_tables_storage = engine_for_tables->as<ASTStorage &>();
+        engine_for_tables_storage.reset(engine_for_tables_storage.settings);
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
         if (engine_func->arguments == nullptr)
         {

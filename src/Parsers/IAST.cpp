@@ -13,6 +13,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/String.h>
+#include <Common/SecretString.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
@@ -270,16 +271,20 @@ String IAST::formatForErrorMessage() const
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
 
-String IAST::formatWithSecretsOneLine() const
+template <typename StringType>
+StringType IAST::formatWithSecretsOneLine() const
 {
-    return formatWithPossiblyHidingSensitiveData(
+    return StringType(formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/true,
         /*show_secrets=*/true,
         /*print_pretty_type_names=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
+
+template String IAST::formatWithSecretsOneLine<String>() const;
+template SecretString IAST::formatWithSecretsOneLine<SecretString>() const;
 
 String IAST::formatWithSecretsMultiLine() const
 {

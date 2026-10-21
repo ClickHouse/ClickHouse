@@ -146,7 +146,7 @@ protected:
     StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error = false) const;
     StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error, const ProxyClusters & clusters) const;
 
-    const ASTPtr database_engine_define;
+    const SecretString database_engine_define;
     const String remote_database;
     LoggerPtr log;
 

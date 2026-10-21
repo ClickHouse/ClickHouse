@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
+#include <Common/Base64.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
@@ -1065,6 +1066,16 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
 {
     return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBasicCredentials(std::string_view user_, std::string_view password_)
+{
+    if (user_.empty())
+        return createWithBearerToken(/*bearer_token_=*/ "");
+
+    BuilderRWBufferFromHTTP builder = *this;
+    builder.http_header_entries.emplace_back("Authorization", "Basic " + base64Encode(fmt::format("{}:{}", user_, password_)));
+    return builder.createWithBearerToken(/*bearer_token_=*/ "");
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(std::string_view bearer_token_)

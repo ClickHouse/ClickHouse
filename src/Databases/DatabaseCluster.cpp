@@ -153,7 +153,7 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
         return nullptr;
     }
 
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->name = "Distributed";

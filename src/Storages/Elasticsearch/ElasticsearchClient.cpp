@@ -77,7 +77,7 @@ ElasticsearchClient::ElasticsearchClient(ElasticsearchConfiguration config_, Con
     if (config.auth_kind == ElasticsearchConfiguration::AuthKind::Basic)
     {
         credentials.setUsername(config.user);
-        credentials.setPassword(config.password);
+        credentials.setPassword(String(config.password));
     }
     auth_headers = config.authorizationHeaders();
 }
