@@ -55,6 +55,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM second"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE second SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE reader SYNC"
 
+# A wrapper repeats the definition of the disk it wraps: a table that names a custom disk
+# cannot be loaded after a restart without a table that defines it.
 function plain_disk()
 {
     local name=$1
@@ -82,15 +84,13 @@ ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE detached"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE detached SYNC"
 
 echo '-- two cache disks over one writable disk share its root'
-inner="${CLICKHOUSE_TEST_UNIQUE_NAME}_inner"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on c1 "disk(name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_c1', type = cache,
     path = 'filesystem_caches/${CLICKHOUSE_TEST_UNIQUE_NAME}_c1/', max_size = '1Gi', disk = $(plain_disk inner))")"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on c2 "disk(name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_c2', type = cache,
-    path = 'filesystem_caches/${CLICKHOUSE_TEST_UNIQUE_NAME}_c2/', max_size = '1Gi', disk = '${inner}')")" 2>&1 | grep -o -m1 'can hold the data of only one table.*(BAD_ARGUMENTS)'
+    path = 'filesystem_caches/${CLICKHOUSE_TEST_UNIQUE_NAME}_c2/', max_size = '1Gi', disk = $(plain_disk inner))")" 2>&1 | grep -o -m1 'can hold the data of only one table.*(BAD_ARGUMENTS)'
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE c1 SYNC"
 
 echo '-- encrypted disks over sibling paths of one disk are allowed, nested and parent paths are refused'
-delegate="${CLICKHOUSE_TEST_UNIQUE_NAME}_delegate"
 function encrypted_disk()
 {
     local name=$1 path=$2 delegate_def=$3
@@ -98,12 +98,12 @@ function encrypted_disk()
         disk = ${delegate_def})"
 }
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on ea "$(encrypted_disk ea 'a/' "$(plain_disk delegate)")")"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on eb "$(encrypted_disk eb 'b/' "'${delegate}'")")"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on eb "$(encrypted_disk eb 'b/' "$(plain_disk delegate)")")"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ea VALUES (1)"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO eb VALUES (2)"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ea"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM eb"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on en "$(encrypted_disk en 'a/n/' "'${delegate}'")")" 2>&1 | grep -o -m1 'can hold the data of only one table.*(BAD_ARGUMENTS)'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on en "$(encrypted_disk en 'a/n/' "$(plain_disk delegate)")")" 2>&1 | grep -o -m1 'can hold the data of only one table.*(BAD_ARGUMENTS)'
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on ep "$(plain_disk delegate)")" 2>&1 | grep -o -m1 'can hold the data of only one table.*(BAD_ARGUMENTS)'
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ea SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE eb SYNC"
