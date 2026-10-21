@@ -90,7 +90,10 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     if (!enable_reads && !enable_writes)
         return nullptr;
 
-    if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+    if (!object_with_metadata || !object_with_metadata->metadata)
+        return nullptr;
+    const auto content_token = object_with_metadata->metadata->getContentCacheToken();
+    if (!content_token)
         return nullptr;
 
     if (!object_with_metadata->path_for_content_cache)
@@ -120,7 +123,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     const ObjectMetadata & metadata = *object_with_metadata->metadata;
     SipHash hash;
     hash.update(*object_with_metadata->path_for_content_cache);
-    hash.update(metadata.etag);
+    hash.update(*content_token);
     hash.update(metadata.size_bytes);
     /// The format settings that change the values decoded from the file without changing their
     /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
@@ -221,7 +224,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(object_with_metadata->getPath(), object_with_metadata->metadata->etag);
+        return ParquetMetadataCache::createKey(
+            object_with_metadata->getPath(),
+            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
     return std::nullopt;
 }
 
