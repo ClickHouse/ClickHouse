@@ -463,6 +463,17 @@ try
 
             if (should_ask_2fa)
             {
+                /// The server asks for the second factor before it checks the password, so the first attempt
+                /// without any password ends here too. Ask for the password alone first: it may already contain
+                /// the code (`password+code`); otherwise the server asks again and the code is prompted.
+                if (!asked_password && !config().has("password") && !config().getBool("ask-password", false))
+                {
+                    asked_password = true;
+                    config().setBool("ask-password", true);
+                    preserve_announced_endpoint_for_retry = true;
+                    continue;
+                }
+
                 asked_2fa = true;
                 if (!connection_parameters.password.empty())
                     config().setString("password", connection_parameters.password);
@@ -943,7 +954,8 @@ void Client::connect()
             }
 
             /// This problem can't be fixed with reconnection so it is not attempted
-            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
+            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD
+                || e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR)
                 throw;
 
             if (attempted_address_index == hosts_and_ports.size() - 1)
