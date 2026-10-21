@@ -2031,8 +2031,9 @@ static NameToNameVector collectFilesForRenames(
         add_rename(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
 
     /// The record is always recomputed and rewritten in finalize, so drop the source part's inherited
-    /// checksum entry here; otherwise a recomputed-empty record leaves checksums.txt referencing a file
-    /// the new part does not have. The new record is unknown this early, hence the source-only condition.
+    /// `secondary_index_column_types.json` checksum entry here; otherwise a recomputed-empty record leaves
+    /// `checksums.txt` referencing a file the new part does not have. The new record is unknown this early,
+    /// hence the source-only condition.
     if (!source_part->getSecondaryIndexColumnTypes().empty())
         add_rename(IMergeTreeDataPart::SECONDARY_INDEX_COLUMN_TYPES_FILE_NAME, "");
 
