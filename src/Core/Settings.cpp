@@ -5177,7 +5177,7 @@ Possible values:
 - 0 — Disabled. FINAL merge always processes all rows (default).
 - 1 — Enabled. FINAL merge stops early once LIMIT rows have been produced.
 )", 0, \
-        {"26.10", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"}) \
+        {"26.11", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"}) \
     DECLARE(Bool, optimize_final_sequential_partitions, false, R"(
 When enabled, together with `optimize_final_limit_pushdown`, `do_not_merge_across_partitions_select_final`,
 and `optimize_read_in_order`, FINAL queries with ORDER BY ... LIMIT will process partitions sequentially
@@ -5195,7 +5195,7 @@ Possible values:
 - 0 — Disabled. All partitions are processed in parallel (default).
 - 1 — Enabled. Partitions are sorted by minmax index and processed sequentially.
 )", 0, \
-        {"26.10", false, false, "New setting to enable sequential partition processing for FINAL queries with LIMIT using minmax index ordering"}) \
+        {"26.11", false, false, "New setting to enable sequential partition processing for FINAL queries with LIMIT using minmax index ordering"}) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 
