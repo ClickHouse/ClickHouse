@@ -41,14 +41,9 @@ poco_cc_library(
         "-Wno-unreachable-code-return",
         "-Wno-implicit-int-conversion",
     ],
-    implementation_deps = [
-        "//bazel:clickhouse_config_headers",
-        "@llvm-project//libunwind:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//compiler-rt:headers",
-        "@clickhouse_llvm_project//:libcxxabi_headers",
-    ],
     language = "C",
+    libcxx_headers = False,
+    llvm_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",

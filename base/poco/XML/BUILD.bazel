@@ -4,20 +4,14 @@ package(default_visibility = ["//visibility:public"])
 
 poco_cc_library(
     name = "_poco_xml",
-    srcs = glob(["src/*.cpp"]) + glob(
-        ["src/**/*.h"],
-        exclude = [
-            "src/asciitab.h",
-            "src/iasciitab.h",
-            "src/latin1tab.h",
-            "src/nametab.h",
-            "src/utf8tab.h",
-            "src/xmlrole.h",
-            "src/xmltok.h",
-            "src/xmltok_impl.h",
-        ],
+    srcs = glob(["src/*.cpp"]) + [
+        "src/hash_table.h",
+        "src/siphash.h",
+    ],
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/Poco/XML/expat*.h"],
     ),
-    hdrs = glob(["include/**/*.h"]),
     copts = [
         "-Wno-c99-extensions",
         "-Wno-cast-qual",
@@ -54,31 +48,36 @@ poco_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_poco_xml",
     ],
-    deps = ["//base/poco/Foundation:_poco_foundation"],
-    implementation_deps = [":_poco_xml_expat"],
+    deps = [
+        ":_poco_xml_expat",
+        "//base/poco/Foundation:_poco_foundation",
+    ],
 )
 
 poco_cc_library(
     name = "_poco_xml_expat",
-    srcs = glob(["src/*.c"]) + glob(
-        [
-            "src/*.h",
-            "include/Poco/XML/expat*.h",
-        ],
+    srcs = glob(
+        ["src/*.c"],
         exclude = [
-            "src/hash_table.h",
-            "src/siphash.h",
-            "src/xmlrole.h",
-            "src/xmltok.h",
+            "src/xmltok_impl.c",
+            "src/xmltok_ns.c",
         ],
-    ),
-    hdrs = [
+    ) + [
+        "src/asciitab.h",
+        "src/iasciitab.h",
+        "src/latin1tab.h",
+        "src/nametab.h",
+        "src/utf8tab.h",
+        "src/xmltok_impl.h",
+    ],
+    hdrs = glob(["include/Poco/XML/expat*.h"]) + [
+        "src/ascii.h",
+        "src/expat_config.h",
+        "src/fallthrough.h",
+        "src/internal.h",
+        "src/xcs.h",
         "src/xmlrole.h",
         "src/xmltok.h",
-    ],
-    textual_hdrs = [
-        "src/xmltok_impl.c",
-        "src/xmltok_ns.c",
     ],
     copts = [
         "-Wno-cast-qual",
@@ -91,9 +90,7 @@ poco_cc_library(
         "-Wno-unused-macros",
         "-Wno-implicit-int-conversion",
     ],
-    implementation_deps = [
-        "//base/poco/Foundation:_poco_foundation",
-    ],
+    includes = ["include"],
     language = "C",
     libcxx_headers = False,
     llvm_headers = False,
@@ -106,6 +103,12 @@ poco_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_poco_xml",
     ],
-    local_includes = ["include"],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    private_hdrs = [
+        "src/xmltok_impl.c",
+        "src/xmltok_ns.c",
+    ],
+    deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+    ],
 )

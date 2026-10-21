@@ -254,7 +254,7 @@ poco_cc_library(
     ],
     includes = ["include"],
     local_defines = _FOUNDATION_DEFINES,
-    textual_hdrs = [
+    private_hdrs = [
         "src/DirectoryIterator_UNIX.cpp",
         "src/Environment_UNIX.cpp",
         "src/Event_POSIX.cpp",
@@ -276,9 +276,9 @@ poco_cc_library(
         "src/Timezone_UNIX.cpp",
     ],
     deps = [
-        "@lz4//:lz4",
-        "@lz4//:lz4_frame",
         "@clickhouse_zlib_ng//:_zlib",
+        "@lz4",
+        "@lz4//:lz4_frame",
     ],
 )
 
@@ -288,7 +288,6 @@ poco_cc_library(
     copts = _FOUNDATION_COPTS,
     implementation_deps = [
         ":_poco_foundation",
-        "//src:clickhouse_common_io__compile_0",
         "//base:common",
         "//src/Common",
     ],
@@ -316,8 +315,6 @@ poco_cc_library(
         "-Wno-unused-macros",
         "-Wno-implicit-int-conversion",
         "-Wno-disabled-macro-expansion",
-    ],
-    implementation_deps = [
     ],
     language = "C",
     libcxx_headers = False,
