@@ -234,6 +234,7 @@ static struct InitFiu
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
+    ONCE(adaptive_aggregation_drain_create_states_throw) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
@@ -441,6 +442,8 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_removed_from_disk_set) \
     PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
     PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_local_logs_preprocessing_wait) \
+    REGULAR(keeper_never_pause_appending_entries) \
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
@@ -456,6 +459,7 @@ static struct InitFiu
     ONCE(zk_send_thread_operations_insert_throw) \
     PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
     PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(wasm_module_manager_pause_after_compile) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \

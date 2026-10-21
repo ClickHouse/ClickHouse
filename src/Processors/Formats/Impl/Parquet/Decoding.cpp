@@ -2518,6 +2518,9 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
 
 void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
+    /// E.g. the dictionary page of a column chunk with only NULLs. `offsets[num_values - 1]` is not valid then.
+    if (num_values == 0)
+        return;
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)

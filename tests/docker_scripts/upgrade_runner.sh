@@ -518,6 +518,13 @@ fi
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
+# Profiles of the previous release can only be symbolized with its binary; keep them apart so
+# collect_jemalloc_profiles renders a profile of the new server with the new binary.
+if compgen -G "$JEMALLOC_PROFILES_DIR/*.heap" > /dev/null; then
+    mkdir -p "$JEMALLOC_PROFILES_DIR/previous_release"
+    mv "$JEMALLOC_PROFILES_DIR"/*.heap "$JEMALLOC_PROFILES_DIR/previous_release/"
+fi
+
 # Install and start new server
 install_packages $PACKAGES_DIR
 configure "${configure_opts[@]}" --default-compression-codec "$default_compression_codec"
@@ -555,6 +562,7 @@ then
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
       AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
+      AND new_settings.alias_for = ''
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -1035,5 +1043,7 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
+# Only the upgraded server's log: the previous release's profiles were moved aside above.
+collect_jemalloc_profiles /var/log/clickhouse-server/clickhouse-server.upgrade.log
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
