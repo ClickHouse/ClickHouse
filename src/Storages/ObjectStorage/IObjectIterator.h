@@ -59,6 +59,9 @@ struct ObjectInfo
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
 
+    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
+    std::optional<size_t> archive_entry_index;
+
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };

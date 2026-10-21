@@ -10,6 +10,9 @@
 namespace DB
 {
 
+struct AggregatingTransformParams;
+using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
@@ -74,6 +77,10 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
     bool isFinal() const { return final; }
+
+    /// Whether the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) may compute this aggregation.
+    /// Shared by the plan optimization that stamps the statistics key and by `transformPipeline`.
+    bool canUseRadixUniqExact() const;
 
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)
@@ -168,13 +175,17 @@ public:
     void setShouldProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
-    bool supportsDataflowStatisticsCollection() const override
-    {
-        return grouping_sets_params.empty();
-    }
+    bool supportsDataflowStatisticsCollection() const override;
 
 private:
     void updateOutputHeader() override;
+
+    /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`), if `canUseRadixUniqExact`.
+    void buildRadixUniqExact(
+        QueryPipelineBuilder & pipeline,
+        const AggregatingTransformParamsPtr & transform_params,
+        size_t max_threads,
+        const StatsCollectingParams & stats_collecting_params) const;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;

@@ -5,7 +5,9 @@
 #include <limits>
 
 #include <base/arithmeticOverflow.h>
+#include <base/unaligned.h>
 #include <Common/Exception.h>
+#include <Core/UUID.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -220,6 +222,11 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
         return deserializeDecimalFromBinaryRepr(str, *non_nullable_type, lower_bound, compensate_rounding);
     if (non_nullable_type->getTypeId() == TypeIndex::Variant)
         return std::nullopt;
+    /// The spec serializes a `uuid` bound as 16 big-endian bytes and orders the pair by unsigned
+    /// byte comparison, while ClickHouse orders `UUID` by its second half. The two orders
+    /// disagree, so even a byte-swapped pair can exclude a value the file holds.
+    if (non_nullable_type->getTypeId() == TypeIndex::UUID)
+        return std::nullopt;
 
     /// `insertData` of a fixed-size column ignores the length and reads the width of the type, so a
     /// shorter bound would read past the buffer. Iceberg keeps the bound as written, which for a
@@ -232,6 +239,17 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
     Field result;
     column->get(0, result);
     return result;
+}
+
+std::optional<Field> deserializeUUIDPointFromBinaryRepr(const String & lower, const String & upper)
+{
+    if (lower != upper || lower.size() != sizeof(UUID))
+        return std::nullopt;
+
+    UUID uuid;
+    UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(lower.data());
+    UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(lower.data() + sizeof(UInt64));
+    return Field(uuid);
 }
 
 }

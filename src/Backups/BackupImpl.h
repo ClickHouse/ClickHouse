@@ -185,6 +185,9 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// Instead of `file_infos` when the backup is opened only for lookups (`CreateParams::for_file_lookups_only`): the sizes
+    /// and checksums of its files, sorted and without duplicates. Without empty files.
+    std::vector<SizeAndChecksum> sizes_and_checksums TSA_GUARDED_BY(mutex);
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
