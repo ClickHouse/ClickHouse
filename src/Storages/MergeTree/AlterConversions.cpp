@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
@@ -23,6 +24,7 @@ namespace ProfileEvents
     extern const Event PatchesAppliedInAllReadTasks;
     extern const Event PatchesMergeAppliedInAllReadTasks;
     extern const Event PatchesJoinAppliedInAllReadTasks;
+    extern const Event PatchesMergeOnKeyAppliedInAllReadTasks;
     extern const Event ReadTasksWithAppliedMutationsOnFly;
     extern const Event MutationsAppliedOnFlyInAllReadTasks;
 }
@@ -99,6 +101,9 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (src_alter->partition)
         alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
 
+    if (src_alter->partitions)
+        alter_command->partitions = alter_command->children.emplace_back(src_alter->partitions->clone()).get();
+
     alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
     auto mutation_command = MutationCommand::parse(
         *alter_command,
@@ -109,6 +114,13 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
+
+    /// The rewritten command stands for the same mutation, so it carries its version - as
+    /// `createCommandWithUpdatedColumns` does for its own rewrite. Without it the on-fly stage built
+    /// from this command has no version bound, `getMaxPatchVersionForStep` returns none, and the
+    /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
+    /// `DELETE` would be applied before its predicate is evaluated.
+    mutation_command->mutation_version = command.mutation_version;
 
     return *mutation_command;
 }
@@ -169,6 +181,27 @@ bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
         || type == MutationCommand::DROP_COLUMN;
 }
 
+void AlterConversions::addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns)
+{
+    using enum MutationCommand::Type;
+
+    if (command.type == READ_COLUMN)
+    {
+        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
+        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
+        if (command.data_type)
+            updated_columns.insert(command.column_name);
+    }
+    else if (command.type == UPDATE || command.type == DELETE)
+    {
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+        {
+            for (const auto & child : alter->update_assignments->children)
+                updated_columns.insert(child->as<ASTAssignment &>().column_name);
+        }
+    }
+}
+
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
 {
     using enum MutationCommand::Type;
@@ -208,11 +241,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     {
         ++number_of_alter_mutations;
         version_of_alter_mutation = command.mutation_version;
-
-        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
-        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
-        if (command.data_type)
-            all_updated_columns.insert(command.column_name);
+        addUpdatedColumns(command, all_updated_columns);
     }
     else if (command.type == UPDATE || command.type == DELETE)
     {
@@ -226,21 +255,19 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        if (auto alter = command.ast(); alter && alter->update_assignments)
-        {
-            for (const auto & child : alter->update_assignments->children)
-                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
-        }
-
+        addUpdatedColumns(command, all_updated_columns);
         mutation_commands.push_back(command);
     }
 }
 
 void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
 {
+    /// Columns of the key the patch was written with must not be reported as updated columns.
+    const auto & sorting_key_columns = patch_part.stored_sorting_key_columns;
+
     for (const auto & column : patch_part.part->getColumns())
     {
-        if (isPatchPartSystemColumn(column.name))
+        if (isPatchPartSystemColumn(column.name) || sorting_key_columns.contains(column.name))
             continue;
 
         String updated_column_name = column.name;
@@ -430,6 +457,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     size_t num_join = 0;
     size_t num_merge = 0;
+    size_t num_merge_on_key = 0;
 
     for (const auto & patch : patch_parts)
     {
@@ -443,6 +471,9 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         }
         else
         {
+            /// Columns of the key the patch was written with must not be reported as updated columns.
+            const auto & sorting_key_columns = patch.stored_sorting_key_columns;
+
             has_column_in_patch = std::ranges::any_of(read_columns, [&](const auto & column)
             {
                 if (isPatchPartSystemColumn(column.name))
@@ -453,16 +484,21 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
                 if (patch_conversions && patch_conversions->isColumnRenamed(name_in_storage))
                     name_in_storage = patch_conversions->getColumnOldName(name_in_storage);
 
+                if (sorting_key_columns.contains(name_in_storage))
+                    return false;
+
                 return patch.part->getColumnsDescription().hasPhysical(name_in_storage);
             });
         }
 
         if (has_column_in_patch)
         {
-            if (patch.mode == PatchMode::Join)
-                ++num_join;
-            else
-                ++num_merge;
+            switch (patch.mode)
+            {
+                case PatchMode::Join:       ++num_join; break;
+                case PatchMode::Merge:      ++num_merge; break;
+                case PatchMode::MergeOnKey: ++num_merge_on_key; break;
+            }
 
             patches_to_read.push_back(patch);
         }
@@ -474,6 +510,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         ProfileEvents::increment(ProfileEvents::PatchesAppliedInAllReadTasks, patches_to_read.size());
         ProfileEvents::increment(ProfileEvents::PatchesJoinAppliedInAllReadTasks, num_join);
         ProfileEvents::increment(ProfileEvents::PatchesMergeAppliedInAllReadTasks, num_merge);
+        ProfileEvents::increment(ProfileEvents::PatchesMergeOnKeyAppliedInAllReadTasks, num_merge_on_key);
     }
 
     return patches_to_read;

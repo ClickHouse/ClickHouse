@@ -37,3 +37,13 @@ WITH cte AS (
 SELECT count() < 100000 AS sample_actually_applied FROM cte;
 
 DROP TABLE t_cte_sample;
+
+-- Coverage for TableExpressionModifiers.cpp lines 27-28: the sample_offset_ratio branch in dump()
+-- is never hit by existing tests because no test combines SAMPLE with OFFSET.
+-- EXPLAIN QUERY TREE calls TableExpressionModifiers::dump() and triggers the offset path.
+CREATE TABLE t_sample_off (a UInt64) ENGINE = MergeTree ORDER BY a SAMPLE BY a;
+INSERT INTO t_sample_off SELECT number FROM numbers(100);
+
+EXPLAIN QUERY TREE SELECT * FROM t_sample_off SAMPLE 1/2 OFFSET 1/4;
+
+DROP TABLE t_sample_off;

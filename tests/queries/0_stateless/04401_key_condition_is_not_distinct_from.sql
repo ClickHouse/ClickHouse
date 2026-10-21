@@ -281,8 +281,11 @@ SELECT 'todatetime_isnull_throws' FROM d32_null WHERE isNull(toDateTime(d)) SETT
 SELECT 'todatetime_ndf_null_throws' FROM d32_null WHERE toDateTime(d) IS NOT DISTINCT FROM NULL SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 -- Under 'ignore', `toDateTime` saturates instead of throwing, so the scan succeeds and returns 0.
 SELECT 'todatetime_ndf_null_ignore', count() FROM d32_null WHERE toDateTime(d) IS NOT DISTINCT FROM NULL SETTINGS date_time_overflow_behavior = 'ignore';
-SELECT 'intdiv0_isnull_throws' FROM i64_null WHERE isNull(intDiv(k, 0)); -- { serverError ILLEGAL_DIVISION }
-SELECT 'intdiv0_ndf_null_throws' FROM i64_null WHERE intDiv(k, 0) IS NOT DISTINCT FROM NULL; -- { serverError ILLEGAL_DIVISION }
+-- `intDiv` declines `canBeExecutedOnDefaultArguments`, so it is not executed on the rows behind a
+-- NULL: the NULL granule no longer raises and can emit its row before the non-NULL granule raises.
+-- `FORMAT Null` keeps the assertion about the exception free of that partial output.
+SELECT 'intdiv0_isnull_throws' FROM i64_null WHERE isNull(intDiv(k, 0)) FORMAT Null; -- { serverError ILLEGAL_DIVISION }
+SELECT 'intdiv0_ndf_null_throws' FROM i64_null WHERE intDiv(k, 0) IS NOT DISTINCT FROM NULL FORMAT Null; -- { serverError ILLEGAL_DIVISION }
 -- `intDiv(k, 2)` never raises, so the full scan returns the NULL-row count.
 SELECT 'intdiv2_ndf_null', count() FROM i64_null WHERE intDiv(k, 2) IS NOT DISTINCT FROM NULL;
 -- ifNull / coalesce composed wrapper forms match the bare wrapped atom.

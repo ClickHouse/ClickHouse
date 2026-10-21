@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'AWS PrivateLink para ClickPipes'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'Estabeleça uma conexão segura entre o ClickPipes e uma fonte de dados usando o AWS PrivateLink.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'AWS PrivateLink para ClickPipes'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'segurança do ClickPipes', 'endpoint da VPC', 'conectividade privada', 'recurso da VPC']
 integration:
@@ -19,9 +20,7 @@ Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para es
   Verifique as [regiões da AWS compatíveis](#aws-privatelink-regions) antes de começar.
 </Note>
 
-<div id="supported-sources">
-  ## Fontes de dados compatíveis com o ClickPipes
-</div>
+## Fontes de dados compatíveis com o ClickPipes {#supported-sources}
 
 A funcionalidade de endpoint privado reverso do ClickPipes é limitada aos seguintes
 tipos de fonte de dados:
@@ -35,9 +34,7 @@ tipos de fonte de dados:
   Para o Kafka, é possível acessar um [registro de esquemas compatível com o Confluent](/pt-BR/integrations/clickpipes/kafka/schema-registries#confluent-compatible-registries) pelo mesmo endpoint privado reverso dos brokers — ele não precisa estar acessível publicamente — desde que seu hostname seja resolvido para os endereços IP privados do endpoint.
 </Note>
 
-<div id="aws-privatelink-endpoint-types">
-  ## Tipos de endpoint do AWS PrivateLink compatíveis
-</div>
+## Tipos de endpoint do AWS PrivateLink compatíveis {#aws-privatelink-endpoint-types}
 
 O endpoint privado reverso do ClickPipes pode ser configurado com uma das seguintes opções do AWS PrivateLink:
 
@@ -45,9 +42,7 @@ O endpoint privado reverso do ClickPipes pode ser configurado com uma das seguin
 * [conectividade multi-VPC do MSK para o ClickPipe do MSK](#msk-multi-vpc)
 * [serviço de endpoint da VPC](#vpc-endpoint-service)
 
-<div id="vpc-resource">
-  ### Recurso da VPC
-</div>
+### Recurso da VPC {#vpc-resource}
 
 <Info>
   Não há suporte entre regiões.
@@ -165,9 +160,7 @@ Para configurar o PrivateLink com um recurso da VPC:
   </Step>
 </Steps>
 
-<div id="msk-multi-vpc">
-  ### Conectividade multi-VPC do MSK
-</div>
+### Conectividade multi-VPC do MSK {#msk-multi-vpc}
 
 A [conectividade multi-VPC](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) é um recurso nativo do AWS MSK que permite conectar várias VPCs a um único cluster MSK.
 O suporte a DNS privado é disponibilizado de imediato e não requer nenhuma configuração adicional.
@@ -183,9 +176,7 @@ Consulte o guia de [introdução](https://docs.aws.amazon.com/msk/latest/develop
 
 Siga nosso [guia de configuração do MSK para ClickPipes](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes) para saber como configurar a conexão.
 
-<div id="vpc-endpoint-service">
-  ### Serviço de endpoint da VPC
-</div>
+### Serviço de endpoint da VPC {#vpc-endpoint-service}
 
 O [serviço de endpoint da VPC](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) é outra forma de compartilhar sua fonte de dados com o ClickPipes.
 Ele requer a configuração de um NLB (Network Load Balancer) em frente à sua fonte de dados
@@ -220,9 +211,7 @@ Consulte o guia de [introdução](https://docs.aws.amazon.com/vpc/latest/private
 Para clusters MSK, consulte [serviço de endpoint da VPC do AWS PrivateLink para cluster MSK](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 para uma configuração de um broker por serviço de endpoint que usa nomes DNS privados personalizados.
 
-<div id="custom-private-dns">
-  ## DNS privado personalizado
-</div>
+## DNS privado personalizado {#custom-private-dns}
 
 <PrivatePreviewBadge />
 
@@ -273,9 +262,7 @@ Para configurar nomes DNS privados personalizados:
   recurso [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
   para gerenciar mapeamentos em um endpoint privado reverso existente.
 
-<div id="creating-clickpipe">
-  ## Como criar um ClickPipe com endpoint privado reverso
-</div>
+## Como criar um ClickPipe com endpoint privado reverso {#creating-clickpipe}
 
 1. Acesse o SQL Console do seu serviço ClickHouse Cloud.
 
@@ -333,9 +320,7 @@ Para configurar nomes DNS privados personalizados:
 
    Para ver uma lista completa de nomes DNS, acesse as configurações do serviço ClickHouse Cloud.
 
-<div id="managing-rpes">
-  ## Gerenciamento de endpoints privados reversos
-</div>
+## Gerenciamento de endpoints privados reversos {#managing-rpes}
 
 Você pode gerenciar endpoints privados reversos existentes nas configurações do serviço ClickHouse Cloud:
 
@@ -351,18 +336,14 @@ Você pode gerenciar endpoints privados reversos existentes nas configurações 
 
    Não é possível editar um endpoint depois de criá-lo. Para excluir um endpoint, clique no `×` correspondente e confirme — a exclusão é permanente e interrompe qualquer ClickPipe que esteja usando esse endpoint.
 
-<div id="aws-privatelink-regions">
-  ## Regiões da AWS compatíveis
-</div>
+## Regiões da AWS compatíveis {#aws-privatelink-regions}
 
 O suporte ao AWS PrivateLink para ClickPipes é limitado a regiões específicas da AWS.
 Consulte a [lista de regiões do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) para ver as regiões disponíveis.
 
 Essa restrição não se aplica a um serviço de endpoint da VPC do PrivateLink com conectividade entre regiões habilitada.
 
-<div id="limitations">
-  ## Limitações
-</div>
+## Limitações {#limitations}
 
 Não há garantia de que os endpoints do AWS PrivateLink para ClickPipes criados no ClickHouse Cloud sejam criados
 na mesma região da AWS que o serviço do ClickHouse Cloud.
@@ -375,9 +356,18 @@ Vários ClickPipes para um único serviço do ClickHouse podem reutilizar o mesm
 
 O AWS MSK oferece suporte a apenas um PrivateLink (endpoint da VPC) por cluster MSK para cada tipo de autenticação (SASL&#95;IAM ou SASL&#95;SCRAM). Como resultado, vários serviços ou organizações do ClickHouse Cloud não podem criar conexões PrivateLink separadas com o mesmo cluster MSK usando o mesmo tipo de autenticação.
 
-<div id="automatic-cleanup">
-  ### Limpeza automática de endpoints inativos
-</div>
+### Limite de réplicas por endpoint privado reverso {#rpe-replica-limit}
+
+Um endpoint privado reverso suporta até 190 réplicas de ClickPipe no total. As réplicas de todos os ClickPipes que compartilham o mesmo endpoint contam para esse limite, inclusive as de ClickPipes pausados.
+
+O ClickPipes rejeita a criação de um ClickPipe, ou o aumento de escala de um ClickPipe existente, se o número total de réplicas do endpoint ultrapassar o limite. A mensagem de erro informa o ID do endpoint privado reverso, o número de réplicas já utilizadas por outros ClickPipes e o número de réplicas solicitado. A redução de escala é sempre permitida.
+
+Para liberar capacidade, você pode:
+
+* Reduzir a escala de outros ClickPipes que usam o mesmo endpoint.
+* Criar um endpoint privado reverso separado para os ClickPipes adicionais.
+
+### Limpeza automática de endpoints inativos {#automatic-cleanup}
 
 Endpoints privados reversos que permanecem em um estado terminal são removidos automaticamente após um período de carência definido.
 Isso garante que endpoints não utilizados ou configurados incorretamente não permaneçam indefinidamente.

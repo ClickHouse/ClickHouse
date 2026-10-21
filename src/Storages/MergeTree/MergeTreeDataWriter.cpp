@@ -18,6 +18,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -26,7 +27,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -41,6 +42,7 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -101,9 +103,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
+    extern const MergeTreeSettingsBool optimize_row_order_if_no_order_by;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsBool skip_empty_columns_on_insert;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
@@ -117,6 +121,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+}
+
+namespace
+{
+
+bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
+{
+    return settings_changes.tryGet("optimize_row_order") != nullptr;
+}
+
 }
 
 void buildScatterSelector(
@@ -289,7 +303,7 @@ bool hasRowsInFilter(const IColumn & where_column)
     if (const auto * where_column_uint8 = typeid_cast<const ColumnUInt8 *>(&where_column))
         return hasRowsInFilter(*where_column_uint8);
     else
-        return hasRowsInFilter(where_column);
+        return hasRowsInFilter<IColumn>(where_column);
 }
 
 void updateTTLInfoConst(MergeTreeDataPartTTLInfo & ttl_info, const ColumnConst & ttl_column, const IColumn * where_column)
@@ -492,6 +506,9 @@ void MergeTreeTemporaryPart::prewarmCaches()
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
     }
+
+    if (prewarm_caches.statistics_cache)
+        part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
@@ -685,35 +702,113 @@ Block MergeTreeDataWriter::mergeBlock(
     return header->cloneWithColumns(status.chunk.getColumns());
 }
 
+
+/// Omit columns that contain only their type default. The marker preserves the
+/// inserted value; expression columns and patch parts are not eligible.
+static void skipEmptyColumnsOnInsert(
+    NamesAndTypesList & columns,
+    const Block & block,
+    SerializationInfoByName & infos,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettingsPtr & data_settings,
+    bool is_patch)
+{
+    if (!(*data_settings)[MergeTreeSetting::skip_empty_columns_on_insert] || is_patch)
+        return;
+
+    /// Old replicas cannot read the marker format, so respect an explicitly pinned version.
+    const MergeTreeSerializationInfoVersion serialization_version = (*data_settings)[MergeTreeSetting::serialization_info_version];
+    if (serialization_version < MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS)
+        return;
+
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NameSet empty_columns;
+    for (const auto & [col_name, type] : columns)
+    {
+        auto col_default = columns_description.getDefault(col_name);
+        if (col_default && col_default->expression)
+            continue;
+        const auto & col_data = block.getByName(col_name);
+        if (!col_data.column->hasOnlyTypeDefaults())
+            continue;
+        /// The frozen IDataType default must match the column's zero representation
+        /// (unlike some Enum and Date32 defaults).
+        auto default_sample = type->createColumn();
+        default_sample->insert(type->getDefault());
+        if (!default_sample->isDefaultAt(0))
+            continue;
+        empty_columns.insert(col_name);
+    }
+    if (empty_columns.empty())
+        return;
+
+    /// A part must retain at least one physical column.
+    auto filtered = columns.eraseNames(empty_columns);
+    if (filtered.empty())
+    {
+        size_t min_bytes = std::numeric_limits<size_t>::max();
+        String keep_name;
+        for (const auto & name : empty_columns)
+        {
+            size_t bytes = block.getByName(name).column->byteSize();
+            if (bytes < min_bytes || (bytes == min_bytes && (keep_name.empty() || name < keep_name)))
+            {
+                min_bytes = bytes;
+                keep_name = name;
+            }
+        }
+        empty_columns.erase(keep_name);
+        filtered = columns.eraseNames(empty_columns);
+    }
+
+    columns = std::move(filtered);
+    for (const auto & name : empty_columns)
+        infos.erase(name);
+
+    SerializationInfoByName::MissingColumns mc;
+    mc.reserve(empty_columns.size());
+    for (const auto & name : empty_columns)
+    {
+        SerializationInfoByName::MissingColumnInfo info;
+        info.name = name;
+        info.type_name = block.getByName(name).type->getName();
+        mc.push_back(std::move(info));
+    }
+    infos.setMissingColumns(std::move(mc));
+}
+
+
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     ContextPtr context,
-    bool may_have_leftover)
+    bool may_have_leftover,
+    const MergeTreeTransactionPtr & txn)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, txn);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
-    SourcePartsSetForPatch source_parts_set,
+    PatchPartIndex patch_part_index,
     ContextPtr context,
     bool may_have_leftover)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     BlockWithPartition & block_with_partition,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
-    SourcePartsSetForPatch source_parts_set,
+    std::optional<PatchPartIndex> patch_part_index,
     ContextPtr context,
     UInt64 block_number,
-    bool may_have_leftover)
+    bool may_have_leftover,
+    const MergeTreeTransactionPtr & txn)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -735,8 +830,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
-    if (!source_parts_set.empty())
-        new_part_info.mutation = source_parts_set.getMaxDataVersion();
+    if (patch_part_index && !patch_part_index->empty())
+        new_part_info.mutation = patch_part_index->getMaxDataVersion();
 
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -771,10 +866,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         global_settings,
         *data_settings);
 
+    /// The engine merge below would aggregate skip index inputs like data columns, so they are computed from the merged rows.
+    /// An expression named like an inserted column stays before the merge, where its result replaces that column.
+    std::function<bool(const String &)> is_computed_before_merge;
+    ExpressionActionsPtr expr_after_merge;
+    if (optimize_on_insert)
+    {
+        is_computed_before_merge = [&](const String & name) { return block.has(name); };
+        expr_after_merge = data.getSkipIndicesExpression(metadata_snapshot, indices, std::not_fn(is_computed_before_merge));
+    }
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
+        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices, is_computed_before_merge);
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }
@@ -811,7 +916,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+    /// An explicitly set table `optimize_row_order = 0` opts the table out of row order optimization
+    /// even when `optimize_row_order_if_no_order_by` would enable it for a table without a sorting key.
+    /// The conditions are ordered so that the table `SETTINGS` lookup happens only when the automatic
+    /// path is actually in play - it must not cost anything on the insert hot path otherwise.
+    const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
+        || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
+            && !metadata_snapshot->hasSortingKey()
+            && !metadata_snapshot->hasSettingChange("optimize_row_order"));
+    if (optimize_row_order_enabled
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
@@ -823,6 +936,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+    }
+
+    if (expr_after_merge)
+    {
+        /// Sorting key expressions and subcolumns computed before the merge are computed again from the merged rows,
+        /// as in a background merge.
+        for (const auto * output : expr_after_merge->getActionsDAG().getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT && block.has(output->result_name))
+                block.erase(output->result_name);
+        const auto & table_columns = metadata_snapshot->getColumns();
+        for (const auto & required_column : expr_after_merge->getRequiredColumns())
+            if (block.has(required_column) && !table_columns.hasPhysical(required_column)
+                && table_columns.hasSubcolumn(GetColumnsOptions::AllPhysical, required_column))
+                block.erase(required_column);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr_after_merge, block);
+        expr_after_merge->execute(block);
     }
 
     ColumnsStatistics statistics;
@@ -913,14 +1042,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
-    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
-    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
-    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
-    /// storage would leave the sidecar existsFile-visible but unopenable, failing
-    /// every subsequent load of the part.
-    if (metadata_snapshot->hasUniqueKey())
-        part_format.storage_type = MergeTreeDataPartStorageType::Full;
-
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)
@@ -946,6 +1067,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
+    skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
+
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
@@ -954,7 +1077,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
-    new_data_part->setSourcePartsSet(std::move(source_parts_set));
+
+    if (patch_part_index)
+        new_data_part->setPatchPartIndex(std::move(*patch_part_index));
+
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
@@ -1011,6 +1137,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
 
+    const auto & creating_txn = txn ? txn : context->getCurrentTransaction();
+    const auto creation_tid = (data.supportsTransactions() && creating_txn) ? creating_txn->tid : Tx::NonTransactionalTID;
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
@@ -1019,25 +1147,35 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         indices,
         compression_codec,
         std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
+        creation_tid,
         block.bytes(),
         /*reset_columns=*/false,
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        std::make_shared<StreamBaseManifest>());
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
+    /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
+    /// records its checksum in `gathered_data.checksums` (so it is covered by
+    /// `CHECK TABLE`, part-size accounting, backup and fetches) and finalizes +
+    /// optionally fsyncs the file inline - before `checksums.txt` is written,
+    /// so a crash cannot leave the checksum durable while the SST is not.
     if (metadata_snapshot->hasUniqueKey())
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+    {
+        SSTIndexWriter::writeDenseIndexOnInsert(
             *data_part_storage,
             metadata_snapshot,
             block,
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
+            gathered_data.checksums,
+            (*data_settings)[MergeTreeSetting::fsync_after_insert],
             context);
+    }
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {
@@ -1059,7 +1197,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1090,6 +1228,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+    if (metadata_snapshot->hasUniqueKey() && perm_ptr)
+        temp_part->sort_permutation = std::move(perm);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
@@ -1105,9 +1245,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const MergeTreeData & data,
     Block block,
     const ProjectionDescription & projection,
+    CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    bool use_selected_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1187,7 +1329,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+    /// The `optimize_row_order_if_no_order_by` setting refers to the parent table having no explicit `ORDER BY`,
+    /// not to the projection's own (often empty) sorting key. A sorted parent table may have unsorted/aggregate
+    /// projections, and we should not broaden the new default to them. Explicit `optimize_row_order` keeps applying
+    /// to projections as before, and an explicitly set table or projection `optimize_row_order = 0` opts out here as well.
+    const auto & table_metadata_snapshot = parent_part->getMetadataSnapshot();
+    const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
+        || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
+            && !table_metadata_snapshot->hasSortingKey()
+            && !isOptimizeRowOrderExplicitlySet(projection.settings_changes)
+            && !table_metadata_snapshot->hasSettingChange("optimize_row_order"));
+    if (optimize_row_order_enabled
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
@@ -1204,7 +1356,24 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
     }
 
-    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
+    /// The projection inherits the compression codec chosen for its parent part (passed in by the
+    /// caller) instead of always selecting the size-aware default with a part size of `0`, which
+    /// would pin every projection to `LZ4`. This way a projection of a large `ZSTD(3)` part gets the
+    /// better ratio too, while projections of small parts (and freshly inserted parts) stay on `LZ4`.
+    /// That inheritance is only sound while the parent's codec is a fact. If the parent part lost its
+    /// `default_compression_codec.txt` and the codec was merely recovered from `checksums.txt`
+    /// (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would compress this
+    /// projection - written here from scratch - with a guess, and `finalizePartOnDisk` would then
+    /// record that guess in the projection's own codec file as authoritative metadata: a small
+    /// post-flip part whose real default is `LZ4` but which recovers as `ZSTD(1)` would have its
+    /// projection permanently relabelled after one rebuild. Nothing of the parent is reused for the
+    /// projection data, so in that case choose the codec independently, exactly as a fresh write does.
+    if (parent_part->default_codec_is_approximate && !use_selected_codec)
+    {
+        /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected here, matching the
+        /// insert path; `expected_size` is the same upper bound used for the part format above.
+        compression_codec = data.getCompressionCodecForPart(metadata_snapshot, expected_size, {}, time(nullptr)).codec;
+    }
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block,
@@ -1226,7 +1395,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        try_adaptive_codec);
+        try_adaptive_codec,
+        /// A separate instance: `<name>.proj/` is its own part directory.
+        std::make_shared<StreamBaseManifest>());
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1247,6 +1418,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
+    CompressionCodecPtr compression_codec,
     bool merge_is_needed,
     ContextPtr context)
 {
@@ -1265,6 +1437,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         data,
         std::move(block),
         projection,
+        std::move(compression_codec),
         std::move(indices),
         merge_is_needed,
         /*try_adaptive_codec=*/ false);
@@ -1277,7 +1450,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
+    CompressionCodecPtr compression_codec,
     size_t block_num,
+    bool use_selected_codec,
+    bool is_explicit_recompression,
     ContextPtr context)
 {
     const auto & table_settings = data.getSettings();
@@ -1296,9 +1472,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         data,
         std::move(block),
         projection,
+        std::move(compression_codec),
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ !is_explicit_recompression,
+        use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

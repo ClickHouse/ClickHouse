@@ -24,7 +24,7 @@ Par exemple, le sous-ensemble couvre un seul jour - `2024-12-17` et est disponib
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -38,10 +38,10 @@ Peak memory usage: 239.50 MiB.
 
 Le jeu de données complet de ce bucket contient plus de 320 Go de fichiers Parquet. Dans les exemples ci-dessous, nous ciblons volontairement des sous-ensembles à l’aide de motifs glob.
 
-Nous supposons que l’utilisateur consomme un flux de ces données, par exemple depuis Kafka ou un stockage d’objets, à partir de cette date. Le schéma de ces données est présenté ci-dessous :
+Nous supposons que l’utilisateur consomme un flux de ces données, par exemple depuis Kafka ou un stockage objet, à partir de cette date. Le schéma de ces données est présenté ci-dessous :
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -127,7 +127,7 @@ Nous alimentons la table principale et la vue associée avec un sous-ensemble de
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -184,7 +184,7 @@ Nous remplissons cette table avec notre 2e sous-ensemble d&#39;environ la même 
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -288,11 +288,11 @@ Des insertions plus volumineuses, c’est-à-dire avec davantage de lignes, impl
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
 --continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
@@ -301,14 +301,14 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## Scénario 1 : réinjecter des données historiques alors que l’ingestion est déjà en place
+  ## Scénario 1 : backfill de données historiques alors que l’ingestion est déjà en place
 </div>
 
-Dans ce scénario, nous supposons que les données à réinjecter ne se trouvent pas dans un bucket isolé et qu’un filtrage est donc nécessaire. Des données sont déjà en cours d’ingestion, et il est possible d’identifier un `horodatage` ou une colonne à croissance monotone à partir duquel ou de laquelle les données historiques doivent être réinjectées.
+Dans ce scénario, nous supposons que les données à backfiller ne se trouvent pas dans un bucket isolé et qu’un filtrage est donc nécessaire. Des données sont déjà en cours d’ingestion, et il est possible d’identifier un `horodatage` ou une colonne à croissance monotone à partir duquel ou de laquelle les données historiques doivent être backfillées.
 
 Ce processus suit les étapes suivantes :
 
-1. Identifiez le point de reprise — soit un `horodatage`, soit une valeur de colonne à partir de laquelle les données historiques doivent être réinjectées.
+1. Identifiez le point de reprise — soit un `horodatage`, soit une valeur de colonne à partir de laquelle les données historiques doivent être backfillées.
 2. Créez des doublons de la table principale et des tables cibles des vues matérialisées.
 3. Créez des copies de toutes les vues matérialisées pointant vers les tables cibles créées à l’étape (2).
 4. Insérez les données dans la table principale dupliquée créée à l’étape (2).
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -529,12 +529,12 @@ Notez qu’ici, la mémoire utilisée est de `639.47 MiB`.
 Plusieurs facteurs détermineront les performances et les ressources utilisées dans le scénario ci-dessus. Avant de tenter tout réglage, nous recommandons aux lecteurs de se familiariser avec les mécanismes d&#39;insertion documentés en détail dans la section [Using Threads for Reads](/fr/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) du [guide Optimizing for S3 Insert and Read Performance](/fr/integrations/connectors/data-ingestion/AWS/performance). En résumé :
 
 * **Parallélisme de lecture** - Le nombre de threads utilisés pour lire les données. Contrôlé via [`max_threads`](/fr/reference/settings/session-settings/max-threads#max_threads). Dans ClickHouse Cloud, il est déterminé par la taille de l’instance et correspond par défaut au nombre de vCPU. Augmenter cette valeur peut améliorer les performances de lecture, au prix d’une utilisation mémoire plus élevée.
-* **Parallélisme d’insertion** - Le nombre de threads d’insertion utilisés pour insérer les données. Contrôlé via [`max_insert_threads`](/fr/reference/settings/session-settings/max-insert#max_insert_threads). **Remarque** : cette valeur est plafonnée par `max_threads`, donc le parallélisme d’insertion effectif est `min(max_insert_threads, max_threads)`. Dans ClickHouse Cloud, il est déterminé par la taille de l’instance (entre 2 et 4) et est défini à 1 dans OSS. Augmenter cette valeur peut améliorer les performances, au prix d’une utilisation mémoire plus élevée.
+* **Parallélisme d’insertion** - Le nombre de threads d’insertion utilisés pour insérer les données. Contrôlé via [`max_insert_threads`](/fr/reference/settings/session-settings/max-insert#max_insert_threads). Pour les valeurs positives, le parallélisme d’insertion effectif est `min(max_insert_threads, max_threads)`. Une valeur de `0` est automatiquement définie sur le nombre de cœurs CPU et peut être réduite en cas de pression mémoire par [`max_insert_threads_min_free_memory_per_thread`](/fr/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread). Dans ClickHouse Cloud, la valeur par défaut est déterminée par la taille de l’instance : `1` pour les nœuds disposant de 8 Gio de mémoire, `2` pour les nœuds disposant de 16 Gio et `4` pour les nœuds plus grands. Dans OSS depuis la version 26.8, la valeur par défaut est `0`. Augmenter cette valeur peut améliorer les performances, au prix d’une utilisation mémoire plus élevée.
 * **Taille des blocs d’insertion** - les données sont traitées dans une boucle où elles sont récupérées, analysées et regroupées en blocs d’insertion en mémoire selon la [clé de partitionnement](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Ces blocs sont triés, optimisés, compressés puis écrits sur le stockage sous forme de nouvelles [parties de données](/fr/concepts/core-concepts/parts). La taille du bloc d’insertion, contrôlée par les paramètres [`min_insert_block_size_rows`](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_rows) et [`min_insert_block_size_bytes`](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (non compressé), a un impact sur l’utilisation mémoire et les E/S disque. Des blocs plus volumineux utilisent davantage de mémoire, mais créent moins de parties, ce qui réduit les E/S et les fusions en arrière-plan. Ces paramètres représentent des seuils minimaux (le premier atteint déclenche un flush).
 * **Taille des blocs des vues matérialisées** - En plus des mécanismes décrits ci-dessus pour l’insertion principale, les blocs sont également fusionnés avant l’insertion dans les vues matérialisées afin d’optimiser le traitement. La taille de ces blocs est déterminée par les paramètres [`min_insert_block_size_bytes_for_materialized_views`](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) et [`min_insert_block_size_rows_for_materialized_views`](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views). Des blocs plus volumineux permettent un traitement plus efficace, au prix d’une utilisation mémoire plus élevée. Par défaut, ces paramètres reprennent respectivement les valeurs des paramètres de la table source [`min_insert_block_size_rows`](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_rows) et [`min_insert_block_size_bytes`](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_bytes).
 
 <Note>
-  **Conseil pour les requêtes INSERT SELECT triviales** : Pour les requêtes simples `INSERT INTO t1 SELECT * FROM t2` sans transformations complexes, vous pouvez activer `optimize_trivial_insert_select=1`. Ce paramètre (désactivé par défaut depuis la version 24.7) ajuste automatiquement le parallélisme du SELECT pour l’aligner sur `max_insert_threads`, ce qui réduit l’utilisation des ressources et le nombre de parts créées. Cela est particulièrement utile pour les migrations de données en masse entre tables.
+  **Conseil pour les requêtes INSERT SELECT triviales** : Pour les requêtes simples `INSERT INTO t1 SELECT * FROM t2` sans transformations complexes, vous pouvez activer `optimize_trivial_insert_select=1`. Ce paramètre (désactivé par défaut depuis la version 24.7) ajuste automatiquement le parallélisme du SELECT pour l’aligner sur `max_insert_threads`, ce qui réduit l’utilisation des ressources et le nombre de parties créées. Cela est particulièrement utile pour les migrations de données en masse entre tables.
 </Note>
 
 Pour améliorer les performances, vous pouvez suivre les recommandations décrites dans la section [Tuning Threads and Block Size for Inserts](/fr/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) du [guide Optimizing for S3 Insert and Read Performance](/fr/integrations/connectors/data-ingestion/AWS/performance). Dans la plupart des cas, il n&#39;est pas nécessaire de modifier également `min_insert_block_size_bytes_for_materialized_views` et `min_insert_block_size_rows_for_materialized_views` pour améliorer les performances. Si ces paramètres sont modifiés, appliquez les mêmes bonnes pratiques que celles décrites pour `min_insert_block_size_rows` et `min_insert_block_size_bytes`.
@@ -592,7 +592,7 @@ SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 0
 Peak memory usage: 218.64 MiB.
 ```
 
-Enfin, gardez à l’esprit que réduire la taille des blocs génère davantage de parts et accentue la pression sur les opérations de fusion. Comme indiqué [ici](/fr/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), ces paramètres doivent être modifiés avec prudence.
+Enfin, gardez à l’esprit que réduire la taille des blocs génère davantage de parties et accentue la pression sur les opérations de fusion. Comme indiqué [ici](/fr/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges), ces paramètres doivent être modifiés avec prudence.
 
 <div id="no-timestamp-or-monotonically-increasing-column">
   ### Aucun horodatage ni colonne à croissance monotone

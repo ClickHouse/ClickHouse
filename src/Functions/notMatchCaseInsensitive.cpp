@@ -40,9 +40,9 @@ notMatchCaseInsensitive(haystack, pattern)
         "Usage example",
         "SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'",
         R"(
-┌─notMatchCase⋯ 'hello.*')─┬─'Hello World⋯GOODBYE.*'─┐
-│                        0 │                       1 │
-└──────────────────────────┴─────────────────────────┘
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
         )"
     }
     };

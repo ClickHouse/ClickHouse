@@ -69,6 +69,14 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     QueryPlan::Node * node = sorting_node->children.front();
     while (const auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
     {
+        /// An `arrayJoin` between the aggregation and the sort changes row multiplicity per group,
+        /// and over an empty array it produces no row at all. The best n groups of a bucket are then
+        /// no longer a superset of the rows the limit needs, and the groups pruned inside the bucket
+        /// can be precisely the ones that would have survived. The sibling gates in
+        /// `optimizeGroupByTopK` and in the planner reject the same shape.
+        if (expression->getExpression().hasArrayJoin())
+            return 0;
+
         const String * traced = traceThroughExpression(*expression, column);
         if (!traced || node->children.size() != 1)
             return 0;

@@ -22,15 +22,10 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (x String) ENGINE = Memory;
 
 -- =============================================================================
--- 1. Experimental setting
+-- 1. Registration
 -- =============================================================================
 
-SELECT '-- Disabled by default';
-SELECT aiGenerate('hello'); -- { serverError SUPPORT_IS_DISABLED }
-
-SET allow_experimental_ai_functions = 1;
-
-SELECT '-- Enabled after setting';
+SELECT '-- Registered';
 SELECT name FROM system.functions WHERE name = 'aiGenerate';
 
 -- =============================================================================
@@ -112,9 +107,12 @@ CREATE TABLE _03300_no_api_key_in (x String) ENGINE = Memory;
 INSERT INTO _03300_no_api_key_in VALUES ('hello');
 SET ai_function_throw_on_error = 0;
 SET ai_function_request_timeout_sec = 3;
+-- The connection to localhost:1 is refused at once; skip the 1s backoff before the retry.
+SET ai_function_retry_initial_delay_ms = 0;
 SELECT length(aiGenerate(x, map('credentials', 'ai_no_api_key'))) FROM _03300_no_api_key_in;
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
+SET ai_function_retry_initial_delay_ms = 1000;
 DROP TABLE _03300_no_api_key_in;
 
 DROP NAMED COLLECTION ai_no_api_key;
@@ -290,7 +288,6 @@ SELECT
     default AS default_value
 FROM system.settings
 WHERE name IN (
-    'allow_experimental_ai_functions',
     'ai_function_request_timeout_sec',
     'ai_function_max_retries',
     'ai_function_retry_initial_delay_ms',
@@ -664,6 +661,8 @@ DROP NAMED COLLECTION ai_anthropic_sim;
 
 SET ai_function_throw_on_error = 0;
 SET ai_function_request_timeout_sec = 3;
+-- The connection to localhost:1 is refused at once; skip the 1s backoff before the retry.
+SET ai_function_retry_initial_delay_ms = 0;
 
 SELECT '-- aiEmbed: DEFAULT survives INSERT (no exception)';
 DROP TABLE IF EXISTS _03300_embed_default;
@@ -771,16 +770,7 @@ DROP TABLE _03300_similarity_default;
 
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
-
--- =============================================================================
--- 21. Re-disable the setting mid-session
--- =============================================================================
-
-SET allow_experimental_ai_functions = 0;
-SELECT '-- Re-disabled blocks function';
-SELECT aiGenerate('hello'); -- { serverError SUPPORT_IS_DISABLED }
-
-SET allow_experimental_ai_functions = 1;
+SET ai_function_retry_initial_delay_ms = 1000;
 
 -- =============================================================================
 -- Cleanup

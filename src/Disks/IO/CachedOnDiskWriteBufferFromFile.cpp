@@ -18,6 +18,8 @@ namespace ProfileEvents
     extern const Event CachedWriteBufferCacheWriteBytes;
     extern const Event CachedWriteBufferCacheWriteMicroseconds;
     extern const Event CachedWriteBufferCacheWriteStopped;
+    extern const Event CachedWriteBufferCoveringSegmentShrunk;
+    extern const Event CachedWriteBufferCoveringSegmentShrinkFailed;
 }
 
 namespace DB
@@ -197,7 +199,9 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         }
         size_t size_to_write = std::min(available_size, size);
 
-        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason);
+        bool reserved = file_segment->reserve(
+            size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
+            /* reserve_stat */nullptr, /* reserve_hint */std::nullopt, &reserve_ahead);
         if (!reserved)
         {
             appendFilesystemCacheLog(*file_segment);
@@ -322,14 +326,45 @@ FileSegment * FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
         }
         else if (file_segment.getCurrentWriteOffset() != offset)
         {
-            /// Note: this exception can happen if you configure
-            /// max_file_segment_size < 2 * boundary_alignment, which is a misconfiguration,
-            /// but difficult to validate.
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Writing at offset {}, but covering file segment has write offset {} ({})",
-                offset, file_segment.getCurrentWriteOffset(),
-                file_segment.getInfoForLog());
+            /// The covering segment stayed behind `offset` because the ranges in between went to
+            /// another cache server (mid-segment failover, see `updateServerIfNotActive`), and
+            /// completing it shrinks it only to the downloaded size rounded up to
+            /// `boundary_alignment`. Shrink it for real, then start a new segment at `offset`.
+            LOG_DEBUG(
+                log, "Writing at offset {}, but covering file segment has write offset {}. "
+                "Will shrink it and start a new file segment ({})",
+                offset, file_segment.getCurrentWriteOffset(), file_segment.getInfoForLog());
+
+            file_segments->completeAndPopFront(
+                /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/true);
+
+            file_segments = cache->getOrSet(
+                key, offset, /* size */cache->getMaxFileSegmentSize(),
+                /* file_size */0, create_settings, /* file_segments_limit */1, origin,
+                /* boundary_alignment_ */0);
+
+            const auto & new_file_segment = file_segments->front();
+
+            /// `FileSegment::complete` only shrinks for the last holder, so the hole can still be
+            /// there. Do not retry: stop caching, the data still reaches its destination anyway.
+            if (new_file_segment.isDetached() || new_file_segment.getCurrentWriteOffset() < offset)
+            {
+                failure_reason = fmt::format(
+                    "covering file segment write offset is still behind {} ({})",
+                    offset, new_file_segment.getInfoForLog());
+
+                LOG_DEBUG(log, "Will stop write-through caching: {}", failure_reason);
+
+                ProfileEvents::increment(ProfileEvents::CachedWriteBufferCoveringSegmentShrinkFailed);
+
+                /// Holding it on would block eviction and make `finalize` log it to
+                /// `filesystem_cache_log` again, on top of the writer which downloaded it.
+                file_segments = nullptr;
+
+                return nullptr;
+            }
+
+            ProfileEvents::increment(ProfileEvents::CachedWriteBufferCoveringSegmentShrunk);
         }
     }
     else
@@ -423,6 +458,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
 
     expected_write_offset = position;
     ignore_bytes = 0;
+    reserve_ahead.reset();
 }
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(

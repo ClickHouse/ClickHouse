@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED;
 
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
 
     extern const int UNSUPPORTED_MEDIA_TYPE;
 }
@@ -129,6 +130,10 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
     if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
     {
         return HTTPResponse::HTTP_REQUEST_TIMEOUT;
+    }
+    if (exception_code == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT)
+    {
+        return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
     if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
     {

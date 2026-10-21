@@ -62,7 +62,7 @@ public:
 
     // Verifies whether the user's validity extends beyond the current time.
     // Throws an exception if the user's validity has expired.
-    void checkIfUserIsStillValid();
+    void checkIfUserIsStillValid() const;
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
@@ -73,6 +73,9 @@ public:
 
     /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
+
+    /// Returns the ID of the authenticated user, or `std::nullopt` before the authentication.
+    std::optional<UUID> getUserID() const { return user_id; }
 
     /// Modify the session's ClientInfo.
     void setClientInfo(const ClientInfo & client_info);
@@ -121,6 +124,14 @@ private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached = false) const;
     void recordLoginSuccess(ContextPtr login_context) const;
+
+    /// Returns the GRANTS clause of the authentication method the user logged in with
+    /// (the access rights of the session are limited to the intersection with it), or null if there is no limit.
+    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
+    /// Returns the expiry (VALID UNTIL) of the authentication method the user logged in with, or 0 if none.
+    /// Carried into the session/query context so deferred-execution paths can fail closed after expiry.
+    time_t getAuthenticationValidUntil() const;
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;

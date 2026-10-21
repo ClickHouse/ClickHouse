@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AuthenticationType.h>
 #include <optional>
 
@@ -16,6 +17,16 @@ namespace DB
   * ASTAuthenticationData without a type represents authentication data with
   *  the default password type that will be later inferred from the server parameters.
   */
+
+/// Formats the `VALID UNTIL <datetime>` / `VALID FOR <interval>` clause, leading space included.
+/// Shared by the authentication data of `CREATE USER` and by `CREATE TOKEN`.
+void formatAuthenticationValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings);
+
+/// Formats the `GRANTS (privilege ON object [,...])` clause, leading space included. The caller
+/// decides whether the clause is present at all (an `AccessRightsElements` which is not
+/// `structurallyEmpty()` but grants nothing is formatted as the canonical `GRANTS (USAGE ON *.*)`).
+void formatAuthenticationGrants(const AccessRightsElements & grants, WriteBuffer & ostr);
+
 
 class ASTAuthenticationData : public IAST
 {
@@ -52,6 +63,10 @@ public:
     /// SSH keys, HTTP scheme). They always precede `valid_until`, which, when present, is also
     /// stored in `children` and must be excluded from positional payload access.
     size_t numPayloadChildren() const { return children.size() - (valid_until ? 1 : 0); }
+
+    /// If not empty, the access rights of a user authenticated with this method
+    /// are limited to the intersection with these elements (the GRANTS clause).
+    AccessRightsElements grants;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

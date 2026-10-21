@@ -78,11 +78,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// The connection's client certificate, or the executing node's own server certificate.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+        return "() -> Map(String, String)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

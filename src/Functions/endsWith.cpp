@@ -25,9 +25,9 @@ Checks whether a string ends with the provided suffix.
         "Usage example",
         "SELECT endsWith('ClickHouse', 'House');",
         R"(
-┌─endsWith('Cl⋯', 'House')─┐
-│                        1 │
-└──────────────────────────┘
+┌─endsWith('ClickHouse', 'House')─┐
+│                               1 │
+└─────────────────────────────────┘
         )"
     }
     };
@@ -36,6 +36,7 @@ Checks whether a string ends with the provided suffix.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEndsWith>(documentation);
+    factory.registerAlias("ends_with", NameEndsWith::name, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(EndsWithCaseInsensitive)
@@ -54,9 +55,9 @@ Checks whether a string ends with the provided case-insensitive suffix.
         "Usage example",
         "SELECT endsWithCaseInsensitive('ClickHouse', 'HOUSE');",
         R"(
-┌─endsWithCaseInsensitive('Cl⋯', 'HOUSE')─┐
-│                                       1 │
-└─────────────────────────────────────────┘
+┌─endsWithCaseInsensitive('ClickHouse', 'HOUSE')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
         )"
     }
     };
