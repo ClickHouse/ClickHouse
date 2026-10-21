@@ -144,7 +144,9 @@ std::pair<Columns, Columns> extractRowStoreColumns(const Block & block, const Co
     return {row_store_columns, remaining_columns};
 }
 
-Columns materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessIndexes & access_indexes)
+}
+
+Columns HashJoin::materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessIndexes & access_indexes)
 {
     const auto & stored_columns = stored_block.columns;
     const auto & selector = stored_block.selector;
@@ -193,6 +195,9 @@ Columns materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessInd
     }
     return result;
 }
+
+namespace
+{
 
 /// Routes each row the way `map` places its key: by `map.hash` and `getBucketOfKey`.
 template <HashJoin::Type type, typename Map>
@@ -357,7 +362,8 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     HashJoinBuildLayout build_layout_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    bool allow_set_maps_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -374,6 +380,7 @@ HashJoin::HashJoin(
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
     , stats_collecting_params(stats_collecting_params_)
+    , allow_set_maps(allow_set_maps_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -729,7 +736,7 @@ bool HashJoin::preferUseMapsAll() const
 /// result can never contain a value taken from a right row.
 bool HashJoin::canUseSetMaps() const
 {
-    if (!table_join->enableJoinKeyOnlyHashTables())
+    if (!allow_set_maps || !table_join->enableJoinKeyOnlyHashTables())
         return false;
 
     /// A mixed join expression is evaluated against the right rows themselves.
@@ -990,7 +997,7 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
 /// many fewer cache misses than reading it column by column.
 static constexpr size_t MIN_CACHE_MISSES_SAVED_BY_ROW_STORE = 2;
 
-void HashJoin::initRowStore(const Block & block)
+void HashJoin::initRowStore(const Block & block, bool may_rerange)
 {
     /// Skip initializing if it's already initialized or disabled.
     if (data->row_store_state != RowStoreState::Enabled)
@@ -999,7 +1006,7 @@ void HashJoin::initRowStore(const Block & block)
     /// Skip using row store when the right table rerange optimization could get triggered.
     /// TODO: allow row store when right table could get reranged and build the reranged table
     /// based on the row store instead.
-    if (isRightTableRerangeEnabled())
+    if (may_rerange && isRightTableRerangeEnabled())
     {
         data->row_store_state = RowStoreState::Disabled;
         return;
@@ -1060,6 +1067,17 @@ void HashJoin::initRowStore(const Block & block)
     data->column_access_indexes = std::move(access_indexes);
 
     LOG_DEBUG(log, "{}Initialized Row store with {} columns", instance_log_id, row_store_columns.size());
+}
+
+StoredBlock HashJoin::createStoredBlock(const Block & block_to_save, ScatteredBlock::Selector selector, RowDataStorePtr row_store) const
+{
+    if (data->row_store_state != RowStoreState::Initialized)
+        return StoredBlock(block_to_save.getColumns(), std::move(selector), std::move(row_store));
+
+    auto [row_store_columns, remaining_columns] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
+    if (!row_store)
+        row_store = RowDataStore::create(data->row_store_layout, row_store_columns);
+    return StoredBlock(std::move(remaining_columns), std::move(selector), std::move(row_store));
 }
 
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
@@ -1164,23 +1182,13 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
         assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
 
-        Columns columns;
-        RowDataStorePtr row_store;
-        if (data->row_store_state == RowStoreState::Initialized)
-        {
-            auto [row_store_columns, remaining_columns] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
-            columns = std::move(remaining_columns);
-            row_store = RowDataStore::create(data->row_store_layout, row_store_columns);
-        }
-        else
-            columns = block_to_save.getColumns();
-
+        StoredBlock new_stored_block = createStoredBlock(block_to_save, std::move(selector));
         doDebugAsserts();
         /// Register the block and account for it while a local list still owns it: `splice` cannot throw,
         /// so the worker's list, `data->allocated_size` and `data->rows_to_join` always describe the same set
         /// of stored blocks. Same ordering as `tryRerangeRightTableDataImpl`; a list node keeps its address.
         StoredBlocksList new_block;
-        new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
+        new_block.emplace_back(std::move(new_stored_block));
         auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         stored_columns->block_no = data->stored_columns_index->add(stored_columns);
