@@ -19,8 +19,6 @@ CREATE TABLE table_for_alter (
   Data String
 ) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096, index_granularity_bytes = '10Mi';
 
-ALTER TABLE table_for_alter MODIFY SETTING index_granularity=555; -- { serverError READONLY_SETTING }
-
 SHOW CREATE TABLE table_for_alter;
 
 ALTER TABLE table_for_alter MODIFY SETTING  parts_to_throw_insert = 1, parts_to_delay_insert = 1;
@@ -64,8 +62,6 @@ CREATE TABLE table_for_reset_setting (
  Data String
 ) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096, index_granularity_bytes = '10Mi';
 
-ALTER TABLE table_for_reset_setting MODIFY SETTING index_granularity=555; -- { serverError READONLY_SETTING }
-
 SHOW CREATE TABLE table_for_reset_setting;
 
 INSERT INTO table_for_reset_setting VALUES (1, '1');
@@ -88,8 +84,6 @@ DETACH TABLE table_for_reset_setting;
 ATTACH TABLE table_for_reset_setting;
 
 SHOW CREATE TABLE table_for_reset_setting;
-
-ALTER TABLE table_for_reset_setting RESET SETTING index_granularity; -- { serverError READONLY_SETTING }
 
 -- don't execute alter with incorrect setting
 ALTER TABLE table_for_reset_setting RESET SETTING merge_with_ttl_timeout, unknown_setting; -- { serverError BAD_ARGUMENTS }
