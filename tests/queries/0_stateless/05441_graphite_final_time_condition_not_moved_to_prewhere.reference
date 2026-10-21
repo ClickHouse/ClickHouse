@@ -1,0 +1,4 @@
+all	sum_1	959996400	3	1
+le	sum_1	959996400	3	1
+path	sum_1	959996400	3	1
+Prewhere filter column:  Path = \'sum_1\'
