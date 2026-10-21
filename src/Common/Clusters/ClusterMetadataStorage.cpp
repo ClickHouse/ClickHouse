@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SHARD_DOESNT_EXIST;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNFINISHED;
 }
 
 namespace
@@ -70,12 +71,12 @@ void updateHashWithMap(SipHash & hash, std::string_view kind, const Map & map, S
 }
 
 ClusterMetadataStorage::ClusterMetadataStorage(
-    zkutil::ZooKeeperPtr zookeeper_,
+    ZooKeeperGetter get_zookeeper_,
     String replica_group_root_,
     bool encrypted_,
     String encryption_key_hex_,
     String encryption_algorithm_)
-    : zookeeper(std::move(zookeeper_))
+    : get_zookeeper(std::move(get_zookeeper_))
     , replica_group_root(std::move(replica_group_root_))
     , encrypted(encrypted_)
     , encryption_algorithm(std::move(encryption_algorithm_))
@@ -100,8 +101,8 @@ ClusterMetadataStorage::ClusterMetadataStorage(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster metadata encryption requires building with SSL support");
 #endif
 
-    if (!zookeeper)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataStorage requires non-null ZooKeeper pointer");
+    if (!get_zookeeper)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataStorage requires a ZooKeeper getter");
     if (replica_group_root.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cluster metadata replica group root cannot be empty");
     if (replica_group_root.front() != '/')
@@ -113,6 +114,7 @@ ClusterMetadataStorage::ClusterMetadataStorage(
 void ClusterMetadataStorage::initLayout()
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataStorage::initLayout");
+    auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(replica_group_root);
     zookeeper->createIfNotExists(replica_group_root, "");
     zookeeper->createIfNotExists(joinPath(replica_group_root, "format_version"), String(FORMAT_VERSION));
@@ -131,7 +133,7 @@ void ClusterMetadataStorage::initLayout()
 bool ClusterMetadataStorage::metadataInitialized() const
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataStorage::metadataInitialized");
-    return zookeeper->exists(metadataRoot());
+    return getZooKeeper()->exists(metadataRoot());
 }
 
 ClusterMetadataStorage::Snapshot ClusterMetadataStorage::readSnapshot() const
@@ -211,12 +213,12 @@ EndpointCatalogDefinition ClusterMetadataStorage::readEndpoint(const String & na
 bool ClusterMetadataStorage::endpointExists(const String & name) const
 {
     validateEntityName(name, "Endpoint");
-    return zookeeper->exists(endpointPath(name));
+    return getZooKeeper()->exists(endpointPath(name));
 }
 
 std::vector<String> ClusterMetadataStorage::listEndpointNames() const
 {
-    return zookeeper->getChildren(endpointsRoot());
+    return getZooKeeper()->getChildren(endpointsRoot());
 }
 
 void ClusterMetadataStorage::appendCreateShardOps(
@@ -288,7 +290,7 @@ ShardCatalogDefinition ClusterMetadataStorage::readShard(const String & name) co
 ShardCatalogDefinition ClusterMetadataStorage::readShard(const String & name, Coordination::Stat * stat) const
 {
     validateEntityName(name, "Shard");
-    auto shard = ShardCatalogDefinition::deserialize(decodeData(zookeeper->get(shardPath(name), stat)));
+    auto shard = ShardCatalogDefinition::deserialize(decodeData(getZooKeeper()->get(shardPath(name), stat)));
     if (shard.name.empty())
         shard.name = name;
     return shard;
@@ -297,12 +299,12 @@ ShardCatalogDefinition ClusterMetadataStorage::readShard(const String & name, Co
 bool ClusterMetadataStorage::shardExists(const String & name) const
 {
     validateEntityName(name, "Shard");
-    return zookeeper->exists(shardPath(name));
+    return getZooKeeper()->exists(shardPath(name));
 }
 
 std::vector<String> ClusterMetadataStorage::listShardNames() const
 {
-    return zookeeper->getChildren(shardsRoot());
+    return getZooKeeper()->getChildren(shardsRoot());
 }
 
 void ClusterMetadataStorage::appendCreateClusterOps(
@@ -371,18 +373,18 @@ ClusterCatalogDefinition ClusterMetadataStorage::readCluster(const String & name
 ClusterCatalogDefinition ClusterMetadataStorage::readCluster(const String & name, Coordination::Stat * stat) const
 {
     validateEntityName(name, "Cluster");
-    return ClusterCatalogDefinition::deserialize(decodeData(zookeeper->get(clusterPath(name), stat)));
+    return ClusterCatalogDefinition::deserialize(decodeData(getZooKeeper()->get(clusterPath(name), stat)));
 }
 
 bool ClusterMetadataStorage::clusterExists(const String & name) const
 {
     validateEntityName(name, "Cluster");
-    return zookeeper->exists(clusterPath(name));
+    return getZooKeeper()->exists(clusterPath(name));
 }
 
 std::vector<String> ClusterMetadataStorage::listClusterNames() const
 {
-    return zookeeper->getChildren(clustersRoot());
+    return getZooKeeper()->getChildren(clustersRoot());
 }
 
 void ClusterMetadataStorage::validateEndpointsExist(const std::vector<String> & endpoint_names) const
@@ -395,7 +397,7 @@ void ClusterMetadataStorage::validateEndpointsExist(const std::vector<String> & 
         paths.push_back(endpointPath(name));
     }
 
-    auto responses = zookeeper->exists(paths);
+    auto responses = getZooKeeper()->exists(paths);
     for (size_t i = 0; i < endpoint_names.size(); ++i)
     {
         if (responses[i].error != Coordination::Error::ZOK)
@@ -413,7 +415,7 @@ void ClusterMetadataStorage::validateShardsExist(const std::vector<String> & sha
         paths.push_back(shardPath(name));
     }
 
-    auto responses = zookeeper->exists(paths);
+    auto responses = getZooKeeper()->exists(paths);
     for (size_t i = 0; i < shard_names.size(); ++i)
     {
         if (responses[i].error != Coordination::Error::ZOK)
@@ -498,46 +500,127 @@ String ClusterMetadataStorage::shardClusterRefPath(const String & shard_name, co
 
 String ClusterMetadataStorage::readData(const String & path) const
 {
-    return decodeData(zookeeper->get(path));
+    return decodeData(getZooKeeper()->get(path));
 }
 
 void ClusterMetadataStorage::createOrUpdateData(const String & path, const String & data)
 {
-    zookeeper->createOrUpdate(path, encodeData(data), zkutil::CreateMode::Persistent);
+    getZooKeeper()->createOrUpdate(path, encodeData(data), zkutil::CreateMode::Persistent);
+}
+
+zkutil::ZooKeeperPtr ClusterMetadataStorage::getZooKeeper() const
+{
+    /// Ask for the session every time instead of caching it: after a session expiration the getter returns
+    /// a renewed session, so catalog operations (and imported groups) recover without being recreated.
+    auto zookeeper = get_zookeeper();
+    if (!zookeeper)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ClusterMetadataStorage ZooKeeper getter returned null");
+    return zookeeper;
 }
 
 void ClusterMetadataStorage::rebuildReferenceIndex() const
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataStorage::rebuildReferenceIndex");
+    auto zookeeper = getZooKeeper();
 
-    for (const auto & endpoint_name : listEndpointNames())
-    {
-        validateEntityName(endpoint_name, "Endpoint");
-        zookeeper->createIfNotExists(endpointRefsPath(endpoint_name), "");
-    }
+    /// Every catalog write updates the snapshot digest node in the same transaction, so its version
+    /// is a monotonic catalog write counter. Missing references are installed only in transactions that
+    /// check that this version has not changed since the definitions were read; otherwise a concurrent
+    /// `DROP` could be followed by recreation of references from a stale copy of the definitions, leaving
+    /// ghost references behind. On conflict, start over from a fresh read.
+    static constexpr size_t max_attempts = 10;
+    static constexpr size_t max_creates_per_transaction = 100;
 
-    for (const auto & shard_name : listShardNames())
+    for (size_t attempt = 0; attempt < max_attempts; ++attempt)
     {
-        validateEntityName(shard_name, "Shard");
-        const auto shard = readShard(shard_name);
-        zookeeper->createIfNotExists(shardRefsPath(shard_name), "");
-        for (const auto & endpoint_name : shard.endpoint_names)
+        Coordination::Stat digest_stat;
+        zookeeper->get(snapshotDigestPath(), &digest_stat);
+
+        /// Parents are listed before their children, so they are created first.
+        std::vector<String> ref_paths;
+        try
         {
-            validateEntityName(endpoint_name, "Endpoint");
-            zookeeper->createIfNotExists(endpointShardRefPath(endpoint_name, shard_name), "");
+            for (const auto & endpoint_name : listEndpointNames())
+            {
+                validateEntityName(endpoint_name, "Endpoint");
+                ref_paths.push_back(endpointRefsPath(endpoint_name));
+            }
+
+            for (const auto & shard_name : listShardNames())
+            {
+                validateEntityName(shard_name, "Shard");
+                const auto shard = readShard(shard_name);
+                ref_paths.push_back(shardRefsPath(shard_name));
+                for (const auto & endpoint_name : shard.endpoint_names)
+                {
+                    validateEntityName(endpoint_name, "Endpoint");
+                    ref_paths.push_back(endpointShardRefPath(endpoint_name, shard_name));
+                }
+            }
+
+            for (const auto & cluster_name : listClusterNames())
+            {
+                validateEntityName(cluster_name, "Cluster");
+                const auto cluster = readCluster(cluster_name);
+                for (const auto & shard_name : cluster.members)
+                {
+                    validateEntityName(shard_name, "Shard");
+                    ref_paths.push_back(shardClusterRefPath(shard_name, cluster_name));
+                }
+            }
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            /// A definition was dropped concurrently between listing and reading it.
+            if (e.code != Coordination::Error::ZNONODE)
+                throw;
+            continue;
+        }
+
+        auto exists_responses = zookeeper->exists(ref_paths);
+        std::vector<String> missing;
+        for (size_t i = 0; i < ref_paths.size(); ++i)
+        {
+            if (exists_responses[i].error == Coordination::Error::ZNONODE)
+                missing.push_back(ref_paths[i]);
+            else if (exists_responses[i].error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(exists_responses[i].error, ref_paths[i]);
+        }
+
+        if (missing.empty())
+            return;
+
+        bool conflict = false;
+        for (size_t begin = 0; begin < missing.size() && !conflict; begin += max_creates_per_transaction)
+        {
+            const size_t end = std::min(missing.size(), begin + max_creates_per_transaction);
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(snapshotDigestPath(), digest_stat.version));
+            for (size_t i = begin; i < end; ++i)
+                ops.emplace_back(zkutil::makeCreateRequest(missing[i], "", zkutil::CreateMode::Persistent));
+
+            Coordination::Responses responses;
+            const auto code = zookeeper->tryMulti(ops, responses);
+            if (code == Coordination::Error::ZOK)
+                continue;
+
+            const size_t failed_op = zkutil::getFailedOpIndex(code, responses);
+            /// The digest check failed (a catalog write happened), or another node's repair created the same
+            /// reference concurrently: re-read and retry.
+            if (failed_op == 0 || code == Coordination::Error::ZNODEEXISTS)
+                conflict = true;
+            else
+                zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+
+        if (!conflict)
+            return;
     }
 
-    for (const auto & cluster_name : listClusterNames())
-    {
-        validateEntityName(cluster_name, "Cluster");
-        const auto cluster = readCluster(cluster_name);
-        for (const auto & shard_name : cluster.members)
-        {
-            validateEntityName(shard_name, "Shard");
-            zookeeper->createIfNotExists(shardClusterRefPath(shard_name, cluster_name), "");
-        }
-    }
+    throw Exception(
+        ErrorCodes::UNFINISHED,
+        "Cannot rebuild cluster metadata reference index at `{}`: the catalog keeps changing concurrently",
+        replica_group_root);
 }
 
 String ClusterMetadataStorage::encodeData(const String & data) const

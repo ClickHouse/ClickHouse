@@ -3,6 +3,7 @@
 #include <Common/Clusters/ClusterCatalogTypes.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -25,8 +26,12 @@ public:
         String digest;
     };
 
+    /// Returns the current Keeper session. It is called for every operation, so the storage keeps working
+    /// after the session expires and the getter starts returning a renewed one.
+    using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
+
     explicit ClusterMetadataStorage(
-        zkutil::ZooKeeperPtr zookeeper_,
+        ZooKeeperGetter get_zookeeper_,
         String replica_group_root_,
         bool encrypted_ = false,
         String encryption_key_hex_ = {},
@@ -74,7 +79,7 @@ public:
     String decodeData(const String & data) const;
 
 private:
-    zkutil::ZooKeeperPtr zookeeper;
+    ZooKeeperGetter get_zookeeper;
     String replica_group_root;
     bool encrypted = false;
     String encryption_key;
@@ -102,6 +107,7 @@ private:
     void createOrUpdateData(const String & path, const String & data);
     ShardCatalogDefinition readShard(const String & name, Coordination::Stat * stat) const;
     ClusterCatalogDefinition readCluster(const String & name, Coordination::Stat * stat) const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void rebuildReferenceIndex() const;
 };
 

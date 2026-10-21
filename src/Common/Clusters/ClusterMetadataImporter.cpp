@@ -133,8 +133,6 @@ std::vector<ClusterMetadataImporter::ImportedSnapshot> ClusterMetadataImporter::
 
 void ClusterMetadataImporter::initializeGroups()
 {
-    auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(keeper_name);
-
     std::lock_guard lock(mutex);
     imported_groups.clear();
     imported_groups.reserve(replica_groups.size());
@@ -142,7 +140,8 @@ void ClusterMetadataImporter::initializeGroups()
     {
         const String imported_root = joinKeeperPath(root_path, replica_group);
         auto imported_storage = std::make_shared<ClusterMetadataStorage>(
-            zookeeper,
+            [global_context = context, zookeeper_name = keeper_name]
+            { return global_context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name); },
             imported_root,
             encrypted,
             encryption_key_hex,

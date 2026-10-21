@@ -307,9 +307,9 @@ void ClusterMetadataManager::initialize()
     }
 
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::initialize");
-    auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(config.keeper_name);
     storage = std::make_shared<ClusterMetadataStorage>(
-        zookeeper,
+        [global_context = context, keeper_name = config.keeper_name]
+        { return global_context->getDefaultOrAuxiliaryZooKeeper(keeper_name); },
         config.local_root,
         config.encrypted,
         config.encryption_key_hex,
