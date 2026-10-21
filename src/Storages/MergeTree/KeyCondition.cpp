@@ -3615,8 +3615,7 @@ bool KeyCondition::setElementsContainNaN(const Columns & set_columns, const SetA
 /// representation of the set element type carries the same semantics as the key type. Counter-examples
 /// (see `03916_has_to_in`): `DateTime` stores seconds while `Date` stores days, so
 /// `has([toDateTime(...)], date_key)` is false at runtime while the cast maps the element onto the
-/// matching `Date`; a `String` element never equals an `Enum` value even when it names one of its
-/// labels; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
+/// matching `Date`; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
 /// prunes rows that satisfy the predicate under `notHas`. Allow only pairs where the raw comparison
 /// provably matches the cast:
 ///   - identical types (after stripping `Nullable` and `LowCardinality`);
@@ -5824,6 +5823,17 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
     bool cast_not_needed
         = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
         && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
+
+    /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+    /// a scale-0 decimal compares the same and is not stepped.
+    if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
+        && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
+    {
+        if (const_value.getType() == Field::Types::Int64)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
+        else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<UInt64>()), 0);
+    }
 
     if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
     {

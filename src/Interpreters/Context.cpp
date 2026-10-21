@@ -33,6 +33,9 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
+#if USE_GPU
+#include <GPU/GPUDevice.h>
+#endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
@@ -497,6 +500,9 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+#if USE_GPU
+    extern const int GPU_ERROR;
+#endif
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -712,6 +718,9 @@ struct ContextSharedPart : boost::noncopyable
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
+#if USE_GPU
+    std::unique_ptr<GPU::GPUDevice> gpu;    /// Set at the start of the server, before any query, so read without the mutex.
+#endif
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -1386,6 +1395,11 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_access_control.reset();
 
+#if USE_GPU
+        /// After everything that may still hold device or pinned memory.
+        gpu.reset();
+#endif
+
         total_memory_tracker.resetOvercommitTracker();
         total_memory_tracker.resetPageCache();
     }
@@ -1570,7 +1584,6 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
-    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
@@ -4510,6 +4523,7 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
+        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -4890,6 +4904,23 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
+void Context::stopDDLWorkerAndWaitAllBackupsAndRestores() const
+{
+    /// A worker that has not started yet must never start, because its startup job would undo the stop.
+    if (shared->ddl_worker_startup_task)
+        getAsyncLoader().remove(shared->ddl_worker_startup_task->goals());
+
+    DDLWorker * ddl_worker = nullptr;
+    {
+        SharedLockGuard lock(shared->mutex);
+        ddl_worker = shared->ddl_worker.get();
+    }
+    if (ddl_worker)
+        ddl_worker->shutdown();
+
+    waitAllBackupsAndRestores();
+}
+
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
@@ -5079,6 +5110,23 @@ void Context::setPageCache(std::chrono::milliseconds history_window,
         history_window, cache_policy, size_ratio,
         min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
+
+#if USE_GPU
+void Context::setGPU(const ServerSettings & server_settings)
+{
+    if (shared->gpu)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU has been already set.");
+
+    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromServerSettings(server_settings));
+}
+
+GPU::GPUDevice & Context::getGPU() const
+{
+    if (!shared->gpu)
+        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
+    return *shared->gpu;
+}
+#endif
 
 PageCachePtr Context::getPageCache() const
 {
