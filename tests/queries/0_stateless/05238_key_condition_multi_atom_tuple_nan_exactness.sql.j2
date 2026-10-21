@@ -1,0 +1,37 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- The read counts depend on the granularity and on implicit projections being enabled.
+
+SET explain_query_plan_default = 'legacy';
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+-- The query condition cache is disabled, so that the rows read by the logged queries do not depend on the
+-- checks that read the same predicates before them.
+SET use_query_condition_cache = 0;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan, the marks
+    selected by index analysis and the key condition. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }})),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%')
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_multi_atom_tuple_nan (i UInt16, t Tuple(Float64, Int32)) ENGINE = MergeTree ORDER BY (toUInt8(i), i, t)
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_multi_atom_tuple_nan VALUES
+    (257, (1., 1)), (257, (2., 1)), (257, (10., 1)), (257, (500., 7)), (257, (nan, 2)), (257, (nan, 3)), (257, (nan, 4)), (257, (nan, 5));
+
+-- The exact atom on `i` covers its relaxed `toUInt8(i)` sibling. The independent tuple range still needs row
+-- filtering: its index bounds can contain NaNs that fail the row comparison. Exactness derived from the
+-- multi-atom group must respect that additional relaxation, so the indexed count matches the full scan.
+{{ check('test_multi_atom_tuple_nan', 'i = 257 AND t >= (5., 3)') }}
+
+-- Counting the tuple range reads rows, while the exact group alone can still use the index.
+SELECT count() FROM test_multi_atom_tuple_nan WHERE i = 257 AND t >= (5., 3) SETTINGS log_comment = '05238 tuple NaN filtering';
+SELECT count() FROM test_multi_atom_tuple_nan WHERE i = 257 SETTINGS log_comment = '05238 exact group';
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, read_rows > 1 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05238 tuple NaN filtering', '05238 exact group')
+ORDER BY log_comment;

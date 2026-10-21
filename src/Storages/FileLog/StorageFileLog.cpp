@@ -1119,6 +1119,7 @@ void registerStorageFileLog(StorageFactory & factory)
         SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         },
         Documentation{

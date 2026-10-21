@@ -1,0 +1,23 @@
+or keeps the left series when they are present
+[('pod','p1')]	1
+[('pod','p2')]	2
+or fills an empty left side with vector(0)
+[]	0
+or range fills only the steps where the left side is absent
+[]	[('1970-01-01 00:01:50.000',0),('1970-01-01 00:02:00.000',0)]
+[('pod','p1')]	[('1970-01-01 00:01:40.000',1)]
+[('pod','p2')]	[('1970-01-01 00:01:40.000',2)]
+and keeps the left series when the right side is present
+[('pod','p1')]	1
+[('pod','p2')]	2
+and with an empty right side returns no series
+0
+unless drops the left series when the right side is present
+0
+unless keeps the left series when the right side is empty
+[('pod','p1')]	1
+[('pod','p2')]	2
+or drops the right side when the left side is present
+[]	1
+on(pod) still removes every tag except pod
+1

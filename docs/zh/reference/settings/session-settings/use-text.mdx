@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## use_text_index_header_cache
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 是否将反序列化后的文本索引头部缓存在内存中。
 在处理大量文本索引查询时，使用文本索引头部缓存可显著降低延迟并提高吞吐量。
 
-## use_text_index_like_evaluation_by_dictionary_scan
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -32,7 +32,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 可加速的模式包括 `%value%`、`value%` 和 `%value`，以及被 `optimize_rewrite_like_perfect_affix` 改写为 `value%` 和 `%value` 的 `startsWith` 与 `endsWith` 调用。
 
-## use_text_index_negative_tokens_cache
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,7 +41,16 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 是否缓存数据分区片段中不存在的文本索引标记。
 负标记缓存使用文本索引标记缓存，避免重复查找不存在的标记。
 
-## use_text_index_postings_cache
+## use_text_index_pattern_bypass_cache {#use_text_index_pattern_bypass_cache}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于缓存超出倒排列表阈值的文本索引模式 dictionary scan 结果。"}]}]} />
+
+是否缓存超出 `text_index_like_max_postings_to_read` 的文本索引模式 dictionary scan 结果。
+模式绕过缓存基于文本索引标记缓存实现，对于此前已回退为对原始谓词求值的 dictionary scan，可避免重复执行。
+
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -50,7 +59,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 是否在内存中缓存反序列化后的文本索引倒排列表。
 在处理大量文本索引查询时，使用文本索引倒排列表缓存可以显著降低延迟并提高吞吐量。
 
-## use_text_index_tokens_cache
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

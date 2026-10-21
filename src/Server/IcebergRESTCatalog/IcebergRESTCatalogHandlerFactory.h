@@ -4,7 +4,10 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 #include <Common/logger_useful.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
 
 namespace DB
 {
