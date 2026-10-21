@@ -7,7 +7,6 @@
 #if USE_AWS_S3
 
 #    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/core/utils/threading/ReaderWriterLock.h>
 #    include <aws/core/http/HttpRequest.h>
 #    include <aws/core/endpoint/AWSEndpoint.h>
 #    include <aws/core/AmazonSerializableWebServiceRequest.h>
@@ -198,8 +197,16 @@ public:
     SSOCredentialsProvider(DB::S3::PocoHTTPClientConfiguration aws_client_configuration_, uint64_t expiration_window_seconds_);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
 
 private:
+    /// Access is serialized by the enclosing provider's `get_aws_credentials_mutex`.
+    class BearerTokenProvider : public Aws::Auth::SSOBearerTokenProvider
+    {
+    public:
+        Aws::Auth::AWSBearerToken GetAWSBearerToken() override;
+    };
+
     Aws::UniquePtr<Aws::Internal::SSOCredentialsClient> client;
     Aws::Auth::AWSCredentials credentials;
 
@@ -214,14 +221,14 @@ private:
     // The expiration time of the accessToken.
     Aws::Utils::DateTime expires_at;
     // The SSO Token Provider
-    Aws::Auth::SSOBearerTokenProvider bearer_token_provider;
+    BearerTokenProvider bearer_token_provider;
 
     DB::S3::PocoHTTPClientConfiguration aws_client_configuration;
     uint64_t expiration_window_seconds;
     LoggerPtr logger;
+    Silk::FiberMutex get_aws_credentials_mutex;
 
     void Reload() override;
-    void refreshIfExpired();
     Aws::String loadAccessTokenFile(const Aws::String & sso_access_token_path);
 };
 
