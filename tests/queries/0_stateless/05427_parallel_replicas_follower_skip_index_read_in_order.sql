@@ -50,6 +50,27 @@ SELECT count(), sum(k) FROM
 )
 SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 1, query_plan_remove_redundant_sorting = 0;
 
+-- Without the read-time skip-index evaluation, the followers read only the marks the coordinator assigns.
+SET use_skip_indexes_on_data_read = 0;
+
+SELECT count(), sum(k) FROM
+(
+    SELECT k FROM t_pr_follower_skip_idx_in_order WHERE v = 42 ORDER BY k
+)
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0;
+
+SELECT count(), sum(k) FROM
+(
+    SELECT k FROM t_pr_follower_skip_idx_in_order WHERE v = 42 ORDER BY k DESC
+)
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0;
+
+SELECT count(), sum(k) FROM
+(
+    SELECT k FROM t_pr_follower_skip_idx_in_order WHERE v = 42 ORDER BY k
+)
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 1, query_plan_remove_redundant_sorting = 0;
+
 SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
 DROP TABLE t_pr_follower_skip_idx_in_order;
