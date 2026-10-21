@@ -51,6 +51,8 @@ void ASTCodec::readJSON(const Poco::JSON::Object & json)
 void ASTCodec::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
+    /// Parameters are formatted as calls (`tuple(1, 2)`, not `(1, 2)`), the form the stored metadata has always had.
+    frame.allow_operators = false;
     ostr << "CODEC(";
     elements().format(ostr, settings, state, frame);
     ostr << ')';

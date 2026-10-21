@@ -188,6 +188,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     {
         auto nested_frame = frame;
         nested_frame.expression_list_prepend_whitespace = false;
+        nested_frame.allow_operators = false;
         ostr << ' ' << "STATISTICS" << '(';
         statistics_desc->format(ostr, format_settings, state, nested_frame);
         ostr << ')';

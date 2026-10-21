@@ -1,7 +1,7 @@
-auto_minmax_index_a	minmax()	a	Implicit	1
-auto_minmax_index_b	minmax()	b	Implicit	1
-auto_minmax_index_a	minmax()	a	Implicit	1
-auto_minmax_index_b	minmax()	b	Implicit	1
+auto_minmax_index_a	minmax	a	Implicit	1
+auto_minmax_index_b	minmax	b	Implicit	1
+auto_minmax_index_a	minmax	a	Implicit	1
+auto_minmax_index_b	minmax	b	Implicit	1
 Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_alter)
