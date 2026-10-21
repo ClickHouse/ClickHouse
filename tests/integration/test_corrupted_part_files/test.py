@@ -11,6 +11,7 @@ Converted from stateless tests (which must not modify the server's data on disk)
   - 04506_packed_part_fetch_checksum.sh
   - 02346_text_index_corrupted_positions.sh
   - 04545_empty_columns_txt_not_fatal.sh
+  - 05229_zero_length_columns_txt_replicated.sh
 """
 
 import shlex
@@ -776,7 +777,8 @@ def test_empty_columns_txt_discarded_substreams_refused(started_cluster):
     truncate_file(node1, data_path + "columns.txt")
     node1.query(f"ATTACH TABLE {table}")
 
-    assert node1.query(f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' AND active") == "0\n"
+    # The replica may then cover the lost part with an empty one, so check rows rather than parts.
+    assert node1.query(f"SELECT count() FROM {table}") == "0\n"
     # The part is kept for recovery rather than deleted.
     assert node1.query(f"SELECT count() FROM system.detached_parts WHERE database = 'default' AND table = '{table}'") == "1\n"
     # Pin the branch: the part state above is also what the other refusals and an unfixed server
@@ -934,5 +936,68 @@ def test_empty_columns_txt_projection_part(started_cluster):
     assert node1.query(f"SELECT count() FROM system.projection_parts WHERE database = 'default' AND table = '{table}' AND active AND NOT is_broken") == "1\n"
     assert bash(node1, f"grep -c '^`_block_number`' {shlex.quote(proj_path + 'columns.txt')}").strip() == "1"
     assert node1.query(f"SELECT count(), sum(v) FROM {table}") == "600\t134550\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+# The tests below are converted from stateless test 05229_zero_length_columns_txt_replicated.sh.
+#
+# ReplicatedMergeTree loads its parts with require_part_metadata = true, where a rebuilt column list
+# is only accepted when columns_substreams.txt recorded the part's own column list and the rebuilt
+# list matches it exactly. Without that record there is nothing to verify the rebuilt list against,
+# so the part is still detached as broken and re-fetched from a healthy replica.
+
+
+def create_wide_part_replicated_table(table):
+    node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node1.query(
+        f"""
+        CREATE TABLE {table} (id UInt64, val UInt64)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}', 'r1') ORDER BY id
+        SETTINGS {WIDE_PART_SETTINGS}
+        """
+    )
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, number + 1 FROM numbers(500)", settings=ONE_PART_PER_INSERT)
+
+
+def test_empty_columns_txt_replicated(started_cluster):
+    table = "t_empty_columns_replicated"
+    create_wide_part_replicated_table(table)
+
+    data_path = single_wide_part_path(table)
+    assert node1.query(f"SELECT count(), sum(val) FROM {table}") == "500\t125250\n"
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT count(), sum(val) FROM {table}") == "500\t125250\n"
+
+    # Persistence proof: reload from disk and re-digest.
+    node1.query(f"DETACH TABLE {table}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT count(), sum(val) FROM {table}") == "500\t125250\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_columns_txt_replicated_without_substreams_file(started_cluster):
+    # Nothing verifies the rebuilt list, so the part must stay broken rather than be loaded with a
+    # list that may silently miss a column lost together with columns.txt.
+    table = "t_empty_columns_replicated_unverifiable"
+    create_wide_part_replicated_table(table)
+
+    data_path = single_wide_part_path(table)
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    bash(node1, f"rm -f {shlex.quote(data_path + 'columns_substreams.txt')}")
+    node1.query(f"ATTACH TABLE {table}")
+
+    # The replica may then cover the lost part with an empty one, so check rows rather than parts.
+    assert node1.query(f"SELECT count() FROM {table}") == "0\n"
+    assert node1.query(f"SELECT count() FROM system.detached_parts WHERE database = 'default' AND table = '{table}'") == "1\n"
+    assert node1.contains_in_log("columns_substreams.txt to rebuild it from")
 
     node1.query(f"DROP TABLE {table} SYNC")

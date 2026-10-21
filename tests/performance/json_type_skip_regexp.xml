@@ -1,0 +1,103 @@
+<test>
+    <settings>
+        <!-- One thread: this measures type construction, not scan throughput. -->
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+    CREATE TABLE json_type_skip_regexp_src
+    (
+        json JSON(
+            http.method LowCardinality(String),
+            http.status_code UInt16,
+            http.flavor LowCardinality(String),
+            http.request.header.accept String,
+            http.request.header.authorization_present Bool,
+            http.request.header.connection LowCardinality(String),
+            http.request.header.content_type LowCardinality(String),
+            http.request.header.origin String,
+            http.request.header.user_agent String,
+            http.request.header.x_request_id String,
+            http.response.header.content_encoding LowCardinality(String),
+            http.response.header.content_type LowCardinality(String),
+            http.response.header.last_modified String,
+            http.response.header.set_cookie_count UInt8,
+            http.response.header.x_cache LowCardinality(String),
+            tls.cipher LowCardinality(String),
+            tls.resumed Bool,
+            tls.alpn LowCardinality(String),
+            geo.region LowCardinality(String),
+            geo.as_org String,
+            geo.longitude Float64,
+            client.address String,
+            client.type LowCardinality(String),
+            waf.action LowCardinality(String),
+            waf.rule_group LowCardinality(String),
+            waf.anomaly_score Int32,
+            waf.matched_value_len UInt32,
+            waf.tags_count UInt8,
+            cdn.pop LowCardinality(String),
+            cdn.origin_status UInt16,
+            cdn.bytes_received UInt64,
+            edge.router_id LowCardinality(String),
+            edge.upstream_status UInt16,
+            edge.retries UInt8,
+            url.path String,
+            url.fragment_present Bool,
+            url.registered_domain String,
+            url.port UInt16,
+            user.session_present Bool,
+            user.tenant LowCardinality(String),
+            trace.span_id String,
+            trace.sampled Bool,
+            event.duration_ms UInt32,
+            event.action LowCardinality(String),
+            rate_limit.limited Bool,
+            SKIP REGEXP '^reqHdr\\.jwt\\.([^ips].*|i[^s].*|is[^s].*|iss.+|p[^r].*|pr[^n].*|prn.+|s[^u].*|su[^b].*|sub.+)$',
+            SKIP REGEXP '^http\\.request\\.cookie\\.([^_].*|_[^g].*|_g[^a].*|_ga.+)$',
+            SKIP REGEXP '^url\\.query\\.([^u].*|u[^t].*|ut[^m].*|utm.+)$',
+            SKIP REGEXP '^cdn\\.debug\\.([^t].*|t[^r].*|tr[^a].*|tra[^c].*|trac[^e].*|trace.+)$',
+            SKIP REGEXP '^client\\.fingerprint\\.([^j].*|j[^a].*|ja[^34].*|ja[34].+)$',
+            SKIP REGEXP '^waf\\.matched_vars\\.([^n].*|n[^a].*|na[^m].*|nam[^e].*|name.+)$',
+            SKIP REGEXP '^http\\.request\\.header\\.sec_.*$',
+            SKIP REGEXP '^edge\\.upstream_headers\\..*$',
+            SKIP REGEXP '^event\\.attributes\\..*\\.(raw|blob|payload)$',
+            SKIP REGEXP '^trace\\.baggage\\..*$'
+        )
+    )
+    ENGINE = Memory
+    </create_query>
+
+    <fill_query>INSERT INTO json_type_skip_regexp_src SELECT materialize('{{}}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO FUNCTION file(json_type_skip_regexp.native, Native) SELECT * FROM json_type_skip_regexp_src SETTINGS max_block_size = 100, engine_file_truncate_on_insert = 1</fill_query>
+
+    <create_query>
+    CREATE TABLE json_type_skip_regexp_control_src
+    (
+        json JSON(
+            SKIP REGEXP '^reqHdr\\.jwt\\.([^ips].*|i[^s].*|is[^s].*|iss.+|p[^r].*|pr[^n].*|prn.+|s[^u].*|su[^b].*|sub.+)$',
+            SKIP REGEXP '^http\\.request\\.cookie\\.([^_].*|_[^g].*|_g[^a].*|_ga.+)$',
+            SKIP REGEXP '^url\\.query\\.([^u].*|u[^t].*|ut[^m].*|utm.+)$',
+            SKIP REGEXP '^cdn\\.debug\\.([^t].*|t[^r].*|tr[^a].*|tra[^c].*|trac[^e].*|trace.+)$',
+            SKIP REGEXP '^client\\.fingerprint\\.([^j].*|j[^a].*|ja[^34].*|ja[34].+)$',
+            SKIP REGEXP '^waf\\.matched_vars\\.([^n].*|n[^a].*|na[^m].*|nam[^e].*|name.+)$',
+            SKIP REGEXP '^http\\.request\\.header\\.sec_.*$',
+            SKIP REGEXP '^edge\\.upstream_headers\\..*$',
+            SKIP REGEXP '^event\\.attributes\\..*\\.(raw|blob|payload)$',
+            SKIP REGEXP '^trace\\.baggage\\..*$'
+        )
+    )
+    ENGINE = Memory
+    </create_query>
+
+    <fill_query>INSERT INTO json_type_skip_regexp_control_src SELECT materialize('{{}}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO FUNCTION file(json_type_skip_regexp_control.native, Native) SELECT * FROM json_type_skip_regexp_control_src SETTINGS max_block_size = 100, engine_file_truncate_on_insert = 1</fill_query>
+
+    <query>SELECT json.http.status_code FROM file(json_type_skip_regexp.native, Native) FORMAT Null</query>
+    <query>SELECT json.http.status_code FROM file(json_type_skip_regexp_control.native, Native) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_type_skip_regexp_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_type_skip_regexp_control_src</drop_query>
+    <drop_query>INSERT INTO FUNCTION file(json_type_skip_regexp.native) SELECT * FROM numbers(0) SETTINGS engine_file_truncate_on_insert = 1</drop_query>
+    <drop_query>INSERT INTO FUNCTION file(json_type_skip_regexp_control.native) SELECT * FROM numbers(0) SETTINGS engine_file_truncate_on_insert = 1</drop_query>
+</test>
