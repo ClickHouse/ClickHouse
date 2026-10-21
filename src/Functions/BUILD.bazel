@@ -208,7 +208,6 @@ _GENERATED_HDRS_0 = [
     "FunctionDateOrDateTimeAddInterval.h",
     "FunctionDateOrDateTimeToSomething.h",
     "FunctionDynamicAdaptor.h",
-    "FunctionFactory.h",
     "FunctionGenerateRandomStructure.h",
     "FunctionHelpers.h",
     "FunctionIfBase.h",
@@ -224,7 +223,6 @@ _GENERATED_HDRS_0 = [
     "FunctionsComparison.h",
     "FunctionsConversion.h",
     "FunctionsExternalDictionaries.h",
-    "FunctionsLogical.h",
     "FunctionsMiscellaneous.h",
     "FunctionsNullSafeCmp.h",
     "FunctionsNumericIndexedVectorHelper.h",
@@ -996,6 +994,7 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     deps = [
+        "//src:dbms__compile_1",
         "//src/Common:memory_tracking_api",
         "//src:core_types",
         "//base:common",

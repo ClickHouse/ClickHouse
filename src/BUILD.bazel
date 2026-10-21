@@ -804,7 +804,9 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
         "//base:common",
         ":dbms",
+        ":dbms__compile_1",
         "//src/Common",
+        "//src/Functions:headers",
     ],
     link_runtime = True,
     local_defines = [
@@ -2824,18 +2826,17 @@ ch_cc_library(
         "//src/Functions/GatherUtils:resizeConstantSize.cpp",
         "//src/Functions/GatherUtils:resizeDynamicSize.cpp",
     ],
+    hdrs = [
+        "//src/Functions:FunctionFactory.h",
+        "//src/Functions:FunctionsLogical.h",
+    ],
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
         "//base/poco/Foundation:_poco_foundation",
-        "//base:common",
         "//src/AggregateFunctions:headers",
-        "//src/Common",
-        "//src/Functions:headers",
         "//src/Functions/GatherUtils:headers",
         "//bazel:clickhouse_config_headers",
-        ":dbms__compile_0",
-        "@clickhouse_llvm_project//:llvm_headers",
     ],
     local_defines = _DBMS_LOCAL_DEFINES,
     local_includes = select({
@@ -2849,7 +2850,15 @@ ch_cc_library(
         ],
     }),
     source_headers = False,
-    deps = [],
+    deps = [
+        "//base:common",
+        "//src/Common",
+        "//src/Functions:headers",
+        ":dbms__compile_0",
+        "@clickhouse_llvm_project//:llvm_headers",
+        ":core_types",
+        "@clickhouse_boost//:boost_headers",
+    ],
 )
 
 ch_cc_library(
