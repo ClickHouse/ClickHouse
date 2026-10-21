@@ -9,6 +9,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -39,7 +41,19 @@ namespace ErrorCodes
 namespace
 {
 
-/// The tables in `FROM` and `JOIN` of the query and its subqueries. `CREATE VIEW` qualifies the names of the tables,
+/// The table of a table expression or of the right operand of `IN`. `CREATE VIEW` marks a table name in `IN` as a table
+/// identifier, but not an alias of an expression
+const ASTTableIdentifier * getTableIdentifier(const IAST & ast)
+{
+    if (const auto * expr = ast.as<ASTTableExpression>(); expr && expr->database_and_table_name)
+        return expr->database_and_table_name->as<ASTTableIdentifier>();
+    if (const auto * function = ast.as<ASTFunction>();
+        function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        return function->arguments->children[1]->as<ASTTableIdentifier>();
+    return nullptr;
+}
+
+/// The tables which the query and its subqueries read. `CREATE VIEW` qualifies the names of the tables,
 /// so a name without a database which a `WITH` element of an enclosing query declares is a common table expression
 void collectTableIds(const IAST & ast, const ContextPtr & context, Names & with_names, std::vector<StorageID> & ids)
 {
@@ -51,16 +65,13 @@ void collectTableIds(const IAST & ast, const ContextPtr & context, Names & with_
                 with_names.push_back(with_element->name);
     }
 
-    if (const auto * expr = ast.as<ASTTableExpression>(); expr && expr->database_and_table_name)
+    if (const auto * identifier = getTableIdentifier(ast))
     {
-        if (const auto * identifier = expr->database_and_table_name->as<ASTTableIdentifier>())
-        {
-            auto id = identifier->getTableId();
-            if (!id.database_name.empty())
-                ids.push_back(std::move(id));
-            else if (!std::ranges::contains(with_names, id.table_name))
-                ids.emplace_back(context->getCurrentDatabase(), id.table_name);
-        }
+        auto id = identifier->getTableId();
+        if (!id.database_name.empty())
+            ids.push_back(std::move(id));
+        else if (!std::ranges::contains(with_names, id.table_name))
+            ids.emplace_back(context->getCurrentDatabase(), id.table_name);
     }
     for (const auto & child : ast.children)
         collectTableIds(*child, context, with_names, ids);
