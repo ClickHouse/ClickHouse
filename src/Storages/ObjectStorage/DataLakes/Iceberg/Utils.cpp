@@ -1339,24 +1339,22 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
-        /// Manifests and manifest lists share this directory but are never named `v...`.
-        if (list_v_prefixed_names_only)
-            metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
-        if (metadata_files.empty())
+        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
-            for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
-            {
+            /// Manifests and manifest lists share this directory but are never named `v...`.
+            if (list_v_prefixed_names_only)
+                metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
+            if (metadata_files.empty())
                 metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-                if (!metadata_files.empty())
-                    break;
-                LOG_DEBUG(
-                    log,
-                    "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
-                    "(attempt {} of {}), retrying",
-                    table_path,
-                    attempt + 1,
-                    MAX_LIST_RETRIES);
-            }
+            if (!metadata_files.empty())
+                break;
+            LOG_DEBUG(
+                log,
+                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                "(attempt {} of {}), retrying",
+                table_path,
+                attempt + 1,
+                MAX_LIST_RETRIES);
         }
         if (metadata_files.empty())
         {
