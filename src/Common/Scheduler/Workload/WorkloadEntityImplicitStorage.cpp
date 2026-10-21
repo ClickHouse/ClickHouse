@@ -2,7 +2,6 @@
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-#include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -59,10 +58,17 @@ ASTPtr makeWorkload(std::string_view workload_name, ASTCreateWorkloadQuery::Sett
     return query;
 }
 
-/// The implicit entities defined by `config`, without the root workload
+/// The implicit entities defined by `config`
 WorkloadEntities makeImplicitEntities(const ImplicitWorkloadEntitiesConfig & config)
 {
+    ASTCreateWorkloadQuery::SettingsChanges root_changes;
+    if (config.respect_cpu_limit && config.cpu_slots != ImplicitWorkloadEntitiesConfig::unlimited)
+        root_changes.emplace_back("max_concurrent_threads", Field(static_cast<UInt64>(config.cpu_slots)), "");
+    if (config.respect_memory_limit && config.memory_bytes != ImplicitWorkloadEntitiesConfig::unlimited)
+        root_changes.emplace_back("max_memory", Field(static_cast<UInt64>(config.memory_bytes)), "");
+
     WorkloadEntities entities;
+    entities.emplace(WorkloadEntityKey{WorkloadEntityType::Workload, ""}, makeWorkload("", std::move(root_changes)));
     if (config.respect_cpu_limit)
         entities.emplace(WorkloadEntityKey{WorkloadEntityType::Resource, String(IMPLICIT_CPU_RESOURCE_NAME)},
             makeResource(IMPLICIT_CPU_RESOURCE_NAME, {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread}));
@@ -83,12 +89,10 @@ WorkloadEntityImplicitStorage::WorkloadEntityImplicitStorage(const ContextPtr & 
     log = getLogger("WorkloadEntityImplicitStorage");
     if (!getNextStorage())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Implicit workload entity storage requires a next storage");
-}
 
-WorkloadEntityImplicitStorage::~WorkloadEntityImplicitStorage()
-{
-    // Inner transactions call `addDerivedEntities`, which must not run on a partially destroyed object
-    unsubscribeFromNextStorage();
+    // The root workload is provided from the start, before the first `updateImplicitEntities`
+    auto lock = getLock();
+    replaceOwnEntities(lock, makeImplicitEntities(config));
 }
 
 bool WorkloadEntityImplicitStorage::isReplicated() const
@@ -110,45 +114,7 @@ void WorkloadEntityImplicitStorage::updateImplicitEntities(const ImplicitWorkloa
 {
     auto lock = getLock();
     config = new_config;
-
-    // The root workload depends on the config as well, so it is recomputed even if own entities are the same
     replaceOwnEntities(lock, makeImplicitEntities(config));
-}
-
-void WorkloadEntityImplicitStorage::addDerivedEntities(WorkloadEntities & visible_entities) const
-{
-    String master_thread_resource;
-    String worker_thread_resource;
-    String memory_reservation_resource;
-    for (const auto & [key, entity] : visible_entities)
-    {
-        auto * resource = typeid_cast<ASTCreateResourceQuery *>(entity.get());
-        if (!resource)
-            continue;
-        for (const auto & operation : resource->operations)
-        {
-            if (operation.mode == ResourceAccessMode::MasterThread)
-                master_thread_resource = key.name;
-            else if (operation.mode == ResourceAccessMode::WorkerThread)
-                worker_thread_resource = key.name;
-            else if (operation.mode == ResourceAccessMode::MemoryReservation)
-                memory_reservation_resource = key.name;
-        }
-    }
-
-    ASTCreateWorkloadQuery::SettingsChanges changes;
-
-    // One limit cannot be shared by two resources, so split or partial CPU layouts get no limit
-    if (config.respect_cpu_limit && config.cpu_slots != ImplicitWorkloadEntitiesConfig::unlimited
-        && !master_thread_resource.empty() && master_thread_resource == worker_thread_resource)
-        changes.emplace_back("max_concurrent_threads", Field(static_cast<UInt64>(config.cpu_slots)), master_thread_resource);
-
-    if (config.respect_memory_limit && config.memory_bytes != ImplicitWorkloadEntitiesConfig::unlimited
-        && !memory_reservation_resource.empty())
-        changes.emplace_back("max_memory", Field(static_cast<UInt64>(config.memory_bytes)), memory_reservation_resource);
-
-    if (!changes.empty())
-        visible_entities.emplace(WorkloadEntityKey{WorkloadEntityType::Workload, ""}, makeWorkload("", std::move(changes)));
 }
 
 bool WorkloadEntityImplicitStorage::storeEntity(

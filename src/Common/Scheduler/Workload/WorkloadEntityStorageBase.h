@@ -98,16 +98,8 @@ protected:
     /// Unlocks `lock`.
     void replaceOwnEntities(std::unique_lock<std::recursive_mutex> & lock, WorkloadEntities new_own_entities);
 
-    /// Adds entities derived from the other visible entities (e.g. the root workload) to `visible_entities`.
-    /// Called with the lock held on every change of own or inherited entities.
-    virtual void addDerivedEntities(WorkloadEntities & /*visible_entities*/) const {}
-
     /// Inner layer of the chain, if any.
     IWorkloadEntityStorage * getNextStorage() const { return next_storage.get(); }
-
-    /// Stops receiving transactions of the next storage. Waits for an in-flight one. Derived classes that
-    /// override `addDerivedEntities` call it in their destructor.
-    void unsubscribeFromNextStorage() { subscription.reset(); }
 
     /// Serialize own entities stored in memory plus one optional `change` into multiline string
     String serializeOwnEntities(std::optional<Event> change);

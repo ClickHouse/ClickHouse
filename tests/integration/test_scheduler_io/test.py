@@ -1140,11 +1140,12 @@ def test_config_based_workloads_and_resources():
         == "2\n"
     )
 
+    # The root workload (empty name) is always present
     assert (
         node.query(
             "SELECT count() FROM system.workloads"
         )
-        == "2\n"
+        == "3\n"
     )
 
     # Verify scheduler nodes exist for config entities
@@ -1217,11 +1218,12 @@ def test_config_based_workloads_and_resources():
         )
         == "1\n"
     )
+    # The root workload (empty name) is always present
     assert (
         node.query(
             "SELECT count() FROM system.workloads"
         )
-        == "2\n"
+        == "3\n"
     )
 
     # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"

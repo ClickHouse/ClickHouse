@@ -55,13 +55,13 @@ class RestorerFromBackup;
  *
  * Implicit entities. The implicit layer synthesizes from the server configuration (see
  * `ImplicitWorkloadEntitiesConfig`) the resources `__server_cpu__` (MASTER THREAD, WORKER THREAD) and
- * `__server_memory__` (MEMORY RESERVATION) and the workload `default`. User entities shadow them. The names of the
- * implicit resources are reserved: statements and loads reject user entities with these names. Implicit entities
- * cannot be dropped.
+ * `__server_memory__` (MEMORY RESERVATION), the workload `default` and the root workload (see below). User entities
+ * shadow them. The names of the implicit resources are reserved: statements and loads reject user entities with these
+ * names. Implicit entities cannot be dropped.
  *
- * Root workload. The workload with the empty name. It is the parent of every workload without an explicit parent,
- * and its settings are the per-resource root limits (e.g. `max_concurrent_threads = 8 FOR __server_cpu__`). Only the
- * implicit layer provides it, deriving it from its visible entities; it has no SQL form. The resource manager creates
+ * Root workload. The workload with the empty name. It is the parent of every workload without an explicit parent.
+ * The implicit layer always provides it; it has no SQL form. Its settings are the server limits without `FOR` (e.g.
+ * `max_concurrent_threads = 8`), so they apply to every resource of the matching unit. The resource manager creates
  * no workload node for it and applies its settings to the root node of every resource.
  *
  * Events and transactions. Subscribers of a layer receive changes of its visible entities only. Every change in any
@@ -124,10 +124,10 @@ struct ImplicitWorkloadEntitiesConfig
     /// Synthesizes the workload `default`.
     bool implicit_default_workload = false;
 
-    /// Number of concurrent threads for the single resource holding both MASTER THREAD and WORKER THREAD.
+    /// `max_concurrent_threads` of the root workload.
     Int64 cpu_slots = unlimited;
 
-    /// Memory reservation budget in bytes for the resource holding MEMORY RESERVATION.
+    /// `max_memory` of the root workload, in bytes.
     Int64 memory_bytes = unlimited;
 };
 

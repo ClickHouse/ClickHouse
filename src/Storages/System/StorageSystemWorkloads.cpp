@@ -18,7 +18,7 @@ ColumnsDescription StorageSystemWorkloads::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the workload."},
         {"parent", std::make_shared<DataTypeString>(), "The name of the parent workload."},
-        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the workload. For an implicit workload (`source` = `implicit`) it describes the workload and cannot be executed. The root workload, whose name is empty, is shown as ``CREATE WORKLOAD `` SETTINGS ...``."},
+        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the workload. For an implicit workload (`source` = `implicit`), including the root workload with the empty name, it describes the workload and cannot be executed."},
         {"source", std::make_shared<DataTypeString>(), "The name of the storage that defines the workload: `configuration` for the server configuration, `disk` or `keeper` for SQL, `implicit` for workloads created implicitly by the server."},
     };
 }

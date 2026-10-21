@@ -741,7 +741,6 @@ WorkloadEntities WorkloadEntityStorageBase::computeVisibleEntities(const Workloa
             result.emplace(key, entity);
     }
 
-    addDerivedEntities(result);
     return result;
 }
 

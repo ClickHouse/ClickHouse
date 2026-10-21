@@ -7,13 +7,12 @@ namespace DB
 {
 
 /// The outermost layer of the server chain (see IWorkloadEntityStorage.h). Its own entities are the implicit
-/// entities synthesized from `ImplicitWorkloadEntitiesConfig`, and it derives the root workload from its
-/// visible entities. Writes, backup and restore are forwarded to the next (SQL) storage.
+/// entities synthesized from `ImplicitWorkloadEntitiesConfig`, including the root workload. Writes, backup and
+/// restore are forwarded to the next (SQL) storage.
 class WorkloadEntityImplicitStorage : public WorkloadEntityStorageBase
 {
 public:
     WorkloadEntityImplicitStorage(const ContextPtr & global_context_, std::unique_ptr<IWorkloadEntityStorage> next_storage_);
-    ~WorkloadEntityImplicitStorage() override;
 
     std::string_view getName() const override { return "implicit"; }
 
@@ -59,9 +58,6 @@ private:
 
     /// Whether the server settings define an implicit entity of this kind and name, visible or shadowed
     bool definesEntity(const String & entity_name, WorkloadEntityType entity_type) const;
-
-    /// Adds the root workload
-    void addDerivedEntities(WorkloadEntities & visible_entities) const override;
 
     ImplicitWorkloadEntitiesConfig config; /// Guarded by the storage lock
 };
