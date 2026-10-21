@@ -259,11 +259,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
         else if (limit_being_counted)
         {
-            /// `ARRAY JOIN` may sit between a query limit and a sorting transform after the
-            /// sorting was moved below the expansion. In that shape the sorting transform sees
-            /// input rows, while `rows_before_limit_at_least` must continue to describe expanded
-            /// rows seen by the query limit. Stop searching toward the source so Case 7 attaches
-            /// the counter to the limit's input port.
+            /// a sorting below `ARRAY JOIN` sees the rows before the expansion, count the expanded rows at the limit (Case 7)
             if (typeid_cast<ArrayJoinTransform *>(processor))
                 continue;
 

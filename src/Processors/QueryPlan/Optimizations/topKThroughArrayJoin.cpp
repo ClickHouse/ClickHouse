@@ -1,4 +1,3 @@
-#include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -7,6 +6,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
+
+#include <algorithm>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -94,19 +95,11 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     if (array_join_columns.size() > 1 && !array_join_step->isUnaligned())
         return 0;
 
-    const NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
+    /// a joined column keeps its name across the step, so the input header alone does not tell that a key is joined
     const auto & array_join_input_header = array_join_step->getInputHeaders().front();
-
-    /// Every sort key must be carried through the `ARRAY JOIN` unchanged. A joined column
-    /// keeps its name across the step and only changes its type, so checking that the name is
-    /// present in the input header is not enough.
     for (const auto & sort_column : description)
-    {
-        if (array_join_column_names.contains(sort_column.column_name))
+        if (std::ranges::contains(array_join_columns, sort_column.column_name) || !array_join_input_header->has(sort_column.column_name))
             return 0;
-        if (!array_join_input_header->has(sort_column.column_name))
-            return 0;
-    }
 
     const size_t n = limit_step->getLimitForSorting();
     if (n == 0)
@@ -124,11 +117,8 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     /// An inner ARRAY JOIN drops input rows whose arrays are all empty. Filter them out on the
     /// join's immediate input (where the joined columns are present under `getColumns()` names),
     /// then place the sort above that guard: `ArrayJoin -> Sort -> Filter -> Input`.
-    if (!array_join_step->isLeft())
-    {
-        if (!addArrayJoinEmptinessFilter(*array_join_step, array_join_input_node, nodes))
-            return 0;
-    }
+    if (!array_join_step->isLeft() && !addArrayJoinEmptinessFilter(*array_join_step, array_join_input_node, nodes))
+        return 0;
 
     auto moved_sort_step = std::make_unique<SortingStep>(
         array_join_input_node->step->getOutputHeader(),
