@@ -728,13 +728,12 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             matcher->formatForErrorMessage(),
             filter_expression->formatForErrorMessage());
 
-    auto filter_context = Context::withUnresolvedPositionalArguments(query_context);
-    auto filter_query_tree = buildQueryTree(filter_expression, filter_context);
+    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     /// The filter reads the source table only in its subqueries, which read the view source iff `view_source_in_subqueries`.
     QueryAnalysisPass query_analysis_pass(
         table_expression, /*only_analyze_=*/ false, /*view_source_substituted_=*/ view_source_in_subqueries, view_source_in_subqueries);
-    query_analysis_pass.run(filter_query_tree, filter_context);
+    query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
