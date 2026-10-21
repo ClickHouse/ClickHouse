@@ -34,10 +34,13 @@ namespace ErrorCodes
 namespace
 {
 
-/// The floor of a producer's writes to disk (see `adaptive_spill_min_bytes`).
+/// The floor of a producer's writes to disk (see `adaptive_spill_min_bytes`), raised to
+/// `min_bytes_before_external_group_by`, as for the tables of the baseline path.
 size_t adaptiveSpillMinBytes(const Aggregator::Params & params)
 {
-    return std::min(adaptive_spill_min_bytes, params.max_bytes_before_external_group_by / (2 * params.max_threads));
+    return std::max(
+        std::min(adaptive_spill_min_bytes, params.max_bytes_before_external_group_by / (2 * params.max_threads)),
+        params.min_bytes_before_external_group_by);
 }
 
 }

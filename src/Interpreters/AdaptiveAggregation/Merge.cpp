@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/CacheLine.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -35,6 +36,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char adaptive_aggregation_drain_create_states_throw[];
 }
 
 namespace
@@ -464,6 +471,12 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                         if (inserted)
                         {
                             it->getMapped() = nullptr;
+                            /// Stands for the creation of the states failing, as on a memory limit: the key stays
+                            /// in the table with a null state.
+                            fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
+                            {
+                                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
+                            });
                             AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                             createAggregateStates(place);
                             it->getMapped() = place;
@@ -495,6 +508,12 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     if (inserted)
                     {
                         it->getMapped() = nullptr;
+                        /// Stands for the creation of the states failing, as on a memory limit: the key stays
+                        /// in the table with a null state.
+                        fiu_do_on(FailPoints::adaptive_aggregation_drain_create_states_throw,
+                        {
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while creating the states of a merged key");
+                        });
                         AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
                         createAggregateStates(place, use_compiled_functions);
                         it->getMapped() = place;
