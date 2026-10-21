@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "daemon",
+    hdrs = glob(["*.h"]),
     srcs = [
         "BaseDaemon.cpp",
         "GraphiteWriter.cpp",
@@ -13,7 +14,6 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
-        "//src/Common/Config:clickhouse_common_config",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -90,6 +90,12 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
         "//src/Loggers:loggers",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
+        "//src/Common/Config:clickhouse_common_config",
+        "//src/Common",
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Util:_poco_util",
     ],
 )
 

@@ -6,12 +6,12 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "loggers",
     srcs = glob(["*.cpp"]),
-    hdrs = [
-    ],
+    hdrs = glob(["*.h"]),
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
         "//src:clickhouse_common_io__compile_0",
+        "//base/poco/Net:_poco_net",
     ],
     link_runtime = True,
     local_defines = [
@@ -410,11 +410,15 @@ ch_cc_library(
         "@clickhouse_fp16//:fp16",
         "@clickhouse_usearch//:usearch",
         "//contrib/librdkafka-cmake:rdhttp_poco_transport",
+        "//src:headers",
+        "//src/Common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
     ],
 )
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    hdrs = glob(["*.h"], exclude = ["OwnJSONPatternFormatter.h"]),
     deps = ["//base/poco/Util:_poco_util"],
 )
