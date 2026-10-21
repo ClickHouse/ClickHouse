@@ -1,0 +1,32 @@
+--- unqualified names of joinGet and dictGet inside USE db.ns are bound to db.ns.j and db.ns.d
+joinGet(db.`ns.j`, \'v\', toUInt64(1)) AS a, joinGet(\'db.`ns.j`\', \'v\', toUInt64(1)) AS b, dictGet(db.`ns.d`, \'v\', toUInt64(1)) AS c, dictGet(\'db.`ns.d`\', \'v\', toUInt64(1)) AS e
+j1	j1	d1	d1
+--- a qualified name of joinGet in a mutation is bound to db.ns.j
+1	j1
+1	d1
+(UPDATE v = joinGet(db.`ns.j`, \'v\', k) WHERE 1)
+(UPDATE v = dictGet(db.`ns.d`, \'v\', k) WHERE 1)
+--- the bound names keep naming the same objects when a database db.ns appears
+j1	j1	d1	d1
+--- a resolved name is not reinterpreted as relative to the current database
+(UNKNOWN_TABLE)
+(UNKNOWN_TABLE)
+2
+--- TRUNCATE ON CLUSTER is checked for the table it truncates
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+1
+0
+--- both operands of EXCHANGE TABLES are existing tables
+b.t
+x
+--- the GRANTS of an authentication method bind the names like GRANT
+GRANTS (SELECT ON db.`ns.t`)
+--- USE checks the access before reporting a database that does not exist
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+--- merge reads a namespace
+ns.m1	1
+ns.m1	1
+ns.m1	1
