@@ -109,17 +109,19 @@ private:
     void initKeeperLayout();
     void initializeCounter();
     void registerReplica();
-    bool reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep);
+    /// Both require `processing_mutex` to be held.
+    bool reloadSnapshotAndAdvanceIfTooFarBehindUnlocked(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep);
+    /// Reload the durable snapshot together with the matching `max_log_ptr` and set this replica's `log_ptr` and
+    /// digest to them. Returns the new `log_ptr`.
+    UInt32 reloadSnapshotConsistentlyUnlocked();
     bool catchUpLocalSnapshotUnlocked(UInt32 target_log_ptr);
     EnqueuedMutation enqueueMutationImpl(const ClusterMetadataMutation & mutation);
     void applyEnqueuedMutationLocallyUnlocked(const EnqueuedMutation & enqueued, const ClusterMetadataMutation & mutation);
     void appendMutationOps(Coordination::Requests & ops, const ClusterMetadataMutation & mutation) const;
     UInt32 processEntriesBatch(UInt32 first_entry, UInt32 last_entry);
-    void updateReplicaDigest(const String & digest);
     bool canRemoveEntry(UInt32 entry_number) const;
 
     UInt32 readUInt32Node(const ZooKeeperPtr & zookeeper, const String & path) const;
-    void updateReplicaLogPointer(UInt32 log_pointer);
     UInt32 logEntryNumber(const String & entry_name) const;
 };
 

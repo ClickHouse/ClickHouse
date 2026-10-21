@@ -190,7 +190,7 @@ def start_two_node_cluster(test_file, encrypted, cluster_name):
         ENCRYPTED_MAIN_CONFIGS[encrypted],
     ]
     cluster = ClickHouseCluster(test_file, name=cluster_name)
-    ch1 = cluster.add_instance("ch1", main_configs=main_configs, with_zookeeper=True)
+    ch1 = cluster.add_instance("ch1", main_configs=main_configs, with_zookeeper=True, stay_alive=True)
     ch2 = cluster.add_instance("ch2", main_configs=main_configs, with_zookeeper=True)
     try:
         cluster.start()
@@ -434,6 +434,34 @@ def test_replica_ddl_keeper_backed_catalog(encrypted):
             f"FORMAT TabSeparated"
         )
         assert c == "0\n", c
+
+        # A replica that was down while the catalog changed must not replay the missed entries against
+        # the newer snapshot it loads on startup, and must keep receiving later changes.
+        n_rs_ep = f"{p}_restart_ep"
+        n_rs_s1 = f"{p}_restart_s1"
+        n_rs_s2 = f"{p}_restart_s2"
+        n_rs_cluster = f"{p}_restart_cluster"
+        shards_query = (
+            f"SELECT count() FROM system.clusters WHERE cluster = '{n_rs_cluster}' FORMAT TabSeparated"
+        )
+        ch1.query(f"CREATE ENDPOINT {n_rs_ep} PROPERTIES (host = '127.0.0.1', port = 9000)")
+        ch1.query(f"CREATE SHARD {n_rs_s1} REPLICA {n_rs_ep}")
+        ch1.query(f"CREATE SHARD {n_rs_s2} REPLICA {n_rs_ep}")
+        ch1.query(f"CREATE CLUSTER {n_rs_cluster} ({n_rs_s1})")
+        assert_eq_with_retry(ch1, shards_query, "1\n")
+
+        ch1.stop_clickhouse()
+        catalog_query_with_retry(ch2, f"ALTER CLUSTER {n_rs_cluster} ADD SHARD {n_rs_s2}")
+        ch1.start_clickhouse()
+
+        assert_eq_with_retry(ch1, shards_query, "2\n")
+        catalog_query_with_retry(ch2, f"ALTER CLUSTER {n_rs_cluster} DROP SHARD {n_rs_s2}")
+        assert_eq_with_retry(ch1, shards_query, "1\n")
+        catalog_query_with_retry(ch1, f"DROP CLUSTER {n_rs_cluster}")
+        assert_eq_with_retry(ch2, shards_query, "0\n")
+        drop_catalog_topology_safely(
+            ch1, shards=(n_rs_s1, n_rs_s2), endpoints=(n_rs_ep,)
+        )
     finally:
         drop_endpoint_safely(
             ch1, n_alter, n_type, n_host, n_v6, n_fqdn, n_dup, n_missing_drop, f"{n_bad}_prop"

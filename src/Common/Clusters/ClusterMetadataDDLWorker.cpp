@@ -155,7 +155,7 @@ bool ClusterMetadataDDLWorker::catchUpLocalSnapshotUnlocked(UInt32 target_log_pt
     if (log_ptr >= target_log_ptr)
         return false;
 
-    if (reloadSnapshotAndAdvanceIfTooFarBehind(log_ptr, target_log_ptr, SNAPSHOT_RELOAD_LAG_THRESHOLD))
+    if (reloadSnapshotAndAdvanceIfTooFarBehindUnlocked(log_ptr, target_log_ptr, SNAPSHOT_RELOAD_LAG_THRESHOLD))
         return true;
 
     bool made_progress = false;
@@ -220,14 +220,24 @@ ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMuta
             "Cannot enqueue cluster metadata mutation because another node is allocating a log entry. Client should retry");
     if (lock_code != Coordination::Error::ZOK)
         throw zkutil::KeeperException::fromPath(lock_code, counter_lock_path);
+    /// The successful commit transaction below removes the lock itself; after that the path may already
+    /// belong to another initiator, so cleanup must be disarmed. On the exceptional path, only remove the
+    /// lock if it is still owned by our session (after session loss or an uncertain transaction result the
+    /// node may have been released and re-acquired by someone else).
+    bool lock_released = false;
     SCOPE_EXIT({
-        try
+        if (!lock_released)
         {
-            zookeeper->tryRemove(counter_lock_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("Failed to release cluster metadata enqueue lock {}", counter_lock_path));
+            try
+            {
+                Coordination::Stat lock_stat;
+                if (zookeeper->exists(counter_lock_path, &lock_stat) && lock_stat.ephemeralOwner == zookeeper->getClientID())
+                    zookeeper->tryRemove(counter_lock_path, lock_stat.version);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to release cluster metadata enqueue lock {}", counter_lock_path));
+            }
         }
     });
 
@@ -284,6 +294,7 @@ ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMuta
         ops.emplace_back(zkutil::makeSetRequest(max_log_ptr_path, toString(entry_number), -1));
         ops.emplace_back(zkutil::makeRemoveRequest(counter_lock_path, -1));
         zookeeper->multi(ops);
+        lock_released = true;
 
         applyEnqueuedMutationLocallyUnlocked(enqueued, mutation);
     }
@@ -312,13 +323,24 @@ void ClusterMetadataDDLWorker::enqueueMutationAndConfirmLocal(const ClusterMetad
 void ClusterMetadataDDLWorker::applyEnqueuedMutationLocallyUnlocked(const EnqueuedMutation & enqueued, const ClusterMetadataMutation & mutation)
 {
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::applyEnqueuedMutationLocally");
-    const String local_digest = mutation_applier(std::vector<ClusterMetadataMutation>{mutation});
-    if (local_digest != enqueued.digest)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cluster metadata DDL worker local digest {} does not match just-enqueued durable digest {}",
-            local_digest,
-            enqueued.digest);
+    try
+    {
+        const String local_digest = mutation_applier(std::vector<ClusterMetadataMutation>{mutation});
+        if (local_digest != enqueued.digest)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cluster metadata DDL worker local digest {} does not match just-enqueued durable digest {}",
+                local_digest,
+                enqueued.digest);
+    }
+    catch (...)
+    {
+        /// The entry is already committed together with this replica's `log_ptr`, so the local snapshot must not
+        /// be left diverged from it: reload it from the durable state before reporting the error.
+        tryLogCurrentException(log, fmt::format("Local apply of just-enqueued cluster metadata entry {} failed", enqueued.entry_name));
+        reloadSnapshotConsistentlyUnlocked();
+        throw;
+    }
 }
 
 void ClusterMetadataDDLWorker::scheduleTasks(bool /*reinitialized*/)
@@ -331,11 +353,16 @@ void ClusterMetadataDDLWorker::scheduleTasks(bool /*reinitialized*/)
         &stat,
         Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredClusterMetadata});
 
-    const UInt32 log_ptr = getLogPointer();
-    const UInt32 max_log_ptr = getMaxLogPointer();
     const UInt32 logs_to_keep = readUInt32Node(zookeeper, logs_to_keep_path);
-    if (reloadSnapshotAndAdvanceIfTooFarBehind(log_ptr, max_log_ptr, logs_to_keep))
-        return;
+    UInt32 log_ptr = 0;
+    UInt32 max_log_ptr = 0;
+    {
+        std::lock_guard lock(processing_mutex);
+        log_ptr = getLogPointer();
+        max_log_ptr = getMaxLogPointer();
+        if (reloadSnapshotAndAdvanceIfTooFarBehindUnlocked(log_ptr, max_log_ptr, logs_to_keep))
+            return;
+    }
 
     if (log_ptr < max_log_ptr)
     {
@@ -355,11 +382,15 @@ void ClusterMetadataDDLWorker::initializeReplication()
     initKeeperLayout();
     registerReplica();
 
-    const UInt32 log_ptr = getLogPointer();
-    const UInt32 max_log_ptr = getMaxLogPointer();
-    const UInt32 logs_to_keep = readUInt32Node(getZooKeeper(), logs_to_keep_path);
-
-    reloadSnapshotAndAdvanceIfTooFarBehind(log_ptr, max_log_ptr, logs_to_keep);
+    /// A returning replica keeps its old `log_ptr`, but the local snapshot may already have been loaded from
+    /// newer durable state (see `ClusterMetadataManager::initialize`), or may have diverged before the
+    /// reinitialization. Replaying entries against it would apply them twice, so establish a consistent
+    /// snapshot and matching applied position first.
+    {
+        std::lock_guard lock(processing_mutex);
+        if (getLogPointer() < getMaxLogPointer())
+            reloadSnapshotConsistentlyUnlocked();
+    }
 
     LOG_INFO(log, "Cluster metadata DDL worker initialized for node `{}` at `{}`", node_name, replica_group_root);
 }
@@ -395,7 +426,7 @@ void ClusterMetadataDDLWorker::registerReplica()
     zookeeper->createIfNotExists(replica_digest_path, "0");
 }
 
-bool ClusterMetadataDDLWorker::reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep)
+bool ClusterMetadataDDLWorker::reloadSnapshotAndAdvanceIfTooFarBehindUnlocked(UInt32 log_ptr, UInt32 max_log_ptr, UInt32 logs_to_keep)
 {
     if (log_ptr >= max_log_ptr || max_log_ptr - log_ptr <= logs_to_keep)
         return false;
@@ -409,10 +440,68 @@ bool ClusterMetadataDDLWorker::reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log
         max_log_ptr,
         logs_to_keep);
 
-    const String digest = snapshot_reloader();
-    updateReplicaDigest(digest);
-    updateReplicaLogPointer(max_log_ptr);
+    reloadSnapshotConsistentlyUnlocked();
     return true;
+}
+
+UInt32 ClusterMetadataDDLWorker::reloadSnapshotConsistentlyUnlocked()
+{
+    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::reloadSnapshotConsistently");
+    auto zookeeper = getZooKeeper();
+
+    /// Catalog metadata and `max_log_ptr` are changed by the same Keeper transaction (see `enqueueMutationImpl`),
+    /// and `max_log_ptr` only grows. So a snapshot read between two equal reads of `max_log_ptr` contains exactly
+    /// the effects of the entries up to it, and the local snapshot and `log_ptr` can be set to that position
+    /// without replaying (and duplicating) any entry.
+    static constexpr size_t max_attempts = 10;
+    for (size_t attempt = 0; attempt < max_attempts; ++attempt)
+    {
+        const UInt32 old_log_ptr = getLogPointer();
+        const UInt32 max_log_ptr = getMaxLogPointer();
+        const String digest = snapshot_reloader();
+        if (getMaxLogPointer() != max_log_ptr)
+            continue;
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(replica_digest_path, digest, -1));
+        ops.emplace_back(zkutil::makeSetRequest(replica_log_ptr_path, toString(max_log_ptr), -1));
+
+        /// The reloaded snapshot includes the skipped entries, so report them as applied for `SYNC` waiters.
+        /// Entries that were already cleaned up from the log are skipped; very long gaps are not reported.
+        if (max_log_ptr > old_log_ptr && max_log_ptr - old_log_ptr <= max_log_entries_per_batch)
+        {
+            std::vector<String> entry_paths;
+            std::vector<String> finished_paths;
+            for (UInt32 entry_number = old_log_ptr + 1; entry_number <= max_log_ptr; ++entry_number)
+            {
+                entry_paths.push_back(joinPath(log_root, DDLTaskBase::getLogEntryName(entry_number)));
+                finished_paths.push_back(joinPath(joinPath(entry_paths.back(), "finished"), node_name));
+            }
+            auto entry_responses = zookeeper->exists(entry_paths);
+            auto finished_responses = zookeeper->exists(finished_paths);
+            const String status = ExecutionStatus(0).serializeText();
+            for (size_t i = 0; i < entry_paths.size(); ++i)
+            {
+                if (entry_responses[i].error == Coordination::Error::ZOK && finished_responses[i].error == Coordination::Error::ZNONODE)
+                    ops.emplace_back(zkutil::makeCreateRequest(finished_paths[i], status, zkutil::CreateMode::Persistent));
+            }
+        }
+
+        Coordination::Responses responses;
+        const auto code = zookeeper->tryMulti(ops, responses);
+        /// Lost a race with log cleanup or with another writer of the `finished` statuses: retry.
+        if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+            continue;
+        zkutil::KeeperMultiException::check(code, ops, responses);
+
+        LOG_INFO(log, "Reloaded cluster metadata snapshot for node `{}` at log_ptr={} (was {})", node_name, max_log_ptr, old_log_ptr);
+        return max_log_ptr;
+    }
+
+    throw Exception(
+        ErrorCodes::UNFINISHED,
+        "Cannot reload a consistent cluster metadata snapshot at `{}`: the catalog keeps changing concurrently",
+        replica_group_root);
 }
 
 void ClusterMetadataDDLWorker::appendMutationOps(Coordination::Requests & ops, const ClusterMetadataMutation & mutation) const
@@ -486,11 +575,7 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::processEntriesBatch");
     auto zookeeper = getZooKeeper();
 
-    bool local_materialization_started = false;
-    bool local_snapshot_published = false;
-    bool writing_success_status = false;
     String failure_entry_name = DDLTaskBase::getLogEntryName(first_entry);
-    String failure_finished_path = joinPath(joinPath(joinPath(log_root, failure_entry_name), "finished"), node_name);
     try
     {
         std::vector<BatchEntry> entries;
@@ -518,14 +603,24 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
         for (size_t i = 0; i < entry_names.size(); ++i)
         {
             failure_entry_name = entry_names[i];
-            failure_finished_path = finished_paths[i];
 
             const auto & finished_response = finished_responses[i];
             if (finished_response.error == Coordination::Error::ZOK)
             {
                 const auto status = ExecutionStatus::fromText(finished_response.data);
                 if (status.code != 0)
+                {
+                    /// A failure status written by an older version. Process the entries before it first;
+                    /// once it is the first entry, recover from the durable snapshot below.
+                    if (entries.empty())
+                        throw Exception(
+                            ErrorCodes::UNFINISHED,
+                            "Cluster metadata DDL log entry {} has a failure status for node `{}`: {}",
+                            entry_names[i],
+                            node_name,
+                            status.message);
                     break;
+                }
 
                 entries.push_back(BatchEntry{
                     .name = entry_names[i],
@@ -562,7 +657,6 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
             {
                 const auto entry_index = entries_to_read[response_index].first;
                 failure_entry_name = entry_names[entry_index];
-                failure_finished_path = finished_paths[entry_index];
 
                 if (entry_data_responses[response_index].error != Coordination::Error::ZOK)
                     throw zkutil::KeeperException::fromPath(entry_data_responses[response_index].error, entry_data_paths[response_index]);
@@ -589,7 +683,6 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
 
         if (!mutations_to_apply.empty())
         {
-            local_materialization_started = true;
             local_digest = mutation_applier(mutations_to_apply);
             if (caught_up_to_durable_log && local_digest != target_digest)
                 throw Exception(
@@ -597,7 +690,6 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
                     "Cluster metadata DDL worker local digest {} does not match durable digest {}",
                     local_digest,
                     target_digest);
-            local_snapshot_published = true;
         }
 
         const String status = ExecutionStatus(0).serializeText();
@@ -609,7 +701,6 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
                 ops.emplace_back(zkutil::makeCreateRequest(entry.finished_path, status, zkutil::CreateMode::Persistent));
         }
         ops.emplace_back(zkutil::makeSetRequest(replica_log_ptr_path, toString(last_ready_entry), -1));
-        writing_success_status = true;
         zookeeper->multi(ops);
 
         LOG_DEBUG(log, "Applied cluster metadata DDL log entries from {} to {}", entries.front().name, entries.back().name);
@@ -620,30 +711,22 @@ UInt32 ClusterMetadataDDLWorker::processEntriesBatch(UInt32 first_entry, UInt32 
         tryLogCurrentException(
             log,
             fmt::format("Incremental apply of cluster metadata DDL log entry {} failed", failure_entry_name));
+    }
 
-        if (local_materialization_started || local_snapshot_published || writing_success_status)
-            return first_entry - 1;
-
-        const String status = ExecutionStatus::fromCurrentException().serializeText();
-        try
-        {
-            zookeeper->createOrUpdate(failure_finished_path, status, zkutil::CreateMode::Persistent);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                log,
-                fmt::format("Failed to write failure status for cluster metadata DDL log entry {} to Keeper", failure_entry_name));
-        }
+    /// Never record a terminal failure for a committed entry: the durable catalog already contains its effects.
+    /// The local snapshot may be partially advanced (e.g. local apply succeeded but the acknowledgment failed),
+    /// so retrying the entry could apply it twice. Recover by reloading the durable snapshot together with the
+    /// matching log position instead. If that fails too (e.g. Keeper is unavailable), report no progress and
+    /// retry on the next scheduling pass.
+    try
+    {
+        return reloadSnapshotConsistentlyUnlocked();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to recover cluster metadata from the durable snapshot");
         return first_entry - 1;
     }
-}
-
-void ClusterMetadataDDLWorker::updateReplicaDigest(const String & digest)
-{
-    auto zookeeper = getZooKeeper();
-    storage->writeSnapshotDigest(digest);
-    zookeeper->createOrUpdate(replica_digest_path, digest, zkutil::CreateMode::Persistent);
 }
 
 bool ClusterMetadataDDLWorker::canRemoveEntry(UInt32 entry_number) const
@@ -677,12 +760,6 @@ UInt32 ClusterMetadataDDLWorker::readUInt32Node(const ZooKeeperPtr & zookeeper, 
     if (data.empty())
         return 0;
     return parse<UInt32>(data);
-}
-
-void ClusterMetadataDDLWorker::updateReplicaLogPointer(UInt32 log_pointer)
-{
-    auto zookeeper = getZooKeeper();
-    zookeeper->createOrUpdate(replica_log_ptr_path, toString(log_pointer), zkutil::CreateMode::Persistent);
 }
 
 UInt32 ClusterMetadataDDLWorker::logEntryNumber(const String & entry_name) const
