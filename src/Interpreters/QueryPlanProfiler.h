@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/CapturedPlan.h>
+#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 namespace DB
 {
 
@@ -28,9 +29,16 @@ public:
 
     size_t getMaxDescriptionLength() const { return max_description_length; }
 
-    /// Records the plan the query is about to run, taking ownership of it and handing back
-    /// a reference.
-    QueryPlan & captureQueryPlan(QueryPlan plan_);
+    /// Reads the names out of the `ActionsDAG`s, which building the pipeline moves into the
+    /// `ExpressionActions`. Returns them rather than keeping them: they are needed only until the
+    /// structure is captured, a few lines later in the same function.
+    static PrettyNamesPerPlan capturePrettyNames(const QueryPlan & plan);
+
+    /// Records the shape of the plan, and everything the analysis will need from it, as values.
+    /// Called once the pipeline has been built, which is both the first moment the index analysis
+    /// and the lazily built child plans exist, and the last moment the plan does. Nothing after
+    /// this touches the plan.
+    void capturePlanStructure(const QueryPlan & plan, const PrettyNamesPerPlan & pretty_names);
 
     /// Records what the pipeline measured. Does not keep the pipeline object, but extracts
     /// the statistics out of it.
@@ -49,44 +57,18 @@ public:
     String render();
 
 private:
-    /// The body shared by `captureStatistics` and `finish`: the pipeline is what the statistics
-    /// come from, and there is none when a query failed before finishing.
-    void capture(QueryPipeline * pipeline);
-
-    bool canCapture() const
-    {
-        return running.query_plan && running.query_plan->isInitialized() && running.pretty_names.has_value();
-    }
-
     const size_t max_description_length;
 
-    /// Set of fields the profiler needs to keep alive while the query is still being executed.
-    /// Once the query finishes, or throws, these fields are cleared and only `captured` has
-    /// valid state.
-    struct WhileRunning
-    {
-        /// QueryPlan has to be dropped as it holds `QueryPlanResourceHolder`.
-        std::optional<QueryPlan> query_plan;
+    /// The plan, as values. Taken when the structure is captured and valid from then on, so the
+    /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
+    std::optional<CapturedPlan> captured;
+    PlanAnalysisSnapshot plan_snapshot;
 
-        /// Attached to the pipeline so the processors can time their steps; kept so the statistics
-        /// can be read back off it once the query has run.
-        StepProfilerPtr step_profiler;
-        std::optional<PrettyNamesPerPlan> pretty_names;
-
-        void release()
-        {
-            query_plan.reset();
-            step_profiler.reset();
-            pretty_names.reset();
-        }
-    };
-
-    WhileRunning running;
+    /// Built while the plan is still around, because it takes a clock per step of it, then attached
+    /// to the pipeline so the processors can time their steps and read back once the query has run.
+    StepProfilerPtr step_profiler;
 
     /// The order the methods above must come in is asserted against this in debug builds.
     bool finished = false;
-
-    /// Valid once the profiling is finished
-    std::optional<CapturedPlan> captured;
 };
 }

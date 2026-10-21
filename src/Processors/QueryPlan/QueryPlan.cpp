@@ -12,6 +12,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryPlanProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
@@ -240,7 +241,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
-    bool do_optimize)
+    bool do_optimize,
+    QueryPlanProfiler * profiler)
 {
     checkInitialized();
 
@@ -253,6 +255,12 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     if (effective_settings.make_distributed_plan)
         convertToDistributed(effective_settings);
+
+    /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
+    /// into the `ExpressionActions`, and the names are derived from them.
+    PrettyNamesPerPlan pretty_names;
+    if (profiler)
+        pretty_names = QueryPlanProfiler::capturePrettyNames(*this);
 
     struct Frame
     {
@@ -298,6 +306,11 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(resources);
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
+
+    /// The last moment the plan is worth reading: the index analysis and the child plans built
+    /// along the way exist now, and nothing after this needs the plan at all.
+    if (profiler)
+        profiler->capturePlanStructure(*this, pretty_names);
 
     return last_pipeline;
 }

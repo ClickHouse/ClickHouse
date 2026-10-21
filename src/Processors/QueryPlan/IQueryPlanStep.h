@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepAnalysisInputs.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <functional>
 #include <span>
@@ -233,6 +234,10 @@ public:
 
     /// See `StepReporter`. The default reports nothing.
     virtual StepReporter makeReporter() const { return {}; }
+
+    /// Everything the analysis reads from this step, as values, so that it can be shaped after
+    /// the step is gone. The default describes the stages; a step with more to say overrides it.
+    virtual StepAnalysisInputs captureAnalysisInputs() const;
 
 protected:
     virtual void updateOutputHeader() = 0;

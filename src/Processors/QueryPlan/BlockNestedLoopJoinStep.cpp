@@ -352,6 +352,19 @@ String BlockNestedLoopJoinStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown block nested loop join stage {}", group);
 }
 
+StepAnalysisInputs BlockNestedLoopJoinStep::captureAnalysisInputs() const
+{
+    StepAnalysisInputs inputs = IQueryPlanStep::captureAnalysisInputs();
+
+    JoinAnalysisInputs join_inputs;
+    join_inputs.is_block_nested_loop = true;
+    join_inputs.block_nested_loop_kind = getKind();
+    join_inputs.block_nested_loop_strictness = getStrictness();
+    inputs.join = std::move(join_inputs);
+
+    return inputs;
+}
+
 StepReporter BlockNestedLoopJoinStep::makeReporter() const
 {
     /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,

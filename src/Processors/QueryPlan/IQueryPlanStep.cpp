@@ -495,6 +495,15 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
+StepAnalysisInputs IQueryPlanStep::captureAnalysisInputs() const
+{
+    StepAnalysisInputs inputs;
+    inputs.groups = getStepGroups();
+    for (size_t group : inputs.groups)
+        inputs.group_names[group] = getStepGroupName(group);
+    return inputs;
+}
+
 String IQueryPlanStep::getUniqID() const
 {
     return fmt::format("{}_{}", getName(), step_index.get());

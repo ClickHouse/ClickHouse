@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/Profiling/Analysis/StepAnalysisInputs.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <base/types.h>
 
@@ -12,7 +13,7 @@ class IQueryPlanStep;
 /// collector read off the pipeline. Only valid while that step and its pipeline are alive.
 struct StepStatsContext
 {
-    const IQueryPlanStep * step = nullptr;
+    StepAnalysisInputs inputs;
     StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
@@ -22,7 +23,7 @@ struct StepStatsContext
 
 using StepStatsAnalyzer = AnalyzedStepData (*)(const StepStatsContext & context, StepAnalysisReport report);
 
-StepStatsAnalyzer getStepStatsAnalyzer(const IQueryPlanStep * step);
+StepStatsAnalyzer getStepStatsAnalyzer(const StepAnalysisInputs & inputs);
 
 AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report);
 

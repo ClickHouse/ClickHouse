@@ -591,18 +591,9 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// would double-count the optimization phase.
     query_plan.optimize(optimization_settings);
 
-    /// This is necessary because:
-    ///  - buildQueryPipeline moves each step's ActionsDAG into its ExpressionActions, and
-    ///    buildPrettyNamesPerPlan reads those DAGs, so the names must be built first;
-    ///  - PrettyNamesPerPlan is keyed by `const QueryPlan *` and explainPlan looks it up as
-    ///    `find(this)`, so it must be built on the very object that will later be rendered.
-    /// Hence: move the plan into the profiler, build the names there, then build the pipeline from it.
-    QueryPlan * plan_to_build = &query_plan;
-    if (plan_profiler)
-        plan_to_build = &plan_profiler->captureQueryPlan(std::move(planner).extractQueryPlan());
-
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
-    return std::move(*plan_to_build->buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
+    return std::move(*query_plan.buildQueryPipeline(
+        optimization_settings, build_pipeline_settings, /*do_optimize=*/false, plan_profiler.get()));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

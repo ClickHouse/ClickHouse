@@ -215,9 +215,8 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
 }
 
 void prependEstimationComparison(
-    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
+    StepAnalysisReport & report, const JoinEstimation & estimation, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
 {
-    const JoinEstimation & estimation = join_step.getEstimation();
 
     std::optional<UInt64> actual_branch_cost;
     if (const auto cost_it = std::ranges::find(report, MetricGroupKey::Cost, &MetricGroup::key); cost_it != report.end())
@@ -279,10 +278,15 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     /// The block nested loop join is a plan step of its own rather than an `IJoin`. It never swaps its
     /// inputs and reports no per-stage metrics, so the derived per-side numbers and the spill group
     /// are all there is to shape.
-    if (const auto * block_nested_loop_step = typeid_cast<const BlockNestedLoopJoinStep *>(context.step))
+    if (!context.inputs.join)
+        return buildAnalyzedStepData(context, std::move(report));
+
+    const JoinAnalysisInputs & join_inputs = *context.inputs.join;
+
+    if (join_inputs.is_block_nested_loop)
     {
         enrichJoinSides(
-            report, context.io.output_rows, block_nested_loop_step->getKind(), block_nested_loop_step->getStrictness());
+            report, context.io.output_rows, join_inputs.block_nested_loop_kind, join_inputs.block_nested_loop_strictness);
 
         if (auto * spill_group = findGroup(report, MetricGroupKey::Spill))
             reshapeSpillGroup(*spill_group);
@@ -290,15 +294,12 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
         return buildAnalyzedStepData(context, std::move(report));
     }
 
-    const auto * join_step = typeid_cast<const JoinStep *>(context.step);
-    const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(context.step);
-    if (!join_step && !filled_join_step)
+    if (!join_inputs.join)
         return buildAnalyzedStepData(context, std::move(report));
 
     /// Only JoinStep can swap its inputs; a filled join always keeps the storage on the right.
-    bool swapped = join_step && join_step->swap_streams;
-    const auto & join = join_step ? join_step->getJoin() : filled_join_step->getJoin();
-    const auto & table_join = join->getTableJoin();
+    const bool swapped = join_inputs.swapped;
+    const auto & table_join = join_inputs.join->getTableJoin();
 
     const JoinKind logical_kind = swapped ? reverseJoinKind(table_join.kind()) : table_join.kind();
 
@@ -314,14 +315,14 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
         reshapeSpillGroup(*spill_group);
 
     /// Only a JoinStep passes through the optimizer that assigns the estimation; a filled join has none.
-    if (join_step)
+    if (join_inputs.has_estimation)
     {
-        prependEstimationComparison(report, *join_step, context, matched_output_rows);
+        prependEstimationComparison(report, join_inputs.estimation, context, matched_output_rows);
 
         /// Ad hoc solution since we don't have generic infrastructure for rendering EXPLAIN PLAN
         /// and EXPLAIN ANALYZE at the moment. That is why we pull the part for the collecting the input columns
         /// and instead put it in here
-        for (auto & group : QueryPlanFormat::collectJoinInputColumns(*join_step))
+        for (auto group : join_inputs.input_columns)
             report.push_back(std::move(group));
     }
 

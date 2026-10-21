@@ -60,6 +60,7 @@ public:
     String getStepGroupName(size_t group) const override;
 
     StepReporter makeReporter() const override;
+    StepAnalysisInputs captureAnalysisInputs() const override;
 
 private:
     void updateOutputHeader() override;

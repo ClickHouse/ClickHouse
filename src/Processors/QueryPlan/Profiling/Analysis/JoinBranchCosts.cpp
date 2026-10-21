@@ -1,10 +1,8 @@
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/typeid_cast.h>
 #include <base/defines.h>
 
 namespace DB
@@ -13,15 +11,21 @@ namespace DB
 namespace
 {
 
-bool sameCluster(const JoinStep * lhs, const JoinStep * rhs)
+bool sameCluster(const JoinBranchNode & lhs, const JoinBranchNode & rhs)
 {
-    return lhs->getClusterId() != 0 && lhs->getClusterId() == rhs->getClusterId();
+    return lhs.cluster_id != 0 && lhs.cluster_id == rhs.cluster_id;
 }
 
-std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * root)
+using NodesById = std::unordered_map<String, const JoinBranchNode *>;
+
+std::vector<const JoinBranchNode *> collectPostOrder(const NodesById & nodes_by_id, const String & root_id)
 {
-    std::vector<const QueryPlan::Node *> post_order;
-    std::vector<const QueryPlan::Node *> to_visit{root};
+    const auto root_it = nodes_by_id.find(root_id);
+    if (root_it == nodes_by_id.end())
+        return {};
+
+    std::vector<const JoinBranchNode *> post_order;
+    std::vector<const JoinBranchNode *> to_visit{root_it->second};
 
     while (!to_visit.empty())
     {
@@ -29,12 +33,9 @@ std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * ro
         to_visit.pop_back();
         post_order.push_back(node);
 
-        for (const auto * child : node->children)
-            to_visit.push_back(child);
-
-        for (const auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
-            if (child_plan && child_plan->isInitialized())
-                to_visit.push_back(child_plan->getRootNode());
+        for (const auto & child_id : node->children)
+            if (const auto it = nodes_by_id.find(child_id); it != nodes_by_id.end())
+                to_visit.push_back(it->second);
     }
 
     std::reverse(post_order.begin(), post_order.end());
@@ -43,62 +44,62 @@ std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * ro
 
 }
 
-JoinBranchCosts::JoinBranchCosts(const QueryPlan & plan, const CardinalityByJoinStep & cardinality_by_join_step)
+JoinBranchCosts::JoinBranchCosts(
+    const JoinBranchNodes & nodes, const String & root_id, const CardinalityByJoinStep & cardinality_by_join_step)
 {
-    if (const auto * root = plan.getRootNode())
-        accumulate(root, cardinality_by_join_step);
-}
+    NodesById nodes_by_id;
+    nodes_by_id.reserve(nodes.size());
+    for (const auto & node : nodes)
+        nodes_by_id.emplace(node.id, &node);
 
-void JoinBranchCosts::accumulate(const QueryPlan::Node * root, const CardinalityByJoinStep & cardinality_by_join_step)
-{
-    std::unordered_map<const QueryPlan::Node *, std::vector<const JoinStep *>> joins_below;
+    /// The joins of each node's subtree, carried up as the post-order walk retires its children.
+    std::unordered_map<String, std::vector<const JoinBranchNode *>> joins_below;
 
-    for (const auto * node : collectPostOrder(root))
+    for (const auto * node : collectPostOrder(nodes_by_id, root_id))
     {
         /// collect the joins from children
-        std::vector<const JoinStep *> joins_below_the_curren_node;
-        for (const auto * child : node->children)
+        std::vector<const JoinBranchNode *> joins_below_the_current_node;
+        for (const auto & child_id : node->children)
         {
-            const auto it = joins_below.find(child);
-            chassert(it != joins_below.end(), "post-order traversal must have processed the child already");
-            joins_below_the_curren_node.insert(joins_below_the_curren_node.end(), it->second.begin(), it->second.end());
+            const auto it = joins_below.find(child_id);
+            if (it == joins_below.end())
+                continue;
+            joins_below_the_current_node.insert(joins_below_the_current_node.end(), it->second.begin(), it->second.end());
             joins_below.erase(it);
         }
 
-        const auto * join_step = typeid_cast<const JoinStep *>(node->step.get());
-
         /// If step is not join -- propagate the joins below it
-        if (!join_step)
+        if (!node->is_join)
         {
-            joins_below[node] = std::move(joins_below_the_curren_node);
+            joins_below[node->id] = std::move(joins_below_the_current_node);
             continue;
         }
 
         std::optional<UInt64> cost;
-        if (const auto it = cardinality_by_join_step.find(join_step); it != cardinality_by_join_step.end())
+        if (const auto it = cardinality_by_join_step.find(node->id); it != cardinality_by_join_step.end())
             cost = it->second;
 
         /// For every join in the same cluster, add its cost to the cost of this join
-        for (const auto * descendant : joins_below_the_curren_node)
+        for (const auto * descendant : joins_below_the_current_node)
         {
-            if (!sameCluster(descendant, join_step))
+            if (!sameCluster(*descendant, *node))
                 continue;
 
-            const auto & descendant_cost = cost_by_join_step.at(descendant);
+            const auto & descendant_cost = cost_by_join_step.at(descendant->id);
             if (cost && descendant_cost)
                 *cost += *descendant_cost;
             else
                 cost = std::nullopt;
         }
 
-        cost_by_join_step[join_step] = cost;
-        joins_below[node] = {join_step};
+        cost_by_join_step[node->id] = cost;
+        joins_below[node->id] = {node};
     }
 }
 
-std::optional<UInt64> JoinBranchCosts::getBranchCost(const JoinStep * join_step) const
+std::optional<UInt64> JoinBranchCosts::getBranchCost(const String & step_id) const
 {
-    if (const auto it = cost_by_join_step.find(join_step); it != cost_by_join_step.end())
+    if (const auto it = cost_by_join_step.find(step_id); it != cost_by_join_step.end())
         return it->second;
     return {};
 }

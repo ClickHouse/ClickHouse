@@ -131,7 +131,7 @@ bool ExecutionThreadContext::executeTask()
     {
         auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
         if (!cached_clock)
-            cached_clock = step_profiler->findClockForStep(step, group);
+            cached_clock = step_profiler->findClockForStep(processor->getStepUniqID(), group);
 
         clock = cached_clock;
         if (clock)

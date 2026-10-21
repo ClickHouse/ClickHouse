@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 
 #include <Common/Stopwatch.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <map>
@@ -17,7 +18,10 @@ namespace DB
 class IQueryPlanStep;
 class QueryPlan;
 
-using PlanStepGroup = std::pair<const IQueryPlanStep *, size_t>;
+/// Keyed by the step's uniq id rather than its address: the clocks are read while the query runs
+/// and once it has finished, and by then the plan the steps belonged to may be long gone. The
+/// processors carry the same id, so they can find their clock without the step.
+using PlanStepGroup = std::pair<String, size_t>;
 using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 
 /// Statistics needed for EXPLAIN ANALYZE.
@@ -29,7 +33,7 @@ public:
     /// wants those plans and so passes false.
     StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, bool only_built_child_plans = false);
 
-    StepWallClock * findClockForStep(const IQueryPlanStep * step, size_t group) const;
+    StepWallClock * findClockForStep(const String & step_id, size_t group) const;
 
     /// Stamped by the executor when it finishes, so the duration excludes everything the
     /// query-finish path does afterwards -- serializing and sending the result, in particular.

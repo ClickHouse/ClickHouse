@@ -336,6 +336,22 @@ static JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_process
     return counters;
 }
 
+StepAnalysisInputs JoinStep::captureAnalysisInputs() const
+{
+    StepAnalysisInputs inputs = IQueryPlanStep::captureAnalysisInputs();
+
+    JoinAnalysisInputs join_inputs;
+    join_inputs.join = join;
+    join_inputs.can_swap_streams = true;
+    join_inputs.swapped = swap_streams;
+    join_inputs.has_estimation = true;
+    join_inputs.estimation = getEstimation();
+    join_inputs.input_columns = QueryPlanFormat::collectJoinInputColumns(*this);
+    inputs.join = std::move(join_inputs);
+
+    return inputs;
+}
+
 StepReporter JoinStep::makeReporter() const
 {
     /// A join gathers these metrics only when the query runs with the analyze mode on.
@@ -581,6 +597,18 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 void FilledJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
+}
+
+StepAnalysisInputs FilledJoinStep::captureAnalysisInputs() const
+{
+    StepAnalysisInputs inputs = IQueryPlanStep::captureAnalysisInputs();
+
+    /// A filled join always keeps the storage on the right and never carries an estimation.
+    JoinAnalysisInputs join_inputs;
+    join_inputs.join = join;
+    inputs.join = std::move(join_inputs);
+
+    return inputs;
 }
 
 StepReporter FilledJoinStep::makeReporter() const

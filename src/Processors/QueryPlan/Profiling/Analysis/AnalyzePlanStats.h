@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
@@ -43,7 +44,17 @@ class AnalyzeStepsStats
     using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
 
 public:
-    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_);
+    /// `plan_snapshot` is everything the analysis needs from the plan, so the plan itself does not
+    /// have to be alive here. `plan_for_interval_timings` is the one exception: the per-step time
+    /// intervals are still computed over the live plan, and they exist only for `EXPLAIN ANALYZE`
+    /// with `time = 1`. The logged plan collects no intervals and passes nothing.
+    AnalyzeStepsStats(
+        const QueryPipeline & pipeline,
+        PlanAnalysisSnapshot plan_snapshot_,
+        StepProfiler & step_profiler,
+        UInt64 execution_start_ns,
+        UInt64 execution_query_time_ns_,
+        const QueryPlan * plan_for_interval_timings = nullptr);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
@@ -54,6 +65,9 @@ public:
     /// `StepStatisticsJSONPrinter` are two readings of this. Must run while the pipeline is alive.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
+    /// The same, for a caller that no longer has the step -- the logged plan, after execution.
+    AnalyzedStepData analyzeStep(const String & step_id) const;
+
     /// How long the query executed, and the thread count that caps how parallel any stage could be.
     UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
     UInt64 getMaxThreads() const { return max_num_threads_per_query; }
@@ -62,14 +76,17 @@ private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const StepProfiler & step_profiler, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
-    void computeJoinBranchCosts(const QueryPlan & plan);
+    void computeJoinBranchCosts();
 
-    StepStatsContext makeContext(const IQueryPlanStep * step) const;
+    AnalyzedStepData analyzeStepImpl(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const;
+    StepStatsContext makeContext(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const;
     void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
+
+    PlanAnalysisSnapshot plan_snapshot;
 
     ReportsByStep join_raw_reports;
 

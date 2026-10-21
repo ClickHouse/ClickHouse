@@ -12,6 +12,7 @@
 #include <Common/JSONBuilder.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Processors/QueryPlan/Profiling/Render/JsonPlanRenderer.h>
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
@@ -121,42 +122,80 @@ void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * 
         reason);
 }
 
-QueryPlan & QueryPlanProfiler::captureQueryPlan(QueryPlan plan_)
+PrettyNamesPerPlan QueryPlanProfiler::capturePrettyNames(const QueryPlan & plan)
 {
-    /// One plan per query, given before anything else is asked of the profiler.
-    chassert(!running.query_plan);
+    /// Only the child plans the steps already hold: asking a step to build one would make taking
+    /// the names change what the query does.
+    return QueryPlanFormat::buildPrettyNamesPerPlan(plan, /*only_built_child_plans=*/ true);
+}
+
+void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const PrettyNamesPerPlan & pretty_names)
+{
+    /// One plan per query, and nothing is asked of the profiler before this.
+    chassert(!captured);
     chassert(!finished);
 
-    running.query_plan.emplace(std::move(plan_));
+    /// Runs while the query is still being set up, so an exception here would fail a query that
+    /// would otherwise have run. Capturing is a diagnostic; it does not get to do that.
+    MemoryTrackerBlockerInThread block_memory_tracker;
 
-    /// Reads the ActionsDAGs, which building the pipeline moves out of the steps.
-    running.pretty_names.emplace(
-        QueryPlanFormat::buildPrettyNamesPerPlan(*running.query_plan, /*only_built_child_plans=*/ true)
-    );
-    return *running.query_plan;
+    try
+    {
+        /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
+        captured = capturePlan(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
+
+        plan_snapshot = PlanAnalysisSnapshot::capture(plan);
+
+        /// Takes a clock per step of the plan, so it has to be built while the plan is here.
+        step_profiler = std::make_shared<StepProfiler>(plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        captured.reset();
+        step_profiler.reset();
+    }
 }
 
 void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
 {
-    /// Otherwise there is nothing for the statistics to be about, and the pipeline that produced
-    /// them was built from a plan this profiler never saw.
-    chassert(running.query_plan);
     chassert(!finished);
 
-    capture(&pipeline);
+    if (!captured || !step_profiler)
+        return;
+
+    /// Runs on the query-finish path after the client has already received the result. An exception
+    /// here would fail a query that had already succeeded, so diagnostics must not propagate.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        /// Both come from the profiler: the executor stamped the end when it finished, so the
+        /// duration does not include whatever the query-finish path does afterwards.
+        const AnalyzeStepsStats stats(
+            pipeline,
+            plan_snapshot,
+            *step_profiler,
+            step_profiler->getExecutionStartNs(),
+            step_profiler->getExecutionTimeNs());
+
+        for (auto & node : captured->nodes)
+            node.statistics = stats.analyzeStep(node.id);
+
+        captured->execution_time_ns = stats.getExecutionTimeNs();
+        captured->max_threads = stats.getMaxThreads();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline)
 {
-    if (!running.query_plan || !running.query_plan->isInitialized())
-        return;
-
-    /// Work intervals are only for `EXPLAIN ANALYZE`; the plan column does not render them yet.
-    /// The clocks are attached from the plans the steps already hold, so instrumenting a pipeline
-    /// does not make a step build anything.
-    running.step_profiler = std::make_shared<StepProfiler>(
-        *running.query_plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);
-    pipeline.setStepProfiler(running.step_profiler);
+    /// Built with the plan, back when there was one.
+    if (step_profiler)
+        pipeline.setStepProfiler(step_profiler);
 }
 
 void QueryPlanProfiler::finish()
@@ -164,48 +203,12 @@ void QueryPlanProfiler::finish()
     if (finished)
         return;
 
-    /// Nothing captured means the query never reached `captureStatistics`; take the plan alone.
-    if (!captured)
-        capture(nullptr);
-
-    running.release();
+    /// A query that threw keeps the plan captured when its pipeline was built, without statistics.
+    /// One that threw before the pipeline was built captured nothing, and has no plan to show:
+    /// there is no executed plan for a query that never got one.
+    step_profiler.reset();
+    plan_snapshot = {};
     finished = true;
-}
-
-void QueryPlanProfiler::capture(QueryPipeline * pipeline)
-{
-    if (captured || !canCapture())
-        return;
-
-    /// Runs on the query-finish path after the client has already received the result.
-    /// An exception here would fail a query that had already succeeded,
-    /// so diagnostics must not propagate.
-    MemoryTrackerBlockerInThread block_memory_tracker;
-
-    try
-    {
-        std::optional<AnalyzeStepsStats> stats;
-        if (pipeline && running.step_profiler)
-        {
-            /// Both come from the profiler: the executor stamped the end when it finished, so the
-            /// duration does not include whatever the query-finish path does afterwards.
-            stats.emplace(*pipeline, *running.query_plan, *running.step_profiler,
-                running.step_profiler->getExecutionStartNs(), running.step_profiler->getExecutionTimeNs());
-        }
-
-        auto result = capturePlan(
-            *running.query_plan,
-            planExplainOptions(),
-            max_description_length,
-            stats ? &*stats : nullptr,
-            running.pretty_names ? &*running.pretty_names : nullptr);
-
-        captured = std::move(result);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 String QueryPlanProfiler::render()
@@ -219,7 +222,12 @@ String QueryPlanProfiler::render()
 
     try
     {
-        return toJSONString(capturedPlanToJSON(*captured));
+        String result;
+        WriteBufferFromString out(result);
+        JsonPlanRenderer renderer;
+        renderer.render(*captured, out);
+        out.finalize();
+        return result;
     }
     catch (...)
     {

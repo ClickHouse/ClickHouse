@@ -24,7 +24,7 @@ StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan, bool only_b
             continue;
 
         for (size_t group : cur->step->getStepGroups())
-            clocks.try_emplace(std::make_pair(cur->step.get(), group), std::make_unique<StepWallClock>());
+            clocks.try_emplace(std::make_pair(cur->step->getUniqID(), group), std::make_unique<StepWallClock>());
 
         for (const auto * child : cur->children)
             stack.push_back(child);
@@ -44,9 +44,9 @@ StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_,
 {
 }
 
-StepWallClock * StepProfiler::findClockForStep(const IQueryPlanStep * step, size_t group) const
+StepWallClock * StepProfiler::findClockForStep(const String & step_id, size_t group) const
 {
-    auto it = clocks.find({step, group});
+    auto it = clocks.find({step_id, group});
     return it != clocks.end() ? it->second.get() : nullptr;
 }
 
