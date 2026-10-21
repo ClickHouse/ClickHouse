@@ -85,7 +85,7 @@
         {
           "group": "故障排查与错误",
           "pages": [
-            "zh/resources/support-center/troubleshooting/index",
+            "resources/support-center/troubleshooting/index",
             "zh/resources/support-center/troubleshooting/troubleshooting",
             "zh/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
             "zh/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
