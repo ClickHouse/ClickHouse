@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -101,9 +103,13 @@ bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
 {
     if (atom->function_base->getName() == "in")
         return false;
+    /// Check only the key: the constants that `atomSafelySubstitutable` accepts compare at the key's cost
     for (const auto * child : atom->children)
     {
-        if (!child->result_type->isValueRepresentedByNumber())
+        if (child->type != ActionsDAG::ActionType::INPUT)
+            continue;
+        const auto key_type = removeNullable(removeLowCardinality(child->result_type));
+        if (!key_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             return false;
     }
     return true;
