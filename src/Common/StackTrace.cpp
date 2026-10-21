@@ -114,7 +114,9 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
         if (info.si_addr == nullptr)
             address = "NULL pointer";
         else if (const auto resolved = resolveFaultAddress(info.si_addr))
-            address = resolved->object.empty() ? fmt::format("{}", resolved->address) : fmt::format("{} in {}", resolved->address, resolved->object);
+            address = resolved->object.empty()
+                ? fmt::format("{:#x}", reinterpret_cast<uintptr_t>(resolved->address))
+                : fmt::format("{:#x} in {}", reinterpret_cast<uintptr_t>(resolved->address), resolved->object);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";

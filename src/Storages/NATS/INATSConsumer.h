@@ -107,6 +107,8 @@ protected:
 
     const String & getQueueName() const { return queue_name; }
 
+    UInt64 getConsumerNumber() const { return consumer_number; }
+
     void setSubscriptions(std::vector<NATSSubscriptionPtr> subscriptions_) { subscriptions = std::move(subscriptions_); }
 
     /// True if the client has closed any subscription we hold.
@@ -133,6 +135,9 @@ private:
 
     std::shared_ptr<ConcurrentBoundedQueue<MessageData>> loadReceived() const;
     void storeReceived(std::shared_ptr<ConcurrentBoundedQueue<MessageData>> queue);
+
+    /// Identifies the consumer in log and exception messages.
+    const UInt64 consumer_number;
 
     NATSConnectionPtr connection;
     std::vector<NATSSubscriptionPtr> subscriptions;
