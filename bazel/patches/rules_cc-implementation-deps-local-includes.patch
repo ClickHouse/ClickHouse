@@ -1,7 +1,72 @@
+diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_library.bzl
+--- a/cc/private/rules_impl/cc_library.bzl
++++ b/cc/private/rules_impl/cc_library.bzl
+@@ -283,6 +283,18 @@
+ </p>
+         """,
+         ),
++        "private_hdrs": attr.label_list(
++            allow_files = True,
++            flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
++            doc = """
++Files included by this library which must not be compiled as separate sources
++or published to dependent libraries. Ordinary private headers may remain in
++<code>srcs</code>. Use <code>private_hdrs</code> for included implementation
++files, such as <code>.c</code> or template files, whose suffix would otherwise
++be compiled or ignored. Files must not also occur in <code>srcs</code>,
++<code>hdrs</code>, or <code>textual_hdrs</code>.
++""",
++        ),
+         "textual_hdrs": attr.label_list(
+             allow_files = True,
+             flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
+diff --git a/cc/common/cc_helper.bzl b/cc/common/cc_helper.bzl
+--- a/cc/common/cc_helper.bzl
++++ b/cc/common/cc_helper.bzl
+@@ -1124,6 +1124,18 @@
+             for artifact in src[DefaultInfo].files.to_list():
+                 if "." + artifact.extension in extensions.CC_HEADER:
+                     artifact_label_map[artifact] = src.label
++    if getattr(ctx.attr, "private_hdrs", []):
++        other_files = {}
++        for attr_name in ["srcs", "hdrs", "textual_hdrs"]:
++            for artifact in getattr(ctx.files, attr_name):
++                other_files[artifact] = attr_name
++        for hdr in ctx.attr.private_hdrs:
++            for artifact in hdr[DefaultInfo].files.to_list():
++                if artifact in other_files:
++                    fail("Artifact '{}' is also declared in '{}'".format(artifact, other_files[artifact]), attr = "private_hdrs")
++                if artifact in artifact_label_map:
++                    fail("Artifact '{}' is declared twice".format(artifact), attr = "private_hdrs")
++                artifact_label_map[artifact] = hdr.label
+     return artifact_label_map.items()
+ 
+ # Returns the files from headers and does some checks.
 diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/cc_compilation_helper.bzl
 --- a/cc/private/compile/cc_compilation_helper.bzl
 +++ b/cc/private/compile/cc_compilation_helper.bzl
-@@ -687,6 +687,7 @@ def _init_cc_compilation_context(
+@@ -16,6 +16,7 @@
+ load("@bazel_skylib//lib:paths.bzl", "paths")
+ load(
+     "//cc/common:cc_helper_internal.bzl",
++    "extensions",
+     "get_relative_path",
+     "package_source_root",
+     "repository_exec_path",
+@@ -302,7 +303,11 @@
+     for header in expanded(parameters.private_headers):
+         if header.path in added_paths:
+             continue
+-        add_header(path = header.path, visibility = "private", can_compile = True)
++        add_header(
++            path = header.path,
++            visibility = "private",
++            can_compile = "." + header.extension in extensions.CC_HEADER,
++        )
+         added_paths.add(header.path)
+ 
+     for header in parameters.separate_module_headers:
+@@ -687,6 +692,7 @@
              external_includes = depset(external_include_dirs),
              system_includes = depset(system_include_dirs_for_context),
              includes = depset(include_dirs_for_context),

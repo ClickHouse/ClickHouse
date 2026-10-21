@@ -108,28 +108,41 @@ ch_cc_library(
     ] + [
         ":config/contrib/librdkafka-cmake/config.h",
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport.h",
-    ] + glob(["src/**/*.h"], exclude = ["src/rdkafka.h"]),
+    ] + glob(
+        ["src/**/*.h"],
+        exclude = [
+            "src/lz4.h",
+            "src/lz4frame_static.h",
+            "src/lz4hc.h",
+            "src/rddl.h",
+            "src/rdhdrhistogram.h",
+            "src/rdkafka.h",
+            "src/rdkafka_plugin.h",
+            "src/rdsignal.h",
+            "src/rdwin32.h",
+            "src/regexp.h",
+            "src/win32_config.h",
+        ],
+    ),
     hdrs = ["src/rdkafka.h"],
-    additional_compiler_inputs = ["src/rdkafka_conf.c"],
     copts = [
         "-w",
         "-std=gnu11",
         "-fno-sanitize=undefined",
     ],
     implementation_deps = [
-        "@clickhouse_llvm_project//:libcxxabi_headers",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_cyrus_sasl//:_sasl2",
-        "@lz4//:lz4_frame",
-        "@clickhouse_krb5//:_krb5",
         "@clickhouse_zstd//:_zstd__compile_0",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = RDKAFKA_LOCAL_DEFINES,
     local_includes = ["config/contrib/librdkafka-cmake", "src"],
     strip_include_prefix = "src",
+    private_hdrs = ["src/rdkafka_conf.c"],
 )
 
 cc_library(
