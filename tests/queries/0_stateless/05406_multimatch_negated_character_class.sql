@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, use-vectorscan
 
--- multiMatch* compiles patterns with HS_FLAG_UTF8, where vectorscan keeps a character class as a
--- boost::icl::interval_set. Built against libc++ 22, boost::icl before 1.92 lost intervals in every
+-- `multiMatch*` compiles patterns with `HS_FLAG_UTF8`, where vectorscan keeps a character class as a
+-- `boost::icl::interval_set`. Built against libc++ 22, `boost::icl` before 1.92 lost intervals in every
 -- operation that spanned more than one of them, so a negated class kept only some of its members
 -- and matched strings that `match` rejects: https://github.com/ClickHouse/ClickHouse/issues/117522
 
