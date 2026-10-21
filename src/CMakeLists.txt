@@ -218,6 +218,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
 add_headers_and_sources(dbms Storages/BigQuery)
+add_headers_and_sources(dbms Storages/Elasticsearch)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -498,7 +499,11 @@ ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_const
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
-${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/user_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schema_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/table_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/column_privileges.sql")
 
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
@@ -530,6 +535,7 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_streaming Processors/Streaming)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_fragments Processors/QueryPlan/Fragments)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_processors_queryplan_profiling_execution Processors/QueryPlan/Profiling/Execution)
 add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
