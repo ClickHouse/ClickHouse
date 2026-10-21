@@ -1036,7 +1036,12 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 /// partial-drop recovery marker: until a startup completes, it keeps the tables hidden and forces
                 /// a create-style startup that reloads every table from a new snapshot. A failure to persist it
                 /// propagates before anything is truncated.
-                const bool reload_marker_existed = getDisk()->existsFile(getPartialDropRecoveryMarkerPath());
+                bool reload_marker_existed = false;
+                {
+                    /// The database disk can keep its metadata in Keeper, which requires a component for every request.
+                    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::detachTablePermanently");
+                    reload_marker_existed = getDisk()->existsFile(getPartialDropRecoveryMarkerPath());
+                }
                 persistPartialDropRecoveryMarker();
                 replication_handler->addTableToReplication(materialized_storage, table_name, /* clear_existing_data */ true);
                 table_readded = true;
@@ -1189,11 +1194,19 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
     /// window in which a failed write followed by a server restart loses the decision: the reconstructed
     /// database would take the steady-state attach path over the tables the refused drop has already removed.
     /// A failure to write the marker refuses the drop before any data is removed.
-    if (drop_in_progress && local_context->isInternalQuery()
-        && !getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
+    if (drop_in_progress && local_context->isInternalQuery())
     {
-        persistPartialDropRecoveryMarker();
-        partial_drop_marker_written_by_drop = true;
+        bool marker_exists = false;
+        {
+            /// The database disk can keep its metadata in Keeper, which requires a component for every request.
+            auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::dropTable");
+            marker_exists = getDisk()->existsFile(getPartialDropRecoveryMarkerPath());
+        }
+        if (!marker_exists)
+        {
+            persistPartialDropRecoveryMarker();
+            partial_drop_marker_written_by_drop = true;
+        }
     }
 
     try
