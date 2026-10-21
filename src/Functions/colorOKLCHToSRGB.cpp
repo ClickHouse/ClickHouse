@@ -34,9 +34,7 @@ public:
         Float64 chroma = oklch[1];
         Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
-        Float64 sin_hue;
-        Float64 cos_hue;
-        sinCos(hue_rad, sin_hue, cos_hue);
+        const auto [sin_hue, cos_hue] = sinCos(hue_rad);
 
         auto oklab = oklch;
         oklab[1] = chroma * cos_hue;
