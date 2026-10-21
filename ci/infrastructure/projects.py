@@ -365,7 +365,7 @@ PROJECTS = [
                 availability_zones=["us-east-1c"],
                 instance_type="mac-m4pro.metal",
                 image_id=MAC_OS_26_ARM_US_EAST_1_AMI,
-                quantity_per_az=5,
+                quantity_per_az=15,
                 vpc_name="macos-us-east-1",
             ),
         ],
