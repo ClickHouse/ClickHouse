@@ -1515,20 +1515,20 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 LIKE/ILIKE のクエリパターンが `%<alpha-numeric-characters-without-spaces>%`、`<alpha-numeric-characters-without-spaces>%`、`%<alpha-numeric-characters-without-spaces>` のいずれかであり、テキスト索引のトークナイザーが `splitByNonAlpha` または `array` である場合、ClickHouse は転置索引を活用して LIKE/ILIKE クエリを大幅に高速化します。このとき ClickHouse は、フルテーブルスキャンではなく転置索引の辞書をスキャンして、一致するパターンを見つけます。
 
-辞書スキャンの結果をどう利用するかは、needle がどこにアンカーされているかによって決まります。
+辞書スキャンの結果をどう利用するかは、検索文字列がどこにアンカーされているかによって決まります。
 
 * `%value%` は、その行のいずれかのトークンに一致する場合にのみ行に一致します。そのため索引だけでクエリを判定でき、元の述語を除去する [direct read (hint なし) ](#direct-read) となります。
-* `value%` と `%value` は needle を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての direct read](#direct-read) に利用されます。
+* `value%` と `%value` は検索文字列を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての direct read](#direct-read) に利用されます。
 
-この同じ辞書スキャンは、needle に検索できる完全なトークンが存在しない場合の `startsWith(col, 'value')` と `endsWith(col, 'value')` にも使われます。
+この同じ辞書スキャンは、検索文字列に検索できる完全なトークンが存在しない場合の `startsWith(col, 'value')` と `endsWith(col, 'value')` にも使われます。
 アナライザのパスである [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ja/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (デフォルトで有効) が `col LIKE 'value%'` を `startsWith(col, 'value')` に、`col LIKE '%value'` を `endsWith(col, 'value')` に rewrite するため、実際にはほとんどの `value%` および `%value` パターンがこの経路をたどります。
-複数のトークンにまたがる needle は needle の完全なトークンをそのまま使用するため、辞書スキャンは不要です。
+複数のトークンにまたがる検索文字列は検索文字列の完全なトークンをそのまま使用するため、辞書スキャンは不要です。
 
-特別なケースとして、索引のトークナイザーが `array` の場合は、*あらゆる* パターンがこの最適化の対象となります。アンカー、句読点、`_` の wildcard、`%` で区切られた複数の needle、escape された metacharacter などがすべて含まれます。
+特別なケースとして、索引のトークナイザーが `array` の場合は、*あらゆる* パターンがこの最適化の対象となります。アンカー、句読点、`_` の wildcard、`%` で区切られた複数の検索文字列、escape された metacharacter などがすべて含まれます。
 
 この最適化が有効な場合、LIKE/ILIKE クエリはフルテーブルスキャンよりも大幅に高速になります。ただし、パターンが辞書内のほとんどのトークンに一致する場合は、フルテーブルスキャンより性能が低下することがあります。幸い、これを防ぐための fallback の仕組みがあります。
 
-`value%` や `%value` パターンの高速化はグラニュールのスキップによって得られるため、一致する行の配置状況に依存します。すべてのグラニュールに一致行が存在するような needle では何も prune されず、結局は行われる full scan に加えて辞書スキャンのコストまで支払うことになります。そのような workload では [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を無効にしてください。
+`value%` や `%value` パターンの高速化はグラニュールのスキップによって得られるため、一致する行の配置状況に依存します。すべてのグラニュールに一致行が存在するような検索文字列では何も prune されず、結局は行われる full scan に加えて辞書スキャンのコストまで支払うことになります。そのような workload では [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を無効にしてください。
 
 この最適化は次の設定で制御されます。
 
@@ -1539,13 +1539,12 @@ fallback の仕組みは 2 つの設定で制御されます。
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ja/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数、および needle が 1 つの場合の `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive`、`multiSearchAnyCaseInsensitiveUTF8` の各関数のみです。
+この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数、および検索文字列が 1 つの場合の `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive`、`multiSearchAnyCaseInsensitiveUTF8` の各関数のみです。
 また一般に、プリプロセッサやポストプロセッサを持たない索引が必要です (`ilike` はプリプロセッサ関数として `lower` または `upper` も受け付けます)。
 
-`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 2 つの特殊なケースでは検索がフルテーブルスキャンに falls back します。
+`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 1 つの特殊なケースでは検索がフルテーブルスキャンに falls back します。
 
-* needle に文字 `k` が含まれる場合。`ilike` は `U+212A KELVIN SIGN` を `k` として扱いますが、辞書スキャンはバイト単位で比較するため、その表記の行を取りこぼしてしまいます。`U+212A` は `ilike` が ASCII の英数字に畳み込む唯一の文字であるため、影響を受ける needle 中の文字は `k` のみです。
-* 索引のプリプロセッサ expression に `lowerUTF8` または `upperUTF8` が含まれる場合。これらは非 ASCII 文字を ASCII の文字に書き換える (`ß` を `SS` に、`ſ` を `S` に) ため、`ilike` が一致しない行を索引が報告してしまうことになります。
+* 索引のプリプロセッサ式に `lowerUTF8` または `upperUTF8` が含まれる場合。これらは非 ASCII 文字を ASCII の文字に書き換える (`ß` を `SS` に、`ſ` を `S` に) ため、`ilike` が一致しない行を索引が報告してしまうことになります。
 
 ### 単純なカウントクエリ {#count-queries-perf}
 

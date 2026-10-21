@@ -1514,7 +1514,7 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 当 LIKE/ILIKE 的查询模式为 `%<alpha-numeric-characters-without-spaces>%`、`<alpha-numeric-characters-without-spaces>%` 或 `%<alpha-numeric-characters-without-spaces>`，且文本索引的分词器为 `splitByNonAlpha` 或 `array` 时，ClickHouse 会利用 inverted index 显著加速 LIKE/ILIKE 查询。为此，ClickHouse 会扫描 inverted index 的字典来查找匹配的模式，而不是执行全表扫描。
 
-字典扫描结果的使用方式取决于 needle 的锚定位置：
+dictionary scan 结果的使用方式取决于 needle 的锚定位置：
 
 * 当且仅当 `%value%` 与某一行的某个标记匹配时，该行才算匹配，因此索引本身即可判定查询结果：这是一次[直接读取 (不作为提示) ](#direct-read)，并会移除原始谓词。
 * `value%` 和 `%value` 将 needle 锚定在整个值上，而 dictionary scan 只能将其锚定在单个标记上，因此扫描返回的是匹配行的 superset，只能[作为提示的直接读取](#direct-read)使用。
@@ -1541,9 +1541,8 @@ fallback 机制由以下两个设置控制：
 该优化仅支持 `like`、`ilike`、`startsWith` 和 `endsWith` 函数，以及仅带一个 needle 的 `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive` 和 `multiSearchAnyCaseInsensitiveUTF8` 函数。
 它通常要求索引不带预处理器或后处理器 (`ilike` 也接受 `lower` 或 `upper` 作为预处理器函数) 。
 
-对于 `ilike`，在两种特殊情况下搜索会退化为全表扫描，这对 `splitByNonAlpha` 和 `array` 两种分词器都适用：
+对于 `ilike`，在一种特殊情况下搜索会退化为全表扫描，这对 `splitByNonAlpha` 和 `array` 两种分词器都适用：
 
-* needle 中包含字母 `k`。`ilike` 会把 `U+212A KELVIN SIGN` 视作 `k`，但 dictionary scan 是按字节比较的，会漏掉以这种方式书写的行。`U+212A` 是 `ilike` 唯一会折叠为 ASCII 字母或数字的字符，因此 `k` 是唯一受影响的 needle 字符。
 * 索引的预处理器表达式中包含 `lowerUTF8` 或 `upperUTF8`。它们会把非 ASCII 字符改写为 ASCII 字母 (`ß` 改写为 `SS`，`ſ` 改写为 `S`) ，这会导致索引报告出 `ilike` 实际并不匹配的行。
 
 ### 简单计数查询 {#count-queries-perf}

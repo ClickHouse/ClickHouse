@@ -1518,7 +1518,7 @@ Cuando el patrón de una consulta LIKE/ILIKE es `%<caracteres-alfanuméricos-sin
 El uso que se da al resultado del escaneo del Diccionario depende de dónde esté anclado el needle:
 
 * `%value%` coincide con una fila si y solo si coincide con alguno de los tokens de esa fila, por lo que el índice resuelve la consulta por sí solo: una [lectura directa (sin pista)](#direct-read) que elimina el predicado original.
-* `value%` y `%value` anclan el needle al valor completo, mientras que el escaneo del Diccionario solo puede anclarlo a un token, de modo que el scan devuelve un superset de las filas coincidentes y se utiliza como una [lectura directa como sugerencia](#direct-read).
+* `value%` y `%value` anclan el needle al valor completo, mientras que el escaneo del Diccionario solo puede anclarlo a un token, de modo que el escaneo devuelve un superset de las filas coincidentes y se utiliza como una [lectura directa como sugerencia](#direct-read).
 
 Ese mismo escaneo del Diccionario atiende a `startsWith(col, 'value')` y `endsWith(col, 'value')` cuando el needle no contiene ningún token completo que buscar.
 Esta es la vía que sigue en realidad la mayoría de los patrones `value%` y `%value`, ya que la pasada del analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/es/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (habilitada de forma predeterminada) reescribe `col LIKE 'value%'` como `startsWith(col, 'value')` y `col LIKE '%value'` como `endsWith(col, 'value')`.
@@ -1528,7 +1528,7 @@ Como caso especial, si el tokenizador del índice es `array`, entonces *cualquie
 
 Cuando la optimización está habilitada, las consultas LIKE/ILIKE deberían ser considerablemente más rápidas que un escaneo completo de tabla. No obstante, cuando el patrón coincide con la mayoría de los tokens del Diccionario, el rendimiento puede ser peor que el de un escaneo completo de tabla. Por suerte, existe un mecanismo de fallback para evitarlo.
 
-La mejora de rendimiento de un patrón `value%` o `%value` proviene de omitir gránulos, por lo que depende de cómo estén distribuidas las filas coincidentes. Los needles que coinciden con filas en todos los gránulos no descartan nada, y la consulta paga el coste del escaneo del Diccionario además del full scan que habría realizado de todos modos. Deshabilita [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/es/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) para este tipo de workloads.
+La mejora de rendimiento de un patrón `value%` o `%value` proviene de omitir gránulos, por lo que depende de cómo estén distribuidas las filas coincidentes. Los needles que coinciden con filas en todos los gránulos no descartan nada, y la consulta paga el coste del escaneo del Diccionario además del escaneo completo que habría realizado de todos modos. Deshabilita [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/es/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) para este tipo de workloads.
 
 La optimización se controla mediante una configuración:
 
@@ -1542,9 +1542,8 @@ El mecanismo de fallback se controla mediante dos configuraciones:
 Esta optimización solo admite las funciones `like`, `ilike`, `startsWith` y `endsWith`, así como las funciones `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` y `multiSearchAnyCaseInsensitiveUTF8` con un único needle.
 Por lo general, requiere un índice sin preprocessor ni posprocesamiento (`ilike` también acepta `lower` o `upper` como función de preprocessor).
 
-En el caso de `ilike`, la búsqueda recurre a un escaneo completo de tabla en dos casos especiales, tanto con el tokenizador `splitByNonAlpha` como con el `array`:
+En el caso de `ilike`, la búsqueda recurre a un escaneo completo de tabla en un caso especial, tanto con el tokenizador `splitByNonAlpha` como con el `array`:
 
-* El needle contiene la letra `k`. `ilike` trata `U+212A KELVIN SIGN` como una `k`, pero el escaneo del Diccionario compara bytes y pasaría por alto una fila escrita de ese modo. `U+212A` es el único carácter que `ilike` convierte en una letra o dígito ASCII, por lo que `k` es el único carácter del needle afectado.
 * La preprocessor expression del índice contiene `lowerUTF8` o `upperUTF8`. Estas reescriben los caracteres no ASCII como letras ASCII (`ß` como `SS`, `ſ` como `S`), lo que haría que el índice informara de filas que `ilike` no hace coincidir.
 
 ### Consultas de recuento simples {#count-queries-perf}

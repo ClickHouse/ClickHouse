@@ -1518,7 +1518,7 @@ Quando o pattern de uma consulta LIKE/ILIKE é `%<alpha-numeric-characters-witho
 A forma como o resultado do Dicionário scan é usado depende de onde a needle está ancorada:
 
 * `%value%` corresponde a uma linha se e somente se corresponder a um dos tokens da linha, portanto o índice decide a consulta sozinho: uma [leitura direta (sem hint)](#direct-read) que remove o predicado original.
-* `value%` e `%value` ancoram a needle no valor inteiro, enquanto o Dicionário scan só consegue ancorá-la em um token; assim, o scan retorna um superconjunto das linhas correspondentes e é usado como uma [leitura direta como hint](#direct-read).
+* `value%` e `%value` ancoram a needle no valor inteiro, enquanto o Dicionário scan só consegue ancorá-la em um token; assim, o scan retorna um superconjunto das linhas correspondentes e é usado como uma [leitura direta como dica](#direct-read).
 
 O mesmo Dicionário scan atende `startsWith(col, 'value')` e `endsWith(col, 'value')` quando a needle não possui um token completo para pesquisar.
 Esse é o caminho que a maioria dos patterns `value%` e `%value` realmente segue, pois a passagem do analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/pt-BR/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (habilitada por padrão) reescreve `col LIKE 'value%'` como `startsWith(col, 'value')` e `col LIKE '%value'` como `endsWith(col, 'value')`.
@@ -1542,9 +1542,8 @@ O mecanismo de fallback é controlado por duas configurações:
 Essa otimização suporta apenas as funções `like`, `ilike`, `startsWith` e `endsWith`, além das funções `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` e `multiSearchAnyCaseInsensitiveUTF8` com uma única needle.
 De modo geral, ela exige um índice sem pré-processador ou pós-processador (`ilike` também aceita `lower` ou `upper` como função de pré-processador).
 
-Para `ilike`, a busca recorre a um full-table scan em dois casos especiais, tanto para o tokenizer `splitByNonAlpha` quanto para o `array`:
+Para `ilike`, a busca recorre a um full-table scan em um caso especial, tanto para o tokenizer `splitByNonAlpha` quanto para o `array`:
 
-* A needle contém a letra `k`. O `ilike` trata `U+212A KELVIN SIGN` como um `k`, mas o Dicionário scan compara bytes e deixaria passar uma linha escrita dessa forma. `U+212A` é o único caractere que o `ilike` converte para uma letra ou dígito ASCII, portanto `k` é o único caractere de needle afetado.
 * A expressão do pré-processador do índice contém `lowerUTF8` ou `upperUTF8`. Essas funções reescrevem caracteres não ASCII como letras ASCII (`ß` como `SS`, `ſ` como `S`), o que faria o índice reportar linhas que o `ilike` não corresponde.
 
 ### Consultas triviais de contagem {#count-queries-perf}

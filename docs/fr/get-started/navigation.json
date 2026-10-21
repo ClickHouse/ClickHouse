@@ -15,7 +15,7 @@
             "fr/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "Tous les cas d’usage",
+              "group": "Tous les cas d’utilisation",
               "pages": [
                 "fr/get-started/setup/cloud",
                 "fr/get-started/quickstarts/obtain-your-cloud-connection-details",
@@ -27,7 +27,7 @@
             },
             {
               "expanded": false,
-              "group": "Analytique en temps réel",
+              "group": "Analyse en temps réel",
               "pages": [
                 "fr/get-started/quickstarts/create-your-first-materialized-view",
                 "fr/get-started/quickstarts/create-your-first-projection"
@@ -35,7 +35,7 @@
             },
             {
               "expanded": false,
-              "group": "Entrepôt de données",
+              "group": "Entreposage de données",
               "pages": [
                 "fr/get-started/quickstarts/connect-your-iceberg-catalog",
                 "fr/get-started/quickstarts/mutations"
@@ -43,7 +43,7 @@
             },
             {
               "expanded": false,
-              "group": "Observabilité",
+              "group": "Observability",
               "pages": [
                 "fr/get-started/quickstarts/working-with-the-map-type"
               ]

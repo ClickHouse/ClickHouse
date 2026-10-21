@@ -1513,22 +1513,22 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 ### استعلامات LIKE/ILIKE {#like-ilike-queries-perf}
 
-عندما يكون نمط استعلام LIKE/ILIKE بالشكل `%<alpha-numeric-characters-without-spaces>%` أو `<alpha-numeric-characters-without-spaces>%` أو `%<alpha-numeric-characters-without-spaces>`، ويكون الـ مُقسِّم الرموز الخاص بفهرس النص هو `splitByNonAlpha` أو `array`، فإن ClickHouse يستفيد من الفهرس المعكوس لتسريع استعلامات LIKE/ILIKE بدرجة كبيرة. ولتحقيق ذلك، يفحص ClickHouse قاموس الفهرس المعكوس بدلاً من إجراء مسح كامل للجدول للعثور على النمط المطابق.
+عندما يكون نمط استعلام LIKE/ILIKE بالشكل `%<alpha-numeric-characters-without-spaces>%` أو `<alpha-numeric-characters-without-spaces>%` أو `%<alpha-numeric-characters-without-spaces>`، ويكون الـ مُقسِّم الرموز الخاص بفهرس نصي هو `splitByNonAlpha` أو `array`، فإن ClickHouse يستفيد من الفهرس المعكوس لتسريع استعلامات LIKE/ILIKE بدرجة كبيرة. ولتحقيق ذلك، يفحص ClickHouse قاموس الفهرس المعكوس بدلاً من إجراء مسح كامل للجدول للعثور على النمط المطابق.
 
-تعتمد طريقة استخدام نتيجة فحص القاموس على موضع تثبيت الـ needle:
+تعتمد طريقة استخدام نتيجة فحص القاموس على موضع تثبيت سلسلة البحث:
 
 * يطابق `%value%` صفاً إذا وفقط إذا طابق أحد رموز ذلك الصف، وبالتالي يحسم الفهرس الاستعلام بمفرده: [قراءة مباشرة (بدون تلميح)](#direct-read) تزيل الـ مسند الأصلي.
-* يثبّت كل من `value%` و`%value` الـ needle عند القيمة بأكملها، بينما لا يستطيع فحص القاموس تثبيته إلا عند رمز، لذا يُرجع الفحص مجموعة فائقة من الصفوف المطابقة ويُستخدم بوصفه [قراءة مباشرة كـ تلميح](#direct-read).
+* يثبّت كل من `value%` و`%value` سلسلة البحث عند القيمة بأكملها، بينما لا يستطيع فحص القاموس تثبيتها إلا عند رمز، لذا يُرجع الفحص مجموعة فائقة من الصفوف المطابقة ويُستخدم بوصفه [قراءة مباشرة كـ تلميح](#direct-read).
 
-ويخدم فحص القاموس نفسه كلاً من `startsWith(col, 'value')` و`endsWith(col, 'value')` عندما لا يحتوي الـ needle على رمز كامل للبحث عنه.
+ويخدم فحص القاموس نفسه كلاً من `startsWith(col, 'value')` و`endsWith(col, 'value')` عندما لا تحتوي سلسلة البحث على رمز كامل للبحث عنه.
 وهذا هو المسار الذي تسلكه فعلياً معظم أنماط `value%` و`%value`، لأن مرحلة الـ analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ar/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (المفعّلة افتراضياً) تعيد كتابة `col LIKE 'value%'` إلى `startsWith(col, 'value')` و`col LIKE '%value'` إلى `endsWith(col, 'value')`.
-أما الـ needles التي تمتد عبر عدة رموز فتظل تستخدم الـ رموز الكاملة الخاصة بها ولا تحتاج إلى فحص القاموس.
+أما سلاسل البحث التي تمتد عبر عدة رموز فتظل تستخدم الـ رموز الكاملة الخاصة بها ولا تحتاج إلى فحص القاموس.
 
-وكحالة خاصة، إذا كان مُقسِّم الرموز الخاص بالفهرس هو `array`، فإن *أي* نمط يكون مؤهلاً لهذا التحسين: المثبِّتات وعلامات الترقيم و`_` أحرف البدل وعدة needles مفصولة بـ `%` والـ محارف الوصفية المُفلَتة.
+وكحالة خاصة، إذا كان مُقسِّم الرموز الخاص بالفهرس هو `array`، فإن *أي* نمط يكون مؤهلاً لهذا التحسين: المثبِّتات وعلامات الترقيم و`_` أحرف البدل وعدة سلاسل بحث مفصولة بـ `%` والـ محارف الوصفية المُفلَتة.
 
 عند تفعيل هذا التحسين، يُفترض أن تكون استعلامات LIKE/ILIKE أسرع بكثير من المسح الكامل للجدول. غير أنه إذا طابق النمط معظم رموز القاموس، فقد يصبح الأداء أسوأ مقارنةً بالمسح الكامل للجدول. ولحسن الحظ، توجد آلية fallback تحول دون ذلك.
 
-يأتي التسريع في نمطي `value%` و`%value` من تخطي الـ حبيبات، لذا فهو يعتمد على كيفية توزيع الصفوف المطابقة. فالـ needles التي تطابق صفوفاً في كل حبيبة لا تستبعد شيئاً، ويتحمّل الاستعلام عندئذٍ تكلفة فحص القاموس إضافةً إلى المسح الكامل الذي كان سيجريه على أي حال. عطّل [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ar/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) في مثل هذه الأحمال.
+يأتي التسريع في نمطي `value%` و`%value` من تخطي الـ حبيبات، لذا فهو يعتمد على كيفية توزيع الصفوف المطابقة. فسلاسل البحث التي تطابق صفوفاً في كل حبيبة لا تستبعد شيئاً، ويتحمّل الاستعلام عندئذٍ تكلفة فحص القاموس إضافةً إلى المسح الكامل الذي كان سيجريه على أي حال. عطّل [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ar/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) في مثل هذه الأحمال.
 
 يتحكم في هذا التحسين إعداد واحد:
 
@@ -1539,12 +1539,11 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ar/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-يدعم هذا التحسين الدوال `like` و`ilike` و`startsWith` و`endsWith` فقط، إضافةً إلى الدوال `multiSearchAny` و`multiSearchAnyUTF8` و`multiSearchAnyCaseInsensitive` و`multiSearchAnyCaseInsensitiveUTF8` عند استخدامها مع needle واحد.
+يدعم هذا التحسين الدوال `like` و`ilike` و`startsWith` و`endsWith` فقط، إضافةً إلى الدوال `multiSearchAny` و`multiSearchAnyUTF8` و`multiSearchAnyCaseInsensitive` و`multiSearchAnyCaseInsensitiveUTF8` عند استخدامها مع سلسلة بحث واحدة.
 وهو يتطلب عموماً فهرساً بلا preprocessor أو postprocessor (كما يقبل `ilike` الدالة `lower` أو `upper` بوصفها دالة الـ preprocessor).
 
-بالنسبة إلى `ilike`، يرتد البحث إلى المسح الكامل للجدول في حالتين خاصتين، وذلك لكلا مُقسِّمَي الرموز `splitByNonAlpha` و`array`:
+بالنسبة إلى `ilike`، يرتد البحث إلى المسح الكامل للجدول في حالة خاصة واحدة، وذلك لكلا مُقسِّمَي الرموز `splitByNonAlpha` و`array`:
 
-* احتواء الـ needle على الحرف `k`. إذ تعامل `ilike` الرمز `U+212A KELVIN SIGN` معاملة `k`، بينما يقارن فحص القاموس البايتات وسيغفل أي صف مكتوب بتلك الطريقة. و`U+212A` هو المحرف الوحيد الذي تطويه `ilike` إلى حرف أو رقم ASCII، لذا فإن `k` هو محرف الـ needle الوحيد المتأثر.
 * احتواء تعبير الـ preprocessor الخاص بالفهرس على `lowerUTF8` أو `upperUTF8`. فهذه الدوال تعيد كتابة المحارف غير ASCII إلى حروف ASCII (`ß` إلى `SS`، و`ſ` إلى `S`)، مما يجعل الفهرس يُبلّغ عن صفوف لا تطابقها `ilike`.
 
 ### استعلامات العد البسيطة {#count-queries-perf}
