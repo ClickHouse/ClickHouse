@@ -63,15 +63,15 @@ SELECT 'correctness',
 DROP TABLE prop_nopk_big;
 DROP TABLE prop_nopk_small;
 
--- Any fixed-size key is cheap to compare, a variable-size one is not
+-- A fixed-size key of at most 32 bytes is cheap to compare, a wider or variable-size one is not
 DROP TABLE IF EXISTS prop_nopk_types_big;
 DROP TABLE IF EXISTS prop_nopk_types_small;
 
-CREATE TABLE prop_nopk_types_big (u UUID, ip IPv6, fs FixedString(3), n Nullable(UInt64), s String, pad UInt64) ENGINE = MergeTree ORDER BY pad;
-CREATE TABLE prop_nopk_types_small (u UUID, ip IPv6, fs FixedString(3), n Nullable(UInt64), s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE prop_nopk_types_big (u UUID, ip IPv6, fs FixedString(32), wfs FixedString(33), n Nullable(UInt64), s String, pad UInt64) ENGINE = MergeTree ORDER BY pad;
+CREATE TABLE prop_nopk_types_small (u UUID, ip IPv6, fs FixedString(32), wfs FixedString(33), n Nullable(UInt64), s String) ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO prop_nopk_types_big SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number % 1000), 12, '0'))), toIPv6(IPv4NumToString(toUInt32(number % 1000))), leftPad(toString(number % 1000), 3, '0'), number % 1000, toString(number % 1000), number FROM numbers(10000);
-INSERT INTO prop_nopk_types_small SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number), 12, '0'))), toIPv6(IPv4NumToString(toUInt32(number))), leftPad(toString(number), 3, '0'), number, toString(number) FROM numbers(1000);
+INSERT INTO prop_nopk_types_big SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number % 1000), 12, '0'))), toIPv6(IPv4NumToString(toUInt32(number % 1000))), leftPad(toString(number % 1000), 3, '0'), leftPad(toString(number % 1000), 3, '0'), number % 1000, toString(number % 1000), number FROM numbers(10000);
+INSERT INTO prop_nopk_types_small SELECT toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number), 12, '0'))), toIPv6(IPv4NumToString(toUInt32(number))), leftPad(toString(number), 3, '0'), leftPad(toString(number), 3, '0'), number, toString(number) FROM numbers(1000);
 
 SELECT 'UUID',
        countIf(explain LIKE '%ilter column:%u = %000000000042%')
@@ -100,6 +100,15 @@ FROM (
     INNER JOIN prop_nopk_types_big AS b ON s.fs = b.fs
 );
 
+SELECT 'wide FixedString',
+       countIf(explain LIKE '%ilter column:%wfs = %042%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_nopk_types_small WHERE wfs = '042') AS s
+    INNER JOIN prop_nopk_types_big AS b ON s.wfs = b.wfs
+);
+
 SELECT 'Nullable',
        countIf(explain LIKE '%ilter column:%n = 42%')
 FROM (
@@ -125,6 +134,8 @@ SELECT 'types correctness',
         INNER JOIN prop_nopk_types_big AS b ON s.ip = b.ip),
        (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE fs = '042') AS s
         INNER JOIN prop_nopk_types_big AS b ON s.fs = b.fs),
+       (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE wfs = '042') AS s
+        INNER JOIN prop_nopk_types_big AS b ON s.wfs = b.wfs),
        (SELECT count() FROM (SELECT * FROM prop_nopk_types_small WHERE n = 42) AS s
         INNER JOIN prop_nopk_types_big AS b ON s.n = b.n);
 

@@ -96,9 +96,10 @@ std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target
     return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
 }
 
-/// A fixed-size comparison costs a fraction of what any join algorithm spends per row, so a copy
-/// that filters nothing is a rounding error. A set lookup is an order of magnitude more, so it has
-/// to earn its place by pruning the primary key instead of being evaluated over the whole target
+/// A comparison of a fixed-size key of at most 32 bytes costs a fraction of what any join algorithm
+/// spends per row, so a copy that filters nothing is a rounding error. A wider key or a set lookup
+/// costs more, so it has to earn its place by pruning the primary key instead of being evaluated
+/// over the whole target
 bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
 {
     if (atom->function_base->getName() == "in")
@@ -109,7 +110,8 @@ bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
         if (child->type != ActionsDAG::ActionType::INPUT)
             continue;
         const auto key_type = removeNullable(removeLowCardinality(child->result_type));
-        if (!key_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        /// a nonselective copy on a `FixedString(256)` probe side costs 18%, on `FixedString(32)` 9%, on `UInt64` 7%
+        if (!key_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() || key_type->getSizeOfValueInMemory() > 32)
             return false;
     }
     return true;
