@@ -144,13 +144,11 @@ ch_cc_library(
     }) + [
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_librdkafka//:_rdkafka",
-        "@clickhouse_openldap//:_ldap",
         "@clickhouse_silk//:_silk_fibers",
     ] + [
         "//base/glibc-compatibility",
         "//src:dbms__compile_0",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
-        "//src/Common/mysqlxx",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_grpc//:grpc",
         "@clickhouse_llvm_project//:clang_rt_builtins",
