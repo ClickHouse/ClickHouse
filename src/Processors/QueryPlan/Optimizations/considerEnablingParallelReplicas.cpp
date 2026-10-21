@@ -896,6 +896,7 @@ void considerEnablingParallelReplicas(
     // optimized like any other (`DelayedMaterializingCTEsStep::optimizePlans`) and switching it would
     // replace the very step that fills the CTE, exactly as for `CreatingSetStep`.
     bool plan_is_simple_enough = true;
+    bool has_trimmed_read = false;
     String unsupported_steps;
     traverseQueryPlan(
         stack,
@@ -910,6 +911,8 @@ void considerEnablingParallelReplicas(
             if (!step_is_supported)
                 unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
             plan_is_simple_enough &= step_is_supported;
+            if (const auto * read = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get()))
+                has_trimmed_read |= read->hasTrimmedRangesForOffset();
         });
     if (!plan_is_simple_enough)
     {
@@ -1006,6 +1009,17 @@ void considerEnablingParallelReplicas(
                 min_bytes_per_replica);
             return;
         }
+    }
+
+    /// The replicas plan is built separately and keeps the original offset, so a trimmed analysis would make
+    /// it skip the same rows a second time. `transplantAnalysisToAllReads` hands every read its analysis, so
+    /// this holds for any read of the plan, not only the one matched here.
+    if (has_trimmed_read)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Index analysis has leading granules trimmed for OFFSET and cannot be reused. Skipping optimization");
+        return;
     }
 
     /// The boundary is where the replicas' share of the work ends: `replicas_plan_boundary` in the replicas plan,
