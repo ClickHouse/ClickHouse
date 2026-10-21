@@ -1843,10 +1843,28 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    if (need_render_progress_table && tty_buf)
+    auto handle_exception = [this]
     {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    };
+
+    try
+    {
+        if (need_render_progress_table && tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.clearTableOutput(*tty_buf, lock);
+        }
+    }
+    catch (...)
+    {
+        /// The terminal may be gone, e.g. a closed session of the client embedded into the server.
+        handle_exception();
     }
 
     /// Order is important: format, compression, file
@@ -1860,12 +1878,7 @@ void ClientBase::resetOutput()
     {
         /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
         /// as well as cleaning other output related setup
-        if (!have_error)
-        {
-            client_exception
-                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
-            have_error = true;
-        }
+        handle_exception();
     }
 
     output_format.reset();
