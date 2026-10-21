@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsUInt64 azure_min_upload_part_size;
     extern const SettingsUInt64 azure_max_upload_part_size;
     extern const SettingsUInt64 azure_max_single_part_copy_size;
+    extern const SettingsUInt64 azure_max_put_blob_from_url_size;
     extern const SettingsNonZeroUInt64 azure_max_blocks_in_multipart_upload;
     extern const SettingsUInt64 azure_max_unexpected_write_error_retries;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
@@ -649,6 +650,16 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
+void RequestSettings::validateCopySettings() const
+{
+    if (max_put_blob_from_url_size > MAX_PUT_BLOB_FROM_URL_SIZE)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_put_blob_from_url_size ({}) can't be greater than the {} that one Put Blob From URL "
+            "request accepts",
+            ReadableSize(max_put_blob_from_url_size), ReadableSize(MAX_PUT_BLOB_FROM_URL_SIZE));
+}
+
 void RequestSettings::validateUploadSettings() const
 {
     if (max_blocks_in_multipart_upload == 0)
@@ -724,6 +735,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->sdk_retry_initial_backoff_ms = query_settings[Setting::azure_sdk_retry_initial_backoff_ms];
     settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
     settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
+    settings->max_put_blob_from_url_size = query_settings[Setting::azure_max_put_blob_from_url_size];
 
     return settings;
 }
@@ -737,7 +749,10 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
     /// A configured endpoint takes priority over the backup setting, ...
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
     if (endpoint_settings)
+    {
         settings->use_native_copy = endpoint_settings->use_native_copy;
+        settings->max_put_blob_from_url_size = endpoint_settings->max_put_blob_from_url_size;
+    }
 
     /// ... except that the backup setting can always veto native copy.
     if (!use_native_copy)
@@ -752,6 +767,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->max_put_blob_from_url_size
+        = config.getUInt64(config_prefix + ".max_put_blob_from_url_size", settings_ref[Setting::azure_max_put_blob_from_url_size]);
     settings->read_only = config.getBool(config_prefix + ".readonly", false);
 
     settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref[Setting::azure_max_single_part_upload_size]);

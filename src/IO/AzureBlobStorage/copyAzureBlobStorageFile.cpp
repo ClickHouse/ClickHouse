@@ -49,13 +49,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// The largest object copied with one `Put Blob From URL`. That request is synchronous: the service copies the
-    /// whole object before it answers, and the thread that sent it waits meanwhile. Azure accepts a source of up to
-    /// 5000 MiB (https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob-from-url), and this stays well
-    /// below it so that one object cannot hold a backup thread for minutes. A larger object is copied through the
-    /// server, as before.
-    constexpr size_t MAX_UPLOAD_FROM_URI_SIZE = 500ULL * 1024 * 1024;
-
     class UploadHelper
     {
     public:
@@ -415,6 +408,8 @@ void copyAzureBlobStorageFile(
 
     if (settings->use_native_copy)
     {
+        settings->validateCopySettings();
+
         /// Do native copy
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
@@ -458,10 +453,11 @@ void copyAzureBlobStorageFile(
                     /// the asynchronous request used here, takes a credential for the source only in a shared access
                     /// signature of its URL, which a copy between the accounts of two services does not have, so the
                     /// service refuses such a copy with 401. `Put Blob From URL` is a server-side copy too and it is
-                    /// accepted for the same source, so retry the copy with it before giving up on the server-side
-                    /// copy: the fallback at the end of this function reads the whole object through the server and
-                    /// holds `max_inflight_parts_for_one_file` of its parts in memory, which is what exhausts the
-                    /// memory of a server that restores many large objects at once.
+                    /// accepted for the same source, so an object of up to `max_put_blob_from_url_size` is copied
+                    /// with it before giving up on the server-side copy: the fallback at the end of this function
+                    /// reads the whole object through the server and holds `max_inflight_parts_for_one_file` of its
+                    /// parts in memory, which is what exhausts the memory of a server that restores many large objects
+                    /// at once. That limit is 0 by default, because `Put Blob From URL` is synchronous.
                     try
                     {
                         Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
@@ -509,8 +505,9 @@ void copyAzureBlobStorageFile(
                         /// differs from the refused request in nothing else. Any other error means the copy itself
                         /// cannot be done, and `Put Blob From URL` would be refused in the same way. An object that
                         /// request does not take is left to the fallback below.
-                        if (e.StatusCode != Azure::Core::Http::HttpStatusCode::Unauthorized
-                            || size > MAX_UPLOAD_FROM_URI_SIZE)
+                        if (!settings->max_put_blob_from_url_size
+                            || e.StatusCode != Azure::Core::Http::HttpStatusCode::Unauthorized
+                            || size > settings->max_put_blob_from_url_size)
                             throw;
 
                         /// Kept to be raised again if the retry fails, see below.

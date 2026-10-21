@@ -649,6 +649,18 @@ The maximum size of object to upload using singlepart upload to Azure blob stora
 The maximum size of object to copy using single part copy to Azure blob storage.
 )", 0, \
         {"24.2", 256*1024*1024, 256*1024*1024, "The maximum size of object to copy using single part copy to Azure blob storage."}) \
+    DECLARE(UInt64, azure_max_put_blob_from_url_size, 0, R"(
+The maximum size of object to copy with one `Put Blob From URL` request when a server-side copy to Azure blob
+storage was refused with `401`. `0` disables it and copies such an object through the server.
+
+A server-side copy between two storage accounts is refused when the destination service may not read the
+source, and the copy then reads the object through the server, holding
+`azure_max_inflight_parts_for_one_file` of its parts in memory. `Put Blob From URL` is accepted for such a
+source, but it is synchronous: the service copies the whole object before it answers and the thread that sent
+the request waits meanwhile, so this limits how long one object may hold that thread. A value above the
+5000 MiB that the request itself accepts is rejected
+(https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob-from-url).
+)", 0) \
     DECLARE(UInt64, s3_max_single_read_retries, S3::DEFAULT_MAX_SINGLE_READ_TRIES, R"(
 The maximum number of retries during single S3 read.
 )", 0) \

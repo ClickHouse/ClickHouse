@@ -24,6 +24,10 @@ struct Settings;
 namespace AzureBlobStorage
 {
 
+/// The largest source Azure accepts for one `Put Blob From URL`,
+/// https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob-from-url
+inline constexpr size_t MAX_PUT_BLOB_FROM_URL_SIZE = 5000ULL * 1024 * 1024;
+
 struct RequestSettings
 {
     RequestSettings() = default;
@@ -46,6 +50,7 @@ struct RequestSettings
     size_t sdk_retry_initial_backoff_ms = 10;
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
+    size_t max_put_blob_from_url_size = 0;
     bool check_objects_after_upload = false;
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
@@ -57,6 +62,10 @@ struct RequestSettings
     /// constructed, so it is never applied to endpoints that route to
     /// `WriteBufferFromAzureDataLakeStorage` (ADLS Gen2 / OneLake), which ignore these settings.
     void validateUploadSettings() const;
+
+    /// Rejects a `max_put_blob_from_url_size` above what the request itself accepts. Invoked by
+    /// `copyAzureBlobStorageFile`, the only consumer of that setting.
+    void validateCopySettings() const;
 };
 
 struct Endpoint
