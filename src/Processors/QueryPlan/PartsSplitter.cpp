@@ -21,7 +21,9 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <algorithm>
 #include <list>
+#include <ranges>
 
 #include <boost/functional/hash.hpp>
 
@@ -965,8 +967,8 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
 /// primary key intervals of the selected ranges, so we add back every granule with this property.
 ///
 /// Granules of a part are sorted by the primary key, so the granules of a part that intersect a given
-/// interval form one contiguous range of marks, found by two binary searches. The work is
-/// O(parts * intervals * log(marks in part)), and it does not depend on the number of rejected granules.
+/// interval form one contiguous range of marks, found by two binary searches. A part only visits the
+/// intervals that overlap its key range, and the work does not depend on the number of rejected granules.
 static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
@@ -1067,10 +1069,15 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         const size_t part_begin = candidate_ranges.front().begin;
         const size_t part_end = candidate_ranges.back().end;
 
+        /// The intervals are sorted and disjoint, so their upper bounds are sorted.
+        const Values part_begin_value = index_access.getValue(part_index, part_begin);
+        const auto first_interval = std::ranges::partition_point(
+            intervals, [&](const Interval & interval) { return compareValues(interval.upper, part_begin_value, false) < 0; });
+
         /// Ranges of marks whose granules intersect one of the intervals, sorted and disjoint.
         MarkRanges intersecting_ranges;
         size_t search_begin = part_begin;
-        for (const auto & interval : intervals)
+        for (const auto & interval : std::ranges::subrange(first_interval, intervals.end()))
         {
             /// Granule `m` intersects the interval if value(m) <= upper and value(m + 1) >= lower.
             /// The first such mark is the rightmost mark with value < lower, because the next mark has value >= lower.
@@ -1240,6 +1247,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.borders = split_ranges.borders;
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }

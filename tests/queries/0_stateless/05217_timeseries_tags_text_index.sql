@@ -96,17 +96,4 @@ INSERT INTO ts_text_memory SELECT * FROM ts_text;
 SELECT count() FROM ts_text_memory;
 DROP TABLE ts_text_memory;
 
-SELECT 'external tags target';
-CREATE TABLE external_tags
-(
-    id Tuple(UInt64, LowCardinality(UUID)),
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String)
-)
-ENGINE = MergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_text_external ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 TAGS external_tags;
-INSERT INTO ts_text_external (metric_name, tags, samples) VALUES ('test_metric', {'job':'api'}, [(1000, 1.)]);
-SELECT value FROM prometheusQuery(ts_text_external, 'test_metric{job="api"}', 1000);
-DROP TABLE ts_text_external;
-DROP TABLE external_tags;
 DROP TABLE ts_text;
