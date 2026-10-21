@@ -518,7 +518,11 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
     std::shared_ptr<const Parquet::FileFooter> footer;
     std::vector<Parquet::FileColumnChunksPtr> column_chunks;
-    auto metadata_cache = context->tryGetParquetMetadataCache();
+    /// Like the input format, uses the cache only if it's enabled. Otherwise, the footer parsed here is
+    /// still shared by the readers of all buckets.
+    ParquetMetadataCachePtr metadata_cache;
+    if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        metadata_cache = context->tryGetParquetMetadataCache();
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
         auto cache_key = ParquetMetadataCache::createKey(object_with_metadata->getPath(), object_with_metadata->metadata->etag);
