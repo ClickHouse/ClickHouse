@@ -160,8 +160,9 @@ public:
 
     /// Initiator's `EXECUTE AS ... SETTINGS` values as (name, `Field::dump`) pairs for secondary queries; nullopt = not sent.
     std::optional<std::vector<std::pair<String, String>>> execute_as_settings;
-    /// `execute_as_settings` as written after its presence byte, which the interserver secret hash also covers.
-    String serializeExecuteAsSettings() const;
+    /// The part of the interserver secret hash input that follows `initial_user`: the serialized external roles sent
+    /// with the query, `current_roles` and `execute_as_settings`.
+    String serializeRolesAndSettingsForInterserverHash(UInt64 protocol_revision, const String & external_roles) const;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.

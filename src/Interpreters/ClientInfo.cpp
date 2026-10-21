@@ -148,6 +148,16 @@ String detectClientAgent()
     return {};
 }
 
+void writeExecuteAsSettings(const std::vector<std::pair<String, String>> & settings, WriteBuffer & out)
+{
+    writeVarUInt(settings.size(), out);
+    for (const auto & [name, value] : settings)
+    {
+        writeStringBinary(name, out);
+        writeStringBinary(value, out);
+    }
+}
+
 }
 
 /// `source` identifies the `forwarded_for` value that was parsed, so direct changes to the public field
@@ -351,7 +361,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
         if (execute_as_settings.has_value())
         {
             writeBinary(static_cast<UInt8>(1), out);
-            writeString(serializeExecuteAsSettings(), out);
+            writeExecuteAsSettings(*execute_as_settings, out);
         }
         else
             writeBinary(static_cast<UInt8>(0), out);
@@ -359,17 +369,26 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 }
 
 
-String ClientInfo::serializeExecuteAsSettings() const
+String ClientInfo::serializeRolesAndSettingsForInterserverHash(UInt64 protocol_revision, const String & external_roles) const
 {
-    if (!execute_as_settings.has_value())
-        return {};
-
     WriteBufferFromOwnString out;
-    writeVarUInt(execute_as_settings->size(), out);
-    for (const auto & [name, value] : *execute_as_settings)
+    if (protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS)
     {
-        writeStringBinary(name, out);
-        writeStringBinary(value, out);
+        /// Each field is framed as on the wire, so no bytes can move from one field to the next and an absent list
+        /// never hashes like an empty one.
+        writeStringBinary(external_roles, out);
+        writeBinary(static_cast<UInt8>(current_roles.has_value()), out);
+        if (current_roles.has_value())
+            writeVectorBinary(*current_roles, out);
+        writeBinary(static_cast<UInt8>(execute_as_settings.has_value()), out);
+        if (execute_as_settings.has_value())
+            writeExecuteAsSettings(*execute_as_settings, out);
+    }
+    else
+    {
+        writeString(external_roles, out);
+        if (protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && current_roles.has_value())
+            writeVectorBinary(*current_roles, out);
     }
     return out.str();
 }

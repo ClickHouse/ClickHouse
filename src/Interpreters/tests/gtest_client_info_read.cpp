@@ -485,6 +485,54 @@ TEST(ClientInfoRead, ExecuteAsSettingNameSizeIsBounded)
     }
 }
 
+/// A relay on an unencrypted `<secret>` connection must not be able to move bytes between the hashed role and setting
+/// fields: e.g. turning `current_roles = []` (SET ROLE NONE) into an absent list would restore the default roles.
+TEST(ClientInfoInterserverHash, FieldsCannotBeShifted)
+{
+    using ExecuteAsSettings = std::vector<std::pair<String, String>>;
+    auto hash_input = [](const String & external_roles, std::optional<std::vector<String>> roles, std::optional<ExecuteAsSettings> settings)
+    {
+        ClientInfo info;
+        info.current_roles = std::move(roles);
+        info.execute_as_settings = std::move(settings);
+        return info.serializeRolesAndSettingsForInterserverHash(DBMS_TCP_PROTOCOL_VERSION, external_roles);
+    };
+
+    /// `external_roles` is the serialized list as sent; the receiver parses only the declared vector out of it.
+    const String no_external_roles(1, '\0');
+    const String inputs[] = {
+        hash_input(no_external_roles, std::nullopt, std::nullopt),
+        hash_input(no_external_roles, std::vector<String>{}, std::nullopt),
+        hash_input(no_external_roles, std::nullopt, ExecuteAsSettings{}),
+        hash_input(no_external_roles, std::vector<String>{}, ExecuteAsSettings{}),
+        hash_input(no_external_roles, std::vector<String>{"a"}, ExecuteAsSettings{}),
+        hash_input(no_external_roles, std::nullopt, ExecuteAsSettings{{"a", ""}}),
+        hash_input(no_external_roles + '\x01', std::nullopt, std::nullopt),
+        hash_input(no_external_roles + String("\x01\x00", 2), std::nullopt, std::nullopt),
+    };
+    for (size_t i = 0; i < std::size(inputs); ++i)
+        for (size_t j = i + 1; j < std::size(inputs); ++j)
+            EXPECT_NE(inputs[i], inputs[j]) << "cases " << i << " and " << j << " hash the same";
+}
+
+/// A peer below `EXECUTE_AS_SETTINGS` hashes the external roles and a present `current_roles` list as they are.
+TEST(ClientInfoInterserverHash, OlderRevisionsAreUnchanged)
+{
+    constexpr UInt64 before_execute_as_settings = DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS - 1;
+    const String external_roles = "\x01\x01x";
+    ClientInfo info;
+    EXPECT_EQ(info.serializeRolesAndSettingsForInterserverHash(before_execute_as_settings, external_roles), external_roles);
+
+    info.current_roles = std::vector<String>{"role_a"};
+    WriteBufferFromOwnString current_roles;
+    writeVectorBinary(*info.current_roles, current_roles);
+    current_roles.finalize();
+    EXPECT_EQ(info.serializeRolesAndSettingsForInterserverHash(before_execute_as_settings, external_roles), external_roles + current_roles.str());
+    EXPECT_EQ(
+        info.serializeRolesAndSettingsForInterserverHash(DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES - 1, external_roles),
+        external_roles);
+}
+
 /// An older peer can forward a server-initiated query whose context was never filled with a
 /// version, so `client_version_*` arrives as 0.0.0 over the wire and `read` overwrites the seed
 /// taken from the session. `setClientVersionFromConnectionIfUnknown` must then restore the peer's
