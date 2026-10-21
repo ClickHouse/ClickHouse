@@ -36,7 +36,7 @@ String transpilePolyglotToClickHouse(
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
         "Polyglot SQL transpiler is not available. "
-        "Rust code or polyglot itself may be disabled. Use another dialect!");
+        "Rust code or polyglot itself may be disabled. Use another dialect.");
 #else
     /// The transpiler must receive the whole foreign query at once, including any inline
     /// `INSERT ... VALUES`/`FORMAT` data (which it rewrites as well), because it cannot know where
