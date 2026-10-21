@@ -43,7 +43,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    textual_hdrs = ["include/aws/http/private/hpack_header_static_table.def"],
+    private_hdrs = ["include/aws/http/private/hpack_header_static_table.def"],
     deps = [
         "@clickhouse_aws_c_io//:aws_c_io",
         "@clickhouse_aws_c_common//:aws_c_common",
