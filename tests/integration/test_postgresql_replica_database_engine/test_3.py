@@ -151,6 +151,39 @@ def test_table_override(started_cluster):
     )
 
 
+def test_replica_identity_index_column_order(started_cluster):
+    table = "test_replica_identity_index_column_order"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (b integer NOT NULL, a integer NOT NULL, z integer NOT NULL, value text)""",
+    )
+    pg_manager.execute(f"CREATE UNIQUE INDEX {table}_idx ON {table} (z, b, a)")
+    pg_manager.execute(f"ALTER TABLE {table} REPLICA IDENTITY USING INDEX {table}_idx")
+    pg_manager.execute(f"INSERT INTO {table} VALUES (1, 2, 3, 'x')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table}'"],
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="z",
+    )
+
+    assert (
+        instance.query(
+            f"SELECT sorting_key FROM system.tables WHERE database = 'test_database' AND name = '{table}'"
+        ).strip()
+        == "z, b, a"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_materialized_view(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(

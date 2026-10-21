@@ -533,7 +533,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
             "and t.relnamespace = {} "
             "and ix.indisreplident = 't' " /// index is is replica identity index
-            "ORDER BY a.attname", /// column name
+            "ORDER BY array_position(ix.indkey, a.attnum)", /// in the order of the index columns
             quoteStringPostgreSQL(postgres_table),
             /// The same schema the columns above were taken from - see the comment on `where`. Resolving the
             /// replica identity in a different schema than the physical columns would describe two relations.
