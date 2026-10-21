@@ -94,7 +94,10 @@ public:
     /// Validate a full codec expression given as a string, e.g. "ZSTD(3)" or "Delta, LZ4", without a column
     /// data type. This is the form stored in the codec-valued MergeTree settings (`marks_compression_codec`,
     /// `primary_key_compression_codec`, `default_compression_codec`). The suspicious-codec sanity checks do not apply to this form.
-    void validateCodecString(const String & compression_codec, const CodecValidationSettings & validation_settings) const;
+    /// `allow_legacy_syntax` for a value re-derived from stored metadata, which an earlier version
+    /// may have written as a function call.
+    void validateCodecString(
+        const String & compression_codec, const CodecValidationSettings & validation_settings, bool allow_legacy_syntax = false) const;
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should

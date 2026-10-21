@@ -3,6 +3,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 ASTNameWithParameters::ASTNameWithParameters(String name_, ASTs parameters_)
@@ -49,6 +51,22 @@ void ASTNameWithParameters::readJSON(const Poco::JSON::Object & json)
     /// `LZ4()` parses as `LZ4`, so an empty list is dropped to keep the tree hash of the parsed form.
     if (auto parameters = r.readChildOfType<ASTExpressionList>("parameters"); parameters && !parameters->children.empty())
         children.push_back(std::move(parameters));
+}
+
+void rejectLegacyNameSyntax(const IAST & ast)
+{
+    checkStackSize();
+
+    if (const auto * name = ast.as<ASTNameWithParameters>(); name && name->legacy_syntax)
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "'{}' is a codec, statistics or index type name, not a function call: a second parameter list, "
+            "`IGNORE NULLS` / `RESPECT NULLS` and `OVER` are not allowed", name->name);
+
+    for (const auto & child : ast.children)
+    {
+        if (child)
+            rejectLegacyNameSyntax(*child);
+    }
 }
 
 void ASTNameWithParameters::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

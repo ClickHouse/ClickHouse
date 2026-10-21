@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- 25.10 refuses to create a table with statistics without it; on the upgraded server
+                 it is an alias of `allow_statistics`, which is on by default. -->
+            <allow_experimental_statistics>1</allow_experimental_statistics>
+        </default>
+    </profiles>
+</clickhouse>

@@ -39,6 +39,10 @@ bool validateCreateIndexQuery(const ASTCreateIndexQuery & query, const ContextPt
         }
     }
 
+    /// Only a definition written here and now is rejected; a replay carries one an earlier version accepted.
+    if (!context->isDDLOrOnClusterInternal() && !context->isRecoveryFromStoredMetadata())
+        rejectLegacyNameSyntax(query);
+
     // Noop if allow_create_index_without_type = true. throw otherwise
     if (!query.index_decl->as<ASTIndexDeclaration>()->getType())
     {

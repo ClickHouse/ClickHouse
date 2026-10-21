@@ -100,10 +100,12 @@ void CompressionCodecFactory::validateCodec(
 }
 
 void CompressionCodecFactory::validateCodecString(
-    const String & compression_codec, const CodecValidationSettings & validation_settings) const
+    const String & compression_codec, const CodecValidationSettings & validation_settings, bool allow_legacy_syntax) const
 {
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    if (!allow_legacy_syntax)
+        rejectLegacyNameSyntax(*ast);
     checkCodecChainIsNotColumnLevelOnly(ast);
 
     validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);

@@ -14,6 +14,9 @@ class ASTNameWithParameters : public IAST
 public:
     String name;
 
+    /// Before 26.11 it was parsed as ASTFunction, hence it may have some garbage like IGNORE NULLS/RESPECT NULLS/OVER/TRIM
+    bool legacy_syntax = false;
+
     ASTNameWithParameters() = default;
     explicit ASTNameWithParameters(String name_, ASTs parameters_ = {});
 
@@ -28,5 +31,9 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+/// Throws when a name in `ast` came from the legacy function syntax. Called for a new definition only:
+/// a stored one must keep loading whatever an earlier version accepted.
+void rejectLegacyNameSyntax(const IAST & ast);
 
 }

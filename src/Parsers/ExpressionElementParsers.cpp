@@ -977,6 +977,23 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+namespace
+{
+
+/// `(a, b)` at `pos`, which must be on the opening bracket.
+bool parseParameterList(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ++pos;
+    if (!ParserExpressionList(false).parse(pos, node, expected))
+        return false;
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+    return true;
+}
+
+}
+
 bool ParserNameWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr name;
@@ -984,17 +1001,42 @@ bool ParserNameWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     ASTPtr parameters;
+    bool legacy_syntax = false;
+
     if (pos->type == TokenType::OpeningRoundBracket)
     {
-        ++pos;
-        if (!ParserExpressionList(false).parse(pos, parameters, expected))
+        if (!parseParameterList(pos, parameters, expected))
             return false;
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
+
+        /// Parametric call form `name(x)(y)` is legacy
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            parameters.reset();
+            if (!parseParameterList(pos, parameters, expected))
+                return false;
+            legacy_syntax = true;
+        }
     }
 
-    node = make_intrusive<ASTNameWithParameters>(getIdentifierName(name), parameters ? std::move(parameters->children) : ASTs{});
+    /// ... and the modifiers of an aggregate or window call, which nothing ever read.
+    if (ParserKeyword(Keyword::RESPECT_NULLS).ignore(pos, expected) || ParserKeyword(Keyword::IGNORE_NULLS).ignore(pos, expected))
+        legacy_syntax = true;
+    if (ParserKeyword(Keyword::OVER).ignore(pos, expected))
+    {
+        ASTPtr window;
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            if (!ParserWindowDefinition().parse(pos, window, expected))
+                return false;
+        }
+        else if (!ParserIdentifier().parse(pos, window, expected))
+            return false;
+        legacy_syntax = true;
+    }
+
+    auto result = make_intrusive<ASTNameWithParameters>(getIdentifierName(name), parameters ? std::move(parameters->children) : ASTs{});
+    result->legacy_syntax = legacy_syntax;
+    node = std::move(result);
     return true;
 }
 
