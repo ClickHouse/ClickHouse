@@ -15,6 +15,13 @@ SELECT tuple((1., 2.)::Point)::Tuple(MultiPoint);
 SELECT map('a', [(0., 0.), (1., 1.)]::LineString)::Map(String, MultiLineString);
 SELECT CAST([[(0., 0.)]]::Polygon::Dynamic AS MultiPolygon);
 
+-- Nullable and Variant elements of an Array.
+SELECT [(1., 2.)::Nullable(Point)]::Array(MultiPoint);
+SELECT [NULL::Nullable(Point)]::Array(MultiPoint); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT CAST([[[(0., 0.)]]::Polygon::Variant(Polygon, MultiPolygon), [[[(1., 1.)]], [[(2., 2.)]]]::MultiPolygon::Variant(Polygon, MultiPolygon)] AS Array(MultiPolygon));
+SELECT CAST([[[(0., 0.)]]::Polygon::Variant(Polygon, String)] AS Array(MultiPolygon)); -- { serverError TYPE_MISMATCH }
+SELECT CAST([[1]::Variant(Array(UInt8), Array(String))] AS Array(Array(UInt8))); -- { serverError TYPE_MISMATCH }
+
 DROP TABLE IF EXISTS t_geo_promotion_variant;
 CREATE TABLE t_geo_promotion_variant (id UInt32, g Variant(Polygon, MultiPolygon)) ENGINE = Memory;
 INSERT INTO t_geo_promotion_variant VALUES (1, [[(0., 0.)]]::Polygon), (2, [[[(1., 1.)]], [[(2., 2.)]]]::MultiPolygon);

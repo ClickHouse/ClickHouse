@@ -998,6 +998,23 @@ bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataTyp
     if (isGeometryToMultiGeometry(from, to))
         return true;
 
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+        return isGeometryToMultiGeometryUnderArrays(*from_nullable->getNestedType(), to);
+
+    /// Some alternative is promoted, and every other one already has the depth of `to`.
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(&from))
+    {
+        bool has_promoted_alternative = false;
+        for (const auto & alternative : from_variant->getVariants())
+        {
+            if (isGeometryToMultiGeometryUnderArrays(*alternative, to))
+                has_promoted_alternative = true;
+            else if (!canHaveSameNumberOfDimensions(*alternative, to))
+                return false;
+        }
+        return has_promoted_alternative;
+    }
+
     const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
     const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
     return from_array && to_array && isGeometryToMultiGeometryUnderArrays(*from_array->getNestedType(), *to_array->getNestedType());
