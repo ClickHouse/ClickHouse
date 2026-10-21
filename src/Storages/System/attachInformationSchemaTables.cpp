@@ -51,6 +51,22 @@ constexpr unsigned char collations[] = {
 #embed "information_schema/collations.sql"
 };
 
+constexpr unsigned char user_privileges[] = {
+#embed "information_schema/user_privileges.sql" /// MySQL-specific
+};
+
+constexpr unsigned char schema_privileges[] = {
+#embed "information_schema/schema_privileges.sql" /// MySQL-specific
+};
+
+constexpr unsigned char table_privileges[] = {
+#embed "information_schema/table_privileges.sql" /// MySQL-specific
+};
+
+constexpr unsigned char column_privileges[] = {
+#embed "information_schema/column_privileges.sql" /// MySQL-specific
+};
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
 static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::span<const unsigned char> query_)
@@ -108,6 +124,10 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "engines", engines);
     createInformationSchemaView(context, information_schema_database, "character_sets", character_sets);
     createInformationSchemaView(context, information_schema_database, "collations", collations);
+    createInformationSchemaView(context, information_schema_database, "user_privileges", user_privileges);
+    createInformationSchemaView(context, information_schema_database, "schema_privileges", schema_privileges);
+    createInformationSchemaView(context, information_schema_database, "table_privileges", table_privileges);
+    createInformationSchemaView(context, information_schema_database, "column_privileges", column_privileges);
 }
 
 }

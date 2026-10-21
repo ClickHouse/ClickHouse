@@ -19,7 +19,6 @@
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
@@ -351,10 +350,6 @@ std::optional<PreformattedMessage> getReasonCascadesCannotDistribute(const IQuer
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
         sorting_step && sorting_step->getType() != SortingStep::Type::Full)
         return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer supports only full sorting steps");
-
-    /// `WITH FILL` is not supported yet.
-    if (typeid_cast<const FillingStep *>(&step))
-        return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer does not support WITH FILL");
 
     return std::nullopt;
 }
