@@ -1154,7 +1154,8 @@ Possible values:
 Enables or disables automatic [PREWHERE](/reference/statements/select/prewhere) optimization in [SELECT](/reference/statements/select/index) queries with [FINAL](/reference/statements/select/from#final-modifier) modifier.
 
 Only conditions that depend on the sorting key alone and are deterministic within the query are moved,
-so the result of `FINAL` is not affected.
+so the result of `FINAL` is not affected. For [GraphiteMergeTree](/reference/engines/table-engines/mergetree-family/graphitemergetree)
+only the path column counts, because `FINAL` rolls up rows with different times into one row.
 
 Works only for [*MergeTree](/reference/engines/table-engines/mergetree-family/index) tables.
 
