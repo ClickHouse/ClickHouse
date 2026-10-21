@@ -328,8 +328,6 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// preserved input (`addSortingForMergeJoin`), which `findReadingStep` will not descend
     /// through. In either case deferring would silently disable both optimizations.
     /// See issues #110662 and #109216.
-    ///
-    /// Parallel-replica coordination is handled inside `shouldSkipTopKAboveMergeTreeInput`.
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join
@@ -338,8 +336,9 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
         && !joinMayHaveDelayedBlocks(*join_node->step)
         && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
+    /// only the parallel replicas check, the block below decides whether pass 2 reads in order
     if (shouldSkipTopKAboveMergeTreeInput(
-            *preserved_input_node, *sort_step, description, n, second_pass_can_apply))
+            *preserved_input_node, *sort_step, description, n, /*defer_to_read_in_order=*/ false))
         return 0;
     if (second_pass_can_apply)
     {
