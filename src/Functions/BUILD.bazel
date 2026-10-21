@@ -950,6 +950,7 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
+        "//src:clickhouse_common_io__compile_0",
         "//contrib/cityhash102:_cityhash",
         "//contrib/libfarmhash:_farmhash",
         "//contrib/libmetrohash:_metrohash",

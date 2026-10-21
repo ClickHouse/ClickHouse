@@ -554,7 +554,12 @@ ch_cc_library(
 )
 
 exports_files(
-    ["IO.h"],
+    [
+        "GeoBbox.h",
+        "HilbertUtils.h",
+        "IO.h",
+        "WKB.h",
+    ],
     visibility = ["//src:__pkg__"],
 )
 
@@ -596,7 +601,10 @@ ch_cc_library(
         ["**/*.h"],
         exclude = [
             "CaresPTRResolver.h",
+            "GeoBbox.h",
+            "HilbertUtils.h",
             "IO.h",
+            "WKB.h",
             "LLVMCoverageMapping.h",
             "MachO.h",
             "**/tests/**/*.h",
@@ -611,7 +619,6 @@ ch_cc_library(
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     source_headers = False,
     deps = [
-        "//src/Functions:headers",
         "//src/Parsers:headers",
         "//src:headers",
         "//base:common",

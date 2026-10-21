@@ -1453,7 +1453,10 @@ ch_cc_library(
     hdrs = glob(
         ["IO/**/*.h"],
         exclude = _PRIVATE_IO_HEADERS,
-    ) + ["//src/Common:IO.h"],
+    ) + [
+        "//src/Common:IO.h",
+        "//src/Common:WKB.h",
+    ],
     additional_compiler_inputs = ["//bazel:gen/embedded/contrib/nlp-data/charset.zst"],
     clickhouse_code = True,
     implementation_deps = [
@@ -1463,7 +1466,6 @@ ch_cc_library(
         "//src/Common/ZooKeeper:headers",
         "//src/Compression:clickhouse_compression",
         "//src/Daemon:headers",
-        "//src/Functions:headers",
         "//src/Parsers:headers",
         "//src/TableFunctions:headers",
         "//base/poco/JSON:_poco_json",
@@ -1504,6 +1506,7 @@ ch_cc_library(
     source_headers = False,
     deps = [
         ":headers",
+        "//src/Functions:headers",
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
@@ -2608,7 +2611,10 @@ ch_cc_library(
         "//src/Common:Scheduler/Workload/WorkloadEntityDiskStorage.h",
         "//src/Common:Scheduler/Workload/WorkloadEntityKeeperStorage.h",
     ],
-    hdrs = _GENERATED_HDRS_1,
+    hdrs = _GENERATED_HDRS_1 + [
+        "//src/Common:GeoBbox.h",
+        "//src/Common:HilbertUtils.h",
+    ],
     additional_compiler_inputs = [
         "//bazel:gen/embedded/programs/keeper/dashboard.html",
         "//bazel:gen/embedded/programs/server/binary.html",

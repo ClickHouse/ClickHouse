@@ -13,7 +13,7 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src:dbms",
-        "//src/Common:Common",
+        "//src/Common",
         "//src/Functions:clickhouse_functions_obj__compile_0",
     ],
     link_runtime = True,

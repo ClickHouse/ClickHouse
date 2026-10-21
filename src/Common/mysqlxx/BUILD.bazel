@@ -110,6 +110,6 @@ ch_cc_library(
         "@clickhouse_cctz//:tzdata",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
-        "//src/Common:Common",
+        "//src/Common",
     ],
 )
