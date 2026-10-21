@@ -55,6 +55,13 @@ same result
 1
 same result
 50
+-- a subquery that the replica plans as a query of its own
+1
+same result
+50
+2
+same result
+50
 -- hive partitioning
 1
 same result

@@ -73,6 +73,16 @@ echo "-- the table in a subquery is read in full by every replica"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50)"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50)" "parallel_replicas_allow_in_with_subquery = 0"
 
+# No primary key, so the IN set does not prune `mt` and the followers read it too.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY tuple();
+    INSERT INTO mt SELECT number FROM numbers(600);
+"
+
+echo "-- a subquery that the replica plans as a query of its own"
+check "SELECT count() FROM t WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)"
+check "SELECT count() FROM mt WHERE a IN (SELECT a FROM t WHERE a < 50 UNION ALL SELECT a FROM t WHERE a < 50)" "parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1"
+
 echo "-- hive partitioning"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE th (a UInt64, p UInt8) ENGINE = S3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_hive/', format = 'Parquet', partition_strategy = 'hive')
@@ -98,5 +108,6 @@ $CLICKHOUSE_CLIENT -q "
     DROP DATABASE ${CLICKHOUSE_DATABASE}_lazy;
     DROP VIEW v;
     DROP VIEW vn;
+    DROP TABLE mt;
     DROP USER u_${CLICKHOUSE_DATABASE};
 "

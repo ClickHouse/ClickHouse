@@ -215,6 +215,8 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    /// See `SelectQueryOptions::is_secondary_query_root`.
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 

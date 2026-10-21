@@ -771,7 +771,7 @@ bool StorageObjectStorage::isReadOnReplicaForInitiator(const ContextPtr & contex
         return false;
 
     const auto * query_node = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
-    if (!query_node || query_node->isSubquery() || query_node->isCTE())
+    if (!query_info.is_secondary_query_root || !query_node)
         return false;
 
     const auto * table_expression = query_node->getJoinTreeNode().get();
