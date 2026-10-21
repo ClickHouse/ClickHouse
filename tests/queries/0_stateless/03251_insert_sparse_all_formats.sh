@@ -16,7 +16,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # round-trip for the SQLite format.
 formats=$($CLICKHOUSE_CLIENT --query "
     SELECT name FROM system.formats
-    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON', 'SQLite')
+    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON', 'SQLite', 'OpenMetrics')
     ORDER BY name FORMAT TSV
 ")
 
