@@ -150,6 +150,7 @@ public:
         /// Settings to flush temporary data to the filesystem (external aggregation).
         /// 0 - do not use external aggregation.
         size_t max_bytes_before_external_group_by = 0;
+        size_t min_bytes_before_external_group_by = 0;
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
@@ -322,6 +323,7 @@ public:
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
+            size_t min_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
             size_t max_threads_,
@@ -407,6 +409,15 @@ public:
         AggregatedDataVariants & table,
         const std::vector<StagedChunkPtr> & chunks,
         std::atomic<bool> & is_cancelled,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
+    /// `drainStagedBatch` into the session's shared table, called under `pressure_sweep_mutex`.
+    /// A drain that throws midway (a memory limit hit while creating states, say) leaves keys
+    /// in the shared table whose states are null; the session is cancelled before the lock is
+    /// released, so no other producer drains into that table or writes it.
+    size_t drainStagedBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared,
+        const std::vector<StagedChunkPtr> & chunks,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
     /// A fresh drain destination of the session's method type, with one arena per bucket.
