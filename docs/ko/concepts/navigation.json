@@ -41,7 +41,7 @@
         {
           "group": "프로젝션",
           "pages": [
-            "ko/concepts/features/projections/projections",
+            "concepts/features/projections/projections",
             "ko/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
@@ -191,7 +191,7 @@
                 },
                 "ko/concepts/features/security/external-authenticators/http",
                 "ko/concepts/features/security/external-authenticators/kerberos",
-                "ko/concepts/features/security/external-authenticators/jwt"
+                "concepts/features/security/external-authenticators/jwt"
               ]
             }
           ]
@@ -219,7 +219,7 @@
               "group": "드라이버 및 인터페이스",
               "pages": [
                 "ko/concepts/features/interfaces/overview",
-                "ko/concepts/features/interfaces/http",
+                "concepts/features/interfaces/http",
                 "ko/concepts/features/interfaces/framing-formats",
                 "ko/concepts/features/interfaces/tcp",
                 "ko/concepts/features/interfaces/adbc",
