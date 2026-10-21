@@ -5042,7 +5042,6 @@ ch_cc_library(
     deps = [
         ":LLVMScalarOpts",
         ":LLVMInstCombine",
-        ":LLVMCGData",
         ":LLVMAnalysis",
         ":LLVMCore",
         ":LLVMProfileData",
