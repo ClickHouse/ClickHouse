@@ -126,19 +126,22 @@ ch_cc_library(
     ),
     hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + _LIBSSH_PUBLIC_C_HEADERS,
     copts = ["-w", "-std=gnu11"],
-    implementation_deps = (["@clickhouse_llvm_project//:libcxxabi_headers"]) + ["@clickhouse//contrib/libssh-cmake:libssh_config_headers"],
+    implementation_deps = [
+        "@clickhouse//contrib/libssh-cmake:libssh_config_headers",
+        "@clickhouse_openssl//:crypto",
+    ],
     includes = [
         "include",
         "config/contrib/libssh/include",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_openssl//:crypto"],
 )
 
 ch_cc_library(
