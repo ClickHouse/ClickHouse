@@ -1,0 +1,392 @@
+#include <gtest/gtest.h>
+
+#include <Columns/ColumnObject.h>
+#include <Common/tests/gtest_global_context.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/JSONPathValues.h>
+#include <Functions/JSONPathValuesExtractor.h>
+#include <Functions/JSONValueEnumerator.h>
+
+#include <vector>
+
+using namespace DB;
+
+namespace
+{
+
+String toHex(std::string_view value)
+{
+    static constexpr char digits[] = "0123456789abcdef";
+    String result(value.size() * 2, '\0');
+    for (size_t i = 0; i != value.size(); ++i)
+    {
+        const auto byte = static_cast<UInt8>(value[i]);
+        result[i * 2] = digits[byte >> 4];
+        result[i * 2 + 1] = digits[byte & 0x0F];
+    }
+    return result;
+}
+
+struct RejectingJSONValueConsumer
+{
+    struct PreparedPath
+    {
+    };
+
+    const PreparedPath * preparePath(std::string_view, const IDataType * = nullptr) { return &prepared_path; }
+
+    bool shouldConsumeValue(const PreparedPath &, const IDataType &)
+    {
+        ++value_checks;
+        return false;
+    }
+
+    void consumeSharedScalar(const PreparedPath &, BinaryTypeIndex, std::string_view) { ++consumed_values; }
+    void consumeValue(
+        const PreparedPath &,
+        const IDataType &,
+        std::string_view,
+        const ISerialization &,
+        const IColumn &,
+        size_t,
+        bool,
+        const FormatSettings &)
+    {
+        ++consumed_values;
+    }
+    void consumeNull(std::string_view, bool) {}
+    void setRow(size_t) {}
+    void finishRows(size_t) {}
+    JSONValueEnumerationState & getEnumerationState() { return enumeration_state; }
+
+    size_t value_checks = 0;
+    size_t consumed_values = 0;
+    PreparedPath prepared_path;
+    JSONValueEnumerationState enumeration_state;
+};
+
+struct CountingTokenConsumer
+{
+    void setRow(size_t) { }
+    void finishRows(size_t rows_) { rows = rows_; }
+    void addToken(std::string_view) { ++tokens; }
+
+    size_t rows = 0;
+    size_t tokens = 0;
+};
+}
+
+GTEST_TEST(JSONPathValues, SharedValuesAreRejectedBeforeDeserialization)
+{
+    const auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths = 0)");
+    auto column = type->createColumn();
+    column->insert(Object{{"array", Array{Field{1u}, Field{2u}}}, {"string", Field{"ignored"}}});
+
+    RejectingJSONValueConsumer consumer;
+    enumerateJSONValues(
+        assert_cast<const ColumnObject &>(*column),
+        assert_cast<const DataTypeObject &>(*type),
+        consumer);
+
+    EXPECT_EQ(consumer.value_checks, 2);
+    EXPECT_EQ(consumer.consumed_values, 0);
+}
+
+GTEST_TEST(JSONPathValues, TypedPathRegexpFilteringManyRows)
+{
+    using namespace JSONPathValues;
+
+    constexpr size_t rows = 1000;
+    const auto type = DataTypeFactory::instance().get(
+        "JSON(max_dynamic_paths = 0, request_id String, created_at String, message String, private_id String, ignored String)");
+    auto column = type->createColumn();
+    for (size_t row = 0; row != rows; ++row)
+    {
+        column->insert(
+            Object{
+                {"request_id", Field{"request"}},
+                {"created_at", Field{"time"}},
+                {"message", Field{"text"}},
+                {"private_id", Field{"private"}},
+                {"ignored", Field{"ignored"}},
+            });
+    }
+
+    const PathMatcher matcher({}, {"_id$", "_at$", "^message$"}, {}, {"^private_", "^internal_"});
+    CountingTokenConsumer consumer;
+    Extractor<CountingTokenConsumer> extractor(64, matcher, consumer);
+    enumerateJSONValues(assert_cast<const ColumnObject &>(*column), assert_cast<const DataTypeObject &>(*type), extractor);
+
+    EXPECT_EQ(consumer.rows, rows);
+    EXPECT_EQ(consumer.tokens, rows * 3);
+}
+
+GTEST_TEST(JSONPathValues, StableTokenBytes)
+{
+    using namespace JSONPathValues;
+
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto int64_type = std::make_shared<DataTypeInt64>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto array_type = std::make_shared<DataTypeArray>(int64_type);
+    const auto map_type = std::make_shared<DataTypeMap>(string_type, string_type);
+
+    EXPECT_EQ(toHex(encodePathTypePrefix("a", string_type)), "610000150000");
+    EXPECT_EQ(toHex(encodePathTypePrefix("n", int64_type)), "6e00000a0000");
+    EXPECT_EQ(toHex(encodePathTypePrefix("u", std::make_shared<DataTypeUInt64>())), "750000040000");
+    EXPECT_EQ(toHex(encodePathTypePrefix("b", DataTypeFactory::instance().get("Bool"))), "6200002d0000");
+    EXPECT_EQ(toHex(encodePathTypePrefix("array", array_type)), "617272617900001e0a0000");
+    EXPECT_EQ(toHex(encodePathTypePrefix("d", nullptr)), "6400000000");
+
+    String long_path_prefix(300, 'p');
+    long_path_prefix.append("\0\0\x15\0\0", 5);
+    EXPECT_EQ(encodePathTypePrefix(String(300, 'p'), string_type), long_path_prefix);
+
+    const auto complete = encodeValue("a", string_type, "x", 64);
+    ASSERT_TRUE(complete);
+    EXPECT_TRUE(complete->complete);
+    EXPECT_EQ(toHex(complete->token), "6100001500000178");
+    EXPECT_EQ(tryGetCompleteScalarValue(complete->token), "x");
+    EXPECT_FALSE(tryGetCompleteScalarValue(std::string_view{"\x01", 1}));
+
+    const auto truncated = encodeValue("a", string_type, "abcdef", 16, false);
+    ASSERT_TRUE(truncated);
+    EXPECT_FALSE(truncated->complete);
+    EXPECT_EQ(toHex(truncated->token), "61000015000002614792385a2986a0bc");
+    EXPECT_FALSE(encodeValue("a", string_type, "abcdefg", 14, false));
+
+    const auto positive_zero = encodeValue("f", float64_type, "0", 64);
+    const auto negative_zero = encodeValue("f", float64_type, "-0", 64);
+    ASSERT_TRUE(positive_zero);
+    ASSERT_TRUE(negative_zero);
+    EXPECT_EQ(toHex(positive_zero->token), "6600000e00000130");
+    EXPECT_EQ(toHex(negative_zero->token), "6600000e0000012d30");
+
+    const String array_prefix = encodePathTypePrefix("a", array_type);
+    const auto array_element = encodeValue(
+        array_prefix, "1", 64, true, Kind::ArrayElementComplete, Kind::ArrayElementTruncated);
+    ASSERT_TRUE(array_element);
+    EXPECT_EQ(toHex(array_element->token), "6100001e0a00000331");
+
+    const auto array_json_leaf = encodeValue(
+        encodePathTypePrefix("items[].price", array_type),
+        "10",
+        64,
+        true,
+        Kind::ScalarComplete,
+        Kind::ScalarTruncated);
+    ASSERT_TRUE(array_json_leaf);
+    EXPECT_EQ(toHex(array_json_leaf->token), "6974656d735b5d2e707269636500001e0a0000013130");
+
+    const auto truncated_array_element = encodeValue(
+        array_prefix, "abcdef", 17, false, Kind::ArrayElementComplete, Kind::ArrayElementTruncated);
+    ASSERT_TRUE(truncated_array_element);
+    EXPECT_EQ(toHex(truncated_array_element->token), "6100001e0a000004614792385a2986a0bc");
+
+    const String map_prefix = encodePathTypePrefix("m", map_type);
+    const auto map_entry = encodeMapEntry(map_prefix, std::string_view{"k\0x", 3}, "v", 64);
+    ASSERT_TRUE(map_entry);
+    EXPECT_EQ(toHex(map_entry->token), "6d00002715150000056b000178000076");
+    const auto validation = encodeDynamicValidation("d", 64);
+    ASSERT_TRUE(validation);
+    EXPECT_EQ(toHex(*validation), "640000000007");
+}
+
+GTEST_TEST(JSONPathValues, PreparedPathTypesRemainValidAcrossAlternatingValues)
+{
+    using namespace JSONPathValues;
+    struct Consumer
+    {
+        void addToken(std::string_view token) { tokens.emplace_back(token); }
+        std::vector<String> tokens;
+    } consumer;
+    const PathMatcher matcher({}, {}, {}, {});
+    Extractor<Consumer> extractor(64, matcher, consumer);
+    const FormatSettings settings;
+
+    for (size_t row = 0; row != 4; ++row)
+    {
+        for (const auto & path : {String(32, 'a'), String(32, 'b')})
+        {
+            const auto * prepared = extractor.preparePath(path);
+            ASSERT_NE(prepared, nullptr);
+            extractor.consumeSharedScalar(*prepared, BinaryTypeIndex::String, "value");
+
+            /// Use a new type on each iteration so cached dispatch must retain its own `DataTypePtr`.
+            const auto type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+            auto column = type->createColumn();
+            column->insert(Array{Field{Int64(42)}});
+            extractor.consumeValue(*prepared, *type, type->getName(), *type->getDefaultSerialization(), *column, 0, false, settings);
+
+            ASSERT_EQ(consumer.tokens.size(), 2);
+            EXPECT_EQ(consumer.tokens[0], encodeValue(path, std::make_shared<DataTypeString>(), "value", 64)->token);
+            EXPECT_EQ(consumer.tokens[1], encodeValue(
+                encodePathTypePrefix(path, type), "42", 64, true, Kind::ArrayElementComplete, Kind::ArrayElementTruncated)->token);
+            consumer.tokens.clear();
+        }
+    }
+}
+
+GTEST_TEST(JSONPathValues, NestedPreparationPreservesRowsAndEscapedPaths)
+{
+    using namespace JSONPathValues;
+    getContext();
+    struct Consumer
+    {
+        void setRow(size_t row_) { row = first_row + row_; }
+        void finishRows(size_t) {}
+        void addToken(std::string_view token) { tokens.emplace_back(row, token); }
+        size_t first_row = 0;
+        size_t row = 0;
+        std::vector<std::pair<size_t, String>> tokens;
+    };
+
+    for (const String type_name : {
+             "JSON(max_dynamic_paths = 0, items Array(Nullable(JSON(max_dynamic_paths = 0))))",
+             "JSON(max_dynamic_paths = 0)"})
+    {
+        const auto type = DataTypeFactory::instance().get(type_name);
+        auto column = type->createColumn();
+        for (size_t row = 0; row != 8; ++row)
+        {
+            const Object leaf{
+                {"value", row % 2 ? Field{"text"} : Field{Int64(row)}},
+                {"a[]", Field{"brackets"}},
+                {"a\\b", Field{"backslash"}},
+                {"a.b", Field{"dot"}},
+                {row % 2 ? "left" : "right", Object{{"inner", Object{{"inner", Field{Int64(row)}}}}}},
+            };
+            column->insert(Object{{"items", Array{Field{}, Field{leaf}, Field{leaf}}}, {"items[].value", Field{"literal"}}});
+        }
+
+        for (const String filter : {"", "items[].value", "items\\[\\].value", "items[].a\\[\\]", "items[].a\\\\b", "items[].a.b"})
+        {
+            const PathMatcher matcher(filter.empty() ? VectorWithMemoryTracking<String>{} : VectorWithMemoryTracking<String>{filter}, {}, {}, {});
+            Consumer together;
+            Extractor<Consumer> extractor(128, matcher, together);
+            enumerateJSONValues(assert_cast<const ColumnObject &>(*column), assert_cast<const DataTypeObject &>(*type), extractor);
+
+            Consumer separately;
+            for (size_t row = 0; row != column->size(); ++row)
+            {
+                separately.first_row = row;
+                Extractor<Consumer> row_extractor(128, matcher, separately);
+                enumerateJSONValues(assert_cast<const ColumnObject &>(*column), assert_cast<const DataTypeObject &>(*type), row_extractor, row, 1);
+            }
+            std::sort(together.tokens.begin(), together.tokens.end());
+            std::sort(separately.tokens.begin(), separately.tokens.end());
+            EXPECT_EQ(together.tokens, separately.tokens) << type_name << " filter=" << filter;
+            if (!filter.empty())
+                EXPECT_EQ(together.tokens.size(), filter == "items\\[\\].value" ? 8 : 16) << type_name << " filter=" << filter;
+        }
+    }
+}
+
+GTEST_TEST(JSONPathValues, EscapedComponentsPreserveOrdering)
+{
+    using namespace JSONPathValues;
+
+    const std::vector<String> values{
+        "",
+        String("\0", 1),
+        String("\0\0", 2),
+        String("\0\1", 2),
+        "a",
+        String("a\0", 2),
+        "aa",
+        "b",
+        String(300, 'p'),
+    };
+
+    for (const auto & lhs : values)
+    {
+        String encoded_lhs;
+        appendEscapedComponent(encoded_lhs, lhs);
+        ASSERT_TRUE(encoded_lhs.ends_with(std::string_view{"\0\0", 2}));
+        for (const auto & rhs : values)
+        {
+            String encoded_rhs;
+            appendEscapedComponent(encoded_rhs, rhs);
+            EXPECT_EQ(lhs < rhs, encoded_lhs < encoded_rhs);
+        }
+    }
+}
+
+GTEST_TEST(JSONPathValues, PathMatcherIncludesExactSubtrees)
+{
+    using namespace JSONPathValues;
+
+    const PathMatcher matcher(
+        {"items[].id", "payload-other", "payload.ids", "request_id", "request_id"},
+        {},
+        {},
+        {});
+
+    EXPECT_TRUE(matcher.shouldIndex("request_id"));
+    EXPECT_TRUE(matcher.shouldIndex("payload.ids"));
+    EXPECT_TRUE(matcher.shouldIndex("payload.ids.primary"));
+    EXPECT_TRUE(matcher.shouldIndex("items[].id"));
+    EXPECT_FALSE(matcher.shouldIndex("request"));
+    EXPECT_FALSE(matcher.shouldIndex("payload.identity"));
+    EXPECT_FALSE(matcher.shouldIndex("items[].name"));
+    EXPECT_TRUE(matcher.shouldIndex("payload-other"));
+
+    EXPECT_TRUE(matcher.shouldVisit("payload"));
+    EXPECT_TRUE(matcher.shouldVisit("payload.ids"));
+    EXPECT_TRUE(matcher.shouldVisit("items"));
+    EXPECT_TRUE(matcher.shouldVisit("items[]"));
+    EXPECT_FALSE(matcher.shouldVisit("message"));
+
+    EXPECT_EQ(
+        matcher.getIncludePaths(),
+        (VectorWithMemoryTracking<String>{"items[].id", "payload-other", "payload.ids", "request_id"}));
+}
+
+GTEST_TEST(JSONPathValues, PathMatcherIncludesRegexpsAndSkipsWin)
+{
+    using namespace JSONPathValues;
+
+    const PathMatcher matcher(
+        {"payload", "payload!"},
+        {"(?:^|\\.)(?:.*_id|.*_at)$", "(?:^|\\.)(?:.*_id|.*_at)$"},
+        {"payload.secret"},
+        {"private_"});
+
+    EXPECT_TRUE(matcher.shouldIndex("request_id"));
+    EXPECT_TRUE(matcher.shouldIndex("nested.created_at"));
+    EXPECT_TRUE(matcher.shouldIndex("payload.message"));
+    EXPECT_FALSE(matcher.shouldIndex("message"));
+    EXPECT_FALSE(matcher.shouldIndex("payload.secret"));
+    EXPECT_FALSE(matcher.shouldIndex("payload.secret.value"));
+    EXPECT_FALSE(matcher.shouldIndex("private_id"));
+
+    EXPECT_TRUE(matcher.shouldVisit("unmatched_parent"));
+    EXPECT_FALSE(matcher.shouldVisit("payload.secret"));
+    EXPECT_EQ(matcher.getIncludePathRegexps().size(), 1);
+
+    const PathMatcher ancestor_regexp_matcher({}, {}, {}, {"^container$"});
+    EXPECT_FALSE(ancestor_regexp_matcher.shouldIndex("container"));
+    EXPECT_TRUE(ancestor_regexp_matcher.shouldVisit("container"));
+    EXPECT_TRUE(ancestor_regexp_matcher.shouldIndex("container.value"));
+}
+
+GTEST_TEST(JSONPathValues, PathMatcherDistinguishesArrayJSONFromLiteralBrackets)
+{
+    using namespace JSONPathValues;
+
+    const String literal_path = escapeLiteralPath("items[].price");
+    EXPECT_EQ(literal_path, R"(items\[\].price)");
+
+    const PathMatcher structural_matcher({"items[].price"}, {}, {}, {});
+    EXPECT_TRUE(structural_matcher.shouldIndex("items[].price"));
+    EXPECT_FALSE(structural_matcher.shouldIndex(literal_path));
+
+    const PathMatcher literal_matcher({literal_path}, {}, {}, {});
+    EXPECT_FALSE(literal_matcher.shouldIndex("items[].price"));
+    EXPECT_TRUE(literal_matcher.shouldIndex(literal_path));
+}

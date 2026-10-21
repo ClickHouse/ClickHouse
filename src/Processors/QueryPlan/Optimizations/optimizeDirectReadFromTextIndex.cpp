@@ -402,7 +402,10 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             if (WhichDataType(node.result_type).isSet())
                 return convertSetColumnToAST(*node.column);
 
-            return make_intrusive<ASTLiteral>((*node.column)[0]);
+            return makeASTFunction(
+                "CAST",
+                make_intrusive<ASTLiteral>((*node.column)[0]),
+                make_intrusive<ASTLiteral>(node.result_type->getName()));
         }
 
         case ActionsDAG::ActionType::ALIAS:
@@ -462,10 +465,15 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_)
+    TextIndexDAGReplacer(
+        ActionsDAG & actions_dag_,
+        const TextIndexReadInfos & text_index_read_infos_,
+        bool direct_read_from_text_index_,
+        bool removes_filter_column_)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
+        , removes_filter_column(removes_filter_column_)
     {
         /// Register the text-index virtual column inputs that are already present in this DAG from a previous
         /// optimization pass. This prevents them from being re-added to `index_read_tasks` when the same DAG is processed again.
@@ -495,13 +503,19 @@ public:
         NodesReplacementMap replacements;
         std::unordered_set<const ActionsDAG::Node *> original_inputs(actions_dag.getInputs().begin(), actions_dag.getInputs().end());
         const auto * filter_node = filter_column_name.empty() ? nullptr : &actions_dag.findInOutputs(filter_column_name);
+        const auto * filter_predicate_node = filter_node;
+        while (filter_predicate_node && filter_predicate_node->type == ActionsDAG::ActionType::ALIAS)
+            filter_predicate_node = filter_predicate_node->children.front();
 
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
         for (const auto * node : nodes_ptrs)
         {
-            const auto * replaced_node = processFunctionNode(*node, context);
+            /// A removed filter only needs boolean semantics. Re-encoding the text-index `UInt8`
+            /// as `LowCardinality(UInt8)` rebuilds a two-value dictionary for every block.
+            const bool preserve_result_type = !removes_filter_column || node != filter_predicate_node;
+            const auto * replaced_node = processFunctionNode(*node, context, preserve_result_type);
             if (replaced_node != node)
                 replacements[node] = replaced_node;
         }
@@ -562,6 +576,7 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
+    bool removes_filter_column = false;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
@@ -654,7 +669,7 @@ private:
     }
 
     /// Returns the node replacing `function_node`, or `function_node` itself if it is not rewritten.
-    const ActionsDAG::Node * processFunctionNode(const ActionsDAG::Node & function_node, const ContextPtr & context)
+    const ActionsDAG::Node * processFunctionNode(const ActionsDAG::Node & function_node, const ContextPtr & context, bool preserve_result_type)
     {
         if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function || !function_node.function_base)
             return &function_node;
@@ -680,7 +695,7 @@ private:
             node = processTextIndexFunction(*node, selected_conditions, context);
 
         if (direct_read_from_text_index)
-            node = replaceFunctionsToVirtualColumns(*node, std::move(selected_conditions), context);
+            node = replaceFunctionsToVirtualColumns(*node, std::move(selected_conditions), context, preserve_result_type);
 
         return node;
     }
@@ -903,7 +918,8 @@ private:
     const ActionsDAG::Node * replaceFunctionsToVirtualColumns(
         const ActionsDAG::Node & function_node,
         std::vector<SelectedCondition> selected_conditions,
-        const ContextPtr & context)
+        const ContextPtr & context,
+        bool preserve_result_type)
     {
         std::erase_if(selected_conditions, [](const auto & condition) { return condition.virtual_column.name.empty(); });
         if (selected_conditions.empty())
@@ -928,12 +944,16 @@ private:
         if (!has_materialized_index)
             return &function_node;
 
+        /// A text-index virtual column cannot preserve NULL when the predicate is reused after filtering.
+        if (preserve_result_type && isNullableOrLowCardinalityNullable(function_node.result_type))
+            return &function_node;
+
         /// Convert up front: without an AST the optimization must be skipped, not registered with a different meaning.
         ASTPtr exact_default_expression;
         if (has_exact_search)
         {
-            exact_default_expression = convertNodeToAST(function_node);
-            if (!exact_default_expression)
+            auto exact_predicate_ast = convertNodeToAST(function_node);
+            if (!exact_predicate_ast)
             {
                 LOG_TRACE(
                     getLogger("optimizeDirectReadFromTextIndex"),
@@ -941,6 +961,14 @@ private:
                     function_node.result_name);
                 return &function_node;
             }
+
+            exact_default_expression = makeASTFunction(
+                "CAST",
+                makeASTFunction(
+                    "ifNull",
+                    std::move(exact_predicate_ast),
+                    make_intrusive<ASTLiteral>(Field(UInt8(0)))),
+                make_intrusive<ASTLiteral>(String("UInt8")));
         }
 
         auto add_condition_to_input = [&](SelectedCondition & condition)
@@ -996,7 +1024,7 @@ private:
         /// If the type of original function does not match the type of replacement,
         /// add a cast to the replacement to match the expected type (e.g. hasAnyTokens('hello world', toNullable('world'))).
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
-        if (!function_node.result_type->equals(*result_node->result_type))
+        if (preserve_result_type && !function_node.result_type->equals(*result_node->result_type))
             result_node = &actions_dag.addCast(*result_node, function_node.result_type, "", context);
 
         /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
@@ -1013,9 +1041,10 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     ActionsDAG & filter_dag,
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
-    bool direct_read_from_text_index)
+    bool direct_read_from_text_index,
+    bool removes_filter_column)
 {
-    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
+    TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, removes_filter_column);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
     if (!result)
         return nullptr;
@@ -1104,7 +1133,7 @@ static bool applyTextIndexInject(
         const_cast<ActionsDAG::Node &>(*input).result_name = it->second;
     }
 
-    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false);
+    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, /*removes_filter_column=*/ false);
     bool is_rewritten = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
 
     for (const auto * input : dag.getInputs())
@@ -1122,7 +1151,13 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 {
     read_from_merge_tree_step.updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(
+        read_from_merge_tree_step,
+        cloned_prewhere_info.prewhere_actions,
+        text_index_read_infos,
+        cloned_prewhere_info.prewhere_column_name,
+        direct_read_from_text_index,
+        cloned_prewhere_info.remove_prewhere_column);
 
     if (!result_filter_node)
     {
@@ -1275,7 +1310,12 @@ void processAndOptimizeTextIndexFunctions(
             ActionsDAG & filter_dag = filter_step->getExpression();
             bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
             const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
+                *read_from_merge_tree_step,
+                filter_dag,
+                text_index_infos,
+                filter_step->getFilterColumnName(),
+                direct_read_allowed,
+                filter_step->removesFilterColumn());
 
             update_source_columns(filter_dag);
             if (!result_filter_node)
