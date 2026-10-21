@@ -1306,6 +1306,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
 
+A read with no pointer setting takes the files named `v...` as the only candidates whenever any exist.
+
 We use table_uuid both for metadata cache queries and selection of the latest metadata file.
 For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
  */
@@ -1330,19 +1332,30 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
+        const bool list_version_numbered_names_only = !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
+            && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+            && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
+
         std::vector<String> metadata_files;
-        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        /// Manifests and manifest lists share the directory but are never named `v...`. `<N>-<uuid>`
+        /// names share their first character with uuid-named manifests, so they need the full listing.
+        if (list_version_numbered_names_only)
+            metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
+        if (metadata_files.empty())
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-            if (!metadata_files.empty())
-                break;
-            LOG_DEBUG(
-                log,
-                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
-                "(attempt {} of {}), retrying",
-                table_path,
-                attempt + 1,
-                MAX_LIST_RETRIES);
+            for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+            {
+                metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+                if (!metadata_files.empty())
+                    break;
+                LOG_DEBUG(
+                    log,
+                    "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                    "(attempt {} of {}), retrying",
+                    table_path,
+                    attempt + 1,
+                    MAX_LIST_RETRIES);
+            }
         }
         if (metadata_files.empty())
         {
