@@ -1605,6 +1605,11 @@ Enabling this setting gives the wrong impression that different values within a 
 Therefore, please do not enable this setting.
 )", 0, \
         {"23.4", true, false, "Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()."}) \
+    DECLARE(Bool, to_timezone_requires_constant_timezone, true, R"(
+Requiring a constant time zone in `toTimeZone()`: the function throws `ILLEGAL_COLUMN` for a time zone argument that is non-constant at execution, and for a late-constant one that does not match the resolved result data type (for example when the argument becomes constant only after the analyzer folds the function, e.g. from a single-row subquery).
+Set it to `false` (or use the `compatibility` setting with a version before 26.11) to restore the previous behavior where such arguments are silently ignored and the time zone of the column stays as it was resolved.
+)", 0, \
+        {"26.11", false, true, "Before 26.11, `toTimeZone()` silently ignored a time zone argument that was non-constant at execution (and a constant one that did not match the resolved result data type); previous_value=false restores that behavior."}) \
     DECLARE(Bool, use_legacy_to_time, false, R"(
 When enabled, the name `toTime` refers to the legacy [`toTime`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) function,
 which converts a date with time to a certain fixed date, while preserving the time.
