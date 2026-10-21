@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS ts_hist_copy;
 DROP TABLE IF EXISTS ts_hist_default;
 DROP TABLE IF EXISTS ts_hist_granularity;
 
-CREATE TABLE ts_hist ENGINE = TimeSeries SETTINGS version = 10;
+CREATE TABLE ts_hist ENGINE = TimeSeries SETTINGS version = 11;
 
 SELECT '--- a table of the min histograms supported version has a generated histograms table ---';
 SELECT extract(create_table_query, 'version = (\d+)'),
@@ -55,7 +55,6 @@ SELECT '--- the histograms table cannot be customized yet ---';
 CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS ENGINE = MergeTree ORDER BY id; -- { serverError NOT_IMPLEMENTED }
 CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS INNER COLUMNS (extra UInt8); -- { serverError NOT_IMPLEMENTED }
 CREATE TABLE ts_hist_external ENGINE = MergeTree ORDER BY (id, timestamp) AS SELECT * FROM timeSeriesHistograms(ts_hist);
-CREATE TABLE ts_hist_explicit ENGINE = TimeSeries HISTOGRAMS ts_hist_external; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '--- a table of version 7 rejects a declared histograms table, but drops an inherited one ---';
 CREATE TABLE ts_hist_explicit ENGINE = TimeSeries SETTINGS version = 7 HISTOGRAMS ENGINE = MergeTree; -- { serverError INCORRECT_QUERY }

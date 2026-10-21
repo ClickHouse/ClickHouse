@@ -582,6 +582,12 @@ namespace
             old_settings.removeSettings(Strings{names.begin(), names.end()});
         }
 
+        /// The `id` type and the expression generating identifiers are declared in the inner columns from version
+        /// MIN_WITHOUT_ID_SETTINGS (see TimeSeriesVersion.h), so the settings declaring them aren't copied into a table of
+        /// that version: the `id` type is still inherited through the resolved types, the expression is generated for it.
+        if (new_version >= TimeSeriesVersion::MIN_WITHOUT_ID_SETTINGS)
+            old_settings.removeSettings({"id_type", "id_generator"});
+
         /// The same for the settings of the deduplication caches which exist from version 7.
         if (new_version < TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES)
             old_settings.removeSettings({"metric_families_deduplication_cache_size_bytes", "metric_families_deduplication_cache_expiration_seconds",
@@ -1118,9 +1124,9 @@ namespace
             inner_engine.reset(inner_engine.engine);
     }
 
-    /// The histograms table can't be customized yet: an external histograms table, and inner columns or an inner engine
-    /// differing from the generated ones, are rejected. A declaration equal to the generated one is accepted, because
-    /// a normalized definition is replayed as a new table on the other replicas and by the clause `AS <other_table>`.
+    /// The histograms table can't be customized yet: inner columns or an inner engine, differing from the generated ones, are rejected.
+    /// A declaration equal to the generated one is accepted, because a normalized definition is replayed as a new table on the other
+    /// replicas and by the clause `AS <other_table>`.
     /// A stored definition is checked too: it was generated, so a customized histograms target in it means the metadata was edited.
     void checkHistogramsTargetIsNotCustomized(const ASTCreateQuery & create_query, const TimeSeriesSettings & settings, const StorageID & table_id)
     {
@@ -1132,9 +1138,6 @@ namespace
                 "{}: {} of the HISTOGRAMS target cannot be specified yet, the histograms table of a TimeSeries table is always generated",
                 table_id.getNameForLogs(), what);
         };
-
-        if (hasTargetTableID(create_query, kind))
-            throw_not_implemented("An external table");
 
         if (const auto * inner_columns = create_query.getTargetInnerColumns(kind))
         {
@@ -1882,8 +1885,8 @@ namespace
     /// `SimpleAggregateFunction(groupBitOr, UInt8)`, and the engine of an inner time ranges table must keep it when it merges rows:
     /// a `MergeTree` engine merging no rows, the column in the sorting key, or `AggregatingMergeTree` with the aggregated type.
     /// Other engines don't merge rows themselves (e.g. `Memory`), or pass them to tables of the user (e.g. `Distributed`),
-    /// whose engines are the responsibility of the user like the engine of an external time ranges table (`inner_engine` is null then).
-    void checkSampleKindsColumn(const IDataType & type, const ASTStorage * inner_engine, ViewTarget::Kind target_kind, const StorageID & table_id)
+    /// whose engines are the responsibility of the user.
+    void checkSampleKindsColumn(const IDataType & type, const ASTStorage & inner_engine, ViewTarget::Kind target_kind, const StorageID & table_id)
     {
         const auto & valid_plain_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ false);
         const auto & valid_aggregated_type = TimeSeriesSampleKinds::getDataType(/* aggregated = */ true);
@@ -1900,12 +1903,9 @@ namespace
                 valid_plain_type->getName(),
                 valid_aggregated_type->getName());
 
-        if (!inner_engine)
-            return;
+        chassert(inner_engine.engine);
 
-        chassert(inner_engine->engine);
-
-        std::string_view engine_name = inner_engine->engine->name;
+        std::string_view engine_name = inner_engine.engine->name;
         if (!engine_name.ends_with("MergeTree"))
             return;
         if (engine_name.starts_with("Replicated"))
@@ -1917,12 +1917,12 @@ namespace
 
         /// Merged rows have equal sorting keys, and key columns aren't aggregated, so a key column keeps its value. Its type is
         /// `UInt8` then: a `SimpleAggregateFunction` column isn't allowed in a sorting key.
-        if (inner_engine->order_by)
+        if (inner_engine.order_by)
         {
-            const auto * function = inner_engine->order_by->as<ASTFunction>();
+            const auto * function = inner_engine.order_by->as<ASTFunction>();
             const ASTs key_elements = (function && (function->name == "tuple") && function->arguments)
                 ? function->arguments->children
-                : ASTs{inner_engine->order_by};
+                : ASTs{inner_engine.order_by};
             for (const auto & element : key_elements)
             {
                 const auto * identifier = element->as<ASTIdentifier>();
@@ -1938,7 +1938,7 @@ namespace
             "{}: The engine {} of the inner {} table could lose the kinds of samples of time series when it merges rows. "
             "Add the column {} to the sorting key, or use MergeTree, or AggregatingMergeTree with the column of type {}",
             table_id.getNameForLogs(),
-            inner_engine->engine->name,
+            inner_engine.engine->name,
             target_kind,
             TimeSeriesColumnNames::SampleKinds,
             valid_aggregated_type->getName());
@@ -1946,7 +1946,7 @@ namespace
 
     /// Checks that a target table or an inner-columns list has all the columns required by the
     /// TimeSeries table engine, and that those columns match the resolved types.
-    /// `inner_engine` is the engine of an inner target table, null for an external one.
+    /// `inner_engine` is the engine of an inner target table, null for an external one with name `table_id`.
     void checkTargetTable(
         const ColumnsDescription & target_table_columns,
         ViewTarget::Kind target_kind,
@@ -1955,6 +1955,16 @@ namespace
         const StorageID & table_id,
         const ASTStorage * inner_engine)
     {
+        /// A table of version `MIN_WITHOUT_EXTERNAL_TARGETS` or later can have inner target tables only (see TimeSeriesVersion.h),
+        /// an existing table keeps the external target tables of its version.
+        if (!inner_engine && (time_series_settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITHOUT_EXTERNAL_TARGETS))
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "The {} target refers to the external table {}, but a table of version {} can have inner target tables only "
+                "(external target tables are supported for version {} and earlier); "
+                "use the INNER COLUMNS and INNER ENGINE clauses to customize the inner table instead",
+                target_kind, table_id.getNameForLogs(), time_series_settings[TimeSeriesSetting::version].value,
+                TimeSeriesVersion::MIN_WITHOUT_EXTERNAL_TARGETS - 1);
+
         auto check_column = [&](std::string_view column_name)
         {
             if (!target_table_columns.tryGet(String(column_name)))
@@ -2080,9 +2090,11 @@ namespace
             if (!TimeSeriesSampleKinds::isStored(time_series_settings))
                 return;
 
+            /// External tables are forbidden for tables with histograms version and above.
+            chassert(inner_engine);
             check_column(TimeSeriesColumnNames::SampleKinds);
             const auto * sample_kinds_column = target_table_columns.tryGet(TimeSeriesColumnNames::SampleKinds);
-            checkSampleKindsColumn(*sample_kinds_column->type, inner_engine, target_kind, table_id);
+            checkSampleKindsColumn(*sample_kinds_column->type, *inner_engine, target_kind, table_id);
         };
 
         switch (target_kind)
@@ -2306,20 +2318,11 @@ namespace
                 }
             }
 
+            /// An external target of the old table (a table of version 9 or earlier could have one) has no inner engine
+            /// and isn't copied: the new table gets an inner target instead, generated unless the query declares it.
             if (!hasTargetTableID(create_query, kind) && !hasInnerEngine(create_query, kind))
             {
-                if (hasTargetTableID(old_create_query, kind))
-                {
-                    /// An external target of the old table is not copied, but the query can declare an inner target
-                    /// instead by its columns, then the engine is generated.
-                    if (!hasInnerColumns(create_query, kind))
-                    {
-                        StorageID old_table_id{old_create_query.getDatabase(), old_create_query.getTable()};
-                        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Cannot CREATE a table AS {} because it has external tables", old_table_id.getNameForLogs());
-                    }
-                }
-                else if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
+                if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
                 {
                     auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
                     removeInnerEngineKeysDisabledByNewSettings(*new_inner_engine, kind, new_settings);
@@ -2595,8 +2598,10 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         checkInnerEnginesReplicationTypesMatch(create_query, table_id);
 
         /// Record `id_type` and `id_generator` in the SETTINGS clause if they aren't kept in the definition otherwise.
-        /// A table pinned to an earlier version is written the way that version did it, without the settings.
-        if (create_query.storage && (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
+        /// A table pinned to an earlier version is written the way that version did it, without the settings,
+        /// and a table of version MIN_WITHOUT_ID_SETTINGS or later keeps them in the inner columns only (see TimeSeriesVersion.h).
+        if (create_query.storage && (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING)
+            && (settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITHOUT_ID_SETTINGS))
         {
             bool tags_are_external = hasTargetTableID(create_query, ViewTarget::Tags);
             recordIdTypeAndIdGenerator(

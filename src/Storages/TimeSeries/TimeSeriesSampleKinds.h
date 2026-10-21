@@ -15,7 +15,7 @@ struct TimeSeriesSettings;
 /// (`store_time_ranges`) have the column, like `min_time` and `max_time`. It has no default: the TimeSeries
 /// table writes it with every row, and whoever writes the "time ranges" table another way is responsible for the right kinds.
 /// The engine of the "time ranges" table must keep the kinds when it merges rows: the generated one does, a customized inner one
-/// is checked on creation, an external one is the responsibility of its owner.
+/// is checked on creation.
 class TimeSeriesSampleKinds
 {
 public:

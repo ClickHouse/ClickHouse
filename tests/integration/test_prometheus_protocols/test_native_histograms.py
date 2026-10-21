@@ -353,8 +353,9 @@ def test_max_buckets_setting():
 
 
 def test_table_without_histograms_drops_them():
-    # A table of a version before 8 has no histograms table. The histograms of a request are dropped with a warning,
-    # the float samples of the same request are written and the request succeeds: rejecting it would lose the samples too.
+    # A table of a version without the histograms table (see TimeSeriesVersion.h) has none. The histograms of a request
+    # are dropped with a warning, the float samples of the same request are written and the request succeeds: rejecting it
+    # would lose the samples too.
     node.query("DROP TABLE prometheus SYNC")
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 5")
     histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)

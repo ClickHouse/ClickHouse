@@ -37,7 +37,11 @@ namespace DB
 ///   9 - The default partition key of an inner recent samples table pins the timezone:
 ///       `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions leave it to the
 ///       server timezone, whose every change moves the meaning of the partition values already written.
-///   10 - The "histograms" target table was introduced: every table of this version has a fifth target table
+///  10 - External target tables are not supported for new tables: every target of a table of this version is an inner table.
+///       The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression
+///       generating identifiers are declared in the inner columns of the "tags" table. Tables of earlier versions keep
+///       their external target tables and these settings.
+///  11 - The "histograms" target table was introduced: every table of this version has a fifth target table
 ///       storing native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have none.
 namespace TimeSeriesVersion
 {
@@ -85,8 +89,17 @@ namespace TimeSeriesVersion
     /// generate it without one, so their tables keep the partition grid they were written on.
     constexpr UInt64 MIN_WITH_UTC_PARTITION_KEY = MIN_WITH_TIME_RANGES_TARGET + 1;
 
+    /// The first version whose target tables are all inner (see the version history above).
+    /// A new table of this version or later can't refer to external target tables, tables of the earlier versions can.
+    constexpr UInt64 MIN_WITHOUT_EXTERNAL_TARGETS = MIN_WITH_UTC_PARTITION_KEY + 1;
+
     /// The first version with the "histograms" target table.
-    constexpr UInt64 MIN_WITH_HISTOGRAMS_TARGET = MIN_WITH_UTC_PARTITION_KEY + 1;
+    constexpr UInt64 MIN_WITH_HISTOGRAMS_TARGET = MIN_WITHOUT_EXTERNAL_TARGETS + 1;
+
+    /// The first version declaring the type of the `id` column and the expression generating identifiers in the inner columns
+    /// of the "tags" table only (see the version history above). The earlier versions could declare them in the settings
+    /// `id_type` and `id_generator`, which a table of this version or later can't have.
+    constexpr UInt64 MIN_WITHOUT_ID_SETTINGS = MIN_WITHOUT_EXTERNAL_TARGETS;
 
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
@@ -103,6 +116,8 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_TIME_RANGES_TARGET <= LATEST);
     static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
     static_assert(MIN_WITH_HISTOGRAMS_TARGET <= LATEST);
+    static_assert(MIN_WITHOUT_EXTERNAL_TARGETS <= LATEST);
+    static_assert((MIN_WITH_ID_TYPE_SETTING <= MIN_WITHOUT_ID_SETTINGS) && (MIN_WITHOUT_ID_SETTINGS <= LATEST));
 
     static_assert(MIN_SUPPORTED <= LATEST);
     static_assert((MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL) && (MIN_SUPPORTED_BY_PROMQL <= LATEST));

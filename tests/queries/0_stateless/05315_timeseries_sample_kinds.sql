@@ -14,12 +14,7 @@ SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS ts;
 DROP TABLE IF EXISTS ts_no_time_ranges;
 DROP TABLE IF EXISTS ts_v9;
-DROP TABLE IF EXISTS ts_external;
-DROP TABLE IF EXISTS ts_external_tags;
-DROP TABLE IF EXISTS ts_external_samples;
-DROP TABLE IF EXISTS ts_external_time_ranges;
 DROP TABLE IF EXISTS ts_bad;
-DROP TABLE IF EXISTS ts_bad_time_ranges;
 DROP TABLE IF EXISTS ts_custom_key;
 DROP TABLE IF EXISTS ts_custom_plain;
 
@@ -82,8 +77,16 @@ OPTIMIZE TABLE ts FINAL;
 SELECT count(), groupBitOr(sample_kinds) FROM timeSeriesTimeRanges(ts)
 WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'mixed' AND tags['job'] = 'b');
 
-SELECT '-- a series written before a change of the id generator has an id outside the range of its metric: its kinds are unknown, both tables are read';
-ALTER TABLE ts MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name) + 1, toLowCardinality(reinterpretAsUUID(sipHash128(tags))))';
+SELECT '-- a series written with another id generator has an id outside the range of its metric: its kinds are unknown, both tables are read';
+-- The series is written directly into the inner tables: the first component of its id isn't the hash of the metric name, so the
+-- time ranges table isn't read for it (see `addTimeRangesTableJoin`) and the kinds stored there don't matter.
+-- The table name is qualified because an asynchronous insert through a table function resolves an unqualified name in the default database.
+INSERT INTO FUNCTION timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) (id, metric_name, tags) VALUES
+    (tuple(1, toUUID('00000000-0000-0000-0000-000000000001')), 'floats', map('__name__', 'floats', 'job', 'old'));
+INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (id, min_time, max_time, sample_kinds) VALUES
+    (tuple(1, toUUID('00000000-0000-0000-0000-000000000001')), toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:00:00', 3), 1);
+INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, timestamp, value) VALUES
+    (tuple(1, toUUID('00000000-0000-0000-0000-000000000001')), toDateTime64('2026-01-01 00:00:00', 3), 5);
 SELECT 'floats', countIf(explain LIKE '%ReadFromMergeTree%samples.%'), countIf(explain LIKE '%ReadFromMergeTree%histograms.%')
 FROM (EXPLAIN SELECT * FROM timeSeriesSelector(ts, 'floats', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3)));
 SELECT 'floats', value, length(histogram)
@@ -107,35 +110,6 @@ SELECT countMatches(create_table_query, 'sample_kinds') FROM system.tables WHERE
 INSERT INTO ts_v9 (metric_name, tags, samples) VALUES ('floats', {}, [(toDateTime64('2026-01-01 00:00:00', 3), 1)]);
 SELECT 'floats', value FROM timeSeriesSelector(ts_v9, 'floats', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3));
 
-SELECT '-- an external time ranges table gets the column with DEFAULT 1 for the rows written by a version without histograms';
-CREATE TABLE ts_external_tags
-(
-    id UInt64,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String)
-) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ts_external_samples (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_external_time_ranges
-(
-    id UInt64,
-    min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3))
-) ENGINE = AggregatingMergeTree ORDER BY id;
-INSERT INTO ts_external_tags VALUES (1, 'old', {'__name__': 'old'});
-INSERT INTO ts_external_samples VALUES (1, toDateTime64('2026-01-01 00:00:00', 3), 5);
-INSERT INTO ts_external_time_ranges VALUES (1, toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:00:00', 3));
-CREATE TABLE ts_external ENGINE = TimeSeries SAMPLES ts_external_samples TAGS ts_external_tags TIME RANGES ts_external_time_ranges; -- { serverError THERE_IS_NO_COLUMN }
-ALTER TABLE ts_external_time_ranges ADD COLUMN sample_kinds SimpleAggregateFunction(groupBitOr, UInt8) DEFAULT 1;
-CREATE TABLE ts_external ENGINE = TimeSeries SAMPLES ts_external_samples TAGS ts_external_tags TIME RANGES ts_external_time_ranges;
-INSERT INTO ts_external (metric_name, tags, samples) VALUES ('floats', {}, [(toDateTime64('2026-01-01 00:00:00', 3), 1)]);
-INSERT INTO ts_external (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_spans, histograms.positive_values_int)
-    VALUES ('other', {}, [toDateTime64('2026-01-01 00:00:00', 3)], [3], [1.5], [[(0, 1)]], [[3]]);
-SELECT 'floats', countIf(explain LIKE '%ReadFromMergeTree%samples%'), countIf(explain LIKE '%ReadFromMergeTree%histograms.%')
-FROM (EXPLAIN SELECT * FROM timeSeriesSelector(ts_external, 'floats', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3)));
-SELECT 'old', countIf(explain LIKE '%ReadFromMergeTree%samples%'), countIf(explain LIKE '%ReadFromMergeTree%histograms.%')
-FROM (EXPLAIN SELECT * FROM timeSeriesSelector(ts_external, 'old', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3)));
-SELECT 'old', value, length(histogram) FROM timeSeriesSelector(ts_external, 'old', toDateTime64('2026-01-01 00:00:00', 3), toDateTime64('2026-01-01 00:10:00', 3));
-
 SELECT '-- a customized engine of the inner time ranges table must keep the kinds when it merges rows';
 CREATE TABLE ts_bad ENGINE = TimeSeries TIME RANGES INNER ENGINE = ReplacingMergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 CREATE TABLE ts_bad ENGINE = TimeSeries TIME RANGES INNER ENGINE = SummingMergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
@@ -145,22 +119,10 @@ CREATE TABLE ts_custom_plain ENGINE = TimeSeries TIME RANGES INNER COLUMNS (samp
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE 'ts\\_custom\\_%' ORDER BY name;
 
 SELECT '-- the column must have one of the allowed types';
-CREATE TABLE ts_bad_time_ranges
-(
-    id Tuple(UInt64, LowCardinality(UUID)),
-    min_time SimpleAggregateFunction(min, DateTime64(3)),
-    max_time SimpleAggregateFunction(max, DateTime64(3)),
-    sample_kinds UInt16
-) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ts_bad ENGINE = TimeSeries TIME RANGES ts_bad_time_ranges; -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ts_bad ENGINE = TimeSeries TIME RANGES INNER COLUMNS (sample_kinds UInt16); -- { serverError BAD_TYPE_OF_FIELD }
 
 DROP TABLE ts;
 DROP TABLE ts_no_time_ranges;
 DROP TABLE ts_v9;
-DROP TABLE ts_external;
-DROP TABLE ts_external_tags;
-DROP TABLE ts_external_samples;
-DROP TABLE ts_external_time_ranges;
-DROP TABLE ts_bad_time_ranges;
 DROP TABLE ts_custom_key;
 DROP TABLE ts_custom_plain;

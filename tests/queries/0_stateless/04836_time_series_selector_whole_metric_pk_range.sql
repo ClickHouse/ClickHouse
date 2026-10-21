@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS ts_clustered;
 DROP TABLE IF EXISTS ts_check;
 DROP TABLE IF EXISTS ts_plain;
 DROP TABLE IF EXISTS ts_custom_gen;
-DROP TABLE IF EXISTS ts_altered_gen;
+DROP TABLE IF EXISTS ts_foreign_id;
 DROP TABLE IF EXISTS ts_u64;
 DROP TABLE IF EXISTS ts_prune;
 
@@ -176,27 +176,32 @@ SELECT
     countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%-element set%') > 0 AS id_set_in_index_analysis
 FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000));
 
-SELECT '-- id_generator changed after ingestion: the old series ids have another first component, the id set alone';
+SELECT '-- a series written with another id generator has an id with another first component: the id set alone';
 
-CREATE TABLE ts_altered_gen ENGINE = TimeSeries
-TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags))));
+CREATE TABLE ts_foreign_id ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
 
-INSERT INTO ts_altered_gen (metric_name, tags, samples) VALUES
-    ('foo', map('env', 'old'), [(toDateTime64(100, 3), 1.)]);
+-- A series written with another id generator (e.g. before the inner tables were altered): the first component of its id
+-- isn't the hash of the metric name, so the id lies outside the id range of the metric `foo`.
+-- The table name is qualified because an asynchronous insert through a table function resolves an unqualified name in the default database.
+-- `sample_kinds` = 1 marks float samples: the selector reads only the data tables of the kinds stored in the time ranges.
+INSERT INTO FUNCTION timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_foreign_id) (id, metric_name, tags) VALUES
+    (tuple(1, toUUID('00000000-0000-0000-0000-000000000001')), 'foo', map('__name__', 'foo', 'env', 'old'));
+INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts_foreign_id) (id, min_time, max_time, sample_kinds) VALUES
+    (tuple(1, toUUID('00000000-0000-0000-0000-000000000001')), toDateTime64(100, 3), toDateTime64(100, 3), 1);
+INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_foreign_id) (id, timestamp, value) VALUES
+    (tuple(1, toUUID('00000000-0000-0000-0000-000000000001')), toDateTime64(100, 3), 1.);
 
--- The setting overrides the column DEFAULT, so new inserts get canonical (metric-clustered) ids.
-ALTER TABLE ts_altered_gen MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags)))';
-
-INSERT INTO ts_altered_gen (metric_name, tags, samples) VALUES
+-- A series written through the table gets a canonical (metric-clustered) id.
+INSERT INTO ts_foreign_id (metric_name, tags, samples) VALUES
     ('foo', map('env', 'new'), [(toDateTime64(200, 3), 2.)]);
 
--- Both the old-generator and the new-generator series must be returned.
-SELECT timestamp, value FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
+-- Both series must be returned.
+SELECT timestamp, value FROM timeSeriesSelector(ts_foreign_id, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT
     countIf(explain ILIKE '%Condition:%' AND explain LIKE '%(id in [%') > 0 AS has_id_range,
     countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%-element set%') > 0 AS id_set_in_index_analysis
-FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_altered_gen, 'foo', 0, 1000));
+FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_foreign_id, 'foo', 0, 1000));
 
 SELECT '-- Tuple(UInt64, UInt64) id layout: the range in index analysis, the id set only in the WHERE';
 
@@ -239,7 +244,7 @@ FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_prune, 'f
 
 DROP TABLE ts_prune;
 DROP TABLE ts_u64;
-DROP TABLE ts_altered_gen;
+DROP TABLE ts_foreign_id;
 DROP TABLE ts_custom_gen;
 DROP TABLE ts_plain;
 DROP TABLE ts_check;

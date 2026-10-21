@@ -27,9 +27,10 @@ empty	0
 -- the rows of the two inserts of a series keep their kinds, and a merge ORs them into one row: kinds, then rows and kinds
 3
 1	3
--- a series written before a change of the id generator has an id outside the range of its metric: its kinds are unknown, both tables are read
+-- a series written with another id generator has an id outside the range of its metric: its kinds are unknown, both tables are read
 floats	1	1
 floats	1	0
+floats	5	0
 -- without the time ranges table there is no column and no time filter: both tables are read, also for a series without samples
 0
 floats	1	1
@@ -37,10 +38,6 @@ empty	1	1
 -- a table of a version without histograms has a time ranges table without the column, and the selector does not read it
 0
 floats	1
--- an external time ranges table gets the column with DEFAULT 1 for the rows written by a version without histograms
-floats	1	0
-old	1	0
-old	5	0
 -- a customized engine of the inner time ranges table must keep the kinds when it merges rows
 ts_custom_key
 ts_custom_plain
