@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -864,8 +865,7 @@ bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMe
 {
     return columns_cache
         && part.isWidePart()
-        && part.getTableUUID() != UUIDHelpers::Nil
-        && !part.isProjectionPart();
+        && canUseColumnsCacheForPart(part.getTableUUID(), part.isProjectionPart());
 }
 
 MergeTreeReaderPtr createMergeTreeReader(

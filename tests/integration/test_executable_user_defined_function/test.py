@@ -598,3 +598,39 @@ def test_executable_function_stderr_in_exception_on_failure(started_cluster, fun
 
     for component in required_components:
         assert component in exception_text, f"Missing required component in {mode}: {component}"
+
+
+def test_executable_function_in_alias_with_implicit_index_after_restart(started_cluster):
+    skip_test_msan(node)
+    node.query("DROP TABLE IF EXISTS t_alias_implicit_index SYNC")
+    node.query(
+        "CREATE TABLE t_alias_implicit_index (id UInt64, a String ALIAS test_function_bash_deterministic(id)) "
+        "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1"
+    )
+    node.query("INSERT INTO t_alias_implicit_index VALUES (1)")
+    assert (
+        node.query(
+            "SELECT name FROM system.data_skipping_indices WHERE table = 't_alias_implicit_index' ORDER BY name"
+        )
+        == "auto_minmax_index_a\n"
+    )
+
+    # Versions before 25.12 stored the implicit index in the table definition.
+    node.query("DROP TABLE IF EXISTS t_alias_implicit_index_legacy SYNC")
+    node.query(
+        "ATTACH TABLE t_alias_implicit_index_legacy UUID '6d1f0c3e-5b8a-4c2e-9f47-3a0b8e2d1c75' "
+        "(id UInt64, a String ALIAS test_function_bash_deterministic(id), INDEX auto_minmax_index_a a TYPE minmax() GRANULARITY 1) "
+        "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1"
+    )
+    node.query("INSERT INTO t_alias_implicit_index_legacy VALUES (1)")
+
+    # Executable functions are registered only after the tables are loaded.
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/async_load_databases.xml",
+        "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>",
+    )
+    node.restart_clickhouse()
+    assert node.query("SELECT id, a FROM t_alias_implicit_index") == "1\tKey 1\n"
+    assert node.query("SELECT id, a FROM t_alias_implicit_index_legacy") == "1\tKey 1\n"
+    node.query("DROP TABLE t_alias_implicit_index SYNC")
+    node.query("DROP TABLE t_alias_implicit_index_legacy SYNC")

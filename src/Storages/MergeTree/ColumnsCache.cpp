@@ -4,12 +4,15 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
+#include <Common/memory.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
+#include <IO/UncompressedCache.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -64,6 +67,95 @@ UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & pa
     hash.update(column_name);
     hash.update(schema_identity);
     return hash.get128();
+}
+
+namespace
+{
+
+/// The server-owned columns of entries that are gone while a query still holds the column: an entry
+/// served whole shares its column with the read, see `MergeTreeReaderWide::serveRowsFromColumnsCache`.
+/// The memory has to be released under `MemoryTrackerBlockerInThread`, and the query would release it
+/// unblocked when it drops its reference, so the column is kept here until the query is done with it.
+/// Never destroyed: an entry can outlive every static.
+struct ParkedColumns
+{
+    std::mutex mutex;
+    std::vector<ColumnPtr> columns TSA_GUARDED_BY(mutex);
+    std::atomic<size_t> count{0};
+
+    /// Both block the global tracker too, so that their own allocations cannot reach `autoResize`, which
+    /// evicts entries and so parks columns itself. A free under the blocker still reaches the global
+    /// tracker, see `MemoryTracker::free`.
+    void park(ColumnPtr column)
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user(VariableContext::Global);
+        std::lock_guard lock(mutex);
+        columns.push_back(std::move(column));
+        count.store(columns.size(), std::memory_order_relaxed);
+    }
+
+    /// Release the columns nobody else holds any more. Nobody can take a new reference to a parked
+    /// column, so one whose only holder is this list stays so.
+    void releaseUnused()
+    {
+        if (count.load(std::memory_order_relaxed) == 0)
+            return;
+
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user(VariableContext::Global);
+        std::vector<ColumnPtr> unused;
+        {
+            if (!mutex.try_lock())
+                return;
+            std::lock_guard lock(mutex, std::adopt_lock);
+            auto in_use_end = std::partition(columns.begin(), columns.end(), [](const ColumnPtr & column) { return column->use_count() > 1; });
+            std::move(in_use_end, columns.end(), std::back_inserter(unused));
+            columns.erase(in_use_end, columns.end());
+            count.store(columns.size(), std::memory_order_relaxed);
+        }
+    }
+};
+
+ParkedColumns & parkedColumns()
+{
+    static auto * parked = new ParkedColumns;
+    return *parked;
+}
+
+/// What the query was charged for `column`: its data, and the column objects, as `operator new` charged them.
+/// A `LowCardinality` dictionary shared by N entries is counted N times, so the query is undercounted by up to
+/// N - 1 dictionaries while it runs (its user is not). Accepted: bounded by the dictionary size.
+size_t chargedBytesOfColumn(const IColumn & column)
+{
+    size_t bytes = column.allocatedBytes() + ::Memory::getActualAllocationSize(column.sizeOfObject());
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn) { bytes += ::Memory::getActualAllocationSize(subcolumn.sizeOfObject()); });
+    return bytes;
+}
+
+}
+
+std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
+{
+    return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedCacheEntryAllocator<ColumnsCacheEntry>{});
+}
+
+/// Only the root is checked for other holders: a subcolumn a query keeps past the eviction (e.g. from `assumeNotNull`)
+/// is released by that query, which is credited with it. Accepted: bounded by the subcolumn, and checking subcolumns
+/// would never release entries that share a dictionary.
+ColumnsCacheEntry::~ColumnsCacheEntry()
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    String().swap(part_name);
+    String().swap(column_name);
+    source.reset();
+
+    /// A column the query read and the cache did not admit is the query's, released as such.
+    if (!column || !owned_by_server.load(std::memory_order_relaxed))
+        return;
+
+    if (column->use_count() > 1)
+        parkedColumns().park(std::move(column));
+    else
+        column.reset();
 }
 
 std::optional<UUID> getColumnsCacheTableUUIDOfExternalFile(const StorageID & storage_id)
@@ -222,8 +314,11 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
 
     /// Overlapping or adjacent: the union, made of the rows of the existing entry and the rows
     /// of the new one beyond it on either side. The same part, the same column and the same
-    /// schema, so the rows agree where the two overlap.
-    auto merged = std::make_shared<ColumnsCacheEntry>();
+    /// schema, so the rows agree where the two overlap. The cache builds it, so it is the
+    /// server's from the start, not the query's that happens to write the other half: `setMany`
+    /// runs under `MemoryTrackerBlockerInThread`.
+    auto merged = makeColumnsCacheEntry();
+    merged->owned_by_server.store(true, std::memory_order_relaxed);
     merged->table_uuid = existing->table_uuid;
     merged->part_name = existing->part_name;
     merged->column_name = existing->column_name;
@@ -263,6 +358,26 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
 {
     OperationInThread operation;
 
+    /// What the cache allocates here - merged entries, the index, the cells of the shards - is the
+    /// server's. The columns the query read become the server's once admitted, but taking them off
+    /// the query has to wait until the blocker is gone: the memory the thread has not flushed to its
+    /// trackers yet would be flushed under the blocker, to the global tracker only.
+    size_t bytes_to_hand_over = 0;
+    size_t bytes_admitted = 0;
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        bytes_admitted = setManyImpl(entries, expected_table_generation, bytes_to_hand_over);
+    }
+    if (bytes_to_hand_over)
+        handOverCurrentQueryMemoryToServer(bytes_to_hand_over);
+
+    /// The insertion evicts what does not fit, and the columns of entries evicted earlier may be free by now.
+    parkedColumns().releaseUnused();
+    return bytes_admitted;
+}
+
+size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over)
+{
     if (entries.empty())
         return 0;
 
@@ -350,36 +465,47 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     if (on_entries_staged_for_test)
         on_entries_staged_for_test();
 
+    /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
+    /// the space left by the protected segment, even when it is within the overall size limit.
+    /// In that case the eviction callback has already reset the bit. The entries the cache admits are the
+    /// server's from here on: their memory stops counting against the query and its user, and is released
+    /// as the server's, see `ColumnsCacheEntry::owned_by_server`. Handed over under the lock of the shard:
+    /// a concurrent write of the same stripe can replace the entry right after it, and the memory of an
+    /// entry the cache does not hold must stay the query's. A stale entry taken out below is handed over
+    /// too, the same as an entry evicted after its admission.
+    std::vector<bool> resident(keys.size());
     for (size_t i = 0; i < keys.size(); ++i)
-        shardOf(keys[i]).set(keys[i], to_store[i]);
+    {
+        resident[i] = shardOf(keys[i]).setAndContains(keys[i], to_store[i], [&]
+        {
+            auto & entry = *to_store[i];
+            if (!entry.owned_by_server.exchange(true, std::memory_order_relaxed))
+                bytes_to_hand_over += chargedBytesOfColumn(*entry.column);
+        });
+    }
 
     if (on_entries_inserted_for_test)
         on_entries_inserted_for_test();
 
-    /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
-    /// the space left by the protected segment, even when it is within the overall size limit.
-    /// In that case the eviction callback has already reset the bit.
-    ///
     /// A stale writer of the same stripe, racing this call, releases the bucket of the stripe when
     /// it takes its own entry back out - see below - and the bucket has to be there for every entry
     /// the cache holds, or `removePart` would walk past this one and leave it resident for a part
     /// that is gone. So the stripe of every resident entry is recorded again. Recording it costs a
     /// lookup in a hash set that holds it already in every other case.
     ///
-    /// The residency is checked and the stripe recorded under the mutex of the shard, then
+    /// The residency is checked again and the stripe recorded under the mutex of the shard, then
     /// `index_mutex` - the order `onEntryRemoval` uses: an eviction of the entry by another thread,
     /// such as a resize, happens either before, and the entry is not resident, or after, and the
-    /// eviction callback resets the bit. Recorded from a residency sampled earlier, the bucket of
-    /// an entry evicted in between would stay in the index with no entry in any shard.
+    /// eviction callback resets the bit. Recorded from the residency found at the insertion, the
+    /// bucket of an entry evicted in between would stay in the index with no entry in any shard.
     ///
     /// An invalidation can have happened between the check above and the insertion. The entries
     /// are then stale and nobody will look them up under this schema identity, but they would
     /// hold their memory until the eviction reaches them, so take them out right away.
-    std::vector<bool> resident(keys.size());
     bool stale = false;
     for (size_t i = 0; i < keys.size() && !stale; ++i)
     {
-        resident[i] = shardOf(keys[i]).doIfContains(keys[i], [&]
+        shardOf(keys[i]).doIfContains(keys[i], [&]
         {
             std::lock_guard lock(index_mutex);
             if (currentGeneration(table_uuid) != expected_table_generation)
@@ -508,6 +634,8 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     OperationInThread operation;
     /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+    /// The memory of the cache is the server's, see `setMany`.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
     /// Not under `index_mutex`: `maxSizeInBytes` of a shard takes the mutex of the shard.
     const bool disabled = shards.front()->maxSizeInBytes() == 0;
@@ -563,6 +691,8 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     OperationInThread operation;
     /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+    /// The memory of the cache is the server's, see `setMany`.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
     /// No invalidation stamp is advanced here, see the declaration: the part is removed from
     /// the cache only once no reader can hold it, so there is no deferred write to reject.
@@ -596,6 +726,8 @@ void ColumnsCache::clearAll()
     OperationInThread operation;
     /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+    /// The memory of the cache is the server's, see `setMany`.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
     {
         std::lock_guard lock(index_mutex);
@@ -706,9 +838,13 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 
     /// This is called from `MemoryTracker` when an allocation is about to exceed the limit;
     /// anything allocated here must not be tracked, or it would end up right back there.
-    /// The entries evicted below were allocated by the queries that read them, and tracked,
-    /// so their release is tracked as well: `MemoryTracker::free` is not affected by the blocker.
+    /// The entries evicted below are the server's, and so is their release: a free under the
+    /// blocker still reaches the global tracker, see `MemoryTracker::free`.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+
+    /// Called periodically by `MemoryWorker`, so this is where the columns of evicted entries that
+    /// queries no longer hold are released.
+    parkedColumns().releaseUnused();
 
     /// One resize at a time: the periodic one and the ones from allocations that hit the limit
     /// can coincide, and a resize that finds another in progress has nothing to add to it.
