@@ -115,6 +115,7 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
+    extern const SettingsUInt64 max_rpn_elements_for_skip_indexes_with_disjunctions;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
@@ -1144,11 +1145,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// because key_condition_rpn_template is the RPN used in mergePartialResultsForDisjunctions
     /// and in the callback that writes to the partial_disjunction_result bitset.
     /// When use_primary_key = false, key_condition has skip_analysis_ = true and its RPN
-    /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
+    /// has only 1 element, but the template has the full RPN.
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !use_skip_indexes_on_data_read_
                                 && key_condition_rpn_template != nullptr
-                                && key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                && isRPNSizeAllowedForSkipIndexesWithDisjunctions(
+                                    key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -1289,7 +1291,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 PartialDisjunctionResult partial_eval_results;
                 if (use_skip_indexes_for_disjunctions)
-                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+                    partial_eval_results.resize(
+                        ranges.data_part->index_granularity->getMarksCountWithoutFinal()
+                            * key_condition_rpn_template->generateForPart(ranges.data_part).getRPN().size(),
+                        true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -3013,16 +3018,17 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
         {
-            const size_t max_position = std::min(key_condition_rpn_template->getRPN().size(), MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT);
-            return [range_begin, max_position, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            /// One bit per element of the RPN template per mark.
+            const size_t rpn_size = key_condition_rpn_template->getRPN().size();
+            return [range_begin, rpn_size, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
             {
                 /// Index conditions may have extra condition-local RPN nodes after rewrites.
                 /// `mergePartialResultsForDisjunctions` reads only positions from
                 /// `key_condition_rpn_template`, so leave extra positions at the default.
-                if (is_unknown || position >= max_position)
+                if (is_unknown || position >= rpn_size)
                     return;
 
-                const auto bit_index = (range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position;
+                const auto bit_index = (range_begin * rpn_size) + position;
                 if (bit_index >= partial_disjunction_result.size())
                 {
                     throw Exception(
@@ -3379,6 +3385,12 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     return min_max_granules;
 }
 
+bool MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesWithDisjunctions(size_t rpn_size, const Settings & settings)
+{
+    const UInt64 max_rpn_elements = settings[Setting::max_rpn_elements_for_skip_indexes_with_disjunctions];
+    return max_rpn_elements == 0 || rpn_size <= max_rpn_elements;
+}
+
 /// Evaluate the predicate condition using the saved partial results.
 /// e.g (A = 5 OR (B = 5 AND C = 5))
 /// For each range, we have saved the results of evaluation with
@@ -3410,6 +3422,14 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
 
     /// Evaluate the RPN over all the ranges.
     auto rpn = rpn_template_for_eval_result.getRPN();
+
+    /// One bit per element of the RPN template per mark, see `filterPartsByPrimaryKeyAndSkipIndexes`.
+    const size_t marks_count = part_info.getIndexGranularity().getMarksCountWithoutFinal();
+    if (partial_eval_results.size() != marks_count * rpn.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Partial disjunction results have {} bits, expected {} marks * {} RPN elements, RPN = {}",
+            partial_eval_results.size(), marks_count, rpn.size(), rpn_template_for_eval_result_string);
+
     std::vector<bool> rpn_stack;
     for (auto range : ranges)
     {
@@ -3421,7 +3441,7 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
             {
                 if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
                 {
-                    rpn_stack.emplace_back(partial_eval_results[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position]);
+                    rpn_stack.emplace_back(partial_eval_results[(range_begin * rpn.size()) + position]);
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {

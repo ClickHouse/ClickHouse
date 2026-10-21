@@ -143,13 +143,13 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache);
 
-    /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
-    /// 'use_skip_indexes_for_disjunctions') is enabled.
-    /// One bit per RPN element is consumed to store the partial evaluation results.
+    /// Whether evaluation of OR-connected filter conditions using skip indexes (setting `use_skip_indexes_for_disjunctions`)
+    /// may be used for a filter whose RPN has `rpn_size` elements (setting `max_rpn_elements_for_skip_indexes_with_disjunctions`).
+    /// One bit per RPN element per mark is consumed to store the partial evaluation results.
     /// Example:
     /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
-    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 128;
+    static bool isRPNSizeAllowedForSkipIndexesWithDisjunctions(size_t rpn_size, const Settings & settings);
 
 private:
     const MergeTreeData & data;

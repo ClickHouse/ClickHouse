@@ -3223,7 +3223,8 @@ void ReadFromMergeTree::buildIndexes(
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
                                                     && !indexes->key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
-                                                    && indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                                    && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesWithDisjunctions(
+                                                        indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()

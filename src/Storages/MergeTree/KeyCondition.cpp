@@ -838,7 +838,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
         /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
         /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
-        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
+        /// when the index RPN is longer than the template RPN.
         if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
