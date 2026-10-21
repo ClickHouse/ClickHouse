@@ -3040,11 +3040,18 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 }
 
-void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
+void ActionsDAG::mergeNodes(
+    ActionsDAG && second,
+    NodeRawConstPtrs * out_outputs,
+    const NodeMapping * inputs_map,
+    bool bind_by_name)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
-    for (auto & node : nodes)
-        node_name_to_node.emplace(node.result_name, &node);
+    if (bind_by_name)
+    {
+        for (auto & node : nodes)
+            node_name_to_node.emplace(node.result_name, &node);
+    }
 
     struct Frame
     {
@@ -3076,12 +3083,26 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
             continue;
         }
 
-        auto node_it = node_name_to_node.find(node->result_name);
-        if (node_it != node_name_to_node.end())
+        if (inputs_map)
         {
-            second_node_to_result.emplace(node, node_it->second);
-            nodes_to_process.pop_back();
-            continue;
+            auto it = inputs_map->find(node);
+            if (it != inputs_map->end())
+            {
+                second_node_to_result.emplace(node, it->second);
+                nodes_to_process.pop_back();
+                continue;
+            }
+        }
+
+        if (bind_by_name)
+        {
+            auto node_it = node_name_to_node.find(node->result_name);
+            if (node_it != node_name_to_node.end())
+            {
+                second_node_to_result.emplace(node, node_it->second);
+                nodes_to_process.pop_back();
+                continue;
+            }
         }
 
         /// Names bind a node of `second` only to an existing node of this DAG, or an input to an input of `second`.
