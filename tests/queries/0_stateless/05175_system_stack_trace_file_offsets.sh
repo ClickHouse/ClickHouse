@@ -10,13 +10,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `system.stack_trace` stores frames inside the main binary as file offsets, which `system.symbols`
 # bounds, and every other frame as 0, so no runtime address is published. Threads waiting in the
-# C library keep both kinds present in any snapshot of a running server.
+# C library keep both kinds present in any snapshot of a running server. Only a few long-lived threads are
+# read: each snapshot signals every thread it reads, one at a time across all queries, which is too slow
+# with many copies of the test in parallel.
 query="
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
     countIf(x > (SELECT max(address_end) FROM system.symbols)) = 0,
     countIf(x = 0) > 0
-FROM (SELECT arrayJoin(trace) AS x FROM system.stack_trace)
+FROM (SELECT arrayJoin(trace) AS x FROM system.stack_trace WHERE thread_name IN ('AsyncMetrics', 'ConfigReloader'))
 SETTINGS allow_introspection_functions = 1"
 
 # Signalling a thread can time out, leaving a snapshot with no deep trace to measure. Only that case is
