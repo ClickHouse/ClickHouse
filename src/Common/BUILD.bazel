@@ -531,8 +531,8 @@ ch_cc_library(
     name = "clickhouse_new_delete",
     srcs = ["AllocationInterceptors.cpp"],
     clickhouse_code = True,
-    implementation_deps = _ALLOCATOR_IMPLEMENTATION_DEPS,
-    link_runtime = True,
+    deps = ["@clickhouse_llvm_project//:unwind"],
+    implementation_deps = _ALLOCATOR_IMPLEMENTATION_DEPS + ["@clickhouse_llvm_project//:cxxabi"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     source_headers = False,
 )

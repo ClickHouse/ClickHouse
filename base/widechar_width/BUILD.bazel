@@ -7,8 +7,8 @@ ch_cc_library(
     srcs = ["widechar_width.cpp"],
     hdrs = ["widechar_width.h"],
     clickhouse_code = True,
+    deps = ["@clickhouse_llvm_project//:unwind"],
     includes = ["."],
-    link_runtime = True,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
