@@ -39,20 +39,23 @@ run_backup() { # <suffix> <user> <query> [<settings>]
         "${query} TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_${suffix}')${settings:+ SETTINGS ${settings}}"
 }
 
-echo "an implicit selection does not export the collections by default, and needs no rights to read them"
-run_backup default "${user}" "BACKUP DATABASE system ${except_tables_clause}" | grep -c "BACKUP_CREATED"
-find "$(backup_path default)/data/system/named_collections" -type f 2>/dev/null | wc -l
+echo "unset: an implicit selection skips the collections for a user without the rights to read them"
+run_backup default_skip "${user}" "BACKUP DATABASE system ${except_tables_clause}" | grep -c "BACKUP_CREATED"
+find "$(backup_path default_skip)/data/system/named_collections" -type f 2>/dev/null | wc -l
 
-echo "backup_named_collections = 1 exports them, so it requires the rights to read them"
+echo "unset: an implicit selection exports them for a user holding the rights"
+run_backup default_export default "BACKUP DATABASE system ${except_tables_clause}" | grep -c "BACKUP_CREATED"
+find "$(backup_path default_export)/data/system/named_collections" -type f | grep -c "${collection}"
+
+echo "backup_named_collections = 1 makes the missing rights an error"
 run_backup denied "${user}" "BACKUP DATABASE system ${except_tables_clause}" "backup_named_collections = 1" 2>&1 | grep -m1 -c "ACCESS_DENIED"
 
-echo "backup_named_collections = 1 exports them for a user holding the rights"
-run_backup optin default "BACKUP DATABASE system ${except_tables_clause}" "backup_named_collections = 1" | grep -c "BACKUP_CREATED"
-find "$(backup_path optin)/data/system/named_collections" -type f | grep -c "${collection}"
+echo "backup_named_collections = 0 never exports, even explicitly selected, and needs no rights"
+run_backup off "${user}" "BACKUP TABLE system.named_collections" "backup_named_collections = 0" | grep -c "BACKUP_CREATED"
+find "$(backup_path off)/data/system/named_collections" -type f 2>/dev/null | wc -l
 
-echo "naming the table explicitly exports them without the setting"
-run_backup explicit default "BACKUP TABLE system.named_collections" | grep -c "BACKUP_CREATED"
-find "$(backup_path explicit)/data/system/named_collections" -type f | grep -c "${collection}"
+echo "an explicit selection requires the rights"
+run_backup explicit_denied "${user}" "BACKUP TABLE system.named_collections" 2>&1 | grep -m1 -c "ACCESS_DENIED"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP USER ${user};

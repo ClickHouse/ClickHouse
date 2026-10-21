@@ -1176,6 +1176,38 @@ def test_system_named_collections_required_privileges():
     node1.query("DROP NAMED COLLECTION backup_nc")
 
 
+def test_system_named_collections_implicit_selection_on_cluster():
+    node1.query("CREATE NAMED COLLECTION backup_nc AS key1 = 'nc_secret_value'")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON *.* TO u1")
+
+    # With `backup_named_collections` unset, an implicit (DATABASE or ALL) selection exports the
+    # collections only if the initiating user may read their values. The hosts execute the
+    # dispatched query with full access, so the initiator takes that decision before dispatch:
+    # for u1, who may not read the values, the hosts must not export them.
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE system ON CLUSTER 'cluster' TO {backup_name}", user="u1")
+    for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+        assert "named_collections" not in os.path.relpath(dir_path, get_path_to_backup(backup_name)), dir_path
+        for file_name in file_names:
+            with open(os.path.join(dir_path, file_name), "rb") as f:
+                assert b"nc_secret_value" not in f.read(), file_name
+
+    # The same backup by a user holding the rights exports the collections.
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE system ON CLUSTER 'cluster' TO {backup_name}")
+    entry_files = []
+    for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+        if os.path.basename(dir_path) == "named_collections":
+            entry_files += file_names
+    assert len(entry_files) == 1
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
 def test_backup_required_privileges_address_default_database():
     # The addresses of 'cluster_address_default_db' set `default_database`, so an unqualified
     # table name in the dispatched query resolves on every host to that database, not to the

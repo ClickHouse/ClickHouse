@@ -130,14 +130,20 @@ struct BackupSettings
     /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
 
-    /// Whether `BACKUP ALL` and `BACKUP DATABASE system` export the SQL-created named collections
-    /// (the `system.named_collections` table). Disabled by default: exporting the collections writes
-    /// their values into the backup, so it requires the rights to read the values (`SHOW NAMED
-    /// COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and `displaySecretsInShowAndSelect`), which an
-    /// administrator allowed to back up everything does not necessarily hold, and a backup holding
-    /// them cannot be restored by a server which predates their support. Naming the table explicitly
-    /// (`BACKUP TABLE system.named_collections`) exports it regardless of this setting.
-    bool backup_named_collections = false;
+    /// Whether to export the SQL-created named collections (the `system.named_collections` table).
+    /// Exporting them writes their values into the backup, so it requires the rights to read the
+    /// values back: `SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and
+    /// `displaySecretsInShowAndSelect`.
+    /// - unset (the default): a backup selecting the table through an `ALL` or `DATABASE system`
+    ///   element exports the collections if the user holds those rights and skips them with a
+    ///   warning otherwise; naming the table explicitly requires the rights.
+    /// - true: the backup exports the collections and requires the rights, however the table is
+    ///   selected.
+    /// - false: the backup never exports the collections and does not require the rights.
+    /// For `BACKUP ON CLUSTER` the initiating host resolves the unset default against its user's
+    /// rights before dispatching the query, because the other hosts may execute it with full access
+    /// (see `BackupsWorker`).
+    std::optional<bool> backup_named_collections;
 
 #if CLICKHOUSE_CLOUD
     /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a

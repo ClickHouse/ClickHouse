@@ -8,6 +8,8 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+
 
 namespace DB::BackupUtils
 {
@@ -61,11 +63,32 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 }
 
 
-/// Returns access required to execute BACKUP query.
-AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, bool backup_named_collections)
+namespace
 {
-    const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
+    bool wildcardElementCoversSystemNamedCollections(const ASTBackupQuery::Element & element)
+    {
+        static const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
 
+        if (element.type == ASTBackupQuery::DATABASE)
+            return (element.database_name == system_named_collections.first)
+                && !element.except_tables.contains(system_named_collections);
+
+        if (element.type == ASTBackupQuery::ALL)
+            return !element.except_databases.contains(system_named_collections.first)
+                && !element.except_tables.contains(system_named_collections);
+
+        return false;
+    }
+}
+
+bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
+{
+    return std::ranges::any_of(elements, wildcardElementCoversSystemNamedCollections);
+}
+
+/// Returns access required to execute BACKUP query.
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections)
+{
     AccessRightsElements required_access;
     bool exports_named_collections = false;
     for (const auto & element : elements)
@@ -75,10 +98,11 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             case ASTBackupQuery::TABLE:
             {
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
-                /// Naming the table explicitly exports the collections regardless of the
-                /// `backup_named_collections` setting (see `backupNamedCollections`).
-                exports_named_collections |= (element.database_name == system_named_collections.first)
-                    && (element.table_name == system_named_collections.second);
+                /// Naming the table explicitly exports the collections unless `backup_named_collections`
+                /// turns the export off (see `backupNamedCollections`).
+                exports_named_collections |= (backup_named_collections != false)
+                    && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+                    && (element.table_name == "named_collections");
                 break;
             }
 
@@ -92,9 +116,11 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
-                exports_named_collections |= backup_named_collections
-                    && (element.database_name == system_named_collections.first)
-                    && !element.except_tables.contains(system_named_collections);
+                /// A DATABASE or ALL element selecting the table requires the rights only with
+                /// `backup_named_collections = true`: with the setting unset such an element exports
+                /// the collections only if the user holds the rights (see `backupNamedCollections`),
+                /// so nothing is required.
+                exports_named_collections |= (backup_named_collections == true) && wildcardElementCoversSystemNamedCollections(element);
                 break;
             }
 
@@ -102,9 +128,7 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP);
-                exports_named_collections |= backup_named_collections
-                    && !element.except_databases.contains(system_named_collections.first)
-                    && !element.except_tables.contains(system_named_collections);
+                exports_named_collections |= (backup_named_collections == true) && wildcardElementCoversSystemNamedCollections(element);
                 break;
             }
         }

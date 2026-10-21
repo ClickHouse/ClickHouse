@@ -1,6 +1,7 @@
 #include <Common/NamedCollections/NamedCollectionsBackup.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -51,30 +52,55 @@ constexpr std::string_view encrypted_sql_extension = ".sql.enc";
 
 void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup)
 {
-    /// A DATABASE or ALL element selects this table implicitly; export the collections for such an
-    /// element only when `backup_named_collections` asks for them. Naming the table in the query is
-    /// the explicit opt-in. This runs before the access check below, so that `BACKUP ALL` keeps
-    /// working for a user who may back up everything but may not read the collections' values.
-    if (!backup_entries_collector.getBackupSettings().backup_named_collections
-        && !backup_entries_collector.isTableExplicitlySelectedForBackup(
-            QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"}))
+    const auto & backup_named_collections = backup_entries_collector.getBackupSettings().backup_named_collections;
+
+    /// `backup_named_collections = false` turns the export off entirely, even for an explicitly
+    /// named `system.named_collections` table.
+    if (backup_named_collections == false)
         return;
 
     auto context = backup_entries_collector.getContext();
-    auto & factory = NamedCollectionFactory::instance();
-    const auto storage_properties = factory.getMetadataStorageProperties();
 
     /// The entries are the `CREATE NAMED COLLECTION` statements with their values. With an
     /// encrypted storage they are copied as ciphertext, but any server holding the same key
     /// restores them into collections whose values can then be read, so exporting them is
-    /// still equivalent to reading the values and requires the same rights `system.named_collections`
+    /// equivalent to reading the values and requires the same rights `system.named_collections`
     /// requires to show the values: `SHOW_NAMED_COLLECTIONS_SECRETS` together with
     /// `displaySecretsInShowAndSelect` (the former alone does not allow reading the values back).
-    /// The same rights are also required of the initiating user of a `BACKUP ON CLUSTER` query
+    const AccessFlags show_values_rights = AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS};
+
+    if (!backup_named_collections.has_value()
+        && !backup_entries_collector.isTableExplicitlySelectedForBackup(
+            QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"}))
+    {
+        /// The default for a DATABASE or ALL element selecting this table implicitly: export the
+        /// collections if the user may read their values, skip them with a warning otherwise, so
+        /// that `BACKUP ALL` works for a user who may back up everything but may not read the
+        /// values. For `BACKUP ON CLUSTER` this decision was already taken by the initiating host
+        /// against the initiating user (see `BackupsWorker`), because this host may be running the
+        /// query with full access.
+        auto access = context->getAccess();
+        if (!access->isGranted(show_values_rights) || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+        {
+            LOG_WARNING(
+                getLogger("backupNamedCollections"),
+                "Not exporting the named collections to the backup: the user has no rights to read their values "
+                "(`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and `displaySecretsInShowAndSelect`). "
+                "Set backup_named_collections = 1 to make this an error, or backup_named_collections = 0 to "
+                "silence this warning");
+            return;
+        }
+    }
+
+    /// With `backup_named_collections = true` or the table named explicitly, the missing rights are an
+    /// error. The same rights are also required of the initiating user of a `BACKUP ON CLUSTER` query
     /// before it is dispatched (see `BackupUtils::getRequiredAccessToBackup`), because the hosts
     /// running this check may execute the query with full access.
-    context->checkAccess(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
+    context->checkAccess(show_values_rights);
     context->checkAccess(AccessType::displaySecretsInShowAndSelect);
+
+    auto & factory = NamedCollectionFactory::instance();
+    const auto storage_properties = factory.getMetadataStorageProperties();
 
     auto raw_entries = factory.getRawEntriesForBackup();
 

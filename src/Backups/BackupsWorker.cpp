@@ -21,6 +21,7 @@
 #include <Backups/BackupsHelper.h>
 #endif
 #include <Common/FailPoint.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -517,6 +518,21 @@ struct BackupsWorker::BackupStarter
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
+
+            /// With `backup_named_collections` unset, a DATABASE or ALL element exports the named
+            /// collections only if the user may read their values. That decision belongs to the
+            /// initiating user, but with the default `distributed_ddl_use_initial_user_and_roles = false`
+            /// the other hosts execute the dispatched query with full access and would always export, so
+            /// it is taken here and forwarded. Only the refusal is forwarded: for a user holding the
+            /// rights the setting stays unset, which keeps the query accepted by hosts predating it.
+            if (!backup_settings.backup_named_collections.has_value()
+                && BackupUtils::wildcardSelectionCoversSystemNamedCollections(backup_query->elements))
+            {
+                auto access = query_context->getAccess();
+                if (!access->isGranted(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS})
+                    || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+                    backup_settings.backup_named_collections = false;
+            }
         }
 
         /// Check access rights before opening the backup destination (e.g., S3).
