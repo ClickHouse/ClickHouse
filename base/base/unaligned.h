@@ -97,6 +97,19 @@ inline T unalignedLoadBigEndian(const void * address)
     return unalignedLoadEndian<std::endian::big, T>(address);
 }
 
+/// Loads a value from its `size` least significant bytes, at most `sizeof(T)`, in big-endian order. The other
+/// bytes of the value are zero.
+template <typename T>
+inline T unalignedLoadBigEndian(const void * address, size_t size)
+{
+    T res {};
+    if constexpr (std::endian::native == std::endian::big)
+        memcpy(reinterpret_cast<char *>(&res) + sizeof(res) - size, address, size);
+    else
+        reverseMemcpy(&res, address, size);
+    return res;
+}
+
 
 template <typename T>
 inline void unalignedStoreBigEndian(void * address,

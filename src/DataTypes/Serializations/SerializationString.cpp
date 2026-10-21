@@ -592,7 +592,7 @@ void SerializationString::enumerateStreamsWithoutSize(
     settings.path.pop_back();
 }
 
-ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithoutSizeStream::clone() const
+ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithoutSizeStream::cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const
 {
     auto res = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
     res->need_string_data = need_string_data;

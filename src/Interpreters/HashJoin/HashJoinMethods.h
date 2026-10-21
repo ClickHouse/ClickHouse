@@ -116,26 +116,6 @@ public:
         bool is_join_get = false);
 
 private:
-    template <typename KeyGetter, bool is_asof_join>
-    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
-
-    /// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
-    /// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
-    /// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
-    template <typename KeyGetter, typename HashMap, typename Selector>
-    static void NO_INLINE insertFromBlockImplTypeCase(
-        HashJoin & join,
-        HashMap & map,
-        const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes,
-        UInt32 stored_block_no,
-        const Selector & selector,
-        ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask,
-        Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
-
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
