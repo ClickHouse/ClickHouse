@@ -17,7 +17,7 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select toString(generateUUIDv4())")
 # The trace spans 3000..5000: the child starts first, the root starts last.
 ${CLICKHOUSE_CLIENT} -q "
     insert into system.opentelemetry_span_log
-        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, finish_date, attribute)
+        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, event_date, attribute)
     values
         ('h', '$trace_id', 1, 0, 'root',  'INTERNAL', 5000, 1000, today(), map()),
         ('h', '$trace_id', 2, 1, 'child', 'INTERNAL', 3000, 2000, today(), map())

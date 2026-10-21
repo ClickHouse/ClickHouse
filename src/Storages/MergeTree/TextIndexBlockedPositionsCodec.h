@@ -11,6 +11,8 @@
 namespace DB
 {
 
+struct TokenPostingsInfo;
+
 /// Blocked candidate-driven positions codec (the text index positions layout).
 ///
 /// One token's positions as per-document lists, chunked into blocks of BLOCK_DOCS consecutive
@@ -116,6 +118,10 @@ public:
         PaddedPODArray<UInt32> & positions,
         DecodeScratch & scratch);
 };
+
+/// Throws CORRUPTED_DATA if the token has no positions, or if they are outside the stream of `file_size` bytes.
+/// Must be called before seeking to the positions: an offset outside the stream would leave the buffer out of range.
+void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 
 /// Collects one token's positions during the index build and streams them to the encoder.
 class PositionListBuilder

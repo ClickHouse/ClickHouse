@@ -512,7 +512,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             const ColumnWithTypeAndName & key_col = header_flatten.safeGetByPosition(*column_num_it);
             const String & name = key_col.name;
-            const IDataType & nested_type = *recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*key_col.type).getNestedType());
+            const DataTypePtr nested_type_holder = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*key_col.type).getNestedType());
+            const IDataType & nested_type = *nested_type_holder;
 
             if (column_num_it == map.second.begin()
                 || endsWith(name, "ID")
