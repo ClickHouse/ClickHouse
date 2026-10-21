@@ -2924,23 +2924,11 @@ void HashJoin::publishSharedRuntimeFilters()
                             else
                                 dispatch.template operator()<UInt8>(map.key8, UInt8(0), 1ULL << 8);
                             break;
-                        case Type::two_level_key8:
-                            if (build_signed)
-                                dispatch.template operator()<Int8>(map.two_level_key8, UInt8(0), 1ULL << 8);
-                            else
-                                dispatch.template operator()<UInt8>(map.two_level_key8, UInt8(0), 1ULL << 8);
-                            break;
                         case Type::key16:
                             if (build_signed)
                                 dispatch.template operator()<Int16>(map.key16, UInt16(0), 1ULL << 16);
                             else
                                 dispatch.template operator()<UInt16>(map.key16, UInt16(0), 1ULL << 16);
-                            break;
-                        case Type::two_level_key16:
-                            if (build_signed)
-                                dispatch.template operator()<Int16>(map.two_level_key16, UInt16(0), 1ULL << 16);
-                            else
-                                dispatch.template operator()<UInt16>(map.two_level_key16, UInt16(0), 1ULL << 16);
                             break;
                         case Type::range8_key32:
                             if (build_signed)
