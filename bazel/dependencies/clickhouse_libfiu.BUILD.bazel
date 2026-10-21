@@ -13,8 +13,10 @@ ch_cc_library(
         "libfiu/fiu-rc.c",
         "libfiu/backtrace.c",
         "libfiu/wtable.c",
+        "libfiu/internal.h",
+        "libfiu/wtable.h",
     ],
-    hdrs = glob(["libfiu/**/*.h"]),
+    hdrs = glob(["libfiu/fiu*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
