@@ -15,7 +15,7 @@
             "ko/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "전체 사용 사례",
+              "group": "모든 사용 사례",
               "pages": [
                 "ko/get-started/setup/cloud",
                 "ko/get-started/quickstarts/obtain-your-cloud-connection-details",
