@@ -559,8 +559,9 @@ The same check runs in these cases:
   a view or a table which a table function makes. If the user does not have `SHOW TABLES` on all the tables which it can
   read, the check fails with `ACCESS_DENIED`, also when these tables do not exist. For a `Merge` table, these are all the
   tables of its source database, or of all the databases if a regular expression selects the databases. For a view,
-  these are the tables in `FROM` and `JOIN` of its query and its subqueries. A table function in the query of a view
-  is not checked.
+  these are the tables in `FROM`, `JOIN` and the right operand of `IN` of its query and its subqueries. A table function
+  in the query of a view is not checked. For a table which a table function makes, these are all the tables of the
+  server. A table which a table function makes from data outside of the server, such as `s3` or `url`, is not checked.
 - `CREATE TABLE` and `ATTACH TABLE` with a full definition, if a policy for the table already exists.
 - `RENAME TABLE` and `EXCHANGE TABLES`, if a policy for the new name exists.
 
