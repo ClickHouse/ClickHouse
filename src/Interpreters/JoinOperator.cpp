@@ -527,7 +527,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
-    settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store] = min_string_column_bytes_for_hash_join_row_store;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES)
+        settings[QueryPlanSerializationSetting::min_string_column_bytes_for_hash_join_row_store] = min_string_column_bytes_for_hash_join_row_store;
 }
 
 bool JoinSettings::canRunGraceHash() const
