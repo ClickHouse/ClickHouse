@@ -1258,8 +1258,9 @@ contains a `NULL` and all of the 256 values of `UInt8` cannot be written, and th
 A column that has no `NULL`s at all is written without the attribute instead, and is read back as
 not `Nullable`, unless its data contains the default fill value of its type: the readers of the
 format take that value as missing even without the attribute, so then the column is written with a
-`_FillValue` that its data does not contain, the same as a column with a `NULL`. This does not apply
-to the types of one byte, which have no default fill value for the readers. A String column works the same way: the `_FillValue` of a `char` variable is a
+`_FillValue` that its data does not contain, the same as a column with a `NULL`. This applies to
+the types of one byte as well: the netCDF conventions exempt them, but `netCDF4` masks their default
+fill values in the classic formats all the same. A String column works the same way: the `_FillValue` of a `char` variable is a
 single character other than the zero byte, chosen so that the data of the column does not contain
 the string of that one character, so a `NULL` and an empty string stay different values. A column
 that contains a `NULL` and all of the 255 such one-character strings cannot be written, and throws

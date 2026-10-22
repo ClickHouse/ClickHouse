@@ -8,7 +8,8 @@ FILE=${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.nc
 rm -f "$FILE"
 
 # Without the `_FillValue` attribute, the readers of the format (the netCDF library, `netCDF4`)
-# take the default fill value of the type as missing data, except for the types of one byte. So a
+# take the default fill value of the type as missing data. The conventions exempt the types of one
+# byte, but `netCDF4` masks them in the classic formats too, so they are handled the same way. A
 # column without NULLs whose data contains that value is written with an explicit `_FillValue` that
 # the data does not contain, and the value is read back as a value, not as a NULL.
 
@@ -41,6 +42,13 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)"
 echo "--- UInt16 taking every value: nothing is left, no attribute"
 rm -f "$FILE"
 $CLICKHOUSE_LOCAL -q "SELECT toUInt16(number) AS x FROM numbers(65536) INTO OUTFILE '$FILE' FORMAT NetCDF"
+$CLICKHOUSE_LOCAL -q "
+    SELECT toTypeName(x), count(), uniqExact(x) FROM file('$FILE', NetCDF)
+    GROUP BY 1 SETTINGS input_format_netcdf_fill_value_as_null = 1"
+
+echo "--- UInt8 taking every value: nothing is left, no attribute"
+rm -f "$FILE"
+$CLICKHOUSE_LOCAL -q "SELECT toUInt8(number) AS x FROM numbers(256) INTO OUTFILE '$FILE' FORMAT NetCDF"
 $CLICKHOUSE_LOCAL -q "
     SELECT toTypeName(x), count(), uniqExact(x) FROM file('$FILE', NetCDF)
     GROUP BY 1 SETTINGS input_format_netcdf_fill_value_as_null = 1"

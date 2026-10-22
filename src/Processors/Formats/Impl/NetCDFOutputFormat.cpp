@@ -339,14 +339,6 @@ void writeDateTime64Column(WriteBuffer & out, const IColumn & column, const UInt
     }
 }
 
-/// The readers take the default fill value of a type as missing data even in a variable without the
-/// `_FillValue` attribute, except for the types of one byte, which are often small numbers rather
-/// than measurements. The netCDF library documents this in its conventions of the attributes.
-bool isByteType(NetCDFType type)
-{
-    return type == NetCDFType::Byte || type == NetCDFType::UByte;
-}
-
 /// Picks the value to write the NULLs of a column as, looking at the data that the column holds.
 String chooseFillValue(const IColumn & column, const UInt8 * null_map, const String & name, bool only_if_default_is_taken)
 {
@@ -660,13 +652,15 @@ void NetCDFOutputFormat::finalizeImpl()
                         "The column {} is Nullable and its values take every value of its type, so the NetCDF "
                         "format has no value left to write the NULLs as", variable.name);
             }
-            else if (!isByteType(variable.type))
+            else
             {
                 /// A column that has no NULLs needs no value to write them as. But a variable without
                 /// the attribute is not free of missing data for the readers: the netCDF library and
-                /// `netCDF4` take the default fill value of the type as missing then, for all types
-                /// but the ones of one byte. So when the data contains that value, an explicit
-                /// `_FillValue` that the data does not contain is written, and the value stays a value.
+                /// `netCDF4` take the default fill value of the type as missing then. The conventions
+                /// exempt the types of one byte, but `netCDF4` masks them in the classic formats all
+                /// the same, so they are no exception here. When the data contains that value, an
+                /// explicit `_FillValue` that the data does not contain is written, and the value
+                /// stays a value.
                 /// When the data takes every value of the type, there is nothing to choose, and the
                 /// attribute is not written, as it would mark a real value as missing either way.
                 variable.fill_value = chooseFillValue(*variable.data, null_map, variable.name, /*only_if_default_is_taken=*/ true);
