@@ -104,6 +104,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -4996,6 +4997,7 @@ bool MutateTask::prepare()
             .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
+            .temporary_data = ctx->context->getTempDataOnDisk(),
         };
 
         MergeTreeData::MutableDataPartPtr part;
@@ -5005,6 +5007,8 @@ bool MutateTask::prepare()
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
                 ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
+            if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+                part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
             ctx->temporary_directory_lock = std::move(lock);
         }
 
@@ -5174,6 +5178,8 @@ bool MutateTask::prepare()
 
     ctx->new_data_part = std::move(builder).build();
     ctx->new_data_part->getDataPartStorage().beginTransaction();
+    if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+        ctx->new_data_part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
 
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
