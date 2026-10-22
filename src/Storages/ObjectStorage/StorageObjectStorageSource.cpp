@@ -2863,7 +2863,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 
             if (!archive_object->getObjectMetadata())
                 archive_object->setObjectMetadata(
-                    object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                    getObjectMetadataForRead(*object_storage, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
 
             archive_reader = createArchiveReader(archive_object);
             auto first_file = archive_reader->firstFile();
