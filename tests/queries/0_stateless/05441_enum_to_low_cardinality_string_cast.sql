@@ -22,6 +22,11 @@ SELECT count(), countIf(CAST(e AS LowCardinality(String)) = CAST(e AS String)), 
 FROM (SELECT CAST(99 - number % 3, assumeNotNull((SELECT 'Enum8(' || arrayStringConcat(arrayMap(i -> '''v' || toString(i) || ''' = ' || toString(i - 100), range(200)), ', ') || ')'))) AS e FROM numbers(1000))
 SETTINGS max_block_size = 100;
 
+-- An empty enum name matches the default value of the dictionary.
+SELECT count(), arraySort(groupUniqArray(CAST(e AS LowCardinality(String))))
+FROM (SELECT CAST(['', 'a'][number % 2 + 1] AS Enum8('' = 1, 'a' = 2)) AS e FROM numbers(100));
+SELECT CAST(CAST('' AS Enum8('' = 1, 'a' = 2)) AS LowCardinality(String)) AS s, s = '';
+
 SELECT CAST(CAST(map('a', 1, 'b', 2), 'Map(Enum16(\'a\' = -5, \'b\' = 300), Int64)') AS Map(LowCardinality(String), Int64)) AS m, toTypeName(m);
 SELECT CAST(CAST(['x', 'y', 'x'], 'Array(Enum8(\'x\' = -1, \'y\' = 1))') AS Array(LowCardinality(String))) AS a, toTypeName(a);
 SELECT CAST(CAST([], 'Array(Enum8(\'x\' = 1))') AS Array(LowCardinality(String))) AS a, toTypeName(a);

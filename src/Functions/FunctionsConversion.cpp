@@ -2939,7 +2939,7 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 /// Maps enum values to indexes in a dictionary of all enum names built once,
 /// so that each block inserts into the result dictionary only the names it uses.
 template <typename EnumType>
-static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const DataTypePtr & from_type, const DataTypeLowCardinality & to_type)
+static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const DataTypePtr & from_type)
 {
     auto enum_type = std::static_pointer_cast<const EnumType>(from_type);
     const auto & values = enum_type->getValues();
@@ -2948,16 +2948,18 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
     constexpr auto missing = std::numeric_limits<UInt32>::max();
     VectorWithMemoryTracking<UInt32> value_to_index(values.back().second - min_value + 1, missing);
 
-    auto all_names = to_type.createColumn();
-    auto & all_names_lc = assert_cast<ColumnLowCardinality &>(*all_names);
-    for (size_t i = 0; i < values.size(); ++i)
+    /// The dictionary starts with the default value at index 0. Enum names are unique, so it is built without hashing.
+    auto names = ColumnString::create();
+    names->insertDefault();
+    for (const auto & [name, value] : values)
     {
-        all_names_lc.insertData(values[i].first.data(), values[i].first.size());
-        value_to_index[values[i].second - min_value] = static_cast<UInt32>(all_names_lc.getIndexes().getUInt(i));
+        if (!name.empty())
+            names->insertData(name.data(), name.size());
+        value_to_index[value - min_value] = name.empty() ? 0 : static_cast<UInt32>(names->size() - 1);
     }
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeString(), std::move(names));
 
-    const auto default_index = static_cast<UInt32>(all_names_lc.getDictionary().getDefaultValueIndex());
-    return [enum_type, min_value, value_to_index, default_index, dictionary = all_names_lc.getDictionaryPtr()]
+    return [enum_type, min_value, value_to_index, dictionary]
         (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
     {
         const auto & data = typeid_cast<const typename EnumType::ColumnType &>(*arguments.front().column).getData();
@@ -2969,7 +2971,7 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
         {
             size_t pos = data[i] - min_value;
             if (null_map && (*null_map)[i])
-                indexes_data[i] = default_index;
+                indexes_data[i] = 0;
             else if (pos < value_to_index.size() && value_to_index[pos] != missing)
                 indexes_data[i] = value_to_index[pos];
             else
@@ -3027,9 +3029,9 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
     if (to_low_cardinality && isString(to_nested))
     {
         if (isEnum8(from_type))
-            return createEnumToLowCardinalityStringWrapper<DataTypeEnum8>(from_type, *to_low_cardinality);
+            return createEnumToLowCardinalityStringWrapper<DataTypeEnum8>(from_type);
         if (isEnum16(from_type))
-            return createEnumToLowCardinalityStringWrapper<DataTypeEnum16>(from_type, *to_low_cardinality);
+            return createEnumToLowCardinalityStringWrapper<DataTypeEnum16>(from_type);
     }
 
     bool skip_not_null_check = false;
