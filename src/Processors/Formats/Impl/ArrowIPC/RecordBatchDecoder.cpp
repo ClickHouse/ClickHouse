@@ -58,6 +58,14 @@ namespace
 /// null maps until conversion, including when schema inference produces a plain `Tuple`.
 DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & column)
 {
+    if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get());
+        if (low_cardinality_type && low_cardinality_column->nestedIsNullable())
+            return std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
+        return type;
+    }
+
     const bool is_nullable = column->isNullable();
     const IColumn & nested_column = is_nullable
         ? assert_cast<const ColumnNullable &>(*column).getNestedColumn() : *column;
@@ -1569,8 +1577,8 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
 }
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
-    const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
-    const String & path, size_t list_depth)
+    const ArrowField & field, bool nullable, size_t rows, bool allow_low_cardinality,
+    const InvisibleRowsMask * invisible_rows, const String & path, size_t list_depth)
 {
     const Slice indices_slice = nextBuffer();
     const DictionaryRegistry::Dictionary & dictionary
@@ -1585,7 +1593,9 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     for (const auto & segment : dictionary.segments)
         segments.push_back(dictionaryValuesFor(field, segment));
 
-    const DataTypePtr & value_type = segments.front().type;
+    /// Null indices of a field declared non-nullable read as NULL, like the nulls of an inline field.
+    const bool wrap_index_nulls = nullable && !field.nullable && segments.front().type->canBeInsideNullable();
+    const DataTypePtr value_type = wrap_index_nulls ? makeNullable(segments.front().type) : segments.front().type;
     const IColumn * first_column = segments.front().column.get();
     if (const auto * constant = typeid_cast<const ColumnConst *>(first_column))
         first_column = &constant->getDataColumn();
@@ -1605,6 +1615,11 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
         keys->insertRangeFrom(*values, 0, values->size());
     }
     const size_t default_key_index = keys->size();
+    if (wrap_index_nulls)
+    {
+        auto keys_null_map = ColumnUInt8::create(default_key_index, UInt8{0});
+        keys = ColumnNullable::create(std::move(keys), std::move(keys_null_map));
+    }
     if (invisible_rows)
         keys->insertDefault();
 
@@ -1921,7 +1936,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
 
     /// Dictionary values come from separate batches; `effective_invisible` controls index visibility.
     if (field.dictionary)
-        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, path, list_depth);
+        return decodeDictionary(field, nullable, rows, allow_low_cardinality, effective_invisible, path, list_depth);
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
     if (wrapsInNullable(field, nullable, *inner, resolveTargetHint(target_hint, path, list_depth)))

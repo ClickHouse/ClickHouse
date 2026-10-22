@@ -56,7 +56,10 @@ for format in Arrow ArrowStream; do
 
     $CLICKHOUSE_CLIENT -q "INSERT INTO t_arrow_null_as_default SETTINGS input_format_null_as_default = 0 FORMAT $format" < "$file" 2>&1 \
         | grep -o -m1 "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN"
-    $CLICKHOUSE_LOCAL -q "SELECT i, s FROM file('$file', $format, 'i Nullable(Int64), s Nullable(String)') ORDER BY i SETTINGS input_format_null_as_default = 0"
+    $CLICKHOUSE_LOCAL -q "SELECT i, s, d, toTypeName(d) FROM file('$file', $format, 'i Nullable(Int64), s Nullable(String), d Nullable(String)') ORDER BY i SETTINGS input_format_null_as_default = 0"
+    $CLICKHOUSE_LOCAL -q "SELECT groupArray(tuple(d)) FROM file('$file', $format, 'd LowCardinality(Nullable(String))') SETTINGS input_format_null_as_default = 0"
+    $CLICKHOUSE_LOCAL -q "SELECT d FROM file('$file', $format, 'd String') SETTINGS input_format_null_as_default = 0" 2>&1 \
+        | grep -o -m1 "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN"
 done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_arrow_null_as_default"

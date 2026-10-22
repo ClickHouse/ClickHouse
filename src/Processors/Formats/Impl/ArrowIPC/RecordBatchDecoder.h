@@ -324,10 +324,11 @@ private:
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
     /// validity buffer), so this function needs no separate null map for the indices. `path` and
-    /// `list_depth` are the field's position, which selects the dictionary values decoded for it.
+    /// `list_depth` are the field's position, which selects the dictionary values decoded for it. `nullable` is
+    /// the field's effective nullability: its declared one, or true if its `FieldNode` reports nulls.
     ColumnPtr decodeDictionary(
-        const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
-        const String & path, size_t list_depth);
+        const ArrowField & field, bool nullable, size_t rows, bool allow_low_cardinality,
+        const InvisibleRowsMask * invisible_rows, const String & path, size_t list_depth);
     ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.

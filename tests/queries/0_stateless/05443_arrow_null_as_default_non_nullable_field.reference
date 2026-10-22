@@ -3,14 +3,18 @@ Arrow
 3	c	x	[]	(0)
 42	default		[]	(0)
 CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
-1	a
-3	c
-\N	\N
+1	a	x	Nullable(String)
+3	c	x	Nullable(String)
+\N	\N	\N	Nullable(String)
+[('x'),(NULL),('x')]
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
 ArrowStream
 1	a	x	[1,0]	(1)
 3	c	x	[]	(0)
 42	default		[]	(0)
 CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
-1	a
-3	c
-\N	\N
+1	a	x	Nullable(String)
+3	c	x	Nullable(String)
+\N	\N	\N	Nullable(String)
+[('x'),(NULL),('x')]
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
