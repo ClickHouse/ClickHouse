@@ -1644,6 +1644,13 @@ String childActionNameOfVirtualColumn(const String & column_name)
     return "__merge_virtual_column." + column_name;
 }
 
+/// The name the replacement of the `Merge` virtual column has in the output of such a child: the pinned
+/// `String` constant is wrapped into `toLowCardinality`, see `getModifiedQueryInfo`.
+String childOutputNameOfVirtualColumn(const String & column_name)
+{
+    return "toLowCardinality(" + childActionNameOfVirtualColumn(column_name) + ")";
+}
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     TableExpressionNodePtr original_table_expression,
@@ -1946,18 +1953,24 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             if (!merge_storage_snapshot->metadata->isVirtualColumn(column_name))
                 return;
 
-            auto value_node = std::make_shared<ConstantNode>(value, lc_string_type);
             auto action_name_node = std::make_shared<ConstantNode>(common_processed_stage > QueryProcessingStage::FetchColumns
                 ? childActionNameOfVirtualColumn(column_name)
                 : outerActionNameOfVirtualColumn(column_name));
 
-            auto function_node = std::make_shared<FunctionNode>("__actionName");
-            function_node->getArguments().getNodes().push_back(value_node);
-            function_node->getArguments().getNodes().push_back(std::move(action_name_node));
-            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", modified_context));
+            /// `__actionName` gets a `String` value, and `toLowCardinality` restores the type outside of it:
+            /// a child that executes the query itself sends this expression to the shards, and older
+            /// servers reject an argument of `__actionName` of any type other than `String`.
+            auto action_name_function_node = std::make_shared<FunctionNode>("__actionName");
+            action_name_function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(value, std::make_shared<DataTypeString>()));
+            action_name_function_node->getArguments().getNodes().push_back(std::move(action_name_node));
+            action_name_function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", modified_context));
+
+            auto function_node = std::make_shared<FunctionNode>("toLowCardinality");
+            function_node->getArguments().getNodes().push_back(std::move(action_name_function_node));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("toLowCardinality", modified_context));
 
             virtual_column_name_to_node.emplace(column_name, std::move(function_node));
-            virtual_column_name_to_constant.emplace(column_name, std::move(value_node));
+            virtual_column_name_to_constant.emplace(column_name, std::make_shared<ConstantNode>(value, lc_string_type));
         };
 
         add_child_name_constant("_database", database_name);
@@ -2204,7 +2217,7 @@ void ReadFromMerge::addVirtualColumns(
         {
             for (const auto * column_name : {"_database", "_table"})
             {
-                if (output->result_name == childActionNameOfVirtualColumn(column_name))
+                if (output->result_name == childOutputNameOfVirtualColumn(column_name))
                 {
                     output = &renaming_dag.addAlias(*output, outerActionNameOfVirtualColumn(column_name));
                     renamed = true;

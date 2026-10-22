@@ -1,16 +1,16 @@
 -- Test: exercises `FunctionActionName::useDefaultImplementationForLowCardinalityColumns`
--- override. Without this override, a LowCardinality(String) constant argument would be
--- unwrapped to String before reaching `getReturnTypeImpl`, silently bypassing the type
--- check that is meant to forbid non-String arguments (only the first argument, the
--- value, may be LowCardinality(String)).
+-- override that the PR added but did not test. Without this override, a
+-- LowCardinality(String) constant argument would be unwrapped to String before
+-- reaching `getReturnTypeImpl`, silently bypassing the type check that is meant
+-- to forbid non-String arguments.
 -- Covers: src/Functions/identity.h:91 — useDefaultImplementationForLowCardinalityColumns() = false
 -- Covers: src/Functions/identity.h:93-103 — getReturnTypeImpl type validation loop
 
 SET enable_analyzer = 1;
 
--- LowCardinality(String) constant - first arg: allowed (the value of a `Merge` child's
--- `_table` constant is LowCardinality(String)), and the LowCardinality type is kept.
-SELECT __actionName(toLowCardinality('foo'), 'bar'), toTypeName(__actionName(toLowCardinality('foo'), 'bar'));
+-- LowCardinality(String) constant - first arg
+-- Without the LowCardinality override, this would silently return 'foo'.
+SELECT __actionName(toLowCardinality('foo'), 'bar'); -- { serverError BAD_ARGUMENTS }
 
 -- LowCardinality(String) constant - second arg
 SELECT __actionName('foo', toLowCardinality('bar')); -- { serverError BAD_ARGUMENTS }

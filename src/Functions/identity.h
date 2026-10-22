@@ -1,5 +1,4 @@
 #pragma once
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
@@ -107,8 +106,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 
-    /// Do not allow any argument to have type other than String, except that the value
-    /// may be a `LowCardinality(String)` (e.g. the `_table` constant of a `Merge` child).
+    /// Do not allow any argument to have type other than String
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -123,9 +121,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (const auto & arg : arguments)
         {
-            const auto & arg = i == 0 ? removeLowCardinality(arguments[i]) : arguments[i];
             if (WhichDataType(arg).isString())
                 continue;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
