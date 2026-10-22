@@ -175,7 +175,8 @@ InitialAllRangesAnnouncement makeAnnouncementForStream(size_t replica_num, Range
         replica_num,
         /*mark_segment_size=*/0,
         /*min_marks_per_request=*/24,
-        stream_id);
+        stream_id,
+        /*wants_analyzed_ranges=*/false);
 }
 
 InitialAllRangesAnnouncement makeAnnouncement(size_t replica_num, RangesInDataPartsDescription parts)
@@ -186,7 +187,8 @@ InitialAllRangesAnnouncement makeAnnouncement(size_t replica_num, RangesInDataPa
         replica_num,
         /*mark_segment_size=*/0,
         /*min_marks_per_request=*/24,
-        /*stream_id=*/"default.t2");
+        /*stream_id=*/"default.t2",
+        /*wants_analyzed_ranges=*/false);
 }
 
 InitialAllRangesAnnouncement makeDefaultAnnouncement(size_t replica_num, RangesInDataPartsDescription parts)
@@ -197,7 +199,8 @@ InitialAllRangesAnnouncement makeDefaultAnnouncement(size_t replica_num, RangesI
         replica_num,
         /*mark_segment_size=*/128,
         /*min_marks_per_request=*/24,
-        /*stream_id=*/"default.t2");
+        /*stream_id=*/"default.t2",
+        /*wants_analyzed_ranges=*/false);
 }
 
 }
@@ -971,7 +974,7 @@ TEST(ParallelReplicasCoordinator, InOrderAuthoritativeIdentityAppliesToItsOwnTab
 /// compiles this file against the merge-base sources, where the newer constants do not exist yet.
 TEST(ParallelReplicasCoordinator, PartDescriptionRoundTripsPerProtocolVersion)
 {
-    for (const UInt64 protocol_version : {8ull, 9ull, 10ull})
+    for (const UInt64 protocol_version : {8ull, 9ull, 10ull, 11ull})
     {
         auto original = makePartWithFingerprint(
             "all", 3, 7, 2, /*marks=*/42,
@@ -1003,14 +1006,14 @@ TEST(ParallelReplicasCoordinator, PartDescriptionRoundTripsPerProtocolVersion)
 
         /// The newer fields only travel once their gate is open; below it they must come back as the
         /// default rather than as garbage read out of the following field.
-        const size_t expected_total_marks = protocol_version >= 9 ? getTotalMarksInPart(original) : 0;
+        const size_t expected_total_marks = protocol_version >= 10 ? getTotalMarksInPart(original) : 0;
         EXPECT_EQ(getTotalMarksInPart(got), expected_total_marks) << "at protocol version " << protocol_version;
 
         const std::pair<UInt64, UInt64> expected_fingerprint
-            = protocol_version >= 10 ? getPartFingerprint(original) : std::pair<UInt64, UInt64>{0, 0};
+            = protocol_version >= 11 ? getPartFingerprint(original) : std::pair<UInt64, UInt64>{0, 0};
         EXPECT_EQ(getPartFingerprint(got), expected_fingerprint) << "at protocol version " << protocol_version;
 
-        const UInt8 expected_identity = protocol_version >= 10 ? getPartNameIdentityValue(original) : 0;
+        const UInt8 expected_identity = protocol_version >= 11 ? getPartNameIdentityValue(original) : 0;
         EXPECT_EQ(getPartNameIdentityValue(got), expected_identity) << "at protocol version " << protocol_version;
     }
 }

@@ -455,6 +455,16 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
+    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
+    if (hasUniqueKey())
+    {
+        const auto uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
+        UInt64 res = 0;
+        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
+            res += uk_read_snapshot->liveRows(*part);
+        return res;
+    }
+
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -475,8 +485,15 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
-    auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
+    /// Guarded, so a plain count on a table without a unique key does not start a transaction
+    /// as a side effect.
+    DeleteBitmapSnapshotPtr uk_read_snapshot;
+    if (hasUniqueKey())
+        uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
+    auto parts = uk_read_snapshot
+        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
+        : getVisibleDataPartsVector(local_context);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -4183,6 +4200,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         {
             .txn = local_context->getCurrentTransaction(),
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+            .temporary_data = local_context->getTempDataOnDisk(),
         };
         if (replace)
         {
@@ -4398,6 +4416,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+            .temporary_data = local_context->getTempDataOnDisk(),
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(

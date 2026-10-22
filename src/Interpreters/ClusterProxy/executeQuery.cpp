@@ -1813,6 +1813,15 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
 
+        /// `InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas` pins these on the context shipped
+        /// to the replicas, so the query text must not re-apply the user's values over it. The parser copies the
+        /// SELECT's trailing `SETTINGS` into the INSERT's own clause, so both carriers are stripped. A replica that
+        /// re-applies a non-zero `automatic_parallel_replicas_mode` and does not ignore it as a follower reads the
+        /// whole source table instead of its share, and the insert writes every row once per replica.
+        static constexpr std::array settings_pinned_by_initiator{
+            std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+        removeSettingsFromQueryTopLevel(new_query_ast, settings_pinned_by_initiator);
+
         /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
         /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf
         /// values shipped with 'new_context' are authoritative on the remote replica; otherwise the original outer
