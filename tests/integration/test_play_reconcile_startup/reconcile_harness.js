@@ -2016,8 +2016,9 @@ async function main() {
     /// concurrent run fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. A probe started by the bookkeeping of
     /// another request (`rememberAuthenticationOutcome`, as after the database panel) holds the query
     /// of a Run back until it settles, and a probe wanted while the query of a Run is in flight waits
-    /// for it to finish.
-    for (const order of ['probe-first', 'run-first']) {
+    /// for it to finish. The admission is per server, not per connection: a probe started for one
+    /// HTTP session (`session_id=a`) also holds back the Run of another one (`session_id=b`).
+    for (const order of ['probe-first', 'run-first', 'probe-first-other-session']) {
         const r = await runScenario(js, {
             href: base,
             historyState: null,
@@ -2053,12 +2054,17 @@ async function main() {
             rememberAuthenticationOutcome({ ok: true, status: 200, headers: { get: () => null } }, url_elem.value, '', '');
         `, r.sandbox);
         const wait_for = async (event) => { for (let i = 0; i < 100 && !events.includes(event); ++i) await sleep(10); };
-        if (order === 'probe-first') {
+        if (order === 'probe-first' || order === 'probe-first-other-session') {
+            const other_session = order === 'probe-first-other-session';
+            const origin = new URL(base).origin;
+            if (other_session) vm.runInContext(`url_elem.value = ${JSON.stringify(origin + '/?session_id=a')};`, r.sandbox);
             remember();
             await wait_for('probe:start');
+            if (other_session) vm.runInContext(`url_elem.value = ${JSON.stringify(origin + '/?session_id=b')};`, r.sandbox);
             vm.runInContext("query_area.value = 'SELECT 7'; postAll();", r.sandbox);
             await sleep(50);
-            check('probe-admission', 'the query of the Run is held back while the probe is in flight',
+            const what = other_session ? 'the query of a Run in another HTTP session' : 'the query of the Run';
+            check('probe-admission', what + ' is held back while the probe is in flight',
                 !events.includes('query:start'), events);
             release.probe();
             release.query();

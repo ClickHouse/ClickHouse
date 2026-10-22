@@ -16952,7 +16952,7 @@ async function learnImplicitUser(server_address, password) {
 /// the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`. The probes are bookkeeping and must
 /// never displace a query of the user, whichever path starts them (`storeCredentials`,
 /// `rememberAuthenticationOutcome` after the database panel or the completions, Download, the
-/// startup auto-run). So, per server (`serverIdentityKey`): a probe is sent only while no query of a
+/// startup auto-run). So, per server (`serverAdmissionKey`): a probe is sent only while no query of a
 /// run is in flight, waiting for them to finish otherwise, and a run that starts while a probe is in
 /// flight sends its query only after the probe has settled. A run counts from its admission to the
 /// end of its response, as the server holds the slot until then. The probe is a short status query
@@ -16962,7 +16962,7 @@ async function learnImplicitUser(server_address, password) {
 /// at any other point.
 function implicitUserProbeAdmission(server_address) {
     const all = implicitUserProbeAdmission.servers ??= new Map();
-    const key = serverIdentityKey(server_address) ?? server_address;
+    const key = serverAdmissionKey(server_address) ?? server_address;
     if (!all.has(key)) all.set(key, { runs: 0, probes: new Set(), idle: [] });
     return all.get(key);
 }
@@ -16992,6 +16992,17 @@ async function admitImplicitUserProbe(server_address, probe) {
     } finally {
         admission.probes.delete(pending);
     }
+}
+
+/// The key under which the probes and the runs are admitted (`implicitUserProbeAdmission`): the
+/// protocol and the host with the port, or `null` if the address does not parse. Coarser than
+/// `serverIdentityKey`: the query slots belong to the server, so connections that differ only in the
+/// path or the query string (e.g. `session_id`) still compete for them. Grouping connections that do
+/// not share the slots only makes a run wait for a short probe.
+function serverAdmissionKey(server_address) {
+    let url;
+    try { url = new URL(server_address, location.href); } catch (e) { return null; }
+    return url.protocol + '//' + url.host;
 }
 
 /// `sameConnectionUser` of a stored connection and the live connection fields.

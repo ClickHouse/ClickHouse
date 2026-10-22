@@ -169,7 +169,7 @@ function makeContext(storage) {
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
     'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryImplicitUser', 'replayConnectionUser',
     'learnImplicitUser', 'implicitUserProbeAdmission', 'admitRunQuery', 'admitImplicitUserProbe', 'sameConnectionUser', 'sameAsLiveConnectionUser',
-    'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
+    'serverIdentityKey', 'serverAdmissionKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
     'rememberLoginPassword', 'rememberAuthenticationOutcome', 'connectionTuple', 'checkCredentials'];
