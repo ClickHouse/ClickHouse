@@ -53,6 +53,16 @@ ch_cc_library(
     deps = [":_kj"],
 )
 
+_CAPNPC_PUBLIC_HEADERS = [
+    "c++/src/capnp/schema-parser.h",
+    "c++/src/capnp/serialize-text.h",
+    "c++/src/capnp/compiler/compiler.h",
+    "c++/src/capnp/compiler/error-reporter.h",
+    "c++/src/capnp/compiler/generics.h",
+    "c++/src/capnp/compiler/grammar.capnp.h",
+    "c++/src/capnp/compiler/resolver.h",
+]
+
 ch_cc_library(
     name = "_capnpc",
     srcs = [
@@ -67,11 +77,11 @@ ch_cc_library(
         "c++/src/capnp/compiler/compiler.c++",
         "c++/src/capnp/schema-parser.c++",
         "c++/src/capnp/serialize-text.c++",
-    ],
-    hdrs = [
-        "c++/src/capnp/schema-parser.h",
-        "c++/src/capnp/serialize-text.h",
-    ] + glob(["c++/src/capnp/compiler/**/*.h"]),
+    ] + glob(
+        ["c++/src/capnp/compiler/**/*.h"],
+        exclude = _CAPNPC_PUBLIC_HEADERS,
+    ),
+    hdrs = _CAPNPC_PUBLIC_HEADERS,
     copts = _CAPNPROTO_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [

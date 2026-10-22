@@ -64,9 +64,10 @@ ch_cc_library(
     implementation_deps = [
         ":boost_config",
         ":boost_headers",
+        ":_boost_context",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":_boost_context"],
+    deps = [],
 )
 
 ch_cc_library(

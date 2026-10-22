@@ -46,8 +46,11 @@ ch_cc_library(
         "src/register.c",
         "src/base64.c",
         "src/md5pwd.c",
-    ]) + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]),
-    hdrs = glob(["**/*.h"]),
+    ]) + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]) + glob(
+        ["**/*.h"],
+        exclude = ["src/gsasl*.h"],
+    ),
+    hdrs = glob(["src/gsasl*.h"]),
     copts = [
         "-w",
         "-std=gnu11",

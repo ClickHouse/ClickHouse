@@ -60,6 +60,8 @@ ch_cc_library(
         "//src/Parsers:clickhouse_parsers",
         "//src/Storages/System:clickhouse_storages_system__compile_1",
         "//src/TableFunctions:headers",
+        "//src/Dictionaries:clickhouse_dictionaries",
+        "//src/TableFunctions:clickhouse_table_functions",
     ],
     link_runtime = True,
     local_defines = [
@@ -148,9 +150,5 @@ ch_cc_library(
         ".",
         "../../" + "bazel/gen",
     ],
-    deps = [
-        "//src/AggregateFunctions:clickhouse_aggregate_functions",
-        "//src/Dictionaries:clickhouse_dictionaries",
-        "//src/TableFunctions:clickhouse_table_functions",
-    ],
+    deps = ["//src/AggregateFunctions:clickhouse_aggregate_functions"],
 )

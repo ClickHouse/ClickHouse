@@ -10,6 +10,7 @@ exports_files([
     "llvm-clickhouse-runtime.patch",
     "librdkafka-config-include.patch",
     "mongo-bsoncxx-enum-compatibility.patch",
+    "msgpack-version-include.patch",
     "lz4-fast-decoder.patch",
     "perfetto-protos-protoc.patch",
     "rules_rs-local-workspaces.patch",

@@ -13,8 +13,11 @@ alias(
 
 ch_cc_library(
     name = "_icui18n",
-    srcs = glob(["icu4c/source/i18n/*.cpp"]),
-    hdrs = glob(["icu4c/source/i18n/**/*.h"]),
+    srcs = glob([
+        "icu4c/source/i18n/*.cpp",
+        "icu4c/source/i18n/*.h",
+    ]),
+    hdrs = glob(["icu4c/source/i18n/unicode/*.h"]),
     copts = [
         "-w",
         "-std=c++23",
@@ -45,6 +48,7 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = [":_icudata"],
     includes = [
         "icu4c/source/common",
     ],
@@ -60,5 +64,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
     ],
-    implementation_deps = [":_icudata"],
 )

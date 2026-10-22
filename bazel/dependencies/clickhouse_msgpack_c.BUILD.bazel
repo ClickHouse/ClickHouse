@@ -1,3 +1,4 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -6,13 +7,78 @@ exports_files([
     "LICENSE_1_0.txt",
 ])
 
+_C_API_HDRS = [
+    "include/msgpack.h",
+    "include/msgpack/fbuffer.h",
+    "include/msgpack/pack.h",
+    "include/msgpack/pack_define.h",
+    "include/msgpack/sbuffer.h",
+    "include/msgpack/timestamp.h",
+    "include/msgpack/unpack.h",
+    "include/msgpack/util.h",
+    "include/msgpack/version.h",
+    "include/msgpack/vrefbuffer.h",
+]
+
+_BOOST_HDRS = glob(["include/msgpack/**/adaptor/boost/*.hpp"])
+
+_ZBUFFER_HDRS = glob([
+    "include/msgpack/**/zbuffer*.h",
+    "include/msgpack/**/zbuffer*.hpp",
+])
+
+# MSGPACK_PP_ITERATE, MSGPACK_PP_ASSIGN_SLOT, and MSGPACK_PP_LOCAL_ITERATE
+# supply the filenames and the macro state these headers require.
+# slot/detail/def.hpp defines ordinary public macros and stays in hdrs.
+_PREPROCESSOR_TEXTUAL_HDRS = [
+    "include/msgpack/preprocessor/slot/detail/counter.hpp",
+    "include/msgpack/preprocessor/slot/detail/shared.hpp",
+] + glob([
+    "include/msgpack/preprocessor/iteration/detail/**/*.hpp",
+    "include/msgpack/preprocessor/slot/detail/slot*.hpp",
+])
+
 cc_library(
     name = "msgpack_c",
-    hdrs = glob([
-        "include/**/*.h",
-        "include/**/*.hpp",
-    ]),
-    includes = [
-        "include",
+    hdrs = glob(
+        [
+            "include/**/*.h",
+            "include/**/*.hpp",
+        ],
+        exclude = _C_API_HDRS + _BOOST_HDRS + _ZBUFFER_HDRS + _PREPROCESSOR_TEXTUAL_HDRS + [
+            "include/msgpack/pack_template.h",
+            "include/msgpack/unpack_template.h",
+        ],
+    ),
+    includes = ["include"],
+    textual_hdrs = _PREPROCESSOR_TEXTUAL_HDRS,
+)
+
+cc_library(
+    name = "msgpack_boost",
+    hdrs = _BOOST_HDRS,
+    defines = ["MSGPACK_USE_BOOST"],
+    deps = [
+        ":msgpack_c",
+        "@clickhouse_boost//:boost_headers",
     ],
+)
+
+cc_library(
+    name = "msgpack_zbuffer",
+    hdrs = _ZBUFFER_HDRS,
+    deps = [
+        ":msgpack_c",
+        "@clickhouse_zlib_ng//:_zlib",
+    ],
+)
+
+ch_cc_library(
+    name = "msgpack_c_api",
+    srcs = ["include/msgpack/unpack_template.h"] + glob(["src/*.c"]),
+    hdrs = _C_API_HDRS,
+    language = "C",
+    libcxx_headers = False,
+    textual_hdrs = ["include/msgpack/pack_template.h"],
+    deps = [":msgpack_c"],
 )

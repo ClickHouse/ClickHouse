@@ -1813,10 +1813,7 @@ filegroup(
         out
         for out in CODEGEN_RULES["generate_native_SQLConsole"]["outs"]
         if out.endswith(".gz")
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    ],
 )
 
 embed_clickstack(

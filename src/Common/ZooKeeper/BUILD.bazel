@@ -198,22 +198,10 @@ _GENERATED_LOCAL_DEFINES_0 = select({
 
 ch_cc_library(
     name = "clickhouse_common_zookeeper_base",
-    srcs = ([
-        "IKeeper.cpp",
-    ] + glob(["Keeper*.cpp"]) + [
-        "SystemTablesDataTypes.cpp",
-        "TestKeeper.cpp",
-        "ZooKeeper.cpp",
-        "ZooKeeperArgs.cpp",
-        "ZooKeeperCachingGetter.cpp",
-        "ZooKeeperCommon.cpp",
-        "ZooKeeperConstants.cpp",
-        "ZooKeeperIO.cpp",
-        "ZooKeeperLock.cpp",
-        "ZooKeeperNodeCache.cpp",
-        "ZooKeeperPathUtils.cpp",
-        "ZooKeeperWithFaultInjection.cpp",
-    ]) + glob(["KeeperClientCLI/*.cpp"]),
+    srcs = glob(
+        ["*.cpp"],
+        exclude = ["ZooKeeperImpl.cpp"],
+    ) + glob(["KeeperClientCLI/*.cpp"]),
     hdrs = [
         "KeeperOverDispatcher.h",
         "ZooKeeperImpl.h",

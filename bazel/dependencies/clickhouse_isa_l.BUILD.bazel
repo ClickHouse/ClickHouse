@@ -48,11 +48,30 @@ ch_cc_library(
             "mem/mem_zero_detect_base.c",
             "raid/raid_base_aliases.c",
             "raid/raid_base.c",
-        ] + glob(["crc/**/*.h", "erasure_code/**/*.h"]),
+        ] + glob(
+            [
+                "crc/**/*.h",
+                "erasure_code/**/*.h",
+                "igzip/*.h",
+            ],
+            exclude = [
+                "igzip/checksum_test_ref.h",
+                "igzip/inflate_std_vects.h",
+            ],
+        ),
         "@platforms//cpu:aarch64": [],
     }),
     hdrs = select({
-        "@platforms//cpu:x86_64": glob(["igzip/**/*.h", "include/**/*.h"]),
+        "@platforms//cpu:x86_64": [
+            "include/crc.h",
+            "include/crc64.h",
+            "include/erasure_code.h",
+            "include/gf_vect_mul.h",
+            "include/igzip_lib.h",
+            "include/mem_routines.h",
+            "include/raid.h",
+            "include/unaligned.h",
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [
@@ -69,6 +88,10 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:libcxxabi_headers"],
         "@platforms//cpu:aarch64": [],
     }),
+    includes = select({
+        "@platforms//cpu:x86_64": ["include"],
+        "@platforms//cpu:aarch64": [],
+    }),
     language = "C",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -82,10 +105,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    includes = select({
-        "@platforms//cpu:x86_64": ["include"],
-        "@platforms//cpu:aarch64": [],
-    }),
 )
 
 nasm_objects(

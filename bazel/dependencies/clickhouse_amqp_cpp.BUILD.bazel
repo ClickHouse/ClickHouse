@@ -9,26 +9,6 @@ exports_files([
     "LICENSE",
 ])
 
-_AMQP_SHARED_HEADERS = [
-    "src/basicframe.h",
-    "src/basicheaderframe.h",
-    "src/basicpublishframe.h",
-    "src/bodyframe.h",
-    "src/channelframe.h",
-    "src/confirmframe.h",
-    "src/connectionframe.h",
-    "src/exchangeframe.h",
-    "src/extframe.h",
-    "src/headerframe.h",
-    "src/includes.h",
-    "src/linux_tcp/function.h",
-    "src/linux_tcp/poll.h",
-    "src/methodframe.h",
-    "src/queueframe.h",
-    "src/receivedframe.h",
-    "src/transactionframe.h",
-]
-
 ch_cc_library(
     name = "_amqp-cpp",
     srcs = [
@@ -51,17 +31,21 @@ ch_cc_library(
         "src/table.cpp",
         "src/watchable.cpp",
         "include/amqpcpp/linux_tcp/tcpdefines.h",
-    ] + glob(["src/**/*.h"], exclude = _AMQP_SHARED_HEADERS),
-    hdrs = glob(["include/**/*.h"], exclude = [
-        "include/amqpcpp/libboostasio.h",
-        "include/amqpcpp/libev.h",
-        "include/amqpcpp/libevent.h",
-        "include/amqpcpp/linux_tcp/tcpdefines.h",
-    ]) + _AMQP_SHARED_HEADERS,
+    ] + glob(["src/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = [
+            "include/amqpcpp/libboostasio.h",
+            "include/amqpcpp/libev.h",
+            "include/amqpcpp/libevent.h",
+            "include/amqpcpp/linux_tcp/tcpdefines.h",
+        ],
+    ),
     copts = [
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = ["@clickhouse_openssl//:crypto"],
     includes = [
         "include",
     ],
@@ -75,5 +59,4 @@ ch_cc_library(
         "@clickhouse_libuv//:_uv",
         "@clickhouse_openssl//:ssl",
     ],
-    implementation_deps = ["@clickhouse_openssl//:crypto"],
 )

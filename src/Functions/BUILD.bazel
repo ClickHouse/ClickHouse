@@ -110,11 +110,13 @@ _PRIVATE_FUNCTIONS_OBJ_0_HEADERS = glob(
 ) + [
     "ColorConversion.h",
     "CountSubstringsImpl.h",
+    "CustomWeekTransforms.h",
     "EmptyImpl.h",
     "ExtractString.h",
     "FunctionBase32Conversion.h",
     "FunctionBase58Conversion.h",
     "FunctionBase64Conversion.h",
+    "FunctionBaseXXConversion.h",
     "FunctionBinaryArithmetic.h",
     "FunctionBitTestMany.h",
     "FunctionConstantBase.h",
@@ -138,6 +140,7 @@ _PRIVATE_FUNCTIONS_OBJ_0_HEADERS = glob(
     "HTMLCharacterReference.h",
     "HasSubsequenceImpl.h",
     "HasTokenImpl.h",
+    "IFunctionCustomWeek.h",
     "Kusto/KQLExactArithmetic.h",
     "Kusto/KQLPlan.h",
     "LeastGreatestGeneric.h",
@@ -200,11 +203,9 @@ _GENERATED_HDRS_0 = [
     "CastOverloadResolver.h",
     "ComparisonNames.h",
     "ComparisonOrderDomain.h",
-    "CustomWeekTransforms.h",
     "DateTimeTransforms.h",
     "DivisionUtils.h",
     "FieldInterval.h",
-    "FunctionBaseXXConversion.h",
     "FunctionDateOrDateTimeAddInterval.h",
     "FunctionDateOrDateTimeToSomething.h",
     "FunctionDynamicAdaptor.h",
@@ -233,7 +234,6 @@ _GENERATED_HDRS_0 = [
     "HighlightImpl.h",
     "IFunction.h",
     "IFunctionAdaptors.h",
-    "IFunctionCustomWeek.h",
     "IFunctionDateOrDateTime.h",
     "ITupleFunction.h",
     "IsOperation.h",
@@ -989,7 +989,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     local_includes = [
-        "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
     deps = [
@@ -1078,7 +1077,6 @@ ch_cc_library(
     }),
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     local_includes = [
-        "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
     deps = [
@@ -1212,15 +1210,13 @@ ch_cc_library(
     }),
     local_includes = select({
         "@platforms//cpu:x86_64": [
-            "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../../" + "bazel/gen",
             "../../" + "bazel/gen/x86_64/.",
         ],
         "@platforms//cpu:aarch64": [],
     }),
     deps = select({
-        "@platforms//cpu:x86_64": [
-        ],
+        "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "//base:common",
             "//base/glibc-compatibility",
@@ -1234,7 +1230,7 @@ ch_cc_library(
             "//base/poco/XML:_poco_xml",
             "//base/readpassphrase",
             "//base/widechar_width",
-            "//contrib/arrow-cmake:headers",
+            "//contrib/arrow-cmake:arrow_cmake_headers",
             "//contrib/c-ares-cmake:headers",
             "//contrib/cityhash102:_cityhash",
             "//contrib/consistent-hashing:_consistent_hashing",
@@ -1262,7 +1258,7 @@ ch_cc_library(
             "//src/Dictionaries/Embedded:clickhouse_dictionaries_embedded",
             "//src/Functions/GatherUtils:headers",
             "//src/Functions/JSONPath:clickhouse_functions_jsonpath",
-            "//src/Functions/URL:headers",
+            "//src/Functions/URL:clickhouse_functions_url__compile_1",
             "//src/Functions/array:headers",
             "//src/Loggers:headers",
             "//src/Parsers:headers",

@@ -227,6 +227,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
+        "//src:dbms__compile_1",
     ],
     alwayslink = True,
 )

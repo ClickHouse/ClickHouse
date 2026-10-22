@@ -11,13 +11,7 @@ ch_cc_library(
     name = "_jieba",
     srcs = glob(["src/*.cpp"]),
     hdrs = glob(["include/**/*.h"]),
-    additional_compiler_inputs = glob(
-        [
-            "data/*.dat",
-            "data/*.zst",
-        ],
-        exclude = ["data/jieba_hmm_model.dat"],
-    ),
+    additional_compiler_inputs = glob(["data/*.zst"]),
     copts = [
         "-w",
         "-std=c++23",

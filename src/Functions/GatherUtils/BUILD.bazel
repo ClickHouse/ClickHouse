@@ -24,7 +24,7 @@ ch_cc_library(
     ] + glob(["sliceFrom*.cpp"]) + [
         "starts_with.cpp",
     ]),
-    hdrs = glob(["**/*.h"]),
+    hdrs = ["GatherUtils.h"],
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
@@ -115,6 +115,7 @@ ch_cc_library(
     ],
     local_includes = ["../../../" + "bazel/gen"],
     deps = [
+        ":headers",
         "@clickhouse_arrow//:_arrow",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",

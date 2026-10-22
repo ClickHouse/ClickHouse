@@ -165,7 +165,6 @@ _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
     ],
     local_defines = _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES,
     local_includes = [
-        "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
     ],
     deps = [

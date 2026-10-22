@@ -6,14 +6,11 @@ exports_files([
     "LICENSE",
 ])
 
-_CLD2_PRIVATE_HEADERS = [
-    "internal/cldutil.h",
-    "internal/compact_lang_det_hint_code.h",
-    "internal/fixunicodevalue.h",
-    "internal/utf8acceptinterchange.h",
-    "internal/utf8prop_lettermarkscriptnum.h",
-    "internal/utf8repl_lettermarklower.h",
-    "internal/utf8scannot_lettermarkspecial.h",
+_CLD2_PUBLIC_INTERNAL_HEADERS = [
+    "internal/generated_language.h",
+    "internal/generated_ulscript.h",
+    "internal/integral_types.h",
+    "internal/lang_script.h",
 ]
 
 ch_cc_library(
@@ -43,8 +40,16 @@ ch_cc_library(
         "internal/cld2_generated_deltaoctachrome.cc",
         "internal/cld2_generated_distinctoctachrome.cc",
         "internal/cld_generated_score_quad_octa_2.cc",
-    ] + _CLD2_PRIVATE_HEADERS,
-    hdrs = glob(["public/**/*.h", "internal/**/*.h"], exclude = _CLD2_PRIVATE_HEADERS),
+    ] + glob(
+        ["internal/**/*.h"],
+        exclude = _CLD2_PUBLIC_INTERNAL_HEADERS + [
+            "internal/cld2_dynamic_compat.h",
+            "internal/cld2_dynamic_data_extractor.h",
+            "internal/cldutil_offline.h",
+            "internal/unittest_data.h",
+        ],
+    ),
+    hdrs = glob(["public/**/*.h"]) + _CLD2_PUBLIC_INTERNAL_HEADERS,
     copts = [
         "-w",
         "-std=c++23",

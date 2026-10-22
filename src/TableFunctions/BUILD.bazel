@@ -91,6 +91,7 @@ ch_cc_library(
         "//src/Storages/System:clickhouse_storages_system__compile_1",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
+        "//src:dbms",
     ],
     link_runtime = True,
     local_defines = [
@@ -210,7 +211,6 @@ ch_cc_library(
         "@clickhouse_silk//:_silk_fibers",
     ] + [
         "//base/glibc-compatibility",
-        "//src:dbms",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
         "@clickhouse_cctz//:tzdata",
         "@clickhouse_grpc//:grpc",

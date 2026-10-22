@@ -89,29 +89,13 @@ _NET_SSL_DEFINES = select({
 
 poco_cc_library(
     name = "_poco_net_ssl__compile_0",
-    srcs = ([
-        "src/AcceptCertificateHandler.cpp",
-        "src/CertificateHandlerFactory.cpp",
-        "src/CertificateHandlerFactoryMgr.cpp",
-        "src/Context.cpp",
-        "src/HTTPSClientSession.cpp",
-        "src/HTTPSSessionInstantiator.cpp",
-        "src/HTTPSStreamFactory.cpp",
-        "src/InvalidCertificateHandler.cpp",
-        "src/KeyConsoleHandler.cpp",
-        "src/KeyFileHandler.cpp",
-    ] + glob(["src/PrivateKey*.cpp"]) + [
-        "src/RejectCertificateHandler.cpp",
-        "src/SSLException.cpp",
-        "src/SSLManager.cpp",
-    ] + glob(
-        ["src/Secure*.cpp"],
-        exclude = ["src/SecureSocketImpl.cpp"],
-    ) + [
-        "src/Session.cpp",
-        "src/Utility.cpp",
-        "src/VerificationErrorArgs.cpp",
-    ]),
+    srcs = glob(
+        ["src/*.cpp"],
+        exclude = [
+            "src/EmbeddedCertificates.cpp",
+            "src/SecureSocketImpl.cpp",
+        ],
+    ),
     hdrs = glob(["include/**/*.h"]),
     copts = _NET_SSL_COPTS,
     includes = ["include"],

@@ -223,9 +223,7 @@ ch_cc_library(
     ],
     textual_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
     deps = [
-        "@clickhouse_c_ares//:_c-ares",
         ":_libbson",
-        "@clickhouse_zstd//:_zstd",
         "@clickhouse_openssl//:ssl",
     ],
 )

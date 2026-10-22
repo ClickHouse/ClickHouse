@@ -29,8 +29,11 @@ ch_cc_library(
         "mecab/src/utils.cpp",
         "mecab/src/viterbi.cpp",
         "mecab/src/writer.cpp",
-    ],
-    hdrs = glob(["mecab/src/**/*.h"]),
+    ] + glob(
+        ["mecab/src/**/*.h"],
+        exclude = ["mecab/src/mecab.h"],
+    ),
+    hdrs = ["mecab/src/mecab.h"],
     copts = [
         "-w",
         "-std=c++23",
@@ -47,5 +50,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins", "@clickhouse//contrib/MeCab-cmake:mecab_config_headers"],
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse//contrib/MeCab-cmake:mecab_config_headers",
+    ],
 )

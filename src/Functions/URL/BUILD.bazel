@@ -98,33 +98,10 @@ _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES = [
 
 ch_cc_library(
     name = "clickhouse_functions_url__compile_0",
-    srcs = ([
-        "URLHierarchy.cpp",
-        "URLPathHierarchy.cpp",
-        "basename.cpp",
-        "cutFragment.cpp",
-        "cutQueryString.cpp",
-        "cutQueryStringAndFragment.cpp",
-        "cutToFirstSignificantSubdomain.cpp",
-        "cutToFirstSignificantSubdomainCustom.cpp",
-        "cutURLParameter.cpp",
-        "cutWWW.cpp",
-        "decodeURLComponent.cpp",
-        "domain.cpp",
-        "domainWithoutWWW.cpp",
-    ] + glob(["extractURL*.cpp"]) + [
-        "firstSignificantSubdomain.cpp",
-        "firstSignificantSubdomainCustom.cpp",
-        "fragment.cpp",
-        "netloc.cpp",
-        "path.cpp",
-        "pathFull.cpp",
-        "port.cpp",
-        "protocol.cpp",
-        "queryString.cpp",
-        "queryStringAndFragment.cpp",
-        "topLevelDomain.cpp",
-    ] + _PRIVATE_FUNCTIONS_URL_0_HEADERS),
+    srcs = glob(
+        ["*.cpp"],
+        exclude = ["tldLookup.generated.cpp"],
+    ) + _PRIVATE_FUNCTIONS_URL_0_HEADERS,
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
@@ -160,7 +137,6 @@ ch_cc_library(
 
 ch_cc_library(
     name = "clickhouse_functions_url__compile_1",
-    source_headers = False,
     srcs = ["tldLookup.generated.cpp"],
     hdrs = ["tldLookup.h"],
     clickhouse_code = True,
@@ -174,6 +150,7 @@ ch_cc_library(
     local_includes = [
         "../../../" + "bazel/gen",
     ],
+    source_headers = False,
     deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -434,14 +411,4 @@ cc_library(
         ":clickhouse_functions_url__compile_0",
         ":clickhouse_functions_url__compile_1",
     ],
-)
-
-cc_library(
-    name = "headers",
-    hdrs = glob(
-        [
-            "**/*.h",
-        ],
-        exclude = _PRIVATE_FUNCTIONS_URL_0_HEADERS,
-    ),
 )

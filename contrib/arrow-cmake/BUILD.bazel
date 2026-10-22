@@ -13,11 +13,3 @@ cc_library(
         "cpp/src/orc/c++/include",
     ],
 )
-
-cc_library(
-    name = "headers",
-    hdrs = glob([
-        "**/*.h",
-        "**/*.hh",
-    ]),
-)

@@ -9,10 +9,23 @@ exports_files([
     "LICENSE",
 ])
 
+_DOUBLE_CONVERSION_API_HDRS = [
+    "double-conversion/double-conversion.h",
+    "double-conversion/double-to-string.h",
+    "double-conversion/string-to-double.h",
+    "double-conversion/utils.h",
+]
+
 ch_cc_library(
     name = "_double-conversion",
-    srcs = glob(["double-conversion/*.cc"]),
-    hdrs = glob(["double-conversion/*.h"]),
+    srcs = glob(
+        [
+            "double-conversion/*.cc",
+            "double-conversion/*.h",
+        ],
+        exclude = _DOUBLE_CONVERSION_API_HDRS,
+    ),
+    hdrs = _DOUBLE_CONVERSION_API_HDRS,
     copts = [
         "-w",
         "-std=c++23",

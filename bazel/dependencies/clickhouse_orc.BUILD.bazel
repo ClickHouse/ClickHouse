@@ -88,6 +88,13 @@ ch_cc_library(
         "-include",
         repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h",
     ],
+    implementation_deps = [
+        "@lz4//:lz4",
+        "@clickhouse_snappy//:_snappy",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse//bazel:orc_proto_headers",
+    ],
     includes = [
         "c++/include",
     ],
@@ -150,19 +157,14 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = ["config/contrib/orc/c++/include", "c++/src"],
+    local_includes = [
+        "config/contrib/orc/c++/include",
+        "c++/src",
+    ],
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse//contrib/lz4-cmake:_lz4",
         "@clickhouse_zstd//:_zstd",
-        "@clickhouse//contrib/arrow-cmake:headers",
-    ],
-    implementation_deps = [
-        "@lz4//:lz4",
-        "@clickhouse_snappy//:_snappy",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_zstd//:_zstd__compile_0",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
-        "@clickhouse//bazel:orc_proto_headers",
     ],
 )
