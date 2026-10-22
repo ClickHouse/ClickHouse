@@ -853,6 +853,19 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     return anyChild(ast, [](const ASTPtr & child) { return hasWithFillAnywhere(child); });
 }
 
+/// True if any SELECT in the query has `WITH TOTALS`. The totals row reaches the result through FROM,
+/// JOIN and WITH, but is not distributive over a WHERE: a filter pushed below the totals step
+/// recomputes it over the filtered rows, and `UNION ALL` keeps the totals of one branch only.
+bool hasWithTotalsAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->group_by_with_totals)
+            return true;
+    return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
+}
+
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
 /// global over the table's row versions and is NOT distributive over a WHERE
 /// predicate: the TLP rewrites split rows into `p` / `NOT p` / `p IS NULL`
@@ -1121,6 +1134,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
                         || hasNonStrippableInlineSettings(definition)
                         || hasNestedThreadSettings(definition, nullptr)
+                        || hasWithTotalsAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesDistributedTableAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
@@ -2767,6 +2781,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (usesFinalAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: FINAL (dedup is not distributive over WHERE partitions)");
+        return false;
+    }
+
+    if (hasWithTotalsAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: WITH TOTALS (the totals row is not distributive over WHERE partitions)");
         return false;
     }
 
