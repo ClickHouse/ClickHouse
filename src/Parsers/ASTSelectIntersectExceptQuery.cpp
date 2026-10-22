@@ -53,6 +53,16 @@ void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatS
         bool need_parens = (*it)->as<ASTSelectWithUnionQuery>() != nullptr
             || (*it)->as<ASTSelectIntersectExceptQuery>() != nullptr;
 
+        /// Except for an `INTERSECT` on the right of `EXCEPT` carrying the trailing `SETTINGS` clause, as in
+        /// `A EXCEPT ALL B INTERSECT ALL C SETTINGS ...`: the clause applies to the whole query, and parentheses would
+        /// keep it to the `INTERSECT`. `INTERSECT` binds tighter than `EXCEPT`, so they are not needed. A parenthesized
+        /// `INTERSECT` is wrapped into `ASTSelectWithUnionQuery`, so it is not matched here.
+        if (const auto * intersect = (*it)->as<ASTSelectIntersectExceptQuery>(); intersect && std::next(it) == children.end()
+            && (final_operator == Operator::EXCEPT_ALL || final_operator == Operator::EXCEPT_DISTINCT)
+            && (intersect->final_operator == Operator::INTERSECT_ALL || intersect->final_operator == Operator::INTERSECT_DISTINCT)
+            && getTrailingSettings(*it))
+            need_parens = false;
+
         if (need_parens)
         {
             ostr << indent_str;
