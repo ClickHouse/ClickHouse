@@ -194,6 +194,8 @@ class ParserExpression : public IParserBase
 public:
     explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
 
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const override { return "lambda expression"; }
 
@@ -333,6 +335,16 @@ protected:
     const char * getName() const override { return "ttl expression list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+/// Whether the parentheses that `pos` points at hold an expression over a column named `from`, rather
+/// than a subquery. Does not move `pos`.
+///
+/// `from` is a keyword that ClickHouse has always accepted as an unquoted identifier, and a subquery
+/// may omit its SELECT clause and start with the FROM clause instead (`(FROM t)` means
+/// `(SELECT * FROM t)`), so both readings parse for `WHERE (from IN ('a'))`: the expression
+/// `from IN ('a')`, and the subquery `SELECT * FROM IN('a')` over a table function named `IN`. The
+/// column reading is older than the FROM-first form, so it wins the ambiguity.
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos);
 
 }
 

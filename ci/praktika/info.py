@@ -140,6 +140,10 @@ class Info:
         return self.env.RUN_ID
 
     @property
+    def run_attempt(self):
+        return self.env.RUN_ATTEMPT
+
+    @property
     def pr_labels(self):
         return self.env.PR_LABELS
 
@@ -291,19 +295,6 @@ class Info:
         if key:
             return kv_data.get(key, None)
         return kv_data
-
-    # JOB_KV_DATA key under which a workflow hook may store the description of
-    # the "Ready For Merge" commit status. The description is used only when the
-    # workflow is green: a red status describes the failed jobs instead. Set it
-    # from the Config Workflow job (pre-hooks and filter hooks), whose KV data is
-    # propagated to every other job, including Finish Workflow.
-    READY_FOR_MERGE_DESCRIPTION_KEY = "ready_for_merge_description"
-
-    def set_ready_for_merge_description(self, description):
-        self.store_kv_data(self.READY_FOR_MERGE_DESCRIPTION_KEY, description)
-
-    def get_ready_for_merge_description(self):
-        return self.get_kv_data(self.READY_FOR_MERGE_DESCRIPTION_KEY) or ""
 
     def get_changed_files(self):
         return self.get_kv_data().get("changed_files", None)

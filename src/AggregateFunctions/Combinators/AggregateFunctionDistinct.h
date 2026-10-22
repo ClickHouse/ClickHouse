@@ -291,6 +291,11 @@ public:
         nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
     }
 
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(getNestedPlace(place), to);
+    }
+
     size_t sizeOfData() const override
     {
         return prefix_size + nested_func->sizeOfData();
@@ -352,6 +357,11 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
     }
 
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override

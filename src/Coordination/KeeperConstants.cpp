@@ -70,6 +70,20 @@
     M(RWLockReadersWaitMilliseconds) \
     M(RWLockWritersWaitMilliseconds) \
     M(DNSError) \
+    M(DNSRequests) \
+    M(DNSRequestMicroseconds) \
+    M(DNSRequestError) \
+    M(DNSReverseRequests) \
+    M(DNSReverseRequestMicroseconds) \
+    M(DNSReverseError) \
+\
+    M(TLSHandshakes) \
+    M(TLSHandshakeMicroseconds) \
+    M(TLSHandshakeErrors) \
+    M(TLSServerHandshakes) \
+    M(TLSServerHandshakeMicroseconds) \
+    M(TLSServerHandshakeErrors) \
+\
     M(RealTimeMicroseconds) \
     M(UserTimeMicroseconds) \
     M(SystemTimeMicroseconds) \
@@ -230,7 +244,6 @@
     M(AsynchronousRemoteReadWaitMicroseconds) \
     M(SynchronousRemoteReadWaitMicroseconds) \
 \
-    M(ExternalDataSourceLocalCacheReadBytes) \
 \
     M(MainConfigLoads) \
 \
@@ -457,6 +470,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
+    M(KeeperRaftThreadsWaitingForLogsPreprocessing) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
     M(KeeperChangelogReadAheadThreads) \

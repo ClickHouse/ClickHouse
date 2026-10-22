@@ -19,8 +19,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
-        NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -28,7 +27,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
 
 Параметры `IPV4_PREFIX_BITS` и `IPV6_PREFIX_BITS` можно использовать только тогда, когда `KEYED BY` имеет значение `ip_address` или `forwarded_ip_address`. Они соответствуют полю таблицы [system.quotas](/ru/reference/system-tables/quotas).
 
-Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `queries_per_normalized_hash` соответствуют полям таблицы [system.quotas&#95;usage](/ru/reference/system-tables/quotas_usage).
+Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `written_bytes`, `written_rows`, `failed_sequential_authentications`, `queries_per_normalized_hash` соответствуют полям таблицы [system.quotas&#95;usage](/ru/reference/system-tables/quotas_usage).
 
 Предложение `ON CLUSTER` позволяет создавать квоты для кластера, см. [Distributed DDL](/ru/reference/statements/distributed-ddl).
 

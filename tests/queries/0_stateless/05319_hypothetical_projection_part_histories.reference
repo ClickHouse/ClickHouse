@@ -1,0 +1,5 @@
+-- the estimate
+marks_span: 2 to 4
+verdict: too close to call
+-- the optimizer reads the base table
+0

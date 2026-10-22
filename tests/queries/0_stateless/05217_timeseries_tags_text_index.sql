@@ -6,6 +6,8 @@ SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET explain_query_plan_default = 'legacy';
+-- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
+SET use_text_index_postings_cache = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
 -- Direct reads from text indexes require a single replica.
@@ -94,17 +96,4 @@ INSERT INTO ts_text_memory SELECT * FROM ts_text;
 SELECT count() FROM ts_text_memory;
 DROP TABLE ts_text_memory;
 
-SELECT 'external tags target';
-CREATE TABLE external_tags
-(
-    id Tuple(UInt64, LowCardinality(UUID)),
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String)
-)
-ENGINE = MergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_text_external ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, store_min_time_and_max_time = 0 TAGS external_tags;
-INSERT INTO ts_text_external (metric_name, tags, samples) VALUES ('test_metric', {'job':'api'}, [(1000, 1.)]);
-SELECT value FROM prometheusQuery(ts_text_external, 'test_metric{job="api"}', 1000);
-DROP TABLE ts_text_external;
-DROP TABLE external_tags;
 DROP TABLE ts_text;

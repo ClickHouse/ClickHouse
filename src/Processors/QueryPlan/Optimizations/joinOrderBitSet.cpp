@@ -123,6 +123,7 @@ SelectivityEstimate computeSelectivity(
         /// (left_member, right_member) pairs and taking the minimum selectivity,
         /// since min(1/max(l,r)) = 1/max(all l's and r's).
         UInt64 max_ndv = 0;
+        UInt64 max_ndv_upper_bound = 0;
         bool has_left = false;
         bool has_right = false;
         for (const auto & equiv_member : *equiv_class)
@@ -130,27 +131,18 @@ SelectivityEstimate computeSelectivity(
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
-            auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
             if (left.test(*relation))
-            {
                 has_left = true;
-                max_ndv = std::max(max_ndv, ndv.value_or(0));
-            }
             else if (right.test(*relation))
-            {
                 has_right = true;
-                max_ndv = std::max(max_ndv, ndv.value_or(0));
-            }
+            else
+                continue;
+            auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+            max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
+            max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
         }
         if (has_left && has_right)
-        {
-            estimate.has_equi = true;
-            if (max_ndv > 0)
-            {
-                estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
-                estimate.reliable = true;
-            }
-        }
+            applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
     }
 
     return estimate;

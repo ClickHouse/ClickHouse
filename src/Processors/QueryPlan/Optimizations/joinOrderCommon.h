@@ -18,14 +18,27 @@ using PlanMemo = std::unordered_map<BitSet, DPJoinEntryPtr>;
 struct SelectivityEstimate
 {
     double value = 1.0;
+    /// Like `value`, but a key column without NDV statistics uses the row count of its relation
+    /// (an upper bound of its NDV) instead. Reported by `EXPLAIN` as `estimated (NDV)` and used for the
+    /// match fraction of semi/anti joins; the inner join cost model does not use it, because it says
+    /// nothing about which side is the key.
+    double reported_value = 1.0;
     bool reliable = false;
     bool has_equi = false;
 };
 
 using SelectivityCache = std::unordered_map<JoinActionRef, SelectivityEstimate>;
 
-/// Number of distinct values of a join-key column, or nullopt when no real statistics are available.
-inline std::optional<UInt64> getColumnStats(
+struct ColumnDistinctValues
+{
+    /// Number of distinct values from real statistics, or nullopt when there are none.
+    std::optional<UInt64> ndv;
+    /// `ndv` if known, otherwise the row count of the column's relation; 0 when neither is known.
+    UInt64 upper_bound = 0;
+};
+
+/// Number of distinct values of a join-key column.
+inline ColumnDistinctValues getColumnStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     const BitSet & rels,
@@ -40,15 +53,30 @@ inline std::optional<UInt64> getColumnStats(
         {
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
-                return col_it->second.num_distinct_values;
+                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values};
+            return {{}, it->second->estimated_rows.value_or(0)};
         }
         return {};
     }
 
-    const auto & col_stats = relation_stats.at(rel_id.value()).column_stats;
-    if (auto it = col_stats.find(column_name); it != col_stats.end())
-        return it->second.num_distinct_values;
-    return {};
+    const auto & relation_stat = relation_stats.at(rel_id.value());
+    if (auto it = relation_stat.column_stats.find(column_name); it != relation_stat.column_stats.end())
+        return {it->second.num_distinct_values, it->second.num_distinct_values};
+    return {{}, relation_stat.estimated_rows.value_or(0)};
+}
+
+/// Accounts for an equality between key columns with the largest NDV `max_ndv` (0 if unknown)
+/// and the largest NDV upper bound `max_ndv_upper_bound` (0 if unknown), see `ColumnDistinctValues`.
+inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, UInt64 max_ndv, UInt64 max_ndv_upper_bound)
+{
+    estimate.has_equi = true;
+    if (max_ndv > 0)
+    {
+        estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
+        estimate.reliable = true;
+    }
+    if (max_ndv_upper_bound > 0)
+        estimate.reported_value = std::min(estimate.reported_value, 1.0 / static_cast<double>(max_ndv_upper_bound));
 }
 
 inline SelectivityEstimate computeSelectivity(
@@ -67,15 +95,12 @@ inline SelectivityEstimate computeSelectivity(
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
         return estimate;
 
-    estimate.has_equi = true;
     auto lhs_ndv = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
     auto rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
-    UInt64 max_ndv = std::max(lhs_ndv.value_or(0), rhs_ndv.value_or(0));
-    if (max_ndv > 0)
-    {
-        estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
-        estimate.reliable = true;
-    }
+    applyEquiKeyDistinctValues(
+        estimate,
+        std::max(lhs_ndv.ndv.value_or(0), rhs_ndv.ndv.value_or(0)),
+        std::max(lhs_ndv.upper_bound, rhs_ndv.upper_bound));
     return estimate;
 }
 
@@ -90,6 +115,7 @@ inline SelectivityEstimate computeSelectivity(
     {
         auto edge_estimate = computeSelectivity(query_graph, dp_table, expression_selectivity, *edge);
         estimate.value = std::min(estimate.value, edge_estimate.value);
+        estimate.reported_value = std::min(estimate.reported_value, edge_estimate.reported_value);
         estimate.reliable |= edge_estimate.reliable;
         estimate.has_equi |= edge_estimate.has_equi;
     }
@@ -97,33 +123,27 @@ inline SelectivityEstimate computeSelectivity(
 }
 
 /// Expected number of rows an inner join of `lhs_rows` x `rhs_rows` keeps under `selectivity`.
-/// Without reliable NDV an equi join is assumed to be FK->PK (the smaller side is a unique key),
-/// so it keeps the larger side; without any equi condition (cross or range-only join) the
-/// result is the full product.
-inline double estimateJoinedRows(const SelectivityEstimate & selectivity, double lhs_rows, double rhs_rows)
+/// When a side has no row estimate we cannot tell which side is the key, so the join is costed as
+/// before the FK->PK heuristic: the missing row estimate counts as 1 row and the selectivity is the
+/// NDV upper bound (`reported_value`), whatever `reliable` says. A join with an unknown relation must
+/// not look more expensive than that, otherwise the only relations with known sizes (for example,
+/// those with hash-table statistics hints) are pushed to the end of the join order, and a key whose
+/// relation has a known size must keep making the join with it cheap even when the other side is a
+/// sub-join of unknown size. With both sizes known, an equi join without reliable NDV is assumed to
+/// be FK->PK (the smaller side is a unique key), so it keeps the larger side. Without any equi
+/// condition (cross or range-only join) the result is the full product.
+inline double estimateJoinedRows(
+    const SelectivityEstimate & selectivity, std::optional<UInt64> lhs_rows, std::optional<UInt64> rhs_rows)
 {
+    double lhs = static_cast<double>(lhs_rows.value_or(1));
+    double rhs = static_cast<double>(rhs_rows.value_or(1));
+    if (!lhs_rows || !rhs_rows)
+        return selectivity.reported_value * lhs * rhs;
     if (selectivity.reliable)
-        return selectivity.value * lhs_rows * rhs_rows;
+        return selectivity.value * lhs * rhs;
     if (selectivity.has_equi)
-        return std::max(lhs_rows, rhs_rows);
-    return lhs_rows * rhs_rows;
-}
-
-/// The fraction of the cross product `estimateJoinedRows` keeps. Unlike `SelectivityEstimate::value`,
-/// which is 1 when no NDV is known, it reflects the FK->PK assumption and is therefore comparable
-/// with the actual cartesian selectivity reported by `EXPLAIN ANALYZE`.
-inline double effectiveSelectivity(const SelectivityEstimate & selectivity, double lhs_rows, double rhs_rows)
-{
-    double product = lhs_rows * rhs_rows;
-    if (product <= 0)
-        return selectivity.value;
-    return std::min(1.0, estimateJoinedRows(selectivity, lhs_rows, rhs_rows) / product);
-}
-
-inline double effectiveSelectivity(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
-{
-    return effectiveSelectivity(
-        selectivity, static_cast<double>(left->estimated_rows.value_or(1)), static_cast<double>(right->estimated_rows.value_or(1)));
+        return std::max(lhs, rhs);
+    return lhs * rhs;
 }
 
 /// Single source of truth for join cardinality estimation. For outer joins the result is
@@ -142,26 +162,27 @@ inline std::optional<UInt64> estimateJoinCardinality(
     JoinKind join_kind,
     JoinStrictness strictness = JoinStrictness::All)
 {
-    if (!left_rows && !right_rows)
+    /// With one side unknown the result is unknown too: even for an inner equi join we cannot tell
+    /// whether the known side is the key, and for an outer join the preserved side may be the unknown one.
+    if (!left_rows || !right_rows)
         return {};
 
-    double lhs = static_cast<double>(left_rows.value_or(0));
-    double rhs = static_cast<double>(right_rows.value_or(0));
+    double lhs = static_cast<double>(*left_rows);
+    double rhs = static_cast<double>(*right_rows);
 
     if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
     {
-        if (!left_rows || !right_rows)
-            return {};
-
         /// Preserved side is the left input for LEFT (and Inner/Cross, defensively), the right
         /// input for RIGHT; the other side is only probed for existence.
         const bool preserve_left = !isRight(join_kind);
         const double preserved = preserve_left ? lhs : rhs;
         const double other = preserve_left ? rhs : lhs;
-        /// Expected fraction of preserved rows with at least one match. `selectivity.value` is ~1/ndv,
-        /// so `selectivity.value * other` approximates matches per preserved row; cap at 1. Without
-        /// reliable statistics the value is 1, i.e. every preserved row is assumed to have a match.
-        const double match_fraction = std::min(1.0, selectivity.value * other);
+        /// Expected fraction of preserved rows with at least one match. The selectivity is ~1/ndv,
+        /// so `ndv_selectivity * other` approximates matches per preserved row; cap at 1. Without
+        /// reliable statistics use the row-count upper bound of NDV (`reported_value`), which treats
+        /// the join as FK->PK: e.g. a semi join of 1000 rows against 10 keys keeps ~10 rows.
+        const double ndv_selectivity = selectivity.reliable ? selectivity.value : selectivity.reported_value;
+        const double match_fraction = std::min(1.0, ndv_selectivity * other);
         const double kept = (strictness == JoinStrictness::Semi)
             ? preserved * match_fraction
             : preserved * (1.0 - match_fraction);
@@ -171,18 +192,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
         return static_cast<UInt64>(semi_rows);
     }
 
-    double joined_rows = 1.0;
-    if (!left_rows || !right_rows)
-    {
-        /// One side is unknown: for an equi join assume FK->PK, so the join keeps the known side.
-        /// For a cross or range-only join the result is a product with an unknown multiplier;
-        /// returning the known side would make the cross product look deceptively small.
-        if (!selectivity.has_equi)
-            return {};
-        joined_rows = std::max(lhs, rhs);
-    }
-    else
-        joined_rows = std::max(estimateJoinedRows(selectivity, lhs, rhs), 1.0);
+    double joined_rows = std::max(estimateJoinedRows(selectivity, left_rows, right_rows), 1.0);
 
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
@@ -212,9 +222,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
 
 inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
 {
-    double lhs = static_cast<double>(left->estimated_rows.value_or(1));
-    double rhs = static_cast<double>(right->estimated_rows.value_or(1));
-    return left->cost + right->cost + estimateJoinedRows(selectivity, lhs, rhs);
+    return left->cost + right->cost + estimateJoinedRows(selectivity, left->estimated_rows, right->estimated_rows);
 }
 
 }

@@ -55,21 +55,21 @@ namespace ErrorCodes
 
 namespace DataLakeStorageSetting
 {
-    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
-    extern DataLakeStorageSettingsString object_storage_endpoint;
-    extern DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern DataLakeStorageSettingsString storage_aws_secret_access_key;
-    extern DataLakeStorageSettingsString storage_region;
-    extern DataLakeStorageSettingsString storage_aws_role_arn;
-    extern DataLakeStorageSettingsString storage_aws_role_session_name;
-    extern DataLakeStorageSettingsString storage_catalog_url;
-    extern DataLakeStorageSettingsString storage_warehouse;
-    extern DataLakeStorageSettingsString storage_catalog_credential;
+    extern const DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
+    extern const DataLakeStorageSettingsString object_storage_endpoint;
+    extern const DataLakeStorageSettingsString storage_aws_access_key_id;
+    extern const DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern const DataLakeStorageSettingsString storage_region;
+    extern const DataLakeStorageSettingsString storage_aws_role_arn;
+    extern const DataLakeStorageSettingsString storage_aws_role_session_name;
+    extern const DataLakeStorageSettingsString storage_catalog_url;
+    extern const DataLakeStorageSettingsString storage_warehouse;
+    extern const DataLakeStorageSettingsString storage_catalog_credential;
 
-    extern DataLakeStorageSettingsString storage_auth_scope;
-    extern DataLakeStorageSettingsString storage_auth_header;
-    extern DataLakeStorageSettingsString storage_oauth_server_uri;
-    extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
+    extern const DataLakeStorageSettingsString storage_auth_scope;
+    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsString storage_oauth_server_uri;
+    extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
 struct FormatParserSharedResources;
@@ -107,6 +107,12 @@ public:
     }
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
+
+    void setExplicitMetadataFilePath(const String & path) override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->setExplicitMetadataFilePath(path);
+    }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
@@ -204,6 +210,21 @@ public:
     {
         lazyInitializeIfNeeded(object_storage, context);
         getMetadata()->checkAlterIsPossible(commands);
+    }
+
+    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkAlterPartitionIsPossible(commands);
+    }
+
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override
+    {
+        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 
     void alter(
@@ -319,6 +340,8 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+            HudiMetadata::pauseBeforeIterate();
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
@@ -389,12 +412,7 @@ public:
             || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
-        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
-        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
-        /// "no catalog integration", the same as the base-class default.
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
@@ -403,10 +421,30 @@ public:
 #endif
     }
 
-    bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    ASTs completeEngineArgsFromCatalog(
+        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) override
+    {
+#if USE_AVRO && USE_PARQUET
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
+        if (!datalake_database)
+            return {};
+        auto args = datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+        datalake_database->applyCatalogSpecificConfiguration(*this);
+        return args;
+#else
+        return {};
+#endif
+    }
+
+    bool optimize(
+        ObjectStoragePtr object_storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        return getMetadata()->optimize(metadata_snapshot, context, format_settings);
+        return getMetadata()->optimize(metadata_snapshot, context, format_settings, catalog);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
@@ -420,8 +458,13 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
+        this->source_disk_name = disk_name;
         auto disk = context->getDisk(disk_name);
-        ready_object_storage = disk->getObjectStorage();
+        /// The table works through a private copy of the disk's object storage: the decorators
+        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
+        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
+        /// corrupt the disk's own storage.
+        ready_object_storage = disk->getObjectStorage()->clone();
     }
 
     bool supportsPrewhere() const override
@@ -453,6 +496,18 @@ private:
     /// republish in update() cannot destroy the object they are still calling into.
     std::shared_ptr<IDataLakeMetadata> current_metadata TSA_GUARDED_BY(metadata_mutex);
     LoggerPtr log = getLogger("DataLakeConfiguration");
+
+#if USE_AVRO && USE_PARQUET
+    static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
+    {
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
+        return std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+    }
+#endif
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {
