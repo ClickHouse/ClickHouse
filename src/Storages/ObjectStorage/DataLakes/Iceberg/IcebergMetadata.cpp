@@ -1306,6 +1306,113 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     return iceberg_history;
 }
 
+IcebergMetadata::IcebergMetadataLogEntries IcebergMetadata::getMetadataLogEntries(ContextPtr local_context) const
+{
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_components.table_path,
+        getMetadataLookupSettings(),
+        persistent_components.metadata_cache,
+        local_context,
+        log.get(),
+        persistent_components.table_uuid,
+        persistent_components.metadata_compression_method);
+
+    const auto metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        compression_method,
+        persistent_components.table_uuid);
+
+    using SnapshotTimestamps = std::vector<std::pair<Int64, Int64>>;
+    using SnapshotsById = std::map<Int64, Poco::JSON::Object::Ptr>;
+
+    /// snapshot-log is optional; treat an absent log as empty.
+    SnapshotTimestamps snapshot_timestamps;
+    if (metadata_object->has(f_snapshot_log))
+    {
+        const auto snapshot_logs = metadata_object->getArray(f_snapshot_log);
+        for (size_t i = 0; i < snapshot_logs->size(); ++i)
+        {
+            const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(i));
+            snapshot_timestamps.emplace_back(
+                snapshot_log->getValue<Int64>(f_timestamp_ms), snapshot_log->getValue<Int64>(f_metadata_snapshot_id));
+        }
+    }
+
+    SnapshotsById snapshots_by_id;
+    if (metadata_object->has(f_snapshots))
+    {
+        const auto snapshots = metadata_object->getArray(f_snapshots);
+        for (size_t i = 0; i < snapshots->size(); ++i)
+        {
+            const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+            snapshots_by_id.emplace(snapshot->getValue<Int64>(f_metadata_snapshot_id), snapshot);
+        }
+    }
+
+    /// The latest snapshot is the one with the greatest timestamp not later than the entry, as in Iceberg.
+    auto set_latest_snapshot = [&](IcebergMetadataLogEntry & record)
+    {
+        std::optional<Int64> latest_timestamp;
+        for (const auto & [timestamp, snapshot_id] : snapshot_timestamps)
+        {
+            if (timestamp <= record.timestamp.value && (!latest_timestamp || timestamp > *latest_timestamp))
+            {
+                latest_timestamp = timestamp;
+                record.latest_snapshot_id = snapshot_id;
+            }
+        }
+
+        if (!record.latest_snapshot_id)
+            return;
+
+        const auto snapshot_it = snapshots_by_id.find(*record.latest_snapshot_id);
+        if (snapshot_it == snapshots_by_id.end())
+            return;
+
+        const auto & snapshot = snapshot_it->second;
+        if (snapshot->has(f_schema_id))
+            record.latest_schema_id = snapshot->getValue<Int32>(f_schema_id);
+        if (snapshot->has(f_metadata_sequence_number))
+            record.latest_sequence_number = snapshot->getValue<Int64>(f_metadata_sequence_number);
+    };
+
+    IcebergMetadataLogEntries metadata_log_entries;
+    std::unordered_set<String> metadata_files;
+
+    if (metadata_object->has(f_metadata_log))
+    {
+        const auto metadata_logs = metadata_object->getArray(f_metadata_log);
+        for (size_t i = 0; i < metadata_logs->size(); ++i)
+        {
+            const auto entry = metadata_logs->getObject(static_cast<UInt32>(i));
+            IcebergMetadataLogEntry record;
+            record.timestamp = entry->getValue<Int64>(f_timestamp_ms);
+            record.file = persistent_components.path_resolver.resolve(
+                IcebergPathFromMetadata::deserialize(entry->getValue<String>(f_metadata_file)));
+            set_latest_snapshot(record);
+            metadata_files.insert(record.file);
+            metadata_log_entries.push_back(std::move(record));
+        }
+    }
+
+    /// The log holds only the previous metadata files, but some writers add the current one as well.
+    if (!metadata_files.contains(metadata_file_path))
+    {
+        IcebergMetadataLogEntry record;
+        record.timestamp = metadata_object->getValue<Int64>(f_last_updated_ms);
+        record.file = metadata_file_path;
+        set_latest_snapshot(record);
+        metadata_log_entries.push_back(std::move(record));
+    }
+
+    return metadata_log_entries;
+}
+
 namespace
 {
 
