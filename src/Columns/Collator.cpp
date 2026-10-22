@@ -16,6 +16,8 @@
 #include <Poco/String.h>
 #include <base/sort.h>
 
+#include <limits>
+
 /// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that
 /// re-uses the original name during expansion (`#define ucol_open
 /// U_ICU_ENTRY_POINT_RENAME(ucol_open)`), so every ICU call below triggers
@@ -30,6 +32,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_COLLATION_LOCALE;
     extern const int COLLATION_COMPARISON_FAILED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 }
 
@@ -135,13 +138,16 @@ Collator::~Collator() // NOLINT
 int Collator::compare(const char * str1, size_t length1, const char * str2, size_t length2) const
 {
 #if USE_ICU
-    UCharIterator iter1;
-    UCharIterator iter2;
-    uiter_setUTF8(&iter1, str1, static_cast<int32_t>(length1));
-    uiter_setUTF8(&iter2, str2, static_cast<int32_t>(length2));
+    /// ICU takes `int32_t` lengths and reads a negative one as a NUL-terminated string.
+    static constexpr size_t max_length = std::numeric_limits<int32_t>::max();
+    if (length1 > max_length || length2 > max_length)
+        throw DB::Exception(DB::ErrorCodes::TOO_LARGE_STRING_SIZE,
+                            "Cannot compare a string of {} bytes with collation '{}', the maximum is {} bytes",
+                            std::max(length1, length2), locale, max_length);
 
     UErrorCode status = U_ZERO_ERROR;
-    UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);
+    UCollationResult compare_result = ucol_strcollUTF8(
+        collator, str1, static_cast<int32_t>(length1), str2, static_cast<int32_t>(length2), &status);
 
     if (U_FAILURE(status))
         throw DB::Exception(DB::ErrorCodes::COLLATION_COMPARISON_FAILED, "ICU collation comparison failed with error code: {}",
