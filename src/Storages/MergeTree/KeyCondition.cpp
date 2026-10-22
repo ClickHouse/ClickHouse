@@ -29,6 +29,7 @@
 #include <Functions/geometryConverters.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/Hex.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -54,6 +55,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <base/itoa.h>
 
 #include <algorithm>
 #include <ranges>
@@ -1930,11 +1932,14 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
     /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
-    WriteBufferFromOwnString buf;
-    writeText("_", buf);
-    writePointerHex(func.get(), buf);
-    writeText("_" + toString(field.column_idx), buf);
-    String result_name = buf.str();
+    /// Built on the stack: this runs for both bounds of every range the analysis checks.
+    char key_buf[3 + 2 * sizeof(uintptr_t) + 1 + std::numeric_limits<UInt64>::digits10 + 1];
+    memcpy(key_buf, "_0x", 3);
+    writeHexUIntLowercase(reinterpret_cast<uintptr_t>(func.get()), key_buf + 3);
+    char * key_end = key_buf + 3 + 2 * sizeof(uintptr_t);
+    *key_end++ = '_';
+    key_end = itoa(static_cast<UInt64>(field.column_idx), key_end);
+    const std::string_view result_name(key_buf, key_end - key_buf);
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
 
@@ -1980,10 +1985,10 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
         }
         catch (...)
         {
-            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), String(result_name)});
             throw;
         }
-        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), String(result_name)});
     }
 
     return FieldRef(field.columns, field.row_idx, result_idx);
