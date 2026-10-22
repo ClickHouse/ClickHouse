@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, no-parallel-replicas
 # Tag no-replicated-database: named collections are server-global and not replicated, so the other replicas cannot apply a `CREATE TABLE` that uses one.
+# Tag no-parallel-replicas: with parallel replicas, a table defined `AS icebergLocal(...)` is loaded back from its metadata as a cluster storage, whose replicas fail to read it (`NOT_FOUND_COLUMN_IN_BLOCK`).
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105644
 # Data lake engines (`Iceberg`, `DeltaLake`, `Hudi`, `Paimon`) must reject the
