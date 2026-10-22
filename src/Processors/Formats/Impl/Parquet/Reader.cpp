@@ -1944,7 +1944,7 @@ void Reader::preparePrewhere()
 
     /// `decode_dictionary_as_replicated`: the last step's single input, a plain column no other step reads.
     if (steps.empty() || steps.back().input_idxs.size() != 1
-        || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions.getActionsDAG()))
+        || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions_pool->getPrototype()->getActionsDAG()))
         return;
     const auto & output_idx = sample_block_to_output_columns_idx.at(steps.back().input_idxs[0]);
     if (!output_idx.has_value())
