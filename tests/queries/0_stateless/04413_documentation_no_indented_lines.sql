@@ -22,22 +22,30 @@ WITH
     arrayMap(l -> match(l, '\S'), lines) AS nonblank,
     arrayCumSum(arrayMap(l -> toUInt8(match(l, '^ *```')), lines)) AS fences_through,
     arrayMap(l -> match(l, '^ *([-*+]|[0-9]+[.)])\s'), lines) AS is_list,
-    arrayMap(l -> toUInt32(length(extract(l, '^( *(?:[-*+]|[0-9]+[.)])\s+)'))), lines) AS list_offset
+    arrayMap(l -> toUInt32(length(extract(l, '^( *(?:[-*+]|[0-9]+[.)])\s+)'))), lines) AS list_offset,
+    arrayMap((is_l, lo, ind) -> if(is_l, lo, ind) + 4, is_list, list_offset, indent) AS container_indent,
+    arrayFilter(
+        (i, nb, prev_nb, prev_fences, ind) ->
+            nb
+            AND prev_fences % 2 = 0                        -- line i is outside a fenced code block
+            AND ind >= 4
+            AND NOT prev_nb,                               -- preceded by a blank line
+        range(2, n + 1),
+        arraySlice(nonblank, 2),
+        arraySlice(nonblank, 1, n - 1),
+        arraySlice(fences_through, 1, n - 1),
+        arraySlice(indent, 2)
+    ) AS candidates
 SELECT name, type
 FROM system.documentation
 WHERE arrayExists(i ->
-        nonblank[i]
-        AND fences_through[i - 1] % 2 = 0                 -- line i is outside a fenced code block
-        AND indent[i] >= 4
-        AND NOT nonblank[i - 1]                            -- preceded by a blank line
-        AND (
-            -- top level: any indent of four or more columns is a code block
-            empty(arrayFilter(j -> nonblank[j] AND indent[j] < indent[i], range(1, i)))
-            -- otherwise: a code block only if indented four columns past the enclosing list content
-            OR indent[i] >= (
-                if(is_list[arrayMax(arrayFilter(j -> nonblank[j] AND indent[j] < indent[i], range(1, i)))],
-                   list_offset[arrayMax(arrayFilter(j -> nonblank[j] AND indent[j] < indent[i], range(1, i)))],
-                   indent[arrayMax(arrayFilter(j -> nonblank[j] AND indent[j] < indent[i], range(1, i)))]) + 4)
-        ),
-        range(2, n + 1))
+        -- At the top level `arrayLast` returns 0 (no prior non-blank line with smaller indent),
+        -- which every candidate (`indent[i] >= 4`) satisfies; inside a container it returns the
+        -- nearest enclosing line's content offset + 4.
+        indent[i] >= arrayLast(
+            (ci, nb, ind) -> nb AND ind < indent[i],
+            arraySlice(container_indent, 1, i - 1),
+            arraySlice(nonblank, 1, i - 1),
+            arraySlice(indent, 1, i - 1)),
+        candidates)
 ORDER BY type, name;
