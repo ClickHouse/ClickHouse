@@ -227,7 +227,7 @@ UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & ty
     /// (`IndicesDescription::getIndexFromAST`), so match it case-insensitively here too. Without this
     /// an uppercase `TEXT` skips the whole-part default below and keeps the literal `GRANULARITY` the
     /// user wrote -- and a text index is serialized whole-part, so a per-granule granularity makes its
-    /// mark-cache prewarm throw (wedging SharedMergeTree startup) and its queries under-count. The same
+    /// mark-cache prewarm throw (wedging SharedMergeTree startup) and can make its queries under-count. The same
     /// case-insensitivity gives an uppercase `VECTOR_SIMILARITY` its default granularity when none is
     /// given (an explicit `GRANULARITY` is honored for it, as for lowercase `vector_similarity`).
     const String type_name = type ? Poco::toLower(type->name) : String{};
