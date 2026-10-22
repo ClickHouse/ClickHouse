@@ -8,6 +8,7 @@ ch_cc_library(
     srcs = ["ChecksumForCompressedBlock.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Dictionaries:clickhouse_dictionaries",
         "//contrib/cityhash102:_cityhash",
         "//src/Common",
         "//src:clickhouse_common_io__compile_0",
@@ -17,8 +18,5 @@ ch_cc_library(
     local_includes = [
         ".",
         "../../" + "bazel/gen",
-    ],
-    deps = [
-        "//src/Dictionaries:clickhouse_dictionaries",
     ],
 )

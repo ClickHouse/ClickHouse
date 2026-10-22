@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
@@ -16,6 +17,16 @@ expand_template(
         "@libssh_VERSION_PATCH@": "2",
     },
     template = ":include/libssh/libssh_version.h.cmake",
+)
+
+copy_file(
+    name = "private_config",
+    src = select({
+        "@platforms//cpu:x86_64": "@clickhouse//contrib/libssh-cmake:linux/x86-64/config.h",
+        "@platforms//cpu:aarch64": "@clickhouse//contrib/libssh-cmake:linux/aarch64/config.h",
+    }),
+    out = "config/private/config.h",
+    allow_symlink = True,
 )
 
 # Installed C headers from include/libssh/CMakeLists.txt.
@@ -103,14 +114,8 @@ ch_cc_library(
         "src/bind.c",
         "src/bind_config.c",
         "src/server.c",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse//contrib/libssh-cmake:linux/x86-64/config.h",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse//contrib/libssh-cmake:linux/aarch64/config.h",
-        ],
-    }) + glob(
+        ":private_config",
+    ] + glob(
         ["src/**/*.h", "include/**/*.h"],
         exclude = _LIBSSH_PUBLIC_C_HEADERS + [
             "include/libssh/dh-gex.h",
@@ -127,7 +132,6 @@ ch_cc_library(
     hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + _LIBSSH_PUBLIC_C_HEADERS,
     copts = ["-w", "-std=gnu11"],
     implementation_deps = [
-        "@clickhouse//contrib/libssh-cmake:libssh_config_headers",
         "@clickhouse_openssl//:crypto",
     ],
     includes = [
@@ -135,6 +139,7 @@ ch_cc_library(
         "config/contrib/libssh/include",
     ],
     language = "C",
+    local_includes = ["config/private"],
     libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

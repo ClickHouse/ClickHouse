@@ -10,6 +10,7 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "//programs/server:clickhouse-server-lib",
         "//src/Loggers:headers",
         "//src/Common:memory_tracking_api",
         "//base:common",
@@ -37,7 +38,4 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     source_headers = True,
-    deps = [
-        "//programs/server:clickhouse-server-lib",
-    ],
 )

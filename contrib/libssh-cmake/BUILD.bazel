@@ -1,20 +1,6 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "linux/aarch64/config.h",
     "linux/x86-64/config.h",
 ])
-
-cc_library(
-    name = "libssh_config_headers",
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["linux/x86-64/config.h"],
-        "@platforms//cpu:aarch64": ["linux/aarch64/config.h"],
-    }),
-    includes = select({
-        "@platforms//cpu:x86_64": ["linux/x86-64"],
-        "@platforms//cpu:aarch64": ["linux/aarch64"],
-    }),
-)

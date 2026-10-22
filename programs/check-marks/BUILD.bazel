@@ -8,6 +8,7 @@ ch_cc_library(
     srcs = ["CheckMarks.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "//src/Compression:clickhouse_compression",
         "@clickhouse_boost//:boost_headers",
         "//src:clickhouse_common_io__compile_0",
@@ -18,8 +19,5 @@ ch_cc_library(
     local_includes = [
         ".",
         "../../" + "bazel/gen",
-    ],
-    deps = [
-        "//src/AggregateFunctions:clickhouse_aggregate_functions",
     ],
 )

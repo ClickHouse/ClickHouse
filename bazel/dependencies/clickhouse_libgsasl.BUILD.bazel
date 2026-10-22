@@ -48,7 +48,15 @@ ch_cc_library(
         "src/md5pwd.c",
     ]) + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]) + glob(
         ["**/*.h"],
-        exclude = ["src/gsasl*.h"],
+        exclude = [
+            "src/gsasl*.h",
+            "gl/float+.h",
+            "gl/size_max.h",
+            "gl/str-two-way.h",
+            "gl/vasnprintf.h",
+            "gl/verify.h",
+            "gs2/gs2helper.h",
+        ],
     ),
     hdrs = glob(["src/gsasl*.h"]),
     copts = [

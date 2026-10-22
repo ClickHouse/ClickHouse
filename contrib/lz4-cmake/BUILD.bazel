@@ -1,8 +1,6 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
+alias(
     name = "_lz4",
-    deps = ["@lz4//:lz4_frame"],
+    actual = "@lz4//:lz4_frame",
 )

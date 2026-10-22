@@ -4,10 +4,22 @@ load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "LICENSE",
-    "proto/orc_proto.proto",
-])
+exports_files(["LICENSE"])
+
+genrule(
+    name = "orc_proto",
+    srcs = ["proto/orc_proto.proto"],
+    outs = [
+        "c++/include/orc_proto.pb.h",
+        "c++/include/orc_proto.pb.cc",
+    ],
+    cmd = "mkdir -p $(RULEDIR)/c++/include && " +
+          "$(execpath @clickhouse_google_protobuf//:protoc) " +
+          "-I $$(dirname $(execpath :proto/orc_proto.proto)) " +
+          "--cpp_out=$(RULEDIR)/c++/include " +
+          "$(execpath :proto/orc_proto.proto)",
+    tools = ["@clickhouse_google_protobuf//:protoc"],
+)
 
 expand_template(
     name = "configure_c_include_Adaptor_hh",
@@ -30,7 +42,7 @@ expand_template(
 ch_cc_library(
     name = "_orc",
     srcs = ([
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.cc",
+        "c++/include/orc_proto.pb.cc",
         "c++/src/Adaptor.cc",
         "c++/src/BlockBuffer.cc",
         "c++/src/BloomFilter.cc",
@@ -79,7 +91,7 @@ ch_cc_library(
         ],
     ),
     hdrs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/orc_proto.pb.h",
+        "c++/include/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
     ] + glob(["c++/include/orc/**/*.hh"]),
     copts = [
@@ -93,7 +105,6 @@ ch_cc_library(
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd__compile_0",
-        "@clickhouse//bazel:orc_proto_headers",
     ],
     includes = [
         "c++/include",

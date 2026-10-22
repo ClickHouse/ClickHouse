@@ -168,7 +168,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_boost_program_options",
-    srcs = glob(["libs/program_options/src/*.cpp"]),
+    srcs = ["boost/program_options/detail/config_file.hpp"] + glob(["libs/program_options/src/*.cpp"]),
     copts = _BOOST_COPTS,
     implementation_deps = [
         ":boost_config",
@@ -243,7 +243,9 @@ cc_library(
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI,
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + [
+            "boost/program_options/detail/config_file.hpp",
+        ],
     ),
     features = ["external_include_paths"],
     textual_hdrs = glob(["boost/**/*.inc"]),

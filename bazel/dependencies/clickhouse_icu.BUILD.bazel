@@ -13,10 +13,16 @@ alias(
 
 ch_cc_library(
     name = "_icui18n",
-    srcs = glob([
-        "icu4c/source/i18n/*.cpp",
-        "icu4c/source/i18n/*.h",
-    ]),
+    srcs = glob(
+        [
+            "icu4c/source/i18n/*.cpp",
+            "icu4c/source/i18n/*.h",
+        ],
+        exclude = [
+            "icu4c/source/i18n/umsg_imp.h",
+            "icu4c/source/i18n/wintzimpl.h",
+        ],
+    ),
     hdrs = glob(["icu4c/source/i18n/unicode/*.h"]),
     copts = [
         "-w",

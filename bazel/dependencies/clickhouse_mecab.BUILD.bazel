@@ -31,7 +31,11 @@ ch_cc_library(
         "mecab/src/writer.cpp",
     ] + glob(
         ["mecab/src/**/*.h"],
-        exclude = ["mecab/src/mecab.h"],
+        exclude = [
+            "mecab/src/mecab.h",
+            "mecab/src/ucstable.h",
+            "mecab/src/winmain.h",
+        ],
     ),
     hdrs = ["mecab/src/mecab.h"],
     copts = [

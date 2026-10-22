@@ -79,7 +79,9 @@ ch_cc_library(
         "c++/src/capnp/serialize-text.c++",
     ] + glob(
         ["c++/src/capnp/compiler/**/*.h"],
-        exclude = _CAPNPC_PUBLIC_HEADERS,
+        exclude = _CAPNPC_PUBLIC_HEADERS + [
+            "c++/src/capnp/compiler/module-loader.h",
+        ],
     ),
     hdrs = _CAPNPC_PUBLIC_HEADERS,
     copts = _CAPNPROTO_COPTS,

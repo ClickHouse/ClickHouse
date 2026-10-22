@@ -8,6 +8,7 @@ ch_cc_library(
     srcs = ["git-import.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src:dbms",
         "//base:common",
         "//src/Common",
         "@clickhouse_boost//:boost_headers",
@@ -18,8 +19,5 @@ ch_cc_library(
     local_includes = [
         ".",
         "../../" + "bazel/gen",
-    ],
-    deps = [
-        "//src:dbms",
     ],
 )

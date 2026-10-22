@@ -1549,13 +1549,6 @@ cc_library(
 )
 
 cc_library(
-    name = "orc_proto_headers",
-    hdrs = ["gen/contrib/arrow-cmake/orc_proto.pb.h"],
-    includes = ["gen/contrib/arrow-cmake"],
-    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
-)
-
-cc_library(
     name = "hdfs3_proto_headers",
     hdrs = [
         "gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.h",

@@ -107,23 +107,17 @@ cc_library(
     ],
 )
 
-cc_library(
+alias(
     name = "_aws__compile_2",
-    deps = select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_aws_c_common//:aws_c_common__compile_2",
-        ],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_aws_checksums//:aws_checksums__compile_2",
-        ],
+    actual = select({
+        "@platforms//cpu:x86_64": "@clickhouse_aws_c_common//:aws_c_common__compile_2",
+        "@platforms//cpu:aarch64": "@clickhouse_aws_checksums//:aws_checksums__compile_2",
     }),
 )
 
-cc_library(
+alias(
     name = "_aws__compile_3",
-    deps = [
-        "@clickhouse_aws_c_io//:aws_c_io__compile_3",
-    ],
+    actual = "@clickhouse_aws_c_io//:aws_c_io__compile_3",
 )
 
 cc_library(

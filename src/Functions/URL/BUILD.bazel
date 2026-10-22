@@ -110,6 +110,7 @@ ch_cc_library(
         "//src:headers",
         "//src/Common",
         "//src/Functions:clickhouse_functions_obj__compile_0",
+        "//src:dbms__compile_1",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
     local_includes = [

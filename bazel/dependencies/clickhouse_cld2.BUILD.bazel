@@ -47,6 +47,8 @@ ch_cc_library(
             "internal/cld2_dynamic_data_extractor.h",
             "internal/cldutil_offline.h",
             "internal/unittest_data.h",
+            "internal/cld2_dynamic_data.h",
+            "internal/cld2_dynamic_data_loader.h",
         ],
     ),
     hdrs = glob(["public/**/*.h"]) + _CLD2_PUBLIC_INTERNAL_HEADERS,
