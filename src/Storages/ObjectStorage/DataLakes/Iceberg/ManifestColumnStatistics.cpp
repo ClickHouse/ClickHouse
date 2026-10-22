@@ -240,7 +240,8 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
 std::optional<ManifestColumnStatistics::DistinctValues> ManifestColumnStatistics::estimateDistinctValues(
     const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows)
 {
-    const UInt64 nulls = column.null_fraction ? static_cast<UInt64>(std::llround(*column.null_fraction * static_cast<Float64>(rows))) : 0;
+    /// `value_or`: the optimizer may call `llround` before checking the optional, and MSan reports the empty value it reads.
+    const UInt64 nulls = static_cast<UInt64>(std::llround(column.null_fraction.value_or(0) * static_cast<Float64>(rows)));
     const UInt64 non_null_rows = rows - std::min(nulls, rows);
 
     std::optional<UInt64> range_width;
