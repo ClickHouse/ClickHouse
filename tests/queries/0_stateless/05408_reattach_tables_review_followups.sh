@@ -67,6 +67,20 @@ function check_user_detaches()
     fi
 }
 
+# The hook skips a table whose exclusive lock it cannot take within a short probe, and on a loaded runner
+# a background task of a fresh table can hold its lock for that long. The positive controls are read-only,
+# so retry them until the hook gets the table idle.
+function retry_until_ok()
+{
+    local result
+    for _ in {1..10}
+    do
+        result=$("$@")
+        [ "$result" = "OK" ] && break
+    done
+    echo "$result"
+}
+
 echo "setting-dependent projection"
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_tz;
@@ -87,24 +101,24 @@ DEFAULT_ALLOWS_NONCONST_TIMEZONE=$(${CLICKHOUSE_CLIENT} -q "
 if [ "$DEFAULT_ALLOWS_NONCONST_TIMEZONE" -eq 0 ]; then
     check_if_not_detached "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0, allow_nonconst_timezone_arguments = 0" t_tz
 else
-    check_if_detached "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0, allow_nonconst_timezone_arguments = 0" t_tz
+    retry_until_ok check_if_detached "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0, allow_nonconst_timezone_arguments = 0" t_tz
 fi
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_tz SETTINGS optimize_use_projections = 0"
 # A control: a projection the default settings accept does not stop the reattach.
-check_if_detached "SELECT count() FROM t_plain" t_plain
+retry_until_ok check_if_detached "SELECT count() FROM t_plain" t_plain
 
 echo "nested explain"
 check_if_not_detached "SELECT * FROM (EXPLAIN AST SELECT * FROM src) FORMAT Null" src
 
 echo "execute as"
-check_user_detaches "SELECT count() FROM src"
+retry_until_ok check_user_detaches "SELECT count() FROM src"
 check_user_fails_without_detach "EXECUTE AS ${TARGET_USER_NAME} SELECT count() FROM src" "ACCESS_DENIED"
 
 echo "global with statement"
 check_user_fails_without_detach "WITH rhs AS (SELECT 1 AS x) SELECT x FROM src WHERE x IN (SELECT x FROM rhs) SETTINGS enable_global_with_statement = 0" "ACCESS_DENIED"
 check_user_fails_without_detach "WITH rhs AS (SELECT 1 AS x) SELECT x FROM src WHERE x IN (SELECT x FROM rhs SETTINGS enable_global_with_statement = 0)" "ACCESS_DENIED"
 # A control: with the outer CTE visible, `rhs` is the CTE and `src` is reattached.
-check_user_detaches "WITH rhs AS (SELECT 1 AS x) SELECT x FROM src WHERE x IN (SELECT x FROM rhs)"
+retry_until_ok check_user_detaches "WITH rhs AS (SELECT 1 AS x) SELECT x FROM src WHERE x IN (SELECT x FROM rhs)"
 
 echo "function privileges"
 check_user_fails_without_detach "SELECT file('anything', '') FROM src" "ACCESS_DENIED"
