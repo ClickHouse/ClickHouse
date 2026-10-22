@@ -27,9 +27,9 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     const String & getFilterColumnName() const { return filter_column_name; }
-    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
     const String & getFilterName() const { return filter_name; }
     const String & getFilterKey() const { return filter_key; }
+    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
     bool allowsNotExactFilter() const { return build_options.polarity == RuntimeFilterPolarity::Contains; }
     const RuntimeFilterGeometry & getGeometry() const { return build_options.geometry; }
     void setGeometry(const RuntimeFilterGeometry & geometry_) { build_options.geometry = geometry_; }

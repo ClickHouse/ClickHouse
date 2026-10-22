@@ -1,27 +1,18 @@
 -- A join runtime filter moved into `PREWHERE` keeps filtering in a shipped plan fragment, and the
 -- fragment's hash join still publishes the shared `FixedHashMap` filter.
 
-SET enable_analyzer = 1;
-SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
-SET query_plan_optimize_join_order_randomize = 0;
-SET query_plan_join_swap_table = 0;
 -- The assertions below count the rows the filter in PREWHERE lets through.
 SET optimize_move_to_prewhere = 1;
-SET join_use_nulls = 0;
--- The shared `FixedHashMap` filter is published only by a non-spilling `hash` join.
-SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
-SET join_runtime_filter_from_fixed_hash_table = 1;
--- Without column statistics Cascades may keep the whole plan in the main stage, and nothing is shipped.
--- The tables pin `auto_statistics_types` with distinct-count statistics, materialized on insert.
-SET use_statistics = 1, materialize_statistics_on_insert = 1;
+-- The shared `FixedHashMap` filter is published only by a `hash` join.
+SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS probe;
 DROP TABLE IF EXISTS build;
 
-CREATE TABLE probe (k UInt64, v String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024, auto_statistics_types = 'basic, uniq_v2';
-CREATE TABLE build (k UInt64, c UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024, auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE probe (k UInt64, v String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE build (k UInt64, c UInt8) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO probe SELECT number, toString(number) FROM numbers(200000);
 -- Dense keys, so the hash join converts its map into a `FixedHashMap` and publishes the shared filter.

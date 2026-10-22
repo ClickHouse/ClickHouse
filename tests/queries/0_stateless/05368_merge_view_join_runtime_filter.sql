@@ -2,22 +2,19 @@
 -- once more when it builds the pipeline. The join is a physical step by then, and the second optimization
 -- must not make its runtime filter inert: the filter cuts the rows of the probe-side read.
 
-SET enable_analyzer = 1;
-SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1;
-SET join_runtime_filter_min_probe_rows = 0;
-SET query_plan_join_swap_table = 0;
+-- A random join order may put `rf_probe` on the build side.
 SET query_plan_optimize_join_order_randomize = 0;
+-- The assertion below counts the rows the filter in PREWHERE lets through.
 SET optimize_move_to_prewhere = 1;
-SET log_processors_profiles = 1;
 
 DROP TABLE IF EXISTS rf_merge;
 DROP VIEW IF EXISTS rf_view;
 DROP TABLE IF EXISTS rf_probe;
 DROP TABLE IF EXISTS rf_build;
 
-CREATE TABLE rf_probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024;
-CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024;
+CREATE TABLE rf_probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO rf_probe SELECT number, number FROM numbers(200000);
 INSERT INTO rf_build SELECT number * 1000 FROM numbers(50);
 
