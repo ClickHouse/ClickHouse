@@ -19,7 +19,7 @@ ONE_ROW_PER_FILE="
 
 ${CLICKHOUSE_CLIENT} --query "
     ${ONE_ROW_PER_FILE}
-    CREATE TABLE t (id UInt64) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet');
+    CREATE TABLE t (id Int64) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet');
     INSERT INTO t SELECT number FROM numbers(3);
 "
 
