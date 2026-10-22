@@ -65,6 +65,7 @@
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -3730,7 +3731,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 try
                 {
                     const auto columns = InterpreterCreateQuery::getColumnsDescription(
-                        *create->columns_list->columns, validation_context, LoadingStrictnessLevel::ATTACH);
+                        *create->columns_list, validation_context, LoadingStrictnessLevel::ATTACH);
                     if (create->columns_list->indices)
                         for (const auto & index : create->columns_list->indices->children)
                             IndexDescription::getIndexFromAST(
