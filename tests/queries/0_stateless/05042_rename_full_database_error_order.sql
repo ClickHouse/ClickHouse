@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: moving tables between databases is not supported
-
 -- A destination database that is full (its `max_tables` limit is reached) must not mask
 -- source-side errors of `RENAME`: the source table is resolved and validated before the
 -- destination quota is checked.

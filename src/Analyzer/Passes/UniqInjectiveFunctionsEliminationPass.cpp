@@ -65,9 +65,7 @@ public:
                 return false;
 
             const auto & arg_function = arg_typed->getFunction();
-            /// Pass the argument types: whether a function is injective can depend on them, as it
-            /// does for `toString` of a date-time in a time zone with a fall-back transition.
-            if (!arg_function->isInjective(arg_typed->getArgumentColumns()))
+            if (!arg_function->isInjective({}))
                 return false;
 
             /// The `Null` combinator makes `uniq*` skip rows where a Nullable argument is NULL: `uniq(tuple(x))`

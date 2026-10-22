@@ -7,8 +7,6 @@
 
 namespace DB
 {
-class ASTUserNameWithHost;
-class ASTUserNamesWithHost;
 class ASTSettingsProfileElements;
 class ASTAlterSettingsProfileElements;
 
@@ -35,8 +33,8 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    boost::intrusive_ptr<ASTUserNamesWithHost> names;
-    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
+    Strings names;
+    String new_name;
     String storage_name;
 
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;

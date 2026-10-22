@@ -10,7 +10,9 @@ sidebarTitle: 'API リファレンス'
 
 このドキュメントでは、ClickHouse Operator のカスタムリソースに関する詳細な API リファレンスを提供します。
 
-## AdditionalPort {#additionalport}
+<div id="additionalport">
+  ## AdditionalPort
+</div>
 
 AdditionalPort は、ClickHouse ポッドおよびパブリックなヘッドレス Service で公開する追加の TCP ポートを 1 つ定義します。
 
@@ -23,7 +25,9 @@ AdditionalPort は、ClickHouse ポッドおよびパブリックなヘッドレ
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector {#cabundleselector}
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
 
 CABundleSelector は、クラスターのネームスペース内の Secret から、CA バンドルを含むキーを選択します。
 
@@ -36,11 +40,15 @@ CABundleSelector は、クラスターのネームスペース内の Secret か�
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster {#clickhousecluster}
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
 
 ClickHouseCluster は `clickhouseclusters` API のスキーマです。
 
-### API バージョンと Kind {#clickhousecluster-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### API バージョンと Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +64,15 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList {#clickhouseclusterlist}
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
 
 ClickHouseClusterList には、ClickHouseCluster の一覧が含まれます。
 
-### APIバージョンと Kind {#clickhouseclusterlist-api-version-and-kind}
+<div id="clickhouseclusterlist-api-version-and-kind">
+  ### APIバージョンと Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +83,9 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------- | -- | ---- | ----- |
 | `items` | [ClickHouseCluster](#clickhousecluster) の配列 |    | true |       |
 
-## ClickHouseClusterSpec {#clickhouseclusterspec}
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
 
 ClickHouseClusterSpec は ClickHouseCluster の望ましい状態を定義します。
 
@@ -99,7 +113,9 @@ Appears in:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus {#clickhouseclusterstatus}
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
 
 ClickHouseClusterStatus は、ClickHouseCluster の観測された状態を定義します。
 
@@ -119,7 +135,9 @@ ClickHouseClusterStatus は、ClickHouseCluster の観測された状態を定�
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
 
 ClickHouseNetworkPolicySpec は、ClickHouse クラスター用に管理される NetworkPolicy を設定します。
 この管理対象ポリシーは、クラスター内部のトラフィックを対象とします。
@@ -137,7 +155,9 @@ ClickHouseNetworkPolicySpec は、ClickHouse クラスター用に管理され�
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings {#clickhousesettings}
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
 
 ClickHouseSettings は、ClickHouse サーバーの設定オプションを定義します。
 
@@ -155,7 +175,9 @@ Appears in:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec {#clustertlsspec}
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
 
 ClusterTLSSpec は、クラスターの TLS 設定を定義します。
 
@@ -171,7 +193,9 @@ ClusterTLSSpec は、クラスターの TLS 設定を定義します。
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector {#configmapkeyselector}
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
 
 ConfigMapKeySelector は、ConfigMap のキーを選択します。
 
@@ -184,7 +208,9 @@ ConfigMapKeySelector は、ConfigMap のキーを選択します。
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage {#containerimage}
+<div id="containerimage">
+  ## ContainerImage
+</div>
 
 ContainerImage は、repository、tag、または hash を指定したコンテナーイメージを定義します。
 
@@ -198,7 +224,9 @@ ContainerImage は、repository、tag、または hash を指定したコンテ�
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec {#containertemplatespec}
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
 
 ContainerTemplateSpec は、クラスター内のコンテナーに対する設定のオーバーライドを定義します。
 
@@ -218,7 +246,9 @@ ContainerTemplateSpec は、クラスター内のコンテナーに対する設�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector {#defaultpasswordselector}
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
 
 DefaultPasswordSelector は、デフォルトユーザーのパスワードの参照元を選択します。
 
@@ -232,7 +262,9 @@ DefaultPasswordSelector は、デフォルトユーザーのパスワードの�
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings {#encryptionsettings}
+<div id="encryptionsettings">
+  ## EncryptionSettings
+</div>
 
 EncryptionSettings は、テーブルデータの保存時暗号化を有効にします。これが指定されている場合、operator は各データディスクを対象とする
 暗号化された ClickHouse の storage policy を生成します。テーブルでは `SETTINGS storage_policy` でこれを有効にします。
@@ -246,7 +278,9 @@ EncryptionSettings は、テーブルデータの保存時暗号化を有効に�
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret {#externalsecret}
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
 
 ExternalSecret は、同じネームスペース内の Secret への参照です。
 
@@ -259,7 +293,9 @@ ExternalSecret は、同じネームスペース内の Secret への参照です
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy {#externalsecretpolicy}
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
 
 ExternalSecretPolicy は、オペレーター が external secret の内容をどのように扱うかを制御します。
 
@@ -272,11 +308,15 @@ ExternalSecretPolicy は、オペレーター が external secret の内容を�
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster {#keepercluster}
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
 
 KeeperCluster は `keeperclusters` API のスキーマです。
 
-### APIバージョンと Kind {#keepercluster-api-version-and-kind}
+<div id="clickhouseclusterlist-api-version-and-kind">
+  ### APIバージョンと Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -292,11 +332,15 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList {#keeperclusterlist}
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
 
 KeeperClusterList は、KeeperCluster の一覧を含みます。
 
-### APIバージョンとKind {#keeperclusterlist-api-version-and-kind}
+<div id="keeperclusterlist-api-version-and-kind">
+  ### APIバージョンとKind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -307,7 +351,9 @@ kind: KeeperClusterList
 | ------- | ---------------------------------- | -- | ---- | ----- |
 | `items` | [KeeperCluster](#keepercluster) 配列 |    | true |       |
 
-## KeeperClusterReference {#keeperclusterreference}
+<div id="keeperclusterreference">
+  ## KeeperClusterReference
+</div>
 
 KeeperClusterReference は、ClickHouseCluster で使用される KeeperCluster を参照します。
 
@@ -320,7 +366,9 @@ KeeperClusterReference は、ClickHouseCluster で使用される KeeperCluster 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec {#keeperclusterspec}
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
 
 KeeperClusterSpec は、KeeperCluster の望ましい状態を定義します。
 
@@ -343,7 +391,9 @@ KeeperClusterSpec は、KeeperCluster の望ましい状態を定義します。
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus {#keeperclusterstatus}
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
 
 KeeperClusterStatus は、KeeperCluster の観測された状態を定義します。
 
@@ -363,7 +413,9 @@ KeeperClusterStatus は、KeeperCluster の観測された状態を定義しま�
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
 
 KeeperNetworkPolicySpec は、Keeper クラスター向けに管理される NetworkPolicy を設定します。
 管理対象のポリシーは、クラスター内部のトラフィックを対象とします。
@@ -382,7 +434,9 @@ KeeperNetworkPolicySpec は、Keeper クラスター向けに管理される Net
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings {#keepersettings}
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
 
 KeeperSettings は ClickHouse Keeper サーバーの構成を定義します。
 
@@ -396,7 +450,9 @@ KeeperSettings は ClickHouse Keeper サーバーの構成を定義します。
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig {#loggerconfig}
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
 
 LoggerConfigはサーバーのログ設定を定義します。
 
@@ -413,7 +469,9 @@ LoggerConfigはサーバーのログ設定を定義します。
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta {#namedtemplatemeta}
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
 
 NamedTemplateMeta は、名前を必要とするテンプレートオブジェクトでサポートされるメタデータ設定を定義します。
 
@@ -427,7 +485,9 @@ NamedTemplateMeta は、名前を必要とするテンプレートオブジェ�
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy {#networkpolicypolicy}
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
 
 NetworkPolicyPolicy は、operator がクラスターの NetworkPolicy を管理するかどうかを制御します。
 
@@ -441,7 +501,9 @@ NetworkPolicyPolicy は、operator がクラスターの NetworkPolicy を管理
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy {#pdbpolicy}
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
 
 PDBPolicy は、PodDisruptionBudget を作成するかどうかを制御します。
 
@@ -455,7 +517,9 @@ PDBPolicy は、PodDisruptionBudget を作成するかどうかを制御しま�
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
 
 PersistentVolumeClaimTemplate は、レプリカごとの PersistentVolumeClaim 用の名前付きテンプレートです。
 
@@ -468,7 +532,9 @@ PersistentVolumeClaimTemplate は、レプリカごとの PersistentVolumeClaim 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
 
 PodDisruptionBudgetSpec は、クラスター用に作成される PDB を設定します。
 設定できるのは MinAvailable または MaxUnavailable のいずれか 1 つだけです。
@@ -486,7 +552,9 @@ PodDisruptionBudgetSpec は、クラスター用に作成される PDB を設定
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec {#podtemplatespec}
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
 
 PodTemplateSpec は、クラスター内のポッドに対する設定のオーバーライド内容を定義します。
 
@@ -505,7 +573,6 @@ PodTemplateSpec は、クラスター内のポッドに対する設定のオー�
 | `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) の配列                                    | Volumes は、ポッドに属するコンテナがマウントできるボリュームの一覧を定義します。<br />詳細: https://kubernetes.io/docs/concepts/storage/volumes<br />名前ごとにオペレーターのデフォルト設定とマージされます。同じ名前のオペレーターのボリュームがある場合は、ユーザー定義のボリュームで置き換えられます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false |       |
 | `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                | SecurityContext は、ポッドレベルのセキュリティ属性と共通のコンテナー設定を保持します。<br />SecurityContext に nil 以外を指定すると、オペレーターのデフォルト設定は完全に置き換えられ、<br />構造体全体の管理はユーザーの責任となります。nil の場合は、オペレーターのデフォルト設定が維持されます。                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false |       |
 | `topologyZoneKey`               | string                                                                                                                               | TopologyZoneKey はノードラベルのキーです。<br />このキーを持ち、値が同一のラベルが設定されたノードは、同じトポロジードメインに属するとみなされます。<br />たとえば、&quot;topology.kubernetes.io/zone&quot; であれば同じ可用性ゾーン、&quot;kubernetes.io/hostname&quot; であれば同じノードです。<br />これを設定すると、同じデータを保持するポッド (ClickHouse では 1 つの分片のレプリカ、Keeper ではすべてのレプリカ) が<br />各ドメインに分散されるようになります。具体的には、必須の TopologySpreadConstraint (maxSkew 1、DoNotSchedule) と、優先 PodAntiAffinity ルールが適用されます。<br />異なる分片のポッドは同じドメインを共有できるため、1 ドメインあたり複数のポッドを配置できます。<br />ドメイン数がレプリカ数より少ない場合は、複数のレプリカが 1 つのドメインを共有しますが、それでも均等に分散されます。<br />さらに ClickHouse ポッドは、それらが使用する Keeper ポッドが配置されているドメインを優先します。<br />&quot;topology.kubernetes.io/zone&quot; に設定することを推奨します。 | false |       |
-| `topologyMinDomains`            | 整数                                                                                                                                   | TopologyMinDomains は、TopologyZoneKey によって生成される TopologySpreadConstraint の minDomains フィールドを設定します。<br />Kubernetes スケジューラは、すでに対象となるノードが存在するゾーンのみをトポロジードメインとして数えます。<br />需要駆動型のオートスケーラー (例: Karpenter、Cluster Autoscaler) を使用している場合、スケジューリング時点で<br />2 つの AZ にしかノードが存在しないと、maxSkew:1/DoNotSchedule の制約が<br />2/1 の分割で満たされてしまい、オートスケーラーが 3 つ目の AZ にノードをプロビジョニングしなくなります。<br />TopologyMinDomains に想定されるゾーン数 (通常は 3) を設定すると、すべてのゾーンにノードが存在するかどうかに関係なく<br />その数のゾーンをドメインとして扱うようスケジューラに指示でき、<br />オートスケーラーは不足しているゾーンへのプロビジョニングを強制されます。<br />TopologyZoneKey が設定されている必要があります。省略 (nil) すると、対象となるノードが既に存在するゾーンのみを数える<br />スケジューラのデフォルトの動作が維持されます。                   | false |       |
 | `nodeHostnameKey`               | string                                                                                                                               | NodeHostnameKey はノードラベルのキーです。<br />このキーを持ち、かつその値が同じラベルを持つノードは、同一ノード上にあると見なされます。<br />これを設定すると、ノードを排他的に使用するよう強制されます。具体的には、クラスター内のすべてのポッドに対して必須の PodAntiAffinity ルールが適用され、<br />分片に関係なく、1 ノードあたり最大 1 つのポッドのみ配置されます。これには少なくともポッド数と同じ数のノードが必要です。<br />ノード数が不足している場合、超過したポッドは Pending のままになります。<br />同じ分片のレプリカをノード間に分散させつつ、1 ノードあたり複数のポッドを配置するには、<br />代わりに TopologyZoneKey を &quot;kubernetes.io/hostname&quot; に設定してください。<br />&quot;kubernetes.io/hostname&quot; に設定することを推奨します。                                                                                                                                                                             | false |       |
 | `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) の配列                              | InitContainers は、メインのサーバーコンテナーが起動する前に実行される init コンテナーの一覧です。<br />名前を基準に operator のデフォルト設定とマージされます。<br />同名のもの同士が対象です。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | false |       |
 
@@ -514,7 +581,9 @@ PodTemplateSpec は、クラスター内のポッドに対する設定のオー�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector {#secretkeyselector}
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
 
 SecretKeySelector は、Secret のキーを選択します。
 
@@ -527,7 +596,9 @@ SecretKeySelector は、Secret のキーを選択します。
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta {#templatemeta}
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
 
 TemplateMeta は、テンプレートオブジェクトでサポートされるメタデータ設定を定義します。
 
@@ -541,7 +612,9 @@ TemplateMeta は、テンプレートオブジェクトでサポートされる�
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer {#versionprobecontainer}
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
 
 VersionProbeContainer は、バージョンプローブのコンテナーレベルのオーバーライドを定義します。
 フィールド名と JSON タグは corev1.Container に合わせており、SMP で名前ベースのマージができるようになっています。
@@ -556,7 +629,9 @@ VersionProbeContainer は、バージョンプローブのコンテナーレベ�
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec {#versionprobejobspec}
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
 
 VersionProbeJobSpec は、バージョンプローブの Job レベルのオーバーライドを定義します。
 
@@ -569,7 +644,9 @@ VersionProbeJobSpec は、バージョンプローブの Job レベルのオー�
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec {#versionprobepodspec}
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
 
 VersionProbePodSpec は、バージョンプローブのポッドレベルのオーバーライドを定義します。
 フィールド名と JSON タグは、strategic merge patch との互換性を保つため、corev1.PodSpec と一致しています。
@@ -585,7 +662,9 @@ Appears in:
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate {#versionprobepodtemplate}
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
 
 VersionProbePodTemplate は、バージョンプローブ用ポッドのオーバーライドを定義します。
 
@@ -598,7 +677,9 @@ VersionProbePodTemplate は、バージョンプローブ用ポッドのオー�
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate {#versionprobetemplate}
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
 
 VersionProbeTemplate は、バージョン検出 Job のオーバーライドを定義します。
 この構造は batchv1.JobTemplateSpec に対応しており、サポートされているフィールドのみを公開します。

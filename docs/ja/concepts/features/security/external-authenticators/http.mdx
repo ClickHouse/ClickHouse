@@ -64,7 +64,9 @@ HTTP認証サーバーを定義するには、`config.xml` に `http_authenticat
 
 この部分では、クライアントのリクエストヘッダーから外部 HTTP 認証サービスに転送するヘッダーを定義します。ヘッダーは設定内のヘッダーと大文字・小文字を区別せずに照合されますが、転送時にはそのまま、つまり変更されずに送られます。
 
-### `users.xml` で HTTP 認証を有効にする {#enabling-http-auth-in-users-xml}
+<div id="enabling-http-auth-in-users-xml">
+  ### `users.xml` で HTTP 認証を有効にする
+</div>
 
 ユーザーの HTTP 認証を有効にするには、ユーザー定義で `password` などのセクションの代わりに、`http_authentication` セクションを指定します。
 

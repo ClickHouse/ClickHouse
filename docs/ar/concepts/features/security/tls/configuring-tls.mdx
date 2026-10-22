@@ -667,17 +667,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </openSSL>
 ```
 
-## تدوير الشهادات وشهادات CA دون إعادة تشغيل {#rotating-certificates-without-restart}
-
-يراقب ClickHouse server وClickHouse Keeper الملفات المشار إليها في `certificateFile` و`privateKeyFile` و`caConfig`
-ضمن قسمَي `openSSL.server` و`openSSL.client` (وفي `protocols.*` بالنسبة إلى البروتوكولات القابلة للتركيب)، أو الملفات الموجودة داخل
-الدليل إذا كان `caConfig` دليلًا. وعند تغيّر أحد هذه الملفات، أو عند تنفيذ `SYSTEM RELOAD CONFIG`، يُعاد تحميل
-الشهادات وتُستخدم في جميع اتصالات TLS الجديدة، بما في ذلك HTTPS، والبروتوكول native الآمن، واتصالات interserver،
-والاتصالات مع Keeper، واتصالات Raft بين عُقد Keeper. أما الاتصالات القائمة فتظل تستخدم الشهادات التي فُتحت بها.
-
-ولتدوير CA دون توقف للخدمة، استبدل أولًا ملف `caConfig` بحزمة تضم شهادة CA القديمة والجديدة معًا، ثم بدّل شهادات
-العُقد وشهادات العميل بشهادات صادرة عن CA الجديدة، وأخيرًا استبدل الحزمة بشهادة CA الجديدة وحدها.
-
 <div id="summary">
   ## الملخص
 </div>

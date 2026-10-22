@@ -343,8 +343,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
-        /// A throwing read cancels its buffer for good, and the recovery below reads it again.
-        if (!isParseError(e.code()) || decimal_overflow || buf->isCanceled())
+        if (!isParseError(e.code()) || decimal_overflow)
         {
             e.recordToSystemErrors();
             throw;

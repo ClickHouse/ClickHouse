@@ -1,74 +1,67 @@
 ---
 title: 'Descripción general del conector'
 sidebarTitle: 'Descripción general'
-description: 'Servicios de ClickHouse gestionados por ClickHouse Cloud en un cluster que usted administra, con observabilidad y soporte, únicamente mediante conexiones salientes'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
+description: 'Observabilidad y soporte para clústeres de ClickHouse en entornos que usted administra, sin acceso permanente'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+<Note>
+  El ClickHouse Connector se encuentra en Private Preview. Para solicitar acceso, contacte con el equipo de cuenta de ClickHouse.
+</Note>
 
-<PrivatePreviewBadge />
+<div id="what-the-connector-does">
+  ## Qué hace el conector
+</div>
 
-Para solicitar acceso a la Private Preview, contacte con el equipo de cuenta de ClickHouse.
+ClickHouse Connector es un componente que se despliega en su propio entorno, junto con los clústeres de ClickHouse que opera. Proporciona a ClickHouse la visibilidad necesaria para supervisar esos clústeres y ofrecer soporte cuando lo solicite, sin otorgar a ClickHouse acceso permanente a su entorno. El conector se distribuye como un único binario llamado `clicklink`, que incluye tanto los demonios del conector como las herramientas de línea de comandos `clicklink clctl` que se usan para instalarlos y operarlos.
 
-## Qué hace el conector {#what-the-connector-does}
+El conector tiene dos componentes:
 
-El ClickHouse Connector es un componente que se despliega en tu propio entorno. Permite que ClickHouse Cloud administre, supervise y dé soporte a los servicios de ClickHouse en un Kubernetes cluster que tú operas. El conector solo establece conexiones salientes y actúa con identidades acotadas a esos servicios. Se distribuye como un único binary, `clicklink`, que contiene los demonios y las herramientas `clicklink clctl` que los instalan y operan.
+* **El scraper** recopila métricas de una lista de permitidos de tablas del sistema de ClickHouse, además de metadatos de infraestructura y estado de salud, y las envía a ClickHouse Cloud.
+* **El solucionador de problemas** permite a los ingenieros de soporte de ClickHouse ejecutar diagnósticos de solo lectura, pero solo durante una [sesión de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) que usted habilita y puede finalizar en cualquier momento.
 
-El conector consta de tres componentes:
+Todas las conexiones que realiza el conector son salientes. ClickHouse Cloud nunca inicia una conexión hacia su entorno; la página de [arquitectura](/es/products/bring-your-own-cloud/connector/architecture) enumera cada conexión, su protocolo y el método de autenticación.
 
-* **El executor** gestiona el ciclo de vida de los servicios cuya administración le encargas a ClickHouse. Crea cada servicio a partir de una definición que envías y, a continuación, aplica los comandos de escalado, parada, arranque, reinicio, copia de seguridad y eliminación procedentes de ClickHouse Cloud. Ejecutar el executor es lo que se denomina modo administrado.
-* **El scraper** recopila metrics de una allowlist de system tables de ClickHouse, además de metadata de la infrastructure y el estado de salud, y los envía a ClickHouse Cloud.
-* **El solucionador de problemas** permite que los ingenieros de soporte de ClickHouse ejecuten diagnósticos de solo lectura durante una [sesión de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) que tú habilitas y puedes finalizar en cualquier momento.
+<div id="when-to-use-it">
+  ## Cuándo usarlo
+</div>
 
-En un terminal, `init` pregunta si quieres habilitar el modo administrado y, de forma predeterminada, responde que sí; los scripts deben pasar `--managed`. Sin el modo administrado, el conector sigue observando y dando soporte a los clusters que operas por tu cuenta; consulta [ejecutar sin el modo administrado](#run-without-managed-mode).
+Despliegue el conector cuando ClickHouse supervise o preste soporte a clústeres de ClickHouse que se ejecutan en su entorno y su postura de seguridad requiera lo siguiente:
 
-Todas las conexiones que establece el conector son salientes; ClickHouse Cloud nunca inicia una conexión hacia tu entorno. La página de [arquitectura](/es/products/bring-your-own-cloud/connector/architecture) enumera cada conexión, su protocolo y cómo se autentica.
+* Todas las rutas de acceso se originan dentro de su perímetro, sin conectividad entrante.
+* El acceso de soporte está limitado en el tiempo, usted lo habilita y puede revocarlo en cualquier momento.
+* Todo lo que lee ClickHouse es de solo lectura: acceso permanente a tablas de ClickHouse, además de metadatos de cargas de trabajo y logs con ámbito de espacio de nombres durante una sesión que usted haya habilitado. Cada comando de la sesión de soporte se registra en un registro de auditoría de su propiedad.
 
-## Cuándo usarlo {#when-to-use-it}
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
 
-Despliega el conector cuando quieras que ClickHouse Cloud opere servicios de ClickHouse dentro de tu propia cuenta en la nube bajo estas condiciones:
+Durante la configuración inicial, ClickHouse proporciona el endpoint del conector y un token de inscripción de un solo uso. Ejecute `clicklink clctl init --enroll` una sola vez desde una estación de trabajo con acceso a kubeconfig para una instalación de Kubernetes, o directamente en el host para una instalación en una VM Linux. Esta única invocación canjea el token, crea usuarios de ClickHouse dedicados de solo lectura para cada componente, obtiene un certificado de client mTLS, despliega e inicia los demonios y verifica su estado.
 
-* Todas las rutas de acceso se originan dentro de tu perímetro; no hay conectividad entrante.
-* Las escrituras en tu cluster se limitan a los espacios de nombres de los servicios que gestiona ClickHouse, además del token propio del executor, su registro y el certificado renovado en su espacio de nombres principal. Los componentes de plataforma de los que dependen esos servicios solo cambian después de que apruebes cada actualización.
-* Tus datos permanecen en buckets y detrás de IAM roles que tú mismo creas y eliminas. El executor no dispone de credenciales para tus buckets ni para tus IAM roles.
-* El acceso de Support está limitado en el tiempo, lo habilitas tú y es revocable en cualquier momento. Cada comando de una sesión de soporte queda registrado en un audit log de tu propiedad.
+A partir de entonces, el scraper lee periódicamente las tablas del sistema incluidas en la lista de permitidos y envía métricas, metadato y el estado de salud al endpoint del conector mediante TLS con autenticación mutua. El solucionador de problemas permanece idle: mantiene un canal de comandos saliente, pero este canal no transmite nada hasta que habilite una sesión de soporte. El certificado mTLS se renueva automáticamente, sin que tenga que realizar ninguna acción.
 
-## Cómo funciona {#how-it-works}
+<div id="requirements-at-a-glance">
+  ## Requisitos de un vistazo
+</div>
 
-Durante el onboarding, ClickHouse registra tu entorno y te proporciona el endpoint del conector y un token de inscripción de un solo uso. Ejecuta `clicklink clctl init --enroll` una sola vez: desde una workstation con acceso a kubeconfig, si la instalación es en Kubernetes, o en el propio host, si es en una Linux VM. Ese comando canjea el token, obtiene un certificado de client mTLS, despliega e inicia los demonios y verifica su health.
+* **Un destino de implementación.** Cualquier clúster de Kubernetes compatible (instalado con el gráfico de Helm) o cualquier host Linux con systemd, amd64 o arm64.
+* **Acceso de red saliente por el puerto 443** al endpoint del conector y a su endpoint de inscripción, así como a `releases.clicklink.clickhouse.com` y ECR Public durante la instalación. Esta es la ruta estándar; existen alternativas aisladas y con réplica para cada paso. Consulte la [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding).
+* **Un listener nativo de ClickHouse accesible.** El conector se comunica con cada clúster mediante el protocolo nativo; en Kubernetes detecta automáticamente el puerto seguro (9440) o el de texto sin cifrar (9000).
+* **Un token de inscripción.** ClickHouse proporciona el endpoint del conector y un token de inscripción de un solo uso durante la configuración inicial.
+* **Acceso de administrador a ClickHouse durante la configuración.** El aprovisionamiento inicial crea los usuarios de solo lectura del conector. La contraseña de administrador, si se ha configurado, se solicita una sola vez y nunca se almacena.
+* **Acceso de administrador a un servidor de la API de Kubernetes durante el aprovisionamiento**, en ambos destinos de instalación: los paquetes de acceso están vinculados a ServiceAccounts de Kubernetes. Consulte la [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding).
 
-Al habilitar el modo administrado se despliega el executor y se aplica su concesión de acceso a Kubernetes. Esa concesión es un ServiceAccount `pcm-executor`. Una política de admission limita sus escrituras a los espacios de nombres de servicios (con el prefijo `ns-` de forma predeterminada). Las excepciones son la renewal de su propio token, un ConfigMap del registro y, en Kubernetes, el certificado de client renovado en su espacio de nombres de origen.
+Consulte la [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding) para ver el procedimiento completo para ambos destinos de instalación.
 
-Crear un servicio requiere dos comandos. `clicklink clctl executor prepare` crea los buckets y el IAM role del servicio con tus credenciales de AWS y muestra una sola vez la password del usuario `default`. `clicklink clctl instances create` envía la definición del servicio a ClickHouse Cloud a través de tu endpoint del conector. A partir de ahí, ClickHouse Cloud gestiona el servicio mediante el canal de comandos saliente del executor: scaling, detención e inicio, reinicios, copias de seguridad, upgrades de versión y cambios de configuración. Consulta [servicios gestionados](/es/products/bring-your-own-cloud/connector/managed-services) para ver el recorrido.
-
-Dos acciones siguen estando en tus manos. Las updates de los componentes de la plataforma en tu cluster quedan a la espera de tu aprobación; consulta [actualizaciones de la plataforma](/es/products/bring-your-own-cloud/connector/platform-updates). Eliminar un servicio solo elimina sus recursos de Kubernetes; sus buckets y su IAM role permanecen hasta que ejecutes `clicklink clctl executor teardown`.
-
-El scraper lee las system tables incluidas en la allowlist a un interval fijo y envía metrics, metadata y health status a tu endpoint del conector mediante mTLS. El solucionador de problemas mantiene abierto un canal de comandos saliente que no transporta nada hasta que habilitas una sesión de soporte. El certificado mTLS se renueva por sí solo.
-
-## Ejecutar sin el modo administrado {#run-without-managed-mode}
-
-Pase `--no-managed` a `clicklink clctl init`, o responda «no» cuando se le pregunte, para instalar únicamente el scraper y el solucionador de problemas. En ese caso, el conector observa y da soporte a los clusters de ClickHouse que usted mismo opera; ClickHouse no puede crear, modificar ni eliminar servicios. Aun así, el conector se despliega por sí mismo y aprovisiona usuarios de ClickHouse de solo lectura y ServiceAccounts; consulte el [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model). Este es también el esquema aplicable a los destinos que el modo administrado no cubre. El modo administrado se ejecuta en Amazon EKS con S3 storage; la observabilidad y el soporte funcionan en cualquier Kubernetes cluster conforme o host Linux.
-
-## Requisitos de un vistazo {#requirements-at-a-glance}
-
-* **Un destino de despliegue.** El modo administrado requiere un cluster de Amazon EKS con almacenamiento S3. La observabilidad y el soporte, por sí solos, funcionan en cualquier cluster de Kubernetes conforme (instalado con el gráfico de Helm) o en cualquier host Linux con systemd, amd64 o arm64.
-* **Registro por parte de ClickHouse.** ClickHouse registra tu entorno para el modo administrado y, durante el onboarding, te proporciona el endpoint del conector y un token de inscripción de un solo uso.
-* **Acceso de red saliente por el puerto 443** a tu endpoint del conector y a su endpoint de inscripción, además de `releases.clicklink.clickhouse.com` y ECR Public en el momento de la instalación. Existen alternativas aisladas y con réplicas para cada paso; consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding). En el modo administrado, los nodos de tu cluster también descargan imágenes de ClickHouse desde el registro en el que está registrado tu entorno. El executor accede a Amazon ECR y STS cuando descarga un chart de plataforma desde ECR.
-* **Administración del cluster durante la configuración.** Al habilitar el modo administrado se aplica una sola vez la concesión de acceso del executor: un ServiceAccount, el Rol de clúster vinculado a él y la política de admission que limita sus escrituras a los espacios de nombres del servicio. Aprobar una actualización de plataforma también requiere permisos de administración del cluster. En ambos destinos de instalación, los access bundles del solucionador de problemas están anclados a ServiceAccounts de Kubernetes. Consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding).
-* **Credenciales de AWS para `prepare` y `teardown`, y acceso al registro para `platform approve`.** La creación de los buckets y el IAM role de un servicio se ejecuta con tus credenciales, al igual que su eliminación una vez borrado el servicio. Ambas operaciones se ejecutan en tu workstation o en el host del conector. Para el acceso directo al registro de ClickHouse, la aprobación y la sincronización de plataforma asumen el rol de descarga de solo lectura mediante el instance profile de la VM EC2 del conector. Los perfiles de AWS de la workstation o las credenciales de SSO no sustituyen a esa identidad. Otros registros de charts en ECR usan las credenciales de AWS del entorno. Consulta [credenciales del registro](/es/products/bring-your-own-cloud/connector/platform-updates#registry-credentials). El executor nunca posee credenciales de tus buckets ni de IAM. Sus únicas llamadas a la nube van a Amazon ECR y STS para descargar charts y comprobar imágenes de plataforma.
-* **Un listener nativo de ClickHouse accesible** para los clusters que operas tú mismo, observado por una Implementación independiente del conector que se ejecuta sin el executor. El scraper y el solucionador de problemas se comunican con cada cluster mediante el protocolo nativo; en Kubernetes detectan automáticamente si la conexión es segura (9440) o en plaintext (9000).
-* **Acceso de administración de ClickHouse durante la configuración** para los clusters que operas tú mismo. El aprovisionamiento inicial crea los usuarios de solo lectura del conector. La contraseña de administración, cuando existe, se solicita una única vez y nunca se almacena.
-
-## Próximos pasos {#next-steps}
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
 * [Configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding): instale y registre el conector en Kubernetes o en una VM de Linux.
-* [Servicios gestionados](/es/products/bring-your-own-cloud/connector/managed-services): habilite el modo administrado, cree un servicio y siga su ciclo de vida, estado y eliminación.
-* [Actualizaciones de la plataforma](/es/products/bring-your-own-cloud/connector/platform-updates): apruebe los cambios en los componentes de la plataforma dentro de su cluster.
 * [Arquitectura](/es/products/bring-your-own-cloud/connector/architecture): componentes, todas las conexiones, ciclo de vida de los certificados y qué datos salen de su entorno.
 * [Sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions): cómo habilitar, delimitar, auditar y revocar el acceso de soporte.
 * [Configuración](/es/products/bring-your-own-cloud/connector/configuration) y [operaciones](/es/products/bring-your-own-cloud/connector/operations): ajuste, actualizaciones y tareas operativas posteriores a la implementación.
-* [FAQ](/es/products/bring-your-own-cloud/connector/reference/faq): preguntas frecuentes, incluido quién puede modificar sus servicios, la salida de datos y la revocación.
+* [FAQ](/es/products/bring-your-own-cloud/connector/reference/faq): preguntas frecuentes, incluida la salida de datos y la revocación.
 
-El conector se ejecuta en un cluster que usted proporciona y controla; ClickHouse Cloud gestiona los servicios dentro de él a través del executor. Si prefiere que ClickHouse aprovisione y opere el cluster por sí mismo en su cuenta en la nube, el modelo de implementación es [BYOC](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview). La página de [arquitectura de BYOC](/es/products/bring-your-own-cloud/overview/architecture) explica las diferencias entre ambos.
+El conector está destinado a entornos que usted mismo opera. Si prefiere que ClickHouse opere los clústeres dentro de su cuenta en la nube, el modelo de implementación es [BYOC](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview); consulte la página de [arquitectura de BYOC](/es/products/bring-your-own-cloud/overview/architecture) para conocer las diferencias entre ambos.

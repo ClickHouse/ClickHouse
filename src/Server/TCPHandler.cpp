@@ -50,14 +50,11 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerSwitcher.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
-#include <Common/checkSSLReturnCode.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/SettingSource.h>
@@ -102,6 +99,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
@@ -423,9 +421,7 @@ void TCPHandler::runImpl()
         /// client observes 'Connection reset by peer' without any explanation. Send the
         /// exception into the socket directly instead.
         tryLogCurrentException(log, "Cannot initialize connection");
-        /// Writing to a timed-out TLS handshake would start it over for another window.
-        if (e.code() != ErrorCodes::SOCKET_TIMEOUT || !secureHandshakePending(socket().impl()))
-            trySendExceptionWithoutConnectionBuffers(e);
+        trySendExceptionWithoutConnectionBuffers(e);
         return;
     }
 
@@ -928,7 +924,7 @@ void TCPHandler::runImpl()
                             block,
                             getCompressionCodec(query_settings, query_state->compression),
                             client_tcp_protocol_version,
-                            getNativeWireFormatSettings(query_state->query_context),
+                            getFormatSettings(query_state->query_context),
                             !query_settings[Setting::low_cardinality_allow_in_native_format]);
                     });
 
@@ -1357,7 +1353,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             {
                 bool empty_block = false;
                 if (state.skipping_data)
-                    empty_block = !processUnexpectedData(state);
+                    empty_block = !processUnexpectedData();
                 else
                     empty_block = !processData(state, packet_type == Protocol::Client::Scalar);
                 if (empty_block)
@@ -1452,18 +1448,6 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     startInsertQuery(state);
     Squashing squashing(std::make_shared<const Block>(state.input_header), 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
-    /// The block outlives this query once queued, so it is charged to a tracker of its own from the start.
-    auto queued_data_tracker = tryCreateMemoryTrackerUnderCurrentQuery(VariableContext::Process);
-    if (queued_data_tracker)
-        queued_data_tracker->setDriftExpected();
-
-    /// The reader lives as long as the query, so it is not queued data.
-    initBlockInput(state);
-
-    std::optional<MemoryTrackerSwitcher> switcher;
-    if (queued_data_tracker)
-        switcher.emplace(queued_data_tracker.get());
-
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
@@ -1472,20 +1456,15 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
 
         {
-            /// Log rows and writers are the query's, not queued data.
-            switcher.reset();
             std::lock_guard lock(*callback_mutex);
             /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
             sendLogs(state);
             sendInsertProfileEvents(state);
             out->sync();
-            if (queued_data_tracker)
-                switcher.emplace(queued_data_tracker.get());
         }
 
         if (result_chunk)
         {
-            switcher.reset();
             auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
@@ -1500,14 +1479,11 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         squashing.getHeader());
     if (!result_chunk)
     {
-        switcher.reset();
-        return insert_queue.pushQueryWithBlock(
-            state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context, std::move(queued_data_tracker));
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context);
     }
 
     auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
-    switcher.reset();
-    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context, std::move(queued_data_tracker));
+    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context);
 }
 
 
@@ -2855,7 +2831,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
                     block,
                     getCompressionCodec(query_settings, current_state->compression),
                     client_tcp_protocol_version,
-                    getNativeWireFormatSettings(current_state->query_context),
+                    getFormatSettings(current_state->query_context),
                     !query_settings[Setting::low_cardinality_allow_in_native_format]);
             });
     }
@@ -2868,6 +2844,20 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// handler member that lives as long as the connection, so until it is assigned it still holds
     /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
     query_kind = state->query_context->getClientInfo().query_kind;
+
+    /// FIXME: Remove together with the old query analysis itself.
+    /// Analyzer became Beta in 24.3 and started to be enabled by default.
+    /// We have to disable it for ourselves to make sure we don't have different settings on
+    /// different servers. `enable_analyzer` is an obsolete setting a user cannot disable anymore,
+    /// but an initiator this old has no analyzer at all, so a query it sends has to keep being
+    /// analyzed the old way. The value survives `clampToSettingsConstraints` below because a
+    /// change disabling the analyzer is only refused on the throwing paths (see
+    /// `SettingsConstraints`), which a secondary query does not take.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+            < VersionNumber(23, 3, 0)
+        && !passed_settings[Setting::allow_experimental_analyzer].changed)
+        passed_settings.set("allow_experimental_analyzer", false);
 
     if (state->stage == QueryProcessingStage::WithMergeableState
         && VersionNumber(client_info.connection_client_version_major, client_info.connection_client_version_minor, client_info.connection_client_version_patch)
@@ -3070,7 +3060,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 }
 
 
-bool TCPHandler::processUnexpectedData(QueryState & state)
+bool TCPHandler::processUnexpectedData()
 {
     String skip_external_table_name;
     readStringBinary(skip_external_table_name, *in);
@@ -3081,8 +3071,7 @@ bool TCPHandler::processUnexpectedData(QueryState & state)
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeReader>(
-        *maybe_compressed_in, client_tcp_protocol_version, getNativeWireFormatSettings(state.query_context));
+    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
     bool empty_block = skip_block_in->read().empty();
     return !empty_block;
 }
@@ -3110,7 +3099,7 @@ void TCPHandler::initBlockInput(QueryState & state)
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getNativeWireFormatSettings(state.query_context));
+            getFormatSettings(state.query_context));
     }
 }
 
@@ -3151,7 +3140,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             std::make_shared<const Block>(block.cloneEmpty()),
-            getNativeWireFormatSettings(state.query_context),
+            getFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -3175,7 +3164,7 @@ void TCPHandler::initLogsBlockOutput(
             *logs_buf,
             client_tcp_protocol_version,
             std::make_shared<const Block>(block.cloneEmpty()),
-            getNativeWireFormatSettings(state.query_context),
+            getFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -3194,7 +3183,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getNativeWireFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 

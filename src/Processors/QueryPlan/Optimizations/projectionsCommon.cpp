@@ -30,6 +30,9 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
 }
@@ -44,9 +47,24 @@ namespace QueryPlanOptimizations
 
 std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// TODO(unique-key): support projections, `_minmax_count_projection` included.
-    if (reading->getStorageMetadata()->hasUniqueKey())
-        return std::unexpected("the table has a UNIQUE KEY");
+    /// Reading through a projection part bypasses the parent table's
+    /// delete-bitmap filter, so logically-deleted rows would resurface. Decline
+    /// the projection for a unique-key table that carries one (CREATE/ALTER
+    /// reject the combination, but SECONDARY_CREATE/ATTACH load it); the
+    /// optimizer then falls back to the correctly-filtered base-table read, and
+    /// an actual projection-part read is hard-rejected downstream in
+    /// MergeTreeDataSelectExecutor. A unique-key table with no projection is
+    /// unaffected.
+    /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
+    /// TODO(unique-key): count shortcuts that bypass the delete bitmap — the
+    /// implicit _minmax_count_projection here and the trivial-count path
+    /// (supportsTrivialCountOptimization -> totalRows) — are deferred to the
+    /// read+delete work, which makes count() delete-bitmap-aware.
+    {
+        const auto metadata = reading->getStorageMetadata();
+        if (metadata->hasUniqueKey() && metadata->hasProjections())
+            return std::unexpected("the table has a UNIQUE KEY");
+    }
 
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return std::unexpected("the read is already served by a projection");
@@ -58,12 +76,6 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     /// mismatch. Keep the read whole; the projection optimization is a no-op for distributed reads.
     if (reading->getDistributedReadBucketCount() > 0)
         return std::unexpected("the read is part of a distributed plan");
-
-    /// A streaming read resolves which rows it returns at runtime, from the subscription bounds and
-    /// the cursor; plan-time part selection is skipped for it. A projection describes the whole
-    /// table, so an answer derived from one ignores those bounds.
-    if (reading->getQueryInfo().isStream())
-        return std::unexpected("the query uses STREAM");
 
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
@@ -78,11 +90,16 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
+        bool support_projection = query_settings[Setting::allow_experimental_analyzer]
+            && query_settings[Setting::parallel_replicas_local_plan]
             && query_settings[Setting::parallel_replicas_support_projection];
 
-        if (!support_projection)
-            return std::unexpected("parallel replicas are enabled without projection support");
+        /// AggregationInOrder may cause local and remote replicas to use different CoordinationModes, which is currently unsupported.
+        bool enable_aggregation_in_order = query_settings[Setting::optimize_aggregation_in_order]
+            || query_settings[Setting::force_aggregation_in_order];
+
+        if (!support_projection || enable_aggregation_in_order)
+            return std::unexpected("parallel replicas are enabled without projection support or with aggregation in order");
     }
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
@@ -364,56 +381,15 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
-/// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
-/// `AlterConversions` of the parent part only; a projection part is read without them. So until such a
-/// mutation rewrites the part, its projection part may still carry a column the metadata no longer has
-/// under that name: after `DROP COLUMN c, ADD COLUMN c` the projection would return the old values of
-/// `c` instead of the new column's default. Such a part is read from the parent part instead.
-/// Only the mutations touching a column the projection holds or the read needs (for `RENAME COLUMN`,
-/// both the old and the new name) matter: a pending drop of an unrelated column keeps the projection usable.
-static bool partHasPendingMetadataMutationsOnColumns(
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const MergeTreeData::DataPartPtr & part,
-    const ProjectionDescription & projection,
-    const Names & required_column_names)
-{
-    if (!mutations_snapshot->hasMetadataMutations())
-        return false;
-
-    auto is_affected = [&](const String & name)
-    {
-        if (name.empty())
-            return false;
-        return std::find(projection.required_columns.begin(), projection.required_columns.end(), name) != projection.required_columns.end()
-            || projection.sample_block.has(name)
-            || std::find(required_column_names.begin(), required_column_names.end(), name) != required_column_names.end();
-    };
-
-    /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
-    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
-    {
-        if (!AlterConversions::isSupportedMetadataMutation(command.type))
-            continue;
-
-        if (is_affected(command.column_name) || is_affected(command.rename_to))
-            return true;
-    }
-
-    return false;
-}
-
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
-    const MergeTreeData::MutationsSnapshotPtr & parent_mutations_snapshot,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
     const StorageMetadataPtr & parent_metadata,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
-    bool allow_query_condition_cache,
-    bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
@@ -424,9 +400,7 @@ bool analyzeProjectionCandidate(
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
-            && !partHasPendingMetadataMutationsOnColumns(
-                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, required_column_names))
+                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
                 it->second,
@@ -452,12 +426,7 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         top_k_filter_info,
         context,
-        context->getSettingsRef()[Setting::max_threads],
-        /*max_block_numbers_to_read=*/nullptr,
-        /// The candidate's marks are reused by the projection read, so it must not consult the cache
-        /// when the analyzed read has it disabled for correctness (`disableQueryConditionCache`).
-        allow_query_condition_cache,
-        allow_top_k_prewhere_query_condition_cache);
+        context->getSettingsRef()[Setting::max_threads]);
 
     /// If projection analysis exceeded limits, skip this candidate
     if (!projection_result_ptr->isUsable())
@@ -517,9 +486,7 @@ void filterPartsAndCollectProjectionCandidates(
         auto it = created_projections.find(projection.name);
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
-            && !partHasPendingMetadataMutationsOnColumns(
-                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns))
+                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns))
         {
             RangesInDataPart projection_part(
                 it->second,
@@ -561,10 +528,7 @@ void filterPartsAndCollectProjectionCandidates(
         reading.getTopKFilterInfo(),
         context,
         context->getSettingsRef()[Setting::max_threads],
-        /*max_block_numbers_to_read=*/nullptr,
-        /// The result filters the parts of the actual read, so keep the read's own cache gate.
-        reading.isQueryConditionCacheAllowed(),
-        reading.isTopKPrewhereQueryConditionCacheAllowed());
+        nullptr);
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)

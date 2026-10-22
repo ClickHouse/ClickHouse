@@ -20,7 +20,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -76,7 +75,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
     try
     {
         S3::URI uri(url);
-        uri.checkRemoteHostFilter(context_->getGlobalContext()->getRemoteHostFilter());
+        context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri.uri);
     }
     catch (...)
     {
@@ -343,7 +342,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn, s3DatabaseSecretArguments(), {
+    factory.registerDatabase("S3", create_fn, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,

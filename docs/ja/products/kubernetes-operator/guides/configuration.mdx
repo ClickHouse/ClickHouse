@@ -137,7 +137,9 @@ Keeper ノードは、ヘッドレス Service を介してポッド名を使用�
   ## ポッドの設定
 </div>
 
-### トポロジースプレッドとアフィニティの自動設定 {#automatic-topology-spread-and-affinity}
+<div id="automatic-topology-spread-and-affinity">
+  ### トポロジースプレッドとアフィニティの自動設定
+</div>
 
 ポッドをアベイラビリティゾーン間に分散します:
 
@@ -150,20 +152,6 @@ spec:
 
 <Note>
   Kubernetesクラスターに、分散制約を満たせるだけのノードが異なるゾーンに十分にあることを確認してください。
-</Note>
-
-ノードのオートスケーラー (Karpenter、Cluster Autoscaler) を使用している場合、分散制約だけでは、まだノードが存在しないゾーンをプロビジョニングすることはできません。スケジューラーは認識できるゾーンの範囲で妥協してしまいます。
-分散を強制するには、`topologyMinDomains` にアベイラビリティゾーンの数を設定します:
-
-```yaml
-spec:
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-    topologyMinDomains: 3   # number of availability zones
-```
-
-<Note>
-  `topologyMinDomains` には `topologyZoneKey` が必要です。要求した数よりも利用可能なゾーンが少ない間、ポッドは `Pending` のままになるため、クラスターが提供できるゾーン数の範囲内に収めてください。
 </Note>
 
 <div id="manual-configuration">
@@ -732,7 +720,7 @@ spec:
 
 | フラグ                               | デフォルト   | 効果                                                                                           |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | オペレーターがアップストリームのバージョン一覧を再取得する頻度。バージョン更新チェックが有効な場合は、ゼロより大きい値である必要があります                        |
+| `--version-update-interval`       | `24h`   | オペレーターがアップストリームのバージョン一覧を再取得する頻度                                                              |
 | `--disable-version-update-checks` | `false` | アップグレードチェッカーを完全に無効にします。`VersionUpgraded` 条件は設定されず、`clickhouse.com` への外向きの HTTP トラフィックも発生しません |
 
 エアギャップ環境、または `clickhouse.com` への egress が許可されていない場合は、`--disable-version-update-checks=true` を設定してください。
@@ -844,7 +832,9 @@ spec:
   (`passwordType: password`) には、必ず Secret を使用してください。
 </Note>
 
-### 設定でのカスタムユーザー {#custom-users-in-configuration}
+<div id="custom-users-in-configuration">
+  ### 設定でのカスタムユーザー
+</div>
 
 設定ファイルで追加ユーザーを設定します。
 
@@ -1093,17 +1083,4 @@ spec:
       configMap:
         key: password
         name: default-password
-```
-
-## 定期的な再同期 {#periodic-resync}
-
-オペレーターは、Kubernetesのイベントに反応するだけでなく、一定間隔ですべてのクラスターを再度リコンサイルします。これにより、watchでは検知できない状態 (ClickHouseのレプリカのヘルス、Keeperのクォーラムなど) についてもステータス条件を最新に保ち、スタックしたポッドのクリーンアップといった修復処理を再試行します。
-
-この間隔は、オペレーターの環境変数 `RESYNC_PERIOD` (デフォルトは `30s`) で制御します。これは `KeeperCluster` リソースに適用され、`0` を指定すると定期的な再同期が無効になります。`ClickHouseCluster` リソースは30秒ごとにClickHouseの `system.warnings` をポーリングしており、その時点でリコンサイルが再度トリガーされるため、現時点では `RESYNC_PERIOD` は影響しません。
-
-```yaml
-# in the operator Deployment spec
-env:
-- name: RESYNC_PERIOD
-  value: "1m"
 ```

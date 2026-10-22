@@ -10,7 +10,9 @@ sidebarTitle: 'Référence de l’API'
 
 Ce document fournit une référence détaillée de l’API pour les ressources personnalisées du ClickHouse Operator.
 
-## AdditionalPort {#additionalport}
+<div id="additionalport">
+  ## AdditionalPort
+</div>
 
 AdditionalPort déclare un port TCP supplémentaire à exposer sur le pod ClickHouse et le Service headless public.
 
@@ -23,7 +25,9 @@ Apparaît dans :
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector {#cabundleselector}
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
 
 CABundleSelector sélectionne une clé contenant un bundle de CA à partir d&#39;un Secret dans l&#39;espace de noms du cluster.
 
@@ -36,11 +40,15 @@ Apparaît dans :
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster {#clickhousecluster}
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
 
 ClickHouseCluster est le schéma de l’API `clickhouseclusters`.
 
-### Version de l’API et Kind {#clickhousecluster-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Version de l’API et Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +64,15 @@ Apparaît dans :
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList {#clickhouseclusterlist}
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
 
 ClickHouseClusterList contient une liste de ClickHouseCluster.
 
-### Version de l’API et Kind {#clickhouseclusterlist-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Version de l’API et Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +83,9 @@ kind: ClickHouseClusterList
 | ------- | ----------------------------------------------- | ----------- | ----------- | ---------- |
 | `items` | [ClickHouseCluster](#clickhousecluster) tableau |             | true        |            |
 
-## ClickHouseClusterSpec {#clickhouseclusterspec}
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
 
 ClickHouseClusterSpec définit l’état souhaité de ClickHouseCluster.
 
@@ -99,7 +113,9 @@ Apparaît dans :
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus {#clickhouseclusterstatus}
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
 
 ClickHouseClusterStatus définit l’état observé de ClickHouseCluster.
 
@@ -119,7 +135,9 @@ Apparaît dans :
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
 
 ClickHouseNetworkPolicySpec configure la NetworkPolicy gérée pour le cluster ClickHouse.
 La politique gérée couvre le trafic interne au cluster :
@@ -137,7 +155,9 @@ Apparaît dans :
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings {#clickhousesettings}
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
 
 ClickHouseSettings définit les options de configuration du serveur ClickHouse.
 
@@ -155,7 +175,9 @@ Apparaît dans :
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec {#clustertlsspec}
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
 
 ClusterTLSSpec définit la configuration TLS du cluster.
 
@@ -171,7 +193,9 @@ Apparaît dans :
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector {#configmapkeyselector}
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
 
 ConfigMapKeySelector sélectionne une clé d&#39;une ConfigMap.
 
@@ -184,7 +208,9 @@ Apparaît dans :
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage {#containerimage}
+<div id="containerimage">
+  ## ContainerImage
+</div>
 
 ContainerImage définit une image de conteneur avec un dépôt, un tag ou un hash.
 
@@ -198,7 +224,9 @@ Apparaît dans :
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec {#containertemplatespec}
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
 
 ContainerTemplateSpec décrit les surcharges de configuration des conteneurs du cluster.
 
@@ -218,7 +246,9 @@ Apparaît dans :
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector {#defaultpasswordselector}
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
 
 DefaultPasswordSelector sélectionne la source du mot de passe de l’utilisateur `default`.
 
@@ -232,7 +262,9 @@ Apparaît dans :
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings {#encryptionsettings}
+<div id="encryptionsettings">
+  ## EncryptionSettings
+</div>
 
 EncryptionSettings active le chiffrement des données de table au repos. Lorsqu’il est présent, l’opérateur génère une
 politique de stockage chiffrée ClickHouse qui encapsule chaque disque de données ; les tables l’activent via `SETTINGS storage_policy`.
@@ -246,7 +278,9 @@ Apparaît dans :
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret {#externalsecret}
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
 
 ExternalSecret est une référence à un Secret dans le même espace de noms.
 
@@ -259,7 +293,9 @@ Apparaît dans :
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy {#externalsecretpolicy}
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
 
 ExternalSecretPolicy contrôle la façon dont l&#39;opérateur traite le contenu du secret externe.
 
@@ -272,11 +308,15 @@ Apparaît dans :
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster {#keepercluster}
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
 
 KeeperCluster est le schéma de l’API `keeperclusters`.
 
-### Version de l’API et Kind {#keepercluster-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Version de l’API et Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -292,11 +332,15 @@ Apparaît dans :
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList {#keeperclusterlist}
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
 
 KeeperClusterList contient une liste de KeeperCluster.
 
-### Version de l’API et Kind {#keeperclusterlist-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Version de l’API et Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -307,7 +351,9 @@ kind: KeeperClusterList
 | ------- | --------------------------------------- | ----------- | ----------- | ---------- |
 | `items` | [KeeperCluster](#keepercluster) tableau |             | true        |            |
 
-## Référence de KeeperCluster {#keeperclusterreference}
+<div id="keeperclusterreference">
+  ## Référence de KeeperCluster
+</div>
 
 KeeperClusterReference identifie le KeeperCluster utilisé par un ClickHouseCluster.
 
@@ -320,7 +366,9 @@ Apparaît dans :
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec {#keeperclusterspec}
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
 
 KeeperClusterSpec définit l’état souhaité de KeeperCluster.
 
@@ -343,7 +391,9 @@ Apparaît dans :
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus {#keeperclusterstatus}
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
 
 KeeperClusterStatus définit l’état observé de KeeperCluster.
 
@@ -363,7 +413,9 @@ Apparaît dans :
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
 
 KeeperNetworkPolicySpec configure la NetworkPolicy gérée pour le cluster Keeper.
 La politique gérée couvre le trafic interne au cluster :
@@ -381,7 +433,9 @@ Apparaît dans :
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings {#keepersettings}
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
 
 KeeperSettings définit la configuration du serveur ClickHouse Keeper.
 
@@ -395,7 +449,9 @@ Apparaît dans :
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig {#loggerconfig}
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
 
 LoggerConfig définit la configuration de journalisation du serveur.
 
@@ -412,7 +468,9 @@ Apparaît dans :
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta {#namedtemplatemeta}
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
 
 NamedTemplateMeta définit les paramètres de métadonnées pris en charge pour les objets de modèle qui nécessitent un nom.
 
@@ -426,7 +484,9 @@ Apparaît dans :
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy {#networkpolicypolicy}
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
 
 NetworkPolicyPolicy détermine si l’opérateur gère une NetworkPolicy pour le cluster.
 
@@ -440,7 +500,9 @@ Apparaît dans :
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy {#pdbpolicy}
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
 
 PDBPolicy détermine si des PodDisruptionBudgets sont créés.
 
@@ -454,7 +516,9 @@ Apparaît dans :
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
 
 PersistentVolumeClaimTemplate est un modèle nommé pour un PersistentVolumeClaim propre à chaque réplique.
 
@@ -467,7 +531,9 @@ Apparaît dans :
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
 
 PodDisruptionBudgetSpec configure le PDB créé pour le cluster.
 Une seule des valeurs MinAvailable ou MaxUnavailable peut être définie.
@@ -485,7 +551,9 @@ Apparaît dans :
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec {#podtemplatespec}
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
 
 PodTemplateSpec décrit les surcharges de configuration appliquées aux pods du cluster.
 
@@ -493,19 +561,18 @@ PodTemplateSpec décrit les surcharges de configuration appliquées aux pods du 
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------------- |
 | `terminationGracePeriodSeconds` | entier                                                                                                                                    | Durée facultative, en secondes, nécessaire au pod pour s&#39;arrêter proprement. Elle peut être réduite dans une requête de suppression.<br />La valeur doit être un entier non négatif. La valeur zéro indique un arrêt immédiat via<br />le signal `kill` (sans possibilité d&#39;arrêt propre).<br />Si cette valeur est nil, la période de grâce par défaut sera utilisée.<br />La période de grâce correspond à la durée, en secondes, entre l&#39;envoi d&#39;un signal de terminaison aux processus en cours d&#39;exécution dans le pod<br />et le moment où ces processus sont arrêtés de force avec un signal `kill`.<br />Définissez une valeur supérieure au temps de nettoyage attendu pour votre processus.<br />La valeur par défaut est de 30 secondes.                                                                                                                                                                                                                                                                                                                                                                      | false       |                   |
 | `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) tableau | TopologySpreadConstraints décrit comment un groupe de pods doit être réparti sur des domaines<br />de topologie. L’ordonnanceur planifiera les pods de manière à respecter les contraintes.<br />Tous les topologySpreadConstraints sont combinés par un ET logique.<br />Fusionné avec les valeurs par défaut de l’opérateur via `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false       |                   |
-| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) liste           | ImagePullSecrets est une liste facultative de références à des secrets dans le même espace de noms, à utiliser pour récupérer les images utilisées par ce PodSpec.<br />S&#39;ils sont spécifiés, ces secrets seront transmis aux implémentations de récupération d&#39;images afin qu&#39;elles puissent les utiliser.<br />Plus d&#39;informations : https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />Fusionné avec les valeurs par défaut de l&#39;opérateur par nom.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | false       |                   |
-| `nodeSelector`                  | objet (clés:string, valeurs:string)                                                                                                       | NodeSelector est un sélecteur qui doit être satisfait pour que le pod puisse être exécuté sur un nœud.<br />Sélecteur qui doit correspondre aux labels d’un nœud pour que le pod soit planifié sur ce nœud.<br />Plus d’informations : https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false       |                   |
-| `affinity`                      | [Affinité](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | Le cas échéant, les contraintes de planification du pod.<br />S’ajoute aux valeurs par défaut de l’opérateur : les listes de termes de planification sont concaténées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |                   |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) liste           | ImagePullSecrets est une liste facultative de références à des secrets dans le même espace de noms, à utiliser pour récupérer les images utilisées par ce PodSpec.<br />S&#39;ils sont spécifiés, ces secrets seront transmis aux implémentations de récupération d&#39;images afin qu&#39;elles puissent les utiliser.<br />Plus d&#39;informations : https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />Fusionné avec les valeurs par défaut de l&#39;opérateur par nom.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | false       |                   |
+| `nodeSelector`                  | objet (clés:string, valeurs:string)                                                                                                       | NodeSelector est un sélecteur qui doit être satisfait pour que le pod puisse être exécuté sur un nœud.<br />Sélecteur qui doit correspondre aux labels d’un nœud pour que le pod soit planifié sur ce nœud.<br />Plus d’informations : https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false       |                   |
+| `affinity`                      | [Affinité](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | Le cas échéant, les contraintes de planification du pod.<br />S’ajoute aux valeurs par défaut de l’opérateur : les listes de termes de planification sont concaténées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |                   |
 | `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core)[]                                   | Tolérances du pod, si elles sont spécifiées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false       |                   |
 | `schedulerName`                 | string                                                                                                                                    | S&#39;il est spécifié, le pod sera planifié par l&#39;ordonnanceur indiqué.<br />S&#39;il ne l&#39;est pas, le pod sera planifié par l&#39;ordonnanceur par défaut.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | false       |                   |
-| `serviceAccountName`            | string                                                                                                                                    | ServiceAccountName est le nom du ServiceAccount à utiliser pour exécuter ce pod.<br />Pour en savoir plus : https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false       |                   |
+| `serviceAccountName`            | string                                                                                                                                    | ServiceAccountName est le nom du ServiceAccount à utiliser pour exécuter ce pod.<br />Pour en savoir plus : https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false       |                   |
 | `priorityClassName`             | string                                                                                                                                    | PriorityClassName désigne le nom de la PriorityClass à utiliser pour le pod.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false       |                   |
 | `runtimeClassName`              | string                                                                                                                                    | RuntimeClassName désigne le nom de la RuntimeClass à utiliser pour le pod.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | false       |                   |
-| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) liste                                       | Volumes définit la liste des volumes pouvant être montés par les conteneurs du pod.<br />Plus d’informations : https://kubernetes.io/docs/concepts/storage/volumes<br />Fusionné par nom avec les valeurs par défaut de l’opérateur ; un volume utilisateur remplace tout volume de l’opérateur portant le même nom.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |                   |
-| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                     | SecurityContext contient les attributs de sécurité au niveau du pod ainsi que les paramètres communs des conteneurs.<br />Un SecurityContext non nul remplace intégralement les valeurs par défaut de l’opérateur ; l’utilisateur est responsable de la<br />struct entière. Lorsqu’il est nul, les valeurs par défaut de l’opérateur sont conservées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |                   |
-| `topologyZoneKey`               | string                                                                                                                                    | TopologyZoneKey est la clé des labels du nœud.<br />Les nœuds qui possèdent un label avec cette clé et des valeurs identiques sont considérés comme appartenant au même domaine de topologie,<br />par exemple la même zone de disponibilité pour &quot;topology.kubernetes.io/zone&quot; ou le même nœud pour &quot;kubernetes.io/hostname&quot;.<br />Définissez-la pour répartir de manière équilibrée les pods contenant les mêmes données (répliques d’un shard pour ClickHouse, toutes les répliques pour Keeper)<br />entre les domaines : une contrainte TopologySpreadConstraint requise (maxSkew 1, DoNotSchedule), ainsi qu’une règle PodAntiAffinity privilégiée.<br />Les pods de shards différents peuvent partager un domaine, plusieurs pods par domaine sont donc autorisés.<br />Lorsqu’il y a moins de domaines que de répliques, plusieurs répliques partagent un domaine, tout en restant réparties de manière homogène.<br />Les pods ClickHouse privilégient également les domaines qui hébergent les pods Keeper qu’ils utilisent.<br />Il est recommandé de la définir sur &quot;topology.kubernetes.io/zone&quot;. | false       |                   |
-| `topologyMinDomains`            | integer                                                                                                                                   | TopologyMinDomains définit le champ minDomains de la TopologySpreadConstraint générée par TopologyZoneKey.<br />L’ordonnanceur Kubernetes ne compte comme domaines de topologie que les zones qui disposent déjà de nœuds éligibles.<br />Avec des autoscalers pilotés par la demande (par exemple Karpenter, Cluster Autoscaler), cela signifie que si des nœuds<br />n’existent que dans deux AZ au moment de la planification, une contrainte maxSkew:1/DoNotSchedule est satisfaite avec<br />une répartition 2/1 et l’autoscaler ne provisionne jamais de nœud dans la troisième AZ.<br />Définir TopologyMinDomains au nombre de zones attendu (généralement 3) indique à l’ordonnanceur de<br />traiter ce nombre de zones comme des domaines, qu’il existe ou non des nœuds dans toutes ces zones, forçant ainsi<br />l’autoscaler à provisionner dans la zone manquante.<br />Nécessite que TopologyZoneKey soit défini. Omettez-le (nil) pour conserver le comportement par défaut<br />de l’ordonnanceur, qui ne compte que les zones disposant de nœuds éligibles existants.                                                     | false       |                   |
-| `nodeHostnameKey`               | string                                                                                                                                    | NodeHostnameKey est la clé des labels du nœud.<br />Les nœuds qui portent un label avec cette clé et des valeurs identiques sont considérés comme étant sur le même nœud.<br />Définissez-la pour imposer une occupation exclusive des nœuds : une règle PodAntiAffinity obligatoire sur tous les pods du cluster,<br />avec au plus un pod par nœud, quel que soit le shard. Cela nécessite au moins autant de nœuds que de pods ;<br />avec moins de nœuds, les pods excédentaires restent à l’état Pending.<br />Pour répartir les répliques d’un même shard entre les nœuds tout en plaçant plusieurs pods par nœud,<br />définissez plutôt TopologyZoneKey sur &quot;kubernetes.io/hostname&quot;.<br />Il est recommandé de la définir sur &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                                                                         | false       |                   |
+| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) liste                                       | Volumes définit la liste des volumes pouvant être montés par les conteneurs du pod.<br />Plus d’informations : https://kubernetes.io/docs/concepts/storage/volumes<br />Fusionné par nom avec les valeurs par défaut de l’opérateur ; un volume utilisateur remplace tout volume de l’opérateur portant le même nom.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |                   |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                     | SecurityContext contient les attributs de sécurité au niveau du pod ainsi que les paramètres communs des conteneurs.<br />Un SecurityContext non nul remplace intégralement les valeurs par défaut de l’opérateur ; l’utilisateur est responsable de la<br />struct entière. Lorsqu’il est nul, les valeurs par défaut de l’opérateur sont conservées.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |                   |
+| `topologyZoneKey`               | string                                                                                                                                    | TopologyZoneKey est la clé des labels du nœud.<br />Les nœuds qui possèdent un label avec cette clé et des valeurs identiques sont considérés comme appartenant au même domaine de topologie,<br />par exemple la même zone de disponibilité pour &quot;topology.kubernetes.io/zone&quot; ou le même nœud pour &quot;kubernetes.io/hostname&quot;.<br />Définissez-la pour répartir de manière équilibrée les pods contenant les mêmes données (répliques d’un shard pour ClickHouse, toutes les répliques pour Keeper)<br />entre les domaines : une contrainte TopologySpreadConstraint requise (maxSkew 1, DoNotSchedule), ainsi qu’une règle PodAntiAffinity privilégiée.<br />Les pods de shards différents peuvent partager un domaine, plusieurs pods par domaine sont donc autorisés.<br />Lorsqu’il y a moins de domaines que de répliques, plusieurs répliques partagent un domaine, tout en restant réparties de manière homogène.<br />Les pods ClickHouse privilégient également les domaines qui hébergent les pods Keeper qu’ils utilisent.<br />Il est recommandé de la définir sur &quot;topology.kubernetes.io/zone&quot;. | false       |                   |
+| `nodeHostnameKey`               | string                                                                                                                                    | NodeHostnameKey est la clé des labels du nœud.<br />Les nœuds qui portent un label avec cette clé et des valeurs identiques sont considérés comme étant sur le même nœud.<br />Définissez-la pour imposer une occupation exclusive des nœuds : une règle PodAntiAffinity obligatoire sur tous les pods du cluster,<br />avec au plus un pod par nœud, quel que soit le shard. Cela nécessite au moins autant de nœuds que de pods ;<br />avec moins de nœuds, les pods excédentaires restent à l’état Pending.<br />Pour répartir les répliques d’un même shard entre les nœuds tout en plaçant plusieurs pods par nœud,<br />définissez plutôt TopologyZoneKey sur &quot;kubernetes.io/hostname&quot;.<br />Il est recommandé de la définir sur &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                                                                         | false       |                   |
 | `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) tableau                               | InitContainers est la liste des conteneurs d’initialisation à exécuter avant le démarrage du conteneur serveur principal.<br />Fusionnée avec les valeurs par défaut de l’opérateur portant<br />le même nom.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | false       |                   |
 
 Apparaît dans :
@@ -513,7 +580,9 @@ Apparaît dans :
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector {#secretkeyselector}
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
 
 SecretKeySelector sélectionne une clé dans un Secret.
 
@@ -526,7 +595,9 @@ Apparaît dans :
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta {#templatemeta}
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
 
 TemplateMeta définit les paramètres de métadonnées pris en charge pour les objets de modèle.
 
@@ -540,7 +611,9 @@ Apparaît dans :
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer {#versionprobecontainer}
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
 
 VersionProbeContainer définit des surcharges au niveau du conteneur pour la sonde de version.
 Les noms de champ et les balises JSON correspondent à corev1.Container afin que les fusions SMP s&#39;effectuent par nom.
@@ -555,7 +628,9 @@ Apparaît dans :
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec {#versionprobejobspec}
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
 
 VersionProbeJobSpec définit des surcharges au niveau du Job pour la sonde de version.
 
@@ -568,7 +643,9 @@ Apparaît dans :
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec {#versionprobepodspec}
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
 
 VersionProbePodSpec définit des surcharges au niveau du pod pour la sonde de version.
 Les noms des champs et les balises JSON correspondent à corev1.PodSpec pour assurer la compatibilité avec les patchs de fusion stratégique.
@@ -584,7 +661,9 @@ Apparaît dans :
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate {#versionprobepodtemplate}
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
 
 VersionProbePodTemplate décrit les surcharges du pod de la sonde de version.
 
@@ -597,7 +676,9 @@ Apparaît dans :
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate {#versionprobetemplate}
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
 
 VersionProbeTemplate définit des surcharges pour le Job de détection de version.
 La structure reproduit batchv1.JobTemplateSpec et n’expose que les champs pris en charge.

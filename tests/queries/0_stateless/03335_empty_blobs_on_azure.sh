@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-distributed-cache
+# Tags: no-fasttest
 # Tag: no-fasttest - requires S3
-# Tag no-distributed-cache: Not supported auth type
-
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

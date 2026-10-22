@@ -204,20 +204,14 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
     if (operation == "start")
     {
         auto unique_temp_file_path = params.get("temp_path");
-        /// What the coordinator wants appended to status replies; absent means the fixed reply only.
-        TaskCollectors collectors;
-        if (params.has("collect"))
-            collectors = TaskCollectors::parse(params.get("collect"));
-
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
-        /// Read the rest of the body, otherwise the keep-alive connection is closed.
-        body->ignoreAll();
+        body->eof();
         body.reset();
 
         /// Pass it to the runner to start execution
-        task_runner->startTask(task_id, task_description, unique_temp_file_path, collectors);
+        task_runner->startTask(task_id, task_description, unique_temp_file_path);
     }
     else if (operation == "get_status")
     {
@@ -225,13 +219,16 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("wait_for_ms"))
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
 
+        UInt64 client_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
+        if (params.has("client_version"))
+            client_version = parse<UInt64>(params.get("client_version"));
+
         body->eof();
         body.reset();
 
         auto status = task_runner->getStatus(task_id, wait_milliseconds);
         DistributedQueryTaskStatus task_status;
         task_status.progress = std::move(status.progress);
-        task_status.logs = std::move(status.logs);
 
         switch (status.result)
         {
@@ -277,7 +274,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 break;
             }
         }
-        task_status.write(out, status.collectors);
+        task_status.write(out, client_version);
     }
     else if (operation == "cancel")
     {

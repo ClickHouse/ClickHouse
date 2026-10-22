@@ -489,7 +489,7 @@ namespace
     {
     public:
 
-        using SendDataTask = std::function<void()>;
+        using SendDataTask = std::function<void(void)>;
 
         ShellCommandSource(
             ContextPtr context_,

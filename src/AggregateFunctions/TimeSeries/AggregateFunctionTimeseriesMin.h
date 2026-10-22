@@ -19,17 +19,18 @@ namespace DB
 ///
 /// The bucket keeps the raw samples because the duplicate-timestamp rule keeps the greatest value at a timestamp,
 /// which may raise the minimum, and a preaggregated minimum could not undo a smaller value it has already taken.
-template <typename TimestampType_, typename ValueType_, bool return_timestamp_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool return_timestamp_>
 struct AggregateFunctionTimeseriesMinTraits
 {
     /// Return the timestamp of the minimum (ts_of_min_over_time) instead of the minimum itself.
     static constexpr bool return_timestamp = return_timestamp_;
-    using GridScaleTimestampType = DateTime64;
-    using ValueType = ValueType_;
-    using TimestampType = TimestampType_;
 
-    /// The timestamp is returned as is, with the type of the timestamps in the input columns.
-    using ResultType = std::conditional_t<return_timestamp, TimestampType, ValueType>;
+    using TimestampType = TimestampType_;
+    using IntervalType = IntervalType_;
+    using ValueType = ValueType_;
+
+    /// A timestamp in seconds needs Float64 precision (a Float32 near the current epoch has a ~128-second ulp).
+    using ResultType = std::conditional_t<return_timestamp, Float64, ValueType>;
 
     static String getName()
     {
@@ -87,13 +88,15 @@ struct AggregateFunctionTimeseriesMinTraits
     /// Sliding aggregator: preaggregates each bucket's samples into a `Summary` for the (non-invertible) `SlidingSum`.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
-        explicit Aggregator(size_t stack_size)
-            : sliding_sum(stack_size)
+        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        TimestampType timestamp_scale_multiplier;
+
+        Aggregator(size_t stack_size, TimestampType timestamp_scale_multiplier_)
+            : sliding_sum(stack_size), timestamp_scale_multiplier(timestamp_scale_multiplier_)
         {
         }
 
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
@@ -104,27 +107,33 @@ struct AggregateFunctionTimeseriesMinTraits
                 sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(GridScaleTimestampType cut_off)
+        void removeBefore(TimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.empty())
                 return std::nullopt;
             if constexpr (return_timestamp)
-                return combined.timestamp;
+            {
+                /// The timestamp in seconds.
+                return static_cast<Float64>(static_cast<Int64>(combined.timestamp))
+                    / static_cast<Float64>(static_cast<Int64>(timestamp_scale_multiplier));
+            }
             else
+            {
                 return combined.value;
+            }
         }
     };
 
     /// Raw samples, preaggregated by the aggregator's `add`.
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 1;
 
     /// Two-stacks thresholds, measured by the `timeseries_to_grid_two_stack_vs_recompute` example:
     /// two-stacks first wins at 4 buckets per window and is 2x faster from 18.
@@ -134,14 +143,14 @@ struct AggregateFunctionTimeseriesMinTraits
 
 
 /// Aggregate function to calculate PromQL-like min_over_time (or ts_of_min_over_time) on a grid.
-template <typename TimestampType_, typename ValueType_, bool return_timestamp_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool return_timestamp_>
 class AggregateFunctionTimeseriesMin final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesMin<TimestampType_, ValueType_, return_timestamp_>,
-        AggregateFunctionTimeseriesMinTraits<TimestampType_, ValueType_, return_timestamp_>>
+        AggregateFunctionTimeseriesMin<TimestampType_, IntervalType_, ValueType_, return_timestamp_>,
+        AggregateFunctionTimeseriesMinTraits<TimestampType_, IntervalType_, ValueType_, return_timestamp_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesMinTraits<TimestampType_, ValueType_, return_timestamp_>;
+    using Traits = AggregateFunctionTimeseriesMinTraits<TimestampType_, IntervalType_, ValueType_, return_timestamp_>;
 
     using Aggregator = typename Traits::Aggregator;
 
@@ -150,15 +159,15 @@ public:
 
     Aggregator createAggregator(size_t stack_size_for_two_stacks) const
     {
-        return Aggregator{stack_size_for_two_stacks};
+        return Aggregator{stack_size_for_two_stacks, Base::timestamp_scale_multiplier};
     }
 };
 
-/// Each SQL function as a template, so registration names the function directly.
-template <typename TimestampType, typename ValueType>
-using AggregateFunctionTimeseriesMinToGrid = AggregateFunctionTimeseriesMin<TimestampType, ValueType, /* return_timestamp = */ false>;
+/// Each SQL function as a 3-argument template, so registration names the function directly.
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesMinToGrid = AggregateFunctionTimeseriesMin<TimestampType, IntervalType, ValueType, /* return_timestamp = */ false>;
 
-template <typename TimestampType, typename ValueType>
-using AggregateFunctionTimeseriesTimestampOfMinToGrid = AggregateFunctionTimeseriesMin<TimestampType, ValueType, /* return_timestamp = */ true>;
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesTimestampOfMinToGrid = AggregateFunctionTimeseriesMin<TimestampType, IntervalType, ValueType, /* return_timestamp = */ true>;
 
 }

@@ -6,10 +6,10 @@
 -- but can be switched off with the `use_query_condition_cache_for_top_k` setting.
 -- This test asserts the gate-off contract at every gated touch point:
 --   * a TopK read must not reuse an entry primed by a plain `SELECT ... WHERE` with the same
---     predicate (no predicate-only reuse path), including skip-index-only TopK shapes where no
+--     predicate (no predicate-only reuse path) — including skip-index-only TopK shapes where no
 --     `__topKFilter` node is folded into the filter DAG, so the plain condition hash of the TopK
 --     read would otherwise match the plain `WHERE` entry, and TopK reads with an existing
---     `PREWHERE`, whose key would otherwise match the plain `PREWHERE` query's;
+--     `PREWHERE`, whose `PREWHERE` consult key is never TopK-salted;
 --   * a TopK read must not write any QCC entry (neither the WHERE write in
 --     `updateQueryConditionCache`, nor index-analysis exclusions in `selectRangesToRead`,
 --     nor row-level entries from the reader);
@@ -109,6 +109,10 @@ SELECT '--- A TopK read with an existing PREWHERE must not reuse a plain PREWHER
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
+-- A read that already has a `PREWHERE` cannot take dynamic filtering, so the plan is stamped as
+-- TopK via the minmax skip index alone. The `PREWHERE` consult key in
+-- `filterPartsByQueryConditionCache` is never TopK-salted, so without the read-side gate the TopK
+-- read would hit the entry primed by the plain `PREWHERE` query.
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_prime';
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04628_pw_topk_after_prime';
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_plain_reuse';

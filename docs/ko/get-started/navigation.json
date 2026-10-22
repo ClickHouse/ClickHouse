@@ -1,9 +1,9 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "시작하기",
+  "item": "Get started",
   "pages": [
     {
-      "group": "시작하기",
+      "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ko/get-started/index",
@@ -30,7 +30,8 @@
               "group": "실시간 분석",
               "pages": [
                 "ko/get-started/quickstarts/create-your-first-materialized-view",
-                "ko/get-started/quickstarts/create-your-first-projection"
+                "ko/get-started/quickstarts/create-your-first-projection",
+                "ko/get-started/quickstarts/tutorial"
               ]
             },
             {
@@ -53,7 +54,7 @@
         {
           "expandable": true,
           "expanded": true,
-          "group": "소개",
+          "group": "Introduction",
           "pages": [
             "ko/get-started/about/intro",
             "ko/get-started/about/why-clickhouse-is-so-fast",
@@ -62,10 +63,9 @@
         },
         {
           "expanded": true,
-          "group": "사용 사례",
+          "group": "Use cases",
           "pages": [
             "ko/get-started/use-cases/overview",
-            "ko/get-started/use-cases/choosing-a-service",
             "ko/get-started/use-cases/real-time-analytics",
             "ko/get-started/use-cases/observability",
             "ko/get-started/use-cases/data-warehousing",
@@ -77,18 +77,18 @@
     },
     {
       "expanded": true,
-      "group": "설정",
+      "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "ko/get-started/setup/install",
         "ko/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "자체 관리형",
+          "group": "Self-managed",
           "pages": [
             "ko/get-started/setup/self-managed/overview",
             {
-              "group": "로컬 개발",
+              "group": "Local development",
               "pages": [
                 "ko/get-started/setup/self-managed/quick-install",
                 "ko/get-started/setup/self-managed/clickhousectl",
@@ -97,7 +97,7 @@
               ]
             },
             {
-              "group": "프로덕션 서버",
+              "group": "Production server",
               "pages": [
                 "ko/get-started/setup/self-managed/debian-ubuntu",
                 "ko/get-started/setup/self-managed/redhat",
@@ -111,13 +111,13 @@
     },
     {
       "expanded": true,
-      "group": "샘플 데이터셋",
+      "group": "Sample datasets",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "ko/get-started/sample-datasets/index",
         "ko/get-started/sample-datasets/playground",
         {
-          "group": "벤치마크",
+          "group": "Benchmarks",
           "pages": [
             "ko/get-started/sample-datasets/amplab-benchmark",
             "ko/get-started/sample-datasets/brown-benchmark",
@@ -129,7 +129,7 @@
           ]
         },
         {
-          "group": "벡터 검색 및 임베딩",
+          "group": "Vector search & embeddings",
           "pages": [
             "ko/get-started/sample-datasets/dbpedia",
             "ko/get-started/sample-datasets/hacker-news-vector-search",
@@ -138,7 +138,7 @@
           ]
         },
         {
-          "group": "웹 및 소셜 분석",
+          "group": "Web & social analytics",
           "pages": [
             "ko/get-started/sample-datasets/amazon-reviews",
             "ko/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "지리 및 위치",
+          "group": "Geo & location",
           "pages": [
             "ko/get-started/sample-datasets/cell-towers",
             "ko/get-started/sample-datasets/foursquare-os-places",
@@ -158,7 +158,7 @@
           ]
         },
         {
-          "group": "시계열 및 센서",
+          "group": "Time series & sensors",
           "pages": [
             "ko/get-started/sample-datasets/environmental-sensors",
             "ko/get-started/sample-datasets/noaa",
@@ -167,7 +167,7 @@
           ]
         },
         {
-          "group": "공공 기록 및 오픈 데이터",
+          "group": "Public records & open data",
           "pages": [
             "ko/get-started/sample-datasets/covid19",
             "ko/get-started/sample-datasets/menus",
@@ -180,7 +180,7 @@
     },
     {
       "expanded": true,
-      "group": "마이그레이션",
+      "group": "Migrate",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "ko/get-started/migrate/overview",
@@ -189,7 +189,7 @@
           "pages": [
             "ko/get-started/migrate/postgres/overview",
             {
-              "group": "마이그레이션 가이드",
+              "group": "Migration guide",
               "pages": [
                 "ko/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "ko/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -230,14 +230,14 @@
           ]
         },
         {
-          "group": "OSS에서 Cloud로",
+          "group": "OSS to Cloud",
           "pages": [
             "ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "ko/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "기타 방법",
+          "group": "Other methods",
           "pages": [
             "ko/get-started/migrate/other-methods/clickhouse-local-etl",
             "ko/get-started/migrate/other-methods/etl-tool-to-clickhouse",

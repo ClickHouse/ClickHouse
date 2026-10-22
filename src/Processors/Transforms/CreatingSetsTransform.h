@@ -6,7 +6,6 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
@@ -34,7 +33,6 @@ public:
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_,
-        SetSpillSettings spill_settings_,
         bool recoverable_build_ = false);
 
     ~CreatingSetsTransform() override;
@@ -61,8 +59,6 @@ private:
 
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
-
-    SetSpillSettings spill_settings;
 
     /// See `CreatingSetStep::recoverable_build`.
     bool recoverable_build = false;
