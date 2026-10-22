@@ -123,6 +123,15 @@ SELECT count() FROM r1 INNER JOIN r2 USING (a) PREWHERE (arrayMap(z -> z + v, [1
 SELECT 'lambda argument beside a matcher';
 SELECT count() FROM r1 INNER JOIN r2 USING (a)
 PREWHERE ((arrayMap(z -> tuple(z, * EXCEPT w), [1])[1]).3) != 0;
+-- A lambda whose input is rolled back is bound to the rolled-back type, not to the supertype.
+SELECT 'lambda consumes a lambda expansion';
+SELECT count() FROM r1 INNER JOIN r2 USING (a)
+PREWHERE arrayMap(t -> t.2, arrayMap(z -> tuple(* EXCEPT w), [1]))[1] != 0;
+SELECT 'lambda consumes a direct expansion';
+SELECT count() FROM r1 INNER JOIN r2 USING (a) PREWHERE arrayMap(t -> t.2, [tuple(* EXCEPT w)])[1] != 0;
+SELECT 'nested lambda reads the outer lambda argument';
+SELECT count() FROM r1 INNER JOIN r2 USING (a)
+PREWHERE arrayMap(t -> arrayMap(u -> t.1 + u, [1])[1], arrayMap(z -> tuple(* EXCEPT w), [1]))[1] != 0;
 
 DROP TABLE IF EXISTS s1;
 CREATE TABLE s1 (`k` UInt32, `p` Int16) ENGINE = MergeTree ORDER BY tuple()

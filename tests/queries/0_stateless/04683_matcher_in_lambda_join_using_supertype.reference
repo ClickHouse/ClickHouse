@@ -53,6 +53,12 @@ lambda argument is not replaced
 1
 lambda argument beside a matcher
 1
+lambda consumes a lambda expansion
+1
+lambda consumes a direct expansion
+1
+nested lambda reads the outer lambda argument
+1
 subquery in PREWHERE keeps its own supertype
 Array(Tuple(UInt64, Int16))
 subquery inside a lambda is not visited
