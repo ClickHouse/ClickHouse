@@ -18,7 +18,10 @@ INSERT INTO t_05326 SELECT number, number % 10 FROM numbers(50000, 50000);
 
 SET log_query_plans = 1;
 
-SELECT b, count() FROM t_05326 WHERE '05326_projection' != '' GROUP BY b ORDER BY b FORMAT Null;
+-- Set explicitly rather than relied on: there is nothing for projection analysis to report with
+-- projections off, and the randomized settings do turn them off.
+SELECT b, count() FROM t_05326 WHERE '05326_projection' != '' GROUP BY b ORDER BY b
+SETTINGS optimize_use_projections = 1 FORMAT Null;
 
 SET log_query_plans = 0;
 SYSTEM FLUSH LOGS query_log;
