@@ -24,6 +24,7 @@ function cleanup()
     if [[ -n "$killer_pid" ]]; then
         wait "$killer_pid" ||:
     fi
+    $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES local_rollback" ||:
 }
 trap cleanup EXIT
 
@@ -36,8 +37,6 @@ $CLICKHOUSE_CLIENT --query "
              cleanup_delay_period_random_add=0, merge_tree_clear_old_parts_interval_seconds=100000;
     INSERT INTO local_rollback VALUES (1), (2);
 "
-table_uuid=$($CLICKHOUSE_CLIENT --query "SELECT uuid FROM system.tables WHERE database=currentDatabase() AND name='local_rollback'")
-
 tx 1 "BEGIN TRANSACTION"
 transaction_id=$(tx 1 "SELECT transactionID()" | cut -f2-)
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${failpoint}"
@@ -49,27 +48,28 @@ part=$($CLICKHOUSE_CLIENT --query "SELECT result_part_name FROM system.merges WH
 
 # The local transaction owns the renamed part but has not registered it with
 # `MergeTreeTransaction`. Cancellation must not interrupt its metadata rollback.
-# `KILL TRANSACTION` cancels the mutation without first reading `system.mutations`,
-# which would wait for the parts lock held by the paused task.
+# `SYSTEM STOP MERGES` synchronously sets the task's cancellation predicate without
+# acquiring the parts lock or the background processing mutex.
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES local_rollback"
 $CLICKHOUSE_CLIENT --query "KILL TRANSACTION WHERE tid=${transaction_id} FORMAT Null" > "$killer_output" 2>&1 &
 killer_pid=$!
 
-# The mutation cancellation waits for the mutex held by the paused task.
-# Its log entry establishes that cancellation reached the task before resuming it.
+# Rollback marks the transaction cancelled before trying to kill its mutations.
+# Wait for that state change, not for `killMutation` to finish: a background selector
+# can hold its mutex while waiting for the parts lock held by the paused task.
+# A transaction already removed from `system.transactions` has finished rollback.
 deadline=$((SECONDS + 60))
-cancelled=0
+running=1
 while (( SECONDS < deadline )); do
     # shellcheck disable=SC2086
-    cancelled=$(timeout 10 $CLICKHOUSE_CLIENT --query "
-        SYSTEM FLUSH LOGS text_log;
-        SELECT count() FROM system.text_log
-        WHERE logger_name='${CLICKHOUSE_DATABASE}.local_rollback (${table_uuid})'
-          AND startsWith(message, 'Cancelled part mutations and removed mutation file');
+    running=$(timeout 10 $CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.transactions
+        WHERE tid=${transaction_id} AND state != 'ROLLED_BACK';
     ")
-    if [[ "$cancelled" -gt 0 ]]; then break; fi
+    if [[ "$running" -eq 0 ]]; then break; fi
     sleep 0.1
 done
-[[ "$cancelled" -gt 0 ]]
+[[ "$running" -eq 0 ]]
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${failpoint}"
 wait "$killer_pid"
