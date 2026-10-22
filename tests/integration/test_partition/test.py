@@ -388,6 +388,84 @@ def test_drop_detached_parts(drop_detached_parts_table):
     assert TSV(detached) == TSV("0_3_3_0\nattaching_0_6_6_0\ndeleting_0_7_7_0")
 
 
+def test_drop_detached_parts_like(drop_detached_parts_table):
+    s = {"allow_drop_detached": 1}
+    q("ALTER TABLE test.drop_detached DETACH PARTITION 0")
+
+    data_path = instance.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='drop_detached'"
+    ).strip()
+
+    path_to_detached = f"{data_path}/detached/"
+    for name in [
+        "ignored_0_1_1_0",
+        "ignored_0_1_1_0_try1",
+        "ignoredx_0_1_1_0",
+        "Ignored_0_1_1_0",
+        "covered-by-broken_0_1_1_0",
+        "attaching_0_6_6_0",
+        "deleting_0_7_7_0",
+        "ignored_malformed",
+    ]:
+        instance.exec_in_container(["mkdir", f"{path_to_detached}{name}"])
+
+    def list_detached():
+        return TSV(
+            q(
+                "SELECT name FROM system.detached_parts "
+                "WHERE table='drop_detached' AND database='test' ORDER BY name"
+            )
+        )
+
+    assert list_detached() == TSV(
+        "0_1_1_0\n"
+        "0_3_3_0\n"
+        "Ignored_0_1_1_0\n"
+        "attaching_0_6_6_0\n"
+        "covered-by-broken_0_1_1_0\n"
+        "deleting_0_7_7_0\n"
+        "ignored_0_1_1_0\n"
+        "ignored_0_1_1_0_try1\n"
+        "ignored_malformed\n"
+        "ignoredx_0_1_1_0"
+    )
+
+    # Backslash escapes the literal underscore, so ignoredx_ and Ignored_ survive.
+    q("ALTER TABLE test.drop_detached DROP DETACHED PART LIKE 'ignored\\\\_%'", settings=s)
+    assert list_detached() == TSV(
+        "0_1_1_0\n"
+        "0_3_3_0\n"
+        "Ignored_0_1_1_0\n"
+        "attaching_0_6_6_0\n"
+        "covered-by-broken_0_1_1_0\n"
+        "deleting_0_7_7_0\n"
+        "ignoredx_0_1_1_0"
+    )
+
+    # '_' matches one character; matching is case-sensitive so Ignored_ survives.
+    q("ALTER TABLE test.drop_detached DROP DETACHED PART LIKE 'ignored__%'", settings=s)
+    assert list_detached() == TSV(
+        "0_1_1_0\n"
+        "0_3_3_0\n"
+        "Ignored_0_1_1_0\n"
+        "attaching_0_6_6_0\n"
+        "covered-by-broken_0_1_1_0\n"
+        "deleting_0_7_7_0"
+    )
+
+    # Exact-name drop still works after LIKE drops.
+    q(
+        "ALTER TABLE test.drop_detached DROP DETACHED PART 'covered-by-broken_0_1_1_0'",
+        settings=s,
+    )
+
+    # LIKE '%' drops remaining detached entries but skips attaching_ and deleting_,
+    # and leaves active partition 1 data untouched.
+    q("ALTER TABLE test.drop_detached DROP DETACHED PART LIKE '%'", settings=s)
+    assert list_detached() == TSV("attaching_0_6_6_0\ndeleting_0_7_7_0")
+    assert TSV(q("SELECT count(), sum(n) FROM test.drop_detached")) == TSV("8\t92")
+
+
 def test_system_detached_parts(drop_detached_parts_table):
     q("drop table if exists sdp_0 sync")
     q("drop table if exists sdp_1 sync")
