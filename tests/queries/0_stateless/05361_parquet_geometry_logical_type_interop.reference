@@ -1,0 +1,46 @@
+--- crs_default
+wkt	Nullable(String)					
+geometry	Polygon					
+--- crs_geography
+wkt	Nullable(String)					
+geography	Geometry					
+--- crs_srid
+wkt	Nullable(String)					
+geometry	Polygon					
+--- geography_points
+id	Nullable(Int64)					
+geometry	Point					
+--- crs_default, crs_geography: the same polygon, as GEOMETRY and as GEOGRAPHY
+221	(-111,45)	-28	1
+221	(-111,45)	-28
+--- crs_srid: the CRS is not interpreted
+221	-1176249.406
+--- geography_points
+500	-179.309	179.573	-90	90
+--- pruning near the antimeridian
+165	(171.21893174375145,-19.79631185002726)
+199	(175.9549540424705,-11.677621096526842)
+ParquetPrunedRowGroups: 48
+--- the same without pruning
+165
+199
+--- pruning near the origin
+216
+237
+250
+271
+284
+ParquetPrunedRowGroups: 47
+--- pruning of a file written by ClickHouse: by GeospatialStatistics, the GeoParquet metadata has no covering
+Geometry(crs=)
+Geometry(crs=)
+-- pg
+9
+10
+11
+ParquetPrunedRowGroups: 9
+-- geom
+9
+10
+11
+ParquetPrunedRowGroups: 9
