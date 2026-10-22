@@ -483,7 +483,7 @@ std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifi
     /// Resolve the database the same way table resolution does, so the hint search starts from
     /// the right database (the current one for a bare name) and can fall back to other databases.
     if (database_name.empty())
-        database_name = context->getCurrentDatabase().getFullName();
+        database_name = context->getCurrentDatabase();
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     TableNameHints hints(database, context);
