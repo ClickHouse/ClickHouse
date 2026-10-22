@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -112,8 +113,8 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
 }
 
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
-/// True for a `__applyFilter` call, an `and` of such predicates, or an `or` with at least one such
-/// operand. Aliases are looked through.
+/// True for a `__applyFilter` call or an always-true `x = x`, an `and` of such predicates, or an `or`
+/// with at least one such operand. Aliases are looked through.
 bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 {
     if (!node)
@@ -126,7 +127,7 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
         return false;
 
     const auto & function_name = node->function_base->getName();
-    if (function_name == "__applyFilter")
+    if (function_name == "__applyFilter" || isAlwaysTrueEquality(*node))
         return true;
 
     if (node->children.empty())
@@ -299,6 +300,25 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport);
     }
 
+    /// A join that has already been optimized enters its parent's join graph as a single relation,
+    /// and the row count it settled on is the only estimate that relation has. Read it before the
+    /// single-child check below, which a join, having two children, would never pass.
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
+        /// to keep the parent from appending a second estimate to it.
+        /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
+        /// a storage read with a filter it cannot use, the row count is then unknown.
+        return RelationStats{
+            .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName(),
+            .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
+            .composite = true};
+    }
+
     if (node.children.size() != 1)
         return {};
 
@@ -334,17 +354,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
-    }
-
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
-        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = join_step->hasImpreciseEstimate()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
