@@ -570,6 +570,20 @@ struct AdaptiveAggregationProducer
             return true;
         }
 
+        /// Whether a batch may skip the pass altogether (see `adaptive_seal_direct_records`):
+        /// only while bypassed. A skip counts towards the resample like a bypassed pass, and the
+        /// resample re-engages the dedup, so the following batches are buffered for a real pass.
+        bool canSkip()
+        {
+            if (!bypassed)
+                return false;
+            if (++passes_since_resample < adaptive_dedup_resample_interval)
+                return true;
+            passes_since_resample = 0;
+            bypassed = false;
+            return false;
+        }
+
         /// Feeds back a pass that ran the dedup: one productive pass re-engages, enough
         /// consecutive passes that merged almost nothing (less than 1/64 of the records)
         /// bypass.
