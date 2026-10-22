@@ -207,6 +207,13 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         return;
     }
 
+    /// Reject this combination before schema inference can treat the archive source as a literal URL.
+    /// Both `url` and `urlCluster` pass through this parser.
+    if (context->getSettingsRef()[Setting::allow_archive_path_syntax]
+        && !configuration.http_method.empty()
+        && getURLAndArchivePattern(filename).second.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");
+
     /// Re-derive format from the resolved URL if still auto, because the original
     /// filename may have been a relative reference (e.g. "?x=1") with no extension.
     /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL

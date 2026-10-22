@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace Setting
 {
     extern const SettingsBool allow_archive_path_syntax;
@@ -39,9 +34,6 @@ WebObjectStorageUsage getWebObjectStorageUsage(
     /// the ordinary URL. In particular, glob characters there retain their normal URL semantics.
     if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
         std::tie(url, archive_pattern) = getURLAndArchivePattern(filename);
-
-    if (archive_pattern && !configuration.http_method.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");
 
     return {
         .has_url_wildcards = configuration.http_method.empty() && urlPathHasListableGlobs(url),
