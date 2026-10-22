@@ -184,7 +184,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
-- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
+- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'`, `WHERE map['key'] IN ('value1', 'value2')` or `WHERE mapContainsKeyValue(map, 'key', 'value')` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -314,7 +314,7 @@ For an optimal user experience, we therefore recommend using preprocessor expres
 </Note>
 
 Functions [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens), and [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
-Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+The preprocessor is part of the index definition, so it applies wherever these functions are evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
 
@@ -405,6 +405,11 @@ Typical use cases for the postprocessor argument include:
    Example: `stem(str, 'en')`
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/reference/functions/regular-functions/string-functions#lowerUTF8).
    For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
+5. **Excluding overly long tokens**. Free-text fields sometimes contain tokens with no search value but significant size, such as SHA-256 or other long hex hashes. Indexing them wastes space without ever being useful search terms.
+   The postprocessor is applied per token for every tokenizer, so the usual `splitByNonAlpha` tokenization can be kept for the rest of the text: only tokens above a length threshold are converted to empty tokens.
+   Example: `if(length(str) > 32, '', str)` (`length` counts bytes; use `lengthUTF8` to count characters)
+   Note that this filters *tokens*, not whole values. `splitByNonAlpha` splits on punctuation, so a value that is only long when its punctuation is included has no long token to drop: the UUID `550e8400-e29b-41d4-a716-446655440000` becomes the tokens `550e8400`, `e29b`, `41d4`, `a716`, `446655440000`, and a base64 blob is split at every `+`, `/`, and `=` into fragments that may each stay below the threshold.
+   To exclude such values, strip them with a preprocessor before tokenization, which leaves the rest of the text tokenized as usual (see the example below).
 
 The postprocessor expression transforms tokens of type [String](/reference/data-types/string) to tokens of the same type.
 Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
@@ -516,6 +521,45 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ```
 
+- Exclude overly long tokens using a postprocessor expression:
+
+```sql
+-- Long tokens such as SHA-256 or other hex hashes carry no search value but
+-- still consume index space. The postprocessor runs per token for any tokenizer,
+-- so splitByNonAlpha tokenization is preserved for the rest of the text:
+-- 'error:failed' is still indexed as the tokens 'error' and 'failed'.
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(length(str) > 32, '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+- Exclude values that only become long tokens once punctuation is included:
+
+```sql
+-- splitByNonAlpha splits a hyphenated UUID into five short tokens (and a base64
+-- blob at every '+', '/' and '='), so a length filter alone never sees the whole
+-- value. The preprocessor removes the whole UUID before tokenization; everything
+-- else is still tokenized by splitByNonAlpha.
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(str, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', ' '),
+        postprocessor = if(length(str) > 32, '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 **Function support**.
 
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
@@ -571,6 +615,7 @@ Storing positions increases the on-disk size of the index and the write cost, so
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `support_phrase_search = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to be enabled.
 Set `support_phrase_search = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+The stored positions can be inspected in the column `positions` of the table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex).
 
 <Warning>
 This argument is experimental and should only be used for testing.
@@ -758,6 +803,10 @@ Example for the text index with `splitByNonAlpha` tokenizer:
 SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
 ```
 
+With the `splitByNonAlpha` or `array` tokenizer and [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) enabled, a `multiSearchAny` or `multiSearchAnyUTF8` call with a single needle, for example `multiSearchAny(comment, ['upport'])`, is evaluated as `comment LIKE '%upport%'` by the [dictionary scan](#like-ilike-queries-perf), so a needle inside a word can use the index too.
+The case-insensitive variants `multiSearchAnyCaseInsensitive` and `multiSearchAnyCaseInsensitiveUTF8` use the index only this way, as `comment ILIKE '%needle%'`.
+Calls with several needles keep the evaluation described above; for them, the case-insensitive variants and the `array` tokenizer do not use the index.
+
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 Similar to `LIKE`, functions [startsWith](/reference/functions/regular-functions/string-functions#startsWith) and [endsWith](/reference/functions/regular-functions/string-functions#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
@@ -905,11 +954,13 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values.
 The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression.
 In the former case (`keyValuePairs` tokenizer), direct read can be used, otherwise direct read with hint.
+A `keyValuePairs` index also answers `IN` on a map element, as one index lookup per value of the list.
 
 Example:
 
 ```sql
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
+SELECT count() FROM table WHERE map['engine'] IN ('clickhouse', 'mergetree');
 ```
 
 See the following examples for using columns of type `Array(T)` and `Map(K, V)` with the text index.
@@ -992,6 +1043,12 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 
 -- Finds all error logs:
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+
+-- Finds all logs of both severities:
+SELECT * FROM logs WHERE attributes['level'] IN ('error', 'warning'); -- one index lookup per value
+
+-- The same as the first query, but considering every entry of a repeated key:
+SELECT * FROM logs WHERE mapContainsKeyValue(attributes, 'level', 'error');
 ```
 
 The tokenizer combines each `(key, value)` pair of a row into a single token, so the index knows which value belongs to which key.
@@ -999,6 +1056,7 @@ The `mapKeys` and `mapValues` indexes described below cannot answer such a query
 
 A pair is stored as the token `key ‖ value ‖ length(key)`.
 The trailing length keeps the boundary between the key and the value unambiguous, so both may contain arbitrary bytes: unlike joining them with a separator such as `key=value`, a key or a value that contains the separator cannot produce a false match.
+The table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) returns the decoded parts of each token in the columns `token_key` and `token_value`.
 
 The following restrictions apply:
 
@@ -1006,11 +1064,17 @@ The following restrictions apply:
   `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
   `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
 - The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
-- Only `=` on a map element is answered from the index so far.
-  Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
+- Only `=` and `IN` on a map element and `mapContainsKeyValue` are answered from the index so far.
+  Other map searches, such as `mapContainsKey`, `mapContainsValue` and their `*Like` variants, fall back to a brute-force scan.
+  So does a needle of type `FixedString`, whose padding bytes the index does not store.
+- `map['key'] IN (...)` uses the index only when the map element is compared on its own: `(map['key'], id) IN (('error', 1))` falls back to a brute-force scan, because a token union cannot tell whether a row matched the other tuple components of the same set element.
+  A set that comes from a subquery is used to skip granules, but not for direct read.
+  A set that comes from an `ENGINE = Set` table is not used at all, because a concurrent `INSERT` into that table changes the set while the query runs.
 - `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
-  Such a predicate falls back to a brute-force scan.
+  Such a predicate falls back to a brute-force scan, as does an `IN` list that contains the empty string.
+  `mapContainsKeyValue(map, 'key', '')` is answered from the index, because it is true only for a row that holds an entry with an empty value.
 - If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
+  `mapContainsKeyValue` considers every entry instead, so `mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2')` is true while `map('k', 'v1', 'k', 'v2')['k'] = 'v2'` is not.
 
 #### Key and value search with `mapKeys` and `mapValues` {#text-index-map-keys-and-values}
 
@@ -1334,7 +1398,7 @@ Direct read is controlled by two settings:
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
-If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`).
+If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` and `IN` on a map element (`map['key'] = 'value'`, `map['key'] IN ('value1', 'value2')`) and for `mapContainsKeyValue`; for `IN`, the set must be a list of constant values.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
@@ -1467,12 +1531,11 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
+This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`, and the functions `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` and `multiSearchAnyCaseInsensitiveUTF8` with one needle.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
-For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:
+For `ilike`, the search falls back to full-table scan in one special case, for both the `splitByNonAlpha` and the `array` tokenizer:
 
-- The needle contains the letter `k`. `ilike` treats `U+212A KELVIN SIGN` as a `k`, but the dictionary scan compares bytes and would miss a row spelled that way. `U+212A` is the only character that `ilike` folds onto an ASCII letter or digit, so `k` is the only affected needle character.
 - The index preprocessor expression contains `lowerUTF8` or `upperUTF8`. These rewrite non-ASCII characters into ASCII letters (`ß` into `SS`, `ſ` into `S`), which would make the index report rows that `ilike` does not match.
 
 ### Trivial count queries {#count-queries-perf}
@@ -1512,7 +1575,8 @@ The optimization is controlled by [query_plan_optimize_count_from_text_index](/r
 Different server-wide caches exist to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
 Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
 Use settings [use_text_index_header_cache](/reference/settings/session-settings/use-text#use_text_index_header_cache), [use_text_index_tokens_cache](/reference/settings/session-settings/use-text#use_text_index_tokens_cache), and [use_text_index_postings_cache](/reference/settings/session-settings/use-text#use_text_index_postings_cache) to disable reading and writing from/to the individual caches by queries.
-Caching tokens that are absent from a data part is enabled by default and can be controlled independently with [`use_text_index_negative_tokens_cache`](/reference/settings/session-settings/use-text).
+Caching tokens that are absent from a data part is enabled by default and can be controlled independently with [`use_text_index_negative_tokens_cache`](/reference/settings/session-settings/use-text#use_text_index_negative_tokens_cache).
+Caching pattern dictionary scans that exceeded the posting-list threshold is enabled by default and can be controlled independently with [`use_text_index_pattern_bypass_cache`](/reference/settings/session-settings/use-text#use_text_index_pattern_bypass_cache).
 
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](/reference/statements/system#drop-text-index-caches)
 
@@ -1633,7 +1697,7 @@ If index is not materialized in the source part, it is built, written into a tem
 
 **Debugging**
 
-Table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) can be used to introspect text indexes.
+Table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) can be used to introspect text indexes: their dictionaries, posting lists and positions.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
