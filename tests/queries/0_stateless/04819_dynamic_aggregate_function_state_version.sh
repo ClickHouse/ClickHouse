@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: `output_format_native_encode_types_in_binary_format` breaks the interserver Native stream for `Dynamic`, https://github.com/ClickHouse/ClickHouse/issues/123991
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

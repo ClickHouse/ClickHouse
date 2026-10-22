@@ -125,7 +125,7 @@ The addresses are generated one by one as tasks are handed to the nodes of the c
 
 -   [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
 -   [URL table function](/reference/engines/table-engines/special/url)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(1));
 }
 
 }

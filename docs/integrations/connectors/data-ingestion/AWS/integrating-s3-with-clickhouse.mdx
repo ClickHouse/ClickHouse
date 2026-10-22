@@ -238,6 +238,10 @@ To execute this over a secure SSL connection, utilize the `remoteSecure` functio
 
 You can write to files in S3 using the `s3` table function. This will require appropriate permissions. We pass the credentials needed in the request, but view the [Managing Credentials](#managing-credentials) page for more options.
 
+<Warning>
+When exporting from ClickHouse Cloud to Amazon S3, use the bucket's regional S3 endpoint, such as `https://my-bucket.s3.eu-west-1.amazonaws.com/...`, instead of the global `https://s3.amazonaws.com/...` endpoint. Using the global endpoint can result in additional data transfer charges.
+</Warning>
+
 In the simple example below, we use the table function as a destination instead of a source. Here we stream 10,000 rows from the `trips` table to a bucket, specifying `lz4` compression and output type of `CSV`:
 
 ```sql

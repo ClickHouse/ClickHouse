@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -60,6 +61,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 distributed_connections_pool_size;
+    extern const SettingsURI format_avro_schema_registry_url;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsString log_comment;
     extern const SettingsBool log_queries;
@@ -587,6 +589,15 @@ private:
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
         auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef());
 
+        /// The remote server runs the job as an initial query and applies its binary type encoding settings to the wire,
+        /// so this connection reads what the remote writes and writes what the remote reads.
+        /// The remote checks the job's Avro schema registry URL against its own allowlist, not against this server's.
+        Settings wire_settings = job_context->getSettingsCopy();
+        wire_settings[Setting::format_avro_schema_registry_url] = "";
+        auto format_settings = getFormatSettings(job_context, wire_settings);
+        std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
+        connection->setFormatSettings(format_settings);
+
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
             return;
@@ -986,6 +997,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             settings,
             args.getContext());
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,

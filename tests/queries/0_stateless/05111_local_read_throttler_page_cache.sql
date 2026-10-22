@@ -1,0 +1,42 @@
+-- Tags: no-object-storage, no-darwin
+-- no-darwin: only Linux can tell a read from the OS page cache (`preadv2` with `RWF_NOWAIT`).
+-- Reads served from the OS page cache produce no block device I/O, so they must not consume
+-- the tokens of the local read bandwidth throttler.
+
+DROP TABLE IF EXISTS t_local_read_throttler;
+
+CREATE TABLE t_local_read_throttler (x UInt64, s String)
+ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_local_read_throttler SELECT number, toString(number) FROM numbers(1000000);
+
+-- The data has just been written, so it is in the OS page cache; read it once more to also warm
+-- up the mark cache, and make sure that nothing but the page cache serves the measured query.
+SELECT count() FROM t_local_read_throttler WHERE NOT ignore(*)
+SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_direct_io = 0, min_bytes_to_use_mmap_io = 0,
+    use_uncompressed_cache = 0, use_page_cache_for_local_disks = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0;
+
+SELECT count() FROM t_local_read_throttler WHERE NOT ignore(*)
+SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_direct_io = 0, min_bytes_to_use_mmap_io = 0,
+    use_uncompressed_cache = 0, use_page_cache_for_local_disks = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
+    max_local_read_bandwidth = 1000000000, log_comment = '05111_local_read_throttler_page_cache';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The throttler must account nothing but the reads that were not page cache hits. Besides the device reads of
+-- the thread pool and of `pread`, that includes the small metadata files read synchronously (e.g. with the `read`
+-- method, which cannot tell a cached read from a device read). It can be less than that when a
+-- prefetched buffer is discarded without being consumed.
+-- Whether the reads were page cache hits at all is not checked: `preadv2` with `RWF_NOWAIT` is not
+-- usable on every system (old kernels, `seccomp` profiles, some filesystems), and then every read
+-- falls back to `pread`, is accounted as a device read, and the check below holds trivially.
+SELECT
+    ProfileEvents['QueryLocalReadThrottlerBytes']
+        <= ProfileEvents['ReadBufferFromFileDescriptorReadBytes']
+            - ProfileEvents['ThreadPoolReaderPageCacheHitBytes']
+            - ProfileEvents['ReadBufferFromFileDescriptorPageCacheHitBytes'] AS page_cache_hits_not_throttled
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment = '05111_local_read_throttler_page_cache';
+
+DROP TABLE t_local_read_throttler;
