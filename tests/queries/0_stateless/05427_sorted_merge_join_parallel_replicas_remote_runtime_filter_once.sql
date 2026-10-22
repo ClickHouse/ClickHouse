@@ -37,25 +37,40 @@ SETTINGS join_algorithm = 'hash', max_threads = 4, log_comment = '05427_hash';
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
--- Every remote replica of the fragment builds the filter of the only key in one step, as with plain `hash`.
-SELECT initial.log_comment, count() > 0, groupUniqArray(steps)
-FROM
-(
-    SELECT q.initial_query_id AS initial_query_id, uniqExactIf(p.step_uniq_id, p.name = 'BuildRuntimeFilterTransform') AS steps
-    FROM system.query_log AS q
-    LEFT JOIN system.processors_profile_log AS p ON p.query_id = q.query_id AND p.event_date >= yesterday()
-    WHERE q.type = 'QueryFinish' AND NOT q.is_initial_query AND q.event_date >= yesterday()
-    GROUP BY q.initial_query_id, q.query_id
-) AS secondary
-INNER JOIN
-(
-    SELECT query_id, log_comment
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05427_%' AND event_date >= yesterday()
-) AS initial ON initial.query_id = secondary.initial_query_id
-GROUP BY initial.log_comment
-ORDER BY initial.log_comment
-SETTINGS enable_parallel_replicas = 0;
+-- No remote replica of the fragment builds the filter of the only key in more than one step, as with plain `hash`.
+-- A remote replica may not take part in the query at all under load (it is cancelled once the others have read
+-- everything), so the check is that no replica has more than one step, not that every replica has exactly one.
+-- The log comments are matched exactly: the test runner sets the file name as the default `log_comment`.
+WITH
+    initial AS
+    (
+        SELECT query_id, log_comment
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+            AND log_comment IN ('05427_hash', '05427_sorted_merge_hash')
+    ),
+    secondary AS
+    (
+        SELECT query_id, initial_query_id
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND NOT is_initial_query AND event_date >= yesterday()
+            AND initial_query_id IN (SELECT query_id FROM initial)
+    ),
+    steps AS
+    (
+        SELECT query_id, uniqExact(step_uniq_id) AS steps
+        FROM system.processors_profile_log
+        WHERE name = 'BuildRuntimeFilterTransform' AND event_date >= yesterday()
+            AND query_id IN (SELECT query_id FROM secondary)
+        GROUP BY query_id
+    )
+SELECT i.log_comment, max(st.steps) <= 1
+FROM initial AS i
+LEFT JOIN secondary AS s ON s.initial_query_id = i.query_id
+LEFT JOIN steps AS st ON st.query_id = s.query_id
+GROUP BY i.log_comment
+ORDER BY i.log_comment
+SETTINGS enable_parallel_replicas = 0, join_use_nulls = 0;
 
 DROP TABLE smjrrf_fact SYNC;
 DROP TABLE smjrrf_dim SYNC;
