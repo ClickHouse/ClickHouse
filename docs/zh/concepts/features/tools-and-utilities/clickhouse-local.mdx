@@ -203,6 +203,15 @@ $ clickhouse-local --copy < data.json > data.csv
 
 默认情况下，`clickhouse-local` 可以访问同一主机上 ClickHouse 服务器的数据，且不依赖服务器配置。它还支持通过 `--config-file` 参数加载服务器配置。对于临时数据，默认会创建一个唯一的临时数据目录。
 
+如果未指定 `--config-file`，`clickhouse-local` 会依次在以下位置查找配置文件，并使用找到的第一个文件：
+
+1. `./config.xml`、`./config.yaml`、`./config.yml`
+2. `./clickhouse-local.xml`、`./clickhouse-local.yaml`、`./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`、`$HOME/.clickhouse-local/config.yaml`、`$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`、`/etc/clickhouse-local/config.yaml`、`/etc/clickhouse-local/config.yml`
+
+配置文件可以使用 XML 或 YAML 编写，格式与 ClickHouse 服务器相同，参见[“配置文件”](/zh/operations/configuration-files)。
+
 基本用法 (Linux) ：
 
 ```bash
@@ -241,8 +250,8 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.console` — 输出到控制台。
 * `--logger.log` — 日志文件名。
 * `--logger.level` — 日志级别。
-* `--ignore-error` — 查询失败时不中止处理。
-* `-c`, `--config-file` — 配置文件路径，其格式与 ClickHouse 服务器 相同；默认配置为空。
+* `--ignore-error` — 查询失败时不中止处理：错误会报告到 `stderr`，然后继续处理下一个查询。由于错误会被忽略，即使部分查询失败，进程仍会以成功状态码退出。
+* `-c`, `--config-file` — 配置文件路径，其格式与 ClickHouse 服务器 相同。未指定时，`clickhouse-local` 会自行查找其主配置文件，参见[“配置文件”](#configuration-files)；仅当所查找的文件均不存在时，配置才为空。
 * `--no-system-tables` — 不加载系统表。
 * `--help` — `clickhouse-local` 的参数参考。
 * `-V`, `--version` — 打印版本信息并退出。
@@ -254,7 +263,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 `clickhouse-local` 不会使用安装在同一主机上的 ClickHouse 服务器 的配置——它会查找自己的主配置文件，并使用以下位置中第一个存在的文件：
 
 1. 通过 `--config-file` 传入的路径；
-2. `./config.xml`；
+2. `./config.xml`、`./config.yaml` 或 `./config.yml`；
 3. `./clickhouse-local.xml`、`./clickhouse-local.yaml` 或 `./clickhouse-local.yml`；
 4. `~/.clickhouse-local/config.xml`、`~/.clickhouse-local/config.yaml` 或 `~/.clickhouse-local/config.yml`；
 5. `/etc/clickhouse-local/config.xml`、`/etc/clickhouse-local/config.yaml` 或 `/etc/clickhouse-local/config.yml`。

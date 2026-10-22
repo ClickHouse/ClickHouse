@@ -507,6 +507,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
+    Strings host_groups;
 
     auto zookeeper = getZooKeeper();
     constexpr int max_retries = 10;
@@ -515,6 +516,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     while (++iteration <= max_retries)
     {
         host_ids.resize(0);
+        host_groups.resize(0);
         Coordination::Stat stat;
         unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (unfiltered_hosts.empty())
@@ -522,28 +524,42 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
+        ::sort(unfiltered_hosts.begin(), unfiltered_hosts.end());
+
+        /// Read the replica group of every replica in a single batch; it's used to filter hosts
+        /// and/or to carry the group of every address of the cluster (e.g. `system.clusters` shows it).
+        /// Hosts are sorted beforehand so that `hosts`, `host_groups` and `host_ids` keep index alignment.
+        std::vector<String> group_paths;
+        group_paths.reserve(unfiltered_hosts.size());
+        for (const auto & host : unfiltered_hosts)
+            group_paths.emplace_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+        auto replica_groups = zookeeper->tryGet(group_paths);
+
         if (all_groups)
         {
+            /// The cluster consists of the replicas of all the groups.
             hosts = unfiltered_hosts;
+            host_groups.resize(hosts.size());
+            for (size_t i = 0; i < hosts.size(); ++i)
+            {
+                if (replica_groups[i].error == Coordination::Error::ZOK)
+                    host_groups[i] = std::move(replica_groups[i].data);
+            }
         }
         else
         {
+            /// The cluster consists of the replicas of the local replica group only.
             hosts.clear();
-            std::vector<String> paths;
-            for (const auto & host : unfiltered_hosts)
-                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-            auto replica_groups = zookeeper->tryGet(paths);
-
-            for (size_t i = 0; i < paths.size(); ++i)
+            for (size_t i = 0; i < unfiltered_hosts.size(); ++i)
             {
                 if (replica_groups[i].data == replica_group_name)
                     hosts.push_back(unfiltered_hosts[i]);
             }
+            host_groups.assign(hosts.size(), replica_group_name);
         }
 
         Int32 cversion = stat.cversion;
-        ::sort(hosts.begin(), hosts.end());
 
         std::vector<String> host_paths;
         host_paths.reserve(hosts.size());
@@ -578,6 +594,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
 
     chassert(!hosts.empty());
     chassert(hosts.size() == host_ids.size());
+    chassert(hosts.size() == host_groups.size());
     String current_shard;
     Shards shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -594,7 +611,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}, std::move(host_groups[i])});
     }
 
     if (shards.empty())
@@ -1069,7 +1086,7 @@ ASTPtr DatabaseReplicated::getCreateDatabaseQueryImpl() const
 {
     ASTPtr ast = DatabaseOnDisk::getCreateDatabaseQueryImpl();
 
-    /// The metadata file may still hold a `logs_to_keep` above `UInt32::max`, if written by an older server.
+    /// The metadata file may still hold a `logs_to_keep` above `MAX_LOGS_TO_KEEP`, if written by an older server.
     auto * create = ast->as<ASTCreateQuery>();
     if (create && create->storage && create->storage->settings)
         DatabaseReplicatedSettings::checkOrClampLogsToKeep(*create->storage->settings, true /* clamp_on_overflow */);
@@ -2397,7 +2414,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
     return ast;
 }
@@ -2849,7 +2866,7 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
     /// Validate settings changes
     for (const auto & change : changes)
     {
-        if (!new_settings.has(change.name))
+        if (!DatabaseReplicatedSettings::hasBuiltin(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
         if (const auto immutable_setting_it = immutable_settings.find(change.name);
@@ -2882,6 +2899,12 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
         new_logs_to_keep = new_settings[DatabaseReplicatedSetting::logs_to_keep];
+        if (new_logs_to_keep > DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `logs_to_keep` of a Replicated database must not exceed {}, got {}",
+                DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP,
+                new_logs_to_keep);
 
         auto zookeeper = getZooKeeper();
         zookeeper->set(zookeeper_path + "/logs_to_keep", std::to_string(new_logs_to_keep));
@@ -3304,7 +3327,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true, .has_builtin_setting_fn = DatabaseReplicatedSettings::hasBuiltin}, Documentation{
+    factory.registerDatabase("Replicated", create_fn, SecretArgumentsSpec{}, {.supports_arguments = true, .supports_settings = true, .has_builtin_setting_fn = DatabaseReplicatedSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The engine is based on the [Atomic](/reference/engines/database-engines/atomic) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
@@ -3448,20 +3471,24 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ## Settings {#settings}
 The following settings are supported:
 
-| Setting                                                                      | Default                        | Scope         | Mutable | Description                                                                                                                                                                                                                                                                                                                                       |
-|------------------------------------------------------------------------------|--------------------------------|---------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `max_broken_tables_ratio`                                                    | 1                              | Replica-local | Yes     | Do not recover replica automatically if the ratio of staled tables to all tables is greater                                                                                                                                                                                                                                                       |
-| `max_replication_lag_to_enqueue`                                             | 50                             | Replica-local | Yes     | Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than `0`; `0` is rejected with `BAD_ARGUMENTS` (minimum is `1`)                                                                                                                                                                          |
-| `wait_entry_commited_timeout_sec`                                            | 3600                           | Replica-local | Yes     | Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet                                                                                                                                                                                                                                                   |
-| `collection_name`                                                            |                                | Replica-local | Yes     | A name of a collection defined in server's config where all info for cluster authentication is defined                                                                                                                                                                                                                                            |
-| `check_consistency`                                                          | true                           | Replica-local | Yes     | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                                  |
-| `max_retries_before_automatic_recovery`                                      | 10                             | Replica-local | Yes     | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                                     |
-| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | Replica-local | Yes     | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                             |
-| `logs_to_keep`                                                               | 1000                           | Cluster-wide  | Yes     | Default number of logs to keep in ZooKeeper for Replicated database. Bounded by the DDL log counter, which is 32-bit, so the value must not exceed `4294967295`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed |
-| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | Replica-local | No      | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                                    |
-| `default_replica_shard_name`                                                 | `{shard}`                      | Replica-local | No      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                            |
-| `default_replica_name`                                                       | `{replica}`                    | Replica-local | No      | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                                  |
-| `internal_replication`                                                       | false                          | Replica-local | No      | Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas)             |
+<Note>
+The `default_replica_path`, `default_replica_shard_name` and `default_replica_name` settings were introduced in ClickHouse 25.10. On earlier versions these settings are not recognized, and configuring them fails with `Code: 115. DB::Exception: Unknown setting '<name>': in DatabaseReplicated config`.
+</Note>
+
+| Setting                                                                      | Default                        | Scope         | Mutable | Description                                                                                                                                                                                                                                                                                                                           |
+|------------------------------------------------------------------------------|--------------------------------|---------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `max_broken_tables_ratio`                                                    | 1                              | Replica-local | Yes     | Do not recover replica automatically if the ratio of staled tables to all tables is greater                                                                                                                                                                                                                                           |
+| `max_replication_lag_to_enqueue`                                             | 50                             | Replica-local | Yes     | Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than `0`; `0` is rejected with `BAD_ARGUMENTS` (minimum is `1`)                                                                                                                                                              |
+| `wait_entry_commited_timeout_sec`                                            | 3600                           | Replica-local | Yes     | Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet                                                                                                                                                                                                                                       |
+| `collection_name`                                                            |                                | Replica-local | Yes     | A name of a collection defined in server's config where all info for cluster authentication is defined                                                                                                                                                                                                                                |
+| `check_consistency`                                                          | true                           | Replica-local | Yes     | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
+| `max_retries_before_automatic_recovery`                                      | 10                             | Replica-local | Yes     | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
+| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | Replica-local | Yes     | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
+| `logs_to_keep`                                                               | 1000                           | Cluster-wide  | Yes     | Default number of logs to keep in ZooKeeper for Replicated database. The value must not exceed `2147483647`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed                                         |
+| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | Replica-local | No      | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
+| `default_replica_shard_name`                                                 | `{shard}`                      | Replica-local | No      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
+| `default_replica_name`                                                       | `{replica}`                    | Replica-local | No      | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
+| `internal_replication`                                                       | false                          | Replica-local | No      | Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas) |
 
 Default values may be overwritten in the configuration file
 ```xml

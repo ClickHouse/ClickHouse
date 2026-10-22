@@ -47,7 +47,9 @@ SELECT 'metadata files', if(name = {CLICKHOUSE_DATABASE_1:String}, 'replica1', '
        extract(engine_full, 'logs_to_keep = (\\d+)')
 FROM system.databases WHERE name IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) ORDER BY name;
 
--- Above the 32-bit domain of DDL log entry numbers, out of range of the setting's `UInt32` type.
+-- Fits the setting's `UInt32` type, but is above `MAX_LOGS_TO_KEEP`.
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING logs_to_keep = 2147483648; -- { serverError BAD_ARGUMENTS }
+-- Out of range of the setting's `UInt32` type.
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING logs_to_keep = 4294967296; -- { serverError CANNOT_CONVERT_TYPE }
 -- Rejected by the setting's own type.
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING logs_to_keep = 0; -- { serverError BAD_ARGUMENTS }

@@ -22,9 +22,7 @@ doc_type: 'guide'
   않습니다. 따라서 이를 사용하기 전에 사용 중인 CNI가 정책을 실제로 적용하는지 확인하십시오.
 </Note>
 
-<div id="cluster-network-policies">
-  ## 클러스터 NetworkPolicies
-</div>
+## 클러스터 NetworkPolicies {#cluster-network-policies}
 
 클러스터별 관리형 정책을 활성화합니다:
 
@@ -53,11 +51,10 @@ spec:
 | Keeper     | 연산자 파드 및 이 Keeper를 참조하는 모든 `ClickHouseCluster`         | `2181`, `2281` (클라이언트), `9123` (HTTP 제어)  |
 
 Keeper는 `keeperClusterRef`를 기준으로 ClickHouse 클러스터의 연결을 허용합니다. 참조를
-추가하거나 제거하면 다른 네임스페이스의 참조를 포함해 Keeper의 정책이 자동으로 업데이트됩니다.
+추가하거나 제거하면 다른 네임스페이스의 참조를 포함해 Keeper의 정책이 자동으로 업데이트됩니다. `externalKeeper`를 사용하는 클러스터는
+노드가 Keeper의 파드를 가리키더라도 연결이 허용되지 않습니다.
 
-<div id="allowing-clients">
-  ### 클라이언트 및 모니터링 허용
-</div>
+### 클라이언트 및 모니터링 허용 {#allowing-clients}
 
 클라이언트 연결과 메트릭 스크래핑은 **포함되지 않습니다**. 관리형
 정책을 활성화하면 별도로 허용하기 전까지 클라이언트 포트(`9000`/`8123` 또는 TLS
@@ -91,9 +88,7 @@ Keeper의 포트 `9090`)에도 동일하게 적용됩니다. 모니터링 네임
 `networkPolicy.policy: Disabled`(기본값)로 설정하면 관리형
 정책이 제거됩니다. 사용자가 정의한 정책은 클러스터의 `app` 레이블이 있는 경우가 아니면 연산자가 절대 수정하지 않습니다.
 
-<div id="np-cluster-wide-disable">
-  ### 클러스터 전체 옵트아웃
-</div>
+### 클러스터 전체 옵트아웃 {#np-cluster-wide-disable}
 
 연산자의 `ENABLE_NETWORK_POLICY` 환경 변수를 통해 클러스터 전체의
 NetworkPolicy 관리를 비활성화할 수도 있습니다. `ENABLE_NETWORK_POLICY=false`로 설정하면
@@ -120,15 +115,11 @@ controller:
     enabled: false
 ```
 
-<div id="operator-pod-policies">
-  ## 연산자 파드 정책
-</div>
+## 연산자 파드 정책 {#operator-pod-policies}
 
 차트는 어떤 트래픽이 연산자 프로세스 자체인 **controller manager 파드**에 도달할 수 있는지 제한하는 선택적 정책도 제공합니다. 이 정책은 연산자가 다른 클라이언트에 노출하는 두 개의 포트, 즉 메트릭 엔드포인트와 admission 웹훅을 대상으로 합니다.
 
-<div id="what-the-helm-chart-creates">
-  ## Helm 차트가 생성하는 항목
-</div>
+## Helm 차트가 생성하는 항목 {#what-the-helm-chart-creates}
 
 활성화하면 이 차트는 최대 2개의 인그레스 전용 정책을 생성하며, 두 정책 모두
 controller manager 파드를 대상으로 합니다:
@@ -141,9 +132,7 @@ controller manager 파드를 대상으로 합니다:
 두 정책 모두 `policyTypes: [Ingress]`만 선언합니다. 따라서 연산자의 egress는 제한하지
 않으며, ClickHouse 서버 또는 Keeper 파드에는 적용되지 않습니다.
 
-<div id="default-deny">
-  ## 기본 거부 동작
-</div>
+## 기본 거부 동작 {#default-deny}
 
 인그레스 `NetworkPolicy`로 파드를 선택하면 해당 파드는 **인그레스 기본 거부**
 상태로 전환됩니다. 즉, 둘 중 하나의 정책이라도 적용되면 명시적으로 허용되지 않은
@@ -157,9 +146,7 @@ controller manager 파드로 들어오는 모든 인바운드 트래픽은 차�
 레이블이 없는 scraper 또는 webhook 호출자는 정책이 적용되는 즉시 작동하지
 않게 됩니다.
 
-<div id="enabling">
-  ## 정책 활성화
-</div>
+## 정책 활성화 {#enabling}
 
 Helm을 사용하는 경우 values에서 게이트를 설정하십시오:
 
@@ -183,9 +170,7 @@ raw `kubectl` 매니페스트를 사용하는 경우,
 [kubectl 설치 가이드](/ko/products/kubernetes-operator/install/kubectl)에 설명된 대로 `[NETWORK POLICY]` 섹션의 주석 처리를 해제하십시오.
 raw 매니페스트에는 동일한 두 개의 정책이 포함되어 있습니다.
 
-<div id="labeling-namespaces">
-  ## 클라이언트 네임스페이스에 레이블 지정
-</div>
+## 클라이언트 네임스페이스에 레이블 지정 {#labeling-namespaces}
 
 두 정책 모두 `namespaceSelector`를 기준으로 소스를 매칭하므로, 연산자에 연결해야 하는 모든 네임스페이스에는 일치하는 레이블이 있어야 합니다. 레이블이 없는 네임스페이스에서 발생한 스크레이프 또는 웹훅 호출은 차단됩니다.
 
@@ -214,9 +199,7 @@ NetworkPolicy는 연결 가능 여부를 제어하고, 클러스터 역할 바�
   필요한 경우 API server에 대한 명시적인 허용 규칙을 추가하십시오.
 </Warning>
 
-<div id="verifying">
-  ## 확인하기
-</div>
+## 확인하기 {#verifying}
 
 ```bash
 NS=clickhouse-operator-system
@@ -238,9 +221,7 @@ kubectl -n $NS describe networkpolicy
 스크레이프 결과 데이터가 없거나 CR 적용이 멈춘다면, 레이블이 없는 소스 네임스페이스 또는
 위에서 설명한 API 서버 도달성 관련 주의 사항이 가장 가능성 높은 원인입니다.
 
-<div id="related-guides">
-  ## 관련 가이드
-</div>
+## 관련 가이드 {#related-guides}
 
 * [연산자 모니터링](/ko/products/kubernetes-operator/guides/monitoring) — 메트릭 엔드포인트, 해당 RBAC, 그리고 스크레이프를 안전하게 보호하는 방법입니다.
 * [kubectl로 설치](/ko/products/kubernetes-operator/install/kubectl) — 네트워크 policy 섹션의 주석을 해제해야 하는 위치입니다.

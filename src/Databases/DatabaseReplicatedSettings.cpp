@@ -28,7 +28,7 @@ extern const int UNKNOWN_SETTING;
     DECLARE(Bool, check_consistency, true, "Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency", 0) \
     DECLARE(UInt64, max_retries_before_automatic_recovery, 10, "Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)", 0) \
     DECLARE(Bool, allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views, false, "If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible", 0) \
-    DECLARE(NonZeroUInt32, logs_to_keep, 1000, "Default number of logs to keep in ZooKeeper for Replicated database. Bounded by the DDL log counter, which is 32-bit, so the value must not exceed 4294967295.", 0) \
+    DECLARE(NonZeroUInt32, logs_to_keep, 1000, "Default number of logs to keep in ZooKeeper for Replicated database. The value must not exceed 2147483647.", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/databases/{uuid}", "The path to the database in ZooKeeper. Used during database creation if arguments are omitted.", 0) \
     DECLARE(String, default_replica_shard_name, "{shard}", "The shard name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
     DECLARE(String, default_replica_name, "{replica}", "The name of the replica in the database. Used during database creation if arguments are omitted.", 0) \
@@ -56,13 +56,13 @@ namespace
 {
 /// `logs_to_keep` is `NonZeroUInt32` because the quantity it is compared against is 32-bit by domain:
 /// `max_log_ptr` is derived from the Keeper node value, so it's inherently 32-bit. Any value greater
-/// than `UInt32::max` is effectively "Keep all the log entries".
+/// than `MAX_LOGS_TO_KEEP` is effectively "Keep all the log entries".
 ///
 /// We reject definitions the user supplies now (`CREATE` and full-syntax `ATTACH`) with a
-/// `logs_to_keep` setting value out of [1; UInt32::max] range.
+/// `logs_to_keep` setting value out of [1; MAX_LOGS_TO_KEEP] range.
 /// However, metadata written by an older server, and old server configs, may still contain values
-/// greater than `UInt32::max`; when such a value is replayed (server startup, short-syntax `ATTACH`,
-/// RESTORE) or read from the config, we clamp it to `UInt32::max` with a corresponding warning
+/// greater than `MAX_LOGS_TO_KEEP`; when such a value is replayed (server startup, short-syntax `ATTACH`,
+/// RESTORE) or read from the config, we clamp it to `MAX_LOGS_TO_KEEP` with a corresponding warning
 /// message in the logs. The value is clamped in the definition itself, so a path that writes the
 /// metadata file from it (RESTORE) persists the clamped value. A replay of an existing metadata file
 /// does not rewrite the file; such a database clamps the value again when it exports its definition,
@@ -79,16 +79,13 @@ void checkOrClampLogsToKeepValue(Field & logs_to_keep, bool clamp_on_overflow)
     if (!clamp_on_overflow)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting `logs_to_keep` of a Replicated database must not exceed {}, got {}. "
-            "The DDL log counter is 32-bit, so a larger value cannot take effect",
+            "Setting `logs_to_keep` of a Replicated database must not exceed {}, got {}",
             DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP,
             wide_value.value);
 
     LOG_WARNING(
         getLogger("DatabaseReplicatedSettings"),
-        "Setting `logs_to_keep` of a Replicated database is {}, which exceeds the maximum of {}, so {} is used "
-        "instead. The DDL log counter is 32-bit, so the value never took effect as written. The setting origin is "
-        "left unchanged",
+        "Setting `logs_to_keep` of a Replicated database is {}, which exceeds the maximum of {}, so {} is used instead",
         wide_value.value,
         DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP,
         DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP);
@@ -138,7 +135,7 @@ void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, cons
         for (const String & key : config_keys)
         {
             /// `logs_to_keep` used to be UInt64, some old configs may contain values greater than
-            /// `UInt32::max`. Clamp them to `UInt32::max`.
+            /// `MAX_LOGS_TO_KEEP`. Clamp them to `MAX_LOGS_TO_KEEP`.
             if (key == "logs_to_keep")
             {
                 Field logs_to_keep = config.getString(config_elem + "." + key);
@@ -169,25 +166,15 @@ String DatabaseReplicatedSettings::toString() const
     return impl->toString();
 }
 
-bool DatabaseReplicatedSettings::has(std::string_view name) const
-{
-    return impl->has(name);
-}
-
 bool DatabaseReplicatedSettings::hasBuiltin(std::string_view name)
 {
     return DatabaseReplicatedSettingsImpl::hasBuiltin(name);
 }
 
-UInt32 DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(const String & logs_to_keep_str, UInt64 * keeper_logs_to_keep)
+UInt32 DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(const String & logs_to_keep_str)
 {
-    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `UInt32::max`. Clamp them to `UInt32::max`.
+    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `MAX_LOGS_TO_KEEP`. Clamp them to `MAX_LOGS_TO_KEEP`.
     const UInt64 logs_to_keep = parse<UInt64>(logs_to_keep_str);
-    if (keeper_logs_to_keep != nullptr)
-    {
-        *keeper_logs_to_keep = logs_to_keep;
-    }
-
     return static_cast<UInt32>(std::min(MAX_LOGS_TO_KEEP, logs_to_keep));
 }
 

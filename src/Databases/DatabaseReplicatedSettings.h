@@ -49,13 +49,16 @@ struct DatabaseReplicatedSettings
     static void checkOrClampLogsToKeep(ASTSetQuery & settings, bool clamp_on_overflow);
 
     String toString() const;
-    bool has(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
 
-    static UInt32 parseLogsToKeepFromKeeper(const String & logs_to_keep_str, UInt64 * keeper_logs_to_keep = nullptr);
+    static UInt32 parseLogsToKeepFromKeeper(const String & logs_to_keep_str);
 
-    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
+    /// Older replicas evaluate `entry_number + logs_to_keep < max_log_ptr` in 32-bit arithmetic,
+    /// so using `UInt32::max` would make `entry_number + logs_to_keep` overflow and the replica would
+    /// delete the whole DDL log and declare itself lost.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/122377 for details.
+    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<Int32>::max();
 
 private:
     std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;
