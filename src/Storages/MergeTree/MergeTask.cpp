@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyMergedIndex.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
@@ -97,6 +98,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event MergedProjections;
     extern const Event RebuiltProjections;
+    extern const Event UniqueKeyMergeInputRowsSkipped;
 }
 
 namespace CurrentMetrics
@@ -659,6 +661,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
+    /// The input filter, the row map and the commit's late-kill diff read the sources' bitmaps at
+    /// the merge transaction's snapshot, so a kill committed after it began is a late kill. A dry
+    /// run has no transaction and pins its own. A projection sub-merge's metadata has no unique key.
+    global_ctx->is_unique_key_merge = global_ctx->metadata_snapshot->hasUniqueKey();
+
+    if (global_ctx->is_unique_key_merge)
+        global_ctx->unique_key_read_snapshot = global_ctx->txn
+            ? global_ctx->data->makeDeleteBitmapSnapshot(global_ctx->txn)
+            : global_ctx->data->makeDeleteBitmapSnapshot(global_ctx->context);
+
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
 
@@ -911,7 +923,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->cleanup ||
         global_ctx->deduplicate ||
         hasLightweightDelete(global_ctx->future_part) ||
-        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary ||
+        /// The UNIQUE KEY input filter skips bitmap-dead rows, so projections and
+        /// minmax indexes must be rebuilt from the merge output, not inherited.
+        global_ctx->is_unique_key_merge;
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
@@ -2172,12 +2187,17 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
 
+        /// Skips the rows the horizontal stage skipped, so the column lines up with `rows_sources`.
+        RangesInDataPart part_ranges(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset);
+        if (global_ctx->is_unique_key_merge)
+            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(part_ranges.data_part->info);
+
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
+            std::move(part_ranges),
             global_ctx->alter_conversions[part_num],
             global_ctx->merged_part_offsets,
             Names{column_name},
@@ -2522,7 +2542,8 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
     }
 
     /// Release offset mapping when all projections with _part_offset has been merged.
-    if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets)
+    if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets
+        && !global_ctx->is_unique_key_merge)
         global_ctx->merged_part_offsets->clear();
 
     const auto & projection_name = (*ctx->projections_iterator)->global_ctx->future_part->name;
@@ -2582,6 +2603,19 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         auto part = task->getFuture().get();
         part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
+    }
+
+    /// Before `finalizePart`, so the dense index's checksum lands in `checksums.txt`, as on INSERT.
+    if (global_ctx->is_unique_key_merge && global_ctx->rows_written > 0)
+    {
+        const UniqueKeyMergeRowMap row_map(
+            global_ctx->future_part->parts, *global_ctx->unique_key_read_snapshot, *global_ctx->merged_part_offsets);
+        UniqueKeyMergedIndexBuilder(
+            global_ctx->future_part->parts,
+            row_map,
+            global_ctx->new_data_part->getDataPartStorage(),
+            global_ctx->data->getContext())
+            .build(global_ctx->gathered_data.checksums, ctx->need_sync);
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -2771,7 +2805,8 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             global_ctx->new_data_part,
             global_ctx->rows_written,
             index_ptr,
-            global_ctx->merged_part_offsets,
+            /// A rebuilt index already holds the merged part's offsets.
+            global_ctx->merge_may_reduce_rows ? nullptr : global_ctx->merged_part_offsets,
             reader_settings,
             global_ctx->to->getWriterSettings(),
             ctx->need_sync);
@@ -2804,7 +2839,8 @@ bool MergeTask::MergeTextIndexStage::finalize() const
     if (global_ctx->parent_part)
         return false;
 
-    if (global_ctx->merged_part_offsets && global_ctx->projections_to_merge.empty())
+    /// A unique-key merge still needs the mapping at its commit.
+    if (global_ctx->merged_part_offsets && global_ctx->projections_to_merge.empty() && !global_ctx->is_unique_key_merge)
         global_ctx->merged_part_offsets->clear();
 
     if (global_ctx->temporary_text_index_storage)
@@ -3473,25 +3509,25 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
     Names merging_column_names = global_ctx->merging_columns.getNames();
-    for (const auto * projection : global_ctx->projections_to_merge)
+    const bool projection_needs_part_offsets = std::ranges::any_of(
+        global_ctx->projections_to_merge, [](const auto * projection) { return projection->with_parent_part_offset; });
+
+    /// If projection needs part offset mapping, add _part_index column to build this mapping.
+    /// A unique-key merge maps the rows killed after its snapshot onto the merged part through it.
+    if (projection_needs_part_offsets || global_ctx->is_unique_key_merge)
     {
-        /// If projection needs part offset mapping, add _part_index column to build this mapping
-        if (projection->with_parent_part_offset)
+        if (global_ctx->metadata_snapshot->hasSortingKey())
         {
-            if (global_ctx->metadata_snapshot->hasSortingKey())
-            {
-                chassert(global_ctx->merged_part_offsets == nullptr);
-                chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
-                global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
-                merging_column_names.push_back("_part_index");
-            }
-            else
-            {
-                global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
-            }
-            break;
+            chassert(global_ctx->merged_part_offsets == nullptr);
+            chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
+            global_ctx->merged_part_offsets
+                = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
+            merging_column_names.push_back("_part_index");
+        }
+        else
+        {
+            global_ctx->merged_part_offsets
+                = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
         }
     }
 
@@ -3525,12 +3561,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (part->getMarksCount() == 0)
             LOG_TRACE(ctx->log, "Part {} is empty", part->name);
 
+        RangesInDataPart part_ranges(part, nullptr, i, part_starting_offset);
+        if (global_ctx->is_unique_key_merge)
+        {
+            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(part->info);
+            /// Counted here, once per merge: the vertical stage's reads skip the same rows again per column.
+            const size_t dead_at_snapshot = part_ranges.delete_bitmap->cardinality();
+            *global_ctx->input_rows_filtered += dead_at_snapshot;
+            ProfileEvents::increment(ProfileEvents::UniqueKeyMergeInputRowsSkipped, dead_at_snapshot);
+        }
+
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
             *plan_for_part,
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            RangesInDataPart(part, nullptr, i, part_starting_offset),
+            std::move(part_ranges),
             global_ctx->alter_conversions[i],
             global_ctx->merged_part_offsets,
             merging_column_names,

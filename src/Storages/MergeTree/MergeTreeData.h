@@ -1132,6 +1132,7 @@ public:
 
     size_t clearEmptyParts();
 
+    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const MergeTreeTransactionPtr & txn) const;
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const ContextPtr & local_context) const;
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
@@ -1973,6 +1974,9 @@ protected:
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot = nullptr) const;
+
+    /// Throws for an OPTIMIZE a UNIQUE KEY table does not run: on a table with TTL, or DEDUPLICATE.
+    static void checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetadata & metadata, bool deduplicate);
 
     static decltype(auto) getStateModifier(DataPartState state)
     {

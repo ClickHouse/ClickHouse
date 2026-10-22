@@ -424,6 +424,15 @@ ENGINE = MergeTree ORDER BY id UNIQUE KEY (id); -- { serverError SUPPORT_IS_DISA
 SET enable_unique_key = 1;
 SELECT 'unique_key_attach_needs_experimental_setting';
 
+-- 25. A column named `_part_index` -> error: merges read it as a virtual column, and a stored one would shadow it.
+CREATE TABLE uk_part_index (id UInt64, _part_index UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id); -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE uk_part_index (id UInt64, x UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);
+ALTER TABLE uk_part_index ADD COLUMN _part_index UInt64; -- { serverError ILLEGAL_COLUMN }
+DROP TABLE uk_part_index;
+ATTACH TABLE uk_part_index_attach UUID '00000000-0000-0000-0000-000000123013'
+(id UInt64, _part_index UInt64) ENGINE = MergeTree ORDER BY id UNIQUE KEY (id); -- { serverError ILLEGAL_COLUMN }
+SELECT 'part_index_column_rejected';
+
 DROP TABLE uk_t;
 DROP TABLE uk_t_src;
 DROP TABLE uk_t_other;

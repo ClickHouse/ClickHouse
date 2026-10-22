@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 # UNIQUE KEY: a DELETE racing another writer, one case per pair, ordered by the other writer.
+#   1. vs merge, the DELETE parked: the merge retires the DELETE's target, so the partition is rescanned and the DELETE applies
 #   3. vs insert, the DELETE parked: no conflict, both commit, the INSERT's rows are neither killed nor lost
 #   4. vs DELETE, both parked: two overlapping DELETEs both commit, and each matched row is dead once
 #   5. vs TRUNCATE, the DELETE parked: the target is gone, so the rescan finds nothing and the DELETE leaves no marker part
@@ -74,6 +75,47 @@ release_delete() {
     fi
     rm -f "$ERR_FILE"
 }
+
+# 1. vs merge, the DELETE parked: red if the partition is not rescanned after the conflict
+# (`delete_retried 0`), e.g. the commit skips the retired target instead of aborting, the retry
+# gives up (`delete_ok 0`), or a row comes back twice (`still_unique` 0).
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_vs_merge"
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE uk_del_vs_merge (id UInt32, v UInt32)
+    ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
+    SETTINGS min_bytes_for_wide_part = 0, parts_to_delay_insert = 10000, parts_to_throw_insert = 20000
+"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES uk_del_vs_merge"
+for p in 0 1 2 3; do
+    $CLICKHOUSE_CLIENT --query "
+        INSERT INTO uk_del_vs_merge SELECT number + ${p} * 250 AS id, ${p} AS v FROM numbers(250)
+    "
+done
+
+start_parked_delete "DELETE FROM uk_del_vs_merge WHERE id < 250" "$ERR_FILE"
+$CLICKHOUSE_CLIENT --query "SYSTEM START MERGES uk_del_vs_merge"
+$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE uk_del_vs_merge FINAL"
+# Re-armed before the DELETE resumes, so the rescan after the conflict parks again.
+arm_delete_failpoint
+$CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $DELETE_FP"
+if wait_for_delete_to_park; then
+    echo "delete_retried 1"
+else
+    echo "delete_retried 0"
+fi
+release_delete delete
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'merge_applied',
+           count() = 750                 AS band_removed,
+           countIf(id < 250) = 0         AS no_survivors,
+           count() = countDistinct(id)   AS still_unique
+    FROM uk_del_vs_merge
+"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_vs_merge"
 
 # 3. vs insert, the DELETE parked: red if the DELETE fails (`insert_delete_ok 0`), kills a row
 # committed after its snapshot (`expected_rows` 0), or leaves a key live twice (`every_id_unique` 0).
