@@ -73,8 +73,8 @@ public:
         const auto float64_type = std::make_shared<DataTypeFloat64>();
         for (auto & argument : non_const_arguments)
         {
-            argument.column = argument.column->convertToFullColumnIfConst();
-            argument.column = castColumn(argument, float64_type);
+            /// Cast constant inputs before expanding them for row-wise access.
+            argument.column = castColumn(argument, float64_type)->convertToFullColumnIfConst();
         }
 
         const size_t lat_arg = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT ? 1 : 0;
