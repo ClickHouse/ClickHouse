@@ -1222,7 +1222,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            if (query_settings.ignore_non_existent_file)
+            /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
+            const auto size_from_table = object_info->getFileSizeHint();
+            const auto file_format = object_info->getFileFormat().value_or(configuration->format);
+            const bool use_size_from_table = configuration->dataFilesAreImmutable()
+                && storage_id.uuid != UUIDHelpers::Nil
+                && size_from_table
+                && (boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC"))
+                && !with_tags
+                && !read_from_format_info.requested_virtual_columns.contains("_etag")
+                && !read_from_format_info.requested_virtual_columns.contains("_time")
+                && !query_settings.ignore_non_existent_file;
+
+            if (use_size_from_table)
+            {
+                object_info->setObjectMetadata(ObjectMetadata::fromTableRecords(
+                    size_from_table,
+                    fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
+                                configuration->getDataSourceDescription(), *size_from_table)));
+            }
+            else if (query_settings.ignore_non_existent_file)
             {
                 auto metadata = tryGetObjectMetadataForRead(*object_storage, metadata_object, with_tags);
                 if (!metadata)
@@ -1614,7 +1633,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// for the columns cache.
         if ((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+            && object_info->getObjectMetadata()->getContentCacheToken().has_value())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1930,7 +1949,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
     }
-    else if (!object_info.metadata->is_fetched && validate_etag_on_read)
+    else if (!object_info.metadata->is_fetched && !object_info.metadata->is_from_table_records && validate_etag_on_read)
     {
         /// Refresh the cluster function's skip_object_metadata placeholder to obtain its size + ETag for
         /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
@@ -1938,7 +1957,15 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
     }
 
-    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    /// A cache serves bytes without a request with this reader's credentials, so it needs an identity scoped to them.
+    if (object_info.metadata->is_from_table_records
+        && (((use_filesystem_cache || use_page_cache) && !object_info.metadata->getContentCacheToken())
+            || (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())))
+    {
+        object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+    }
+
+    if (use_page_cache && !object_info.metadata->getContentCacheToken())
     {
         LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
@@ -2012,9 +2039,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
     /// The size is used by the object storage as the right bound of the read, so it must come from a
-    /// real listing or HEAD: the skip_object_metadata placeholder is default-constructed, and its
+    /// real listing or HEAD, or from table records: the skip_object_metadata placeholder is default-constructed, and its
     /// `size_bytes == 0` would otherwise read every non-empty object as empty.
-    const auto stored_object_size = is_size_known && object_info.metadata->is_fetched
+    const auto stored_object_size = is_size_known && (object_info.metadata->is_fetched || object_info.metadata->is_from_table_records)
         ? object_size
         : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
@@ -2033,7 +2060,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (!object_info.metadata->isEtagUsableAsCacheKey())
+        const auto content_token = object_info.metadata->getContentCacheToken();
+        if (!content_token)
         {
             LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
         }
@@ -2041,7 +2069,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         {
             SipHash hash;
             hash.update(object_info.getPath());
-            hash.update(object_info.metadata->etag);
+            hash.update(*content_token);
 
             auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
@@ -2055,10 +2083,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
             LOG_TRACE(
                 log,
-                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                "Using filesystem cache `{}` (path: {}, version: {}, hash: {})",
                 filesystem_cache_name,
                 object_info.getPath(),
-                object_info.metadata->etag,
+                *content_token,
                 toString(hash.get128()));
         }
     }
@@ -2076,7 +2104,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         pipeline.needMemoryCache(
             getPageCachePathForObjectStorage(object_info, object_storage),
-            "etag:" + object_info.metadata->etag,
+            "etag:" + *object_info.metadata->getContentCacheToken(),
             modified_read_settings.page_cache_settings);
     }
 
