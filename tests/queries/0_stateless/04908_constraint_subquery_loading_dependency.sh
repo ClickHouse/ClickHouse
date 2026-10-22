@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Keep this file's DDL out of the server-side AST fuzzer: a replayed `CREATE` can make a `CHECK` subquery read a
+# table function such as `remote`, which cannot be analysed while the table is loaded at server startup.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query 0"
+
 # A `SQL UDF` is a server-wide object, so its name has to be unique across concurrently running tests.
 UDF="${CLICKHOUSE_DATABASE}_udf"
 DB2="${CLICKHOUSE_DATABASE}_1"

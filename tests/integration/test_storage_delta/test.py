@@ -1,8 +1,10 @@
+import base64
 import io
 import json
 import logging
 import os
 import random
+import re
 import string
 import tempfile
 import threading
@@ -78,6 +80,7 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -837,6 +840,18 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
             "UNION ALL SELECT number, toString(number + 1) FROM numbers(10, 15) "
             ") ORDER BY 1"
         ).strip()
+    )
+
+    # The legacy metadata reader reads the checkpoint twice, once for the schema and once for the
+    # data. With `input_format_allow_seeks = 0` the schema pass cannot seek to the footer, so it
+    # streams the whole file and leaves its buffer at EOF; the data pass has to open its own.
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_allow_seeks = 0"
+            )
+        )
+        == 20
     )
 
 
@@ -2911,10 +2926,16 @@ def test_column_pruning(started_cluster):
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
+    # `input_format_parquet_footer_read_size` is pinned so that the number of bytes read stays a
+    # measure of column pruning only. With the adaptive default the initial footer read is at least
+    # 128 KiB, which is more than this (much smaller) file, so the whole file would be read and the
+    # numbers below would no longer say anything about which columns were fetched.
+    footer_read_size = 64 * 1024
+
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_footer_read_size={footer_read_size}",
             query_id=query_id,
         )
     )
@@ -2930,7 +2951,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0, input_format_parquet_footer_read_size={footer_read_size}",
             query_id=query_id,
         )
     )
@@ -3440,14 +3461,14 @@ def test_delta_kernel_internal_pruning(started_cluster):
         )
     )
 
-    assert result == 1
+    assert result == 3
     instance.query("SYSTEM FLUSH LOGS")
-    assert 1 == int(
+    assert 3 == int(
         instance.query(
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
         )
     )
-    assert 1 == int(
+    assert 3 == int(
         instance.query(
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
         )
@@ -4022,7 +4043,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         def insert(i):
             try:
                 instance.query(
-                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)"
                 )
                 success[i] += 1
             except Exception as e:
@@ -4865,6 +4886,204 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     )
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
+    # A DeltaLake commit that fails must stay the error the client sees, even when
+    # removing the data files the failed INSERT had already uploaded itself fails, and
+    # that removal failure must be reported with the data file it was left on. Two
+    # faults are injected at once: delta_lake_commit_fail_before_log_write throws
+    # before the commit writes its log entry (the commit fails), and
+    # local_object_storage_network_error_during_remove throws on the first data-file
+    # removal. The first INSERT is a control: it commits, so the committed data files
+    # are known and the failed INSERT can be held to changing nothing.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
+    table_name = randomize_table_name("test_commit_failure_cleanup")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    # One row per data file, one row per block: the unpartitioned sink rolls a new data
+    # file per block and the partitioned one opens a sink per partition value, so both
+    # write 3 data files. With a single data file the cleanup loop runs only one
+    # iteration, which exercises neither sink's multi-file path.
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    def failpoint_enabled():
+        return instance.query(
+            f"SELECT enabled FROM system.fail_points WHERE name = '{failpoint}'"
+        ).strip()
+
+    # Version 0 was written from an empty table, so no data file exists yet.
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, so every later count is measured
+    # against a known number of committed data files.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, f"control insert wrote {len(committed)} data files: {committed}"
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        assert failpoint_enabled() == "1"
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do.
+        fired = failpoint_enabled() == "0"
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
+
+    assert fired, "the removal failpoint never fired, so the cleanup path was not exercised"
+
+    # O1: the client is told why nothing was written (the commit failed), not why a
+    # cleanup step failed afterwards.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert commit_error in error, f"unexpected insert error: {error}"
+
+    # O2: the removal that failed is reported, naming the data file it was left on. The
+    # message is the full one only the commit-failure cleanup emits; the cancel path logs a
+    # different one. The path has to follow the message immediately: the injected removal
+    # exception carries the path too, so matching it anywhere on the line would also pass if
+    # the handler logged no path at all.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    assert re.search(
+        re.escape(f"{message}: ") + rf"\S*{re.escape(table_name)}_data/\S+\.parquet",
+        removal_log,
+    ), f"the failed data-file removal was not logged with its path: {removal_log}"
+
+    # O3: the failed INSERT committed nothing, and left the committed data files alone.
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+    assert parquet_paths() == committed
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partitioned):
+    # The cleanup after a failed DeltaLake commit must attempt every data file the INSERT
+    # had uploaded, not stop on the first removal that fails. Observing that needs a
+    # removal fault that persists across calls: with a fault that fires once the later
+    # removals succeed, so a handler that gave up after the first failure would leave the
+    # same files on disk and the same single log line as one that continued, which is what
+    # the sibling test above cannot tell apart. The oracle here is the number of distinct
+    # data files named in the handler's own log lines: one per data file when every removal
+    # is attempted, one in total when the loop stops at the first failure.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_every_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
+    table_name = randomize_table_name("test_commit_failure_every_file")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, which fixes how many data files an
+    # INSERT of this shape writes.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, (
+        f"control insert wrote {len(committed)} data files: {committed}"
+    )
+
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
+        # REGULAR, so it stays armed until disabled and every removal in the window fails.
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
+
+    # O1: the client is still told why nothing was written, not why a cleanup step failed.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert commit_error in error, f"unexpected insert error: {error}"
+
+    # O2: one failed removal is logged per data file, each naming a different one. The
+    # table name anchors the match so the two parametrizations cannot read each other's
+    # lines, and cancelBuffers() logs a different message, so it cannot inflate the count.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    logged_paths = set(
+        re.findall(
+            re.escape(f"{message}: ") + rf"(\S*{re.escape(table_name)}_data/\S+\.parquet)",
+            removal_log,
+        )
+    )
+    assert len(logged_paths) == 3, (
+        f"the handler logged {len(logged_paths)} failed removals, expected one per data file "
+        f"(a handler that stopped at the first failure logs one): {removal_log}"
+    )
+
+    # The injected fault throws after the unlink, so the uncommitted files are gone either
+    # way: this stays an invariant guard, not the discriminating oracle.
+    assert parquet_paths() == committed
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
@@ -5017,11 +5236,10 @@ def test_truncate(started_cluster):
 
     assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
-    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
-
     def count_files():
+        # Re-list on every call: the point is to prove TRUNCATE removed nothing.
         count = 0
-        for obj in s3_objects:
+        for obj in minio_client.list_objects(bucket, result_file, recursive=True):
             print(f"File: {obj.object_name}")
             count = count + 1
         return count
@@ -5031,6 +5249,7 @@ def test_truncate(started_cluster):
         f"TRUNCATE TABLE {table_name}"
     )
     assert count_files() == 3
+    assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
 @pytest.mark.parametrize("on_cluster", [False, True])
@@ -6428,3 +6647,415 @@ def test_create_table_concurrent_race_attaches(started_cluster):
 
     instance.query(f"DROP TABLE {table_a}")
     instance.query(f"DROP TABLE {table_b}")
+
+
+def test_writes_timestamp_ntz_annotation(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_timestamp_ntz")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    # A tz-less pyarrow timestamp becomes Delta `timestamp_ntz`, a tz-aware one Delta `timestamp`.
+    # `ts_tz` is the selectivity control (it must stay UTC-adjusted) and `vc` carries the char/varchar
+    # field annotation. Every Delta field is nullable because `write_deltalake` declares a non-nullable
+    # one without listing the `invariants` writer feature its NOT NULL constraint needs, which makes
+    # Spark reject the table for that unrelated reason. Both ntz columns reach the writer as the Delta
+    # schema's `Nullable(DateTime64(6))`, so the pair proves both ClickHouse declarations get annotated.
+    # The table is partitioned on `id` so the INSERT goes through DeltaLakePartitionedSink; the nested
+    # test covers the unpartitioned DeltaLakeSink.
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("ts_ntz", pa.timestamp("us")),
+            pa.field("ts_ntz_nullable", pa.timestamp("us")),
+            pa.field("ts_tz", pa.timestamp("us", tz="UTC")),
+            pa.field(
+                "vc",
+                pa.string(),
+                metadata={b"__CHAR_VARCHAR_TYPE_STRING": b"varchar(16)"},
+            ),
+        ]
+    )
+    empty_arrays = [pa.array([], type=field.type) for field in schema]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["id"],
+    )
+
+    # Precondition: a `deltalake` version that mapped a tz-less timestamp to Delta `timestamp` would
+    # make every assertion below pass without exercising `timestamp_ntz` at all.
+    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
+        metadata = [json.loads(line) for line in log if "metaData" in line][0]
+    log_types = {
+        field["name"]: field["type"]
+        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
+    }
+    assert log_types["ts_ntz"] == "timestamp_ntz", log_types
+    assert log_types["ts_ntz_nullable"] == "timestamp_ntz", log_types
+    assert log_types["ts_tz"] == "timestamp", log_types
+
+    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} "
+        "(id Int32, ts_ntz DateTime64(6), ts_ntz_nullable Nullable(DateTime64(6)), "
+        "ts_tz DateTime64(6), vc String) "
+        f"ENGINE = DeltaLakeLocal('{result_file}') "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    # A DateTime64 literal is parsed in the session time zone, so pin it to fix the stored number.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(1, '2024-06-01 12:00:00.000000', '2024-06-01 12:00:00.000000', "
+        "'2024-06-01 12:00:00.000000', 'abc')",
+        settings={"session_timezone": "UTC"},
+    )
+
+    # The data file lands under `<table>/id=1/`, so look for it recursively.
+    files = (
+        instance.exec_in_container(
+            ["bash", "-c", f"find {result_file} -name '*.parquet'"]
+        )
+        .strip()
+        .split("\n")
+    )
+    parquet_files = [name for name in files if name.endswith(".parquet")]
+    assert len(parquet_files) == 1, files
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    # pyarrow renders isAdjustedToUTC=false as tz None and isAdjustedToUTC=true as tz 'UTC'.
+    written = pq.read_schema(parquet_files[0])
+    assert written.field("ts_ntz").type == pa.timestamp("us"), written
+    assert written.field("ts_ntz_nullable").type == pa.timestamp("us"), written
+    assert written.field("ts_tz").type == pa.timestamp("us", tz="UTC"), written
+
+    spark = started_cluster.spark_session
+    rows = spark.read.format("delta").load(result_file).collect()
+    assert len(rows) == 1, rows
+    assert str(rows[0]["ts_ntz"]) == "2024-06-01 12:00:00", rows
+    assert str(rows[0]["ts_ntz_nullable"]) == "2024-06-01 12:00:00", rows
+
+    # The ClickHouse round trip stays lossless: the reader takes types from the Delta schema.
+    assert instance.query(
+        f"SELECT id, ts_ntz, ts_ntz_nullable, ts_tz, vc FROM {table_name}",
+        settings={"session_timezone": "UTC"},
+    ).strip() == (
+        "1\t2024-06-01 12:00:00.000000\t2024-06-01 12:00:00.000000\t"
+        "2024-06-01 12:00:00.000000\tabc"
+    )
+
+    # Version 1 is what the INSERT above committed, i.e. the latest version, so this pinned snapshot does
+    # describe the schema the transaction commits against and the annotation applies.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(2, '2024-06-02 12:00:00.000000', '2024-06-02 12:00:00.000000', "
+        "'2024-06-02 12:00:00.000000', 'def')",
+        settings={"session_timezone": "UTC", "delta_lake_snapshot_version": 1},
+    )
+
+    pinned_found = (
+        instance.exec_in_container(
+            ["bash", "-c", f"find {result_file}/id=2 -name '*.parquet'"]
+        )
+        .strip()
+        .split("\n")
+    )
+    pinned_files = [name for name in pinned_found if name.endswith(".parquet")]
+    assert len(pinned_files) == 1, pinned_found
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    pinned_written = pq.read_schema(pinned_files[0])
+    assert pinned_written.field("ts_ntz").type == pa.timestamp("us"), pinned_written
+    assert pinned_written.field("ts_ntz_nullable").type == pa.timestamp(
+        "us"
+    ), pinned_written
+    assert pinned_written.field("ts_tz").type == pa.timestamp(
+        "us", tz="UTC"
+    ), pinned_written
+
+    pinned_rows = sorted(
+        spark.read.format("delta").load(result_file).collect(),
+        key=lambda row: row["id"],
+    )
+    assert len(pinned_rows) == 2, pinned_rows
+    assert str(pinned_rows[0]["ts_ntz"]) == "2024-06-01 12:00:00", pinned_rows
+    assert str(pinned_rows[1]["ts_ntz"]) == "2024-06-02 12:00:00", pinned_rows
+
+    # Version 0 is older than the version this INSERT commits against, so the pin cannot be proven to
+    # describe that schema and the write keeps the UTC-adjusted default.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(3, '2024-06-03 12:00:00.000000', '2024-06-03 12:00:00.000000', "
+        "'2024-06-03 12:00:00.000000', 'ghi')",
+        settings={"session_timezone": "UTC", "delta_lake_snapshot_version": 0},
+    )
+
+    stale_found = (
+        instance.exec_in_container(
+            ["bash", "-c", f"find {result_file}/id=3 -name '*.parquet'"]
+        )
+        .strip()
+        .split("\n")
+    )
+    stale_files = [name for name in stale_found if name.endswith(".parquet")]
+    assert len(stale_files) == 1, stale_found
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    stale_written = pq.read_schema(stale_files[0])
+    assert stale_written.field("ts_ntz").type == pa.timestamp(
+        "us", tz="UTC"
+    ), stale_written
+
+    # No Spark read past this point: that last file deliberately contradicts the Delta schema.
+    assert instance.query(
+        f"SELECT id, ts_ntz FROM {table_name} ORDER BY id",
+        settings={"session_timezone": "UTC"},
+    ).strip() == (
+        "1\t2024-06-01 12:00:00.000000\n2\t2024-06-02 12:00:00.000000\n"
+        "3\t2024-06-03 12:00:00.000000"
+    )
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_writes_timestamp_ntz_annotation_nested(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_timestamp_ntz_nested")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    # One `timestamp_ntz` leaf per container shape, because the writer spells a nested column path
+    # itself (`st.inner_ts`, `arr.element`, `m.value`) rather than reusing the Delta child names.
+    # `st.inner_tz` is a Delta `timestamp` sharing a struct with an ntz sibling: selectivity has to hold
+    # per leaf, not per top-level column.
+    # A Delta field name may contain a dot, so `sc`'s two leaves both flatten to the path `sc.a.b`; one
+    # is `timestamp_ntz` and the other `timestamp`, so neither may be annotated from that path.
+    # `sg` is the same dotted name against a GROUP: the struct `sg.a.b` flattens onto the ntz leaf's path,
+    # but only a leaf path is ever looked up, so the leaf there does keep its annotation.
+    # `si` collides with a non-timestamp leaf, which never reads the annotation, so the ntz leaf keeps it too.
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field(
+                "st",
+                pa.struct(
+                    [
+                        pa.field("inner_ts", pa.timestamp("us")),
+                        pa.field("inner_tz", pa.timestamp("us", tz="UTC")),
+                    ]
+                ),
+            ),
+            pa.field("arr", pa.list_(pa.timestamp("us"))),
+            pa.field("m", pa.map_(pa.string(), pa.timestamp("us"))),
+            pa.field(
+                "sc",
+                pa.struct(
+                    [
+                        pa.field("a.b", pa.timestamp("us")),
+                        pa.field(
+                            "a", pa.struct([pa.field("b", pa.timestamp("us", tz="UTC"))])
+                        ),
+                    ]
+                ),
+            ),
+            pa.field(
+                "sg",
+                pa.struct(
+                    [
+                        pa.field("a.b", pa.timestamp("us")),
+                        pa.field(
+                            "a",
+                            pa.struct(
+                                [pa.field("b", pa.struct([pa.field("x", pa.int32())]))]
+                            ),
+                        ),
+                    ]
+                ),
+            ),
+            pa.field(
+                "si",
+                pa.struct(
+                    [
+                        pa.field("a.b", pa.timestamp("us")),
+                        pa.field("a", pa.struct([pa.field("b", pa.int32())])),
+                    ]
+                ),
+            ),
+        ]
+    )
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(
+            [pa.array([], type=field.type) for field in schema], schema=schema
+        ),
+        mode="overwrite",
+    )
+
+    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
+        metadata = [json.loads(line) for line in log if "metaData" in line][0]
+    log_fields = {
+        field["name"]: field["type"]
+        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
+    }
+    assert log_fields["st"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    assert log_fields["st"]["fields"][1]["type"] == "timestamp", log_fields
+    assert log_fields["arr"]["elementType"] == "timestamp_ntz", log_fields
+    assert log_fields["m"]["valueType"] == "timestamp_ntz", log_fields
+    assert log_fields["sc"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    assert (
+        log_fields["sc"]["fields"][1]["type"]["fields"][0]["type"] == "timestamp"
+    ), log_fields
+    assert log_fields["sg"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    # `sg.a.b` must be a struct, not a leaf, or the leaf-versus-group case is not exercised at all.
+    sg_inner = log_fields["sg"]["fields"][1]["type"]["fields"][0]["type"]
+    assert sg_inner["type"] == "struct", log_fields
+    assert sg_inner["fields"][0]["type"] == "integer", log_fields
+    assert log_fields["si"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    assert (
+        log_fields["si"]["fields"][1]["type"]["fields"][0]["type"] == "integer"
+    ), log_fields
+
+    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, "
+        "st Tuple(inner_ts DateTime64(6), inner_tz DateTime64(6)), "
+        "arr Array(DateTime64(6)), m Map(String, DateTime64(6)), "
+        "sc Tuple(`a.b` DateTime64(6), a Tuple(b DateTime64(6))), "
+        "sg Tuple(`a.b` DateTime64(6), a Tuple(b Tuple(x Int32))), "
+        "si Tuple(`a.b` DateTime64(6), a Tuple(b Int32))) "
+        f"ENGINE = DeltaLakeLocal('{result_file}') "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(1, ('2024-06-01 12:00:00', '2024-06-01 12:00:00'), "
+        "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'}, "
+        "('2024-06-01 12:00:00', tuple('2024-06-01 12:00:00')), "
+        "('2024-06-01 12:00:00', tuple(tuple(42))), "
+        "('2024-06-01 12:00:00', tuple(7)))",
+        settings={"session_timezone": "UTC"},
+    )
+
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls {result_file}"]).strip().split("\n")
+    )
+    parquet_files = [name for name in files if name.endswith(".parquet")]
+    assert len(parquet_files) == 1, files
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    written = pq.read_schema(f"{result_file}/{parquet_files[0]}")
+    struct_type = written.field("st").type
+    assert struct_type.field("inner_ts").type == pa.timestamp("us"), written
+    assert struct_type.field("inner_tz").type == pa.timestamp("us", tz="UTC"), written
+    assert written.field("arr").type.value_type == pa.timestamp("us"), written
+    assert written.field("m").type.item_type == pa.timestamp("us"), written
+    # Ambiguous path: both leaves keep the default annotation, which is what the table gets on master.
+    collision_type = written.field("sc").type
+    assert collision_type.field("a.b").type == pa.timestamp("us", tz="UTC"), written
+    assert (
+        collision_type.field("a").type.field("b").type == pa.timestamp("us", tz="UTC")
+    ), written
+    # The group at the same path is not a competing claim, so this ntz leaf is annotated.
+    group_type = written.field("sg").type
+    assert group_type.field("a.b").type == pa.timestamp("us"), written
+    assert (
+        group_type.field("a").type.field("b").type.field("x").type == pa.int32()
+    ), written
+    int_collision_type = written.field("si").type
+    assert int_collision_type.field("a.b").type == pa.timestamp("us"), written
+    assert int_collision_type.field("a").type.field("b").type == pa.int32(), written
+
+    spark = started_cluster.spark_session
+    rows = (
+        spark.read.format("delta").load(result_file).select("st", "arr", "m").collect()
+    )
+    assert len(rows) == 1, rows
+    assert str(rows[0]["st"]["inner_ts"]) == "2024-06-01 12:00:00", rows
+    assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
+    assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
+
+    rows_sg = spark.read.format("delta").load(result_file).select("sg").collect()
+    assert str(rows_sg[0]["sg"]["a.b"]) == "2024-06-01 12:00:00", rows_sg
+    assert rows_sg[0]["sg"]["a"]["b"]["x"] == 42, rows_sg
+    rows_si = spark.read.format("delta").load(result_file).select("si").collect()
+    assert str(rows_si[0]["si"]["a.b"]) == "2024-06-01 12:00:00", rows_si
+    assert rows_si[0]["si"]["a"]["b"] == 7, rows_si
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_timestamp_ntz_partition")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    # The Delta `timestamp` partition column `p.ts` and the ntz leaf of `p` flatten to the same path,
+    # but a partition column is not written to the data file, so the ntz leaf there keeps its annotation.
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("p.ts", pa.timestamp("us", tz="UTC")),
+            pa.field("p", pa.struct([pa.field("ts", pa.timestamp("us"))])),
+        ]
+    )
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(
+            [pa.array([], type=field.type) for field in schema], schema=schema
+        ),
+        mode="overwrite",
+        partition_by=["p.ts"],
+    )
+
+    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
+        metadata = [json.loads(line) for line in log if "metaData" in line][0]
+    assert metadata["metaData"]["partitionColumns"] == ["p.ts"], metadata
+    log_fields = {
+        field["name"]: field["type"]
+        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
+    }
+    assert log_fields["p.ts"] == "timestamp", log_fields
+    assert log_fields["p"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+
+    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, `p.ts` DateTime64(6), p Tuple(ts DateTime64(6))) "
+        f"ENGINE = DeltaLakeLocal('{result_file}') "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(1, '2024-06-01 12:00:00', tuple('2024-06-01 12:00:00'))",
+        settings={"session_timezone": "UTC"},
+    )
+
+    # The partition directory name contains a space, which LocalDownloader's shell commands do not quote.
+    files = (
+        instance.exec_in_container(["find", result_file, "-type", "f"]).strip().split("\n")
+    )
+    for path in files:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(
+                base64.b64decode(instance.exec_in_container(["base64", "-w0", path]))
+            )
+    parquet_files = [name for name in files if name.endswith(".parquet")]
+    assert len(parquet_files) == 1, files
+
+    written = pq.read_schema(parquet_files[0])
+    # If the partition column were in the file, the two paths would really collide.
+    assert "p.ts" not in written.names, written
+    assert written.field("p").type.field("ts").type == pa.timestamp("us"), written
+
+    spark = started_cluster.spark_session
+    rows = spark.read.format("delta").load(result_file).select("p").collect()
+    assert len(rows) == 1, rows
+    assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
+
+    instance.query(f"DROP TABLE {table_name}")

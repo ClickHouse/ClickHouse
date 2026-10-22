@@ -7,6 +7,9 @@
 
 SET query_plan_direct_read_from_text_index = 1;
 SET enable_lightweight_update = 1;
+-- A bare count() over a text-index predicate is answered from the posting lists
+-- (ReadFromTextIndexCount), which replaces the read step and takes the virtual column out of the plan.
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -67,7 +70,6 @@ SETTINGS
 
 INSERT INTO tab SELECT number, 0, if(number < 10, 'Hello World', 'foo bar') FROM numbers(1000);
 
--- The preprocessor applies on the index path only, so these two legitimately differ.
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 1;
 

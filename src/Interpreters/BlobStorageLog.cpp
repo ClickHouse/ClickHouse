@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -31,6 +32,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
             {"MultiPartUploadComplete", static_cast<Int8>(EventType::MultiPartUploadComplete)},
             {"MultiPartUploadAbort", static_cast<Int8>(EventType::MultiPartUploadAbort)},
             {"Read", static_cast<Int8>(EventType::Read)},
+            {"Copy", static_cast<Int8>(EventType::Copy)},
         });
 
     return ColumnsDescription
@@ -42,7 +44,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
 
-        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read'"},
+        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort', 'Read', 'Copy'"},
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
@@ -52,7 +54,9 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},
         {"remote_path", std::make_shared<DataTypeString>(), "Path to the remote resource."},
         {"local_path", std::make_shared<DataTypeString>(), "Path to the metadata file on the local system, which references the remote resource."},
-        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
+        {"source_bucket", std::make_shared<DataTypeString>(), "Name of the bucket the object was copied from, for the 'Copy' event. Empty for other events."},
+        {"source_remote_path", std::make_shared<DataTypeString>(), "Path to the object the data was copied from, for the 'Copy' event. Empty for other events."},
+        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the operation."},
         {"elapsed_microseconds", std::make_shared<DataTypeUInt64>(), "Elapsed time for the operation, in microseconds."},
 
         {"error_code", std::make_shared<DataTypeInt32>(), "Error code of the operation. 0 if there was no error."},
@@ -79,6 +83,8 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bucket);
     columns[i++]->insert(remote_path);
     columns[i++]->insert(local_path);
+    columns[i++]->insert(source_bucket);
+    columns[i++]->insert(source_remote_path);
     columns[i++]->insert(data_size);
     columns[i++]->insert(elapsed_microseconds);
     columns[i++]->insert(error_code);
@@ -108,7 +114,7 @@ static std::string_view normalizePath(std::string_view path)
 void BlobStorageLog::prepareTable()
 {
     SystemLog<BlobStorageLogElement>::prepareTable();
-    if (auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(getStorage()))
+    if (auto merge_tree_table = castStorage<MergeTreeData>(getStorage(), DeferredTable::Skip))
     {
         std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();

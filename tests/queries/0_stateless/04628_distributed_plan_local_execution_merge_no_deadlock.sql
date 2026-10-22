@@ -37,6 +37,18 @@ SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 
+SYSTEM FLUSH LOGS query_log;
+-- The outer plan over `ReadFromMerge` falls back, so only these task rows show that the child plans distributed.
+WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_dlk') AS run_start
+SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= toDate(run_start) AND event_time >= run_start AND is_initial_query
+            AND current_database = currentDatabase() AND query LIKE 'SELECT count(\_table) FROM m\_dlk%')
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE m_dlk;
 DROP TABLE d_dlk_1;
 DROP TABLE d_dlk_2;
