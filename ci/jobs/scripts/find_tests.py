@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import re
-import shlex
 import sys
 from pathlib import Path
 from collections import Counter
@@ -38,6 +37,8 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell
 from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
+GITHUB_API_URL = "https://api.github.com"
+
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
 # widespread failures (e.g. build broken, environment issue) where every test failed,
@@ -71,6 +72,12 @@ FAILED_TESTS_QUERY = """ \
  order by count() * exp(-dateDiff('day', max(check_start_time), toDateTime('{CUTOFF}', 'UTC')) / 7.) desc
  \
 """
+
+
+class GitHubUnavailableError(RuntimeError):
+    """A GitHub API read of the test selection kept failing for a reason outside
+    the pull request: a server or network error, a rate limit, or a diff that
+    GitHub was still generating."""
 
 
 class Targeting:
@@ -751,21 +758,64 @@ class Targeting:
             self.selection_diagnostics["cutoff"] = self._selection_cutoff
         return self._selection_cutoff
 
-    def _run_attempt_start_time(self):
+    def _github_get(self, path, accept="application/vnd.github+json"):
+        """GET `repos/<repo>/<path>` of the GitHub API. Failures that GitHub may not
+        repeat are retried for `github_retry_sec`, then `GitHubUnavailableError`."""
         import requests
 
-        headers = {"Accept": "application/vnd.github+json"}
+        headers = {"Accept": accept}
         token = os.environ.get("GITHUB_TOKEN", "")
         if token:
             headers["Authorization"] = f"Bearer {token}"
         repo = self.info.repo_name or "ClickHouse/ClickHouse"
-        response = requests.get(
-            f"https://api.github.com/repos/{repo}/actions/runs/{self.info.run_id}"
-            f"/attempts/{self.info.run_attempt}",
-            headers=headers,
-            timeout=60,
+        url = f"{GITHUB_API_URL}/repos/{repo}/{path}"
+        deadline = time.monotonic() + self.config.github_retry_sec
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                response = requests.get(url, headers=headers, timeout=60)
+                response.raise_for_status()
+                return response
+            except requests.HTTPError as ex:
+                error = ex
+                status = ex.response.status_code if ex.response is not None else 0
+                body = ex.response.text if ex.response is not None else ""
+                if status == 429 or (
+                    status == 403
+                    and (
+                        ex.response.headers.get("x-ratelimit-remaining") == "0"
+                        or "rate limit" in body.lower()
+                    )
+                ):
+                    # GitHub asks not to retry before the limit resets.
+                    raise GitHubUnavailableError(f"GitHub API {ex}") from ex
+                # GitHub generates a large diff in the background for a later request.
+                if not (
+                    status >= 500 or (status == 422 and "too long to generate" in body)
+                ):
+                    raise
+            except (
+                requests.ConnectionError,
+                requests.Timeout,
+                requests.exceptions.ChunkedEncodingError,
+            ) as ex:
+                error = ex
+            remaining = deadline - time.monotonic()
+            print(
+                f"WARNING: GitHub API request failed, attempt {attempt}, "
+                f"{max(remaining, 0):.0f} s left to retry: {error}"
+            )
+            if remaining <= 0:
+                raise GitHubUnavailableError(
+                    f"GitHub API failed {attempt} times: {error}"
+                ) from error
+            time.sleep(min(2**attempt, remaining))
+
+    def _run_attempt_start_time(self):
+        response = self._github_get(
+            f"actions/runs/{self.info.run_id}/attempts/{self.info.run_attempt}"
         )
-        response.raise_for_status()
         return datetime.fromisoformat(
             response.json()["run_started_at"].replace("Z", "+00:00")
         ).astimezone(timezone.utc)
@@ -945,6 +995,9 @@ class Targeting:
             tests = self.get_previously_failed_tests()
         except Exception as e:
             if strict:
+                # The targeted jobs skip when GitHub is unavailable.
+                if isinstance(e, GitHubUnavailableError):
+                    raise
                 raise RuntimeError(
                     "Failed to get previously failed tests required for test selection"
                 ) from e
@@ -1051,32 +1104,16 @@ class Targeting:
                 f"gh pr diff {self.info.pr_number} --repo {repo}"
             )
         else:
-            import requests
-
-            headers = {"Accept": "application/vnd.github+json"}
-            token = os.environ.get("GITHUB_TOKEN", "")
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            response = requests.get(
-                f"https://api.github.com/repos/{repo}/pulls/{self.info.pr_number}",
-                headers=headers,
-                timeout=60,
-            )
-            response.raise_for_status()
-            metadata = response.json()
+            metadata = self._github_get(f"pulls/{self.info.pr_number}").json()
             if metadata["head"]["sha"] != self.info.sha:
                 raise RuntimeError(
                     "PR head changed before test selection; refusing a diff for a different SHA"
                 )
             base_sha = metadata["base"]["sha"]
-            headers["Accept"] = "application/vnd.github.diff"
-            response = requests.get(
-                f"https://api.github.com/repos/{repo}/compare/{base_sha}...{self.info.sha}",
-                headers=headers,
-                timeout=60,
-            )
-            response.raise_for_status()
-            self._diff_text = response.text
+            self._diff_text = self._github_get(
+                f"compare/{base_sha}...{self.info.sha}",
+                accept="application/vnd.github.diff",
+            ).text
             self.selection_diagnostics["diff_base_sha"] = base_sha
         return self._diff_text
 
@@ -1110,15 +1147,6 @@ class Targeting:
         name = re.escape(cls.selection_test_name(test).rstrip("."))
         extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
         return f"^{name}(?:{extensions})$"
-
-    @staticmethod
-    def selection_args(tests):
-        """Render selectors as the argument list of a `clickhouse-test` command line.
-
-        `run_tests` executes that command line through bash, whose quote removal would
-        otherwise consume the regex syntax before `clickhouse-test` parses it.
-        """
-        return " ".join(shlex.quote(test) for test in tests) if tests else ""
 
     def get_most_relevant_tests(self):
         changed_lines = self.get_changed_lines_from_diff()
