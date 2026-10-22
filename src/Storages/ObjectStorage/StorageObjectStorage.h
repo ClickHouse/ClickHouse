@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 
+#include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
@@ -107,6 +108,8 @@ public:
 
     void drop() override;
 
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -177,12 +180,19 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
+    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
+    static void dropTable(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id);
+
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
     bool isTransactionalRefreshTarget();
     CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     bool optimize(
@@ -272,8 +282,13 @@ protected:
     bool supports_tuple_elements = false;
     bool is_table_function = false;
 
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
+    struct HivePartitioningColumns
+    {
+        NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+        NamesAndTypesList file_columns;
+    };
+    /// Replaced as a whole by a deferred resolution while other queries read it.
+    MultiVersion<HivePartitioningColumns> hive_partitioning_columns;
 
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;

@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 Funções de tabela são usadas para construir tabelas.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Funções de tabela podem ser usadas na cláusula [`FROM`](/pt-BR/reference/statements/select/from)
 de uma consulta `SELECT`. Por exemplo, você pode usar `SELECT` para selecionar dados de um arquivo na sua máquina local
@@ -88,5 +86,7 @@ cat numbers.csv
 ```
 
 <Note>
-  Você não pode usar funções de tabela se a configuração [allow&#95;ddl](/pt-BR/reference/settings/session-settings/allow#allow_ddl) estiver desativada.
+  A maioria das funções de tabela precisa do privilégio `CREATE TEMPORARY TABLE` para ser executada, portanto um `SELECT` ou `INSERT`
+  que execute uma delas é recusado quando
+  [`readonly`](/pt-BR/concepts/features/configuration/settings/permissions-for-queries#readonly) está definido como 1.
 </Note>

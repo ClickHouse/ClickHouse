@@ -1,0 +1,164 @@
+---
+title: 'Mises à jour de la plateforme'
+sidebarTitle: 'Mises à jour de la plateforme'
+slug: /products/bring-your-own-cloud/connector/platform-updates
+description: 'Approuvez les bundles de plateforme que ClickHouse Cloud propose pour un cluster managé : ce qu''est un bundle, comment se déroule l''approbation et ce qu''elle autorise'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor', 'platform']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+Un cluster managé exécute une petite couche plateforme dont dépendent les services ClickHouse. ClickHouse Cloud propose des mises à jour de cette couche ; l&#39;executor n&#39;applique rien tant que vous ne les avez pas approuvées une à une avec vos propres identifiants de cluster.
+
+## Qu&#39;est-ce qu&#39;une mise à jour de la plateforme {#what-a-platform-update-is}
+
+La couche plateforme se compose de trois composants : le snapshot controller, le ClickHouse Operator et les collectors de supervision. Ils s&#39;installent dans cet ordre, car chacun a besoin des définitions de custom resource du précédent. Les services utilisent une StorageClass nommée `gp3-encrypted` (volumes gp3 chiffrés) livrée avec eux.
+
+Un bundle de plateforme est le manifest que ClickHouse Cloud génère pour votre environnement. Il fige les versions de chart et d&#39;image de ces composants et désigne le registry depuis lequel ils sont récupérés. Chaque bundle est identifié par le sha256 de ce manifest. ClickHouse Cloud le transmet à l&#39;executor via le canal de commandes, et l&#39;executor le prépare en attente de votre approbation.
+
+Un bundle s&#39;applique en deux volets :
+
+* Le **volet permissions** regroupe tout ce qui accorde ou encadre l&#39;accès : Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles et ClusterRoleBindings, Roles et RoleBindings, configurations de webhook et d&#39;admission, PriorityClasses et la StorageClass. Vous seul l&#39;appliquez, avec vos credentials, en exécutant `clicklink clctl platform approve`.
+* Le **volet charge de travail** correspond à ce qui s&#39;exécute : Deployments, Services, ConfigMaps, Secrets, Jobs et PodDisruptionBudgets. L&#39;executor l&#39;applique sous une identity dédiée `pcm-platform`, qui peut écrire ces types de ressources et rien d&#39;autre, et uniquement tant que le jeton à durée de vie courte généré par votre approbation reste valide.
+
+L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé. Il refuse toute synchronisation de plateforme dont le volet permissions est absent, dont le sha256 diffère de celui approuvé, ou dont le jeton a expiré. Le refus signale qu&#39;une approbation est nécessaire et précise le sha256 du bundle en attente. La création d&#39;un service nécessitant une définition de custom resource absente de votre plateforme actuelle échoue de la même manière, avec la même commande à exécuter.
+
+## Approuver une mise à jour de la plateforme {#approve-a-platform-update}
+
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flux d'approbation de la plateforme ClickHouse Connector" />
+
+### Identifiants de registry {#registry-credentials}
+
+L&#39;authentication auprès du registry dépend du mode de distribution d&#39;image enregistré pour votre environnement :
+
+* **Accès direct au registry de ClickHouse.** Exécutez l&#39;approbation sur la VM EC2 du connector. La commande `approve` comme la synchronisation de plateforme de l&#39;executor assument le rôle ECR puller en lecture seule de votre environnement à l&#39;aide des identifiants de l&#39;instance metadata service EC2. Ce rôle assure la connexion au registry de charts ; l&#39;executor s&#39;en sert également pour vérifier l&#39;existence des images de plateforme. Les profils AWS, les identifiants d&#39;environnement ou les identifiants SSO présents sur un poste de travail ne remplacent pas le profil d&#39;instance. Votre kubeconfig fournit toujours les identifiants cluster-admin distincts qui appliquent le volet permissions.
+* **Charts dans un autre registry ECR, y compris votre propre mirror.** La connexion au chart utilise les identifiants AWS ambiants du processus qui exécute `approve` ou l&#39;executor. Ces identifiants doivent être autorisés à lire ce registry.
+
+Réservez la procédure depuis un poste de travail Kubernetes décrite ci-dessous aux deployments avec registry mirroré et approbation de plateforme Kubernetes activée. Pour l&#39;accès direct, demandez au préalable à votre account team de confirmer que votre environnement d&#39;exécution est pris en charge et dispose du profil d&#39;instance EC2 requis.
+
+<Steps>
+  <Step title="Recherchez le bundle préconfiguré" id="find-the-staged-bundle">
+    ClickHouse Cloud envoie d&#39;abord chaque bundle proposé à l&#39;executor. L&#39;executor le met en attente en tant que bundle pending et signale son sha256 dans le heartbeat. Un seul bundle en attente existe à la fois ; une proposition plus récente le remplace. L&#39;executor refuse alors la synchronisation et enregistre une commande failed dont le résultat se termine par la commande à exécuter.
+
+    ```bash
+    clicklink clctl commands list --status failed --action sync_platform
+    ```
+
+    Le champ `result` se termine par `run: clctl platform approve (pending bundle sha <sha256>)`. Sur Kubernetes, l&#39;indication est `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`. Une création ayant rencontré une définition de custom resource manquante comporte la même ligne `clctl platform approve`. Celle-ci apparaît dans sa propre commande échouée ainsi que dans l&#39;erreur affichée par `clicklink clctl instances create --wait`. Votre account team vous prévient également lorsqu&#39;une mise à jour de plateforme est proposée.
+
+    Lisez le bundle mis en attente avant de l&#39;approuver. Il contient le manifest et son sha256.
+
+    <Tabs>
+      <Tab title="VM Linux" id="inspect-vm">
+        L&#39;executor met le bundle en attente sous forme de fichier, à côté de ses ensembles d&#39;accès sur l&#39;hôte du connector :
+
+        ```bash
+        sudo cat /etc/clicklink/access/executor/platform-pending.json
+        ```
+      </Tab>
+
+      <Tab title="Kubernetes" id="inspect-kubernetes">
+        Le pod executor met le bundle en attente sur son volume d&#39;état et l&#39;expose via son API locale. Ouvrez un port-forward et lisez-le :
+
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # le namespace du connector que vous avez choisi à l'initialisation
+        kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+        curl -s http://127.0.0.1:9999/v1/platform/pending
+        ```
+
+        L&#39;API répond `404` avec `no platform bundle is staged` jusqu&#39;à l&#39;arrivée de la première proposition. Laissez le port-forward ouvert pour l&#39;étape suivante.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Exécuter approve" id="run-approve">
+    `approve` sans flags lit le bundle mis en attente et le hache, de sorte que vous approuvez exactement ce que l&#39;executor a reçu. La commande effectue le rendu de chaque chart exactement comme le fera l&#39;executor et applique la moitié « permissions » avec le contexte kube que vous choisissez. Elle crée l&#39;identité `pcm-platform` si nécessaire et génère son jeton. Elle n&#39;émet aucune requête vers votre endpoint de connecteur.
+
+    `approve` nécessite un contexte kube disposant des droits cluster-admin sur le cluster managé (`--context <name>` lorsque votre kubeconfig en contient plusieurs) ainsi que les [identifiants de registry](#registry-credentials) correspondant au mode de distribution d&#39;images de votre environnement. `--dry-run` effectue le rendu et liste la moitié « permissions » sans rien appliquer ni générer ; un accès au registry reste nécessaire pour effectuer le rendu des charts.
+
+    <Tabs>
+      <Tab title="VM Linux" id="approve-vm">
+        Exécutez la commande sur l&#39;hôte du connecteur, en tant que root, là où l&#39;executor a mis le bundle en attente :
+
+        ```bash
+        sudo clicklink clctl platform approve --config /etc/clicklink/config.yaml
+        ```
+
+        `approve` écrit le jeton dans `/etc/clicklink/access/executor/_platform`, à côté des autres credentials de l&#39;executor. La commande construit le nouveau bundle à côté du bundle actif et ne le substitue qu&#39;une fois son jeton créé : un approve en échec laisse donc intact un jeton encore valide.
+      </Tab>
+
+      <Tab title="Kubernetes" id="approve-kubernetes">
+        Pour un déploiement avec registry mis en miroir et approbation de plateforme Kubernetes activée, `approve` lit le bundle mis en attente via le port-forward de l&#39;étape précédente. La commande livre le bundle de jetons sous forme de Secret dans le namespace du connecteur, que le chart monte dans le pod. Exécutez-la depuis un poste de travail dont le kubeconfig atteint le cluster, avec une copie de la configuration du connecteur et un [accès au registry](#registry-credentials). Le chart rend la configuration dans la ConfigMap de l&#39;executor ; `approve` en a besoin uniquement pour le préfixe de namespace et n&#39;y lit aucun credential.
+
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # le namespace de connecteur que vous avez choisi lors de l'init
+        kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+          -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+        clicklink clctl platform approve --config clicklink-config.yaml \
+          --secret-namespace "${CONNECTOR_NAMESPACE}"
+        ```
+
+        `approve` lit par défaut le bundle mis en attente depuis `http://127.0.0.1:9999` ; passez `--endpoint` lorsque votre port-forward utilise un autre port local. Sans port-forward, la commande s&#39;interrompt et affiche la commande `kubectl port-forward` à lancer. Le bundle atterrit dans le Secret `clicklink-platform-bundle` (`--secret-name` pour le modifier, en accord avec le paramètre `executor.platformBundleSecret` du chart). Le pod de l&#39;executor le voit dès que le kubelet rafraîchit le montage, en une minute environ.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Confirmer" id="confirm">
+    `approve` se termine par :
+
+    ```text
+    Approved: <n> permission object(s) applied, platform token valid until <expiry>.
+    The executor may now apply the <n> workload object(s) of this bundle inside <namespaces>.
+    ```
+
+    Sur Kubernetes, une troisième ligne s&#39;ajoute : `Bundle written to Secret <namespace>/<name>; the executor pod sees it once the kubelet refreshes the mount, within about a minute.`
+
+    ClickHouse Cloud renvoie la synchronisation dès que le heartbeat suivant de l&#39;executor signale l&#39;approbation. Il patiente jusqu&#39;à 20 minutes lorsqu&#39;une synchronisation est déjà en cours et ignore tout executor dont le dernier heartbeat remonte à plus de 5 minutes. Après 3 tentatives pour un même bundle, il s&#39;arrête et votre account team la relance. L&#39;executor applique la partie charge de travail et signale la plateforme comme `synced`. Suivez l&#39;aboutissement de la synchronisation avec :
+
+    ```bash
+    clicklink clctl commands list --action sync_platform
+    ```
+
+    La commande `sync_platform` la plus récente passe à l&#39;état `completed`. L&#39;executor transmet également le statut de la plateforme et les versions des composants à ClickHouse Cloud à chaque heartbeat, de sorte que votre account team constate le même résultat.
+  </Step>
+</Steps>
+
+## La fenêtre d&#39;approbation {#the-approval-window}
+
+Une approbation émet un jeton pour l&#39;identity `pcm-platform`, valable 2 heures par défaut (`--ttl` permet de modifier cette durée). L&#39;executor ne le renouvelle jamais. Une fois expiré, l&#39;executor ne peut plus agir sur la couche plateforme et refuse la synchronisation de plateforme suivante en affichant de nouveau le message d&#39;approbation. Il s&#39;agit d&#39;un comportement voulu, indépendant de la connectivité : une approbation accordée alors que le connector est hors ligne expire tout de même selon sa propre horloge.
+
+Exécutez de nouveau `approve` dans les cas suivants :
+
+* le jeton a expiré avant la fin de la synchronisation ;
+* ClickHouse Cloud propose un bundle différent. Le sha256 que vous avez approuvé est enregistré sur le ServiceAccount `pcm-platform`, et l&#39;executor refuse toute synchronisation portant sur un autre bundle tant que vous ne l&#39;avez pas approuvé ;
+* la création d&#39;un service signale une définition de custom resource manquante.
+
+Approuver de nouveau le même bundle ne présente aucun risque et remplace le jeton. Le bundle préparé reste en place après la synchronisation : une nouvelle approbation ne nécessite donc aucune nouvelle proposition.
+
+## Ce qu&#39;accorde l&#39;approbation {#what-the-approval-grants}
+
+Vous appliquez le volet permissions : elle porte donc votre autorité ; l&#39;executor n&#39;en applique aucun élément. `approve` y appose le sha256 du bundle, et, avant de toucher à quoi que ce soit, l&#39;executor vérifie que chaque objet de permission du bundle qui lui a été transmis est présent et approuvé.
+
+L&#39;executor applique le volet charge de travail en tant que `pcm-platform`. Cette identity peut créer et mettre à jour des Secrets, ConfigMaps, Services, Deployments, Jobs et PodDisruptionBudgets, uniquement au sein des namespaces de la plateforme, ce qu&#39;impose une politique d&#39;admission. Elle peut lire les objets dont elle a besoin pour son preflight (pods, events, namespaces, ServiceAccounts, les kinds de permission ci-dessus). Elle ne peut pas :
+
+* écrire un kind à portée cluster ni un objet RBAC ;
+* effectuer `escalate`, `bind` ou `impersonate` ;
+* émettre ni renouveler son propre jeton.
+
+L&#39;identity de cycle de vie des services de l&#39;executor, `pcm-executor`, est distincte et confinée aux namespaces des services. Elle ne peut pas écrire dans les namespaces de la plateforme ; ses reads, en revanche, ne sont pas limités par la protection par prefix. Pour l&#39;énumération complète des deux identities, consultez le [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model).
+
+## Réinitialiser un cluster de test {#resetting-a-test-cluster}
+
+`clicklink clctl platform reset` est destinée aux clusters de test : cette commande désinstalle les composants de la plateforme afin de pouvoir rejouer leur première installation. Avant toute modification, elle liste les clusters ClickHouse présents dans les namespaces appartenant à ce connector et refuse de poursuivre si un service existe.
+
+Sur un cluster vide, elle désinstalle les releases de la plateforme dans l&#39;ordre inverse des dépendances. Elle supprime ensuite le bundle de jetons de plateforme de l&#39;executor : le directory local sur une VM, ou le Secret désigné par `--secret-namespace <connector-namespace>` sur Kubernetes. Les CustomResourceDefinitions, le RBAC et la StorageClass restent en place. Exécutez de nouveau `approve` avant la prochaine synchronisation de la plateforme.
+
+```bash
+sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run
+```
+
+`reset` prend le manifeste de plateforme généré sous forme de fichier (`--bundle`) ; il ne lit pas le bundle préparé. `--dry-run` vérifie la présence de services et affiche le plan sans modifier le cluster.

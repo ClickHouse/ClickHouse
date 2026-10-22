@@ -30,6 +30,8 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
+#include <Formats/FormatFilterInfo.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace CurrentMetrics
 {
@@ -47,6 +49,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace FailPoints
@@ -212,7 +215,7 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return getTableSnapshot()->getVersion() == delta_lake_metadata.getTableSnapshot()->getVersion();
 }
 
-std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context) const
+std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context, const std::optional<DataLakeTableStateSnapshot> &) const
 {
     const auto & settings = context->getSettingsRef();
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
@@ -399,6 +402,9 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     const std::string & parent_physical_name,
     const NameToNameMap & physical_names_map)
 {
+    if (physical_names_map.empty())
+        return type;
+
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
     if (!tuple_type || !tuple_type->hasExplicitNames())
         return type;
@@ -414,7 +420,7 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     for (size_t i = 0; i < element_names.size(); ++i)
     {
         const auto & element_name = element_names[i];
-        const auto full_element_name = parent_logical_name.empty() ? element_name : parent_logical_name + "." + element_name;
+        const auto full_element_name = DeltaLake::appendToLogicalPath(parent_logical_name, element_name);
 
         auto physical_name = DeltaLake::tryGetPhysicalName(full_element_name, physical_names_map);
         /// full_child_physical_path: the complete "parent.child" physical path as stored in the
@@ -450,6 +456,119 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
 
+/// Finds the field named by `name` (field names joined with dots) among `names`, `types` and the tuple elements below them,
+/// and returns its logical path. With dotted names several fields can match: the first one in schema order wins.
+static std::optional<String> findLogicalPath(
+    const Names & names, const DataTypes & types, std::string_view name, const String & parent_logical_path)
+{
+    for (size_t i = 0; i < names.size(); ++i)
+    {
+        if (!name.starts_with(names[i]))
+            continue;
+
+        auto logical_path = DeltaLake::appendToLogicalPath(parent_logical_path, names[i]);
+        if (name.size() == names[i].size())
+            return logical_path;
+
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(types[i].get());
+        if (tuple_type && name[names[i].size()] == '.')
+        {
+            if (auto found = findLogicalPath(
+                    tuple_type->getElementNames(), tuple_type->getElements(), name.substr(names[i].size() + 1), logical_path))
+                return found;
+        }
+    }
+    return {};
+}
+
+/// Returns the key of `physical_names_map` for a name in storage: a table column, or a tuple element of one named by joining
+/// element names with dots. A table column is that column even if a nested field has the same joined name. A tuple element
+/// is looked up in the type of its table column, whose field order can differ from the Delta schema when the schema is declared.
+static String getLogicalPath(
+    const String & name_in_storage,
+    const ColumnsDescription & table_columns,
+    const NamesAndTypesList & delta_schema,
+    const NameToNameMap & physical_names_map)
+{
+    if (physical_names_map.empty())
+        return name_in_storage;
+
+    auto column_path = DeltaLake::appendToLogicalPath({}, name_in_storage);
+    if (table_columns.has(name_in_storage) && physical_names_map.contains(column_path))
+        return column_path;
+
+    if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_storage); column && column->isSubcolumn())
+    {
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column->getTypeInStorage().get()))
+        {
+            auto parent_logical_path = getLogicalPath(column->getNameInStorage(), table_columns, delta_schema, physical_names_map);
+            if (auto found = findLogicalPath(
+                    tuple_type->getElementNames(), tuple_type->getElements(), column->getSubcolumnName(), parent_logical_path))
+                return *found;
+        }
+    }
+
+    return findLogicalPath(delta_schema.getNames(), delta_schema.getTypes(), name_in_storage, {}).value_or(name_in_storage);
+}
+
+static bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name
+        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
+}
+
+static std::vector<ISerialization::SubstreamPath> getStaticStreams(const DataTypePtr & type)
+{
+    std::vector<ISerialization::SubstreamPath> streams;
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
+    auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
+    data.serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & path) { streams.push_back(path); }, data);
+    return streams;
+}
+
+/// Returns the name in `physical_type` of the subcolumn `subcolumn_name` of `type`. The types differ only in tuple element
+/// names, so they have the same static streams in the same order and the subcolumn has the same path in both.
+static String getPhysicalSubcolumnName(const DataTypePtr & type, const DataTypePtr & physical_type, const String & subcolumn_name)
+{
+    if (type->equals(*physical_type))
+        return subcolumn_name;
+
+    auto subcolumn = type->tryGetSubcolumnInfo(subcolumn_name);
+    if (!subcolumn)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no subcolumn {} in type {}", subcolumn_name, type->getName());
+
+    const auto streams = getStaticStreams(type);
+    const auto physical_streams = getStaticStreams(physical_type);
+    if (streams.size() != physical_streams.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Types {} and {} have different streams", type->getName(), physical_type->getName());
+
+    /// A dynamic subcolumn is a static one followed by a path inside its data, which is the same in both types.
+    const auto & path = subcolumn->substreams_path;
+    for (size_t len = path.size(); len > 0; --len)
+    {
+        for (size_t i = 0; i < streams.size(); ++i)
+        {
+            if (streams[i].size() < len || !ISerialization::hasSubcolumnForPath(streams[i], len)
+                || !std::equal(path.begin(), path.begin() + len, streams[i].begin(), isSameSubstream))
+                continue;
+
+            auto name = ISerialization::getSubcolumnNameForStream(streams[i], len);
+            auto physical_name = ISerialization::getSubcolumnNameForStream(physical_streams[i], len);
+            if (len == path.size())
+                return physical_name;
+            if (subcolumn_name.starts_with(name + "."))
+                return physical_name + subcolumn_name.substr(name.size());
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR, "Cannot find subcolumn {} of type {} in type {}", subcolumn_name, type->getName(), physical_type->getName());
+}
+
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
@@ -457,10 +576,13 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
+    const ColumnsDescription & table_columns,
+    const NamesAndTypesList & delta_schema,
     LoggerPtr log)
 {
-    auto physical_name_in_storage = DeltaLake::getPhysicalName(column.getNameInStorage(), physical_names_map);
-    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_name_in_storage, physical_names_map);
+    const auto logical_path = getLogicalPath(column.getNameInStorage(), table_columns, delta_schema, physical_names_map);
+    auto physical_name_in_storage = DeltaLake::getPhysicalName(logical_path, physical_names_map);
+    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), logical_path, physical_name_in_storage, physical_names_map);
 
     /// Take column from read_schema, but only use it to check if column is readable,
     /// because read_schema_column.type can be different from physical_type_in_storage,
@@ -480,11 +602,11 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     NameAndTypePair result_column;
     if (column.isSubcolumn())
     {
-        result_column = NameAndTypePair(
-            physical_name_in_storage,
-            column.getSubcolumnName(),
-            physical_type_in_storage,
-            column.type);
+        auto physical_subcolumn_name = getPhysicalSubcolumnName(column.getTypeInStorage(), physical_type_in_storage, column.getSubcolumnName());
+        auto physical_subcolumn_type = column.getTypeInStorage()->equals(*physical_type_in_storage)
+            ? column.type
+            : physical_type_in_storage->getSubcolumnType(physical_subcolumn_name);
+        result_column = NameAndTypePair(physical_name_in_storage, physical_subcolumn_name, physical_type_in_storage, physical_subcolumn_type);
     }
     else
     {
@@ -529,6 +651,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
     const auto physical_names_map = snapshot->getPhysicalNamesMap();
+    const auto & delta_schema = snapshot->getTableSchema();
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto read_columns_desc = ColumnsDescription(snapshot->getReadSchema());
     std::unordered_set<std::string> partition_columns;
     {
@@ -570,6 +694,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
+            storage_columns,
+            delta_schema,
             log);
         name_and_type = result_name_and_type;
     }
@@ -606,6 +732,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
+            storage_columns,
+            delta_schema,
             log);
 
         if (readable)
@@ -615,7 +743,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     for (const auto & name_and_type : info.columns_description)
         info.columns_description.rename(
             name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+            DeltaLake::getPhysicalName(getLogicalPath(name_and_type.name, storage_columns, delta_schema, physical_names_map), physical_names_map));
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
@@ -626,12 +754,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    const StorageID & /* table_id */,
+    const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     DeltaLakeMetadata::checkInsertIsPossible(context);
 
@@ -648,17 +776,58 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
+    auto write_object_storage = object_storage_;
+    auto write_kernel_helper = kernel_helper;
+    if (catalog && object_storage_->hasCredentialsRefreshCallback())
+    {
+        if (auto write_credentials_callback = catalog->getWriteCredentialsConfigurationCallback(table_id))
+        {
+            write_object_storage = configuration->createObjectStorage(context, /* is_readonly */ false, write_credentials_callback);
+            if (!write_object_storage->tryRefreshCredentialsViaCallback())
+                throw Exception(
+                    ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "The catalog did not vend storage credentials for writing into table {}",
+                    table_id.getNameForLogs());
+            write_kernel_helper = DB::getKernelHelper(configuration, write_object_storage);
+        }
+    }
+
+    /// The kernel opens the table at its latest version for the transaction, so an older pinned
+    /// snapshot's schema is not the one a reader resolves this data file against.
+    std::unordered_set<String> table_timestamp_ntz_paths;
+    if (snapshot_version.has_value())
+    {
+        auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
+            /* version */ std::nullopt, kernel_helper, object_storage, log);
+        if (latest_snapshot->getVersion() == *snapshot_version)
+            table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+    }
+    else
+        table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(
+        write_kernel_helper, snapshot->getTableSchema(), std::move(table_timestamp_ntz_paths));
     delta_transaction->create(partition_columns);
+
+    /// ORC and Avro read any mapper as Iceberg metadata, so only Parquet may be handed one.
+    const auto & timestamp_ntz_paths = delta_transaction->getTimestampNtzPaths();
+    FormatFilterInfoPtr format_filter_info;
+    if (!timestamp_ntz_paths.empty() && boost::iequals(configuration->format, "Parquet"))
+    {
+        auto column_mapper = std::make_shared<ColumnMapper>();
+        column_mapper->setLocalTimestampPaths(std::unordered_set<String>(timestamp_ntz_paths));
+        format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+    }
 
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
             delta_transaction,
-            object_storage_,
+            write_object_storage,
             context,
             sample_block,
             format_settings,
+            format_filter_info,
             configuration->format,
             configuration->compression_method);
     }
@@ -666,10 +835,11 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction,
         partition_columns,
-        object_storage_,
+        write_object_storage,
         context,
         sample_block,
         format_settings,
+        format_filter_info,
         configuration->format,
         configuration->compression_method);
 }
@@ -735,7 +905,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
     auto schema_list = columns.getAllPhysical();
 
-    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list);
+    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list, std::unordered_set<String>{});
 
     /// Test hook: pause after the existence check so a concurrent CREATE can write the `_delta_log`
     /// first, exercising the lost-race attach path in the catch below.

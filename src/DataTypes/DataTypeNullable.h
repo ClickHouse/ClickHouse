@@ -53,9 +53,15 @@ public:
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return nested_data_type;
+    }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr nested_data_type;

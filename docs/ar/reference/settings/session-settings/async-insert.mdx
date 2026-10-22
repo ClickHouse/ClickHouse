@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="async_insert">
-  ## async_insert
-</div>
+## async_insert {#async_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كانت القيمة true، تُخزَّن البيانات من استعلام INSERT في قائمة انتظار، ثم تُفرَّغ لاحقًا إلى الجدول في الخلفية. وإذا كانت wait&#95;for&#95;async&#95;insert تساوي false، فستُعالَج عملية INSERT بشكل شبه فوري، وإلا فسينتظر العميل حتى تُفرَّغ البيانات إلى الجدول
 
-<div id="async_insert_busy_timeout_decrease_rate">
-  ## async_insert_busy_timeout_decrease_rate
-</div>
+## async_insert_busy_timeout_decrease_rate {#async_insert_busy_timeout_decrease_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 معدل النمو الأسيّ الذي تنخفض وفقه مهلة الإدراج غير المتزامن التكيفية
 
-<div id="async_insert_busy_timeout_increase_rate">
-  ## async_insert_busy_timeout_increase_rate
-</div>
+## async_insert_busy_timeout_increase_rate {#async_insert_busy_timeout_increase_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -43,9 +37,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 معدل النمو الأُسّي الذي تزداد وفقه مهلة الإدراج غير المتزامن التكيفية
 
-<div id="async_insert_busy_timeout_max_ms">
-  ## async_insert_busy_timeout_max_ms
-</div>
+## async_insert_busy_timeout_max_ms {#async_insert_busy_timeout_max_ms}
 
 **الأسماء البديلة**: `async_insert_busy_timeout_ms`
 
@@ -57,9 +49,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيمة الافتراضية في Cloud: `1000` (1s).
 
-<div id="async_insert_busy_timeout_min_ms">
-  ## async_insert_busy_timeout_min_ms
-</div>
+## async_insert_busy_timeout_min_ms {#async_insert_busy_timeout_min_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="50" />
 
@@ -67,9 +57,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كان الضبط التلقائي مُمكّنًا عبر async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout، فهذا هو الحد الأدنى للوقت الذي يجب انتظاره قبل تفريغ البيانات المجمعة لكل استعلام منذ ظهور أول البيانات. كما تُستخدم أيضًا كقيمة ابتدائية للخوارزمية التكيفية
 
-<div id="async_insert_deduplicate">
-  ## async_insert_deduplicate
-</div>
+## async_insert_deduplicate {#async_insert_deduplicate}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -77,9 +65,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 لا يسري هذا الإعداد إلا عندما يكون [`deduplicate_insert`](/ar/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) مضبوطًا على `backward_compatible_choice`.
 
-<div id="async_insert_max_data_size">
-  ## async_insert_max_data_size
-</div>
+## async_insert_max_data_size {#async_insert_max_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
@@ -89,18 +75,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 Cloud default value: `104857600` (100 MiB).
 
-<div id="async_insert_max_query_number">
-  ## async_insert_max_query_number
-</div>
+## async_insert_max_query_number {#async_insert_max_query_number}
 
 <SettingsInfoBlock type="UInt64" default_value="450" />
 
 الحد الأقصى لعدد استعلامات إدراج قبل تنفيذ الإدراج.
 لا يسري هذا إلا إذا كانت قيمة الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings/async-insert#async_insert_deduplicate) تساوي 1.
 
-<div id="async_insert_poll_timeout_ms">
-  ## async_insert_poll_timeout_ms
-</div>
+## async_insert_poll_timeout_ms {#async_insert_poll_timeout_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="10" />
 
@@ -108,9 +90,15 @@ Cloud default value: `104857600` (100 MiB).
 
 مهلة لاستطلاع البيانات من قائمة انتظار الإدراج غير المتزامن
 
-<div id="async_insert_use_adaptive_busy_timeout">
-  ## async_insert_use_adaptive_busy_timeout
-</div>
+## async_insert_select_as_async_insert {#async_insert_select_as_async_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "تفعيل عمليات الإدراج غير المتزامنة افتراضيًا لاستعلامات `INSERT ... SELECT`."}]}]} />
+
+يحدد هذا الإعداد ما إذا كان بإمكان استعلام `INSERT ... SELECT` الذي يبدؤه المستخدم استخدام قائمة انتظار الإدراج غير المتزامن، وذلك عندما يكون `async_insert` مفعّلًا ويكون الاستعلام مؤهلًا (أي كتلة صغيرة واحدة تُدرَج في وجهة من عائلة `MergeTree` دون وجود عروض تابعة). عند تعطيل هذا الإعداد، يُنفَّذ `INSERT ... SELECT` دائمًا بشكل متزامن بصرف النظر عن قيمة `async_insert`. أما عمليات الإدراج الداخلية (العرض المُجسَّد القابل للتحديث، و`POPULATE`، و`CREATE TABLE ... AS SELECT`) فتُنفَّذ دائمًا بشكل متزامن وتتجاهل هذا الإعداد.
+
+## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
