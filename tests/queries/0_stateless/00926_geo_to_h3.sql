@@ -58,4 +58,29 @@ ORDER BY lat DESC;
 SELECT geoToH3(lat, 30., 5)
 FROM values('lat Float64', (30.), (120.)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
+-- Accept numeric coordinate types and integer resolution types.
+SELECT geoToH3(30, 120, 5) = geoToH3(30., 120., toUInt8(5));
+SELECT geoToH3(toFloat32(30.5), toInt16(120), toInt8(5)) = geoToH3(toFloat64(toFloat32(30.5)), 120., 5);
+SELECT geoToH3(toBFloat16(30.5), toInt128(120), toUInt128(5)) = geoToH3(toFloat64(toBFloat16(30.5)), 120., 5);
+SELECT geoToH3(toDecimal64(30.5, 1), toDecimal32(120, 1), toInt16(5)) = geoToH3(30.5, 120., 5);
+SELECT geoToH3(toInt256(30), toUInt256(120), toUInt256(5)) = geoToH3(30., 120., 5);
+SELECT geoToH3(toInt16(30), toUInt32(120), number) = geoToH3(30., 120., 0) FROM numbers(1);
+SELECT geoToH3(toUInt32(120), toInt16(30), number) = geoToH3(120., 30., 0) FROM numbers(1) SETTINGS geotoh3_argument_order = 'lon_lat';
+SELECT geoToH3(30, 120, toUInt128(number)) = geoToH3(30., 120., toUInt8(0)) FROM numbers(1);
+SELECT geoToH3(30, 120, toInt16(15)) = geoToH3(30., 120., toUInt8(15));
+SELECT geoToH3(30, 120, toInt32(0)) = geoToH3(30., 120., toUInt8(0));
+
+-- Reject invalid resolutions before narrowing to the H3 resolution type.
+SELECT geoToH3(30, 120, toInt8(-1)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toInt256(-1)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toUInt16(16)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toUInt64(256)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toUInt128('18446744073709551616')); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toUInt256('340282366920938463463374607431768211456')); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, number + 256) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toInt64(number) - 1) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT geoToH3(30, 120, toFloat64(5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT geoToH3(toString(30), 120, 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT geoToH3(120, 30, 5); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 DROP TABLE table1

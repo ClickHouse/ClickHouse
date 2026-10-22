@@ -5,11 +5,13 @@
 #include <array>
 #include <cmath>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <base/range.h>
@@ -27,7 +29,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -58,7 +59,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Float, Float, UInt8) -> UInt64";
+        return "(Number, Number, Integer) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -69,56 +70,19 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
+        const auto float64_type = std::make_shared<DataTypeFloat64>();
         for (auto & argument : non_const_arguments)
+        {
             argument.column = argument.column->convertToFullColumnIfConst();
-
-        const ColumnFloat64 * col_lat = nullptr;
-        const ColumnFloat64 * col_lon = nullptr;
-        size_t lat_arg = 0;
-        size_t lon_arg = 0;
-
-        if (geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT)
-        {
-            lon_arg = 0;
-            lat_arg = 1;
-        }
-        else
-        {
-            lat_arg = 0;
-            lon_arg = 1;
+            argument.column = castColumn(argument, float64_type);
         }
 
-        col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[lat_arg].column.get());
-        col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[lon_arg].column.get());
+        const size_t lat_arg = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT ? 1 : 0;
+        const size_t lon_arg = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT ? 0 : 1;
 
-        if (!col_lat)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be Float64.",
-                arguments[lat_arg].type->getName(),
-                lat_arg + 1,
-                getName());
-
-        const auto & data_lat = col_lat->getData();
-
-        if (!col_lon)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be Float64.",
-                arguments[lon_arg].type->getName(),
-                lon_arg + 1,
-                getName());
-        const auto & data_lon = col_lon->getData();
-
-        const auto * col_res = checkAndGetColumn<ColumnUInt8>(non_const_arguments[2].column.get());
-        if (!col_res)
-            throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be UInt8.",
-                    arguments[2].type->getName(),
-                    3,
-                    getName());
-        const auto & data_res = col_res->getData();
+        const auto & data_lat = assert_cast<const ColumnFloat64 &>(*non_const_arguments[lat_arg].column).getData();
+        const auto & data_lon = assert_cast<const ColumnFloat64 &>(*non_const_arguments[lon_arg].column).getData();
+        const auto & data_res = assert_cast<const ColumnFloat64 &>(*non_const_arguments[2].column).getData();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -128,13 +92,14 @@ public:
         {
             const double lon = data_lon[row];
             const double lat = data_lat[row];
-            const UInt8 res = data_res[row];
-
-            if (res > MAX_H3_RES)
+            /// Valid integer resolutions are exactly representable as Float64.
+            /// Check the range before converting to the narrow type required by H3.
+            const double resolution = data_res[row];
+            if (resolution < 0 || resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                    static_cast<uint8_t>(res),
+                    resolution,
                     getName(),
                     MAX_H3_RES);
 
@@ -150,7 +115,7 @@ public:
             coord.lat = degsToRads(lat);
 
             H3Index hindex = 0;
-            H3Error err = latLngToCell(&coord, res, &hindex);
+            H3Error err = latLngToCell(&coord, static_cast<UInt8>(resolution), &hindex);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lng, err);
 
@@ -175,9 +140,9 @@ The previous behavior can be restored using setting `geotoh3_argument_order = 'l
     )";
     FunctionDocumentation::Syntax syntax = "geoToH3(lat, lon, resolution)";
     FunctionDocumentation::Arguments arguments = {
-        {"lat", "Latitude in degrees.", {"Float64"}},
-        {"lon", "Longitude in degrees.", {"Float64"}},
-        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+        {"lat", "Latitude in degrees.", {"(U)Int*", "Float*", "Decimal"}},
+        {"lon", "Longitude in degrees.", {"(U)Int*", "Float*", "Decimal"}},
+        {"resolution", "Index resolution with range `[0, 15]`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns the H3 index number, or `0` in case of error.",
