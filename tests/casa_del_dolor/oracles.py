@@ -73,13 +73,15 @@ class ElOraculoDeTablas:
 
         try:
             # Limit to tables only, exclude not deterministic tables, and tables not persisted after restarts
-            tables_str = client.query("""
+            tables_str = client.query(
+                """
                 SELECT database, name, engine
                 FROM system.tables
                 WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
                 AND NOT is_temporary
                 AND NOT match(engine, '.*View.*|Dictionary|Merge$|GenerateRandom|Memory|Buffer|.*Set');
-                """)
+                """
+            )
             if not isinstance(tables_str, str) or tables_str == "":
                 logger.warn(f"No tables found to fetch on node {next_node.name}")
                 return None
@@ -174,26 +176,20 @@ class ElOraculoDeTablas:
         "replication queue exception(s)",
         "LOGICAL_ERROR(s) in text_log",
         "CORRUPTED_DATA(s) in text_log",
-        "CHECKSUM_DOESNT_MATCH error(s) in text_log",
-        "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
-        "stuck replication queue task(s) (>5 retries)",
     ]
 
     DETAIL_QUERIES = [
         "SELECT database, table, name FROM system.detached_parts WHERE startsWith(name, 'broken') LIMIT 3;",
         "SELECT database, table, lost_part_count FROM system.replicas WHERE lost_part_count > 0 LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%') ORDER BY event_time DESC LIMIT 3;",
         "",
         "",
         "SELECT database, table, last_exception FROM system.replicas WHERE readonly_start_time IS NOT NULL LIMIT 3;",
         "SELECT database, table, part_name, exception FROM system.part_log WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3;",
         "SELECT database, table, last_exception FROM system.replication_queue WHERE last_exception != '' LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3;",
-        "SELECT database, table, type, last_exception, num_tries FROM system.replication_queue WHERE last_exception != '' AND num_tries > 5 ORDER BY num_tries DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3;",
     ]
 
     def run_health_check(
@@ -206,45 +202,39 @@ class ElOraculoDeTablas:
             )
             info_str = ""
             try:
-                info_str = client.query("""
+                info_str = client.query(
+                    """
                     SELECT x FROM (
                     (SELECT count() x, 1 y FROM system.detached_parts WHERE startsWith("name", 'broken'))
                      UNION ALL
                     (SELECT ifNull(sum(lost_part_count), 0), 2 y FROM system.replicas)
                      UNION ALL
-                    -- Single scan of text_log for all pattern-based checks (3, 8, 10, 11, 12)
-                    (SELECT t.1 x, t.2 y FROM (
-                     SELECT arrayJoin(arrayZip(
-                       [countIf(msg ILIKE concat('%','POTENTIALLY','_BROKEN','_DATA','_PART','%')),
-                        countIf(msg ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),
-                        countIf(msg ILIKE concat('%','LOGICAL','_ERROR','%')),
-                        countIf(msg ILIKE concat('%','CORRUPTED','_DATA','%')),
-                        countIf(msg ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),
-                        countIf(msg ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],
-                       [toUInt64(3), toUInt64(8), toUInt64(10), toUInt64(11), toUInt64(12), toUInt64(13)]
-                     )) AS t
-                     -- Match the server's own words: it echoes the statement at Debug/Trace and quotes it after `(in query:`
-                     FROM (SELECT splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] AS msg
-                           FROM system.text_log
-                           WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information')) tlog)
+                    (SELECT count() x, 3 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%'))
                      UNION ALL
                     (SELECT count() x, 4 y FROM clusterAllReplicas(default, system.clusters)
-                     WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 10000)
+                     WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)
                      UNION ALL
-                    -- Aggregated like every other check: unaggregated it emits one row per replica and shifts all later checks
-                    (SELECT greatest(sum(value), 0)::UInt64 x, 5 y FROM clusterAllReplicas(default, system.metrics) WHERE "name" = 'SharedCatalogDropDetachLocalTablesErrors')
+                    (SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, system.metrics) WHERE "name" = 'SharedCatalogDropDetachLocalTablesErrors')
                      UNION ALL
                     (SELECT count() x, 6 y FROM clusterAllReplicas(default, system.replicas) WHERE readonly_start_time IS NOT NULL)
                      UNION ALL
                     (SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, system.part_log)
                      WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)
                      UNION ALL
+                    (SELECT count() x, 8 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%'))
+                     UNION ALL
                     (SELECT count() x, 9 y FROM system.replication_queue WHERE last_exception != '')
                      UNION ALL
-                    (SELECT count() x, 14 y FROM system.replication_queue
-                     WHERE last_exception != '' AND num_tries > 5)
+                    (SELECT count() x, 10 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%'))
+                     UNION ALL
+                    (SELECT count() x, 11 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%'))
                     ) tx ORDER BY y SETTINGS use_query_condition_cache = 0, use_query_cache = 0;
-                    """)
+                    """
+                )
             except Exception as ex:
                 logger.warn(
                     f"Error occurred while fetching monitoring information for node {next_node.name}: {ex}"

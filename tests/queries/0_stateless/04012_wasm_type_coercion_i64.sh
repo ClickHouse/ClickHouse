@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
-# Int64 widening coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
-# UInt64 → Int64: same i64 WASM kind → accepted.
-# Int32/smaller (i32) → Int64 (i64): integer widening → accepted.
-# Float → Int64: cross-kind → rejected.
+# Int64 coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
+# UInt64 → Int64 is same i64 WASM kind → accepted.
+# Int32 and smaller → i32 WASM kind → rejected for Int64 parameter.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,33 +36,25 @@ SELECT wasm_raw_i64(toInt64(0));
 -- ROW_DIRECT: UInt64 → Int64 accepted (same i64 WASM kind).
 SELECT wasm_raw_i64(toUInt64(42));
 
--- ROW_DIRECT: small-int widening (i32 → i64).
-SELECT wasm_raw_i64(toInt8(127));
-SELECT wasm_raw_i64(toInt16(-1000));
-SELECT wasm_raw_i64(toInt32(2147483647));
-SELECT wasm_raw_i64(toUInt8(255));
-SELECT wasm_raw_i64(toUInt16(65535));
-SELECT wasm_raw_i64(toUInt32(4294967295));
+-- ROW_DIRECT: Int32 → Int64 rejected (i32 ≠ i64 WASM kind).
+SELECT wasm_raw_i64(toInt32(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- ROW_DIRECT: Float → Int64 cross-kind must still be rejected.
+-- ROW_DIRECT: small ints → i32 WASM kind → rejected for i64 parameter.
+SELECT wasm_raw_i64(toInt8(1));  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- ROW_DIRECT: Float → Int64 cross-kind rejected.
 SELECT wasm_raw_i64(toFloat64(1.0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT wasm_raw_i64(toFloat32(1.0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- BUFFERED_V1 RowBinary: exact declared type.
 SELECT wasm_rb_i64(toInt64(9223372036854775807));
 SELECT wasm_rb_i64(toInt64(-9223372036854775808));
 SELECT wasm_rb_i64(toInt64(0));
 
--- BUFFERED_V1: UInt64 → Int64: same i64 kind.
+-- BUFFERED_V1: UInt64 → Int64: getArgumentsBlock() casts UInt64 column to Int64 before 8-byte LE serialization.
 SELECT wasm_rb_i64(toUInt64(42));
 
--- BUFFERED_V1: small-int widening (i32 → i64): getArgumentsBlock() casts to Int64 before 8-byte LE serialization.
-SELECT wasm_rb_i64(toInt8(127));
-SELECT wasm_rb_i64(toInt16(-1000));
-SELECT wasm_rb_i64(toInt32(2147483647));
-SELECT wasm_rb_i64(toUInt8(255));
-SELECT wasm_rb_i64(toUInt16(65535));
-SELECT wasm_rb_i64(toUInt32(4294967295));
+-- BUFFERED_V1: Int32 → Int64 rejected (i32 ≠ i64).
+SELECT wasm_rb_i64(toInt32(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Multiple rows.
 SELECT wasm_rb_i64(toInt64(number)) FROM numbers(4);

@@ -127,7 +127,6 @@ class ASTDescribeQuery : public ASTQueryWithOutput
 {
 public:
     ASTPtr table_expression;
-    bool temporary = false;
 
     String getID(char) const override { return "DescribeQuery"; }
 
@@ -149,7 +148,8 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (temporary ? "DESCRIBE TEMPORARY TABLE" : "DESCRIBE TABLE");
+        ostr
+                      << "DESCRIBE TABLE";
         table_expression->format(ostr, settings, state, frame);
     }
 

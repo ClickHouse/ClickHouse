@@ -1,5 +1,4 @@
 #include <Interpreters/Set.h>
-#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
@@ -16,44 +15,8 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
-    if (query_tree && !apply_query_level_final_if_no_modifiers)
-        return false;
-
     const auto & select = query->as<ASTSelectQuery &>();
     return select.final();
-}
-
-bool SelectQueryInfo::isStream() const
-{
-    return table_expression_modifiers && table_expression_modifiers->hasStream();
-}
-
-/// With a query tree, every table expression carries its own modifiers, while the query AST holds
-/// only the `SAMPLE` of the left-most table. A table expression without modifiers is not sampled.
-std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleSizeRatio() const
-{
-    if (table_expression_modifiers)
-        return table_expression_modifiers->getSampleSizeRatio();
-
-    if (query_tree)
-        return {};
-
-    if (auto sample_size = query->as<ASTSelectQuery &>().sampleSize())
-        return sample_size->as<ASTSampleRatio &>().ratio;
-    return {};
-}
-
-std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffsetRatio() const
-{
-    if (table_expression_modifiers)
-        return table_expression_modifiers->getSampleOffsetRatio();
-
-    if (query_tree)
-        return {};
-
-    if (auto sample_offset = query->as<ASTSelectQuery &>().sampleOffset())
-        return sample_offset->as<ASTSampleRatio &>().ratio;
-    return {};
 }
 
 std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
@@ -69,7 +32,7 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
             if (table_expression_data.hasAliasColumn(column_name))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
+            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
         }
     }
     return node_name_to_input_node_column;
@@ -83,28 +46,25 @@ PrewhereInfo PrewhereInfo::clone() const
     prewhere_info.prewhere_column_name = prewhere_column_name;
     prewhere_info.remove_prewhere_column = remove_prewhere_column;
     prewhere_info.need_filter = need_filter;
-    prewhere_info.query_condition_cache_attribution = query_condition_cache_attribution;
 
     return prewhere_info;
 }
 
-/// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     prewhere_actions.serialize(ctx.out, ctx.registry);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
-    writeBinary(need_filter, ctx.out);
 }
 
 PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     PrewhereInfo prewhere_info;
 
-    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
-    readBinary(prewhere_info.need_filter, ctx.in);
+    prewhere_info.need_filter = true;
 
     return prewhere_info;
 }
@@ -120,7 +80,7 @@ FilterDAGInfo FilterDAGInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     FilterDAGInfo filter_dag_info;
 
-    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(filter_dag_info.column_name, ctx.in);
     readBinary(filter_dag_info.do_remove_column, ctx.in);
 

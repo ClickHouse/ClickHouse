@@ -31,8 +31,6 @@ public:
 
     ~LimitReadBuffer() override;
 
-    bool poll(size_t timeout_microseconds) override;
-
 private:
     ReadBuffer * in;
     std::unique_ptr<ReadBuffer> holder;

@@ -76,17 +76,16 @@ PartitionPruner::PartitionPruner(
         partition_key = DB::KeyDescription::getKeyFromAST(
             partition_key_ast,
             partition_columns_description,
-            {},
             context);
 
-        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context, /* boolean_context */ true);
+        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
         key_condition.emplace(
             inverted_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */);
     }
     if (!physical_names_map_.empty())
     {
         for (auto & name : physical_partition_columns)
-            name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+            name = getPhysicalName(name, physical_names_map_);
     }
 }
 

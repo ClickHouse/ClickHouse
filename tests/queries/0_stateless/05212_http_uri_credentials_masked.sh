@@ -5,9 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A credential embedded in an HTTP URI must never appear in an error message, in SHOW CREATE output,
-# or in system.query_log. Only the masked form scheme://[HIDDEN]@host (or X-Amz-Signature=[HIDDEN] for
-# a presigned URL) may be shown.
+# A credential embedded in an HTTP URI must never appear in an error message. Only the masked form
+# scheme://[HIDDEN]@host (or X-Amz-Signature=[HIDDEN] for a presigned URL) may be shown.
 
 PW="pwleakprobe9f2a"
 URI="http://leakuser:${PW}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping"
@@ -58,23 +57,6 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DICTIONARY dict_uri_leak (id UInt64, val St
 ${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY dict_uri_leak" 2>&1 \
     | grep -F 'in file/uri' | assert_shape "dictionary_reload" "$PW" "$USERINFO_SHAPE"
 
-# 2b. SHOW CREATE must mask the password.
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE DICTIONARY dict_uri_leak" 2>&1 | assert_shape "show_create" "$PW" "$USERINFO_SHAPE"
-
-# 3. system.query_log must store neither the query text nor the exception with the cleartext password.
-#    Print the offending rows rather than a count: on success this selects nothing (the reference has
-#    no line here), and any row printed on failure is the culprit - its query and exception show what
-#    leaked. The needle is split so that this checking query does not itself contain the contiguous
-#    secret.
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT type, query, exception
-    FROM system.query_log
-    WHERE event_date >= yesterday()
-      AND current_database = currentDatabase()
-      AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')
-    FORMAT Vertical"
-
 # 4. Schema inference stores the source URL in system.schema_inference_cache; the credential in its
 #    userinfo must be masked there too. Inferring a schema from a credentialed /ping URL (which needs
 #    no auth and whose "Ok." body is inferrable as one column) populates the cache.
@@ -111,25 +93,5 @@ elif echo "$B_OUT" | grep -qF 'Authentication failed'; then
 else
     echo "body_not_overmasked: FAIL mangled"
 fi
-
-# 7. A bearer token that the remote server reflects in its error body must be scrubbed. The URL
-#    authenticates through its parameters, which take precedence over the 'Authorization' header, so the
-#    remote runs the query and throwIf echoes the token; concat() keeps the token out of the URI, so the
-#    body is its only carrier. Also covers the scheme spellings an HTTP peer accepts: a leading space and
-#    lower case. Grep the "Received error from remote server" line: the client echoes the submitted query.
-TOK="tok${CLICKHOUSE_TEST_UNIQUE_NAME}"
-for CASE in "plain|Bearer" "leading_space| Bearer" "lower_case|bearer"; do
-    LABEL="${CASE%%|*}"
-    SCHEME="${CASE#*|}"
-    T_OUT=$(${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?user=default&query=SELECT+throwIf(1,concat(''tok'',''${CLICKHOUSE_TEST_UNIQUE_NAME}''))', 'CSV', 'x UInt8', headers('Authorization' = '${SCHEME} ${TOK}')) SETTINGS http_max_tries = 1" 2>&1 \
-        | grep -F 'Received error from remote server')
-    if echo "$T_OUT" | grep -qF "$TOK"; then
-        echo "bearer_body_scrubbed_${LABEL}: FAIL cleartext"
-    elif echo "$T_OUT" | grep -qF '[HIDDEN]'; then
-        echo "bearer_body_scrubbed_${LABEL}: OK"
-    else
-        echo "bearer_body_scrubbed_${LABEL}: FAIL no reflected body"
-    fi
-done
 
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS dict_uri_leak"

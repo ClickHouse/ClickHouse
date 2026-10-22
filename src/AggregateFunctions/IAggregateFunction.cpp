@@ -2,7 +2,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -16,18 +15,6 @@ extern const int NOT_IMPLEMENTED;
 DataTypePtr IAggregateFunction::getStateType() const
 {
     return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
-}
-
-DataTypePtr IAggregateFunction::getStateTypeWithVersionOf(const IAggregateFunction & nested) const
-{
-    std::optional<size_t> version;
-    /// The state type has to be held in a named variable: `getStateType` returns a fresh
-    /// `DataTypePtr` by value, and a temporary would be destroyed at the end of the full
-    /// expression, leaving `nested_state` dangling.
-    const DataTypePtr nested_state_type = nested.getStateType();
-    if (const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get()))
-        version = nested_state->getVersionIfExplicit();
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const
@@ -99,18 +86,12 @@ bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & 
 {
     const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
     const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
-
     return lhs_base.haveSameStateRepresentationImpl(rhs_base);
 }
 
 bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const
 {
     return getStateType()->equals(*rhs.getStateType());
-}
-
-bool IAggregateFunction::haveSameDefinition(const IAggregateFunction & rhs) const
-{
-    return assert_cast<const DataTypeAggregateFunction &>(*getStateType()).equalsIgnoringVariant(*rhs.getStateType());
 }
 
 void IAggregateFunction::parallelizeMergePrepare(
@@ -120,26 +101,7 @@ void IAggregateFunction::parallelizeMergePrepare(
         ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
 }
 
-char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, char *, std::optional<size_t>) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
-}
-
-void IAggregateFunction::mergeStateFromDifferentVariant(
-    AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "mergeStateFromDifferentVariant() is not implemented for aggregate function '{}' ({} state variant). "
-        "Cannot merge state produced by '{}' ({} state variant)",
-        getName(),
-        toString(getStateVariant()),
-        rhs.getName(),
-        toString(rhs.getStateVariant()));
-}
-
-void IAggregateFunction::mergeImpl(
+void IAggregateFunction::merge(
     AggregateDataPtr __restrict /*place*/,
     ConstAggregateDataPtr /*rhs*/,
     ThreadPool & /*thread_pool*/,
@@ -149,21 +111,6 @@ void IAggregateFunction::mergeImpl(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
 }
 
-void IAggregateFunction::parallelizeMergeMulti(
-    AggregateDataPtrs & places,
-    ThreadPool & thread_pool,
-    std::atomic<bool> & is_cancelled,
-    Arena * arena) const
-{
-    /// Default: fall back to pairwise parallel merge.
-    for (size_t i = 1; i < places.size(); ++i)
-    {
-        if (is_cancelled.load(std::memory_order_seq_cst))
-            return;
-        merge(places[0], places[i], thread_pool, is_cancelled, arena);
-    }
-}
-
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
 {
     if (isState())
@@ -171,23 +118,6 @@ void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place
             ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented", getName());
 
     insertResultInto(place, to, arena);
-}
-
-void IAggregateFunction::addBatchSparseSinglePlace(
-    size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
-{
-    const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-    const auto * values = &column_sparse.getValuesColumn();
-    const auto & offsets = column_sparse.getOffsetsData();
-
-    auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
-    auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
-
-    size_t num_defaults = (row_end - row_begin) - (to - from);
-    if (from < to)
-        addBatchSinglePlace(from, to, place, &values, arena, -1);
-    if (num_defaults > 0)
-        addManyDefaults(place, &values, num_defaults, arena);
 }
 
 void IAggregateFunction::predictValues(

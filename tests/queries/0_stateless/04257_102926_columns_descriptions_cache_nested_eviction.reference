@@ -1,6 +1,0 @@
--- an entry per distinct column list of the alive parts
-0
-1
-2
--- the entry of the detached part must be evicted once its object is gone
-1

@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
-#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -25,8 +24,6 @@ struct ChunkAndProgress
     /// Explicitly indicate that we have read all data.
     /// This is needed to occasionally return empty chunk to indicate the progress while the rows are filtered out in PREWHERE.
     bool is_finished = false;
-    /// Mark ranges that were read in this call (used for per-block virtual row generation).
-    MarkRanges read_mark_ranges;
 };
 
 class ParallelReadingExtension
@@ -36,20 +33,12 @@ public:
         MergeTreeAllRangesCallback all_callback_,
         MergeTreeReadTaskCallback callback_,
         size_t number_of_current_replica_,
-        size_t total_nodes_count_,
-        String stream_id_
-    );
+        size_t total_nodes_count_);
 
-    std::optional<InitialAllRangesAnnouncementResponse> sendInitialRequest(
-        CoordinationMode mode,
-        RangesInDataPartsDescription description,
-        size_t mark_segment_size,
-        size_t min_marks_per_request) const;
+    void sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const;
 
-    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
-
-    std::optional<ParallelReadResponse> sendReadInOrderRequest(
-        CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
+    std::optional<ParallelReadResponse>
+    sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
     size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
@@ -61,17 +50,9 @@ private:
     MergeTreeReadTaskCallback callback;
     const size_t number_of_current_replica;
     const size_t total_nodes_count;
-    const String stream_id;
 };
 
-/// Per-part inputs for read-time skip-index filtering; the part itself comes from the read task.
-struct SkipIndexReadInput
-{
-    MarkRanges ranges;
-    RangesInDataPartReadHints read_hints;
-    size_t part_starting_offset_in_query = 0;
-};
-using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
+using RangesByIndex = std::unordered_map<size_t, RangesInDataPart>;
 using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
@@ -131,7 +112,6 @@ public:
         const ColumnsDescription * columns_ = nullptr);
 
     String getName() const;
-    std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
 
     static Block transformHeader(
         Block block,
@@ -159,15 +139,9 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
-        bool read_ahead_prewhere_columns,
         const ColumnsDescription * columns = nullptr);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
-
-    /// Enable per-block virtual row generation for read-in-order optimization.
-    /// When set, after each block read, a virtual row carrying the next mark's PK boundary
-    /// is emitted so that MergingSortedTransform can reprioritize sources.
-    void setVirtualRowConversions(ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_);
 
     void onFinish() const;
 
@@ -181,24 +155,11 @@ private:
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
-    SetSpillables set_spillables;
 
     const LazilyReadInfoPtr lazily_read_info;
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
-
-    /// Whether the PREWHERE holds the top-K `__topKFilter` as a conjunct and its query condition cache entry is
-    /// salted with the top-K plan, see `MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere`.
-    const bool prewhere_filters_by_top_k_threshold;
-
-    /// Cache key and human-readable condition under which granules fully filtered out by PREWHERE
-    /// are recorded in the query condition cache. Computed once at construction from the hash of
-    /// the PREWHERE condition if it is deterministic (or only contains `__topKFilter` of a TopK read
-    /// with a TopK salt), or the hash of the deterministic condition derived from it when it involves
-    /// the current time (issue #115504), salted the same way as the consult side. Empty when none
-    /// applies; then PREWHERE results are not cached.
-    std::optional<std::pair<UInt64, String>> prewhere_condition_for_query_condition_cache;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
@@ -214,20 +175,6 @@ private:
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-
-    StorageID storage_id = StorageID::createEmpty();
-    size_t prewhere_step_offset = 0;
-
-    void logPredicateStatistics() const;
-
-    /// For per-block virtual row generation (read-in-order optimization).
-    ExpressionActionsPtr virtual_row_conversions;
-    /// Precomputed header with PK column names/types; cloned and filled from index per block.
-    Block pk_block_header;
-    bool read_in_reverse_order = false;
-    std::optional<ChunkAndProgress> pending_virtual_row;
-
-    ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
