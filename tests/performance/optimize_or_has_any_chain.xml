@@ -1,0 +1,19 @@
+<test>
+    <!-- `ids` values are in [100000, 200000), and the first element of every non-empty `ids` array is one of 100000..100009. -->
+    <create_query>CREATE TABLE has_any_chain (tags Array(String), ids Array(UInt32)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO has_any_chain SELECT arrayMap(x -> toString(cityHash64(number, x) % 1000), range(number % 20)), arrayMap(x -> 100000 + if(x = 0, number % 10, cityHash64(number, x) % 100000), range(number % 20)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE has_any_chain FINAL</fill_query>
+
+    <!-- `optimize_or_has_any_chain` merges these chains into a single `hasAny` call.
+         The needles must be constants for the rewrite: literals and `range` are folded, `arrayMap` with a lambda and scalar subqueries are not. -->
+    <query>SELECT count() FROM has_any_chain WHERE hasAny(tags, ['1', '2', '3']) OR hasAny(tags, ['4', '5', '6']) OR hasAny(tags, ['7', '8', '9'])</query>
+    <query>SELECT count() FROM has_any_chain WHERE hasAny(tags, ['1']) OR hasAny(tags, ['2']) OR hasAny(tags, ['3']) OR hasAny(tags, ['4']) OR hasAny(tags, ['5']) OR hasAny(tags, ['6']) OR hasAny(tags, ['7']) OR hasAny(tags, ['8']) OR hasAny(tags, ['9']) OR hasAny(tags, ['10'])</query>
+    <query>SELECT count() FROM has_any_chain WHERE hasAny(ids, range(150000, 150050)) OR hasAny(ids, range(150050, 150100)) OR hasAny(ids, range(150100, 150150)) OR hasAny(ids, range(150150, 150200)) OR hasAny(ids, range(150200, 150250))</query>
+
+    <!-- The first call matches most rows after 100 non-matching needles, so the short-circuit `OR` rarely evaluates the second call.
+         The needles of the second call never match and sort before those of the first call, so the merged call is fast only if
+         it keeps the needles in query order. -->
+    <query>SELECT count() FROM has_any_chain WHERE hasAny(ids, range(99900, 100010)) OR hasAny(ids, range(65536, 65836))</query>
+
+    <drop_query>DROP TABLE IF EXISTS has_any_chain</drop_query>
+</test>
