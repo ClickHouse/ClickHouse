@@ -86,7 +86,7 @@ std::map<String, Int64> limitRoundBounds(
     double rows_budget = max_rows ? static_cast<double>(max_rows) : std::numeric_limits<double>::infinity();
     double bytes_budget = max_bytes ? static_cast<double>(max_bytes) : std::numeric_limits<double>::infinity();
     bool budget_exhausted = false;
-    bool some_partition_included = false;
+    bool any_part_taken = false;
 
     for (const auto & partition_id : changed_partitions)
     {
@@ -119,23 +119,19 @@ std::map<String, Int64> limitRoundBounds(
             {
                 rows_budget -= rows_per_block * blocks;
                 bytes_budget -= bytes_per_block * blocks;
+                any_part_taken = true;
                 continue;
             }
 
             /// The part crosses the limit: take as many of its blocks as fit, ending the round inside it.
             /// The limit that is crossed has a non-zero size per block, so the result is finite and below `blocks`.
             const auto fit = [](double budget, double per_block) { return per_block > 0 ? budget / per_block : std::numeric_limits<double>::infinity(); };
-            Int64 taken = static_cast<Int64>(std::min(fit(rows_budget, rows_per_block), fit(bytes_budget, bytes_per_block)));
-            if (!some_partition_included)
-                taken = std::max<Int64>(taken, 1);
-
-            bound = low + taken - 1;
+            const Int64 taken = static_cast<Int64>(std::min(fit(rows_budget, rows_per_block), fit(bytes_budget, bytes_per_block)));
+            /// Read at least one block of data per round.
+            bound = low + std::max<Int64>(taken, any_part_taken ? 0 : 1) - 1;
             budget_exhausted = true;
             break;
         }
-
-        if (bound >= from)
-            some_partition_included = true;
     }
 
     return safe_block_numbers;
