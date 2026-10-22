@@ -186,6 +186,37 @@ ALTER TABLE t_discarded_before_overwrite DELETE WHERE id = 999 SETTINGS mutation
 SELECT 't_discarded_before_overwrite', 'materialized', groupArray(a), groupArray(b), groupArray(c) FROM (SELECT a, b, c FROM t_discarded_before_overwrite ORDER BY id);
 DROP TABLE t_discarded_before_overwrite;
 
+-- A lightweight UPDATE between two on-fly UPDATEs of all rows, with a value that does not convert to the post-MODIFY type.
+DROP TABLE IF EXISTS t_unconvertible_discarded_v1;
+CREATE TABLE t_unconvertible_discarded_v1 (id UInt64, c String) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v1';
+INSERT INTO t_unconvertible_discarded_v1 VALUES (1, '0');
+SYSTEM STOP MERGES t_unconvertible_discarded_v1;
+ALTER TABLE t_unconvertible_discarded_v1 UPDATE c = '100' WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+UPDATE t_unconvertible_discarded_v1 SET c = 'bad' WHERE id = 1;
+ALTER TABLE t_unconvertible_discarded_v1 UPDATE c = '200' WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_unconvertible_discarded_v1 MODIFY COLUMN c UInt64 SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT 't_unconvertible_discarded_v1', 'on fly', * FROM t_unconvertible_discarded_v1 SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t_unconvertible_discarded_v1;
+ALTER TABLE t_unconvertible_discarded_v1 DELETE WHERE id = 999 SETTINGS mutations_sync = 2;
+SELECT 't_unconvertible_discarded_v1', 'materialized', * FROM t_unconvertible_discarded_v1;
+DROP TABLE t_unconvertible_discarded_v1;
+
+DROP TABLE IF EXISTS t_unconvertible_discarded_v2;
+CREATE TABLE t_unconvertible_discarded_v2 (id UInt64, c String) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
+INSERT INTO t_unconvertible_discarded_v2 VALUES (1, '0');
+SYSTEM STOP MERGES t_unconvertible_discarded_v2;
+ALTER TABLE t_unconvertible_discarded_v2 UPDATE c = '100' WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+UPDATE t_unconvertible_discarded_v2 SET c = 'bad' WHERE id = 1;
+ALTER TABLE t_unconvertible_discarded_v2 UPDATE c = '200' WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_unconvertible_discarded_v2 MODIFY COLUMN c UInt64 SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT 't_unconvertible_discarded_v2', 'on fly', * FROM t_unconvertible_discarded_v2 SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t_unconvertible_discarded_v2;
+ALTER TABLE t_unconvertible_discarded_v2 DELETE WHERE id = 999 SETTINGS mutations_sync = 2;
+SELECT 't_unconvertible_discarded_v2', 'materialized', * FROM t_unconvertible_discarded_v2;
+DROP TABLE t_unconvertible_discarded_v2;
+
 -- The part stores `c` as LowCardinality(String) after a killed MODIFY, and one v1 patch updates `a` and `c`.
 DROP TABLE IF EXISTS t_killed_modify;
 CREATE TABLE t_killed_modify (id UInt64, a String, b UInt64, c LowCardinality(String)) ENGINE = MergeTree ORDER BY id
