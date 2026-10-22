@@ -7,6 +7,7 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -245,6 +246,37 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 {
     explicit_metadata_file_path.set(std::make_unique<const String>(path));
+}
+
+bool IcebergMetadata::isMetadataFileOfThisTable(const String & path, ContextPtr local_context) const
+{
+    if (path.empty())
+        return false;
+    if (!persistent_components.table_uuid)
+    {
+        /// Without a table uuid only an unchanged metadata file proves the same table, and a recreated table can reuse a `v<N>` name.
+        const auto current_path = explicit_metadata_file_path.get();
+        return path == (current_path ? *current_path : data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value)
+            && !isVersionNumberedCommitScheme(std::filesystem::path(path).filename());
+    }
+    DataLakeStorageSettings lookup_settings = data_lake_settings;
+    lookup_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = path;
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_components.table_path,
+        lookup_settings,
+        persistent_components.metadata_cache,
+        local_context,
+        log.get(),
+        persistent_components.table_uuid,
+        persistent_components.metadata_compression_method);
+    /// A table recreated at the same location reuses `v<N>.metadata.json` names, so a cached copy can be the old table's.
+    const bool name_can_be_reused = isVersionNumberedCommitScheme(std::filesystem::path(metadata_file_path).filename());
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method,
+        name_can_be_reused ? std::optional<String>{} : persistent_components.table_uuid);
+    return metadata_object->has(f_table_uuid)
+        && normalizeUuid(metadata_object->getValue<String>(f_table_uuid)) == *persistent_components.table_uuid;
 }
 
 DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const

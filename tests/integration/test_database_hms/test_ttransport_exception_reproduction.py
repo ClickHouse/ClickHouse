@@ -5,6 +5,7 @@ import os
 import uuid
 import socket
 
+import pyarrow as pa
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from pyiceberg.catalog import load_catalog
@@ -120,3 +121,54 @@ def test_ttransport_exception_restart_service(started_cluster):
     )
 
     node.query("DROP DATABASE IF EXISTS lake_test")
+
+
+def test_recreated_table_with_compaction_enabled(started_cluster):
+    """
+    A table dropped and recreated in the Hive Metastore under the same name and location, with another schema, is read
+    as the new table, also through a database with `allow_experimental_iceberg_compaction`, which keeps its tables.
+    https://github.com/ClickHouse/ClickHouse/issues/122547
+    """
+    node = started_cluster.instances["node1"]
+    namespace = f"test_recreated_table_{uuid.uuid4().hex[:8]}"
+    identifier = f"{namespace}.table"
+    location = f"s3a://warehouse-hms/data/{namespace}/table"
+    databases = [f"{namespace}_plain", f"{namespace}_compaction"]
+
+    wait_for_hms(started_cluster)
+    catalog = load_hive_catalog(started_cluster)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(identifier, schema=Schema(NestedField(1, "a", LongType())), location=location)
+    table.append(pa.table({"a": pa.array([1, 2], type=pa.int64())}))
+
+    for db, extra_settings in zip(databases, ["", ", allow_experimental_iceberg_compaction = 1"]):
+        node.query(f"""
+            CREATE DATABASE {db} ENGINE = DataLakeCatalog('thrift://hive:9083', '{minio_access_key}', '{minio_secret_key}')
+            SETTINGS catalog_type = 'hive', warehouse = 'warehouse_test',
+                     storage_endpoint = 'http://minio1:9001/warehouse-hms'{extra_settings}
+        """)
+
+    def check(expected):
+        for db in databases:
+            assert node.query(f"SELECT * FROM {db}.`{identifier}` ORDER BY ALL") == expected, db
+
+    check("1\n2\n")
+
+    # An unchanged read opens a storage through the plain database only.
+    def opened_storages(db):
+        query_id = uuid.uuid4().hex
+        node.query(f"SELECT * FROM {db}.`{identifier}` FORMAT Null", query_id=query_id)
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return node.query(
+            f"SELECT length(used_storages) FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+
+    assert [opened_storages(db) for db in databases] == ["1\n", "0\n"]
+
+    catalog.drop_table(identifier)
+    table = catalog.create_table(identifier, schema=Schema(NestedField(1, "b", StringType())), location=location)
+    table.append(pa.table({"b": pa.array(["x", "y"], type=pa.string())}))
+    check("x\ny\n")
+
+    for db in databases:
+        node.query(f"DROP DATABASE {db}")
