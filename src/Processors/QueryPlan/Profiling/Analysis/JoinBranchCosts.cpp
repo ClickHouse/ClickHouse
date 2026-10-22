@@ -11,21 +11,21 @@ namespace DB
 namespace
 {
 
-bool sameCluster(const JoinBranchNode & lhs, const JoinBranchNode & rhs)
+bool sameCluster(const PlanShapeNode & lhs, const PlanShapeNode & rhs)
 {
     return lhs.cluster_id != 0 && lhs.cluster_id == rhs.cluster_id;
 }
 
-using NodesById = std::unordered_map<String, const JoinBranchNode *>;
+using NodesById = std::unordered_map<String, const PlanShapeNode *>;
 
-std::vector<const JoinBranchNode *> collectPostOrder(const NodesById & nodes_by_id, const String & root_id)
+std::vector<const PlanShapeNode *> collectPostOrder(const NodesById & nodes_by_id, const String & root_id)
 {
     const auto root_it = nodes_by_id.find(root_id);
     if (root_it == nodes_by_id.end())
         return {};
 
-    std::vector<const JoinBranchNode *> post_order;
-    std::vector<const JoinBranchNode *> to_visit{root_it->second};
+    std::vector<const PlanShapeNode *> post_order;
+    std::vector<const PlanShapeNode *> to_visit{root_it->second};
 
     while (!to_visit.empty())
     {
@@ -45,7 +45,7 @@ std::vector<const JoinBranchNode *> collectPostOrder(const NodesById & nodes_by_
 }
 
 JoinBranchCosts::JoinBranchCosts(
-    const JoinBranchNodes & nodes, const String & root_id, const CardinalityByJoinStep & cardinality_by_join_step)
+    const PlanShape & nodes, const String & root_id, const CardinalityByJoinStep & cardinality_by_join_step)
 {
     NodesById nodes_by_id;
     nodes_by_id.reserve(nodes.size());
@@ -53,12 +53,12 @@ JoinBranchCosts::JoinBranchCosts(
         nodes_by_id.emplace(node.id, &node);
 
     /// The joins of each node's subtree, carried up as the post-order walk retires its children.
-    std::unordered_map<String, std::vector<const JoinBranchNode *>> joins_below;
+    std::unordered_map<String, std::vector<const PlanShapeNode *>> joins_below;
 
     for (const auto * node : collectPostOrder(nodes_by_id, root_id))
     {
         /// collect the joins from children
-        std::vector<const JoinBranchNode *> joins_below_the_current_node;
+        std::vector<const PlanShapeNode *> joins_below_the_current_node;
         for (const auto & child_id : node->children)
         {
             const auto it = joins_below.find(child_id);

@@ -22,7 +22,7 @@ struct PlanAnalysisSnapshot
     String root_id;
 
     /// The shape, for accumulating the cost of each join's branch.
-    JoinBranchNodes join_nodes;
+    PlanShape shape;
 
     /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`.
     std::unordered_map<String, StepAnalyzer> analyzers;

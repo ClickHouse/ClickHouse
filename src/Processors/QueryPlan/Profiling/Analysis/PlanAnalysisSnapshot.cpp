@@ -32,7 +32,7 @@ PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan, bool 
         auto & step = *node->step;
         const String step_id = step.getUniqID();
 
-        JoinBranchNode branch_node;
+        PlanShapeNode branch_node;
         branch_node.id = step_id;
 
         for (auto * child : node->children)
@@ -61,7 +61,7 @@ PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan, bool 
             branch_node.cluster_id = join_step->getClusterId();
         }
 
-        snapshot.join_nodes.push_back(std::move(branch_node));
+        snapshot.shape.push_back(std::move(branch_node));
 
         snapshot.analyzers.emplace(step_id, step.makeAnalyzer());
     }

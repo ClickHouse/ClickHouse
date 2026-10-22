@@ -171,7 +171,7 @@ bool ExecutionThreadContext::executeTask()
         clock->onLeave();
 
     if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, step);
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, processor->getStepUniqID());
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();

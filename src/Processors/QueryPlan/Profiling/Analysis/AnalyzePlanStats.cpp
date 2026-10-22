@@ -221,8 +221,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(
     const QueryPipeline & pipeline,
     StepProfiler & step_profiler,
     UInt64 execution_start_ns,
-    UInt64 execution_query_time_ns_,
-    const QueryPlan * plan_for_interval_timings)
+    UInt64 execution_query_time_ns_)
 : plan_snapshot(step_profiler.getPlanSnapshot())
 , max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
@@ -234,13 +233,9 @@ AnalyzeStepsStats::AnalyzeStepsStats(
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts();
 
-    /// Work intervals are collected only when EXPLAIN ANALYZE requests the `time` setting, and only
-    /// that caller passes a plan to lay them over.
-    if (!plan_for_interval_timings)
-        return;
-
+    /// Work intervals are collected only when `EXPLAIN ANALYZE` requests the `time` setting.
     if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
-        interval_timings.emplace(work_intervals, *plan_for_interval_timings);
+        interval_timings.emplace(work_intervals, plan_snapshot);
 }
 
 std::optional<ExecutionTimeBreakdown> AnalyzeStepsStats::executionTimeBreakdown() const
@@ -351,7 +346,7 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
 {
     CardinalityByJoinStep cardinality_by_join_step;
 
-    for (const auto & node : plan_snapshot.join_nodes)
+    for (const auto & node : plan_snapshot.shape)
     {
         if (!node.is_join)
             continue;
@@ -379,7 +374,7 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
         join_raw_reports.emplace(node.id, std::move(report));
     }
 
-    const JoinBranchCosts join_branch_costs(plan_snapshot.join_nodes, plan_snapshot.root_id, cardinality_by_join_step);
+    const JoinBranchCosts join_branch_costs(plan_snapshot.shape, plan_snapshot.root_id, cardinality_by_join_step);
     for (auto & [step_id, report] : join_raw_reports)
     {
         MetricGroup cost_group{MetricGroupKey::Cost, {}};
@@ -388,8 +383,7 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
     }
 }
 
-StepStatsContext AnalyzeStepsStats::makeContext(
-    const String & step_id, const StepAnalyzer & analyzer, const IQueryPlanStep * step_for_interval_timings) const
+StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const StepAnalyzer & analyzer) const
 {
     StepStatsContext context;
     context.execution_query_time_ns = execution_query_time_ns;
@@ -404,24 +398,18 @@ StepStatsContext AnalyzeStepsStats::makeContext(
         if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group)); group_stats_it != stats_by_step_group.end())
             context.group_stats[group] = group_stats_it->second;
 
-    /// The intervals are laid over the live plan, so only the caller that still has one gets them.
-    if (interval_timings && step_for_interval_timings)
-        context.time_and_conc_stats = interval_timings->findTiming(step_for_interval_timings);
+    if (interval_timings)
+        context.time_and_conc_stats = interval_timings->findTiming(step_id);
 
     return context;
 }
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    return analyzeStepImpl(step->getUniqID(), step);
+    return analyzeStep(step->getUniqID());
 }
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const String & step_id) const
-{
-    return analyzeStepImpl(step_id, nullptr);
-}
-
-AnalyzedStepData AnalyzeStepsStats::analyzeStepImpl(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const
 {
     /// Every step analysed here comes from the walk that filled the snapshot, so it has an entry.
     /// One without would be shaped as a plain single-stage step and report none of its metrics.
@@ -445,7 +433,7 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStepImpl(const String & step_id, cons
         raw_report = analyzer.reporter(step_processors);
     }
 
-    auto context_for_step = makeContext(step_id, analyzer, step_for_interval_timings);
+    auto context_for_step = makeContext(step_id, analyzer);
     if (analyzer.finish)
         return analyzer.finish(context_for_step, std::move(raw_report));
 

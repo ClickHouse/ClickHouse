@@ -44,17 +44,14 @@ class AnalyzeStepsStats
     using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
 
 public:
-    /// `step_profiler` carries everything this needs from the plan -- the analyzers and the clocks
-    /// -- so the plan itself does not have to be alive here. `plan_for_interval_timings` is the one
-    /// exception: the per-step time intervals are still computed over the live plan, and they exist
-    /// only for `EXPLAIN ANALYZE` with `time = 1`. The logged plan collects no intervals and passes
-    /// nothing. The profiler must outlive this object.
+    /// `step_profiler` carries everything this needs from the plan -- the analyzers, the shape
+    /// and the clocks -- so the plan does not have to be alive. The profiler must outlive this
+    /// object.
     AnalyzeStepsStats(
         const QueryPipeline & pipeline,
         StepProfiler & step_profiler,
         UInt64 execution_start_ns,
-        UInt64 execution_query_time_ns_,
-        const QueryPlan * plan_for_interval_timings = nullptr);
+        UInt64 execution_query_time_ns_);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
@@ -78,8 +75,7 @@ private:
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts();
 
-    AnalyzedStepData analyzeStepImpl(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const;
-    StepStatsContext makeContext(const String & step_id, const StepAnalyzer & analyzer, const IQueryPlanStep * step_for_interval_timings) const;
+    StepStatsContext makeContext(const String & step_id, const StepAnalyzer & analyzer) const;
     void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;
