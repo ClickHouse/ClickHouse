@@ -34,12 +34,12 @@ import time
 import traceback
 
 from ci.jobs.scripts.agent import (
-    CYBER_RISK_FLAG,
     FALLBACK_MODEL,
     MODEL,
     ROBOT_NAMES,
     codex_login,
     gh_auth_with_robot_token,
+    refused_as_cyber_risk,
     repo_from_pr_url,
 )
 from ci.praktika.info import Info
@@ -288,7 +288,7 @@ def _run(prompt, run_once, agent_name):
         robot_name = robots[(attempt - 1) % len(robots)]
         try:
             result = run_once(prompt, robot_name, model)
-            if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
+            if refused_as_cyber_risk(model, result.info):
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
             if not result.is_ok():

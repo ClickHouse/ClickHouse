@@ -35,6 +35,11 @@ FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 
 
+def refused_as_cyber_risk(model, output):
+    """Whether `model` refused the input in `output`, so the next attempt should use `FALLBACK_MODEL`."""
+    return model != FALLBACK_MODEL and CYBER_RISK_FLAG in output
+
+
 def repo_from_pr_url(pr_url):
     """`owner/repo` parsed from a PR URL, or "" when it is not a PR URL."""
     path_parts = urllib.parse.urlparse(pr_url).path.strip("/").split("/")
