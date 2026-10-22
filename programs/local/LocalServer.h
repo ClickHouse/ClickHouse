@@ -24,6 +24,7 @@ namespace DB
 
 class AsynchronousMetrics;
 class ServerType;
+struct TemporaryTableHolder;
 
 /// Lightweight Application for clickhouse-local.
 /// No networking by default; TCP/HTTP listeners can be started explicitly via `SYSTEM START LISTEN`.
@@ -136,6 +137,7 @@ private:
     std::optional<std::filesystem::path> temporary_directory_to_delete;
     /// Enable implicit stdin-table SELECTs after query files have finished.
     std::optional<String> implicit_stdin_table_to_activate;
+    std::shared_ptr<TemporaryTableHolder> deferred_implicit_stdin_table;
 
     std::unique_ptr<ReadBufferFromFile> input;
 

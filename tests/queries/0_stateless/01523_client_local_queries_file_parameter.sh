@@ -102,6 +102,23 @@ echo "SELECT 'init' FROM system.one;" > "$TEMP_SQL_FILE_NAME"
 { IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=read -q 'SELECT count(), sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
 { IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count(), sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
 
+# The inferred stdin table must not hide a user table called `table` in query files.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE TABLE `table` (x UInt8) ENGINE=Memory;' \
+    'SELECT count() FROM `table`;' \
+    'TRUNCATE TABLE `table`;' \
+    'SELECT count() FROM `table`;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT count(); SELECT count() FROM `table`;' 0<>"$STDIN_DATA_FILE_NAME"
+cat "$STDIN_DATA_FILE_NAME"
+
+# Query-file temporary tables also retain their own namespace.
+printf '%s\n' 'CREATE TEMPORARY TABLE `table` (x UInt8) ENGINE=Memory;' \
+    'INSERT INTO `table` VALUES (7);' \
+    'SELECT sum(x) FROM `table`;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT count(); SELECT sum(x) FROM `table`;' < "$STDIN_DATA_FILE_NAME"
+
 # --copy is a format-conversion shortcut, not a second query mode for --queries-file.
 $CLICKHOUSE_LOCAL --copy --queries-file="$TEMP_SQL_FILE_NAME" --input-format CSV < "$STDIN_DATA_FILE_NAME" 2>&1 | grep -o 'BAD_ARGUMENTS'
 

@@ -116,6 +116,9 @@ public:
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
 
+    /// Used by clickhouse-local to hide its inferred stdin table until query files finish.
+    ContextMutablePtr getSessionContext() { return session->sessionContext(); }
+
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,

@@ -282,6 +282,7 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
@@ -1380,13 +1381,40 @@ void LocalServer::connectAndInitializeInputTable()
 
     /// Initialize before query-file settings (such as readonly or dialect) take effect.
     if (!table_name.empty())
+    {
         executeInitialTableQuery(initial_query, defer_implicit_stdin_table_activation);
+
+        if (defer_implicit_stdin_table_activation)
+        {
+            /// Keep schema inference ready without exposing its table to query files.
+            auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
+            deferred_implicit_stdin_table = session_context->removeExternalTable(table_name);
+            if (!deferred_implicit_stdin_table)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to defer the inferred stdin table {}", backQuote(table_name));
+        }
+    }
 }
 
 void LocalServer::beforeExecutingCommandLineQueries()
 {
-    if (implicit_stdin_table_to_activate)
-        client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
+    if (!implicit_stdin_table_to_activate)
+        return;
+
+    const String & table_name = *implicit_stdin_table_to_activate;
+    auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
+    String name = table_name;
+
+    /// Query files may have created their own table with the default input-table name.
+    /// Preserve their explicit table references while still supporting implicit SELECTs on stdin.
+    if (session_context->findExternalTable(name)
+        || DatabaseCatalog::instance().isTableExist(StorageID(session_context->getCurrentDatabase(), name), session_context))
+    {
+        name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
+        std::replace(name.begin(), name.end(), '-', '_');
+    }
+
+    session_context->addExternalTable(name, std::move(deferred_implicit_stdin_table));
+    client_context->setSetting("implicit_table_at_top_level", name);
 }
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
