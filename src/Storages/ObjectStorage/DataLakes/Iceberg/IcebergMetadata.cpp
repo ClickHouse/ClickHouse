@@ -256,7 +256,7 @@ DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
-    const ContextPtr & context, bool force_fetch_latest_metadata) const
+    const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_metadata_pointer_overrides) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
     const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
@@ -268,7 +268,8 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
-        force_fetch_latest_metadata);
+        force_fetch_latest_metadata,
+        ignore_metadata_pointer_overrides);
     return getState(context, metadata_file_path, metadata_version);
 }
 
@@ -1169,7 +1170,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.table_uuid);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;

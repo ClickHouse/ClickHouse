@@ -115,6 +115,7 @@ namespace ProfileEvents
 
 namespace DB::Setting
 {
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
 }
@@ -1308,6 +1309,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
 
+On S3 and Azure, with `iceberg_list_only_v_prefixed_metadata_files`, a read with no pointer setting takes the files named `v...` as the only candidates whenever any exist.
+
 We use table_uuid both for metadata cache queries and selection of the latest metadata file.
 For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
  */
@@ -1332,10 +1335,19 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
+        const bool list_v_prefixed_names_only = local_context->getSettingsRef()[Setting::iceberg_list_only_v_prefixed_metadata_files]
+            && !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
+            && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+            && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
+
         std::vector<String> metadata_files;
         for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            /// Manifests and manifest lists share this directory but are never named `v...`.
+            if (list_v_prefixed_names_only)
+                metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
+            if (metadata_files.empty())
+                metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
             if (!metadata_files.empty())
                 break;
             LOG_DEBUG(
