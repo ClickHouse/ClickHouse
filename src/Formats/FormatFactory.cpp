@@ -311,6 +311,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
+    format_settings.parquet.use_alp_encoding = settings[Setting::output_format_parquet_use_alp_encoding];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
