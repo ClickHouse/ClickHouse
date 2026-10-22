@@ -505,6 +505,13 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     #if USE_AWS_S3
     if (target_scheme_normalized == "s3" || target_scheme_normalized == "https" || target_scheme_normalized == "http")
     {
+        /// A path spelled under `location` is re-rooted below. Checked before parsing, which is costly per file.
+        /// A query may pin an object version, which is rejected below.
+        if (path.size() > table_location.size() && path.starts_with(table_location)
+            && (table_location.ends_with('/') || path[table_location.size()] == '/')
+            && path.find_first_of("?#", table_location.size()) == std::string::npos)
+            return std::nullopt;
+
         auto s3_uri = parseMetadataS3URI(path, target_decomposed);
 
         /// Storages are shared per bucket and read the latest object version, so a pinned version cannot be honored.
