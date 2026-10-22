@@ -4,6 +4,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
+#include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
@@ -22,6 +27,10 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
+
+/// Base name of the column in which `consume` stores each row's position in the chunk when it records kept rows.
+/// `consume` prefixes it with `_` until no column of the block has that name; `reorderColumns` drops it.
+static constexpr auto ROW_POSITION_COLUMN_NAME = "__ttl_row_position";
 
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
 {
@@ -146,9 +155,9 @@ TTLTransform::TTLTransform(
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
     bool force_,
-    bool ttl_delete_applied_by_merge_)
+    WriteBuffer * ttl_kept_rows_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
-    , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
+    , ttl_kept_rows(ttl_kept_rows_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
@@ -344,7 +353,11 @@ void TTLTransform::consume(Chunk chunk)
 {
     if (all_data_dropped)
     {
-        finishConsume();
+        /// The gather stage needs one kept flag per input row, so keep reading and record each row as dropped.
+        if (ttl_kept_rows)
+            writeChar(0, chunk.getNumRows(), *ttl_kept_rows);
+        else
+            finishConsume();
         return;
     }
 
@@ -370,7 +383,30 @@ void TTLTransform::consume(Chunk chunk)
             block.insert(ColumnWithTypeAndName(default_column, data.type, column));
     }
 
+    const size_t num_input_rows = block.rows();
+    String position_column_name = ROW_POSITION_COLUMN_NAME;
+    /// In a vertical merge, tag every row with its position in the chunk. The TTL algorithms filter the block,
+    /// tag included, so the positions left afterwards are the kept rows; they go into `ttl_kept_rows`
+    /// for the gather stage.
+    if (ttl_kept_rows)
+    {
+        while (block.has(position_column_name))
+            position_column_name = "_" + position_column_name;
+        auto positions = ColumnUInt32::create(num_input_rows);
+        iota(positions->getData().data(), num_input_rows, UInt32(0));
+        block.insert(ColumnWithTypeAndName(std::move(positions), std::make_shared<DataTypeUInt32>(), position_column_name));
+    }
+
     executeAlgorithms(block);
+
+    if (ttl_kept_rows)
+    {
+        IColumn::Filter kept(num_input_rows, 0);
+        const auto & kept_positions = assert_cast<const ColumnUInt32 &>(*block.getByName(position_column_name).column).getData();
+        for (const UInt32 position : kept_positions)
+            kept[position] = 1;
+        ttl_kept_rows->write(reinterpret_cast<const char *>(kept.data()), kept.size());
+    }
 
     if (block.empty())
         return;
@@ -401,8 +437,6 @@ void TTLTransform::finalize()
     {
         if (all_data_dropped)
             LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
-        else if (ttl_delete_applied_by_merge)
-            LOG_DEBUG(log, "Rows with expired TTL were removed from part {} by the merging algorithm", data_part->name);
         else
             LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     }

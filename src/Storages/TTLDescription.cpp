@@ -1409,7 +1409,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
 /// check existed still loads. It must not then execute: it deletes rows whose own TTL is far in the
 /// future and reads past the end of the expression column for an empty array. `buildExpression` and
 /// `buildWhereExpression` are the only way a consumer gets a runnable expression out of a stored
-/// description (`TTLTransform`, `TTLCalcTransform`, `TTLDeleteFilterTransform` and
+/// description (`TTLTransform`, `TTLCalcTransform` and
 /// `MergeTreeDataWriter::updateTTL` all go through them), so failing here turns the silent row loss into
 /// a failed INSERT or TTL merge. The table still attaches, so `ALTER TABLE ... REMOVE TTL` or a
 /// `MODIFY TTL` to a sane expression repairs it.

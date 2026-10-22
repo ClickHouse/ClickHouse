@@ -140,7 +140,7 @@ SELECT 'test2_algo', merge_algorithm, merge_reason FROM system.part_log
 DROP TABLE t_ttl_vert_repl_no_version;
 
 -- Test 3: a duplicate-free part that sorts entirely before the others takes the chunk pass-through
--- path, which applies the TTL predicate per row instead of keeping the whole chunk.
+-- path; the TTL still drops its expired rows and the gathered columns follow.
 DROP TABLE IF EXISTS t_ttl_vert_repl_disjoint;
 
 CREATE TABLE t_ttl_vert_repl_disjoint

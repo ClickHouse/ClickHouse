@@ -5,7 +5,6 @@
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 
 namespace DB
@@ -86,15 +85,11 @@ void ReplacingSortedAlgorithm::consume(Input & input, size_t source_num)
     IMergingAlgorithmWithSharedChunks::consume(input, source_num);
 }
 
-/// True when the group's winning row must not reach the output: a `CLEANUP` tombstone, or a row
-/// the filter rejects.
+/// True when the group's winning row must not reach the output: a `CLEANUP` tombstone.
 bool ReplacingSortedAlgorithm::isSelectedRowSkipped() const
 {
-    if (cleanup && is_deleted_column_number != -1
-        && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num])
-        return true;
-
-    return isRowFiltered(selected_row);
+    return cleanup && is_deleted_column_number != -1
+        && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
 }
 
 /// One row source per input row, so a skipped group is still written out in full: the file tracks
@@ -148,32 +143,20 @@ void ReplacingSortedAlgorithm::insertRowImpl()
     selected_row.clear();
 }
 
-/// Emit a chunk already known to be free of duplicate keys; the filter still applies per row.
+/// Emit a chunk already known to be free of duplicate keys.
 /// Reachable only while the source chunks carry their part level, else the merge takes the slower
 /// per-row path for the same rows.
 void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
 {
     const size_t num_rows = chunk.getNumRows();
-    const auto * mask = getRowFilterMask(chunk);
 
     if (out_row_sources_buf)
     {
         for (size_t i = 0; i < num_rows; ++i)
-            out_row_sources_buf->write(RowSourcePart(source_num, /*skip_flag=*/ mask && !(*mask)[i]).data);
+            out_row_sources_buf->write(RowSourcePart(source_num).data);
     }
 
-    if (!mask)
-    {
-        merged_data->insertChunk(std::move(chunk), num_rows);
-        return;
-    }
-
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = column->filter(*mask, -1);
-
-    const size_t num_kept_rows = columns.empty() ? 0 : columns.front()->size();
-    merged_data->insertChunk(Chunk(std::move(columns), num_kept_rows), num_kept_rows);
+    merged_data->insertChunk(std::move(chunk), num_rows);
 }
 
 IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
