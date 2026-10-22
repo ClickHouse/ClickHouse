@@ -570,7 +570,8 @@ private:
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasTokenStartingWith"
+            || function_name == "hasPhrase";
     }
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
@@ -578,10 +579,12 @@ private:
     static bool needApplyPreprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasTokenStartingWith"
+            || function_name == "hasPhrase";
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
+    /// A postprocessor maps whole tokens, so `hasTokenStartingWith` matches the tokens before it and stays out.
     static bool needApplyPostprocessor(const String & function_name)
     {
         return function_name == "hasToken"

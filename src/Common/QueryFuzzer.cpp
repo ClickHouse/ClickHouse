@@ -5409,7 +5409,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
              "hasAnyToken",
              "hasAnyTokens",
              "hasAllToken",
-             "hasAllTokens"},
+             "hasAllTokens",
+             "hasTokenStartingWith"},
             /// Map containment checks
             {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
             /// Prefix/suffix predicates (string, string → UInt8)
@@ -6735,7 +6736,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// `processTextIndexFunction` only rewrites text-search calls with exactly two arguments,
             /// so drop their optional tokenizer rather than re-rolling it off the text-index path.
             static const std::unordered_set<String> text_search_functions
-                = {"hasAnyToken", "hasAnyTokens", "hasAllToken", "hasAllTokens", "hasPhrase"};
+                = {"hasAnyToken", "hasAnyTokens", "hasAllToken", "hasAllTokens", "hasTokenStartingWith", "hasPhrase"};
 
             if (fn->name == "tokens" && !fn->arguments->children.empty())
             {

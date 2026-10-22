@@ -37,7 +37,8 @@ constexpr size_t arg_needles = 1;
 constexpr size_t arg_tokenizer = 2;
 
 /// Compaction drops tokens covered by longer ones; valid only for `hasAllTokens`.
-TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name, bool compact_tokens)
+/// `hasTokenStartingWith` keeps its string needle as-is: a prefix of a token is not itself a token to tokenize.
+TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name, HasAnyAllTokensMode mode)
 {
     if (arguments.size() < 2)
         return {};
@@ -62,9 +63,16 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
     if (needles_field.getType() == Field::Types::String)
     {
         auto tokens_str = needles_field.safeGet<String>();
-        tokenizer.stringToTokens(tokens_str.data(), tokens_str.size(), tokens_array);
-        if (compact_tokens)
-            tokens_array = tokenizer.compactTokens(tokens_array);
+        if (mode == HasAnyAllTokensMode::StartsWith)
+        {
+            tokens_array.emplace_back(std::move(tokens_str));
+        }
+        else
+        {
+            tokenizer.stringToTokens(tokens_str.data(), tokens_str.size(), tokens_array);
+            if (mode == HasAnyAllTokensMode::All)
+                tokens_array = tokenizer.compactTokens(tokens_array);
+        }
     }
     else if (needles_field.getType() == Field::Types::Array)
     {
@@ -103,9 +111,13 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
 {
     FunctionArgumentDescriptors mandatory_args
     {
-        {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},
-        {"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or const Array(String)"}
+        {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"}
     };
+
+    if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::StartsWith)
+        mandatory_args.push_back({"prefix", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"});
+    else
+        mandatory_args.push_back({"needles", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType), isColumnConst, "const String or const Array(String)"});
 
     FunctionArgumentDescriptors optional_args
     {
@@ -131,7 +143,7 @@ FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildI
         : arguments[arg_tokenizer].column->getDataAt(0);
 
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName(), HasTokensTraits::mode == HasAnyAllTokensMode::All);
+    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName(), HasTokensTraits::mode);
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
     return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
 }
@@ -214,12 +226,43 @@ private:
     UInt64 num_set_bits;
 };
 
+/// Matches a token that starts with the single needle, byte by byte.
+struct HasTokenStartingWithMatcher
+{
+    explicit HasTokenStartingWithMatcher(const TokensWithPosition & tokens_)
+        : prefix(tokens_.begin()->first)
+    {
+        chassert(tokens_.size() == 1);
+    }
+
+    template <typename OnMatchCallback>
+    auto operator()(OnMatchCallback && onMatchCallback)
+    {
+        return [&](const char * token_start, size_t token_len)
+        {
+            if (std::string_view(token_start, token_len).starts_with(prefix))
+            {
+                onMatchCallback();
+                return true;
+            }
+
+            return false;
+        };
+    }
+
+    void reset() { /* nothing to reset */ }
+
+private:
+    std::string_view prefix;
+};
+
 template <typename T>
 concept StringColumnType = std::same_as<T, ColumnString> || std::same_as<T, ColumnFixedString>;
 using ArrayOffset = ColumnArray::Offset;
 
 template <typename Matcher>
-concept MatcherType = std::same_as<Matcher, HasAnyTokensMatcher> || std::same_as<Matcher, HasAllTokensMatcher>;
+concept MatcherType = std::same_as<Matcher, HasAnyTokensMatcher> || std::same_as<Matcher, HasAllTokensMatcher>
+    || std::same_as<Matcher, HasTokenStartingWithMatcher>;
 
 /// Execute on Array(String) or Array(FixedString) column
 void searchOnArray(
@@ -296,6 +339,8 @@ void executeString(
         searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
         searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAllTokensMatcher(tokens));
+    else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::StartsWith)
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasTokenStartingWithMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -325,6 +370,8 @@ void executeArray(
         searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
         searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
+    else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::StartsWith)
+        searchOnArray(offsets, input_string, null_map, col_result, input_size, tokenizer, HasTokenStartingWithMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -394,9 +441,11 @@ ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
 template class ExecutableFunctionHasAnyAllTokens<HasAnyTokensTraits>;
 template class ExecutableFunctionHasAnyAllTokens<HasAllTokensTraits>;
+template class ExecutableFunctionHasAnyAllTokens<HasTokenStartingWithTraits>;
 
 template class FunctionBaseHasAnyAllTokens<HasAnyTokensTraits>;
 template class FunctionBaseHasAnyAllTokens<HasAllTokensTraits>;
+template class FunctionBaseHasAnyAllTokens<HasTokenStartingWithTraits>;
 
 REGISTER_FUNCTION(HasAnyTokens)
 {
@@ -849,5 +898,91 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
     factory.registerFunction<FunctionHasAnyAllTokensOverloadResolver<HasAllTokensTraits>>(documentation_hasAllTokens);
     factory.registerAlias("hasAllToken", HasAllTokensTraits::name);
+}
+
+REGISTER_FUNCTION(HasTokenStartingWith)
+{
+    FunctionDocumentation::Description description = R"(
+Returns 1, if at least one token of the `input` string starts with `prefix`, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
+This is the token-level counterpart of [`startsWith`](/reference/functions/regular-functions/string-functions#startsWith): the prefix may begin at any token, not only at the start of the string.
+
+<Note>
+Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+With a text index, the function seeks the sorted index dictionary to the tokens with the given prefix and reads only their posting lists.
+If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
+</Note>
+
+Prior to searching, the function tokenizes the `input` argument using the tokenizer specified for the text index.
+If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
+The `prefix` argument is never tokenized: it is compared byte by byte with the beginning of each token.
+If the text index has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to `input` and to `prefix`.
+If the text index has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the index is not used and the function matches the tokens before postprocessing.
+
+The index is read when [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) is enabled and `prefix` has at least [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length) characters.
+Otherwise the function is evaluated on the column data, still with the tokenizer and preprocessor of the index.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+hasTokenStartingWith(input, prefix[, tokenizer])
+)";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
+        {"prefix", "The prefix a token must start with.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1`, if at least one token starts with `prefix`. `0`, otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Prefix search over the fields of a row",
+        R"(
+DROP TABLE IF EXISTS doc;
+
+CREATE TABLE doc (
+    id UInt32,
+    user_name String,
+    email String,
+    search String MATERIALIZED lowerUTF8(concatWithSeparator('|', '', user_name, email)),
+    INDEX idx(search) TYPE text(tokenizer = splitByString(['|']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, 'john', 'Fab@example.com'), (2, 'alf', 'abc@example.com'), (3, 'xfa', 'y@example.com');
+
+SELECT id FROM doc WHERE hasTokenStartingWith(search, 'fa') SETTINGS text_index_like_min_pattern_length = 2;
+        )",
+        R"(
+┌─id─┐
+│  1 │
+└────┘
+        )"
+    },
+    {
+        "The prefix may start at any token",
+        R"(
+SELECT hasTokenStartingWith('foo bar', 'ba'), startsWith('foo bar', 'ba');
+        )",
+        R"(
+┌─hasTokenStartingWith('foo bar', 'ba')─┬─startsWith('foo bar', 'ba')─┐
+│                                     1 │                           0 │
+└───────────────────────────────────────┴─────────────────────────────┘
+        )"
+    },
+    {
+        "Use a custom tokenizer via the 3rd argument",
+        R"(
+SELECT hasTokenStartingWith('a|fab@example.com', 'fab@', 'splitByString([''|''])');
+        )",
+        R"(
+┌─hasTokenStartingWith('a|fab@example.com', 'fab@', 'splitByString([\'|\'])')─┐
+│                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionHasAnyAllTokensOverloadResolver<HasTokenStartingWithTraits>>(documentation);
 }
 }
