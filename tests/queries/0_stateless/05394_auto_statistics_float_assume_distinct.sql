@@ -202,6 +202,7 @@ WHERE database = currentDatabase() AND table = 't_floats_uniq_only' AND active A
 ORDER BY column;
 
 -- The optimizer uses the assumed cardinality, e.g. to order PREWHERE conditions.
+-- The `EXPLAIN` lines are trimmed: their indentation depends on the plan, e.g. with parallel replicas.
 SET explain_query_plan_default = 'legacy';
 SET use_statistics = 1;
 SET enable_analyzer = 1;
@@ -229,7 +230,7 @@ INSERT INTO t_floats_prewhere SELECT number + 0.5, number % 1000 FROM numbers(10
 -- so the setting change below takes effect although the cached statistics stay the same.
 -- `f = 100.5` is assumed to match one row, `i = 10` matches about ten: `f` is evaluated first.
 SELECT 'prewhere, assumed';
-SELECT replaceRegexpAll(explain, '__table1\.', '')
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.', ''))
 FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere WHERE i = 10 AND f = 100.5)
 WHERE explain LIKE '%Prewhere filter column%';
 
@@ -237,7 +238,7 @@ ALTER TABLE t_floats_prewhere MODIFY SETTING auto_statistics_assume_floats_disti
 
 -- No sketch for `f` and nothing assumed: the default selectivity, so `i` is evaluated first.
 SELECT 'prewhere, not assumed';
-SELECT replaceRegexpAll(explain, '__table1\.', '')
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.', ''))
 FROM (EXPLAIN actions = 1 SELECT count() FROM t_floats_prewhere WHERE i = 10 AND f = 100.5)
 WHERE explain LIKE '%Prewhere filter column%';
 

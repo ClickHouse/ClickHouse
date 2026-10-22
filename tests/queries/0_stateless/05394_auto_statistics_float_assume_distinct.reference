@@ -58,6 +58,6 @@ u64	uniq_v2(auto)
 f64	[]	\N
 u64	['UniqV2']	10
 prewhere, assumed
-          Prewhere filter column: and(equals(f, 100.5_Float64), equals(i, 10_UInt8)) (removed)
+Prewhere filter column: and(equals(f, 100.5_Float64), equals(i, 10_UInt8)) (removed)
 prewhere, not assumed
-          Prewhere filter column: and(equals(i, 10_UInt8), equals(f, 100.5_Float64)) (removed)
+Prewhere filter column: and(equals(i, 10_UInt8), equals(f, 100.5_Float64)) (removed)
