@@ -212,7 +212,8 @@ public:
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
         const ContextPtr & context,
-        bool force_fetch_latest_metadata = false) const;
+        bool force_fetch_latest_metadata = false,
+        bool ignore_metadata_pointer_overrides = false) const;
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
         const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const;
