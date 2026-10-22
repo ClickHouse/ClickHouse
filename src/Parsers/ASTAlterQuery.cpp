@@ -138,7 +138,7 @@ ASTPtr ASTAlterCommand::clone() const
 void ASTAlterCommand::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "AlterCommand");
-    w.writeString("command_type", std::string(magic_enum::enum_name(type)));
+    w.writeString("command_type", magic_enum::enum_name(type));
 
     w.writeBool("detach", detach);
     w.writeBool("part", part);
@@ -152,7 +152,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeBool("replace", replace);
 
     if (type == ASTAlterCommand::MOVE_PARTITION)
-        w.writeString("move_destination_type", std::string(magic_enum::enum_name(move_destination_type)));
+        w.writeString("move_destination_type", magic_enum::enum_name(move_destination_type));
 
     if (!move_destination_name.empty())
         w.writeString("move_destination_name", move_destination_name);
@@ -698,7 +698,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << "(";
-    auto closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
+    auto closing_bracket_guard = make_scope_guard(std::function<void()>([&ostr]() { ostr << ")"; }));
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {

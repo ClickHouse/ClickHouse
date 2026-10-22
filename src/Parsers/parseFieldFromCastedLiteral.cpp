@@ -1,6 +1,7 @@
 #include <Parsers/parseFieldFromCastedLiteral.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <IO/ReadBufferFromString.h>
@@ -118,17 +119,37 @@ Field parseFieldFromCastedLiteral(const ASTPtr & ast)
     if (const auto * literal = ast->as<ASTLiteral>())
         return literal->value;
 
-    if (const auto * cast_func = ast->as<ASTFunction>();
-        isFunctionCast(cast_func) && cast_func->arguments && cast_func->arguments->children.size() == 2)
+    if (const auto * func = ast->as<ASTFunction>())
     {
-        const auto * value_lit = cast_func->arguments->children[0]->as<ASTLiteral>();
-        const auto * type_lit  = cast_func->arguments->children[1]->as<ASTLiteral>();
-        if (value_lit && type_lit && type_lit->value.getType() == Field::Types::String)
-            return parseLiteralCastedTo(value_lit->value, type_lit->value.safeGet<String>());
+        if (isFunctionCast(func) && func->arguments && func->arguments->children.size() == 2)
+        {
+            const auto * value_lit = func->arguments->children[0]->as<ASTLiteral>();
+            const auto * type_lit  = func->arguments->children[1]->as<ASTLiteral>();
+            if (value_lit && type_lit && type_lit->value.getType() == Field::Types::String)
+                return parseLiteralCastedTo(value_lit->value, type_lit->value.safeGet<String>());
+        }
+
+        if (func->name == "array" || func->name == "tuple")
+        {
+            checkStackSize();
+
+            Array elements;
+            if (func->arguments)
+            {
+                elements.reserve(func->arguments->children.size());
+                for (const auto & child : func->arguments->children)
+                    elements.push_back(parseFieldFromCastedLiteral(child));
+            }
+
+            if (func->name == "array")
+                return elements;
+            return Tuple(elements.begin(), elements.end());
+        }
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Expected a literal or a CAST of a literal, got '{}'", ast->formatForErrorMessage());
+        "Expected a literal, a CAST of a literal, or an array or tuple of those, got '{}'",
+        ast->formatForErrorMessage());
 }
 
 }
