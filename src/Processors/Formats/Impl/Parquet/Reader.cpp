@@ -1,4 +1,6 @@
 
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Allocator.h>
@@ -108,6 +110,20 @@ static int thriftEnumToInt(const E & e)
     std::underlying_type_t<E> v;
     memcpy(&v, &e, sizeof(v));
     return static_cast<int>(v);
+}
+
+/// The smallest memory limit in effect for the current thread: of the query, of the user, or of the server.
+/// 0 if there is none.
+static size_t memoryLimitOfCurrentThread()
+{
+    size_t limit = 0;
+    for (MemoryTracker * tracker = CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
+    {
+        const Int64 hard_limit = tracker->getHardLimit();
+        if (hard_limit > 0 && (limit == 0 || size_t(hard_limit) < limit))
+            limit = size_t(hard_limit);
+    }
+    return limit;
 }
 
 template <typename E>
@@ -2885,7 +2901,23 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     /// since the cache holds those rows anyway, and never together with another chunk.
     const bool aligned_with_columns_cache = !row_group.cached_columns.empty() || !row_group.columns_cache_writes.empty();
     if (aligned_with_columns_cache)
-        rows_per_subgroup = COLUMNS_CACHE_CHUNK_ROWS;
+    {
+        /// Unless the columns that are decoded would take a large part of the memory the query may use for a whole
+        /// chunk, while the block size settings ask for less: then the row group is read in the blocks the settings
+        /// ask for, still never crossing a chunk, and is not written to the cache, which takes only whole chunks.
+        /// A chunk written to the cache is the server's only after it is decoded.
+        double bytes_per_row = 0;
+        for (size_t i = 0; i < primitive_columns.size(); ++i)
+            if (!row_group.columns.at(i).served_from_cache)
+                bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
+        const size_t memory_limit = memoryLimitOfCurrentThread();
+        const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
+            && bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit / 4);
+        if (chunk_too_large)
+            row_group.columns_cache_writes.clear();
+        else
+            rows_per_subgroup = COLUMNS_CACHE_CHUNK_ROWS;
+    }
     chassert(rows_per_subgroup > 0);
 
     /// (Currently we turn each element of row_ranges into at least one row subgroup. If column index
@@ -4505,9 +4537,18 @@ void Reader::addToColumnsCacheWrite(
     entry->key = ColumnsCacheKey{columns_cache_identities.at(idx_in_output_block), row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + chunk};
     entry->column = column;
 
-    const size_t bytes_admitted = cache_options.cache->setMany({entry}, columns_cache_generation);
+    std::vector<bool> resident;
+    const size_t bytes_admitted = cache_options.cache->setMany({entry}, columns_cache_generation, &resident);
     if (bytes_admitted)
         cache_options.write_budget->bytes_written.fetch_add(bytes_admitted, std::memory_order_relaxed);
+
+    /// The cache can reject the chunk, e.g. one larger than a shard of the cache, or one written after the cache was
+    /// dropped. Then the column cannot be served from the cache, and the chunks of it written before are of no use.
+    if (!resident.at(0))
+    {
+        withdrawColumnsCacheWrite(write);
+        return;
+    }
 
     ++write.chunks_written;
     write.entries.push_back(entry);

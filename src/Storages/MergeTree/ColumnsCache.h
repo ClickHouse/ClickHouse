@@ -236,7 +236,10 @@ public:
     /// The expected generation is captured through getInvalidationGeneration
     /// when the reader starts. A mismatch means the table or the whole cache
     /// was invalidated after the read began, so the deferred write is dropped.
-    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation);
+    ///
+    /// If `entries_resident` is given, it is set to whether the cache holds each of the entries right after
+    /// the call: the entry was admitted, or the cache already held all its granules.
+    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, std::vector<bool> * entries_resident = nullptr);
 
     /// Take back entries a reader has written with `setMany`, when what it wrote turns out to be of no
     /// use, e.g. some chunks of a column of a `Parquet` row group that is served from the cache only
@@ -496,7 +499,7 @@ private:
 
     /// `setMany` under `MemoryTrackerBlockerInThread`. Adds the memory of the admitted columns the
     /// query read to `bytes_to_hand_over`.
-    size_t setManyImpl(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over);
+    size_t setManyImpl(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over, std::vector<bool> * entries_resident);
 };
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
