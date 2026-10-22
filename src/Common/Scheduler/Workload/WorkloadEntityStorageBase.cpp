@@ -361,12 +361,12 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created after all entities it references are created as well.
+                // Rule 2: Entity can only be created or updated after all changed entities it references. For an updated
+                // parent this keeps the hierarchy acyclic while workloads are moved: every new ancestor of a workload
+                // already has its new parent when the workload is attached to it.
                 for (const auto & target : new_targets[change.key])
                 {
-                    // If target is creating (or recreating), it should be created first.
-                    // (But if target is updating, there is no dependency).
-                    if (auto it = change_by_key.find(target); it != change_by_key.end() && (!it->second->before || it->second->recreates()))
+                    if (change_by_key.contains(target))
                         dependencies[change.key].insert(target);
                 }
             }

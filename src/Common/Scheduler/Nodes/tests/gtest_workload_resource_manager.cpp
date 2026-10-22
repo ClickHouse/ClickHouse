@@ -2926,6 +2926,24 @@ static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, cons
     return seen;
 }
 
+// Moving workloads so that a parent becomes a child is applied in an order that keeps the hierarchy acyclic, both
+// within one layer and when the configuration shadows a SQL hierarchy.
+TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b IN a");
+
+    t.loadConfig("CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+
+    t.loadConfig("CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
+    t.loadConfig("CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+}
+
 // A load (configuration, Keeper, disk) rejects conflicts and broken references as a whole and keeps the previous
 // entities. A persisted load resolves references against its own entities and the configuration.
 TEST(SchedulerWorkloadResourceManager, LoadRejectsConflictsAndBrokenReferences)
