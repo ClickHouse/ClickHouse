@@ -589,13 +589,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 : Strings{reading_path.path};
 
             const size_t max_expanded_elements = query_settings.list_object_keys_size;
-            /// Host/query shards and path selectors are expanded independently, but every indexed key
-            /// is their Cartesian product. Bound that final product before reserving or materializing it.
-            if (!expanded_paths.empty() && url_shards.size() > max_expanded_elements / expanded_paths.size())
+            /// Count concrete URLs, including every failover option in a logical shard. Host/query
+            /// options and paths are expanded separately; bound their product without overflowing,
+            /// before materializing the indexed keys or making any requests.
+            if (!expanded_paths.empty())
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Table function 'url': first argument generates too many result addresses");
+                size_t remaining_url_options = max_expanded_elements / expanded_paths.size();
+                for (const auto & url_options : url_shards)
+                {
+                    if (url_options.size() > remaining_url_options)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Table function 'url': first argument generates too many result addresses");
+                    remaining_url_options -= url_options.size();
+                }
             }
 
             indexed_paths.reserve(url_shards.size() * expanded_paths.size());

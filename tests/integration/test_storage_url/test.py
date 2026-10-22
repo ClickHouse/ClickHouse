@@ -909,18 +909,29 @@ def test_url_archive_combined_expansion_limit():
     for table_function in table_functions:
         assert node1.query(f"SELECT sum(x) FROM {table_function}", settings=settings).strip() == "303"
 
-    two_shards_two_paths = (
-        "http://resolver:8087/data/archive_identity/archive{0,1}.zip?shard={0,1} :: value.tsv"
-    )
-    queries = [
-        f"SELECT * FROM url('{two_shards_two_paths}', 'TSV', 'x UInt64')",
-        f"SELECT * FROM urlCluster('test_cluster_two_shards', '{two_shards_two_paths}', 'TSV', 'x UInt64')",
+    oversized_sources = [
+        "http://resolver:8087/data/archive_identity/archive{0,1}.zip?shard={0,1} :: value.tsv",
+        "http://{resolver:8087|resolver:8088}/data/archive_braces/{a,b}.zip :: value.tsv",
+        "http://resolver:8087/data/archive_braces/{a,b}.zip?token={primary|mirror} :: value.tsv",
     ]
-    for query in queries:
-        reset_index_page_server_stats()
-        error = node1.query_and_get_error(query, settings=settings)
-        assert "first argument generates too many result addresses" in error
-        assert get_index_page_server_stats() == {}
+    for source in oversized_sources:
+        table_functions = [
+            f"url('{source}', 'TSV', 'x UInt64')",
+            f"urlCluster('test_cluster_two_shards', '{source}', 'TSV', 'x UInt64')",
+        ]
+        for table_function in table_functions:
+            reset_index_page_server_stats()
+            reset_index_page_server_stats(8088)
+            error = node1.query_and_get_error(f"SELECT * FROM {table_function}", settings=settings)
+            assert "first argument generates too many result addresses" in error
+            assert get_index_page_server_stats() == {}
+            assert get_index_page_server_stats(8088) == {}
+            if source in oversized_sources[1:]:
+                # Four candidate URLs still mean two logical files, not four union tasks.
+                assert node1.query(
+                    f"SELECT sum(x) FROM {table_function}",
+                    settings={**settings, "glob_expansion_max_elements": 4},
+                ).strip() == "33"
 
 
 def test_url_cluster_rejects_bucket_granularity_for_archives():
