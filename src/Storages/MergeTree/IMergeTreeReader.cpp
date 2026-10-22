@@ -668,7 +668,7 @@ bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDa
     return type_in_part.hasSubcolumn(subcolumn_name);
 }
 
-void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
+void IMergeTreeReader::performRequiredConversions(Columns & res_columns, const DataTypes & types) const
 {
     try
     {
@@ -689,6 +689,13 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+
+            /// Inserted even without a conversion, as an input of the `DEFAULT` expressions of other conversions.
+            if (!types.empty() && types[pos])
+            {
+                copy_block.insert({res_columns[pos], types[pos], name_and_type->name});
+                continue;
+            }
 
             auto type_before_conversions = getColumnTypeBeforeConversions(pos, name_and_type->type);
             if (type_before_conversions->equals(*name_and_type->type))

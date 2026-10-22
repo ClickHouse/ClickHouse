@@ -3,11 +3,13 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 
 #include <algorithm>
@@ -463,8 +465,10 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         }
     }
 
-    /// Before conversions the read columns have their types in the part, so a patch of another type is applied after conversions.
+    /// Before conversions the read columns have their types in the part, so a patch of another type is applied after
+    /// its column alone is converted to the type in `types_of_patched_columns`, and before the other conversions.
     Block header_before_conversions;
+    DataTypes types_of_patched_columns;
     if (!patch_readers.empty())
     {
         header_before_conversions = result_header;
@@ -487,8 +491,9 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
                 pos = result_header.getPositionByName(column_it->column_name);
                 const auto & type_before_conversions = header_before_conversions.getByPosition(pos).type;
+                const auto & type = result_header.getByPosition(pos).type;
 
-                if (type_before_conversions->equals(*result_header.getByPosition(pos).type))
+                if (type_before_conversions->equals(*type))
                     continue;
 
                 auto type_in_patch = patch_readers[i]->getColumnTypeInPatch(column_it->column_name);
@@ -497,9 +502,18 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
                 /// The chain overwrites such a column before reading it, so its patch is not applied at this step.
                 if (has_skip_set && left_unconverted[pos])
+                {
                     it = columns_for_patch.erase(column_it);
-                else
-                    column_it->order = ColumnForPatch::Order::AfterConversions;
+                    continue;
+                }
+
+                column_it->order = ColumnForPatch::Order::AfterColumnConversion;
+                types_of_patched_columns.resize(reader_columns.size());
+
+                /// Nullable if possible, so that NULLs are replaced by a DEFAULT, which may read other columns, after the patches.
+                types_of_patched_columns[pos] = isNullableOrLowCardinalityNullable(type_before_conversions)
+                    ? makeNullableOrLowCardinalityNullableSafe(type)
+                    : type;
             }
         }
     }
@@ -520,6 +534,39 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     };
 
     apply_patches(header_before_conversions, ColumnForPatch::Order::BeforeConversions);
+
+    if (!types_of_patched_columns.empty())
+    {
+        Block block;
+        NamesAndTypesList types;
+        for (size_t pos = 0; pos < types_of_patched_columns.size(); ++pos)
+        {
+            if (types_of_patched_columns[pos])
+            {
+                const auto & column = header_before_conversions.getByPosition(pos);
+                block.insert({read_columns[pos], column.type, column.name});
+                types.emplace_back(column.name, types_of_patched_columns[pos]);
+            }
+        }
+
+        DB::performRequiredConversions(
+            block,
+            types,
+            merge_tree_reader->data_part_info_for_read->getContext(),
+            merge_tree_reader->getStorageSnapshot()->metadata->getColumns().getDefaults());
+
+        for (size_t pos = 0; pos < types_of_patched_columns.size(); ++pos)
+        {
+            if (types_of_patched_columns[pos])
+            {
+                auto & column = header_before_conversions.getByPosition(pos);
+                read_columns[pos] = std::move(block.getByName(column.name).column);
+                column.type = types_of_patched_columns[pos];
+            }
+        }
+
+        apply_patches(header_before_conversions, ColumnForPatch::Order::AfterColumnConversion);
+    }
 
     /// Apply alter conversions for columns read by this step.
     ///
@@ -554,7 +601,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// columns; keep them out of the skip set so the conversion still runs.
     if (!has_skip_set)
     {
-        merge_tree_reader->performRequiredConversions(read_columns);
+        merge_tree_reader->performRequiredConversions(read_columns, types_of_patched_columns);
     }
     else
     {
@@ -571,7 +618,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             }
         }
 
-        merge_tree_reader->performRequiredConversions(read_columns);
+        merge_tree_reader->performRequiredConversions(read_columns, types_of_patched_columns);
 
         for (size_t pos = 0; pos < left_unconverted.size(); ++pos)
         {

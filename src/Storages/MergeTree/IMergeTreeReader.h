@@ -86,7 +86,8 @@ public:
 
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns) const;
+    /// A column with a type in `types` has this type instead of its type in the part.
+    void performRequiredConversions(Columns & res_columns, const DataTypes & types = {}) const;
 
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
