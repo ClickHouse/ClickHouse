@@ -87,7 +87,7 @@ Grace Hash Join は、メモリに制約されない 3 つの結合アルゴリ�
 
 ## JOIN の最適化の例 {#join-optimization-examples}
 
-以下の例では [Stack Overflow データセット](/ja/getting-started/example-datasets/stackoverflow) を使用し、推奨事項を段階的に適用していきます。
+以下の例では [Stack Overflow データセット](/ja/get-started/sample-datasets/stackoverflow) を使用し、推奨事項を段階的に適用していきます。
 以下の測定値は、ClickHouse 26.8.1 が稼働する ClickHouse Cloud サービス上で `max_threads = 4` を設定し、5 回実行した結果の中央値です。各クエリは事前に 1 回ウォームアップし、クエリの実行順序を交互に入れ替えたうえで、`use_query_cache` と `use_query_condition_cache` を無効化して計測しています。
 
 ### `ANY INNER JOIN` を `IN` に置き換える {#replace-any-inner-join-with-in}

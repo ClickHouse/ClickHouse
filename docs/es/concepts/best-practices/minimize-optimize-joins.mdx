@@ -87,7 +87,7 @@ Si desea optimizar una unión para minimizar el uso de memoria en lugar de reduc
 
 ## Ejemplos de optimización de JOIN {#join-optimization-examples}
 
-Los siguientes ejemplos utilizan el [conjunto de datos de Stack Overflow](/es/getting-started/example-datasets/stackoverflow) y aplican las recomendaciones de forma progresiva.
+Los siguientes ejemplos utilizan el [conjunto de datos de Stack Overflow](/es/get-started/sample-datasets/stackoverflow) y aplican las recomendaciones de forma progresiva.
 Las mediciones que se muestran a continuación son medianas de cinco ejecuciones en un servicio de ClickHouse Cloud con ClickHouse 26.8.1 y `max_threads = 4`. Cada consulta se ejecutó una vez previamente para precalentarla, se alternó el orden de las consultas y se deshabilitaron `use_query_cache` y `use_query_condition_cache`.
 
 ### Reemplazar `ANY INNER JOIN` por `IN` {#replace-any-inner-join-with-in}

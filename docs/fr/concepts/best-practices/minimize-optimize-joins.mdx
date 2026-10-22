@@ -87,7 +87,7 @@ Si vous souhaitez optimiser une jointure pour minimiser l&#39;utilisation de la 
 
 ## Exemples d’optimisation des JOIN {#join-optimization-examples}
 
-Les exemples suivants s’appuient sur le [jeu de données Stack Overflow](/fr/getting-started/example-datasets/stackoverflow) et appliquent les recommandations de manière progressive.
+Les exemples suivants s’appuient sur le [jeu de données Stack Overflow](/fr/get-started/sample-datasets/stackoverflow) et appliquent les recommandations de manière progressive.
 Les mesures ci-dessous correspondent à la médiane de cinq exécutions sur un service ClickHouse Cloud exécutant ClickHouse 26.8.1 avec `max_threads = 4`. Chaque requête a été préchauffée une fois, l’ordre des requêtes a été alterné, et `use_query_cache` ainsi que `use_query_condition_cache` ont été désactivés.
 
 ### Remplacer `ANY INNER JOIN` par `IN` {#replace-any-inner-join-with-in}

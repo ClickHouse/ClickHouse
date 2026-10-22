@@ -87,7 +87,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## أمثلة على تحسين JOIN {#join-optimization-examples}
 
-تستخدم الأمثلة التالية [مجموعة بيانات Stack Overflow](/ar/getting-started/example-datasets/stackoverflow) وتطبّق التوصيات تدريجيًا.
+تستخدم الأمثلة التالية [مجموعة بيانات Stack Overflow](/ar/get-started/sample-datasets/stackoverflow) وتطبّق التوصيات تدريجيًا.
 تمثّل القياسات أدناه القيم الوسيطة لخمس عمليات تشغيل على خدمة ClickHouse Cloud تعمل بالإصدار ClickHouse 26.8.1 مع `max_threads = 4`. جرى تسخين كل استعلام مرة واحدة قبل القياس، وبُدِّل ترتيب الاستعلامات بالتناوب، كما عُطِّل كلٌّ من `use_query_cache` و`use_query_condition_cache`.
 
 ### استبدال `ANY INNER JOIN` بـ `IN` {#replace-any-inner-join-with-in}
