@@ -458,10 +458,43 @@ StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index,
 }
 #endif
 
+#if defined(OS_WINDOWS)
+namespace
+{
+/// The runtime address range of the executable's PE image, read from its own headers.
+struct MainImageBounds
+{
+    const char * begin = nullptr;
+    const char * end = nullptr;
+};
+
+MainImageBounds getMainImageBounds()
+{
+    const auto * image_base = reinterpret_cast<const char *>(GetModuleHandleW(nullptr));
+    const auto * dos_header = reinterpret_cast<const IMAGE_DOS_HEADER *>(image_base);
+    const auto * nt_headers = reinterpret_cast<const IMAGE_NT_HEADERS *>(image_base + dos_header->e_lfanew);
+    return {image_base, image_base + nt_headers->OptionalHeader.SizeOfImage};
+}
+
+/// The runtime address of a frame must not be published, because it defeats ASLR. An address inside
+/// the executable resolves to its offset in the image, as an ELF one does; an address elsewhere (a DLL,
+/// JIT code) is not attributed to any object, so it resolves to nothing.
+StackTrace::ResolvedAddress resolveAddress(const MainImageBounds & image, const void * virtual_addr)
+{
+    const auto * address = static_cast<const char *>(virtual_addr);
+    if (address >= image.begin && address < image.end)
+        return {reinterpret_cast<const void *>(static_cast<uintptr_t>(address - image.begin)), {}, StackTrace::AddressKind::MainObject};
+    return {nullptr, {}, StackTrace::AddressKind::UnknownMapping};
+}
+}
+#endif
+
 StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
+#elif defined(OS_WINDOWS)
+    return ::resolveAddress(getMainImageBounds(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
 #endif
@@ -478,6 +511,8 @@ StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_a
     if (main_object.begin <= address && address < main_object.end)
         return {reinterpret_cast<const void *>(address - main_object.bias), {}, AddressKind::MainObject};
     return {nullptr, {}, AddressKind::UnknownMapping};
+#elif defined(OS_WINDOWS)
+    return ::resolveAddress(getMainImageBounds(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
 #endif
@@ -486,12 +521,18 @@ StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_a
 UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
 {
     const ResolvedAddress resolved = resolveAddress(virtual_addr);
+#if defined(OS_WINDOWS)
+    /// Every address outside the executable is `UnknownMapping` there, and its runtime address would
+    /// defeat ASLR, as in the text of a stack trace: see `forEachFrame`. It is stored as zero.
+    return reinterpret_cast<UInt64>(resolved.address);
+#else
     /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
     /// nowhere to record which object an offset belongs to. A runtime address keeps that information,
     /// because the object that contains it is the one it is mapped into.
     if (resolved.kind != AddressKind::MainObject)
         return reinterpret_cast<UInt64>(virtual_addr);
     return reinterpret_cast<UInt64>(resolved.address);
+#endif
 }
 
 void StackTrace::forEachFrame(
@@ -638,13 +679,9 @@ void StackTrace::forEachFrame(
     UNUSED(fatal);
 
 #if defined(OS_WINDOWS)
-    /// The runtime address of a frame must not be published, because it defeats ASLR. A frame inside
-    /// the executable gets its offset in the image as `physical_addr`, as the ELF branch above does;
-    /// a frame elsewhere (a DLL, JIT code) gets none.
-    const auto * image_base = reinterpret_cast<const char *>(GetModuleHandleW(nullptr));
-    const auto * dos_header = reinterpret_cast<const IMAGE_DOS_HEADER *>(image_base);
-    const auto * nt_headers = reinterpret_cast<const IMAGE_NT_HEADERS *>(image_base + dos_header->e_lfanew);
-    const size_t image_size = nt_headers->OptionalHeader.SizeOfImage;
+    /// A frame inside the executable gets its offset in the image as `physical_addr`, as the ELF branch
+    /// above does; a frame elsewhere gets none. See `resolveAddress`.
+    const MainImageBounds image = getMainImageBounds();
 #endif
 
     for (size_t i = offset; i < size; ++i)
@@ -652,9 +689,7 @@ void StackTrace::forEachFrame(
         StackTrace::Frame current_frame;
         current_frame.virtual_addr = frame_pointers[i];
 #if defined(OS_WINDOWS)
-        const auto * address = static_cast<const char *>(frame_pointers[i]);
-        if (address >= image_base && address < image_base + image_size)
-            current_frame.physical_addr = reinterpret_cast<void *>(static_cast<uintptr_t>(address - image_base));
+        current_frame.physical_addr = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(::resolveAddress(image, frame_pointers[i]).address));
 #endif
         callback(current_frame);
     }
