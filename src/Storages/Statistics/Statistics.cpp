@@ -462,42 +462,76 @@ std::optional<UInt64> ColumnStatistics::tryEstimateCardinality() const
     return std::nullopt;
 }
 
+/// The cardinality assumed if all non-NULL values are distinct, see `ColumnStatistics::estimateAssumedDistinctCardinality`.
+/// Shared with `Estimate::estimateAssumedDistinctCardinality`, so both compute the same from the same inputs.
+/// - `non_null_rows`: the non-NULL rows, or all rows when the NULLs are not counted (no `Basic`).
+/// - `non_null_default_rows`: the non-NULL rows equal to the type default (zeros), 0 when not counted.
+/// - `min`, `max`: the minimum and maximum from `Basic`, nullptr when not known.
+static UInt64 assumeDistinctCardinality(UInt64 non_null_rows, UInt64 non_null_default_rows, const Field * min, const Field * max)
+{
+    /// Without `Basic` the NULLs of a Nullable column are counted as distinct values, still an upper bound.
+    UInt64 cardinality = non_null_rows;
+    if (cardinality == 0)
+        return 0;
+
+    /// The rows equal to the type default (zeros) are a single value.
+    if (const UInt64 default_rows = std::min(non_null_default_rows, cardinality))
+        cardinality = cardinality - default_rows + 1;
+
+    /// All non-NULL values are equal. NaN is skipped by min/max unless every value is NaN, and it
+    /// compares unequal to itself, so don't draw conclusions from it.
+    if (min && max && !min->isNull() && !max->isNull() && !isNaNField(*min) && !isNaNField(*max) && *min == *max)
+        cardinality = std::min<UInt64>(cardinality, 1);
+
+    return cardinality;
+}
+
 std::optional<UInt64> ColumnStatistics::estimateAssumedDistinctCardinality() const
 {
     if (findUniqStats(stats) != nullptr || !canAssumeAllDistinctByType(stats_desc.data_type))
         return std::nullopt;
 
-    /// `getNonNullRowCount` returns `rows` when null-count tracking is absent, so without `Basic`
-    /// the NULLs of a Nullable column are counted as distinct values, still an upper bound.
-    UInt64 cardinality = getNonNullRowCount();
-    if (cardinality == 0)
-        return 0;
-
+    UInt64 non_null_default_rows = 0;
+    const Field * min = nullptr;
+    const Field * max = nullptr;
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {
         const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
 
-        /// For a non-Nullable column the default count is the number of zeros, which are a single value.
+        /// For a non-Nullable column the default count is the number of zeros.
         /// For a Nullable column it is the number of NULLs, already excluded by `getNonNullRowCount`.
         if (basic.hasDefaultCount() && !basic.hasNullCount())
-        {
-            const UInt64 default_count = std::min(basic.getDefaultCount(), cardinality);
-            if (default_count > 0)
-                cardinality = cardinality - default_count + 1;
-        }
+            non_null_default_rows = basic.getDefaultCount();
 
-        /// All non-NULL values are equal. NaN is skipped by min/max unless every value is NaN, and it
-        /// compares unequal to itself, so don't draw conclusions from it.
         if (basic.hasNumericMinMax())
         {
-            const Field & min = basic.getMin();
-            const Field & max = basic.getMax();
-            if (!min.isNull() && !max.isNull() && !isNaNField(min) && !isNaNField(max) && min == max)
-                cardinality = std::min<UInt64>(cardinality, 1);
+            min = &basic.getMin();
+            max = &basic.getMax();
         }
     }
 
-    return cardinality;
+    /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
+    return assumeDistinctCardinality(getNonNullRowCount(), non_null_default_rows, min, max);
+}
+
+std::optional<UInt64> Estimate::estimateAssumedDistinctCardinality(const DataTypePtr & data_type) const
+{
+    if (types.contains(StatisticsType::Uniq) || types.contains(StatisticsType::UniqV2) || !canAssumeAllDistinctByType(data_type))
+        return std::nullopt;
+
+    /// The same inputs as `ColumnStatistics::estimateAssumedDistinctCardinality` uses, as `ColumnStatistics::getEstimate`
+    /// stores them: the NULL and default counts come only from `Basic` (the NULL count only for a Nullable column).
+    const UInt64 null_count = estimated_null_count.value_or(0);
+    const UInt64 non_null_rows = null_count <= rows_count ? rows_count - null_count : 0;
+    /// For a Nullable column the default count of `Basic` is the number of NULLs.
+    const UInt64 non_null_default_rows = estimated_null_count ? 0 : estimated_default_count.value_or(0);
+
+    /// Without `Basic`, the minimum and maximum come from `MinMax`, which the assumption doesn't use.
+    const bool has_basic = types.contains(StatisticsType::Basic);
+    const Field * min = has_basic && estimated_min ? &*estimated_min : nullptr;
+    const Field * max = has_basic && estimated_max ? &*estimated_max : nullptr;
+
+    return assumeDistinctCardinality(non_null_rows, non_null_default_rows, min, max);
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
@@ -585,8 +619,6 @@ Estimate ColumnStatistics::getEstimate() const
 
     if (const IStatistics * uniq_stats = findUniqStats(stats))
         info.estimated_cardinality = uniq_stats->estimateCardinality();
-    else
-        info.estimated_assumed_cardinality = estimateAssumedDistinctCardinality();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {

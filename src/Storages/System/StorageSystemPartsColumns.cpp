@@ -373,9 +373,10 @@ void StorageSystemPartsColumns::processNextStorage(
                 if (estimate_it != estimates->end())
                 {
                     cardinality = estimate_it->second.estimated_cardinality;
-                    /// Without a sketch, show the cardinality the optimizer assumes, if it does.
-                    if (!cardinality && estimate_it->second.estimated_assumed_cardinality && assumes_all_distinct(column.name))
-                        cardinality = estimate_it->second.estimated_assumed_cardinality;
+                    /// Without a sketch, show the cardinality the optimizer assumes, if it does. It is derived from
+                    /// the estimate on request, not stored with it: every part keeps an estimate per column.
+                    if (!cardinality && assumes_all_distinct(column.name))
+                        cardinality = estimate_it->second.estimateAssumedDistinctCardinality(column.type);
                 }
 
                 if (cardinality)

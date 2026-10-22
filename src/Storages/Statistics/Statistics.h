@@ -125,20 +125,25 @@ protected:
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 
+/// Every part keeps one per column with statistics (see `IMergeTreeDataPart::setEstimates`), so keep it small:
+/// derive values from the fields below instead of storing them, see `estimateAssumedDistinctCardinality`.
 struct Estimate
 {
     std::set<StatisticsType> types;
     UInt64 rows_count = 0;
     /// Cardinality measured by a uniq sketch. Unset when the column has no sketch.
     std::optional<UInt64> estimated_cardinality;
-    /// Cardinality assumed for a column type whose values are assumed to be distinct
-    /// (`ColumnStatistics::estimateAssumedDistinctCardinality`). Only depends on the column type,
-    /// whether the policy applies is decided by the owner (see `shouldAssumeAllDistinct`).
-    std::optional<UInt64> estimated_assumed_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
+
+    /// Cardinality that would be assumed if all non-NULL values were distinct, the same as
+    /// `ColumnStatistics::estimateAssumedDistinctCardinality` of the statistics this estimate was taken from.
+    /// `data_type` is the type of the column. Returns std::nullopt if the column has a sketch or its type
+    /// doesn't qualify. Ignores the policy: whether the optimizer actually assumes it is decided by the
+    /// owner (see `shouldAssumeAllDistinct`).
+    std::optional<UInt64> estimateAssumedDistinctCardinality(const DataTypePtr & data_type) const;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;

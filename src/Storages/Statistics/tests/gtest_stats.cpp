@@ -1075,6 +1075,18 @@ std::vector<Field> distinctFloats(size_t count)
     return values;
 }
 
+/// The assumed cardinality derived from the estimate of `stats`, as `system.parts_columns` shows it.
+std::optional<UInt64> assumedCardinalityFromEstimate(const ColumnStatistics & stats)
+{
+    return stats.getEstimate().estimateAssumedDistinctCardinality(stats.getDataType());
+}
+
+/// The estimate (kept by every part) derives the same assumed cardinality as the statistics it was taken from.
+void expectEstimateAgrees(const ColumnStatistics & stats)
+{
+    EXPECT_EQ(assumedCardinalityFromEstimate(stats), stats.estimateAssumedDistinctCardinality()) << stats.getNameForLogs();
+}
+
 }
 
 TEST(Statistics, CanAssumeAllDistinctByType)
@@ -1215,7 +1227,8 @@ TEST(Statistics, AssumedDistinctCardinality)
 
         auto estimate = stats->getEstimate();
         EXPECT_FALSE(estimate.estimated_cardinality.has_value());
-        EXPECT_EQ(estimate.estimated_assumed_cardinality, 1000u);
+        EXPECT_EQ(estimate.estimateAssumedDistinctCardinality(stats->getDataType()), 1000u);
+        expectEstimateAgrees(*stats);
     }
 
     /// Nullable with NULLs: the non-NULL rows.
@@ -1227,7 +1240,8 @@ TEST(Statistics, AssumedDistinctCardinality)
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->getCardinalitySource(), Source::AssumedDistinct);
         EXPECT_EQ(stats->estimateCardinality(), 800u);
-        EXPECT_EQ(stats->getEstimate().estimated_assumed_cardinality, 800u);
+        EXPECT_EQ(assumedCardinalityFromEstimate(*stats), 800u);
+        expectEstimateAgrees(*stats);
 
         auto equal = stats->estimateEqual(Field(Float64(7)));
         ASSERT_TRUE(equal.has_value());
@@ -1242,6 +1256,7 @@ TEST(Statistics, AssumedDistinctCardinality)
         auto stats = buildStats({StatisticsType::Basic}, "Nullable(Float32)", values);
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->estimateCardinality(), 100u);
+        expectEstimateAgrees(*stats);
     }
 
     /// Zeros in a non-Nullable column count as one value.
@@ -1252,11 +1267,13 @@ TEST(Statistics, AssumedDistinctCardinality)
         auto stats = buildStats({StatisticsType::Basic}, "Float32", values);
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->estimateCardinality(), 401u);
+        expectEstimateAgrees(*stats);
         EXPECT_EQ(stats->estimateEqual(Field(Float64(0))), 600.0);
 
         auto only_zeros = buildStats({StatisticsType::Basic}, "Float64", std::vector<Field>(50, Field(Float64(0))));
         only_zeros->setAssumeAllDistinct(true);
         EXPECT_EQ(only_zeros->estimateCardinality(), 1u);
+        expectEstimateAgrees(*only_zeros);
     }
 
     /// `min == max`: one value.
@@ -1264,12 +1281,14 @@ TEST(Statistics, AssumedDistinctCardinality)
         auto stats = buildStats({StatisticsType::Basic}, "Float64", std::vector<Field>(100, Field(Float64(7.5))));
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->estimateCardinality(), 1u);
+        expectEstimateAgrees(*stats);
 
         std::vector<Field> values(100, Field(Float64(7.5)));
         values.insert(values.end(), 100, Field());
         auto nullable_stats = buildStats({StatisticsType::Basic}, "Nullable(Float64)", values);
         nullable_stats->setAssumeAllDistinct(true);
         EXPECT_EQ(nullable_stats->estimateCardinality(), 1u);
+        expectEstimateAgrees(*nullable_stats);
     }
 
     /// NaN: `min == max` says nothing.
@@ -1277,6 +1296,7 @@ TEST(Statistics, AssumedDistinctCardinality)
         auto stats = buildStats({StatisticsType::Basic}, "Float64", std::vector<Field>(100, Field(std::numeric_limits<Float64>::quiet_NaN())));
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->estimateCardinality(), 100u);
+        expectEstimateAgrees(*stats);
     }
 
     /// No rows.
@@ -1284,7 +1304,8 @@ TEST(Statistics, AssumedDistinctCardinality)
         auto stats = buildStats({StatisticsType::Basic}, "Float64", {});
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->estimateCardinality(), 0u);
-        EXPECT_EQ(stats->getEstimate().estimated_assumed_cardinality, 0u);
+        EXPECT_EQ(assumedCardinalityFromEstimate(*stats), 0u);
+        expectEstimateAgrees(*stats);
     }
 
     /// Without `basic` there is no cap and no NULL count: the total rows.
@@ -1296,6 +1317,18 @@ TEST(Statistics, AssumedDistinctCardinality)
         stats->setAssumeAllDistinct(true);
         EXPECT_EQ(stats->getCardinalitySource(), Source::AssumedDistinct);
         EXPECT_EQ(stats->estimateCardinality(), 200u);
+        expectEstimateAgrees(*stats);
+    }
+
+    /// The deprecated `minmax` without `basic`: its minimum and maximum end up in the estimate, but only
+    /// those of `basic` cap the assumption.
+    {
+        auto stats = buildStats({StatisticsType::MinMax}, "Float64", std::vector<Field>(100, Field(Float64(7.5))));
+        stats->setAssumeAllDistinct(true);
+        EXPECT_EQ(stats->estimateCardinality(), 100u);
+        EXPECT_EQ(stats->getEstimate().estimated_min, Field(Float64(7.5)));
+        EXPECT_EQ(assumedCardinalityFromEstimate(*stats), 100u);
+        expectEstimateAgrees(*stats);
     }
 }
 
@@ -1324,7 +1357,7 @@ TEST(Statistics, AssumedDistinctCardinalityUnchangedCases)
 
             auto estimate = stats->getEstimate();
             EXPECT_EQ(estimate.estimated_cardinality, sketch_cardinality);
-            EXPECT_FALSE(estimate.estimated_assumed_cardinality.has_value());
+            EXPECT_FALSE(estimate.estimateAssumedDistinctCardinality(stats->getDataType()).has_value());
         }
     }
 
@@ -1337,7 +1370,7 @@ TEST(Statistics, AssumedDistinctCardinalityUnchangedCases)
         EXPECT_FALSE(stats->estimateAssumedDistinctCardinality().has_value()) << type_name;
         EXPECT_EQ(stats->estimateCardinality(), 10u) << type_name;
         EXPECT_FALSE(stats->hasCardinality()) << type_name;
-        EXPECT_FALSE(stats->getEstimate().estimated_assumed_cardinality.has_value()) << type_name;
+        EXPECT_FALSE(assumedCardinalityFromEstimate(*stats).has_value()) << type_name;
     }
 }
 
