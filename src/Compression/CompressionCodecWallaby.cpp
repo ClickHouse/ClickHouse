@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <tuple>
 
 namespace DB
@@ -574,6 +575,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// of copying, and the packing phase swaps once more to make the winner active again — the
     /// winning scale is never quantized twice. The buffers live per thread, not on the frame:
     /// doubled they exceed the frame-size limit, and every vector overwrites them fully.
+    /// They are allocated on the heap rather than placed in static TLS: glibc puts the static
+    /// TLS block at the top of every thread's stack, so tens of kilobytes there would be
+    /// charged against the stack budget of every thread checked by `checkStackSize`.
     struct QuantizationBuffers
     {
         alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized[2];
@@ -581,7 +585,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions[2];
         std::array<bool, WALLABY_VECTOR_VALUES> exception_flags[2];
     };
-    static thread_local QuantizationBuffers buffers;
+    static thread_local std::unique_ptr<QuantizationBuffers> buffers_holder;
+    if (!buffers_holder)
+        buffers_holder = std::make_unique_for_overwrite<QuantizationBuffers>();
+    QuantizationBuffers & buffers = *buffers_holder;
     SignedType * quantized = buffers.quantized[0].data();
     T * adjustments = buffers.adjustments[0].data();
     UInt16 * exception_positions = buffers.exception_positions[0].data();
