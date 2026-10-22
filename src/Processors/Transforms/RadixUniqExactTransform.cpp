@@ -739,8 +739,26 @@ public:
 
     size_t numBuckets() const override { return num_buckets; }
 
+    /// The memory that the sets of the streams take from the start with the hint: only the streams that start in
+    /// `UnboundedSet` allocate a set for their keys.
+    static size_t startSetBytes(const RadixUniqExactEntry & entry, size_t num_streams)
+    {
+        return startsInUnboundedSet(entry) ? num_streams * unboundedStartCapacity(entry) * sizeof(Key) : 0;
+    }
+
 private:
     static constexpr size_t INITIAL_LOCAL_SET_CAPACITY = 256;
+
+    static bool startsInUnboundedSet(const RadixUniqExactEntry & entry)
+    {
+        return entry.stream_distinct * MIN_REPEATS_TO_START_IN_SET <= entry.stream_keys
+            && entry.stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES;
+    }
+
+    static size_t unboundedStartCapacity(const RadixUniqExactEntry & entry)
+    {
+        return std::bit_ceil(std::max<size_t>(entry.stream_distinct * 2, INITIAL_LOCAL_SET_CAPACITY));
+    }
 
     /// Caps the initial scratch set of a deduplication, so that many repeated keys do not allocate a set for all of them.
     static constexpr size_t MAX_INITIAL_SET_KEYS = MAX_BUCKET_SET_BYTES / (2 * sizeof(Key));
@@ -842,10 +860,10 @@ private:
         /// pays only for keys repeated many times. The bound is far from the one of the switch during the routing, so that
         /// the estimate of the distinct keys, from a sample, does not move the stream between the modes from run to run.
         const size_t stream_distinct = hint->stream_distinct;
-        if (stream_distinct * MIN_REPEATS_TO_START_IN_SET <= hint->stream_keys && stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+        if (startsInUnboundedSet(*hint))
         {
             stream.mode = Mode::UnboundedSet;
-            stream.local_set.reset(std::bit_ceil(std::max<size_t>(stream_distinct * 2, INITIAL_LOCAL_SET_CAPACITY)));
+            stream.local_set.reset(unboundedStartCapacity(*hint));
             return;
         }
 
@@ -1038,7 +1056,8 @@ private:
         size_t num_deduplicated = sample.num_buffers;
 
         const size_t estimated_size = static_cast<size_t>(static_cast<double>(stream.num_buffered) * sample.remaining_ratio) + 1;
-        if (sample.new_distinct_ratio <= 0.25 && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+        const size_t set_bytes = std::bit_ceil(std::max<size_t>(estimated_size * 2, INITIAL_LOCAL_SET_CAPACITY)) * sizeof(Key);
+        if (sample.new_distinct_ratio <= 0.25 && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES && !setWouldSpill(set_bytes))
         {
             switchToUnboundedSet(stream, estimated_size);
             return;
@@ -1149,19 +1168,29 @@ private:
         stream.hot_buckets.clear();
     }
 
+    /// A set over the spill threshold would be spilled right away, and allocated again by the next switch to it.
+    bool setWouldSpill(size_t set_bytes) const
+    {
+        return spill_scope && getMemoryTracker()->get() + static_cast<Int64>(set_bytes) > static_cast<Int64>(max_bytes_before_spill);
+    }
+
+    static size_t keysBytes(const Stream & stream) { return (stream.num_buffered + stream.local_set.capacity()) * sizeof(Key); }
+
     /// Spills the stream if the state uses more memory than the threshold.
     void checkSpill(Stream & stream)
     {
-        if (!spill_scope || stream.mode == Mode::BoundedSet)
+        if (!spill_scope)
             return;
 
-        const size_t stream_bytes = stream.arena->allocatedBytes() + stream.local_set.capacity() * sizeof(Key);
-        if (stream_bytes <= stream.bytes_at_last_spill_check
+        /// The growth follows the keys, not the arena: the arena doubles, so it is half free right after it grows, and `spill`
+        /// skips such a stream until its keys fill that space.
+        const size_t keys_bytes = keysBytes(stream);
+        if (keys_bytes <= stream.bytes_at_last_spill_check
             || getMemoryTracker()->get() <= static_cast<Int64>(max_bytes_before_spill))
             return;
 
-        stream.bytes_at_last_spill_check = stream_bytes;
-        if (stream_bytes < min_bytes_before_spill)
+        stream.bytes_at_last_spill_check = keys_bytes;
+        if (stream.arena->allocatedBytes() + stream.local_set.capacity() * sizeof(Key) < min_bytes_before_spill)
             return;
 
         spill(stream);
@@ -1169,7 +1198,9 @@ private:
 
     void spill(Stream & stream)
     {
-        if (stream.mode == Mode::UnboundedSet)
+        /// The keys moved from a set fill the arena, so its free space does not keep the memory from growing.
+        const bool from_set = stream.mode != Mode::Routing;
+        if (from_set)
             switchToRouting(stream);
         syncBuffers(stream);
 
@@ -1193,7 +1224,7 @@ private:
 
         /// The routing reuses the freed blocks before it allocates more, so with half of the arena free the memory stops
         /// growing for a while without a spill.
-        if (stream.num_buffered * sizeof(Key) * 2 <= stream.arena->allocatedBytes())
+        if (!from_set && stream.num_buffered * sizeof(Key) * 2 <= stream.arena->allocatedBytes())
             return;
 
         if (!stream.spill_file)
@@ -1222,7 +1253,7 @@ private:
         stream.local_set.reset(INITIAL_LOCAL_SET_CAPACITY);
         stream.num_buffered = 0;
         stream.hot_buckets.clear();
-        stream.bytes_at_last_spill_check = stream.arena->allocatedBytes() + stream.local_set.capacity() * sizeof(Key);
+        stream.bytes_at_last_spill_check = keysBytes(stream);
         has_spilled.store(true, std::memory_order_relaxed);
     }
 
@@ -1480,9 +1511,9 @@ RadixUniqExactStatePtr createState(
             hint.reset();
         }
 
-        /// The sets preallocated from the hint are allocated before a spill can free memory, so a query that has to spill
-        /// does not take them.
-        if (hint && spill_params.max_bytes && preallocated * 2 * sizeof(Key) > spill_params.max_bytes)
+        /// The sets of the streams preallocated from the hint are allocated before a spill can free memory, so a query that
+        /// has to spill does not take them.
+        if (hint && spill_params.max_bytes && RadixUniqExactState<Key>::startSetBytes(*hint, num_streams) > spill_params.max_bytes)
             hint.reset();
     }
 
