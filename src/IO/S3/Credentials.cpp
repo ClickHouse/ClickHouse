@@ -249,7 +249,7 @@ private:
 
     std::atomic<size_t> max_credentials;
     std::mutex mutex;
-    std::unordered_map<
+    std::unordered_map< // STYLE_CHECK_ALLOW_STD_CONTAINERS
         CredentialsProviderKey,
         typename CredentialsLRUQueue::iterator,
         CredentialsKeyHash,
