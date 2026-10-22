@@ -124,7 +124,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    parquet::format::FileMetaData file_metadata;
+    std::shared_ptr<const Parquet::FileFooter> file_footer;
     bool initialized = false;
 };
 

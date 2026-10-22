@@ -654,13 +654,7 @@ protected:
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
-    /// Positional arguments inside views must be resolved even on remote/secondary nodes where
-    /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
-    /// not on the initiator).
     bool is_view_inner_query = false;
-    /// Set by local shard plans, whose query is printed from a resolved query tree. Inherited by context copies and
-    /// ignored in view bodies; `withUnresolvedPositionalArguments` resets it for other queries.
-    bool positional_arguments_already_resolved = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -792,6 +786,8 @@ protected:
     /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
     /// parallel reading streams serialize their merges into the one tree.
     std::shared_ptr<StreamingCursor> streaming_cursor;
+
+    QueryExecutionStartedCallback query_execution_started_callback;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -2016,11 +2012,6 @@ public:
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
-    bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
-    void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
-    /// For a query that is not printed from the resolved query tree: `context`, or its copy with the flag reset.
-    static ContextPtr withUnresolvedPositionalArguments(const ContextPtr & context);
-
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
 
@@ -2109,6 +2100,12 @@ public:
     /// Allows adding extra zookeeper operations to the transaction that enqueues a DDL query in DatabaseReplicated.
     void setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests);
     Coordination::Requests getDDLAdditionalChecksOnEnqueue() const;
+
+    /// Called by the interpreter after the query has passed its checks,
+    /// right before it starts its main work.
+    void onQueryExecutionStarted() const;
+    void setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback);
+    const QueryExecutionStartedCallback & getQueryExecutionStartedCallback() const;
 
     void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
     void initCurrentTransaction(MergeTreeTransactionPtr txn);
