@@ -341,28 +341,51 @@ NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_element
     }
 }
 
-/// Copies the first `num_bits` planes from `src` into `matrix` and zeroes the rest.
+using MatrixLine [[gnu::vector_size(64)]] = UInt64;
+
+ALWAYS_INLINE void loadPartialLine(MatrixLine & line, const char * src, UInt32 part)
+{
+    switch (part)
+    {
+        case 7: line[6] = unalignedLoad<UInt64>(src + 48); [[fallthrough]];
+        case 6: line[5] = unalignedLoad<UInt64>(src + 40); [[fallthrough]];
+        case 5: line[4] = unalignedLoad<UInt64>(src + 32); [[fallthrough]];
+        case 4: line[3] = unalignedLoad<UInt64>(src + 24); [[fallthrough]];
+        case 3: line[2] = unalignedLoad<UInt64>(src + 16); [[fallthrough]];
+        case 2: line[1] = unalignedLoad<UInt64>(src + 8); [[fallthrough]];
+        case 1: line[0] = unalignedLoad<UInt64>(src); [[fallthrough]];
+        default: break;
+    }
+}
+
 template <size_t N>
 ALWAYS_INLINE void loadPlanes(UInt64 (&matrix)[N], const char * src, UInt32 num_bits)
 {
-#if defined(__AVX2__)
-    /// Not `memset` followed by `memcpy` of a variable size: the overlapping, unaligned tail stores of `memcpy`
-    /// cannot be forwarded to the narrower loads of the transpose that immediately reads the matrix back,
-    /// so every block waits for them to retire, and how long depends on where the stack happens to place
-    /// the matrix. One select per plane compiles to masked loads and aligned full-width stores instead.
-    /// Without masked loads (e.g. on AArch64) it would be a scalar loop over all `N` planes, slower than the copy.
-    /// A full matrix (e.g. random values) needs no masks: a copy of a constant size is aligned stores only.
-    if (num_bits == N)
+    static_assert(N % 8 == 0);
+    if constexpr (N == 8)
     {
-        memcpy(matrix, src, sizeof(matrix));
-        return;
+        if (num_bits == N)
+        {
+            memcpy(matrix, src, sizeof(matrix));
+            return;
+        }
+        for (UInt32 i = 0; i < N; ++i)
+            matrix[i] = i < num_bits ? unalignedLoad<UInt64>(src + i * sizeof(UInt64)) : 0;
     }
-    for (UInt32 i = 0; i < N; ++i)
-        matrix[i] = i < num_bits ? unalignedLoad<UInt64>(src + i * sizeof(UInt64)) : 0;
-#else
-    memset(matrix, 0, sizeof(matrix));
-    memcpy(matrix, src, num_bits * sizeof(UInt64));
-#endif
+    else
+    {
+        const UInt32 full_lines = num_bits / 8;
+#pragma clang loop unroll(full)
+        for (UInt32 line_index = 0; line_index < N / 8; ++line_index)
+        {
+            MatrixLine line = {};
+            if (line_index < full_lines)
+                memcpy(&line, src + sizeof(MatrixLine) * line_index, sizeof(line));
+            else if (line_index == full_lines)
+                loadPartialLine(line, src + sizeof(MatrixLine) * line_index, num_bits % 8);
+            memcpy(&matrix[8 * line_index], &line, sizeof(line));
+        }
+    }
 }
 
 MULTITARGET_FUNCTION_X86_V4(
