@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <DataTypes/UserDefinedTypeFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
@@ -25,6 +26,52 @@ namespace ErrorCodes
 {
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int UNKNOWN_FUNCTION;
+    extern const int TYPE_ALREADY_EXISTS;
+    extern const int UNKNOWN_TYPE;
+}
+
+std::string_view getUserDefinedSQLObjectTypeName(UserDefinedSQLObjectType object_type)
+{
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            return "function";
+        case UserDefinedSQLObjectType::Type:
+            return "type";
+    }
+}
+
+int getUserDefinedSQLObjectAlreadyExistsErrorCode(UserDefinedSQLObjectType object_type)
+{
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            return ErrorCodes::FUNCTION_ALREADY_EXISTS;
+        case UserDefinedSQLObjectType::Type:
+            return ErrorCodes::TYPE_ALREADY_EXISTS;
+    }
+}
+
+int getUnknownUserDefinedSQLObjectErrorCode(UserDefinedSQLObjectType object_type)
+{
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            return ErrorCodes::UNKNOWN_FUNCTION;
+        case UserDefinedSQLObjectType::Type:
+            return ErrorCodes::UNKNOWN_TYPE;
+    }
+}
+
+ASTPtr normalizeCreateUserDefinedSQLObjectQuery(const IAST & create_query, UserDefinedSQLObjectType object_type, const ContextPtr & context)
+{
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            return normalizeCreateFunctionQuery(create_query, context);
+        case UserDefinedSQLObjectType::Type:
+            return normalizeCreateTypeQuery(create_query);
+    }
 }
 
 namespace
@@ -55,8 +102,9 @@ namespace
     }
 }
 
-UserDefinedSQLObjectsStorageBase::UserDefinedSQLObjectsStorageBase(ContextPtr global_context_)
+UserDefinedSQLObjectsStorageBase::UserDefinedSQLObjectsStorageBase(ContextPtr global_context_, UserDefinedSQLObjectType object_type_)
     : WithContext(global_context_)
+    , storage_object_type(object_type_)
 {}
 
 ASTPtr UserDefinedSQLObjectsStorageBase::get(const String & object_name) const
@@ -65,9 +113,9 @@ ASTPtr UserDefinedSQLObjectsStorageBase::get(const String & object_name) const
 
     auto it = object_name_to_create_object_map.find(object_name);
     if (it == object_name_to_create_object_map.end())
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-            "The object name '{}' is not saved",
-            object_name);
+        throw Exception(getUnknownUserDefinedSQLObjectErrorCode(storage_object_type),
+            "The user-defined {} '{}' is not saved",
+            getUserDefinedSQLObjectTypeName(storage_object_type), object_name);
 
     return it->second;
 }
@@ -121,7 +169,8 @@ bool UserDefinedSQLObjectsStorageBase::storeObject(
     if (it != object_name_to_create_object_map.end())
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined object '{}' already exists", object_name);
+            throw Exception(getUserDefinedSQLObjectAlreadyExistsErrorCode(object_type),
+                "User-defined {} '{}' already exists", getUserDefinedSQLObjectTypeName(object_type), object_name);
         if (!replace_if_exists)
             return false;
     }
@@ -152,7 +201,8 @@ bool UserDefinedSQLObjectsStorageBase::removeObject(
     if (it == object_name_to_create_object_map.end())
     {
         if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
+            throw Exception(getUnknownUserDefinedSQLObjectErrorCode(object_type),
+                "User-defined {} '{}' doesn't exist", getUserDefinedSQLObjectTypeName(object_type), object_name);
         return false;
     }
 
@@ -180,7 +230,7 @@ void UserDefinedSQLObjectsStorageBase::setAllObjects(const VectorWithMemoryTrack
 
     for (const auto & [function_name, create_query] : new_objects)
     {
-        auto normalized_query = normalizeCreateFunctionQuery(*create_query, getContext());
+        auto normalized_query = normalizeCreateUserDefinedSQLObjectQuery(*create_query, storage_object_type, getContext());
         if (auto wasm_function = prepareWasmFunction(function_name, normalized_query, getContext()))
             wasm_functions.push_back(std::move(*wasm_function));
         normalized_functions[function_name] = std::move(normalized_query);
@@ -191,7 +241,9 @@ void UserDefinedSQLObjectsStorageBase::setAllObjects(const VectorWithMemoryTrack
         object_name_to_create_object_map = std::move(normalized_functions);
     }
 
-    UserDefinedWebAssemblyFunctionFactory::instance().replaceAll(std::move(wasm_functions));
+    /// The WebAssembly function registry mirrors the function storage only.
+    if (storage_object_type == UserDefinedSQLObjectType::Function)
+        UserDefinedWebAssemblyFunctionFactory::instance().replaceAll(std::move(wasm_functions));
 }
 
 VectorWithMemoryTracking<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
@@ -205,13 +257,16 @@ VectorWithMemoryTracking<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorage
 
 void UserDefinedSQLObjectsStorageBase::setObject(const String & object_name, const IAST & create_object_query)
 {
-    auto normalized_query = normalizeCreateFunctionQuery(create_object_query, getContext());
+    auto normalized_query = normalizeCreateUserDefinedSQLObjectQuery(create_object_query, storage_object_type, getContext());
     auto wasm_function = prepareWasmFunction(object_name, normalized_query, getContext());
 
     {
         std::lock_guard lock(mutex);
         object_name_to_create_object_map[object_name] = std::move(normalized_query);
     }
+
+    if (storage_object_type != UserDefinedSQLObjectType::Function)
+        return;
 
     if (wasm_function)
         UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(std::move(*wasm_function));
@@ -226,7 +281,8 @@ void UserDefinedSQLObjectsStorageBase::removeObject(const String & object_name)
         object_name_to_create_object_map.erase(object_name);
     }
 
-    UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(object_name);
+    if (storage_object_type == UserDefinedSQLObjectType::Function)
+        UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(object_name);
 }
 
 void UserDefinedSQLObjectsStorageBase::removeAllObjectsExcept(const Strings & object_names_to_keep)
@@ -242,6 +298,9 @@ void UserDefinedSQLObjectsStorageBase::removeAllObjectsExcept(const Strings & ob
                 object_name_to_create_object_map.erase(current);
         }
     }
+
+    if (storage_object_type != UserDefinedSQLObjectType::Function)
+        return;
 
     for (const auto & registered_function : UserDefinedWebAssemblyFunctionFactory::instance().getAllFunctions())
     {
