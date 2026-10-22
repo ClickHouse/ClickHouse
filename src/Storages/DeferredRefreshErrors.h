@@ -29,12 +29,11 @@ public:
     void rethrow(const ContextPtr & context, const StoragePtr & table) const;
 
 private:
-    /// Matches the same storage object, which a `RENAME` keeps, or a table with the same `StorageID::getShortName`,
-    /// for a database that creates a new storage object on every lookup.
+    /// Matched by the storage object, which a `RENAME` keeps. A database that builds a new object on every lookup, like
+    /// `DataLakeCatalog`, never matches: such an object loads its metadata in `read` and fails there.
     struct KeptError
     {
         std::weak_ptr<const IStorage> storage;
-        String short_name;
         std::exception_ptr error;
     };
 
