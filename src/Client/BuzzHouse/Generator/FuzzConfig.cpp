@@ -28,6 +28,7 @@ const DB::Strings codecs
        "LZ4HC",
        "ZSTD",
        "ZXC",
+       "GDeflate",
        "Delta",
        "DoubleDelta",
        "Gorilla",
