@@ -366,6 +366,10 @@ Total number of acquired CPU slots
 
 Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Current number of threads that have parked (released) their CPU slot for a non-CPU wait, such as blocking I/O or having no task to run
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 Total number of preempted threads waiting for CPU slot
@@ -718,6 +722,14 @@ Number of threads in the distributed exchange server handshake thread pool runni
 
 Number of queued or active jobs in the distributed exchange server handshake thread pool.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Total size, in bytes, of the blocks held in the caches of `IN` sets in external memory
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Total number of blocks held in the caches of `IN` sets in external memory
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Sum size of currently allocated fiber stacks.
@@ -841,6 +853,14 @@ Number of threads in global thread pool running a task.
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 Number of queued or active jobs in global thread pool.
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Size of the cache of current Iceberg schema field types in Glue catalogs in bytes
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Number of entries in the cache of current Iceberg schema field types in Glue catalogs
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1105,6 +1125,10 @@ Number of container nodes currently stored in Keeper.
 ### KeeperOutstandingRequests {#keeperoutstandingrequests}
 
 Number of outstanding requests
+
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Number of Raft event loop threads waiting for the local log entries to be preprocessed after startup. The Raft event loop also runs the listener, the election and heartbeat timers and every RPC completion, so this should stay at zero or one.
 
 ### KeeperReadThreads {#keeperreadthreads}
 
@@ -1374,6 +1398,10 @@ Number of threads in the AzureObjectStorage thread pool running a task.
 
 Number of queued or active jobs in the AzureObjectStorage thread pool.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Number of exclusive leases, such as the compaction of an Iceberg table, currently held in object storage by this server.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Size in bytes of ObjectStorageQueue metadata cache.
@@ -1410,6 +1438,10 @@ Number of threads in the S3ObjectStorage thread pool running a task.
 
 Number of queued or active jobs in the S3ObjectStorage thread pool.
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Number of keys, such as Iceberg snapshots being read, currently leased in object storage by the queries of this server.
+
 ### OpenFileForRead {#openfileforread}
 
 Number of files open for reading
@@ -1441,6 +1473,10 @@ Number of active threads in the threadpool for loading Outdated data parts.
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Number of queued or active jobs in the threadpool for loading Outdated data parts.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+Amount of memory (bytes) allocated for the buffered data of packed data parts being written. The data moved to temporary files is not included.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1974,6 +2010,14 @@ Number of threads in the stateless worker thread pool running a task.
 
 Number of queued or active jobs in the stateless worker thread pool.
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Total size of the statistics cache in bytes. Holds the column statistics of data parts of MergeTree tables, one entry per part and column.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Total number of entries (one per data part and column) in the statistics cache
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Number of bytes in buffers of Buffer tables
@@ -2138,6 +2182,10 @@ Number of temporary files created for JOIN
 
 Number of temporary files for vertical merge
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+Number of temporary files with the buffered data of packed data parts being written
+
 ### TemporaryFilesForSet {#temporaryfilesforset}
 
 Number of temporary files created for `IN` sets in external memory
@@ -2261,6 +2309,10 @@ Number of entries in the vector similarity index cache
 ### VersionInteger {#versioninteger}
 
 Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Number of queries waiting for asynchronous loading or startup to finish, limited by the 'max_waiting_queries' server setting
 
 ### Write {#write}
 
