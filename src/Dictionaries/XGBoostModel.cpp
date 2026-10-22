@@ -287,33 +287,29 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
 
     auto result = ColumnFloat64::create(rows);
 
-    {
-        std::lock_guard lock(predict_mutex);
+    /* Shape of output prediction */
+    bst_ulong const * out_shape{nullptr};
+    /* Dimension of output prediction */
+    bst_ulong out_dim{0};
+    /* Pointer to a thread local contiguous array, assigned in prediction function. */
+    float const * out_result{nullptr};
 
-        /* Shape of output prediction */
-        bst_ulong const * out_shape{nullptr};
-        /* Dimension of output prediction */
-        bst_ulong out_dim{0};
-        /* Pointer to a thread local contiguous array, assigned in prediction function. */
-        float const * out_result{nullptr};
+    String config = sanitizePredictParams(params);
 
-        String config = sanitizePredictParams(params);
+    throwOnError(
+        XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result),
+        "XGBoosterPredictFromDMatrix");
 
-        throwOnError(
-            XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result),
-            "XGBoosterPredictFromDMatrix");
+    if (out_dim != 1 || out_shape[0] != rows)
+        throw Exception(
+            ErrorCodes::XGBOOST_ERROR,
+            "XGBoost returned a {}-dimensional prediction result for {} row(s), expected one value per row",
+            out_dim,
+            rows);
 
-        if (out_dim != 1 || out_shape[0] != rows)
-            throw Exception(
-                ErrorCodes::XGBOOST_ERROR,
-                "XGBoost returned a {}-dimensional prediction result for {} row(s), expected one value per row",
-                out_dim,
-                rows);
-
-        auto & data = result->getData();
-        for (std::size_t i = 0; i < rows; ++i)
-            data[i] = static_cast<Float64>(out_result[i]);
-    }
+    auto & data = result->getData();
+    for (std::size_t i = 0; i < rows; ++i)
+        data[i] = static_cast<Float64>(out_result[i]);
 
     return result;
 }
