@@ -301,7 +301,7 @@ void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
     const auto creates_a_set = [this](const String & step_id)
     {
         const auto * analyzer = plan_snapshot.find(step_id);
-        return analyzer && analyzer->is_creating_set;
+        return analyzer && analyzer->isCreatingSet();
     };
 
     std::unordered_map<const TemporaryDataOnDiskScope *, String> steps_by_scope;
@@ -386,7 +386,7 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
 
     for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
     {
-        if (!analyzer.is_join || !analyzer.join_cardinality)
+        if (!analyzer.isJoin())
             continue;
 
         const auto processors_it = processors_by_step.find(step_id);

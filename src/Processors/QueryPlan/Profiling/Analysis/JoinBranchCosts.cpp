@@ -36,7 +36,7 @@ JoinBranchCosts::JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, con
         }
 
         /// If step is not join -- propagate the joins below it
-        if (!node->is_join)
+        if (!node->isJoin())
         {
             joins_below[node->id] = std::move(joins_below_the_current_node);
             continue;

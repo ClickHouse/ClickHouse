@@ -28,7 +28,7 @@ struct StepStatsContext;
 using StepFinisher = std::function<AnalyzedStepData(const StepStatsContext &, StepAnalysisReport)>;
 
 /// The rows a join matched, read from its raw report and the rows it output. Branch costs are
-/// accumulated from these.
+/// accumulated from these, so a step that sets this is a step that takes part in that pass.
 using JoinCardinalityReader = std::function<std::optional<UInt64>(const StepAnalysisReport &, UInt64)>;
 
 /// Analyses one step. Built by the step while the plan is alive, run after the plan is gone, so
@@ -51,7 +51,7 @@ struct StepAnalyzer
 
     /// What the passes that run across steps need to know about this one. A step declares these
     /// for itself, so that nothing has to ask what kind of step it is after the fact.
-    bool is_join = false;
+    ///
     /// Joins of one cluster share their cost. Zero means the join belongs to no cluster.
     UInt64 cluster_id = 0;
     /// A set's builder and its consumers share one spill scope, and the total is attributed to
@@ -69,6 +69,12 @@ struct StepAnalyzer
 
     /// Set by joins only; its presence is what puts a step in the branch-cost phase.
     JoinCardinalityReader join_cardinality;
+
+    /// What a pass across steps asks. The fields above are what a step declares about itself;
+    /// these are the questions asked of it afterwards, so no caller has to know which field
+    /// answers which question.
+    bool isJoin() const { return join_cardinality != nullptr; }
+    bool isCreatingSet() const { return is_creating_set; }
 };
 
 }
