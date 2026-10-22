@@ -1,3 +1,6 @@
+-- Tags: no-shared-merge-tree
+-- no-shared-merge-tree: the test pins the lookup of a `Map` key in its bucket of a data part, which `SharedMergeTree` does not do the same way.
+
 -- `-0.` and `0.` are equal, but they are different constants: `1 / -0.` is `-inf`.
 -- A long constant is named by the hash of its value, and the name identifies the constant in the actions DAG,
 -- so the two zeros must not get the same name.
