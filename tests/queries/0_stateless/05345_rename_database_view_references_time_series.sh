@@ -26,9 +26,10 @@ for suffix in "" 2; do
             ENGINE = ReplacingMergeTree ORDER BY metric_family;
     "
 done
+# Only a table of version 9 or earlier can have external target tables.
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "
-    CREATE TABLE ${SRC}.ts ENGINE = TimeSeries SAMPLES ${SRC}.samples TAGS ${SRC}.tags METRIC FAMILIES ${SRC}.families;
-    CREATE TABLE ${EXT}.ts ENGINE = TimeSeries SAMPLES ${SRC}.samples2 TAGS ${SRC}.tags2 METRIC FAMILIES ${SRC}.families2;
+    CREATE TABLE ${SRC}.ts ENGINE = TimeSeries SETTINGS version = 7 SAMPLES ${SRC}.samples TAGS ${SRC}.tags METRIC FAMILIES ${SRC}.families;
+    CREATE TABLE ${EXT}.ts ENGINE = TimeSeries SETTINGS version = 7 SAMPLES ${SRC}.samples2 TAGS ${SRC}.tags2 METRIC FAMILIES ${SRC}.families2;
 "
 
 ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${SRC} TO ${DST}"

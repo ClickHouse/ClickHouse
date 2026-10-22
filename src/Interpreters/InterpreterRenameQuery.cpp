@@ -12,7 +12,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -78,7 +78,8 @@ public:
     {
     }
 
-    /// Takes the locks and stages the new definitions. Called before the database is renamed.
+    /// Takes the locks and stages the new definitions. Called before the database is renamed,
+    /// with the old database name held by `getExclusiveDDLGuardForDatabase`.
     void prepare();
 
     /// Publishes the new definitions in memory, then persists them. Called after the database is renamed.
@@ -105,7 +106,7 @@ private:
     const String new_database_name;
     const ContextPtr context;
 
-    std::vector<std::unique_lock<SharedMutex>> database_guards;
+    std::unique_lock<SharedMutex> new_database_guard;
     std::map<QualifiedTableName, DDLGuardPtr> table_guards;
     std::vector<IStorage::AlterLockHolder> alter_locks;
     std::vector<View> views;
@@ -220,9 +221,8 @@ void ViewDefinitionsRenaming::prepare()
     auto & catalog = DatabaseCatalog::instance();
     const auto & settings = context->getSettingsRef();
 
-    /// Guards are keyed by name, so both names are guarded until the end.
-    for (const auto & database_name : std::set<String>{old_database_name, new_database_name})
-        database_guards.push_back(catalog.getExclusiveDDLGuardForDatabase(database_name));
+    /// Guards are keyed by name, so the new name is guarded until the end too.
+    new_database_guard = catalog.getExclusiveDDLGuardForDatabase(new_database_name);
 
     checkDetachedTables();
 
