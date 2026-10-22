@@ -9,9 +9,11 @@
 #include <Storages/StorageSnapshot.h>
 
 #include <Common/Logger.h>
+#include <base/extended_types.h>
 
 #include <exception>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -288,6 +290,8 @@ public:
     bool materialized_views_ignore_errors = false;
     bool squash_parallel_inserts = false;
     bool ignore_materialized_views_with_dropped_target_table = false;
+    /// Set when the INSERT's column list differs from the default one; folded into the deduplication block id.
+    std::optional<UInt128> insert_column_names_hash;
 };
 
 }
