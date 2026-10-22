@@ -162,4 +162,13 @@ FROM (SELECT v, [contingencyState(b, c) OVER (PARTITION BY p ORDER BY v)] AS a F
 SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
     max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
 
+-- query_plan_lower_array_join_function would move the arrayJoin out of the expression into an ArrayJoinStep.
+SELECT '-- arrayJoin over the window state, not lowered: distributed then local';
+SELECT round(contingencyMerge(CAST(arrayJoin([s]) AS AggregateFunction(contingency, UInt32, UInt32))), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS query_plan_lower_array_join_function = 0;
+SELECT round(contingencyMerge(CAST(arrayJoin([s]) AS AggregateFunction(contingency, UInt32, UInt32))), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0, query_plan_lower_array_join_function = 0;
+
 DROP TABLE t_window_state_variant_gather;
