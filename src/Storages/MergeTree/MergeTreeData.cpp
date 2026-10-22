@@ -2050,7 +2050,8 @@ void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata &
 namespace
 {
 
-void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command, bool allow_clear = false)
+/// `column_name` is the special column, which may be a subcolumn of the column that `command` alters.
+void checkSpecialColumn(const std::string_view column_meta_name, const String & column_name, const AlterCommand & command, bool allow_clear = false)
 {
     if (command.type == AlterCommand::DROP_COLUMN)
     {
@@ -2061,7 +2062,7 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER DROP {} ({}) column",
             column_meta_name,
-            backQuoteIfNeed(command.column_name));
+            backQuoteIfNeed(column_name));
     }
     else if (command.type == AlterCommand::RENAME_COLUMN)
     {
@@ -2069,7 +2070,7 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER RENAME {} ({}) column",
             column_meta_name,
-            backQuoteIfNeed(command.column_name));
+            backQuoteIfNeed(column_name));
     }
     else if (command.type == AlterCommand::MODIFY_COLUMN
         && (command.default_kind == ColumnDefaultKind::Ephemeral || command.default_kind == ColumnDefaultKind::Alias))
@@ -2078,33 +2079,53 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Cannot modify {} column ({}) to {}",
             column_meta_name,
-            backQuoteIfNeed(command.column_name),
+            backQuoteIfNeed(column_name),
             toString(command.default_kind));
     }
 };
 
-template <typename TMustHaveDataType>
-void checkSpecialColumnWithDataType(const std::string_view column_meta_name, const AlterCommand & command)
+/// The type of a special column after `command` modifies the column it belongs to, or nullptr if the command keeps the type.
+DataTypePtr getNewTypeOfSpecialColumn(const std::string_view column_meta_name, const NameAndTypePair & column, const AlterCommand & command)
 {
-    checkSpecialColumn(column_meta_name, command);
+    if (!command.data_type || !column.isSubcolumn())
+        return command.data_type;
+
+    auto new_type = command.data_type->tryGetSubcolumnType(column.getSubcolumnName());
+    if (!new_type)
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Cannot alter column {} to type {}, because it has no subcolumn {}, which is the {} column",
+            backQuoteIfNeed(command.column_name),
+            command.data_type->getName(),
+            backQuoteIfNeed(column.name),
+            column_meta_name);
+
+    return new_type;
+}
+
+template <typename TMustHaveDataType>
+void checkSpecialColumnWithDataType(const std::string_view column_meta_name, const NameAndTypePair & column, const AlterCommand & command)
+{
+    checkSpecialColumn(column_meta_name, column.name, command);
     if (command.type == AlterCommand::MODIFY_COLUMN)
     {
-        if (!command.data_type)
+        auto new_type = getNewTypeOfSpecialColumn(column_meta_name, column, command);
+        if (!new_type)
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                 "Trying to modify settings for column {} ({}) ",
                 column_meta_name,
-                command.column_name);
+                column.name);
         }
-        else if (!typeid_cast<const TMustHaveDataType *>(command.data_type.get()))
+        else if (!typeid_cast<const TMustHaveDataType *>(new_type.get()))
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                 "Cannot alter {} column ({}) to type {}, because it must have type {}",
                 column_meta_name,
-                command.column_name,
-                command.data_type->getName(),
+                column.name,
+                new_type->getName(),
                 TMustHaveDataType().getName());
         }
     }
@@ -5689,94 +5710,6 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
-/// A sign, version or is_deleted column of the merging algorithm which is a subcolumn.
-struct SpecialSubcolumn
-{
-    std::string_view column_meta_name;
-    NameAndTypePair subcolumn;
-};
-
-/// Storage column -> its subcolumns which are special columns of the merging algorithm.
-std::unordered_map<String, std::vector<SpecialSubcolumn>> getColumnsWithSpecialSubcolumns(
-    const MergeTreeData::MergingParams & merging_params, const ColumnsDescription & columns)
-{
-    std::unordered_map<String, std::vector<SpecialSubcolumn>> result;
-    auto add = [&](std::string_view column_meta_name, const String & column_name)
-    {
-        if (column_name.empty())
-            return;
-
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-        if (column && column->isSubcolumn())
-            result[column->getNameInStorage()].push_back({column_meta_name, *column});
-    };
-
-    add("sign", merging_params.sign_column);
-    add("version", merging_params.version_column);
-    add("is_deleted", merging_params.is_deleted_column);
-    return result;
-}
-
-/// Check that the ALTER of a column keeps its subcolumns usable as special columns of the merging algorithm.
-void checkColumnWithSpecialSubcolumns(const AlterCommand & command, const std::vector<SpecialSubcolumn> & special_subcolumns)
-{
-    const auto & [first_meta_name, first_subcolumn] = special_subcolumns.front();
-
-    if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
-    {
-        const char * verb = command.type == AlterCommand::RENAME_COLUMN ? "RENAME" : (command.clear ? "CLEAR" : "DROP");
-        throw Exception(
-            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-            "Trying to ALTER {} column {} whose subcolumn {} is the {} column",
-            verb,
-            backQuoteIfNeed(command.column_name),
-            backQuoteIfNeed(first_subcolumn.name),
-            first_meta_name);
-    }
-
-    if (command.type != AlterCommand::MODIFY_COLUMN)
-        return;
-
-    if (command.default_kind == ColumnDefaultKind::Ephemeral || command.default_kind == ColumnDefaultKind::Alias)
-        throw Exception(
-            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-            "Cannot modify column {} whose subcolumn {} is the {} column to {}",
-            backQuoteIfNeed(command.column_name),
-            backQuoteIfNeed(first_subcolumn.name),
-            first_meta_name,
-            toString(command.default_kind));
-
-    if (!command.data_type)
-        return;
-
-    for (const auto & [column_meta_name, subcolumn] : special_subcolumns)
-    {
-        auto new_type = command.data_type->tryGetSubcolumnType(subcolumn.getSubcolumnName());
-        if (!new_type)
-            throw Exception(
-                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "Cannot alter column {} to type {} because it has no subcolumn {}, which is the {} column",
-                backQuoteIfNeed(command.column_name),
-                command.data_type->getName(),
-                backQuoteIfNeed(subcolumn.name),
-                column_meta_name);
-
-        /// The sign and is_deleted columns must have exactly one type, so they cannot be changed.
-        if (column_meta_name == "version")
-            checkVersionColumnTypesConversion(subcolumn.type.get(), new_type.get(), subcolumn.name);
-        else if (!new_type->equals(*subcolumn.type))
-            throw Exception(
-                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "Cannot alter column {} to type {} because it changes the type of its subcolumn {}, which is the {} column, from {} to {}",
-                backQuoteIfNeed(command.column_name),
-                command.data_type->getName(),
-                backQuoteIfNeed(subcolumn.name),
-                column_meta_name,
-                subcolumn.type->getName(),
-                new_type->getName());
-    }
-}
-
 /// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
 /// table. keep_alias_columns=false expands ALIAS chains to their base columns.
 Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
@@ -5985,7 +5918,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     std::unordered_map<String, std::vector<String>> column_to_subcolumns_used_in_keys;
 
     const auto & old_columns = old_metadata.getColumns();
-    const auto columns_with_special_subcolumns = getColumnsWithSpecialSubcolumns(merging_params, old_columns);
+
+    /// The sign, version and is_deleted columns may be subcolumns, so a command alters them through the column they belong to.
+    auto get_special_column = [&](const String & column_name) -> std::optional<NameAndTypePair>
+    {
+        if (column_name.empty())
+            return {};
+        return old_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    };
+    const auto sign_column = get_special_column(merging_params.sign_column);
+    const auto version_column = get_special_column(merging_params.version_column);
+    const auto is_deleted_column = get_special_column(merging_params.is_deleted_column);
+    /// Whether the special column is `column_name` or one of its subcolumns.
+    auto belongs_to = [](const std::optional<NameAndTypePair> & column, const String & column_name)
+    {
+        return column && column->getNameInStorage() == column_name;
+    };
 
     if (old_metadata.hasPartitionKey())
     {
@@ -6053,17 +6001,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// "a part of key expression". It has to be checked here as well, because such a column may also
         /// be used in a key, and then the key check below would answer first with the less precise reason.
         /// For the commands this loop does not handle the same check runs in the per-command loop below.
-        if (command.column_name == merging_params.version_column)
-            checkSpecialColumn("version", command);
-        else if (command.column_name == merging_params.is_deleted_column)
-            checkSpecialColumn("is_deleted", command);
-        else if (command.column_name == merging_params.sign_column)
-            checkSpecialColumn("sign", command);
-        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
-            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
+        auto check_special_columns_of = [&](const String & column_name)
+        {
+            if (belongs_to(version_column, column_name))
+                checkSpecialColumn("version", version_column->name, command);
+            else if (belongs_to(is_deleted_column, column_name))
+                checkSpecialColumn("is_deleted", is_deleted_column->name, command);
+            else if (belongs_to(sign_column, column_name))
+                checkSpecialColumn("sign", sign_column->name, command);
+        };
 
-        if (auto it = columns_with_special_subcolumns.find(command.column_name); it != columns_with_special_subcolumns.end())
-            checkColumnWithSpecialSubcolumns(command, it->second);
+        check_special_columns_of(command.column_name);
+        if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
+            checkSpecialColumn("columns to sum", command.column_name, command, /* allow_clear = */ true);
 
         if (columns_in_keys.contains(command.column_name))
         {
@@ -6091,6 +6041,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             std::vector<String> key_columns_in_group;
             for (const auto & nested_column : old_columns.getNested(command.column_name))
             {
+                check_special_columns_of(nested_column.name);
                 if (columns_in_keys.contains(nested_column.name) || column_to_subcolumns_used_in_keys.contains(nested_column.name))
                     key_columns_in_group.push_back(nested_column.name);
             }
@@ -6411,39 +6362,31 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
 
-        if (auto it = columns_with_special_subcolumns.find(command.column_name); it != columns_with_special_subcolumns.end())
-            checkColumnWithSpecialSubcolumns(command, it->second);
-
-        if (command.column_name == merging_params.version_column)
+        /// Not an `else if` chain: a command on a column may alter several special columns that are its subcolumns.
+        if (belongs_to(version_column, command.column_name))
         {
+            checkSpecialColumn("version", version_column->name, command);
+
             /// Some type changes for version column is allowed despite it's a part of sorting key
             if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                checkSpecialColumn("version", command);
+                if (auto new_type = getNewTypeOfSpecialColumn("version", *version_column, command))
+                    checkVersionColumnTypesConversion(version_column->type.get(), new_type.get(), version_column->name);
 
-                const IDataType * new_type = command.data_type.get();
-                auto it = old_types.find(command.column_name);
-
-                if (new_type && it != old_types.end())
-                    checkVersionColumnTypesConversion(it->second, new_type, command.column_name);
-
-                /// No other checks required
-                continue;
+                /// No other checks required for the version column itself, unlike for a column that contains it.
+                if (!version_column->isSubcolumn())
+                    continue;
             }
-            checkSpecialColumn("version", command);
         }
-        else if (command.column_name == merging_params.is_deleted_column)
-        {
-            checkSpecialColumnWithDataType<DataTypeUInt8>("is_deleted", command);
-        }
-        else if (command.column_name == merging_params.sign_column)
-        {
-            checkSpecialColumnWithDataType<DataTypeInt8>("sign", command);
-        }
-        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
-        {
-            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
-        }
+
+        if (belongs_to(is_deleted_column, command.column_name))
+            checkSpecialColumnWithDataType<DataTypeUInt8>("is_deleted", *is_deleted_column, command);
+
+        if (belongs_to(sign_column, command.column_name))
+            checkSpecialColumnWithDataType<DataTypeInt8>("sign", *sign_column, command);
+
+        if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
+            checkSpecialColumn("columns to sum", command.column_name, command, /* allow_clear = */ true);
 
         if (command.type == AlterCommand::MODIFY_QUERY)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -6860,6 +6803,26 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
         }
     }
+
+    /// A special column that is a subcolumn must stay a subcolumn of the same column: an added or renamed column
+    /// with its name, including a column of an added Nested group, would take its place.
+    auto check_special_subcolumn_is_kept = [&](const std::string_view column_meta_name, const std::optional<NameAndTypePair> & column)
+    {
+        if (!column || !column->isSubcolumn())
+            return;
+
+        auto new_column = new_metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column->name);
+        if (!new_column || !new_column->isSubcolumn() || new_column->getNameInStorage() != column->getNameInStorage())
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "ALTER is forbidden, because the {} column {} would no longer be a subcolumn of column {}",
+                column_meta_name,
+                backQuoteIfNeed(column->name),
+                backQuoteIfNeed(column->getNameInStorage()));
+    };
+    check_special_subcolumn_is_kept("sign", sign_column);
+    check_special_subcolumn_is_kept("version", version_column);
+    check_special_subcolumn_is_kept("is_deleted", is_deleted_column);
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
 

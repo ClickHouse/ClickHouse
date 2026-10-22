@@ -43,6 +43,9 @@
 1	[1,2,3]	c
 1	[1,2,3]	c
 2	[1,2]	\N
+-- Nested
+three, first
+three, first
 -- Replicated
 1	a	(2,0)
 1	a	(2,0)

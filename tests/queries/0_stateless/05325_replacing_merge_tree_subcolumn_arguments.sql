@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS t_vertical;
 DROP TABLE IF EXISTS t_horizontal;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_other_subcolumns;
+DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_replicated;
 
 SELECT '-- Wrong subcolumns';
@@ -49,6 +50,7 @@ ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver UInt64); -- { serverError AL
 ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver UInt32, del UInt8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver Int64, del UInt8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver UInt64, del UInt16); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_vertical ADD COLUMN `meta.ver` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_vertical UPDATE meta = (10, 0) WHERE 1; -- { serverError CANNOT_UPDATE_COLUMN }
 
 DETACH TABLE t_vertical;
@@ -80,6 +82,10 @@ OPTIMIZE TABLE t_json FINAL;
 SELECT * FROM t_json ORDER BY key;
 -- Without the typed path the subcolumn becomes Dynamic, which cannot be a version.
 ALTER TABLE t_json MODIFY COLUMN j JSON; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+-- A column with the name of the subcolumn would replace it.
+ALTER TABLE t_json ADD COLUMN `j.ver` UInt32; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_json ADD COLUMN `j.x` UInt32;
+ALTER TABLE t_json RENAME COLUMN `j.x` TO `j.ver`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 SELECT '-- Other subcolumns';
 -- The longest array wins, and a row with NULL is deleted.
@@ -92,6 +98,27 @@ INSERT INTO t_other_subcolumns SETTINGS optimize_on_insert = 0 VALUES (1, [1, 2]
 SELECT * FROM t_other_subcolumns FINAL ORDER BY key;
 OPTIMIZE TABLE t_other_subcolumns FINAL;
 SELECT * FROM t_other_subcolumns ORDER BY key;
+ALTER TABLE t_other_subcolumns ADD COLUMN `arr.size0` String; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SELECT '-- Nested';
+CREATE TABLE t_nested (key UInt64, n Nested(arr UInt32, other String), val String, j JSON(a.b UInt8))
+ENGINE = ReplacingMergeTree(n.arr.size0, j.a.b) ORDER BY key;
+
+INSERT INTO t_nested SETTINGS optimize_on_insert = 0 VALUES (1, [1, 2, 3], ['a', 'b', 'c'], 'three, first', '{}');
+INSERT INTO t_nested SETTINGS optimize_on_insert = 0 VALUES (1, [1], ['a'], 'one, second', '{}');
+SELECT val FROM t_nested FINAL;
+
+-- A command on the Nested group alters all of its columns.
+ALTER TABLE t_nested CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_nested DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_nested DROP COLUMN `n.arr`; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+-- The added Nested group has a column `j.a.b`, which would replace the subcolumn.
+ALTER TABLE t_nested ADD COLUMN `j.a` Nested(b UInt8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_nested DROP COLUMN `n.other`;
+
+DETACH TABLE t_nested;
+ATTACH TABLE t_nested;
+SELECT val FROM t_nested FINAL;
 
 SELECT '-- Replicated';
 CREATE TABLE t_replicated (key UInt64, value String, meta Tuple(ver UInt32, del UInt8))
@@ -116,4 +143,5 @@ DROP TABLE t_vertical;
 DROP TABLE t_horizontal;
 DROP TABLE t_json;
 DROP TABLE t_other_subcolumns;
+DROP TABLE t_nested;
 DROP TABLE t_replicated;
