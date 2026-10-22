@@ -573,6 +573,25 @@ static bool canRecalculateTTLWithoutRewritingData(
     });
 }
 
+/// Check whether any projection requires a rebuild that the recalculate-TTL-only
+/// path cannot perform. When true the caller must fall back to the normal
+/// split-and-modify path so the interpreter gets the full column set.
+static bool mustRebuildProjection(
+    const MergeTreeData::DataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot)
+{
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (!source_part->hasProjection(projection.name)
+            && (projection.with_block_number || projection.with_block_offset))
+            return true;
+
+        if (source_part->hasBrokenProjection(projection.name))
+            return true;
+    }
+    return false;
+}
+
 static UInt64 getExistingRowsCount(const Block & block)
 {
     auto column = block.getByName(RowExistsColumn::name).column;
@@ -1631,9 +1650,6 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
-    /// The result has its own UUID (or none), so never overwrite the source's `uuid.txt` through a hardlink.
-    files_to_skip.insert(IMergeTreeDataPart::UUID_FILE_NAME);
-
     /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
     files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
@@ -2316,8 +2332,6 @@ static void finalizeMutatedPart(
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
-    /// The UUID file was not hardlinked. Drop its inherited checksum even if UUID assignment was disabled.
-    new_data_part->checksums.remove(IMergeTreeDataPart::UUID_FILE_NAME);
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
@@ -3302,6 +3316,15 @@ private:
         /// `MergeTask` (see the projection branch there) inherit the same codec, together with
         /// whether it was asked for by an explicit `RECOMPRESS` TTL.
         ctx->new_data_part->default_codec = ctx->compression_codec;
+        /// When only recalculating TTL (no data rewrite), keep the source part's
+        /// codec metadata. Writing the policy-selected codec would falsely mark
+        /// bytes as recompressed even though they are hardlinked unchanged.
+        if (ctx->recalculate_ttl_only)
+        {
+            ctx->compression_codec = ctx->source_part->default_codec;
+            ctx->new_data_part->default_codec = ctx->compression_codec;
+            ctx->is_explicit_recompression = ctx->source_part->default_codec_is_explicit_recompression;
+        }
         ctx->new_data_part->default_codec_is_explicit_recompression = ctx->is_explicit_recompression;
 
         NameSet entries_to_hardlink;
@@ -4755,8 +4778,6 @@ bool MutateTask::prepare()
     /// remains a grouping barrier. Keep file-rename planning based on the
     /// original commands, including one `UPDATE` entry per original command.
     const auto merge_tree_settings = ctx->data->getSettings();
-    const bool materialize_ttl_recalculate_only = (*merge_tree_settings)[MergeTreeSetting::materialize_ttl_recalculate_only];
-    const bool ttl_only_drop_parts = (*merge_tree_settings)[MergeTreeSetting::ttl_only_drop_parts];
     const UInt64 max_coalescing_commands = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_commands];
     const UInt64 max_coalescing_ast_bytes = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_ast_bytes];
     const UInt64 max_coalescing_keys = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_keys];
@@ -4896,11 +4917,19 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
+    const bool materialize_ttl_recalculate_only = (*merge_tree_settings)[MergeTreeSetting::materialize_ttl_recalculate_only];
+    const bool ttl_only_drop_parts = (*merge_tree_settings)[MergeTreeSetting::ttl_only_drop_parts];
     const bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && ttl_only_drop_parts;
     ctx->recalculate_ttl_only = materialize_ttl_recalculate_only && MutationHelpers::canRecalculateTTLWithoutRewritingData(
         ctx->source_part, ctx->future_part->part_format, ctx->metadata_snapshot, ctx->commands_for_part, *alter_conversions);
 
     FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_after_ttl_mode_selection);
+
+    /// Check upfront whether projections need rebuilding — if so, the
+    /// recalculate-only shortcut cannot be used and we need the full
+    /// split-and-modify path. This avoids creating the interpreter twice.
+    if (ctx->recalculate_ttl_only && MutationHelpers::mustRebuildProjection(ctx->source_part, ctx->metadata_snapshot))
+        ctx->recalculate_ttl_only = false;
 
     if (ctx->recalculate_ttl_only)
         ctx->for_interpreter = ctx->commands_for_part;
@@ -4941,43 +4970,17 @@ bool MutateTask::prepare()
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
         settings.apply_deleted_mask = false;
-        settings.materialize_ttl_recalculate_only = materialize_ttl_recalculate_only;
-        settings.ttl_only_drop_parts = ttl_only_drop_parts;
+        settings.merge_tree_settings = merge_tree_settings;
 
-        auto prepare_interpreter = [&]
-        {
-            ctx->interpreter = std::make_unique<MutationsInterpreter>(
-                *ctx->data, ctx->source_part, alter_conversions,
-                ctx->metadata_snapshot, ctx->for_interpreter,
-                ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+        ctx->interpreter = std::make_unique<MutationsInterpreter>(
+            *ctx->data, ctx->source_part, alter_conversions,
+            ctx->metadata_snapshot, ctx->for_interpreter,
+            ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
-            ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
-            ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
-            ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
-            ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
-        };
-
-        prepare_interpreter();
-
-        /// A TTL-only command can still rebuild a deferred commit-order or broken projection.
-        /// Replan with the normal `Compact` column reads when interpretation discovers required writes.
-        if (ctx->recalculate_ttl_only
-            && (!ctx->materialized_projections.empty() || !ctx->materialized_indices.empty()
-                || !ctx->materialized_statistics.empty() || !ctx->indices_to_drop_names.empty()))
-        {
-            ctx->recalculate_ttl_only = false;
-            ctx->for_interpreter.clear();
-            MutationHelpers::splitAndModifyMutationCommands(
-                ctx->source_part,
-                ctx->metadata_snapshot,
-                alter_conversions,
-                ctx->commands_for_part,
-                ctx->for_interpreter,
-                ctx->for_file_renames,
-                ctx->num_for_file_renames_from_commands,
-                ctx->log);
-            prepare_interpreter();
-        }
+        ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
+        ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
+        ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
+        ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
 
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         /// TTL inputs remain in the pipeline header, but none of them are written in recalc-only mode.
