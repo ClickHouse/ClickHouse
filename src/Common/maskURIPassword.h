@@ -301,10 +301,11 @@ inline bool maskURIUserinfo(std::string & url)
 }
 
 /** Mask the values of the query parameters that carry credentials in a presigned URL, so that
-  * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
-  * is masked. Returns whether anything was masked.
+  * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`, and of the
+  * `connection_string` parameter of an ODBC/JDBC bridge request. Every occurrence is masked.
+  * Returns whether anything was masked.
   *
-  * This used to be the regular expression
+  * Apart from `connection_string`, this used to be the regular expression
   * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
   * rewritten to `\1[HIDDEN]` globally. The parameter set mirrors
   * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression, and
@@ -317,6 +318,9 @@ inline bool maskPresignedURLParameters(std::string & url)
 
     auto is_secret_parameter = [](std::string_view name)
     {
+        if (name == "connection_string")
+            return true;
+
         for (auto exact : exact_names)
             if (name == exact)
                 return true;
