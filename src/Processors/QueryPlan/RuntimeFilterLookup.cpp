@@ -220,11 +220,8 @@ RuntimeBloomFilter::RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Runtime bloom filter supports from 1 to {} hash functions, got {}", RUNTIME_BLOOM_MAX_HASHES, hashes);
 
-    /// A power of two number of blocks: the block is selected by masking the first hash. `bytes` is a
-    /// budget (`join_runtime_bloom_filter_bytes`, or the statistics-based size, which is already a
-    /// power of two), so it is rounded down, never exceeded.
-    const size_t requested_blocks = std::max<size_t>(1, bytes / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64)));
-    const size_t num_blocks = std::bit_floor(requested_blocks);
+    /// A power of two number of blocks: the block is selected by masking the first hash.
+    const size_t num_blocks = normalizeRuntimeBloomFilterBytes(bytes) / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64));
     word_index_mask = num_blocks - 1; /// a block index mask, despite the name
     words.assign(num_blocks * RUNTIME_BLOOM_BLOCK_WORDS, 0);
 }
@@ -722,7 +719,8 @@ ApproximateSetRuntimeFilter ApproximateSetRuntimeFilter::deserialize(ReadBuffer 
     /// The bloom size comes from `bloom_filter_bytes`, never from the exact-phase byte bound: the
     /// sender may have been allowed a bigger exact set than the plain settings geometry, but every
     /// receiver of the same exchange has to allocate the same bits or the merged bits are garbage.
-    if (size_bytes != geometry.bloom_filter_bytes || hash_functions != geometry.bloom_filter_hash_functions
+    const UInt64 expected_size_bytes = normalizeRuntimeBloomFilterBytes(geometry.bloom_filter_bytes);
+    if (size_bytes != expected_size_bytes || hash_functions != geometry.bloom_filter_hash_functions
         || seed != BLOOM_FILTER_SEED)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -730,7 +728,7 @@ ApproximateSetRuntimeFilter ApproximateSetRuntimeFilter::deserialize(ReadBuffer 
             size_bytes,
             hash_functions,
             seed,
-            geometry.bloom_filter_bytes,
+            expected_size_bytes,
             geometry.bloom_filter_hash_functions,
             BLOOM_FILTER_SEED);
 
@@ -751,7 +749,7 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_)
     : filter_column_target_type(filter_column_target_type_)
-    , bloom_filter_bytes(geometry_.bloom_filter_bytes)
+    , bloom_filter_bytes(normalizeRuntimeBloomFilterBytes(geometry_.bloom_filter_bytes))
     , bloom_filter_hash_functions(geometry_.bloom_filter_hash_functions)
     , max_ratio_of_set_bits_in_bloom_filter(geometry_.max_ratio_of_set_bits_in_bloom_filter)
     , distinct_keys_hint(distinct_keys_hint_)
