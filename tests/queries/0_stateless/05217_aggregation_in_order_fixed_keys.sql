@@ -1,6 +1,6 @@
 -- Tags: long
 -- `long` because the file builds four MergeTree tables of 300000-800000 rows and runs five timed
--- guards, eight `EXPLAIN PIPELINE` mirrors and three identity checks over them: 5.9 s on a debug build
+-- guards, nine `EXPLAIN PIPELINE` mirrors and four identity checks over them: 5.9 s on a debug build
 -- with the CI jemalloc profiler config armed
 -- (tests/config/config.d/jemalloc_enable_global_profiler.yaml), against a 60 s Fast test cap on a
 -- runner shared with 24 workers. No sanitizer is excluded: the slowest single guarded query measured
@@ -9,9 +9,10 @@
 -- Regression test for a quadratic blowup in aggregation in order and DISTINCT in order with a
 -- fixed-size GROUP BY key: a hashing state built per run of the sorting prefix batch-packed the whole
 -- block's grouping key, so one block cost O(runs * block_size). Root cause and fix: see the commit
--- message. Each of the five ranged state constructions a query can select gets its own timed guard,
--- and every timed and identity statement has an `EXPLAIN PIPELINE` mirror so it cannot go vacuously
--- green when the optimizer stops choosing the in-order plan.
+-- message. Each of the four ranged state constructions aggregation can select, and the one per block
+-- of the DISTINCT transform, gets its own timed guard, and every timed and identity statement has an
+-- `EXPLAIN PIPELINE` mirror so it cannot go vacuously green when the optimizer stops choosing the
+-- in-order plan.
 --
 -- How every timed guard below is sized, stated once for all of them:
 --
@@ -218,9 +219,8 @@ WHERE explain ILIKE '%AggregatingInOrderTransform%';
 
 DROP TABLE t_agg_in_order_fixed_keys_merge;
 
--- Runs of eight equal `a` repeat the first row's key inside the run: each range's state packs its keys
--- per row, and a per-row packer whose byte layout disagrees with the batch packer maps a repeated row
--- to a different key, so the row is emitted a second time instead of recognised as a duplicate.
+-- Runs of eight equal `a` repeat the first row's key inside the run, so a key packed differently for two
+-- rows of one run is emitted a second time instead of recognised as a duplicate.
 
 DROP TABLE IF EXISTS t_distinct_in_order_fixed_keys;
 CREATE TABLE t_distinct_in_order_fixed_keys (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
@@ -257,10 +257,10 @@ SELECT
     )
 );
 
--- The identity above cannot see a state that covers too few rows: the final `DistinctTransform` above
--- the sorted one removes whatever duplicates such a state lets through. So count the rows the sorted
--- transform itself emitted - with one state per range covering exactly its range, that is the number
--- of distinct rows and no more. The three `log_*` settings only route the measurement to the log.
+-- The identity above cannot see duplicates the sorted transform lets through: the final
+-- `DistinctTransform` above it removes them. So count the rows the sorted transform itself emitted,
+-- which is the number of distinct rows and no more. The three `log_*` settings only route the
+-- measurement to the log.
 SELECT count() FROM
 (
     SELECT DISTINCT a, b, c FROM t_distinct_in_order_fixed_keys
@@ -286,3 +286,23 @@ FROM system.processors_profile_log
 WHERE event_date >= yesterday() AND query_id = id AND name = 'DistinctSortedStreamTransform';
 
 DROP TABLE t_distinct_in_order_fixed_keys;
+
+-- Every run starts with the key the previous run ended with and holds it only once, so a last-key cache
+-- carried from one run into the next would skip that row.
+
+DROP TABLE IF EXISTS t_distinct_in_order_run_boundary;
+CREATE TABLE t_distinct_in_order_run_boundary (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_distinct_in_order_run_boundary SELECT intDiv(number, 2), intDiv(number + 1, 2) AS b, b * 7 FROM numbers(1000);
+
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b, c FROM t_distinct_in_order_run_boundary
+    SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, max_threads = 1,
+             max_block_size = 200000, preferred_block_size_bytes = 0,
+             preferred_max_column_in_block_size_bytes = 0, enable_parallel_replicas = 0)
+WHERE explain ILIKE '%DistinctSortedStreamTransform%';
+
+SELECT count() FROM (SELECT DISTINCT a, b, c FROM t_distinct_in_order_run_boundary)
+SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, max_threads = 1,
+         max_block_size = 200000, preferred_block_size_bytes = 0,
+         preferred_max_column_in_block_size_bytes = 0, enable_parallel_replicas = 0;
+
+DROP TABLE t_distinct_in_order_run_boundary;

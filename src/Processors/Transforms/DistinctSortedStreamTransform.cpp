@@ -63,25 +63,10 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
 }
 
-template <bool clear_data>
-size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumnFilter & filter, const size_t range_begin, const size_t range_end)
-{
-    return data.callOnMethod([&](auto & method)
-    {
-        if constexpr (clear_data)
-            method.data.clear();
-        return buildFilterForRange(method, filter, range_begin, range_end);
-    });
-}
-
-template <typename Method>
+template <typename Method, typename State>
 size_t DistinctSortedStreamTransform::buildFilterForRange(
-    Method & method, IColumnFilter & filter, const size_t range_begin, const size_t range_end)
+    Method & method, State & state, IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
-    /// The state is built per equal-range of the sorted prefix but the columns span the whole chunk,
-    /// so the range it will be asked about has to be passed explicitly.
-    ColumnsHashing::SubRangeState<typename Method::State> state(other_columns, other_columns_sizes, nullptr, {range_begin, range_end});
-
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
     {
@@ -91,6 +76,26 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
         filter[i] = emplace_result.isInserted();
         if (emplace_result.isInserted())
             ++count;
+    }
+    return count;
+}
+
+template <typename Method>
+size_t DistinctSortedStreamTransform::buildFilter(
+    Method & method, IColumnFilter & filter, const size_t continued_rows, const size_t chunk_rows)
+{
+    /// One state serves every range of the chunk. A new range starts from an empty set and an empty last-key cache;
+    /// the first `continued_rows` rows extend the previous chunk's last range, whose set is kept.
+    typename Method::State state(other_columns, other_columns_sizes, nullptr);
+    size_t count = buildFilterForRange(method, state, filter, 0, continued_rows);
+    size_t range_begin = continued_rows;
+    while (range_begin != chunk_rows)
+    {
+        const size_t range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
+        method.data.clear();
+        state.resetCache();
+        count += buildFilterForRange(method, state, filter, range_begin, range_end);
+        range_begin = range_end;
     }
     return count;
 }
@@ -127,26 +132,6 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
     return true;
 }
 
-std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(const size_t chunk_rows, IColumnFilter & filter)
-{
-    /// prev_chunk_latest_key is empty on very first transform() call
-    /// or first row doesn't match a key from previous transform()
-    if (prev_chunk_latest_key.empty() || !isLatestKeyFromPrevChunk(0))
-        return {0, 0};
-
-    size_t output_rows = 0;
-    const size_t range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, 0, chunk_rows);
-    if (other_columns.empty())
-        std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
-    else
-    {
-        constexpr bool clear_data = false;
-        output_rows = ordinaryDistinctOnRange<clear_data>(filter, 0, range_end);
-    }
-
-    return {range_end, output_rows};
-}
-
 void DistinctSortedStreamTransform::transform(Chunk & chunk)
 {
     const size_t chunk_rows = chunk.getNumRows();
@@ -168,30 +153,35 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     ///     otherwise: apply ordinary distinct
     /// (3) repeat until chunk is processed
     IColumn::Filter filter(chunk_rows);
-    auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter); /// try to process chuck as continuation of previous one
-    size_t range_end = range_begin;
-    while (range_end != chunk_rows)
-    {
-        // find new range [range_begin, range_end)
-        range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
 
-        // update filter for range
-        if (other_columns.empty())
+    /// try to process chunk as continuation of previous one:
+    /// prev_chunk_latest_key is empty on very first transform() call
+    /// or first row doesn't match a key from previous transform()
+    size_t continued_rows = 0;
+    if (!prev_chunk_latest_key.empty() && isLatestKeyFromPrevChunk(0))
+        continued_rows = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, 0, chunk_rows);
+
+    size_t output_rows = 0;
+    if (other_columns.empty())
+    {
+        /// skip rows already included in distinct on previous transform()
+        std::fill(filter.begin(), filter.begin() + continued_rows, 0);
+        size_t range_begin = continued_rows;
+        while (range_begin != chunk_rows)
         {
+            const size_t range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
             filter[range_begin] = 1;
             std::fill(filter.begin() + range_begin + 1, filter.begin() + range_end, 0);
             ++output_rows;
+            range_begin = range_end;
         }
-        else
-        {
-            // ordinary distinct in range if there are "non-sorted" columns
-            constexpr bool clear_data = true;
-            output_rows += ordinaryDistinctOnRange<clear_data>(filter, range_begin, range_end);
-        }
-
-        // set where next range start
-        range_begin = range_end;
     }
+    else
+    {
+        /// ordinary distinct in every range if there are "non-sorted" columns
+        output_rows = data.callOnMethod([&](auto & method) { return buildFilter(method, filter, continued_rows, chunk_rows); });
+    }
+
     /// if there is no any new rows in this chunk, just skip it
     if (!output_rows)
     {
