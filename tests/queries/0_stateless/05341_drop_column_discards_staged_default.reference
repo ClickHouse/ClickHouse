@@ -1,0 +1,3 @@
+drop after staged default	k
+drop after staged add default	k
+drop nested parent after staged default	k

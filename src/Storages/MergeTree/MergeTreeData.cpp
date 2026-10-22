@@ -5831,6 +5831,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         const auto & uk_columns = old_metadata.unique_key.column_names;
         NameSet uk_set(uk_columns.begin(), uk_columns.end());
+        /// Names produced by earlier `RENAME`/`ADD` in this statement (`Nested` `n` becomes `n.x`).
+        ColumnsDescription working_columns = old_metadata.columns;
+        const bool share_nested_offsets = (*settings_from_storage)[MergeTreeSetting::share_nested_offsets];
 
         auto uk_list_str = [&uk_columns]()
         {
@@ -5866,6 +5869,61 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
+            /// CLEAR COLUMN rewrites the whole part and would drop the per-part `unique_key_index.sst`.
+            /// Reject it only when it targets a stored column: `CLEAR COLUMN missing IF EXISTS` and
+            /// CLEAR of a non-stored column are no-ops, and CLEAR of a UK column hits the
+            /// ALTER_OF_COLUMN_IS_FORBIDDEN guard below. The mutation conversion also rejects CLEAR,
+            /// but only after applying earlier subcommands; this guard must see the same physicality.
+            if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore
+                && !uk_set.contains(command.column_name)
+                && (share_nested_offsets
+                    ? working_columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name)
+                    : working_columns.hasPhysical(command.column_name)))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
+                    "the whole part is rewritten regardless of which column is targeted, so the "
+                    "per-part UNIQUE KEY dense index would be lost.",
+                    backQuoteIfNeed(command.column_name));
+
+            if (!command.ignore)
+            {
+                if (command.type == AlterCommand::RENAME_COLUMN && working_columns.has(command.column_name))
+                    working_columns.rename(command.column_name, command.rename_to);
+                else if (command.type == AlterCommand::ADD_COLUMN && command.data_type)
+                    command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets);
+                /// Plain `DROP COLUMN` advances the snapshot like `prepare()`/`validate()`,
+                /// so a later name reusing `ADD COLUMN` in this statement is not seen as duplicate.
+                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition
+                    && (working_columns.has(command.column_name)
+                        || (share_nested_offsets && working_columns.hasNested(command.column_name))))
+                    working_columns.remove(command.column_name);
+                /// Physicality can change (`ALIAS`/`EPHEMERAL` <-> stored) and a later
+                /// `CLEAR COLUMN` must see the post-`MODIFY` shape, matching `apply()`.
+                else if (command.type == AlterCommand::MODIFY_COLUMN && working_columns.has(command.column_name))
+                {
+                    working_columns.modify(command.column_name, [&](ColumnDescription & column)
+                    {
+                        if (command.isRemovingProperty())
+                        {
+                            switch (command.to_remove)
+                            {
+                                case AlterCommand::RemoveProperty::DEFAULT:
+                                case AlterCommand::RemoveProperty::MATERIALIZED:
+                                case AlterCommand::RemoveProperty::ALIAS:
+                                    column.default_desc = ColumnDefault{};
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }
+                        else if (command.default_expression)
+                        {
+                            column.default_desc.kind = command.default_kind;
+                            column.default_desc.expression = command.default_expression;
+                        }
+                    });
+                }
+            }
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -6577,7 +6635,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 dropped_columns.emplace(command.column_name);
             }
-            else
+            else if (share_nested_offsets)
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
                 for (const auto & nested_column : nested)
@@ -6673,7 +6731,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                if (old_metadata.getColumns().has(command.column_name))
+                /// A later command of this same statement may drop the column; then there is
+                /// nothing to convert and the final metadata no longer has it.
+                if (old_metadata.getColumns().has(command.column_name)
+                    && new_metadata.getColumns().hasPhysical(command.column_name))
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }

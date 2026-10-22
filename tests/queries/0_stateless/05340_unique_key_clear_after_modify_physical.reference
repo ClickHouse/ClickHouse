@@ -1,0 +1,12 @@
+clear_after_alias_to_default_rejected
+state_intact_alias	1	1
+state_intact_alias	2	2
+kind_intact_alias	x	ALIAS
+clear_after_remove_alias_rejected
+state_intact_remove_alias	1	1
+state_intact_remove_alias	2	2
+kind_intact_remove_alias	x	ALIAS
+clear_after_ephemeral_to_default_rejected
+state_intact_ephemeral	1
+state_intact_ephemeral	2
+kind_intact_ephemeral	x	EPHEMERAL
