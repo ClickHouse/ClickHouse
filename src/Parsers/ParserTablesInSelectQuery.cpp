@@ -599,8 +599,8 @@ When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) 
 ## LATERAL JOIN {#lateral-join}
 
 `JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
-expressions on its left side; the subquery is evaluated for each distinct combination of the left-side
-column values it references, and its result is joined to every left row with that combination:
+expressions on its left side. The result is as if the subquery were evaluated for each distinct combination
+of the left-side column values it references, and its result were joined to every left row with that combination:
 
 ```sql
 SELECT ...
@@ -613,6 +613,12 @@ The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; o
 It is experimental and disabled by default; enable it with the
 [`allow_experimental_lateral_join`](/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join) setting.
 
+The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
+subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
+added to its `GROUP BY` keys if it aggregates, its `LIMIT` becomes `LIMIT ... BY` these columns, and its result
+is joined to the left rows with a hash join on them. `EXPLAIN` shows this as a `Join` step over a
+`LimitBy (LIMIT BY for decorrelated correlated subquery)` step.
+
 Only the following subset is supported so far; anything else is rejected with an error:
 
 - `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
@@ -622,21 +628,21 @@ Only the following subset is supported so far; anything else is rejected with an
 - The `GLOBAL` and `LOCAL` join modifiers are not supported.
 - The lateral subquery must reference at least one column of the left side. Use a regular join for a
   non-correlated subquery.
-- The lateral subquery is evaluated once per distinct value of the left-side columns it references, not
-  once per left row, so it must not contain functions that are non-deterministic within a query, such as
+- Because the lateral subquery is decorrelated rather than evaluated separately for each left value, it
+  must not contain functions that are non-deterministic within a query, such as
   `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
   Functions that are constant within a query, such as `now`, are allowed.
 - Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
   `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
   [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
-- The `GROUP BY` and `ORDER BY` of the lateral subquery run once over all evaluations together, so the
-  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows of all evaluations,
-  not of one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
-- The rows of all evaluations are matched to the left rows by a single join. As for any hash join,
+- The `GROUP BY` and `ORDER BY` of the lateral subquery run once for all left values together, so the
+  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows for all left values,
+  not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
+- The result of the decorrelated subquery is matched to the left rows by a single join. As for any hash join,
   `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
   planner chooses that side: with the default settings (`correlated_subqueries_use_in_memory_buffer = 1`)
   it is the left side of `JOIN LATERAL`, because the left rows must be fully read before the lateral
-  subquery is evaluated; otherwise it can be the results of all evaluations together. The limits are always
+  subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
   enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
 
 **Example**
