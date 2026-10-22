@@ -1914,7 +1914,7 @@ bool BackupImpl::setIsCorrupted() noexcept
 
         if (writing_finalized)
         {
-            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct!");
+            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct");
             return false;
         }
 
