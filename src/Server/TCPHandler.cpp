@@ -2954,8 +2954,10 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     if (scalar)
     {
-        /// Scalar value
-        state.query_context->addScalar(temporary_id.table_name, block);
+        /// Scalar value received from the client over the wire. It must not be trusted as a
+        /// server-computed scalar-subquery result (see Context::addClientScalar): otherwise a client
+        /// could name it with a row policy's scalar-subquery hash and forge the policy's result.
+        state.query_context->addClientScalar(temporary_id.table_name, block);
     }
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
