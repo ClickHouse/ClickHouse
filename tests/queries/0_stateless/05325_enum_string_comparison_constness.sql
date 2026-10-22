@@ -57,6 +57,9 @@ SELECT e < s FROM values('e Enum8(''z'' = 1, ''a'' = 2), s Nullable(String)', ('
 SELECT e < nullIf(s, 'q') FROM values('e Enum8(''z'' = 1, ''a'' = 2), s String', ('z', 'q'), ('z', 'a')) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT if(s = 'q', NULL, tuple(s)) < tuple(e) FROM values('e Enum8(''z'' = 1, ''a'' = 2), s String', ('z', 'q'), ('z', 'a')) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 
+-- the redundant comparison folding keeps the Enum order in a tuple element
+SELECT count() FROM values('s String, k UInt8', ('z', 1)) WHERE (s, k) < (CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)'), 0) AND (s, k) > ('z', 0) SETTINGS optimize_and_compare_chain = 0;
+
 SELECT e < 'q' FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 

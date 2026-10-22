@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Utils.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -890,9 +891,9 @@ static AddComparisonFilterResult addComparisonFilter(
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
-    /// A string ordered against an `Enum` constant compares by value, not by the converted name.
+    /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not by the converted name.
     if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
-        && isStringOrFixedString(expr_type) && isEnum(removeLowCardinality(new_filter.constant_node->getResultType())))
+        && comparesEnumWithString(expr_type, new_filter.constant_node->getResultType()))
         new_filter.converted_value.reset();
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
