@@ -106,7 +106,7 @@ namespace Format
             }
             else if (pattern[i] == '}')
             {
-                if (pattern[i + 1] == '}')
+                if (!is_open_curly && i + 1 < pattern.size() && pattern[i + 1] == '}')
                 {
                     ++i;
                     continue;

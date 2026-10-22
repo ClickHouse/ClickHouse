@@ -83,7 +83,12 @@ public:
         ContextPtr context,
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
-        bool use_query_condition_cache = true) const;
+        bool use_query_condition_cache = true,
+        /// Whether the query condition cache entries a TopK read writes under its `PREWHERE` key may
+        /// be consulted here. Projection candidate analysis is the only place a warm query consults
+        /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
+        /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
+        bool allow_top_k_prewhere_query_condition_cache = false) const;
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
@@ -215,6 +220,19 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
+    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
+    static RangesInDataParts filterParts(
+        const RangesInDataParts & parts,
+        const ReadFromMergeTree::Indexes & indexes,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
@@ -268,6 +286,8 @@ public:
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
+        bool allow_top_k_prewhere_query_condition_cache,
+        bool use_sampling,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
@@ -281,8 +301,10 @@ public:
     /// set of indexes (e.g. use_skip_indexes = 0, an index dropped/ignored, or a different
     /// disjunction mode) never consults a verdict produced by an index it did not run.
     /// Both the write side (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache)
-    /// pass the same Indexes, so the salt is identical on both.
-    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes);
+    /// pass the same Indexes and the same distributed_index_analysis value, so the salt is identical
+    /// on both.
+    static UInt64 getSkipIndexProfiledConditionHash(
+        UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes, bool distributed_index_analysis);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

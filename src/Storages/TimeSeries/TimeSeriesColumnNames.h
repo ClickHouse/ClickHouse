@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -25,11 +25,12 @@ struct TimeSeriesColumnNames
     /// and without the metric name, so reading must be able to handle both cases.)
     static constexpr const char * Tags = "tags";
 
-    /// Contains the time range of a time series.
+    /// The "time ranges" table contains the time range of each time series
+    /// (tables of earlier versions kept these columns in the "tags" table):
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
-    /// The "metrics" table contains general information (metadata) about metrics:
+    /// The "metric families" table contains general information (metadata) about metric families:
     static constexpr const char * MetricFamily = "metric_family";
     static constexpr const char * Type = "type";
     static constexpr const char * Unit = "unit";
@@ -45,15 +46,18 @@ struct TimeSeriesColumnNames
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
     static constexpr const char * OriginalGroup = "original_group";
+    static constexpr const char * ExtraLabelsGroup = "extra_labels_group";
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * JoinPresence = "join_presence";
     static constexpr const char * Values = "values";
+    static constexpr const char * ValueCounts = "value_counts";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
 
     /// Old names kept for compatibility:
 
-    /// The old name of the "metric_family" column, still used in the "metrics" target table.
+    /// The name of the column with the name of a metric family in the "metric families" target table of tables
+    /// of versions before 6, see `getInnerMetricFamily`.
     static constexpr const char * MetricFamilyName = "metric_family_name";
 
     /// Tables created by older versions declare it as an ephemeral column and used to fill it
@@ -65,6 +69,13 @@ struct TimeSeriesColumnNames
     static constexpr const char * getOuterSamples(UInt64 version)
     {
         return (version >= TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN) ? Samples : TimeSeries;
+    }
+
+    /// Returns the name of the column with the name of a metric family in the "metric families" target table
+    /// for a TimeSeries table of the specified version.
+    static constexpr const char * getInnerMetricFamily(UInt64 version)
+    {
+        return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN) ? MetricFamily : MetricFamilyName;
     }
 };
 

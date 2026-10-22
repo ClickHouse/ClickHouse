@@ -3,7 +3,7 @@
 -- Uses many one-row granules and repeated `.null` / `.size` reads in one query to
 -- exercise the substreams cache path across multiple ranges.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_nullable_tuple_cache;
 CREATE TABLE t_nullable_tuple_cache

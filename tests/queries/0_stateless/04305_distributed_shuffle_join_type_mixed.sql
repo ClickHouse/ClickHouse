@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: shuffle-join key types differ on left and right side.
 -- Without casting to a common supertype, the scatter step on each side uses different
 -- hashing because of different physical types, so matching rows are routed to different
@@ -42,7 +39,8 @@ SETTINGS
     enable_parallel_replicas = 0,
     distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0,
-    enable_join_runtime_filters = 0;
+    enable_join_runtime_filters = 0,
+    distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_shuffle_join_left;
 DROP TABLE t_shuffle_join_right;

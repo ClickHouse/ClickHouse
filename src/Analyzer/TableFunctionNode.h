@@ -101,6 +101,9 @@ public:
         return storage;
     }
 
+    /// True for a parameterized view call resolved into its `StorageView` (no real table function behind it)
+    bool isParameterizedView() const;
+
     /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_);
 

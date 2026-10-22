@@ -11,10 +11,5 @@ dyn_in_lowcardinality	1
 var_in_bool	1
 var_in_uint8_stays_numeric	1
 dyn_date_from_datetime	1
-dyn_in_old	1
-dyn_not_in_old	1
-var_in_old	1
-dyn_list_in_old	1
-var_values_old	1
 dyn_still_prunes	1
 dyn_prunes_something	1
