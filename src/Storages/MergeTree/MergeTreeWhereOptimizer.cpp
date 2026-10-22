@@ -179,7 +179,18 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     /// The reader does not apply string value filters when it may write the columns to the columns cache.
     where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
         && !(settings[Setting::use_columns_cache] && settings[Setting::enable_writes_to_columns_cache]);
-    where_optimizer_context.columns_read_before_filter = &columns_read_before_filter;
+    /// Resolve the columns to their storage columns: the reader disables the scan filter for a storage column
+    /// when anything reads it before the filter, including its subcolumns (e.g. `payload.size0` for `payload`).
+    NameSet storage_columns_read_before_filter;
+    const auto & columns_description = storage_metadata->getColumns();
+    for (const auto & column_name : columns_read_before_filter)
+    {
+        if (auto column = columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            storage_columns_read_before_filter.insert(column->getNameInStorage());
+        else
+            storage_columns_read_before_filter.insert(column_name);
+    }
+    where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
 
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
@@ -792,12 +803,12 @@ bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(
         if (argument.isFunction() || argument.isConstant() || argument.isSubqueryOrSet())
             return false;
 
-        if (where_optimizer_context.columns_read_before_filter
-            && where_optimizer_context.columns_read_before_filter->contains(argument.getColumnName()))
+        auto column = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, argument.getColumnName());
+        if (!column || column->isSubcolumn() || !isString(removeNullable(column->type)))
             return false;
 
-        auto column = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, argument.getColumnName());
-        return column && !column->isSubcolumn() && isString(removeNullable(column->type));
+        return !where_optimizer_context.columns_read_before_filter
+            || !where_optimizer_context.columns_read_before_filter->contains(column->getNameInStorage());
     };
 
     auto get_constant_string = [](const RPNBuilderTreeNode & argument) -> std::optional<String>

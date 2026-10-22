@@ -15,9 +15,7 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 描述
-</div>
+## 描述 {#description}
 
 `Native` 格式的完整官方规范可在[这里](/zh/resources/develop-contribute/native-protocol/format)查看，而 `Native` 协议的配套规范——即承载该格式的 TCP 线协议——可在[这里](/zh/resources/develop-contribute/native-protocol/protocol)查看。
 
@@ -38,9 +36,7 @@ doc_type: 'reference'
   但这种格式通常不适合手动处理。
 </Tip>
 
-<div id="data-types-wire-format">
-  ## 数据类型传输格式
-</div>
+## 数据类型传输格式 {#data-types-wire-format}
 
 数据在线上传输时采用列式格式，这意味着每一列都会单独发送，
 并且一列中的所有值会作为一个数组一起发送。
@@ -53,9 +49,7 @@ doc_type: 'reference'
   不带协议版本的普通 HTTP 接口，因此会省略 `BlockInfo`。
 </Note>
 
-<div id="block-structure">
-  ### 块结构
-</div>
+### 块结构 {#block-structure}
 
 以下查询返回两列：`number` 和 `str`，共 3 行：
 
@@ -97,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### 多个块
-</div>
+### 多个块 {#multiple-blocks}
 
 不过，在很多情况下，数据无法放入单个块中，ClickHouse 会以多个块的形式发送数据。
 请看下面这个查询：它会拉取两行数据，并通过减小块大小来强制将数据拆分为每块一行：
@@ -153,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### 简单数据类型
-</div>
+### 简单数据类型 {#simple-data-types}
 
 这些较简单的数据类型中，单个值的传输格式与 `RowBinary`/`RowBinaryWithNamesAndTypes` 类似。
 符合这一描述的完整类型列表包括：
@@ -175,9 +165,7 @@ const data = new Uint8Array([
 
 更多详情，请参阅[&quot;RowBinary 数据类型传输格式&quot;](/zh/reference/formats/RowBinary/RowBinary#data-types-wire-format)中上述类型的说明。
 
-<div id="complex-data-types">
-  ### 复杂数据类型
-</div>
+### 复杂数据类型 {#complex-data-types}
 
 以下类型的编码格式与 `RowBinary` 和 `RowBinaryWithNamesAndTypes` 不同。
 
@@ -189,9 +177,7 @@ const data = new Uint8Array([
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 在 `Native` 格式中，可空列在实际数据之前会有一段字节数据，其字节数等于块中的行数。每个字节都表示对应的值是否为 `NULL`。例如，在这个查询中，每个奇数都会改为 `NULL`：
 
@@ -311,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 不同于在 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#lowcardinality) 中 `LowCardinality` 是透明的，Native format 使用基于字典的列式编码。一个列会被编码为版本前缀，随后是唯一值字典，以及一个指向该字典的整数索引数组。
 
@@ -361,9 +345,7 @@ const data = new Uint8Array([
 02 00 02 00 02              // 索引 → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#array) 为每个数组都添加 LEB128 元素计数前缀不同，Native format 会将数组编码为两个列式子流：
 
@@ -402,9 +384,7 @@ const data = new Uint8Array([
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 `Map(K, V)` 编码为 `Array(Tuple(K, V))`——先是数组偏移量，接着是所有键，最后是所有值。这与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#map) 不同，后者会按每个条目交错存储键和值。
 
@@ -433,9 +413,7 @@ const data = new Uint8Array([
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#variant) 不同，后者每一行都会携带各自的判别字节，并在后面内联存放对应的值；而 Native format 会将判别值与数据分开存储。
 
@@ -464,9 +442,7 @@ const data = new Uint8Array([
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#dynamic) 中每个值都是自描述的 (类型前缀 + 值) 不同，Native format 会将 `Dynamic` 序列化为结构前缀，后接一个 [Variant](#variant) 列。
 
@@ -493,9 +469,7 @@ const data = new Uint8Array([
 03 00 00 00                 // UInt32：3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#json) 不同，后者的每一行都包含路径名和值，因此是自描述的；而 `Native` 格式 会以列式结构来序列化 `JSON`。这种编码较为复杂，并且依赖于版本：它由一个结构前缀组成，其中包含序列化版本、动态路径名称和共享数据布局；随后依次是类型化路径 (每个都作为一整列) 、动态路径 (每个都作为一个 [Dynamic](#dynamic) 列) ，以及用于溢出路径的共享数据。
 
