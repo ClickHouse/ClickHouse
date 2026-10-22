@@ -63,6 +63,9 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW ${SRC}.intersect_v AS SELECT a FROM ${SRC}.sample INTERSECT DISTINCT SELECT a FROM ${SRC}.other;
     CREATE VIEW ${SRC}.except_v AS SELECT a FROM ${SRC}.sample EXCEPT DISTINCT SELECT a FROM ${SRC}.other;
     CREATE VIEW ${SRC}.literal_v AS SELECT concat('${SRC}.sample.a', toString(a)) FROM ${SRC}.sample;
+    CREATE TABLE ${SRC}.j (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+    CREATE VIEW ${EXT}.literal_arg_v AS SELECT concat('${SRC}.j', '${SRC}.excluded', toString(a)) FROM ${SRC}.sample
+        WHERE a NOT IN ${SRC}.excluded AND joinGet('${SRC}.j', 'v', a) = '';
     CREATE TABLE ${SRC}.tgt4 (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW ${SRC}.union_mv TO ${SRC}.tgt4 AS SELECT a FROM (SELECT a FROM ${SRC}.sample UNION ALL SELECT a FROM ${SRC}.sample);
     CREATE MATERIALIZED VIEW ${SRC}.union_rmv REFRESH EVERY 1 YEAR APPEND ENGINE = Memory EMPTY AS SELECT a FROM ${SRC}.sample UNION ALL SELECT a FROM ${SRC}.sample;
@@ -74,6 +77,16 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE MATERIALIZED VIEW ${EXT}.mv2 TO ${SRC}.tgt3 AS SELECT a FROM ${EXT}.s;
     CREATE VIEW ${EXT}.v AS SELECT a FROM ${SRC}.sample;
     CREATE VIEW ${MEM}.v AS SELECT a FROM ${SRC}.sample;
+    CREATE VIEW ${EXT}.merge_v AS SELECT a FROM merge('${SRC}', '^sample$');
+    CREATE VIEW ${EXT}.remote_v (a UInt64) AS SELECT a FROM ${SRC}.sample
+        UNION ALL SELECT a FROM remote('127.0.0.2', merge('${SRC}', '^sample$')) UNION ALL SELECT a FROM remote('127.0.0.2', ${SRC}.sample)
+        UNION ALL SELECT a FROM remoteSecure('127.0.0.2', view(SELECT a FROM ${SRC}.sample))
+        UNION ALL SELECT a FROM cluster('test_shard_localhost', merge('${SRC}', '^sample$'))
+        UNION ALL SELECT a FROM clusterAllReplicas('test_shard_localhost', view(SELECT a FROM ${SRC}.sample));
+    CREATE VIEW ${SRC}.param_v AS SELECT a FROM ${SRC}.sample WHERE a >= {n:UInt64};
+    CREATE VIEW ${EXT}.param_call_v AS SELECT a FROM ${SRC}.param_v(n = 0);
+    CREATE TABLE ${EXT}.prt (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${EXT}.param_rmv REFRESH EVERY 1 YEAR APPEND TO ${EXT}.prt EMPTY AS SELECT a FROM ${SRC}.param_v(n = 0);
 
     CREATE MATERIALIZED VIEW ${SRC}.dep REFRESH EVERY 1 YEAR ENGINE = Memory EMPTY AS SELECT 1 AS x;
     CREATE TABLE ${SRC}.rt (a UInt64) ENGINE = MergeTree ORDER BY a;
@@ -99,19 +112,24 @@ function check()
 {
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DST}.sample SELECT number FROM numbers(5); INSERT INTO ${EXT}.s SELECT number FROM numbers(2)"
     rows ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v \
-        ${DST}.intersect_v ${DST}.except_v ${DST}.literal_v ${DST}.tgt4 ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v
+        ${DST}.intersect_v ${DST}.except_v ${DST}.literal_v ${DST}.tgt4 ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v ${EXT}.merge_v ${EXT}.param_call_v ${EXT}.literal_arg_v
 }
 
 echo "-- after the rename"
 check
 echo "occurrences of the old name: $(occurrences "${SRC}" ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv \
     ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${DST}.intersect_v ${DST}.except_v ${DST}.union_mv ${DST}.union_rmv ${EXT}.mv ${EXT}.mv2 \
-    ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv)"
+    ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv ${EXT}.merge_v ${DST}.param_v ${EXT}.param_call_v ${EXT}.param_rmv)"
 
 ${CLICKHOUSE_CLIENT} -q "
     SYSTEM REFRESH VIEW ${DST}.rmv; SYSTEM WAIT VIEW ${DST}.rmv; SYSTEM REFRESH VIEW ${EXT}.rmv; SYSTEM WAIT VIEW ${EXT}.rmv;
-    SYSTEM REFRESH VIEW ${DST}.union_rmv; SYSTEM WAIT VIEW ${DST}.union_rmv"
-rows ${DST}.rt ${EXT}.rt ${DST}.union_rmv
+    SYSTEM REFRESH VIEW ${DST}.union_rmv; SYSTEM WAIT VIEW ${DST}.union_rmv; SYSTEM REFRESH VIEW ${EXT}.param_rmv; SYSTEM WAIT VIEW ${EXT}.param_rmv"
+rows ${DST}.rt ${EXT}.rt ${DST}.union_rmv ${EXT}.prt
+
+# The arguments of remote() name the tables of another server.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT replaceAll(create_table_query, '${CLICKHOUSE_DATABASE}', '') FROM system.tables
+    WHERE database = '${EXT}' AND name = 'remote_v' FORMAT TSVRaw"
 
 [ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${DST}.unrelated_v" | sed "s/${DST}/db/g")" = "${unrelated_src_before}" ] && echo "unchanged: ${DST}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"
 [ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${EXT}.unrelated_v")" = "${unrelated_ext_before}" ] && echo "unchanged: ${EXT}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"

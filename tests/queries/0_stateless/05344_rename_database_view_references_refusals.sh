@@ -45,8 +45,13 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW ${R}.expression_header_v AS SELECT abs(${R}.events.x) FROM ${EXT}.events CROSS JOIN ${R}.events;
     CREATE VIEW ${R}.header_v AS SELECT * FROM ${EXT}.events JOIN ${R}.events ON ${R}.events.x = ${EXT}.events.x;
     CREATE VIEW ${R}.subquery_v AS SELECT ${R}.t.a FROM ${R}.t, (SELECT 1 AS z) AS sq;
+    CREATE TABLE ${R}.j (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+    CREATE VIEW ${R}.in_header_v AS SELECT 1 IN ${R}.t;
+    CREATE TABLE ${R}.\`t)\` (a UInt64) ENGINE = Memory;
+    CREATE VIEW ${R}.in_paren_header_v AS SELECT 1 IN ${R}.\`t)\`;
+    CREATE VIEW ${R}.joinget_header_v AS SELECT joinGet('${R}.j', 'v', toUInt64(1));
 "
-for view in alias_v dotted_alias_v expression_header_v header_v subquery_v; do
+for view in alias_v dotted_alias_v expression_header_v header_v in_header_v in_paren_header_v joinget_header_v subquery_v; do
     before=$(definitions "${R}" "${EXT}")
     ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${R} TO ${RN}" 2>&1 | sed -n "s/.*the names in ${R}\.\([a-z_]*\) refer.*(\([A-Z_]*\)).*/\1: \2/p" | head -1
     [ "$(definitions "${R}" "${EXT}")" = "$before" ] && echo "nothing changed"

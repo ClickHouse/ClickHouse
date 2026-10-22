@@ -7,6 +7,12 @@ expression_header_v: AMBIGUOUS_IDENTIFIER
 nothing changed
 header_v: AMBIGUOUS_IDENTIFIER
 nothing changed
+in_header_v: AMBIGUOUS_IDENTIFIER
+nothing changed
+in_paren_header_v: AMBIGUOUS_IDENTIFIER
+nothing changed
+joinget_header_v: AMBIGUOUS_IDENTIFIER
+nothing changed
 subquery_v: AMBIGUOUS_IDENTIFIER
 nothing changed
 1

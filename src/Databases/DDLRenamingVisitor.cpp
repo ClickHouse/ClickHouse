@@ -6,6 +6,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
@@ -120,11 +121,38 @@ namespace
         }
     }
 
+    /// The arguments of these table functions name objects on other servers.
+    bool isRemoteTableFunction(const IAST & ast)
+    {
+        const auto * function = ast.as<ASTFunction>();
+        return function
+            && (function->name == "remote" || function->name == "remoteSecure" || function->name == "cluster"
+                || function->name == "clusterAllReplicas");
+    }
+
+    /// A parameterized view is called like a table function named `db.view`.
+    void visitParameterizedViewCall(ASTFunction & function, const DDLRenamingVisitor::Data & data)
+    {
+        Strings parts;
+        splitInto<'.'>(parts, function.name);
+        if (parts.size() != 2 || parts[0].empty() || parts[1].empty())
+            return;
+
+        auto new_name = data.renaming_map.getNewTableName({parts[0], parts[1]});
+        /// The call splits the name on dots.
+        if (new_name.database.contains('.') || new_name.table.contains('.'))
+            return;
+        function.name = new_name.getFullName();
+    }
+
     /// ASTTableExpression represents a reference to a table in SELECT query.
     /// DDLRenamingVisitor should handle ASTTableExpression because some CREATE queries can contain SELECT queries after AS (e.g. CREATE VIEW).
     /// We'll try to replace database and table name.
     void visitTableExpression(ASTTableExpression & expr, const DDLRenamingVisitor::Data & data)
     {
+        if (auto * function = expr.table_function ? expr.table_function->as<ASTFunction>() : nullptr)
+            visitParameterizedViewCall(*function, data);
+
         if (!expr.database_and_table_name)
             return;
 
@@ -372,7 +400,7 @@ void DDLRenamingVisitor::visit(ASTPtr ast, const Data & data)
         visitTableEngine(*storage, data);
 }
 
-bool DDLRenamingVisitor::needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+bool DDLRenamingVisitor::needChildVisit(const ASTPtr & node, const ASTPtr &) { return !isRemoteTableFunction(*node); }
 
 
 void DDLRenamingMap::setNewTableName(const QualifiedTableName & old_table_name, const QualifiedTableName & new_table_name)
@@ -459,9 +487,11 @@ namespace
         return components;
     }
 
-    /// Whether the column name `name` contains `database.table.column` outside its string literals, as the whole name
-    /// or inside an expression like `abs(database.table.column)`.
-    bool containsNameQualifiedWithDatabase(const String & name, const String & database)
+    /// Whether the column name `name` contains, outside its string literals, `database.table.column` as the whole name
+    /// or inside an expression like `abs(database.table.column)`, or `database.table` for a table of `in_tables`, as in
+    /// `in(x, database.table)`. Or a literal of `function_literals` as the first argument of `dictGet` or `joinGet`.
+    bool containsNameQualifiedWithDatabase(
+        const String & name, const String & database, const NameSet & in_tables, const NameSet & function_literals)
     {
         const String prefix = database + ".";
         bool in_literal = false;
@@ -477,6 +507,14 @@ namespace
             }
             else if ((pos == 0 || !isWordCharASCII(name[pos - 1])) && name.compare(pos, prefix.size(), prefix) == 0)
             {
+                size_t table_pos = pos + prefix.size();
+                for (const auto & table : in_tables)
+                {
+                    size_t table_end = table_pos + table.size();
+                    if (name.compare(table_pos, table.size(), table) == 0
+                        && (table_end == name.size() || (!isWordCharASCII(name[table_end]) && name[table_end] != '.')))
+                        return true;
+                }
                 after_prefix = true;
                 pos += database.size();
             }
@@ -484,9 +522,18 @@ namespace
             {
                 return true;
             }
-            else
+            else if (name[pos] == '\'')
             {
-                in_literal = name[pos] == '\'';
+                in_literal = true;
+                if (pos == 0 || name[pos - 1] != '(')
+                    continue;
+                size_t function_start = pos - 1;
+                while (function_start > 0 && isWordCharASCII(name[function_start - 1]))
+                    --function_start;
+                String function = name.substr(function_start, pos - 1 - function_start);
+                if ((functionIsJoinGet(function) || functionIsDictGet(function))
+                    && std::ranges::any_of(function_literals, [&](const String & literal) { return name.compare(pos, literal.size(), literal) == 0; }))
+                    return true;
             }
         }
         return false;
@@ -540,6 +587,24 @@ void DatabaseRenamingInViewDefinition::addName(const Strings & parts, bool multi
     names.push_back(std::move(name));
 }
 
+void DatabaseRenamingInViewDefinition::addTableArgument(const ASTFunction & function, const IAST & argument)
+{
+    bool is_in = functionIsInOrGlobalInOperator(function.name);
+    String table_name;
+    if (const auto * literal = argument.as<ASTLiteral>(); literal && !is_in && literal->value.getType() == Field::Types::String)
+        table_name = literal->value.safeGet<String>();
+    else if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(&argument); identifier && !identifier->isParam())
+        table_name = identifier->name();
+
+    auto qualified_name = QualifiedTableName::tryParseFromString(table_name);
+    if (!qualified_name || qualified_name->database != old_database_name)
+        return;
+    if (is_in)
+        in_tables.insert(qualified_name->table);
+    else
+        function_literals.insert(applyVisitor(FieldVisitorToString(), Field(table_name)));
+}
+
 void DatabaseRenamingInViewDefinition::collect(const ASTPtr & ast, NamePosition position)
 {
     if (!ast)
@@ -573,6 +638,9 @@ void DatabaseRenamingInViewDefinition::collect(const ASTPtr & ast, NamePosition 
     }
     else if (const auto * function = ast->as<ASTFunction>())
     {
+        if (isRemoteTableFunction(*function))
+            return;
+
         auto table_name_argument = getTableNameArgumentIndex(*function);
         for (const auto & child : ast->children)
         {
@@ -582,7 +650,11 @@ void DatabaseRenamingInViewDefinition::collect(const ASTPtr & ast, NamePosition 
                 continue;
             }
             for (size_t i = 0; i < child->children.size(); ++i)
+            {
+                if (i == *table_name_argument)
+                    addTableArgument(*function, *child->children[i]);
                 collect(child->children[i], i == *table_name_argument ? NamePosition::Table : NamePosition::Expression);
+            }
         }
     }
     else if (const auto * refresh = ast->as<ASTRefreshStrategy>())
@@ -706,7 +778,7 @@ void DatabaseRenamingInViewDefinition::check(const ColumnsDescription & view_col
 
     /// A column named `db.table.column` is how the analyzer names a column qualified with the database.
     for (const auto & column : view_columns)
-        if (containsNameQualifiedWithDatabase(column.name, old_database_name))
+        if (containsNameQualifiedWithDatabase(column.name, old_database_name, in_tables, function_literals))
             throwAmbiguous(fmt::format("it has the column {}", column.name));
 
     if (candidates.empty())

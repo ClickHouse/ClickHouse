@@ -15,6 +15,7 @@ namespace DB
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 class DDLRenamingMap;
+class ASTFunction;
 class ASTIdentifier;
 class ASTSelectQuery;
 class ColumnsDescription;
@@ -101,6 +102,7 @@ private:
     void collect(const ASTPtr & ast, NamePosition position);
     void collectIdentifier(ASTIdentifier & identifier, NamePosition position);
     void addName(const Strings & parts, bool multi_component = false);
+    void addTableArgument(const ASTFunction & function, const IAST & argument);
     std::optional<size_t> findTableExpressionScope(const String & table_name) const;
     std::vector<QualifiedTableName> getScopeTables(bool throw_if_not_table) const;
     [[noreturn]] void throwAmbiguous(const String & reason) const;
@@ -111,6 +113,10 @@ private:
     QualifiedTableName view_name;
 
     std::vector<WrittenName> names;
+    /// The renamed tables on the right side of `IN`, and the renamed first arguments of `dictGet` and `joinGet` as literals,
+    /// as the analyzer writes them in column names.
+    NameSet in_tables;
+    NameSet function_literals;
     std::vector<ASTIdentifier *> candidates;
     std::vector<ScopeTableExpression> scope_table_expressions;
     NameSet cte_names;
