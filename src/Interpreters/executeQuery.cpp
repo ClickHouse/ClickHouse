@@ -82,6 +82,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Render/JsonPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
@@ -757,7 +758,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     if (auto plan_profiler = context->getPlanProfiler())
     {
         plan_profiler->captureStatistics(query_pipeline);
-        plan_profiler->finish();
+        plan_profiler->releaseRunningState();
     }
 
     /// Reset pipeline before fetching profile counters
@@ -774,12 +775,48 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
 static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
 {
-    if (auto plan_profiler = context->getPlanProfiler())
+    auto plan_profiler = context->getPlanProfiler();
+    if (!plan_profiler)
+        return;
+
+    /// A query that failed before its pipeline finished has not released yet; one that succeeded
+    /// released on the pipeline path and this does nothing.
+    plan_profiler->releaseRunningState();
+
+    const auto & captured = plan_profiler->getCapturedPlan();
+    if (!captured)
+        return;
+
+    /// Runs on the logging path of a query that has already returned its result, so failing to
+    /// write the plan must not fail the query. Producing the document is also the one part of
+    /// profiling that allocates in proportion to the plan, hence the blocker.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
     {
-        /// A query that failed before its pipeline finished never reached `finish`; for it,
-        /// profiling ends here. On the success path it finished already and this does nothing.
-        plan_profiler->finish();
-        elem.query_plan = plan_profiler->render();
+        WriteBufferFromString out(elem.query_plan);
+        JsonPlanRenderer renderer;
+        renderer.render(*captured, out);
+        out.finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Say why rather than leave half a document behind.
+        elem.query_plan.clear();
+        try
+        {
+            WriteBufferFromString out(elem.query_plan);
+            JsonPlanRenderer::renderError(getCurrentExceptionMessage(/*with_stacktrace=*/ false), out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            /// Ok to swallow: writing the error itself failed. Empty rather than invalid, so the
+            /// column takes its default of an empty JSON object.
+            elem.query_plan.clear();
+        }
     }
 }
 

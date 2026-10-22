@@ -13,7 +13,6 @@
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Render/JsonPlanRenderer.h>
-#include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -52,21 +51,6 @@ ExplainPlanOptions planExplainOptions()
         .compact = true,
         .pretty = true,
     };
-}
-
-String toJSONString(JSONBuilder::ItemPtr item)
-{
-    FormatSettings format_settings;
-    format_settings.json.quote_64bit_integers = false;
-
-    String result;
-    WriteBufferFromString out(result);
-    JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
-    JSONBuilder::FormatContext format_context{.out = out};
-    item->format(json_format_settings, format_context);
-    out.finalize();
-
-    return result;
 }
 
 }
@@ -120,13 +104,6 @@ void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * 
         "Not storing the query plan in 'system.query_log' even though setting `log_query_plans`"
         " is true, because {}.",
         reason);
-}
-
-PrettyNamesPerPlan QueryPlanProfiler::capturePrettyNames(const QueryPlan & plan)
-{
-    /// Only the child plans the steps already hold: asking a step to build one would make taking
-    /// the names change what the query does.
-    return QueryPlanFormat::buildPrettyNamesPerPlan(plan, /*only_built_child_plans=*/ true);
 }
 
 void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const PrettyNamesPerPlan & pretty_names)
@@ -198,7 +175,7 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline)
         pipeline.setStepProfiler(step_profiler);
 }
 
-void QueryPlanProfiler::finish()
+void QueryPlanProfiler::releaseRunningState()
 {
     if (finished)
         return;
@@ -211,41 +188,4 @@ void QueryPlanProfiler::finish()
     finished = true;
 }
 
-String QueryPlanProfiler::render()
-{
-    chassert(finished);
-
-    if (!captured)
-        return {};
-
-    MemoryTrackerBlockerInThread block_memory_tracker;
-
-    try
-    {
-        String result;
-        WriteBufferFromString out(result);
-        JsonPlanRenderer renderer;
-        renderer.render(*captured, out);
-        out.finalize();
-        return result;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        try
-        {
-            auto error_map = std::make_unique<JSONBuilder::JSONMap>();
-            error_map->add("Error", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
-            return toJSONString(std::move(error_map));
-        }
-        catch (...)
-        {
-            /// Ok to swallow: rendering the error itself failed, and this runs on the logging path
-            /// of a query that already returned its result. Empty rather than invalid, so the
-            /// column takes its default of an empty JSON object.
-            return {};
-        }
-    }
-}
 }

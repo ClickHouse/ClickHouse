@@ -62,7 +62,7 @@ public:
     std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
 
     /// The analysis of one step, format-neutral: the ASCII rendering below and the JSON one in
-    /// `StepStatisticsJSONPrinter` are two readings of this. Must run while the pipeline is alive.
+    /// `JsonPlanRenderer` are two readings of this. Must run while the pipeline is alive.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
     /// The same, for a caller that no longer has the step -- the logged plan, after execution.

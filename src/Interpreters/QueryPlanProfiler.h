@@ -27,13 +27,6 @@ public:
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
 
-    size_t getMaxDescriptionLength() const { return max_description_length; }
-
-    /// Reads the names out of the `ActionsDAG`s, which building the pipeline moves into the
-    /// `ExpressionActions`. Returns them rather than keeping them: they are needed only until the
-    /// structure is captured, a few lines later in the same function.
-    static PrettyNamesPerPlan capturePrettyNames(const QueryPlan & plan);
-
     /// Records the shape of the plan, and everything the analysis will need from it, as values.
     /// Called once the pipeline has been built, which is both the first moment the index analysis
     /// and the lazily built child plans exist, and the last moment the plan does. Nothing after
@@ -48,13 +41,15 @@ public:
     /// 0.00 ns as executed time.
     void instrumentPipeline(QueryPipeline & pipeline);
 
-    /// Ends profiling, drops every object kept while the query was being executed,
-    /// and keeps only objects about the execution and query structure. Idempotent: a query that
-    /// failed before its pipeline did finishes at logging time instead.
-    void finish();
+    /// Frees what was only needed while the query was being profiled: the clocks, and the
+    /// reporters and analysis inputs, which hold the `IJoin`s and with them their hash tables.
+    /// What was captured stays. Idempotent: a query that failed before its pipeline finished
+    /// reaches this at logging time instead.
+    void releaseRunningState();
 
-    /// Renders the plan as JSON.
-    String render();
+    /// The captured plan, if there is one. Rendering it is the caller's business: the profiler
+    /// captures, and only the places that write a plan out decide in what form.
+    const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
 
 private:
     const size_t max_description_length;
