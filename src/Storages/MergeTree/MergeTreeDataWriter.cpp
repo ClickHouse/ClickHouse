@@ -1113,8 +1113,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /// `MODIFY TTL` path can later verify the part is not stale (see `MergeTreeDataPartTTLInfos`) -
         /// unless some row's timestamp is exactly 0 (the epoch), which means "no TTL" to the rest of the
         /// machinery and is excluded from the stored `min`: with such a row the bounds are not a complete
-        /// summary of the part and must not carry a fingerprint.
-        if (!new_data_part->ttl_infos.table_ttl.has_epoch_timestamps)
+        /// summary of the part and must not carry a fingerprint. Neither must bounds read from a physical
+        /// column that only shares the name of the TTL expression (see `ITTLAlgorithm::isResultColumnShadowed`).
+        if (!new_data_part->ttl_infos.table_ttl.has_epoch_timestamps && !ITTLAlgorithm::isResultColumnShadowed(rows_ttl, block))
         {
             new_data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
             new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::serverTimezoneInstance());

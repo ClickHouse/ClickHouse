@@ -27,6 +27,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
     if (block.empty() || !isMinTTLExpired())
         return;
 
+    result_column_shadowed |= isResultColumnShadowed(description, block);
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
@@ -97,8 +98,9 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
         {
             /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery and is
             /// excluded from the stored `min`, so if any surviving row computed to it, the bounds are
-            /// not a complete summary of the part and must not carry a fingerprint.
-            if (new_ttl_info.has_epoch_timestamps)
+            /// not a complete summary of the part and must not carry a fingerprint. Neither must bounds
+            /// read from a physical column that only shares the name of the TTL expression.
+            if (new_ttl_info.has_epoch_timestamps || result_column_shadowed)
             {
                 data_part->ttl_infos.table_ttl_expression.clear();
                 data_part->ttl_infos.table_ttl_timezone.clear();

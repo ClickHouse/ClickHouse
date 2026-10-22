@@ -30,6 +30,10 @@ private:
     String old_ttl_expression_fingerprint;
     String old_ttl_timezone_fingerprint;
 
+    /// Some scanned block had a physical column named as the TTL expression, so the new bounds were
+    /// read from it rather than computed by the expression (see `ITTLAlgorithm::isResultColumnShadowed`).
+    bool result_column_shadowed = false;
+
     size_t rows_removed = 0;
 };
 

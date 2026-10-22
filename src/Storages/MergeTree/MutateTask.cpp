@@ -4797,6 +4797,16 @@ bool MutateTask::prepare()
                     delta.reset();
             }
 
+            /// The regular rewrite reads the new TTL values from a physical column named as the new
+            /// expression, if there is one (see `ITTLAlgorithm::isResultColumnShadowed`), instead of
+            /// evaluating it, so such a column breaks the proven shift as well.
+            if (delta && !rows_ttl.expression_ast->as<ASTIdentifier>()
+                && (ctx->source_part->tryGetColumn(rows_ttl.result_column)
+                    || ctx->metadata_snapshot->getColumns().has(rows_ttl.result_column)))
+            {
+                delta.reset();
+            }
+
             /// The time zone is not covered by the checks above: `DataTypeDateTime::equals` ignores it,
             /// `DataTypeDateTime64::equals` compares only the scale, and a `Date`/`Date32` TTL depends on
             /// the mutation context's time zone, which is not part of the table metadata at all. So the part must also
