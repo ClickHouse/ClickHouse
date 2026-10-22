@@ -186,8 +186,6 @@ const std::vector<std::string> url_corpus = {
 
 TEST(MaskS3URLCredentials, MatchTheRegularExpressionsTheyReplaced)
 {
-    size_t presigned_comparisons = 0;
-
     for (const auto & input : url_corpus)
     {
         std::string with_scan = input;
@@ -196,19 +194,10 @@ TEST(MaskS3URLCredentials, MatchTheRegularExpressionsTheyReplaced)
         EXPECT_EQ(maskURIUserinfo(with_scan), maskURIUserinfoWithRE2(with_re2)) << "userinfo return value differs for: " << input;
         EXPECT_EQ(with_scan, with_re2) << "userinfo result differs for: " << input;
 
-        /// The expression cannot decode percent escapes, so the equality is asserted on the names
-        /// where it is still claimed; `MasksPercentEncodedSecretParameterNames` covers the rest.
-        if (!input.contains('%'))
-        {
-            EXPECT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
-                << "presign return value differs for: " << input;
-            EXPECT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
-            ++presigned_comparisons;
-        }
+        EXPECT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
+            << "presign return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
     }
-
-    /// No input above carries an escape, so the skip must not have cost the differential any reach.
-    EXPECT_EQ(presigned_comparisons, url_corpus.size());
 }
 
 TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
@@ -238,14 +227,9 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
         ASSERT_EQ(maskURIUserinfo(with_scan), maskURIUserinfoWithRE2(with_re2)) << "userinfo return value differs for: " << input;
         ASSERT_EQ(with_scan, with_re2) << "userinfo result differs for: " << input;
 
-        /// As above: the expression cannot decode, so no token spells a percent escape and the
-        /// comparison covers every generated string.
-        if (!input.contains('%'))
-        {
-            ASSERT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
-                << "presign return value differs for: " << input;
-            ASSERT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
-        }
+        ASSERT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
+            << "presign return value differs for: " << input;
+        ASSERT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
     }
 }
 
@@ -277,7 +261,7 @@ TEST(MaskS3URLCredentials, MasksPercentEncodedSecretParameterNames)
         /// A malformed and a truncated escape are copied through rather than throwing.
         {"https://h/f?%7Xig=x", "https://h/f?%7Xig=x"},
         {"https://h/f?%7=x", "https://h/f?%7=x"},
-        /// `+` is not decoded at all, so this name stays as it reads.
+        /// `+` decodes to a space, so this name is not `sig`.
         {"https://h/f?s+ig=x", "https://h/f?s+ig=x"},
     };
 

@@ -38,35 +38,6 @@ char asciiToLower(char c)
     return (c >= 'A' && c <= 'Z') ? static_cast<char>(c | 0x20) : c;
 }
 
-/// Decode a query-string component (a parameter name or value) the same way the server interprets it:
-/// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on
-/// this decoded form, otherwise an encoded name like "pass%77ord" (which the server accepts as
-/// "password") would slip past the match and leak its value. Tolerant by design: a malformed escape
-/// is copied through verbatim and nothing throws, since the result is only matched against, never logged.
-std::string decodeQueryComponent(std::string_view name)
-{
-    std::string decoded;
-    decoded.reserve(name.size());
-    for (size_t i = 0; i < name.size(); ++i)
-    {
-        char c = name[i];
-        if (c == '+')
-        {
-            decoded.push_back(' ');
-        }
-        else if (c == '%' && i + 2 < name.size() && isHexDigit(name[i + 1]) && isHexDigit(name[i + 2]))
-        {
-            decoded.push_back(static_cast<char>(unhex2(name.data() + i + 1)));
-            i += 2;
-        }
-        else
-        {
-            decoded.push_back(c);
-        }
-    }
-    return decoded;
-}
-
 /// The name as a peer interprets it: percent-decoded and in lower case.
 std::string normalizeParameterName(std::string_view raw_name)
 {
@@ -94,6 +65,30 @@ bool isSensitiveParameterName(std::string_view raw_name)
     return false;
 }
 
+}
+
+std::string decodeQueryComponent(std::string_view name)
+{
+    std::string decoded;
+    decoded.reserve(name.size());
+    for (size_t i = 0; i < name.size(); ++i)
+    {
+        char c = name[i];
+        if (c == '+')
+        {
+            decoded.push_back(' ');
+        }
+        else if (c == '%' && i + 2 < name.size() && isHexDigit(name[i + 1]) && isHexDigit(name[i + 2]))
+        {
+            decoded.push_back(static_cast<char>(unhex2(name.data() + i + 1)));
+            i += 2;
+        }
+        else
+        {
+            decoded.push_back(c);
+        }
+    }
+    return decoded;
 }
 
 std::string maskSensitiveQueryParametersInURI(const std::string & uri)
