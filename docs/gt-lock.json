@@ -7,42 +7,42 @@
       "versionId": "9b3345383ff3389c6681dbde6573112bd992f08e5b332453425e342f66849919",
       "translations": {
         "es": {
-          "updatedAt": "2026-10-21T20:44:14.198Z",
+          "updatedAt": "2026-10-22T01:00:53.122Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ja": {
-          "updatedAt": "2026-10-21T20:44:14.388Z",
+          "updatedAt": "2026-10-22T01:00:53.325Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ko": {
-          "updatedAt": "2026-10-21T20:44:14.575Z",
+          "updatedAt": "2026-10-22T01:00:53.525Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-21T20:44:14.758Z",
+          "updatedAt": "2026-10-22T01:00:53.718Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ru": {
-          "updatedAt": "2026-10-21T20:44:14.952Z",
+          "updatedAt": "2026-10-22T01:00:53.927Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "zh": {
-          "updatedAt": "2026-10-21T20:44:15.140Z",
+          "updatedAt": "2026-10-22T01:00:54.125Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "ar": {
-          "updatedAt": "2026-10-21T20:44:15.322Z",
+          "updatedAt": "2026-10-22T01:00:54.318Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         },
         "fr": {
-          "updatedAt": "2026-10-21T20:44:15.511Z",
+          "updatedAt": "2026-10-22T01:00:54.520Z",
           "fileName": "docs.json",
           "postProcessHash": "385c193ac34b2cbbf50376d08d07ddccc3af63db2664f8607a6ea0a088d8a997"
         }
@@ -9570,47 +9570,47 @@
     },
     {
       "fileId": "f5ce39fe202f1d2058060e020c9907e4c6b9d5391233ab23ecd9e86ecbe82cd1",
-      "versionId": "da842af1b1cbd85d34b93a6e7497e86321ab8ac49609dc399664c23fbaf28d9b",
+      "versionId": "cfb289744fa667e1a966fe98cce7d3be7ee893ddc566018be4ebf925059257c9",
       "translations": {
-        "es": {
-          "updatedAt": "2026-10-21T10:00:18.162Z",
-          "fileName": "es/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "5c5988085c81a56176d79f829064723cfcd9e01050d4ac7356be3babd7acb3b1"
-        },
         "zh": {
-          "updatedAt": "2026-10-21T10:00:18.167Z",
+          "updatedAt": "2026-10-22T01:00:58.345Z",
           "fileName": "zh/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "16480e4a132b6b5ae08c4a824b81fdf3612e04dcade41ca58acf9f40226fcf0b"
+          "postProcessHash": "ef8f33238b81176967dc76bec95887c47b9ce8cd4646748b66d4879ead7c6418"
         },
-        "ru": {
-          "updatedAt": "2026-10-21T10:00:18.173Z",
-          "fileName": "ru/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "55cfd2198403d1fa5c44d069d8ae4a4e489e1380824a00a0263423efe7da5179"
-        },
-        "ar": {
-          "updatedAt": "2026-10-21T10:00:18.173Z",
-          "fileName": "ar/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "4824357ef9a649a889798db89ba5d607d86793f53fc7aa5cf21356756c11cb38"
-        },
-        "ko": {
-          "updatedAt": "2026-10-21T10:00:18.174Z",
-          "fileName": "ko/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "e192c8822ab58f3b425a4fdcb3358c2396eab9f74ef92f9b145060ce11f464ae"
+        "es": {
+          "updatedAt": "2026-10-22T01:00:58.345Z",
+          "fileName": "es/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "b4d7cdc16675e7a363e64eb4ead3f8aa3098132878484152e7e089943813f050"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-21T10:00:18.174Z",
+          "updatedAt": "2026-10-22T01:00:58.346Z",
           "fileName": "pt-BR/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "4ed99da5d0eff0fb53a721561266be416108506586d622b0031e348249c4a266"
+          "postProcessHash": "4757d583cfbf814d818dede39256a71a6b1ec7abc0a40cdfd21cbf1b2be8faec"
         },
         "fr": {
-          "updatedAt": "2026-10-21T10:00:18.174Z",
+          "updatedAt": "2026-10-22T01:00:58.346Z",
           "fileName": "fr/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "8c6eda901199f0f023a32753fa5e082ea43251439c583703cae56cf2444f26cb"
+          "postProcessHash": "1c8814a4e312c907bcb58748bc961d6c2fceacebeeee1c5694ea67b5c1b3a0b0"
+        },
+        "ru": {
+          "updatedAt": "2026-10-22T01:00:58.347Z",
+          "fileName": "ru/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "b4487ac4c50ddaab47430c0e5eeb6cdeb60cd14e67939d9a14e397fba8955b48"
+        },
+        "ar": {
+          "updatedAt": "2026-10-22T01:00:58.347Z",
+          "fileName": "ar/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "7b02dbd8ffef5c766df7e3b7ba78b59bb841a7c8e54ee676c691ff01772d1c3f"
+        },
+        "ko": {
+          "updatedAt": "2026-10-22T01:00:58.347Z",
+          "fileName": "ko/concepts/best-practices/minimize-optimize-joins.mdx",
+          "postProcessHash": "1fa649471883cc6ff4951f26e98a9cb31b2765e078c37d48a54950fbdd5e852e"
         },
         "ja": {
-          "updatedAt": "2026-10-21T10:00:18.175Z",
+          "updatedAt": "2026-10-22T01:00:58.348Z",
           "fileName": "ja/concepts/best-practices/minimize-optimize-joins.mdx",
-          "postProcessHash": "d2b7b0cbd8a8af883424a852174cb28208a3a747eb3b65264344b3ca818dbe83"
+          "postProcessHash": "95926dff1635e0e63c64cd62ac2bf8e28b678e42d1a8943bc86932a34ebaa1af"
         }
       },
       "fileName": "concepts/best-practices/minimize-optimize-joins.mdx"
@@ -73029,47 +73029,47 @@
     },
     {
       "fileId": "563158e639c78bf309c4e1c5d95166a23eb3b30e5bd0659b78d34030b85de7d5",
-      "versionId": "3aa621443a8238d9b24a9696e4d7437ec6595be59580d9559f7c363e1e8a0df1",
+      "versionId": "a123192314f78dad7eccbe1207ccda680220327684364ad4e1bc98404d5557ed",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-10-21T10:00:18.150Z",
-          "fileName": "pt-BR/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "f809bc3d01668a2d97b69968396cb8d9484e48f979519e30dfd24e62e958dfde"
-        },
-        "zh": {
-          "updatedAt": "2026-10-21T10:00:18.151Z",
-          "fileName": "zh/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "d43e2da037a19c78df1501fa9475303013d12b8604aff841ac6b8de4b3a51bac"
-        },
-        "ar": {
-          "updatedAt": "2026-10-21T10:00:18.156Z",
-          "fileName": "ar/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "2d885417a2e93bbf4f6f4af868fd4b2070f3baf68b203c7df1b6d9f32f312e44"
-        },
-        "ru": {
-          "updatedAt": "2026-10-21T10:00:18.156Z",
-          "fileName": "ru/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "a52430596d4c6b7782f00d344c7ac6a20e817c67c71872e64cd2277024a87575"
-        },
-        "fr": {
-          "updatedAt": "2026-10-21T10:00:18.167Z",
-          "fileName": "fr/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "ebd8d8970bbf94537bb9fb4c67016612a907e636fd842e0ff57325bbb5f1edb1"
+        "es": {
+          "updatedAt": "2026-10-22T01:00:57.318Z",
+          "fileName": "es/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "3ac0229303eb41b771b461643cbec34f55f3e2c0a31de40a4cf79def7d291d3b"
         },
         "ja": {
-          "updatedAt": "2026-10-21T10:00:18.169Z",
+          "updatedAt": "2026-10-22T01:00:57.318Z",
           "fileName": "ja/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "555e0edb5bfd26184d9d4f1fb318f199d9550eb4966e4e7a80a86efe69daacc3"
+          "postProcessHash": "b03bc4497bf00d1b6ce53c79b927f99fd56a34ee40cb49e3603e004a36d72bc2"
         },
         "ko": {
-          "updatedAt": "2026-10-21T10:00:18.170Z",
+          "updatedAt": "2026-10-22T01:00:57.319Z",
           "fileName": "ko/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "5503843bd30b6bfc1a5b35c818eb08259dc7bf907f79276f6a6efcc9cf0dcd22"
+          "postProcessHash": "cad020216ded8a2feb5757556c03b983deb296cd649b92396a52158fe3d98997"
         },
-        "es": {
-          "updatedAt": "2026-10-21T10:00:18.171Z",
-          "fileName": "es/concepts/features/operations/select/joining-tables.mdx",
-          "postProcessHash": "6ddde819dfcc66292e6807a49c3d9042c8c16ac413f8dc3f85b83cf4e0203f1a"
+        "pt-BR": {
+          "updatedAt": "2026-10-22T01:00:57.319Z",
+          "fileName": "pt-BR/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "0f5398c06ed710e0b5c6f5b16a4bb4506a4d41f06cb346d8048cb04b5b374a12"
+        },
+        "ru": {
+          "updatedAt": "2026-10-22T01:00:57.320Z",
+          "fileName": "ru/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "e415423f4395f5b57a40e956c82617b8ce9e6fa3addf155002f21f06d9c8c2ac"
+        },
+        "zh": {
+          "updatedAt": "2026-10-22T01:00:57.320Z",
+          "fileName": "zh/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "1e40035138d96d0003913001ff2b8bedda7bc8d59d597bbe9f751a3c2a5109a3"
+        },
+        "ar": {
+          "updatedAt": "2026-10-22T01:00:57.321Z",
+          "fileName": "ar/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "16e3626744003f716c929d9e5dcdeb2fdf19286bf4ca3c86e1e962bdaaef5c71"
+        },
+        "fr": {
+          "updatedAt": "2026-10-22T01:00:57.321Z",
+          "fileName": "fr/concepts/features/operations/select/joining-tables.mdx",
+          "postProcessHash": "6fa60e63d872e7cb71fc2f64e6e6c0e4210acbcf5c0ba277680f408a495cf021"
         }
       },
       "fileName": "concepts/features/operations/select/joining-tables.mdx"
