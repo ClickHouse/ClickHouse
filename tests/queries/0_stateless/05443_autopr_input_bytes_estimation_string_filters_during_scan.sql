@@ -21,6 +21,8 @@ SET max_threads=4, max_block_size=8192;
 
 DROP TABLE IF EXISTS t_wide;
 DROP TABLE IF EXISTS t_compact;
+DROP TABLE IF EXISTS t_compact_unread_compressible;
+DROP TABLE IF EXISTS t_compact_unread_incompressible;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate takes the compression ratio differently for the two.
@@ -30,14 +32,27 @@ SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_pa
 CREATE TABLE t_compact(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 
+-- A compact part has the sizes of all its columns together only, which says nothing about the one column read:
+-- here the column that is not read compresses either much better or much worse than the one that is.
+-- The columns are compressed separately, otherwise reading one of them reads the other one as well.
+CREATE TABLE t_compact_unread_compressible(id UInt64, s String, payload String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
+
+CREATE TABLE t_compact_unread_incompressible(id UInt64, s String, payload String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
+
 -- One value in a hundred matches; the others are long enough for the filter to stay enabled.
 INSERT INTO t_wide SELECT number, concat(if(number % 100 = 0, 'needle', ''), hex(cityHash64(number)), hex(cityHash64(number, 1)), hex(cityHash64(number, 2)), hex(cityHash64(number, 3)), hex(cityHash64(number, 4)))
 FROM numbers(300000);
 INSERT INTO t_compact SELECT * FROM t_wide;
+INSERT INTO t_compact_unread_compressible SELECT id, s, repeat('x', 1000) FROM t_wide WHERE id < 100000;
+INSERT INTO t_compact_unread_incompressible SELECT id, concat(if(id % 100 = 0, 'needle', ''), hex(cityHash64(id)), repeat('abcdefgh', 8)), s FROM t_wide WHERE id < 100000;
 
 SELECT count() FROM t_wide WHERE s LIKE '%needle%' SETTINGS log_comment='query_wide';
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact';
 SELECT count(), max(id) FROM t_wide WHERE s LIKE '%needle%' SETTINGS log_comment='query_wide_two_columns';
+SELECT count() FROM t_compact_unread_compressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_compressible';
+SELECT count() FROM t_compact_unread_incompressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_incompressible';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
@@ -63,3 +78,5 @@ WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_byte
 
 DROP TABLE t_wide;
 DROP TABLE t_compact;
+DROP TABLE t_compact_unread_compressible;
+DROP TABLE t_compact_unread_incompressible;

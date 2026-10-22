@@ -238,11 +238,15 @@ public:
         const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
-        const ColumnSize & total_columns_size,
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
+
+    /// Decides ahead of reading whether the next read block of `block_rows` rows is sampled by `recordInputColumns`,
+    /// for a reader that has to read a sampled block differently. The decision is handed to `recordInputColumns`
+    /// as `should_continue_sampling`.
+    bool shouldSampleInputBlock(size_t block_rows);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.

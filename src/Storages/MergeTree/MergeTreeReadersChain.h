@@ -52,7 +52,7 @@ public:
 
     ReadResult
     read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
-         size_t max_block_size_rows = 0);
+         size_t max_block_size_rows = 0, std::optional<bool> should_sample_block = {});
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;

@@ -40,7 +40,6 @@ public:
     String getParentPartName() const override { unexpectedCall(); }
     ColumnSize getColumnSize(const String &) const override { unexpectedCall(); }
     std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override { unexpectedCall(); }
-    ColumnSize getTotalColumnsSize() const override { unexpectedCall(); }
     CompressionCodecPtr getDefaultCompressionCodec() const override { unexpectedCall(); }
     ColumnSize getSubcolumnSize(const String &) const override { unexpectedCall(); }
     MergeTreeSettingsPtr getStorageSettings() const override { unexpectedCall(); }

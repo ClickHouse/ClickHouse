@@ -201,6 +201,14 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
     return counter % 5 == 0 && counter < 25;
 }
 
+bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleInputBlock(size_t block_rows)
+{
+    /// A block read from a part always has a byte hint (see `recordInputColumns`).
+    auto & statistics = duplicated ? block->duplicated_bytes_statistics[InputStatisticsType::WithByteHint]
+                                   : block->input_bytes_statistics[InputStatisticsType::WithByteHint];
+    return shouldSampleBlock(statistics, block_rows);
+}
+
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     Statistics & statistics,
     size_t num_rows,
@@ -406,7 +414,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
-    const ColumnSize & total_columns_size,
     const ColumnCodecByName & column_codecs,
     const CompressionCodecPtr & default_codec,
     size_t read_bytes,
@@ -474,32 +481,17 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                 for (const auto & column : input_columns)
                 {
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
-                    if (!part_columns.contains(column.name))
-                        continue;
-
-                    /// A sample of the values replaced with empty strings says nothing about the values read,
-                    /// so the compression ratio of the whole part stands in for the one of the column.
-                    if (const size_t bytes_skipped = get_bytes_skipped(column.name))
+                    if (part_columns.contains(column.name))
                     {
-                        if (total_columns_size.data_uncompressed)
-                        {
-                            const size_t column_bytes = column.column->byteSize() + bytes_skipped;
-                            sample_bytes += column_bytes;
-                            compressed_bytes += static_cast<size_t>(
-                                static_cast<double>(column_bytes) * static_cast<double>(total_columns_size.data_compressed)
-                                / static_cast<double>(total_columns_size.data_uncompressed));
-                        }
-                        continue;
+                        const auto codec_it = column_codecs.find(column.name);
+                        /// A column with no `CODEC` of its own is written with the part's default codec,
+                        /// which is generic, so it applies to any serialization layout.
+                        const auto [sample, compressed] = estimateCompressedColumnSize(
+                            column,
+                            codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
+                        sample_bytes += sample;
+                        compressed_bytes += compressed;
                     }
-
-                    const auto codec_it = column_codecs.find(column.name);
-                    /// A column with no `CODEC` of its own is written with the part's default codec,
-                    /// which is generic, so it applies to any serialization layout.
-                    const auto [sample, compressed] = estimateCompressedColumnSize(
-                        column,
-                        codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
-                    sample_bytes += sample;
-                    compressed_bytes += compressed;
                 }
             }
         }

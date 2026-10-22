@@ -106,6 +106,10 @@ public:
     /// columns misses these values, although they were read from disk.
     std::unordered_map<String, size_t> takeBytesSkippedByStringValueFilters();
 
+    bool hasStringValueFilters() const { return !string_value_filters_by_part_column_name.empty(); }
+    /// Allows to read the values in full for a while, e.g. to take a sample of them.
+    void setStringValueFiltersEnabled(bool enabled) { string_value_filters_enabled = enabled; }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -282,6 +286,7 @@ private:
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
     std::unordered_map<String, StringValueFilterForColumn> string_value_filters_by_part_column_name;
+    bool string_value_filters_enabled = true;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;

@@ -184,6 +184,9 @@ public:
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
         void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
+
+        bool hasStringValueFilters() const;
+        void setStringValueFiltersEnabled(bool enabled);
     };
 
     struct BlockSizeParams
@@ -312,6 +315,8 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     DataflowCacheUpdateCallback dataflow_cache_update_cb;
+    /// See `MergeTreeReadTask::read`.
+    bool read_sampled_blocks_without_string_value_filters = false;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

@@ -163,7 +163,7 @@ void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_pa
     deserialize_settings.string_value_filter = nullptr;
     deserialize_settings.string_value_filter_bytes_skipped = nullptr;
 
-    if (string_value_filters_by_part_column_name.empty())
+    if (string_value_filters_by_part_column_name.empty() || !string_value_filters_enabled)
         return;
 
     auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
