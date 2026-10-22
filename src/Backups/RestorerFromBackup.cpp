@@ -178,6 +178,8 @@ void RestorerFromBackup::run(Mode mode_)
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
 
+    context->onQueryExecutionStarted();
+
     /// Create databases using the create queries read from the backup.
     setStage(Stage::CREATING_DATABASES);
     createAndCheckDatabases();
