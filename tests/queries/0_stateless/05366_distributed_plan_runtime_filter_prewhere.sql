@@ -3,16 +3,21 @@
 
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
+-- A randomized join cardinality makes Cascades keep a local hash join in the main stage, so only one task builds the filter.
+SET query_plan_optimize_join_order_randomize = 0;
 -- The assertions below count the rows the filter in PREWHERE lets through.
 SET optimize_move_to_prewhere = 1;
 -- The shared `FixedHashMap` filter is published only by a `hash` join.
 SET join_algorithm = 'hash';
+-- Without column statistics Cascades keeps the join in the main stage, and nothing is shipped.
+-- An empty `auto_statistics_types` does that, so the tables pin the default types and inserts materialize them.
+SET use_statistics = 1, materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS probe;
 DROP TABLE IF EXISTS build;
 
-CREATE TABLE probe (k UInt64, v String) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE build (k UInt64, c UInt8) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE probe (k UInt64, v String) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE build (k UInt64, c UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
 INSERT INTO probe SELECT number, toString(number) FROM numbers(200000);
 -- Dense keys, so the hash join converts its map into a `FixedHashMap` and publishes the shared filter.
