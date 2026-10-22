@@ -1932,7 +1932,6 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
     /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
-    /// Built on the stack: this runs for both bounds of every range the analysis checks.
     char key_buf[3 + 2 * sizeof(uintptr_t) + 1 + std::numeric_limits<UInt64>::digits10 + 1];
     memcpy(key_buf, "_0x", 3);
     writeHexUIntLowercase(reinterpret_cast<uintptr_t>(func.get()), key_buf + 3);
