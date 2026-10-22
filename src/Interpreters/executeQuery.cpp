@@ -3340,12 +3340,13 @@ static BlockIO executeQueryImpl(
                     {
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
+                        /// Must be read before `getSource` moves the source out of the reader.
+                        quota_ignored = reader->entryIgnoresQuota();
 
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
-                        quota_ignored = reader->entryIgnoresQuota();
 
                         return true;
                     }
