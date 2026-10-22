@@ -2999,14 +2999,21 @@ def test_namespace_nested_sql_ddl(started_cluster):
 
 def test_namespace_path_reads_and_gating(started_cluster):
     """
-    Multipart column qualifiers and nested paths with a quoted dotted component
-    resolve with the setting on; the multipart column qualifier is gated.
+    Inserts by a multipart path, multipart column qualifiers and nested paths
+    with a quoted dotted component resolve with the setting on; the multipart
+    column qualifier is gated.
     """
     node = started_cluster.instances["node1"]
     ns_settings = {"allow_experimental_table_namespaces": 1}
+    insert_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **ns_settings,
+    }
 
     test_ref = f"test_ns_path_reads_{uuid.uuid4().hex[:8]}"
     ns = f"ns_{test_ref}"
+    row = "(NULL, 'AAPL', 193.24, 193.31, tuple('bot'))"
 
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(ns)
@@ -3017,6 +3024,12 @@ def test_namespace_path_reads_and_gating(started_cluster):
     table_child.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"INSERT INTO {CATALOG_NAME}.{ns}.t VALUES {row}", settings=insert_settings)
+    result = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{ns}.t`", settings=ns_settings
+    ).strip()
+    assert result == "4", f"INSERT by three-part path: {result}"
 
     for query in (
         f"SELECT {CATALOG_NAME}.{ns}.t.symbol FROM {CATALOG_NAME}.{ns}.t WHERE symbol = 'kek' LIMIT 1",
