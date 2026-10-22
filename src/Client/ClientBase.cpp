@@ -2680,8 +2680,10 @@ void ClientBase::onEndOfStream()
             /// reader starts late) has to receive it - so write it through `std_out` with the
             /// responsive hook armed: it waits for the sink as long as needed, and a Ctrl+C
             /// received while it waits (the interrupt handler is still armed here) discards the
-            /// line instead of hanging the client on a stuck terminal.
-            if (cancelled || query_interrupt_handler.interruptedWhileRunning() || !std_out)
+            /// line instead of hanging the client on a stuck terminal. The pager cleanup in
+            /// `resetOutput` disarms the handler, but `stopQuery` latches an earlier Ctrl+C into
+            /// `query_received_interrupt`, so consult it as well.
+            if (cancelled || query_received_interrupt || query_interrupt_handler.interruptedWhileRunning() || !std_out)
             {
                 printMessageBestEffort("Ok.");
             }
@@ -2789,7 +2791,12 @@ void ClientBase::onProfileEvents(Block & block)
             /// When the log sink is unavailable - its open was interrupted by a `Ctrl+C`, see
             /// `initLogsOutputStream` - keep accumulating the events instead of printing them, so
             /// nothing is lost if the sink becomes available again before the query ends.
-            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms && initLogsOutputStream())
+            /// After a Ctrl+C, defer them as well: the sink may be exactly what is stuck, and a flush
+            /// to it that waits for the sink can take as long as the period of these packets, so
+            /// `LocalConnection` would always have the next one due and never advance the cancelled
+            /// query. The deferred events are printed by the bounded flush after the query.
+            const bool interrupted = cancelled || query_interrupt_handler.interruptedWhileRunning();
+            if (!interrupted && profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms && initLogsOutputStream())
             {
                 /// We need to restart the watch each time we flushed these events
                 profile_events.watch.restart();
@@ -3012,7 +3019,25 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
 
         setupSignalHandler();
     }
+    const bool had_pager = pager_cmd != nullptr;
     pager_cmd = nullptr;
+
+    /// With a pager the result went to the pager's input, so `std_out` only holds diagnostics
+    /// still buffered for it (e.g. profile events with `--server_logs_file=-`). Their cancellation
+    /// hook is inert by now: `setupSignalHandler` above has disarmed the interrupt handler. After a
+    /// Ctrl+C the terminal may be exactly what is stuck, so bound this flush like the post-query
+    /// epilogue does instead of waiting for the terminal indefinitely.
+    const bool bound_final_flush = had_pager && (cancelled || query_received_interrupt) && isBlockingCapableSink(std_out->getFD());
+    std::optional<UInt64> previous_std_out_flush_budget;
+    if (bound_final_flush)
+    {
+        previous_std_out_flush_budget = std_out->getBestEffortFlushBudget();
+        std_out->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (bound_final_flush)
+            std_out->setBestEffortFlushBudget(previous_std_out_flush_budget);
+    });
 
     std_out->next();
 }
