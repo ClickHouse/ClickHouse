@@ -249,6 +249,21 @@ SELECT count() FROM t_bf_map_nested_array WHERE m['k'] = [[1]];
 SELECT count() FROM t_bf_map_nested_array WHERE m['k'] = [[1]] SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_bf_map_nested_array;
+
+SELECT 'map key over Tuple values with a set of another Tuple type';
+-- The default of the map value type, `('')`, does not convert to `Tuple(UInt8)` or `Tuple(Date)`,
+-- while the stored values do, so the index must not probe the set with it.
+DROP TABLE IF EXISTS t_bf_map_tuple_cast;
+CREATE TABLE t_bf_map_tuple_cast (m Map(String, Tuple(String)), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_tuple_cast VALUES (map('k', tuple('1'), 'd', tuple('2020-01-01')));
+
+SELECT count() FROM t_bf_map_tuple_cast WHERE m['k'] IN (SELECT tuple(toUInt8(1)));
+SELECT count() FROM t_bf_map_tuple_cast WHERE m['k'] IN (SELECT tuple(toUInt8(1))) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_tuple_cast WHERE m['d'] IN (SELECT tuple(toDate('2020-01-01')));
+SELECT count() FROM t_bf_map_tuple_cast WHERE m['d'] IN (SELECT tuple(toDate('2020-01-01'))) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_tuple_cast;
 DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;

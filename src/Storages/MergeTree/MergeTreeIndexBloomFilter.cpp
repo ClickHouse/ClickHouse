@@ -883,6 +883,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (hasNestedEnum(map_value_type))
             return false;
 
+        /// `Set::execute` converts a probe of another type leniently only to a set element type that
+        /// can be inside `Nullable` and is not a `Tuple`; otherwise the cast is strict, so the default
+        /// of `Tuple(String)` (`('')`) throws `CANNOT_PARSE_TEXT` against a `Tuple(UInt8)` set, although
+        /// the stored values are valid. Nothing can be concluded about a missing key then: decline.
+        const auto set_element_type = removeLowCardinalityAndNullable(type);
+        if ((!set_element_type->canBeInsideNullable() || isTuple(set_element_type))
+            && !removeLowCardinalityAndNullable(map_value_type)->equals(*set_element_type))
+            return false;
+
         if (set_contains_default_of(type->createColumnConstWithDefaultValue(1), type)
             || set_contains_default_of(createMissingMapValueColumn(map_value_type), map_value_type))
             return false;

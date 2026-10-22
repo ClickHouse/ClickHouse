@@ -93,3 +93,8 @@ map key over Tuple(Enum8) values
 map key over nested Array values
 1
 1
+map key over Tuple values with a set of another Tuple type
+1
+1
+1
+1
