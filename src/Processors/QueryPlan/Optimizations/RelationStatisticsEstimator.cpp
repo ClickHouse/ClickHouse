@@ -534,10 +534,6 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
     /// before `estimateReadRowsCount` requires a single child, which a join never has.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
-        /// Without the explicit opt-in, keep the previous behavior: a sub-join reports unknown statistics.
-        if (!options.propagate_join_estimates)
-            return RelationStats{};
-
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
         /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
@@ -552,6 +548,8 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = has_plan_time_filter || join_step->hasImpreciseEstimate(),
             .composite = true};
+        /// How a join transforms its inputs' column statistics is not modeled, so consumers that gate on
+        /// `ColumnStatsProvenance` fail closed on a sub-join's column statistics.
         addTransformation(stats.column_stats, Unsupported);
         const auto strictness = join_step->getJoinOperator().strictness;
         if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)

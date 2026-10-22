@@ -688,16 +688,12 @@ TEST(ColumnStatsProvenance, AggregationWithGroupByLimitRecordsNonUniformSubset)
     EXPECT_FALSE(unlimited->column_stats.at("k").range_provenance.has(NonUniformRowSubset));
 }
 
-TEST(ColumnStatsProvenance, JoinEstimatesArePropagatedOnlyOnRequest)
+TEST(ColumnStatsProvenance, JoinEstimatesArePropagated)
 {
     QueryPlan::Node node;
     node.step = makeOptimizedJoinStep(JoinKind::Inner, JoinStrictness::All, "l");
 
-    const auto default_stats = estimateReadRowsCount(node);
-    EXPECT_FALSE(default_stats.estimated_rows.has_value());
-    EXPECT_TRUE(default_stats.column_stats.empty());
-
-    const auto propagated_stats = estimateReadRowsCount(node, nullptr, RelationStatsOptions{.propagate_join_estimates = true});
+    const auto propagated_stats = estimateReadRowsCount(node);
     ASSERT_TRUE(propagated_stats.estimated_rows.has_value());
     EXPECT_EQ(*propagated_stats.estimated_rows, 100);
     ASSERT_TRUE(propagated_stats.column_stats.contains("l"));
@@ -717,7 +713,7 @@ TEST(ColumnStatsProvenance, JoinEstimateUnderPlanTimeFilterIsUnknown)
     filter_node.step = std::make_unique<FilterStep>(header, makeFilterDAG(header), "__filter", true);
     filter_node.children = {&join_node};
 
-    const auto stats = estimateReadRowsCount(filter_node, nullptr, RelationStatsOptions{.propagate_join_estimates = true});
+    const auto stats = estimateReadRowsCount(filter_node);
     /// The sub-join's estimate does not account for the filter above it, so the row count is unknown.
     EXPECT_FALSE(stats.estimated_rows.has_value());
     EXPECT_TRUE(stats.imprecise_estimate);
@@ -735,10 +731,7 @@ TEST(ColumnStatsProvenance, JoinKindsRecordUnsupportedAndSemiAntiSubsets)
     {
         QueryPlan::Node node;
         node.step = makeOptimizedJoinStep(kind, strictness, stats_column);
-        return estimateReadRowsCount(
-            node,
-            nullptr,
-            RelationStatsOptions{.propagate_join_estimates = true});
+        return estimateReadRowsCount(node);
     };
 
     for (const auto kind : {JoinKind::Inner, JoinKind::Left})
@@ -778,7 +771,7 @@ TEST(ColumnStatsProvenance, FullAndPasteJoinEstimatesFailClosed)
         QueryPlan::Node node;
         node.step = makeOptimizedJoinStep(kind, JoinStrictness::All, "l");
 
-        const auto stats = estimateReadRowsCount(node, nullptr, RelationStatsOptions{.propagate_join_estimates = true});
+        const auto stats = estimateReadRowsCount(node);
         ASSERT_TRUE(stats.estimated_rows.has_value());
         ASSERT_TRUE(stats.column_stats.contains("l"));
         EXPECT_TRUE(stats.column_stats.at("l").ndv_provenance.has(Unsupported));

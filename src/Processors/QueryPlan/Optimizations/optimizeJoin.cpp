@@ -633,10 +633,7 @@ static size_t addChildQueryGraph(
     }
 
     graph.inputs.push_back(node);
-    /// An already optimized child join enters this graph as a single relation, and the row count it
-    /// settled on is the only estimate that relation has. Without it, the cost model would read the
-    /// missing count as one row and treat the sub-join as the cheapest input.
-    RelationStats stats = estimateReadRowsCount(*node, nullptr, RelationStatsOptions{.propagate_join_estimates = true});
+    RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
