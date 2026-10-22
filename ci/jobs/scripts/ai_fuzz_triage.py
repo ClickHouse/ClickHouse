@@ -1373,7 +1373,9 @@ def _write_pr_diff(info, repo_name):
     """The PR diff at the tested head, not the live PR.
 
     A commit pushed while the job ran, e.g. one removing the faulty change, must
-    not make the failing code look untouched by the PR.
+    not make the failing code look untouched by the PR. Raises when the API does not
+    return the whole diff (e.g. one too large for it): a partial view, such as the
+    file list capped at 300, may omit the culprit, so the job keeps its status.
     """
     if not info.base_branch or not COMMIT_SHA_RE.match(info.sha or ""):
         raise ValueError(
@@ -1383,10 +1385,7 @@ def _write_pr_diff(info, repo_name):
     try:
         diff = _robot_gh("api", compare, "-H", "Accept: application/vnd.github.diff")
     except subprocess.CalledProcessError as e:
-        # E.g. a diff too large for the API: the paths still narrow it down.
-        print(f"WARNING: AI fuzz triage: cannot fetch the PR diff: {e.stderr}")
-        files = _robot_gh("api", compare, "--jq", ".files[].filename")
-        diff = f"(the diff could not be fetched; the PR changes these files)\n{files}"
+        raise RuntimeError(f"cannot fetch the PR diff: {(e.stderr or '').strip()}") from e
     PR_DIFF_FILE.write_text(diff, encoding="utf-8")
 
 
