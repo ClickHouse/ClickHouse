@@ -1304,8 +1304,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
 
-            /// NULL padding happens at the outer join that joins the relation alone, so its type change is applied there.
-            /// Any other type change pads nothing and is applied at the last step, after all predicates over the original columns.
+            /// NULL padding applies where the relation is joined alone; other type changes only after all predicates on original columns.
             const bool is_last_step = entry_idx + 1 == sequence.size();
             for (const auto & [relation, new_inputs] : query_graph_builder.type_changes)
             {
