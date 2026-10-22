@@ -620,6 +620,16 @@ void FileCache::initialize()
             /// threads and abort the process.
             init_exception = std::current_exception();
             metadata.stopThreads();
+
+            /// A failure of the metadata loading sets `stop_loading_metadata` (its workers are
+            /// joined by now); clear it, otherwise the retried loading would skip every key
+            /// directory and the cache would come up without its existing segments. Do not lose
+            /// a concurrent request from `deactivateBackgroundOperations`, which sets `shutdown`
+            /// before `stop_loading_metadata`: if its store happened before ours, the following
+            /// check of `shutdown` observes it and restores the flag.
+            stop_loading_metadata = false;
+            if (shutdown)
+                stop_loading_metadata = true;
             throw;
         }
     });

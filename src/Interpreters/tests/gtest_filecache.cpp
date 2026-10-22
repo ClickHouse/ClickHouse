@@ -4263,6 +4263,7 @@ TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
     settings[FileCacheSetting::max_elements] = 5;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::load_metadata_threads] = 1;
     settings[FileCacheSetting::background_download_threads] = 2;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
@@ -4271,13 +4272,28 @@ TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
     /// key directory name with `Key::fromKeyString`, which throws `BAD_ARGUMENTS`
     /// for a name that is not a 32-character hex string. Plant such a key directory
     /// (it must be non-empty, otherwise it is silently removed).
-    const fs::path garbage_prefix_dir = cache_path / "gar";
+    /// The key directories of the `Data` key type are loaded before those of the `General`
+    /// type, so with a single loading thread the failure happens before any valid key is
+    /// loaded (`loadMetadata` refuses to retry over partially loaded metadata).
+    const fs::path garbage_prefix_dir = cache_path / "Data" / "gar";
     const fs::path garbage_key_dir = garbage_prefix_dir / "bage";
     fs::create_directories(garbage_key_dir);
     {
         WriteBufferFromFile garbage((garbage_key_dir / "0").string());
         writeString("garbage", garbage);
         garbage.finalize();
+    }
+
+    /// A valid cached segment that the retried `initialize` must recover: the retry must not
+    /// inherit the cancellation of the metadata loading from the failed attempt, otherwise
+    /// it would skip every key directory and come up with an empty cache.
+    const auto valid_key_str = DB::FileCacheKey::fromPath("init_retry_key").toString();
+    const fs::path valid_key_dir = cache_path / valid_key_str.substr(0, 3) / valid_key_str;
+    fs::create_directories(valid_key_dir);
+    {
+        WriteBufferFromFile segment((valid_key_dir / "0").string());
+        writeString(std::string(10, '0'), segment);
+        segment.finalize();
     }
 
     DB::FileCache cache("init_retry", settings);
@@ -4290,6 +4306,9 @@ TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
     fs::remove_all(garbage_prefix_dir);
     cache.initialize();
     EXPECT_TRUE(cache.isInitialized());
+    EXPECT_EQ(cache.getFileSegmentsNum(), 1);
+    EXPECT_EQ(cache.getUsedCacheSize(), 10);
+    EXPECT_TRUE(fs::exists(valid_key_dir / "0"));
 }
 
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a
