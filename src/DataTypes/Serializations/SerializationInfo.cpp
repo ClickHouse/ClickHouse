@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <array>
@@ -108,8 +109,9 @@ void SerializationInfo::Data::add(const Data & other)
 
 void SerializationInfo::Data::remove(const Data & other)
 {
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
+    /// The counts are modular: the aggregated hints of a table can have less than the removed part had.
+    num_rows = common::subIgnoreOverflow(num_rows, other.num_rows);
+    num_defaults = common::subIgnoreOverflow(num_defaults, other.num_defaults);
     exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
