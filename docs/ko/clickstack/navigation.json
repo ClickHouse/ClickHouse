@@ -33,7 +33,7 @@
           ]
         },
         "ko/clickstack/architecture",
-        "ko/clickstack/faq"
+        "clickstack/faq"
       ]
     },
     {
@@ -97,11 +97,11 @@
         "ko/clickstack/text-to-chart",
         "ko/clickstack/features/event-patterns",
         "ko/clickstack/features/event-deltas",
-        "ko/clickstack/features/alerts",
+        "clickstack/features/alerts",
         "ko/clickstack/features/anomaly-detection",
         "ko/clickstack/service-maps",
         "ko/clickstack/features/session-replay",
-        "ko/clickstack/mcp",
+        "clickstack/mcp",
         "ko/clickstack/url-parameters",
         {
           "group": "데모 데이",
