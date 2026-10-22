@@ -27,6 +27,7 @@ namespace DB
 {
 
 class ASTExpressionList;
+class ASTColumns;
 class ASTFunction;
 class ASTIdentifier;
 class ASTOrderByElement;
@@ -52,11 +53,7 @@ class SettingsChanges;
 /// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
 /// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
 /// `sumif` is not), so these stay PascalCase.
-inline const Strings aggregate_combinator_suffixes = {
-    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
-    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
-    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
-};
+const Strings & aggregateCombinatorSuffixes();
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -277,6 +274,9 @@ private:
     /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
     /// occasionally qualified with a known table name.
     ASTPtr makeFuzzedVirtualColumn();
+    /// Builds the string literal naming a data part that `OPTIMIZE ... DRY RUN PARTS` and the
+    /// `PART` forms of `ALTER` take.
+    ASTPtr makeFuzzedPartName();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     /// Fuzz every element of a type list in place. Returns true if any element changed.
@@ -327,8 +327,8 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
-    void fuzzTableStorage(ASTStorage & storage);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
+    void fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
@@ -362,7 +362,10 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzProxyDatabaseEngine(ASTStorage & storage);
+    void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
+    String makeFuzzedLikePattern();
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);

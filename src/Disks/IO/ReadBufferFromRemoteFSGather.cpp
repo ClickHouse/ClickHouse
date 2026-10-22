@@ -214,6 +214,11 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         query_status->throwIfKilled();
     }
 
+    /// The reader adopts the filled bytes as its `internal_buffer` and the swap hands that back;
+    /// lend the whole own buffer every time.
+    if (!use_external_buffer)
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+
     SwapHelper swap(*this, *current_buf);
 
     bool result = current_buf->next();

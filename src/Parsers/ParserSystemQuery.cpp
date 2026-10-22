@@ -8,8 +8,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -302,6 +300,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP CONNECTIONS CACHE", Type::CLEAR_CONNECTIONS_CACHE},
             {"DROP MARK CACHE", Type::CLEAR_MARK_CACHE},
             {"DROP PRIMARY INDEX CACHE", Type::CLEAR_PRIMARY_INDEX_CACHE},
+            {"DROP STATISTICS CACHE", Type::CLEAR_STATISTICS_CACHE},
             {"DROP UNCOMPRESSED CACHE", Type::CLEAR_UNCOMPRESSED_CACHE},
             {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
             {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
@@ -310,6 +309,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP TEXT INDEX HEADER CACHE", Type::CLEAR_TEXT_INDEX_HEADER_CACHE},
             {"DROP TEXT INDEX POSTINGS CACHE", Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE},
             {"DROP TEXT INDEX CACHES", Type::CLEAR_TEXT_INDEX_CACHES},
+            {"DROP COLUMNS CACHE", Type::CLEAR_COLUMNS_CACHE},
             {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
             {"DROP ENCRYPTION HEADERS CACHE", Type::CLEAR_ENCRYPTION_HEADERS_CACHE},
@@ -533,6 +533,32 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
                 return false;
             res->queue_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+            break;
+        }
+
+        case Type::RESET_FILELOG:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            if (ParserKeyword{Keyword::FILE}.ignore(pos, expected))
+            {
+                ASTPtr ast;
+                if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    return false;
+                res->filelog_file = ast->as<ASTLiteral &>().value.safeGet<String>();
+                if (ParserKeyword{Keyword::OFFSET}.ignore(pos, expected))
+                {
+                    if (!ParserUnsignedInteger{}.parse(pos, ast, expected))
+                        return false;
+                    res->filelog_offset = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+                }
+                else if (ParserKeyword{Keyword::TO}.ignore(pos, expected))
+                {
+                    if (!ParserKeyword{Keyword::END}.ignore(pos, expected))
+                        return false;
+                    res->filelog_to_end = true;
+                }
+            }
             break;
         }
 
@@ -1130,14 +1156,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementSystem(StatementFactory & factory)
-{
-    factory.registerStatement("SYSTEM",
+    documentation["SYSTEM"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -1231,6 +1254,11 @@ Clears the mark cache.
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory.
 Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Clears the statistics cache, which holds the column statistics of the data parts of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory, one entry per data part and column.
+Its size is configured with the server-level setting `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
@@ -1314,7 +1342,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-Clears the caches of a `TimeSeries` table which let inserts skip the rows already present in its target tables. There are two such caches: the deduplication cache of the metric families table and the deduplication cache of the tags table (used only when `store_min_time_and_max_time` is disabled), see the `metric_families_deduplication_cache_expiration_seconds` and `tags_deduplication_cache_expiration_seconds` settings of the table. The caches are local to the server and they don't notice changes made to the target tables directly. Such a difference disappears by itself when the entries expire; use the statement to make the next insert write all its rows without waiting (for example, after truncating the metric families table). `TRUNCATE TABLE` of a `TimeSeries` table clears the caches of the executing server only, so if the target tables are replicated, run the statement `ON CLUSTER` afterwards to clear the caches of the other replicas.
+Clears the caches of a `TimeSeries` table which let inserts skip the rows already present in its target tables. There are two such caches: the deduplication cache of the metric families table and the deduplication cache of the tags table, see the `metric_families_deduplication_cache_expiration_seconds` and `tags_deduplication_cache_expiration_seconds` settings of the table. The caches are local to the server and they don't notice changes made to the target tables directly. Such a difference disappears by itself when the entries expire; use the statement to make the next insert write all its rows without waiting (for example, after truncating the metric families table). `TRUNCATE TABLE` of a `TimeSeries` table clears the caches of the executing server only, so if the target tables are replicated, run the statement `ON CLUSTER` afterwards to clear the caches of the other replicas.
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table
@@ -1375,6 +1403,14 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](/reference/settings/session-settings/use#use_uncompressed_cache).
 Its size can be configured using the server-level setting [`uncompressed_cache_size`](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size).
+
+## SYSTEM CLEAR|DROP COLUMNS CACHE {#drop-columns-cache}
+
+Clears the columns cache (deserialized columns kept in memory).
+Reads that are already in progress when the cache is cleared cannot put their data back into the cache, also from the parts of the data they reach only after the clear, so the cache stays cleared even under load.
+The columns cache is enabled/disabled with the query/user/profile-level setting `use_columns_cache`.
+Its size can be configured using the server-level setting `columns_cache_size`.
+Use [`system.columns_cache`](/reference/system-tables/columns_cache) to introspect cache contents.
 
 ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
@@ -2079,6 +2115,18 @@ Blocks until the given file has been processed or permanently failed by the give
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
 
+## SYSTEM RESET FILELOG {#reset-filelog}
+
+Changes where a [FileLog](/reference/engines/table-engines/special/filelog) table continues reading, without recreating the table.
+
+```sql
+SYSTEM RESET FILELOG [ON CLUSTER cluster_name] [db.]table_name [FILE 'file_name' [OFFSET n | TO END]]
+```
+
+Without `FILE`, every file of the table is read again from the beginning. With `FILE`, only the named file is affected (the name as in the `_filename` virtual column): it is read again from the beginning, from byte `n` with `OFFSET n` (the start of a line, such as an `_offset` value), or, with `TO END`, only from data appended after the command, so that what the file contains now is skipped.
+
+Rows that are read again are inserted into the materialized views again. The new position is saved immediately and kept after a server restart. The command waits for a read that is running in the background and fails if a `SELECT` query is reading from the table. It requires the `SYSTEM RESET FILELOG` privilege on the table.
+
 ## SYSTEM ENABLE|DISABLE FAILPOINT {#failpoint}
 
 Fail points are named places in the server code where a fault can be injected on demand - an error, a delay, or a pause of the executing thread - for testing. They are listed in the [`system.fail_points`](/reference/system-tables/fail_points) table together with their current state.
@@ -2117,12 +2165,15 @@ SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
+SYSTEM RESET FILELOG [db.]name [FILE 'file_name' [OFFSET n | TO END]]
 SYSTEM ENABLE | DISABLE FAILPOINT name
 SYSTEM DISABLE ALL FAILPOINTS
 SYSTEM WAIT FAILPOINT name [PAUSE|RESUME] | NOTIFY FAILPOINT name
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
-    });
+    };
+
+    return documentation;
 }
 
 }

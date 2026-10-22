@@ -54,13 +54,13 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets>(*this);
-        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;
+        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_keys_or_values_states.size(); ++bucket)
-            new_state->bucket_keys_or_values_states[bucket] = bucket_keys_or_values_states[bucket] ? bucket_keys_or_values_states[bucket]->clone() : nullptr;
-        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
+            new_state->bucket_keys_or_values_states[bucket] = bucket_keys_or_values_states[bucket] ? bucket_keys_or_values_states[bucket]->clone(context) : nullptr;
+        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone(context) : nullptr;
         return new_state;
     }
 };
