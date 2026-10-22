@@ -25,11 +25,12 @@ INSERT INTO fifth_t SELECT number * 80 FROM numbers(125);
 "
 
 # Pinned: streaming exchanges, because persisted producers are started before their consumer; `hash`,
-# because a sorting join has no build side; `max_rows_to_group_by`, because the CI profile sets it and
-# `make_distributed_plan` rejects an aggregation with a row limit.
+# because a sorting join has no build side; no join runtime filters, which add steps to the printed plan;
+# `max_rows_to_group_by`, because the CI profile sets it and `make_distributed_plan` rejects an aggregation
+# with a row limit.
 SETTINGS="make_distributed_plan = 1, enable_parallel_replicas = 0,
     distributed_plan_force_exchange_kind = 'Streaming', join_algorithm = 'hash', query_plan_optimize_join_order_randomize = 0,
-    max_rows_to_group_by = 0, distributed_plan_fallback_to_local_execution = 0"
+    enable_join_runtime_filters = 0, max_rows_to_group_by = 0, distributed_plan_fallback_to_local_execution = 0"
 # No swap and no reordering: each join builds its right input as written. The queries put the smaller side
 # on the right, as the planner would.
 AS_WRITTEN="query_plan_join_swap_table = 'false', query_plan_optimize_join_order_limit = 0"
@@ -40,34 +41,9 @@ function show()
     local query="$2"
     local case_settings="$3"
     echo "$label"
-    # The joins, exchanges and reads of the plan; the first input of a join is its probe side, the second its build side.
-    $CLICKHOUSE_CLIENT --query "EXPLAIN $query SETTINGS $SETTINGS, $case_settings, explain_query_plan_default = 'legacy'" \
-    | awk -v db="$CLICKHOUSE_DATABASE" '
-        {
-            match($0, /^ */)
-            depth = RLENGTH
-            name = substr($0, RLENGTH + 1)
-            sub(/ .*/, "", name)
-            if (name !~ /^(JoinLogical|[A-Za-z]+Exchange|ReadFromMergeTree)$/)
-                next
-            if (name == "ReadFromMergeTree")
-            {
-                table = $0
-                sub(".*\\(" db "\\.", "", table)
-                sub(/\).*/, "", table)
-                name = name " " table
-            }
-            while (top > 0 && depths[top] >= depth)
-                --top
-            role = ""
-            if (top > 0 && names[top] == "JoinLogical")
-                role = ++inputs[top] == 1 ? "probe: " : "build: "
-            printf "%" (2 * top + 2) "s%s%s\n", "", role, name
-            ++top
-            depths[top] = depth
-            names[top] = name
-            inputs[top] = 0
-        }'
+    # The joins, exchanges and reads of the plan: under a join, `├──` leads to its probe input and `└──` to its build input.
+    $CLICKHOUSE_CLIENT --query "EXPLAIN pretty = 1, compact = 1 $query SETTINGS $SETTINGS, $case_settings" \
+        | grep -E "JoinLogical|Exchange|ReadFromMergeTree" | sed "s/${CLICKHOUSE_DATABASE}\.//"
     for execute_locally in 1 0; do
         echo "  start order, execute_locally = $execute_locally: $($CLICKHOUSE_CLIENT --send_logs_level=debug --send_logs_source_regexp='^DistributedQueryPlanExecutor$' --query "
             $query SETTINGS $SETTINGS, $case_settings, distributed_plan_execute_locally = $execute_locally" \
