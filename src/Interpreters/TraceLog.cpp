@@ -27,8 +27,13 @@
 
 #include <array>
 #include <cstring>
-#include <sys/random.h>
 #include <unistd.h>
+
+#if defined(OS_LINUX)
+#include <sys/syscall.h>
+#else
+#include <sys/random.h>
+#endif
 
 namespace DB
 {
@@ -49,8 +54,14 @@ UInt64 hideAllocationAddress(UInt64 ptr)
     static const std::array<UInt64, 2> key = []
     {
         std::array<UInt64, 2> words{};
+#if defined(OS_LINUX)
+        /// Old glibc (e.g. the ppc64le sysroot) has no `getentropy`, so call `getrandom` directly.
+        if (::syscall(SYS_getrandom, words.data(), sizeof(words), 0) != static_cast<long>(sizeof(words)))
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getrandom");
+#else
         if (::getentropy(words.data(), sizeof(words)) != 0)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getentropy");
+#endif
         return words;
     }();
 
