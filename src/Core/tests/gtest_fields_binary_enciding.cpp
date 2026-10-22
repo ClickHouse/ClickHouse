@@ -1,13 +1,16 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -63,3 +66,28 @@ GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
     }));
 }
 
+
+
+/// A binary-encoded `Decimal` whose scale exceeds the type's maximum precision must be rejected by
+/// `decodeField`, not run on to the decimal text writer with an oversized scale. The scale is
+/// attacker-controlled wire data (an `AggregateFunction` type parameter or a `Dynamic` value carries
+/// its own binary-encoded `Field`). The bytes are hand-built because the encoder cannot produce an
+/// out-of-range scale.
+GTEST_TEST(FieldBinaryEncoding, DecodeDecimalOutOfRangeScaleThrows)
+{
+    WriteBufferFromOwnString ostr;
+    writeBinary(UInt8(0x09), ostr);   /// FieldBinaryTypeIndex::Decimal64
+    writeVarUInt(UInt32(1000), ostr); /// scale far above max_precision<Decimal64> = 18
+    writeBinaryLittleEndian(Int64(4242), ostr);
+
+    ReadBufferFromString istr(ostr.str());
+    try
+    {
+        decodeField(istr);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
+}
