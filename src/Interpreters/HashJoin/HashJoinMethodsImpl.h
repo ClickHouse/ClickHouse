@@ -18,6 +18,7 @@
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event HashJoinDeferredPreallocatedElementsInHashTables;
 }
 
 namespace DB
@@ -292,7 +293,10 @@ BuildResult insertFromBlockImplTypeCase(
         SCOPE_EXIT({ table.addBytes(table.bucket_bytes, slots.slotBytes(map, slot) - bytes_before); });
 
         if (const size_t reserved = slots.reserveOnFirstInsert(map, map_idx, slot))
-            ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
+            ProfileEvents::increment(
+                slots.hasBucketReserves() ? ProfileEvents::HashJoinDeferredPreallocatedElementsInHashTables
+                                          : ProfileEvents::HashJoinPreallocatedElementsInHashTables,
+                reserved);
 
         auto insert_rows = [&](const auto & rows)
         {

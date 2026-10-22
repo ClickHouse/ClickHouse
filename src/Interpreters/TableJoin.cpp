@@ -85,6 +85,7 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
+    extern const SettingsBool enable_hash_join_deferred_build;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
@@ -234,6 +235,7 @@ TableJoin::TableJoin(
           settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
+    , enable_hash_join_deferred_build(settings[Setting::enable_hash_join_deferred_build])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
@@ -269,6 +271,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
+    , enable_hash_join_deferred_build(settings.enable_hash_join_deferred_build)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)

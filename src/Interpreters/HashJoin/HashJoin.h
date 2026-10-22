@@ -71,6 +71,8 @@ enum class JoinMapsKind : uint8_t
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
 
+class DeferredBuildState;
+
 /// Zero bits is one bucket, where routing folds away and the map behaves as single-level.
 constexpr size_t BITS_FOR_BUCKET_SERIAL = 0;
 
@@ -183,7 +185,8 @@ public:
         size_t reserve_num_,
         const String & instance_id_,
         HashJoinBuildLayout build_layout_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        bool allow_deferred_build_ = false);
 
     /// A join without a reserve or an instance id.
     static std::shared_ptr<HashJoin> create(
@@ -191,7 +194,8 @@ public:
         SharedHeader right_sample_block,
         HashJoinBuildLayout build_layout_,
         bool any_take_last_row_ = false,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {})
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        bool allow_deferred_build_ = false)
     {
         return std::make_shared<HashJoin>(
             std::move(table_join_),
@@ -200,7 +204,8 @@ public:
             /*reserve_num_=*/0,
             /*instance_id_=*/"",
             build_layout_,
-            stats_collecting_params_);
+            stats_collecting_params_,
+            allow_deferred_build_);
     }
 
     ~HashJoin() override;
@@ -308,6 +313,13 @@ public:
     size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
     /// Peak bytes the build occupied
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    /// Whether the build stores the right blocks first and inserts their keys in the post-build phase,
+    /// see `enable_hash_join_deferred_build`.
+    bool defersBuild() const { return deferred_build != nullptr; }
+    /// For a deferred build: the bytes it will hold once the stored blocks are inserted. With `all_blocks_stored = false`,
+    /// a cheaper estimate from the counts published so far, which concurrent callers may share.
+    size_t getProjectedBuildBytes(bool all_blocks_stored) const;
 
     StepAnalysisReport getAnalysisReport() const override;
     const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
@@ -590,12 +602,22 @@ public:
         Initialized,
     };
 
+    /// A stored block of a deferred build whose keys are not in the maps yet. `columns` has the right ON condition
+    /// columns as they arrived: the insert reads them, and the stored block does not hold them.
+    struct PendingInsert
+    {
+        StoredBlocksList::iterator stored;
+        Block columns;
+        size_t allocated_bytes = 0;
+    };
+
     /// The lists of one build stream: only its inserts change them, and they are moved only after the inserts stop,
-    /// so they need no mutex. `onBuildPhaseFinish` splices them into the lists of the first worker.
+    /// so they need no mutex. `finishBuildPhase` splices them into the lists of the first worker.
     struct WorkerStoredData
     {
         StoredBlocksList columns;
         NullmapList nullmaps;
+        std::vector<PendingInsert> pending_inserts;
         bool shrink_done = false;
     };
 
@@ -633,6 +655,8 @@ public:
 
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
+        /// The columns of `PendingInsert`.
+        std::atomic<size_t> pending_allocated_size = 0;
         /// Number of rows of right table to join
         std::atomic<size_t> rows_to_join = 0;
         /// Running totals: summing the buckets would read what other build threads are mutating.
@@ -640,8 +664,8 @@ public:
         std::atomic<size_t> keys_to_join = 0;
         std::atomic<size_t> bucket_bytes = 0;
 
-        /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while workers
-        /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
+        /// `allocated_size + nullmaps_allocated_size + pending_allocated_size + bucket_bytes` in one atomic: summing them
+        /// while workers update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 
         /// Add `total_bytes` first so a concurrent size-limit check cannot under-count.
@@ -752,7 +776,15 @@ private:
         SharedHeader right_sample_block_,
         HashJoinBuildLayout build_layout_) const
     {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_);
+        return std::make_shared<HashJoin>(
+            table_join_,
+            right_sample_block_,
+            any_take_last_row,
+            reserve_num,
+            instance_id,
+            build_layout_,
+            HashJoinStatsCollectingParams{},
+            allow_deferred_build);
     }
 
     std::shared_ptr<TableJoin> table_join;
@@ -766,6 +798,8 @@ private:
     const size_t reserve_num;
     const String instance_id;
     const HashJoinBuildLayout build_layout;
+    /// Whether the planner lets this join defer its build, see `enable_hash_join_deferred_build`.
+    const bool allow_deferred_build;
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 
@@ -827,6 +861,16 @@ private:
     bool shared_runtime_filters_publish_attempted = false;
 
     const HashJoinStatsCollectingParams stats_collecting_params;
+
+    /// Set in the constructor when the build stores the right blocks first and inserts their keys in the post-build
+    /// phase, once the number of distinct keys is known, instead of inserting each block as it arrives (a streaming
+    /// build). See `replayDeferredBuild`.
+    std::unique_ptr<DeferredBuildState> deferred_build;
+    /// From `onBuildPhaseFinish` of a deferred build until its keys are in the maps.
+    bool replay_pending = false;
+    /// Whether a build stream asked this join to check the size limits, which a deferred build does once, in `replayDeferredBuild`.
+    std::atomic<bool> deferred_build_checks_limits = false;
+
     bool build_phase_finished = false;
     bool probe_phase_finished = false;
 
@@ -886,6 +930,46 @@ private:
     /// `keepRightBlocksForAnotherAlgorithm`.
     bool right_blocks_may_be_taken = false;
     bool canRemoveColumnsFromLeftBlock() const;
+
+    /// Appends the right columns of `block` to the list of `worker` and accounts for them.
+    StoredBlocksList::iterator storeBlock(WorkerStoredData & worker, const Block & block, ScatteredBlock::Selector selector);
+
+    /// Whether `storeBlock` stores copies of the columns of `block`.
+    bool storesCopies(const Block & block) const;
+
+    /// The key column `column` or the key columns of `block`, converted the way the maps read them.
+    ColumnPtr prepareRightKeyColumn(const ColumnPtr & column) const;
+    std::unordered_map<String, ColumnPtr> prepareRightKeyColumns(const Block & block) const;
+
+    /// The index in `StoredBlock::columns` of the column `name`, or none when the stored blocks keep it in the row store or not at all.
+    std::optional<size_t> storedColumnIndex(const String & name) const;
+
+    /// Whether a deferred build holds no more than the streaming build: the stored blocks have the keys, and the map keeps every row.
+    bool deferredBuildHoldsNoMore() const;
+
+    /// For a deferred build: counts the keys of the stored block in the sketches of `stream`, and keeps what
+    /// `insertStoredBlock` will read in a `PendingInsert` of `worker`.
+    void addPendingInsert(WorkerStoredData & worker, StoredBlocksList::iterator stored, const Block & block, size_t stream);
+
+    /// The block that `insertStoredBlock` reads for `pending`: the key columns of the stored block and the columns of `pending`.
+    Block pendingInsertBlock(const PendingInsert & pending) const;
+
+    /// Reserves the maps from the counts of a deferred build and inserts the stored blocks, with up to one thread per build stream.
+    void replayDeferredBuild();
+
+    /// What `onBuildPhaseFinish` does once the keys are in the maps.
+    void finishBuildPhase();
+
+    /// Inserts the keys of the stored block `stored` into the maps. `block` has the key and ON condition columns of the
+    /// rows the block was stored from. Removes the stored block when nothing refers to it. When the join checks the
+    /// limits, sets the totals for that check.
+    void insertStoredBlock(
+        WorkerStoredData & worker,
+        StoredBlocksList::iterator stored,
+        const Block & block,
+        JoinBuildContext context,
+        size_t & total_rows,
+        size_t & total_bytes);
 
     void shrinkWorkerStoredBlocks(WorkerStoredData & worker);
 

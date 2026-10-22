@@ -487,6 +487,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(spilling_hash_join_throw_after_maps_release) \
+    REGULAR(hash_join_deferred_build_refresh_every_block) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \

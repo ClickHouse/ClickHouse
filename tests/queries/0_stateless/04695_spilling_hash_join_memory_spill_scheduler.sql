@@ -19,6 +19,8 @@ set max_bytes_in_join=0;
 -- bucket by bucket and may stay below the limit. The join is serial when its right side has an estimate below
 -- the threshold. The join order optimization gives the 1M-row estimate, so it must run with the real row counts.
 set parallel_hash_join_threshold=1000000000;
+-- A deferred build reserves the map once, so the map never doubles and the expected OOM does not happen.
+set enable_hash_join_deferred_build=0;
 set query_plan_optimize_join_order_limit=10;
 set query_plan_optimize_join_order_randomize=0;
 -- Put the join's own spill threshold out of reach so that only the scheduler can make it spill.
