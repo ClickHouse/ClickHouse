@@ -1,0 +1,9 @@
+p.b	Map(String, UInt16)	
+arr.size0	UInt32	c
+p.a	UInt64	CODEC(LZ4)
+q	UInt16	modified
+q	String	
+e	Enum8(\'a\' = 1, \'b\' = 2)
+r	String
+q	Int32
+CREATE TABLE default.t_alter_previous_commands\n(\n    `id` UInt64,\n    `arr` Array(UInt8),\n    `p.b` Map(String, UInt16),\n    `arr.size0` UInt32 COMMENT \'c\',\n    `p.a` UInt64 CODEC(LZ4),\n    `r` String,\n    `e` Enum8(\'a\' = 1, \'b\' = 2),\n    `q` Int32\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192

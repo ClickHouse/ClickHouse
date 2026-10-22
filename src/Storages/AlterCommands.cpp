@@ -871,33 +871,21 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_COLUMN)
     {
-        /// `prepare` resolves a subcolumn against the columns before the ALTER. A subcolumn of a column that a previous
-        /// command of the same ALTER adds or changes the type of is resolved here, against the columns so far.
-        String target_column = column_name;
-        String target_subcolumn = subcolumn_name;
-        if (target_subcolumn.empty() && !metadata.columns.has(column_name))
-        {
-            if (auto subcolumn = metadata.columns.tryGetSubcolumn(column_name))
-            {
-                target_column = subcolumn->getNameInStorage();
-                target_subcolumn = subcolumn->getSubcolumnName();
-            }
-        }
-
-        if (skip_absent_column_or_fail("modify", target_column))
+        /// For a subcolumn, `prepare` has set `column_name` to its column and `subcolumn_name` to its name in that column.
+        if (skip_absent_column_or_fail("modify", column_name))
             return;
-        metadata.columns.modify(target_column, after_column, first, [&](ColumnDescription & column)
+        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             /// The result is validated by `validateColumnCodecs` after all commands are applied.
-            if (!target_subcolumn.empty())
+            if (!subcolumn_name.empty())
             {
                 if (to_remove == RemoveProperty::CODEC)
-                    column.subcolumn_codecs.erase(target_subcolumn);
+                    column.subcolumn_codecs.erase(subcolumn_name);
                 else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
-                    column.subcolumn_codecs.set(target_subcolumn, codec);
+                    column.subcolumn_codecs.set(subcolumn_name, codec);
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
-                        backQuote(target_subcolumn), backQuote(target_column));
+                        backQuote(subcolumn_name), backQuote(column_name));
                 return;
             }
 
@@ -2002,8 +1990,10 @@ void AlterCommands::apply(
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
 {
+    /// The columns as the previous commands of this ALTER leave them, advanced the way `apply` changes them,
+    /// so that a command is prepared against the columns it is applied to.
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
 
@@ -2022,6 +2012,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            /// If there is no column with this name, the name is resolved as a subcolumn: the command is retargeted
+            /// to the column which contains it, and `subcolumn_name` keeps the name of the subcolumn inside that column.
             if (!has_column)
             {
                 if (auto subcolumn = columns.tryGetSubcolumn(command.column_name))
@@ -2047,20 +2039,21 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                             "in a single ALTER query");
                     }
 
-                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-                    /// fail explicitly instead of silently dropping the modification.
+                    /// `ADD ENUM VALUES` merges into the existing type, so the column must be in the working snapshot.
                     if (!has_column)
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                            "column created in the same ALTER statement is not supported.",
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table",
                             backQuote(command.column_name));
 
                 }
                 else if (command.data_type)
+                {
                     columns_with_full_type_modify.emplace(command.column_name);
+                    /// A later command may refer to a subcolumn that only the new type has.
+                    if (columns.has(command.column_name))
+                        columns.modify(command.column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
+                }
             }
 
             if (has_column)
@@ -2148,6 +2141,12 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             if (has_column && command.if_not_exists)
                 command.ignore = true;
+            else
+            {
+                ColumnDescription added_column(command.column_name, command.data_type);
+                for (auto & column : columnsAddedByAlter(columns, added_column, context, command.if_not_exists, share_nested_offsets))
+                    columns.add(std::move(column));
+            }
         }
         else if (command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::COMMENT_COLUMN
@@ -2155,6 +2154,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
+            else if (command.type == AlterCommand::DROP_COLUMN && has_column && !command.clear && !command.partition)
+                columns.remove(command.column_name);
+            else if (command.type == AlterCommand::RENAME_COLUMN && columns.has(command.column_name))
+                columns.rename(command.column_name, command.rename_to);
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
