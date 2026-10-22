@@ -189,8 +189,21 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
                 continue;
 
             const auto & [file_type, tracks_min_max, target_index] = type_it->second;
-            file_metrics[target_index].identity_partition_value = identityPartitionValue(
+            auto & metrics = file_metrics[target_index];
+            metrics.identity_partition_value = identityPartitionValue(
                 partition_values[partition_field.tuple_index], file_type, *targets[target_index].nested_type);
+            if (!metrics.identity_partition_value)
+                continue;
+
+            /// Every row of the file holds the partition value, so it stands in for a missing NULL count and bounds.
+            const auto & value = *metrics.identity_partition_value;
+            if (!metrics.nulls)
+                metrics.nulls = value.isNull() ? rows : 0;
+            if (tracks_min_max && metrics.min_value.isNull() && !value.isNull())
+            {
+                metrics.min_value = value;
+                metrics.max_value = value;
+            }
         }
     }
     return file_metrics;
