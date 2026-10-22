@@ -655,4 +655,21 @@ SELECT length(s) FROM volume_reducing_function_push_down ORDER BY lower(s) LIMIT
 SELECT length(splitByChar('l', s)) AS n, lengthUTF8(s) FROM volume_reducing_function_push_down ORDER BY n DESC LIMIT 1;
 SELECT notEmpty(fs) FROM volume_reducing_function_push_down ORDER BY upper(toString(fs));
 
+SELECT 'plan: wide column removed from the sort whose key reads it';
+SELECT
+(
+    SELECT countIf(explain LIKE '%s String%')
+    FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
+        SELECT length(s) FROM volume_reducing_function_push_down ORDER BY lower(s)
+        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_execute_functions_after_sorting = 1,
+                 query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0)
+) <
+(
+    SELECT countIf(explain LIKE '%s String%')
+    FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
+        SELECT length(s) FROM volume_reducing_function_push_down ORDER BY lower(s)
+        SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_execute_functions_after_sorting = 1,
+                 query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0)
+);
+
 DROP TABLE volume_reducing_function_push_down;

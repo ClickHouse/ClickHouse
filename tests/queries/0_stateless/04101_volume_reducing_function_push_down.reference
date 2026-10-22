@@ -91,3 +91,5 @@ converges: sort key reading the argument
 0
 1
 1
+plan: wide column removed from the sort whose key reads it
+1
