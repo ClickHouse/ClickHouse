@@ -200,12 +200,13 @@ ${CLICKHOUSE_CLIENT} \
     --query "select * from remote('127.0.0.2', view(select sleep(30) from system.one)) format Null" \
     >/dev/null 2>&1 &
 
-# Wait until the remote leg is in flight before killing: the non-initial entry appears in
+# Wait until the remote leg is in flight before killing: the non-initial `SELECT` appears in
 # system.processes (127.0.0.2 loops back to this same server) only after the query was
 # sent, i.e. after the connections were established and the target_host attribute was
-# buffered inside the fiber.
+# buffered inside the fiber. `remote` over a view first sends a `DESC TABLE` to infer the
+# structure; that entry is non-initial too and does not mean the `SELECT` was sent.
 for _retry in {1..100}; do
-    started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where initial_query_id = '$kill_query_id' and query_id != initial_query_id")
+    started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where initial_query_id = '$kill_query_id' and query_id != initial_query_id and query_kind = 'Select'")
     [[ "$started" -ge 1 ]] && break
     sleep 0.1
 done

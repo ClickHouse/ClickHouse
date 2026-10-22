@@ -36,9 +36,9 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsMilliseconds cluster_function_wait_for_replica_ms;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
 
@@ -245,14 +245,33 @@ bool StorageObjectStorageCluster::optimize(
     bool /*cleanup*/,
     ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
 {
     updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    configuration->mutate(commands, context, shared_from_this(), getStorageID(), metadata_snapshot, catalog, format_settings);
+    /// The mutation's read query has no table expression, which `IStorageCluster::read` cannot distribute, so read locally.
+    auto read_storage = std::make_shared<StorageObjectStorage>(
+        configuration,
+        object_storage,
+        context,
+        getStorageID(),
+        metadata_snapshot->getColumns(),
+        metadata_snapshot->getConstraints(),
+        /* comment */ "",
+        format_settings,
+        LoadingStrictnessLevel::CREATE,
+        catalog,
+        /* if_not_exists */ true,
+        /* is_datalake_query */ true,
+        /* distributed_processing */ false,
+        /* partition_by */ nullptr,
+        /* order_by */ nullptr,
+        /* is_table_function */ true,
+        /* lazy_init */ true);
+    configuration->mutate(commands, context, read_storage, getStorageID(), metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
@@ -285,6 +304,21 @@ void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & com
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
+Pipe StorageObjectStorageCluster::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
+{
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+}
+
+void StorageObjectStorageCluster::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
+}
+
 Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
     if (!configuration->isDataLakeConfiguration())
@@ -300,22 +334,25 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
-    if (catalog)
-    {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
-    }
-    configuration->drop(drop_context);
+    StorageObjectStorage::dropTable(configuration, catalog, getStorageID());
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
+    return totalRowsInSnapshot(nullptr, query_context);
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
-    return configuration->totalRows(query_context);
+
+    std::optional<DataLakeTableStateSnapshot> state;
+    if (storage_snapshot && storage_snapshot->metadata)
+        state = storage_snapshot->metadata->datalake_table_state;
+
+    return configuration->totalRows(query_context, state);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
@@ -329,7 +366,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -380,16 +418,23 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         const String cluster_function_name = table_function->name + "Cluster";
         if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
         {
-            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
             table_function->name = cluster_function_name;
         }
     }
     else
     {
+        /// The function is already the `*Cluster` variant, so it carries a cluster name the user wrote.
+        /// Replace it with the cluster whose nodes will actually run the query - the two differ when the
+        /// destination drives the fan-out, and those nodes reject a name their own `remote_servers` does not
+        /// define even though they take their share of the work from the initiator rather than dispatching
+        /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-        args.insert(args.begin(), cluster_name_arg);
+        if (!target_cluster_name.empty())
+            cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
+        args.insert(args.begin(), std::move(cluster_name_arg));
     }
     if (settings_temporary_storage)
     {
@@ -479,7 +524,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
         iterator,
         std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
+        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes],
+        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()));
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr

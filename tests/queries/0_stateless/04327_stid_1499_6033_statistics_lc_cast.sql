@@ -7,7 +7,6 @@ SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS stid_1499_6033;

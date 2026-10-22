@@ -51,7 +51,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS = 11;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX = 12;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -61,7 +62,8 @@ static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 8;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST = 9;
+static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 9;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -125,17 +127,57 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
+/// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
+/// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
+/// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
+/// Version 20 also registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
+/// reads `system.one` or `numbers(...)` can be shipped. These are new step names rather than a change
+/// of a step's own bytes, so the per-step version added in 19 does not cover them: an older peer does
+/// not know the names at all.
+/// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
+/// plan setting.
+/// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
+///
+/// Rules for this version:
+/// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
+///   in the same release reuse the value. Whoever bumps it also updates the "Last bumped for release" line below.
+/// - What needs it: a new step name, or a new plan setting name written by `serializeSettings`. An older
+///   peer cannot read either, so the writer sends them only to a peer at the value of the current release
+///   or above.
+/// - What does not need it: a change to the bytes a step writes in `IQueryPlanStep::serialize`. The step
+///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
+///   (see `QueryPlanStepRegistry::StepVersions`).
+///
+/// Last bumped for release 26.11.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that registers a `BlocksMarshalling` step. It is the step's
+/// introduction version in the registry, so `QueryPlanStepRegistry::versionToWrite` refuses to write
+/// the step into an older stream.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP = 20;
 /// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`. Below it, a join
 /// step whose spilling depends on the unified trigger is refused rather than downgraded: the older peer still reads
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
 /// `max_bytes_before_external_join`, so it would run the plan with the other contract without saying so.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 20;
+/// First query-plan serialization version that registers the "ReadFromSystemOne" and
+/// "ReadFromSystemNumbers" steps. Passed to the registry as their `since_plan_version`, so a stream
+/// below it is never given a step whose name the peer does not know.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS = 20;
+/// First query-plan serialization version that knows `allow_block_nested_loop_join`. Below it, the name is not
+/// written: the older peer has no block nested loop join, so it runs a join exactly as with the setting disabled,
+/// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
+/// than executed differently.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
+/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// aggregation with its own two-level decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
@@ -177,10 +219,24 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
+/// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
+/// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
+/// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First global query-plan version that writes version 1 of `Aggregating`, which carries the
+/// `GROUP BY` top-K parameters. Towards an older peer the parameters are omitted rather than
+/// rejected: the peer aggregates without the heap and returns partial states for all its groups,
+/// which the initiator's merge, sort and limit handle correctly - the safe direction.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
+/// Version 4 added runtime filter receive descriptors to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+/// First distributed-task serialization version that carries the runtime filter receive descriptors.
+static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 
@@ -291,6 +347,12 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE 
 /// Send String columns in the native protocol with a separate stream of cumulative byte offsets.
 static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
 
+/// Version 1 of the `uniq` aggregate function state (64-bit hashes instead of 32-bit ones).
+static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
+
+/// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
+static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54494;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -299,5 +361,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54492;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54494;
 }
