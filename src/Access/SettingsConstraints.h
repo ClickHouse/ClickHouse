@@ -107,7 +107,16 @@ public:
     /// writability constraints are not enforced against the change (it may create looser configurations).
     /// Structural rules still apply to everyone: the readonly mode, source restrictions (e.g.
     /// `max_sessions_for_user` is profile-only) and the server-wide `allow_feature_tier` policy.
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles = false, bool actor_is_config_defined = false) const;
+    ///
+    /// `resolved_constraints` are the constraints the elements resolve to, known at login. A constraint that
+    /// leaves out a bound keeps it if an earlier profile in the chain declares it, so it is checked there.
+    void check(
+        const Settings & current_settings,
+        const SettingsProfileElements & profile_elements,
+        SettingSource source,
+        bool skip_config_defined_profiles = false,
+        bool actor_is_config_defined = false,
+        const SettingsConstraints * resolved_constraints = nullptr) const;
 
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source, bool actor_is_config_defined = false) const;
 
@@ -119,6 +128,16 @@ public:
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
     /// `after_reset` holds the values the resets land on, which `compatibility` may have derived.
     void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
+
+    /// Clamping counterpart of `checkResetToDefault`, for a reset crossing an execution context (a nested
+    /// `SETTINGS name = DEFAULT`), where a violation must not throw. `names` is reduced to the resets that
+    /// may be performed as written; a reset clamped by a `MIN` / `MAX` constraint is moved to
+    /// `clamped_changes` as an assignment of the clamped value; a forbidden one is dropped altogether.
+    void clampResetToDefault(
+        const Settings & current_settings,
+        std::vector<String> & names,
+        SettingsChanges & clamped_changes,
+        SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
@@ -219,12 +238,14 @@ private:
                               SettingSource source,
                               boost::container::flat_set<UUID> & visited_profiles,
                               bool skip_config_defined_profiles,
-                              bool actor_is_config_defined) const;
+                              bool actor_is_config_defined,
+                              const SettingsConstraints * resolved_constraints) const;
 
     void checkProfileElementValues(const Settings & current_settings,
                                    const SettingsProfileElement & element,
                                    SettingSource source,
-                                   bool actor_is_config_defined) const;
+                                   bool actor_is_config_defined,
+                                   const SettingsConstraints * resolved_constraints) const;
 
     void checkProfileElementWritability(const SettingsProfileElement & element,
                                         const std::unordered_map<String, SettingConstraintWritability> & writability_map) const;

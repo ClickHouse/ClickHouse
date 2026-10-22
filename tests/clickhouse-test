@@ -27,6 +27,7 @@ import os.path
 import platform
 import random
 import re
+import select
 import shutil
 import signal
 import socket
@@ -287,6 +288,14 @@ CGROUP_VERSION = detect_cgroup_version()
 
 
 BASH = "/bin/bash"
+
+# The interpreter for each non-SQL test extension, matching the shebang the style check requires for it. See where
+# it is used for why tests are not executed directly.
+TEST_INTERPRETERS = {
+    ".sh": "/usr/bin/env bash",
+    ".py": "/usr/bin/env python3",
+    ".expect": "/usr/bin/expect -f",
+}
 
 # Appended to output rescued from a timed-out command: the dump is incomplete.
 TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
@@ -1054,6 +1063,26 @@ def get_zookeeper_session_uptime(args):
         return None
 
 
+def wait_for_exit(proc: Popen, timeout: float) -> None:
+    """Like `proc.wait(timeout)`, but wakes on the exit instead of polling with up to 50 ms sleeps."""
+    if proc.returncode is not None:
+        return
+    try:
+        pidfd = os.pidfd_open(proc.pid)
+    except (AttributeError, OSError):
+        pidfd = None
+    if pidfd is None:
+        proc.wait(timeout)
+        return
+    try:
+        poller = select.poll()
+        poller.register(pidfd, select.POLLIN)
+        poller.poll(timeout * 1000)
+    finally:
+        os.close(pidfd)
+    proc.wait(0)
+
+
 def need_retry(args, stdout, stderr, total_time):
     if args.check_zookeeper_session:
         # Sometimes we may get unexpected exception like "Replica is readonly" or "Shutdown is called for table"
@@ -1265,7 +1294,11 @@ def lldb_backtraces_only(dump: str) -> str:
 def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # The budget bounds a wedged lldb (e.g. signal-handler deadlock on the
     # inferior); it is not an estimate of the work, which scales with the
-    # binary's unwind/symbol cost. Killing lldb leaves the server untouched.
+    # binary's unwind/symbol cost. Killing lldb leaves the server untouched
+    # only without lldb's JIT-loader breakpoint: the linker folds the empty
+    # `__jit_debug_register_code` with other functions, so the `int3` a killed
+    # lldb leaves there traps server threads with SIGTRAP, a fatal signal to
+    # the server, and it wedges (state S, no logs, ignores SIGTERM).
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1279,7 +1312,8 @@ def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # print_c_stacktraces save the full dump to c_stacktraces.log and preview
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"{sudo}{lldb} --batch -p {pid}"
+        f"{sudo}{lldb} --batch -O 'settings set plugin.jit-loader.gdb.enable off'"
+        f" -p {pid}"
         f" -o '{LLDB_DROP_RENDEZVOUS_BREAKPOINT}'"
         " -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=timeout,
@@ -1757,26 +1791,25 @@ def auto_statistics_generator():
     return gen
 
 
-def randomize_external_sort_group_by():
-    """Returns a dict of 4 settings for external sort/group by.
+def randomize_external_thresholds(operations):
+    """Returns a dict of the settings `max_bytes_before_external_<operation>` and
+    `max_bytes_ratio_before_external_<operation>` for each of the operations, which
+    either all spill by bytes or all spill by ratio.
     The Bytes-vs-Ratio choice is made per call (not per process),
     so each test run gets an independent choice."""
+    settings = {}
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
-        return {
-            "max_bytes_before_external_sort": generator(),
-            "max_bytes_before_external_group_by": generator(),
-            "max_bytes_ratio_before_external_sort": 0,
-            "max_bytes_ratio_before_external_group_by": 0,
-        }
+        for operation in operations:
+            settings[f"max_bytes_before_external_{operation}"] = generator()
+            settings[f"max_bytes_ratio_before_external_{operation}"] = 0
+        return settings
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
-    return {
-        "max_bytes_before_external_sort": 0,
-        "max_bytes_before_external_group_by": 0,
-        "max_bytes_ratio_before_external_sort": round(generator(), 2),
-        "max_bytes_ratio_before_external_group_by": round(generator(), 2),
-    }
+    for operation in operations:
+        settings[f"max_bytes_before_external_{operation}"] = 0
+        settings[f"max_bytes_ratio_before_external_{operation}"] = round(generator(), 2)
+    return settings
 
 
 # To keep dependency list as short as possible, tzdata is not used here (to
@@ -1966,6 +1999,7 @@ class SettingsRandomizer:
         "optimize_skip_unused_shards_rewrite_in": lambda: random.random() > 0.05,
         "optimize_time_filter_with_preimage": lambda: random.random() > 0.05,
         "optimize_trivial_count_query": lambda: random.random() > 0.05,
+        "optimize_uniq_exact_radix_partitioning": lambda: random.randint(0, 1),
         "optimize_uniq_to_count": lambda: random.random() > 0.05,
         "optimize_use_projections": lambda: random.random() > 0.05,
         "optimize_use_implicit_projections": lambda: random.random() > 0.05,
@@ -2009,12 +2043,12 @@ class SettingsRandomizer:
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
-        "query_plan_join_shard_by_pk_ranges": lambda: random.random() < 0.3,
         "count_distinct_optimization": lambda: random.random() < 0.3,
+        # Default-true, but the unsharded merge join is a distinct code path worth exercising too
+        "query_plan_join_shard_by_pk_ranges": lambda: random.random() > 0.3,
         "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
-        "use_statistics_cache": lambda: random.random() > 0.05,
         # Columns cache settings - randomize with 0.5 probability each
         "use_columns_cache": lambda: random.randint(0, 1),
         "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
@@ -2053,6 +2087,13 @@ class SettingsRandomizer:
             0.2, 0.2, 1, 128
         ),
         "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
+        # Memory budgets of a set of `IN` written to disk: 0 disables the structure, and 128 MiB is the default
+        "max_bytes_for_external_set_bloom_filter": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
+        "max_bytes_for_external_set_cache": threshold_generator(
+            0.2, 0.2, 0, 128 * 1024 * 1024
+        ),
     }
 
     dependent_settings = {
@@ -2068,8 +2109,6 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
-        # statistics cache is pointless when statistics are disabled
-        "use_statistics_cache": "use_statistics",
         # forcing independent DISTINCT is a no-op when the optimization is not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
@@ -2093,6 +2132,10 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+            # `automatic_parallel_replicas_mode` covers `MergeTree` reads only. Cluster engines (`s3`, `url`, ...) would
+            # follow `enable_parallel_replicas` and fan out to every replica of `parallel_replicas`, including its
+            # deliberately unreachable one, whose connection warnings fail the tests. The ParallelReplicas job covers them.
+            random_settings["parallel_replicas_for_cluster_engines"] = 0
         # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
         # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
         # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
@@ -2120,8 +2163,9 @@ class SettingsRandomizer:
                 random_settings[setting] = 0
             else:
                 random_settings[setting] = generator()
-        # Bytes-vs-Ratio choice is made per test, not per process
-        random_settings.update(randomize_external_sort_group_by())
+        # Bytes-vs-Ratio choice is made per test, not per process. Sets of `IN` make their own choice.
+        random_settings.update(randomize_external_thresholds(["sort", "group_by"]))
+        random_settings.update(randomize_external_thresholds(["set"]))
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         for setting, parent_setting in SettingsRandomizer.conditional_settings.items():
@@ -4053,7 +4097,13 @@ class TestCase:
         # NOTE:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
-        self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # They live in a directory of their own, so the globs over the prefix do not list the
+        # whole suite directory (tens of thousands of files) several times per test.
+        fatal_dir = os.path.join(os.path.dirname(self.stderr_file), ".stderr-fatal")
+        os.makedirs(fatal_dir, exist_ok=True)
+        self.fatal_sanitizer_prefix = os.path.join(
+            fatal_dir, os.path.basename(self.stderr_file) + "-fatal"
+        )
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
@@ -4141,6 +4191,15 @@ class TestCase:
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
             )
+        else:
+            # Do not execute the test file itself, pass it to its interpreter. On macOS the first exec of every new
+            # or modified executable blocks on a Gatekeeper/XProtect security scan (`syspolicyd`, `XprotectService`).
+            # The CI checkout is fresh in every job, so on the Darwin fast test runners every test paid about 100 ms
+            # for that scan. An interpreter only reads the file, which is not scanned.
+            if self.ext not in TEST_INTERPRETERS:
+                raise TestException(f"Unknown test file extension: {self.case_file}")
+            params["interpreter"] = TEST_INTERPRETERS[self.ext]
+            pattern = "{interpreter} " + pattern
 
         command = pattern.format(**params)
 
@@ -4169,7 +4228,7 @@ class TestCase:
         write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
         try:
-            proc.wait(self.get_timeout(args))
+            wait_for_exit(proc, self.get_timeout(args))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -4928,14 +4987,16 @@ class TestSuite:
         if j2env is not None:
             j2env.globals.update(product=itertools.product)
 
+        # Compiled once: `re` caches only 512 patterns, so a longer list would be recompiled for every file.
+        selectors = [re.compile(pattern) for pattern in self.args.test or []]
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
             matching_selectors = (
                 {
-                    pattern
-                    for pattern in self.args.test
-                    if re.search(pattern, test_name)
+                    selector.pattern
+                    for selector in selectors
+                    if selector.search(test_name)
                 }
                 if self.args.test
                 else set()
@@ -6851,6 +6912,40 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
     return test_names_to_skip
 
 
+# Values that `shell_config.sh` reads with `clickhouse extract-from-config` unless they are already set.
+SHELL_CONFIG_EXTRACTED_VARIABLES = [
+    "CLICKHOUSE_PORT_TCP",
+    "CLICKHOUSE_PORT_TCP_SECURE",
+    "CLICKHOUSE_PORT_TCP_WITH_PROXY",
+    "CLICKHOUSE_PORT_HTTP",
+    "CLICKHOUSE_PORT_PROMTHEUS_PORT",
+    "CLICKHOUSE_PORT_HTTPS",
+    "CLICKHOUSE_PORT_MYSQL",
+    "CLICKHOUSE_PORT_POSTGRESQL",
+    "CLICKHOUSE_PORT_KEEPER",
+    "CLICKHOUSE_PORT_SSH",
+    "CLICKHOUSE_KEEPER_IDENTITY",
+    "CLICKHOUSE_PORT_INTERSERVER",
+]
+
+
+def export_shell_config_ports(queries_dir):
+    """Resolve them once instead of in every `.sh` test: that is a dozen process starts per test."""
+    shell_config = os.path.join(queries_dir, "shell_config.sh")
+    if not os.path.exists(shell_config):
+        return
+    script = '. "$0" >/dev/null 2>&1; for name in "$@"; do printf "%s=%s\\0" "$name" "${!name}"; done'
+    output = subprocess.run(
+        ["bash", "-c", script, shell_config, *SHELL_CONFIG_EXTRACTED_VARIABLES],
+        stdout=PIPE,
+        check=True,
+        text=True,
+    ).stdout
+    for assignment in output.split("\0")[:-1]:
+        name, value = assignment.split("=", 1)
+        os.environ.setdefault(name, value)
+
+
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
     stop_testing = multiprocessing.Event()
@@ -6954,6 +7049,8 @@ def main(args):
 
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
+
+    export_shell_config_ports(base_dir)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
@@ -7510,6 +7607,10 @@ def parse_args():
     )
     parser.add_argument("test", nargs="*", help="Optional test case name regex")
     parser.add_argument(
+        "--test-list-file",
+        help="File with more test case name regexes, one per line",
+    )
+    parser.add_argument(
         "-d",
         "--disabled",
         action="store_true",
@@ -7986,7 +8087,14 @@ def parse_args():
         help="Kill all processes from the group pid file and exit (used by CI hooks for orphan cleanup)",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.test_list_file:
+        with open(args.test_list_file, encoding="utf-8") as f:
+            listed_tests = [line.strip() for line in f if line.strip()]
+        if not listed_tests:
+            parser.error(f"--test-list-file {args.test_list_file} lists no tests")
+        args.test += listed_tests
+    return args
 
 
 def cleanup_test_groups(diagnostics=True, worker_pids=None):

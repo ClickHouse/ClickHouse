@@ -41,6 +41,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/Decimal.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -134,6 +135,7 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
+        case TypeIndex::UInt32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
@@ -300,8 +302,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
-        case TypeIndex::UInt32:
             return dumpValue(static_cast<Int32>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field)));
+        case TypeIndex::UInt32:
         case TypeIndex::UInt64:
             return dumpValue(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field));
         case TypeIndex::DateTime64:
@@ -891,6 +893,7 @@ void generateManifestList(
         }
     };
 
+    Int64 snapshot_first_row_id = 0;
     Int64 next_first_row_id = 0;
     if (version > 2)
     {
@@ -904,8 +907,26 @@ void generateManifestList(
                 ErrorCodes::LOGICAL_ERROR,
                 "Snapshot of a format-version 3 Iceberg table has no '{}', cannot assign row ids to the added data files",
                 Iceberg::f_first_row_id);
-        next_first_row_id = new_snapshot->getValue<Int64>(Iceberg::f_first_row_id);
+        snapshot_first_row_id = new_snapshot->getValue<Int64>(Iceberg::f_first_row_id);
+        if (snapshot_first_row_id < 0)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Snapshot of a format-version 3 Iceberg table has a negative '{}' ({}), cannot assign row ids",
+                Iceberg::f_first_row_id,
+                snapshot_first_row_id);
+        next_first_row_id = snapshot_first_row_id;
     }
+    auto reserve_row_ids = [&](Int64 rows)
+    {
+        const Int64 first_row_id = next_first_row_id;
+        if (common::addOverflow(first_row_id, rows, next_first_row_id))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot assign row ids to {} rows starting at row id {}: the row id overflows",
+                rows,
+                first_row_id);
+        return first_row_id;
+    };
     if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
@@ -1010,7 +1031,31 @@ void generateManifestList(
                             add_field_to_datum(Iceberg::f_min_sequence_number);
                         }
                         if (version > 2)
+                        {
                             add_field_to_datum(Iceberg::f_manifest_first_row_id);
+
+                            /// A data manifest without `first_row_id` (written before the upgrade to v3) gets one now.
+                            const bool has_first_row_id = old_entry.hasField(Iceberg::f_manifest_first_row_id)
+                                && old_entry.field(Iceberg::f_manifest_first_row_id).type() != avro::AVRO_NULL;
+                            const bool is_data_manifest = !old_entry.hasField(Iceberg::f_content)
+                                || validate_field_type(Iceberg::f_content, avro::AVRO_INT).value<Int32>()
+                                    == static_cast<Int32>(Iceberg::ManifestFileContentType::DATA);
+                            if (!has_first_row_id && is_data_manifest)
+                            {
+                                const Int64 added_rows = validate_field_type(Iceberg::f_added_rows_count, avro::AVRO_LONG).value<Int64>();
+                                const Int64 existing_rows
+                                    = validate_field_type(Iceberg::f_existing_rows_count, avro::AVRO_LONG).value<Int64>();
+                                Int64 manifest_rows = 0;
+                                if (added_rows < 0 || existing_rows < 0 || common::addOverflow(added_rows, existing_rows, manifest_rows))
+                                    throw Exception(
+                                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                        "Manifest list {} entry has invalid row counts ({} added, {} existing), cannot assign row ids to it",
+                                        resolved_manifest_list_path,
+                                        added_rows,
+                                        existing_rows);
+                                setVersionedField(new_entry, reserve_row_ids(manifest_rows), Iceberg::f_manifest_first_row_id);
+                            }
+                        }
                         writer.write(new_datum);
                     });
                 break;
@@ -1077,7 +1122,7 @@ void generateManifestList(
         if (version == 1)
         {
             setVersionedField(entry, added_files_count, Iceberg::f_added_files_count);
-            setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
+            setVersionedField(entry, 0, Iceberg::f_existing_files_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
                 setVersionedField(entry, summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
@@ -1105,14 +1150,18 @@ void generateManifestList(
 
         /// Only data files get row ids, so a delete manifest leaves the field null.
         if (version > 2 && entry_content == Iceberg::FileContentType::DATA)
-        {
-            setVersionedField(entry, next_first_row_id, Iceberg::f_manifest_first_row_id);
-            next_first_row_id += added_rows_count;
-        }
+            setVersionedField(entry, reserve_row_ids(added_rows_count), Iceberg::f_manifest_first_row_id);
 
         write_partition_summary(entry, entry_idx);
 
         writer.write(entry_datum);
+    }
+
+    /// The snapshot and the table must cover every row id assigned in this manifest list.
+    if (version > 2)
+    {
+        new_snapshot->set(Iceberg::f_added_rows, next_first_row_id - snapshot_first_row_id);
+        metadata->set(Iceberg::f_next_row_id, next_first_row_id);
     }
 
     writer.close();

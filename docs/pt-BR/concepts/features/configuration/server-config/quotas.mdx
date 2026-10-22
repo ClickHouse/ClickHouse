@@ -1,28 +1,28 @@
 ---
-description: 'Guia para configurar e gerenciar cotas de uso de recursos no ClickHouse'
-sidebarTitle: 'Cotas'
+description: 'Guia para configurar e gerenciar QUOTAS de uso de recursos no ClickHouse'
+sidebarTitle: 'QUOTAS'
 slug: /operations/quotas
-title: 'Cotas'
+title: 'QUOTAS'
 doc_type: 'guide'
 ---
 
 <Info>
-  **Cotas no ClickHouse Cloud**
+  **QUOTAS no ClickHouse Cloud**
 
-  As cotas são compatíveis com o ClickHouse Cloud, mas devem ser criadas usando a [sintaxe DDL](/pt-BR/reference/statements/create/quota). A abordagem de configuração em XML documentada abaixo **não tem suporte**.
+  As QUOTAS são compatíveis com o ClickHouse Cloud, mas devem ser criadas usando a [sintaxe DDL](/pt-BR/reference/statements/create/quota). A abordagem de configuração em XML documentada abaixo **não tem suporte**.
 </Info>
 
-As cotas permitem limitar o uso de recursos durante um período de tempo ou acompanhar esse uso.
-As cotas são configuradas na configuração do usuário, que geralmente é &#39;users.xml&#39;.
+As QUOTAS permitem limitar o uso de recursos durante um período de tempo ou acompanhar esse uso.
+As QUOTAS são configuradas na configuração do usuário, que geralmente é &#39;users.xml&#39;.
 
 O sistema também tem um recurso para limitar a complexidade de uma única consulta. Consulte a seção [Restrictions on query complexity](/pt-BR/concepts/features/configuration/settings/query-complexity).
 
-Em contraste com as restrições de complexidade de consulta, as cotas:
+Em contraste com as restrições de complexidade de consulta, as QUOTAS:
 
 * Impõem restrições a um conjunto de consultas que podem ser executadas ao longo de um período, em vez de limitar uma única consulta.
 * Contabilizam os recursos consumidos em todos os servidores remotos no processamento de consultas distribuídas.
 
-Vamos examinar a seção do arquivo &#39;users.xml&#39; que define as cotas.
+Vamos examinar a seção do arquivo &#39;users.xml&#39; que define as QUOTAS.
 
 ```xml
 <!-- Quotas -->
@@ -48,7 +48,7 @@ Vamos examinar a seção do arquivo &#39;users.xml&#39; que define as cotas.
 ```
 
 Por padrão, a QUOTA acompanha o consumo de recursos a cada hora, sem limitar o uso.
-O consumo de recursos calculado para cada intervalo é registrado no log do servidor após cada solicitação.
+O consumo de recursos calculado para cada intervalo é registrado no log do servidor após cada requisição.
 
 ```xml
 <statbox>
@@ -61,6 +61,7 @@ O consumo de recursos calculado para cada intervalo é registrado no log do serv
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ Aqui estão as quantidades que podem ser restringidas:
 `read_bytes` - O tamanho total lido das tabelas para executar a consulta em todos os servidores remotos.
 
 `written_bytes` - O tamanho total de uma operação de gravação.
+
+`written_rows` - O número total de linhas gravadas por consultas `INSERT`.
 
 `execution_time` – O tempo total de execução da consulta, em segundos (wall time).
 

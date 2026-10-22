@@ -5,7 +5,7 @@
 #include <ranges>
 #include <chrono>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/interpolate.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>
@@ -46,6 +46,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -5808,6 +5809,9 @@ bool StorageReplicatedMergeTree::fetchPart(
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
 
+            if (prewarm_caches.statistics_cache)
+                part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
+
             write_part_log({});
         }
         else
@@ -5962,7 +5966,6 @@ void StorageReplicatedMergeTree::startup()
     LOG_TRACE(log, "Starting up table");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
 
     /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
     /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
@@ -5982,7 +5985,6 @@ void StorageReplicatedMergeTree::startup()
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         return;
     }
@@ -6199,13 +6201,11 @@ void StorageReplicatedMergeTree::shutdown(bool)
     /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
     const bool already_called = shutdown_called.exchange(true);
 
-    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
-    /// `shutdown(false)` would take the `already_called` branch and could leave `refreshStatistics` running
-    /// concurrently with `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation
-    /// is idempotent.
+    /// Deactivate the periodic refresh task unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would take the `already_called` branch and could leave the task running
+    /// concurrently with `~MergeTreeData`. Deactivation is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    stopStatisticsCache();
 
     if (already_called)
     {
