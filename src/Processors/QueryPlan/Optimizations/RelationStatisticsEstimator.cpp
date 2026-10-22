@@ -307,8 +307,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             stats.estimated_rows = rows;
             if (estimate->estimator)
                 stats.column_stats = estimate->estimator->estimateRelationProfile().column_stats;
-            /// The read returns every remaining row unless its own filter skips some or delete files remove some.
-            stats.imprecise_estimate = rows != 0 && (reading->getFilterActionsDAG() || estimate->has_delete_files);
+            /// Without conditions, the rows of the remaining files, imprecise with delete files.
+            stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
             return stats;
         }
 
