@@ -990,9 +990,26 @@ public:
 private:
     const ComparisonParams params;
 
+    /// True if the ordering may convert a string to an `Enum`, also in tuple elements.
+    /// The types in a `Dynamic` or a `Variant` are known only at execution.
     static bool ordersEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
     {
-        return comparesStringWithEnum(left, right) || comparesStringWithEnum(right, left);
+        const auto left_type = removeLowCardinalityAndNullable(left);
+        const auto right_type = removeLowCardinalityAndNullable(right);
+        if (isDynamic(left_type) || isVariant(left_type) || isDynamic(right_type) || isVariant(right_type))
+            return true;
+
+        const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get());
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+        if (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (ordersEnumWithString(left_tuple->getElement(i), right_tuple->getElement(i)))
+                    return true;
+            return false;
+        }
+
+        return comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type);
     }
 
     static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
