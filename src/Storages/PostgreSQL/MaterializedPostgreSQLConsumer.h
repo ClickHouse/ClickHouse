@@ -181,6 +181,12 @@ private:
     /// current_lsn converted from String to Int64 via getLSNValue().
     UInt64 lsn_value;
 
+    /// The position of the commit record of the current transaction, from its `Begin` message. A snapshot exported at
+    /// a position contains exactly the transactions that committed before it, so this position, and not the position
+    /// of a change, decides whether the change is already in the snapshot of a table: a change can be written to WAL
+    /// before the snapshot position by a transaction that commits after it.
+    Int64 transaction_commit_lsn = 0;
+
     size_t max_block_size;
 
     bool schema_as_a_part_of_table_name;
@@ -202,7 +208,7 @@ private:
     /// After it is finished, a temporary replication slot is created with 'export snapshot' option, and start_lsn is returned.
     /// Skipped tables are reloaded from snapshot (nested tables are also updated). Afterwards, if a replication message is
     /// related to a table in a skip_list, we compare current lsn with start_lsn, which was returned with according snapshot.
-    /// If current_lsn >= table_start_lsn, we can safely remove table from skip list and continue its synchronization.
+    /// If transaction_commit_lsn >= table_start_lsn, we can safely remove table from skip list and continue its synchronization.
     /// No needed message, related to reloaded table will be missed, because messages are not consumed in the meantime,
     /// i.e. we will not miss the first start_lsn position for reloaded table.
     std::unordered_map<Int32, String> skip_list;
@@ -215,7 +221,8 @@ private:
     /// because we might go beyond this start lsn position before consumer knows that a new table was added.
     std::unordered_map<String, String> waiting_list;
 
-    /// `postgres_table_name` -> the latest `Relation` message received for a table of `waiting_list` before its start lsn.
+    /// `postgres_table_name` -> the latest `Relation` message received for a table of `waiting_list` in a transaction that
+    /// committed before its start lsn.
     /// It is not checked against the nested table on arrival: the snapshot may have been taken after a schema change, so an
     /// earlier column layout is expected to differ. `pgoutput` sends a `Relation` message only before the first change after
     /// a schema change, so the changes after the start lsn may come without one and need this layout. It is processed when
