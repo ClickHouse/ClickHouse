@@ -911,6 +911,21 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
+bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
+{
+    return !create.attach
+        && context->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine]
+        && database && database->getEngineName() == "Replicated";
+}
+
+[[noreturn]] void throwUnreplicatedTableDataNotAllowed()
+{
+    throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                    "Only tables with a replicated engine or tables which do not store their own data on disk "
+                    "are allowed in a Replicated database");
+}
+
 /// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so it is reported as unknown if that is the first missing grant.
 void throwIfEngineIsUnknownAndNotGranted(
     const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before, const ContextPtr & context)
@@ -1217,6 +1232,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+
+        /// Classify the table function before inferring the structure from it: the inference opens and
+        /// reads the source, which would turn a deterministic rejection into a file or access error.
+        /// The same check runs in `doCreateTable` for a definition with an explicit column list.
+        if (!create.isTemporary()
+            && isOnlyReplicatedEngineAllowed(create, DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), getContext())
+            && table_function->hasUnreplicatedTableDataOnDisk())
+            throwUnreplicatedTableDataNotAllowed();
+
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
@@ -2784,6 +2808,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
+    bool only_replicated_engine_allowed = isOnlyReplicatedEngineAllowed(create, database, getContext());
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -2798,6 +2824,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// from the function; a definition with an explicit column list skips that inference and is
         /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+
+        /// Classify the table function before executing it: with a static structure it returns the final storage
+        /// directly, which may not have enough information to decide (e.g. `url` with a relative URL resolved
+        /// against `url_base`), see `ITableFunction::hasUnreplicatedTableDataOnDisk`.
+        if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
+            throwUnreplicatedTableDataNotAllowed();
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -2845,14 +2877,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateStorage(*res, mode, getContext(), create.isTemporary());
 
-    if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
-    {
-        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip) != nullptr;
-        if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
-            throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables with a Replicated engine "
-                            "or tables which do not store data on disk are allowed in a Replicated database");
-    }
+    if (only_replicated_engine_allowed && res->hasUnreplicatedTableDataOnDisk())
+        throwUnreplicatedTableDataNotAllowed();
 
     if (from_path && !res->storesDataOnDisk())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -2980,6 +3006,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
         drop_context->setDDLOrOnClusterInternal(true);
+        drop_context->setQueryExecutionStartedCallback({});
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {
@@ -3208,6 +3235,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
         bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
+        if (fill_io.pipeline.initialized())
+            getContext()->onQueryExecutionStarted();
         executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
         /// Replace target table with created one
@@ -3850,6 +3879,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// The process-list element makes `KILL QUERY` cancel the population: on the lazy path the outer
     /// `executeQuery` attached it to the returned pipeline, so it has to be attached by hand here.
     populate_io.pipeline.setProcessListElement(getContext()->getProcessListElement());
+    getContext()->onQueryExecutionStarted();
     executeTrivialBlockIO(populate_io, getContext(), /*with_interactive_cancel=*/true);
     return BlockIO{};
 }
