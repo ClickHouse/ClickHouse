@@ -27,7 +27,7 @@ The rows are filtered by access rights: an entry is visible only to a user who m
 - `database` ([String](/reference/data-types/string)) — Database name of the table the part belongs to.
 - `table` ([String](/reference/data-types/string)) — Table name.
 - `table_uuid` ([UUID](/reference/data-types/uuid)) — UUID of the table. Stable across renames.
-- `part` ([String](/reference/data-types/string)) — Name of the data part.
+- `part` ([String](/reference/data-types/string)) — Name of the data part. For a part of a projection, the name of the parent part and the name of the projection, as `parent_part:projection`.
 - `column` ([String](/reference/data-types/string)) — Name of the column.
 - `row_begin` ([UInt64](/reference/data-types/int-uint)) — Starting row index of the cached range (inclusive).
 - `row_end` ([UInt64](/reference/data-types/int-uint)) — Ending row index of the cached range (exclusive).
