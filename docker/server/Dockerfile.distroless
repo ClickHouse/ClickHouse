@@ -28,12 +28,14 @@ ARG apt_ports_archive="http://ports.ubuntu.com"
 # We do that in advance at the beginning of Dockerfile before any packages will be
 # installed to prevent picking those uid/gid by some unrelated software.
 # The same uid/gid (101) is used both for alpine and ubuntu.
-RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" /etc/apt/sources.list \
+# apt does not retry a mirror in mid-sync, so apt_update swaps between the given mirror and Canonical.
+RUN apt_update() { for i in 1 2 3 4; do apt-get update --error-on=any && return 0; sed -i -e "s|${apt_archive}|@a@|g" -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|@a@|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|@p@|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" -e "s|@p@|http://ports.ubuntu.com|g" /etc/apt/sources.list; sleep 10; done; apt-get update --error-on=any; } \
+    && sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     # `apt-get update` reports a failed repository index fetch as a warning and exits 0,
     # proceeding with a stale or absent index; `--error-on=any` fails there, not in the install.
-    && apt-get update --error-on=any \
+    && apt_update \
     && apt-get install --yes --no-install-recommends \
         ca-certificates \
         wget \
@@ -102,8 +104,9 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
     fi
 
 # Fall back to installation from the ClickHouse repository.
-RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
-    ; apt-get update --error-on=any \
+RUN apt_update() { for i in 1 2 3 4; do apt-get update --error-on=any && return 0; sed -i -e "s|${apt_archive}|@a@|g" -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|@a@|http://archive.ubuntu.com|g" -e "s|${apt_ports_archive}|@p@|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" -e "s|@p@|http://ports.ubuntu.com|g" /etc/apt/sources.list; sleep 10; done; apt-get update --error-on=any; } \
+    && clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
+    ; apt_update \
     && apt-get install --yes --no-install-recommends dirmngr gnupg2 \
     && mkdir -p /etc/apt/sources.list.d \
     && GNUPGHOME=$(mktemp -d) \
@@ -122,7 +125,7 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     && chmod +r /usr/share/keyrings/clickhouse-keyring.gpg \
     && echo "${REPOSITORY}" > /etc/apt/sources.list.d/clickhouse.list \
     && echo "installing from repository: ${REPOSITORY}" \
-    && apt-get update --error-on=any \
+    && apt_update \
     && for package in ${PACKAGES}; do \
         packages="${packages} ${package}=${VERSION}" \
     ; done \
