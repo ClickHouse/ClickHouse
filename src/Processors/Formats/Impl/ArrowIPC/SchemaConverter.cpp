@@ -307,21 +307,13 @@ ArrowType parseType(const flatbuf::Field & field)
             }
             break;
         }
-        /// View-list types the reader cannot decode, but whose physical buffer layout is known. Keep them as
-        /// `Unsupported` placeholders (so schema inference can drop them and a `SELECT` of such a column errors
-        /// clearly), but parse their children and record the layout so `advanceField` can advance the node/buffer
-        /// cursors past an *unrequested* column of this type and keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.kind = TypeKind::ListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "ListView");
             break;
         case flatbuf::Type_LargeListView:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.kind = TypeKind::LargeListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "LargeListView");
             break;
@@ -358,9 +350,8 @@ ArrowType parseType(const flatbuf::Field & field)
 ArrowSchema parseSchema(const flatbuf::Schema & schema)
 {
     ArrowSchema result;
+    /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
     result.little_endian = schema.endianness() == flatbuf::Endianness_Little;
-    if (!result.little_endian)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Big-endian Arrow IPC streams are not supported by the native reader");
 
     const auto * fields = schema.fields();
     if (fields)
@@ -1145,6 +1136,8 @@ DataTypePtr fieldToCHType(
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
         {
             const ArrowField & element = type.children.at(0);
             result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, isNullableField(element), allow_null_type));
@@ -1196,8 +1189,7 @@ DataTypePtr fieldToCHType(
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
             /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
             /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
-            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
-            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
+            /// nullable. Schema inference infers the same type.
             if (allow_null_type)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(

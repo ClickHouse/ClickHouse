@@ -59,6 +59,11 @@ void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Fractional Offset", fractional_offset);
 }
 
+QueryPlanStepPtr FractionalOffsetStep::clone() const
+{
+    return std::make_unique<FractionalOffsetStep>(*this);
+}
+
 void FractionalOffsetStep::serialize(Serialization & ctx) const
 {
     writeFloatBinary(fractional_offset, ctx.out);
