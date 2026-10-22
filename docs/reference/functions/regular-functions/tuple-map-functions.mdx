@@ -143,7 +143,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Aliases**: `mapFromString`, `str_to_map`
+**Aliases**: `str_to_map`, `mapFromString`
 
 **Arguments**
 
@@ -834,6 +834,8 @@ The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM t
 mapKeys(map)
 ```
 
+**Aliases**: `map_keys`
+
 **Arguments**
 
 - `map` — Map to extract keys from. [`Map(K, V)`](/reference/data-types/map)
@@ -949,7 +951,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Returned value**
 
-Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys. [`Map(K, V)`](/reference/data-types/map) or [`Tuple(Array(UInt*), Array(Any))`](/reference/data-types/tuple)
+Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys. [`Map(K, V)`](/reference/data-types/map) or [`Tuple(Array(UInt*), Array)`](/reference/data-types/tuple)
 
 **Examples**
 
@@ -1165,6 +1167,8 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
 ```sql
 mapValues(map)
 ```
+
+**Aliases**: `map_values`
 
 **Arguments**
 

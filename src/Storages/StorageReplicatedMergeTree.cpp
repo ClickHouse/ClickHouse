@@ -5,7 +5,7 @@
 #include <ranges>
 #include <chrono>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/interpolate.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>
@@ -46,6 +46,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -3443,6 +3444,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(part_desc->src_table_part->info),
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -4559,15 +4561,18 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (select_merge_result.has_value())
             {
                 chassert(select_merge_result.value().size() == 1);
-                future_merged_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
-                if (!future_merged_part)
+                auto constructed_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                 {
                     LOG_DEBUG(log,
-                        "Can't construct future part from source parts. "
-                        "Probably there was a drop part/partition user query or another replica has already executed merge.");
+                        "Can't construct future part from source parts ({}). "
+                        "Probably there was a drop part/partition user query or another replica has already executed merge.",
+                        constructed_part.error().text);
 
                     return AttemptStatus::NeedRetry;
                 }
+
+                future_merged_part = std::move(*constructed_part);
 
                 bool cleanup = future_merged_part->final
                     && (*storage_settings_ptr)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
@@ -5691,6 +5696,7 @@ bool StorageReplicatedMergeTree::fetchPart(
             {
                 .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
                 .keep_metadata_version = true,
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
 
             auto [cloned_part, lock] = cloneAndLoadDataPart(
@@ -5804,6 +5810,9 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
+
+            if (prewarm_caches.statistics_cache)
+                part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
             write_part_log({});
         }
@@ -5959,7 +5968,6 @@ void StorageReplicatedMergeTree::startup()
     LOG_TRACE(log, "Starting up table");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
 
     /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
     /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
@@ -5979,7 +5987,6 @@ void StorageReplicatedMergeTree::startup()
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         return;
     }
@@ -6196,13 +6203,11 @@ void StorageReplicatedMergeTree::shutdown(bool)
     /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
     const bool already_called = shutdown_called.exchange(true);
 
-    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
-    /// `shutdown(false)` would take the `already_called` branch and could leave `refreshStatistics` running
-    /// concurrently with `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation
-    /// is idempotent.
+    /// Deactivate the periodic refresh task unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would take the `already_called` branch and could leave the task running
+    /// concurrently with `~MergeTreeData`. Deactivation is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    stopStatisticsCache();
 
     if (already_called)
     {
@@ -6719,13 +6724,14 @@ bool StorageReplicatedMergeTree::optimize(
                 chassert(choices.size() == 1);
                 MergeSelectorChoice choice = std::move(choices[0]);
 
-                auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
-                if (!future_part)
+                auto constructed_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+                        .explanation = PreformattedMessage::create("Can't construct future part from source parts ({}). Probably there was a drop part/partition user query.", constructed_part.error().text),
                     });
 
+                auto future_part = std::move(*constructed_part);
                 if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
                     future_part->uuid = UUIDHelpers::generateV4();
 
@@ -9709,6 +9715,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             if (replace)
             {
@@ -10010,6 +10017,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,
