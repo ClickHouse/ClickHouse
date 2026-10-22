@@ -206,8 +206,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// query actually reads.
     new_context->setQueryConsumedObjectSets(context->getQueryConsumedObjectSets());
     /// The analyze mode must reach every join the report walker can reach, including the joins of
-    /// this view's inner query.
+    /// this view's inner query. So must the mark of the automatic mode's plan with parallel replicas.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
+    new_context->setIsAutomaticParallelReplicasProbe(context->isAutomaticParallelReplicasProbe());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
@@ -1022,6 +1023,10 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
     if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
         || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
     {
+        /// An index of an attached definition may already hold the implicit index name.
+        if (secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name))
+            return;
+
         bool minmax_index_exists = false;
 
         for (const auto & index : secondary_indices)
@@ -1075,6 +1080,9 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
     auto add_for = [&](const String & column_name, bool enabled)
     {
         if (!enabled)
+            return;
+
+        if (secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name))
             return;
 
         for (const auto & index : secondary_indices)

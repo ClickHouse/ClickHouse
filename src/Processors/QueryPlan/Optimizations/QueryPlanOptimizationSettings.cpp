@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
+    extern const SettingsBool distributed_plan_partial_aggregation_before_shuffle;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
@@ -100,7 +101,7 @@ namespace Setting
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool optimize_min_max_from_files;
-    extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBoolForce query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
@@ -349,7 +350,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::query_plan_optimize_count_from_text_index]
         && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
-    read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
+    const auto & through_join = from[Setting::query_plan_read_in_order_through_join];
+    read_in_order_through_join = through_join.is_keyword ? 2 : through_join.base.value;
     /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
     /// incompatible with distributed execution. When make_distributed_plan is enabled,
     /// always use the materialization path (materializeQueryPlanReferences) instead.
@@ -398,6 +400,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
     distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
+    distributed_plan_partial_aggregation_before_shuffle = from[Setting::distributed_plan_partial_aggregation_before_shuffle];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
     distributed_plan_join_runtime_filters = from[Setting::distributed_plan_join_runtime_filters];
