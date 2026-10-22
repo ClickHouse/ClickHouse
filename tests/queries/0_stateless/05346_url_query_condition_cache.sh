@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-replicated-database
 # Tag no-fasttest: needs Parquet
+# Tag no-replicated-database: a table of the test is created from a named collection, which exists only on
+# the server it was created on: the other replicas of the database fail to create the table.
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache,
 # which a parallel sibling test can wipe at any moment (see 04498_query_condition_cache_local_files).
 
