@@ -1416,23 +1416,6 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
-        {
-            std::lock_guard lock(schedule_pools_mutex);
-            delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
-            delete_schedule_pool = std::move(schedule_pool);
-            delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
-            delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-            delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
-            delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
-        }
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        {
-            std::lock_guard lock(directory_watch_reactor_mutex);
-            delete_directory_watch_reactor = std::move(directory_watch_reactor);
-        }
-#endif
-
         /// Stop zookeeper connections. A connection attempt in flight needs the schedule pool, so this goes first.
         zkutil::ZooKeeperPtr delete_zookeeper;
         {
@@ -1477,6 +1460,13 @@ struct ContextSharedPart : boost::noncopyable
             delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        {
+            std::lock_guard lock(directory_watch_reactor_mutex);
+            delete_directory_watch_reactor = std::move(directory_watch_reactor);
+        }
+#endif
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
