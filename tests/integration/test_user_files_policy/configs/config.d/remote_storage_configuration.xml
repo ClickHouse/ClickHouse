@@ -6,8 +6,6 @@
                 <endpoint>http://minio1:9001/root/data/disks/user_files/tenant=a/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <!-- Cache the object metadata so the tests check that a rewrite invalidates it. -->
-                <object_metadata_cache_size>1048576</object_metadata_cache_size>
             </disk_s3_plain>
         </disks>
 

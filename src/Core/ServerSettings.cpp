@@ -1759,6 +1759,8 @@ The following `file()` and `File` modes are not supported with `user_files_polic
 - `INSERT ... PARTITION BY` into `file()` and partitioned writes with the `File` engine.
 
 The `rename_files_after_processing` setting additionally requires the policy's disk to be a plain local disk.
+
+A plain object storage disk (such as `s3_plain`) used for user files must not set `object_metadata_cache_size`: the cache is not invalidated by changes made by other servers sharing the disk.
 :::
 
 **Example**

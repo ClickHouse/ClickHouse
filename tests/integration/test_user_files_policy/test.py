@@ -458,8 +458,7 @@ def test_local_time_virtual_column_matches_exact_mtime():
 def test_s3_time_virtual_column_tracks_the_object():
     """On a remote disk `_time` comes from `disk->getLastModified`; check it is the
     object's own modification time as reported by the object storage, that it does not
-    change between reads of an unchanged object, and that it follows a rewrite even though
-    the disk caches the object metadata (`object_metadata_cache_size`)."""
+    change between reads of an unchanged object, and that it follows a rewrite."""
     key = "data/disks/user_files/tenant=a/files/s3_mtime_tracked.csv"
 
     def object_mtime():

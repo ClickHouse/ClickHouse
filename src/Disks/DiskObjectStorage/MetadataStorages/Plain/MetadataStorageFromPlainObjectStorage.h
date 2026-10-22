@@ -51,6 +51,7 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return true; }
+    bool cachesObjectMetadata() const override { return object_metadata_cache != nullptr; }
 
     MetadataTransactionPtr createTransaction() override;
 
