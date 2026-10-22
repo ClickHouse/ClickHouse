@@ -169,7 +169,7 @@ namespace
 
     /// Recomputes the AWS Signature Version 4 with the stored password as the secret access key.
     bool checkAWSSignatureV4Authentication(
-        const AWSSignatureV4Credentials * credentials,
+        [[maybe_unused]] const AWSSignatureV4Credentials * credentials,
         const AuthenticationData & authentication_method)
     {
         /// The signature is derived from the password alone, so it cannot carry a one-time password.

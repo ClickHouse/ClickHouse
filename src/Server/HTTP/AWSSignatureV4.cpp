@@ -106,7 +106,11 @@ String sha256Hex(std::string_view data)
     encodeHexStringLower(reinterpret_cast<uint8_t *>(res.data()), reinterpret_cast<const uint8_t *>(binary.data()), binary.size());
     return res;
 }
-
+#else
+String sha256Hex(std::string_view)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AWS Signature Version 4 authentication requires ClickHouse to be built with SSL");
+}
 #endif
 
 bool isLowercaseHexSHA256(std::string_view str)
@@ -508,9 +512,6 @@ bool isAWSSignatureV4QueryParameter(const String & name)
 
 AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & request, time_t now)
 {
-#if !USE_SSL
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AWS Signature Version 4 authentication requires ClickHouse to be built with SSL");
-#else
     auto params = parseQueryString(getQueryString(request));
     bool has_authorization_header = request.has("Authorization");
     bool presigned = findParameter(params, "X-Amz-Algorithm") != nullptr;
@@ -621,7 +622,6 @@ AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & reque
         algorithm, components.amz_date, res.date, res.region, res.service, sha256Hex(canonical_request));
 
     return res;
-#endif
 }
 
 String getAWSSignatureV4PayloadHash(const HTTPServerRequest & request)
