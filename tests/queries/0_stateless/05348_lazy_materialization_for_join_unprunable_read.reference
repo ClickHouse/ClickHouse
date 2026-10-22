@@ -1,0 +1,24 @@
+-- a FINAL read whose every column FINAL merges by, joined with a prunable read
+2	d0
+1	d7
+2	d14
+1	d21
+2	d28
+2	d0
+1	d7
+2	d14
+1	d21
+2	d28
+1
+-- a GraphiteMergeTree read, joined with a prunable read
+g0	d0
+g7	d7
+g14	d14
+g21	d21
+g28	d28
+g0	d0
+g7	d7
+g14	d14
+g21	d21
+g28	d28
+1
