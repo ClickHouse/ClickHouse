@@ -140,8 +140,8 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
     /// busy and recent batches had repeated keys, a thread takes all pending units and updates them together, so
     /// each repeated key is requested and inserted once. Otherwise units are updated one by one, in parallel.
     /// While batching is disabled because of low overlap, every probe_period updates a batch is tried again.
-    /// The key limit is approximate: it counts the rows to update before deduplication, so it limits the typical size
-    /// of one source request, but the last unit taken and a single large unit can go above it.
+    /// The key limit sums the distinct keys of each unit, so a key requested by several units is counted several times.
+    /// It is an upper bound of the keys of one source request, but the last unit taken and a single large unit can go above it.
     static constexpr size_t probe_period = 32;
     static constexpr size_t max_units_in_batch = 1024;
     static constexpr size_t max_keys_in_batch = 8192;
@@ -160,7 +160,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 
         const size_t busy_threads = busy_update_threads.fetch_add(1) + 1;
 
-        size_t keys_in_batch = unit_to_update->keys_to_update_size;
+        size_t keys_in_batch = unit_to_update->distinct_keys_to_update_size;
         batch.push_back(std::move(unit_to_update));
 
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
@@ -175,7 +175,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
                 if (!update_queue.tryPop(next_unit))
                     break;
 
-                keys_in_batch += next_unit->keys_to_update_size;
+                keys_in_batch += next_unit->distinct_keys_to_update_size;
                 batch.push_back(std::move(next_unit));
             }
         }

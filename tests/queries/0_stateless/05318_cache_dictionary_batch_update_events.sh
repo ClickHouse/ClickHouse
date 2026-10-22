@@ -71,24 +71,27 @@ print_delta "$before" "$after" | cut -f 2-5
 
 function lookup_across()
 {
+    local client=$1 rows=$2
     $CLICKHOUSE_CLIENT -q "
         SELECT countIf(dictGetString('cache_dict_events', 'value', k) != toString(k * 3))
-        FROM (SELECT number AS k FROM numbers(1000))" > "${CLICKHOUSE_TMP}/events_across_$1.out" 2>&1 &
+        FROM (SELECT number % 1000 AS k FROM numbers($rows))
+        SETTINGS max_block_size = 65536" > "${CLICKHOUSE_TMP}/events_across_$client.out" 2>&1 &
 }
 
 function check_across_units()
 {
-    local layout=$1
+    local layout=$1 rows=$2
+    rm -f "${CLICKHOUSE_TMP}"/events_across_*.out
     create_dictionary "$layout" slower_source_view
     before=$(read_events)
     # The other clients start only when the update thread fetches the keys of the first client.
-    lookup_across 0
+    lookup_across 0 "$rows"
     for _ in {1..600}; do
         [ "$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.metrics WHERE metric = 'DictCacheRequests'")" -ge 1 ] && break
         sleep 0.1
     done
     for i in {1..15}; do
-        lookup_across "$i"
+        lookup_across "$i" "$rows"
     done
     wait
     after=$(read_events)
@@ -101,12 +104,16 @@ function check_across_units()
 # The first unit takes the update thread for 2 seconds, so the units of the other clients wait in the queue
 # and are updated in a batch.
 echo "All units request the same keys, CACHE"
-check_across_units "CACHE(SIZE_IN_CELLS 65536 MAX_THREADS_FOR_UPDATES 1 ALLOW_READ_EXPIRED_KEYS 0)"
+check_across_units "CACHE(SIZE_IN_CELLS 65536 MAX_THREADS_FOR_UPDATES 1 ALLOW_READ_EXPIRED_KEYS 0)" 1000
+
+# Each unit has 65000 rows but only 1000 distinct keys, so the batch limit, which counts keys, still lets units batch.
+echo "All units request the same keys in many rows, CACHE"
+check_across_units "CACHE(SIZE_IN_CELLS 65536 MAX_THREADS_FOR_UPDATES 1 ALLOW_READ_EXPIRED_KEYS 0)" 65000
 
 echo "All units request the same keys, SSD_CACHE"
 # SSD_CACHE does not accept zero layout values, and ALLOW_READ_EXPIRED_KEYS is 0 by default.
 # The write buffer holds all keys, so the test reads no blocks from the file (see https://github.com/ClickHouse/ClickHouse/issues/117991).
-check_across_units "SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 33554432 WRITE_BUFFER_SIZE 16777216 PATH '${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_cache_dict_events' MAX_THREADS_FOR_UPDATES 1)"
+check_across_units "SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 33554432 WRITE_BUFFER_SIZE 16777216 PATH '${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_cache_dict_events' MAX_THREADS_FOR_UPDATES 1)" 1000
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP DICTIONARY cache_dict_events;

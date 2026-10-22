@@ -42,6 +42,37 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace
+{
+
+/// The update queue limits the size of a batch by distinct keys, because a hot key can fill many rows of a block.
+/// Only simple keys are batched, so complex keys are not counted.
+template <DictionaryKeyType dictionary_key_type, typename KeyType>
+size_t countDistinctKeysToUpdate(
+    const PaddedPODArray<KeyType> & keys, const PaddedPODArray<KeyState> & key_index_to_state, size_t keys_to_update_size)
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+    {
+        return keys_to_update_size;
+    }
+    else
+    {
+        if (keys_to_update_size <= 1)
+            return keys_to_update_size;
+
+        HashSet<KeyType> keys_to_update;
+        for (size_t i = 0; i < keys.size(); ++i)
+        {
+            if (key_index_to_state[i].isExpired() || key_index_to_state[i].isNotFound())
+                keys_to_update.insert(keys[i]);
+        }
+
+        return keys_to_update.size();
+    }
+}
+
+}
+
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionary<dictionary_key_type>::CacheDictionary(
     const StorageID & dict_id_,
@@ -217,8 +248,10 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     }
 
     size_t keys_to_update_size = not_found_keys_size + expired_keys_size;
+    size_t distinct_keys_to_update_size
+        = countDistinctKeysToUpdate<dictionary_key_type>(keys, key_index_to_state_from_storage, keys_to_update_size);
     auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(
-        key_columns, key_index_to_state_from_storage, request, keys_to_update_size);
+        key_columns, key_index_to_state_from_storage, request, keys_to_update_size, distinct_keys_to_update_size);
 
     if (not_found_keys_size == 0 && expired_keys_size > 0 && configuration.allow_read_expired_keys)
     {
@@ -300,7 +333,10 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     found_count.fetch_add(found_keys_size, std::memory_order_relaxed);
 
     size_t keys_to_update_size = expired_keys_size + not_found_keys_size;
-    auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(key_columns, result_of_fetch_from_storage.key_index_to_state, request, keys_to_update_size);
+    size_t distinct_keys_to_update_size
+        = countDistinctKeysToUpdate<dictionary_key_type>(keys, result_of_fetch_from_storage.key_index_to_state, keys_to_update_size);
+    auto update_unit = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>(
+        key_columns, result_of_fetch_from_storage.key_index_to_state, request, keys_to_update_size, distinct_keys_to_update_size);
 
     std::shared_ptr<const HashMap<KeyType, size_t>> requested_keys_to_fetched_columns_during_update_index;
     bool allow_expired_keys_during_aggregation = false;
@@ -561,7 +597,8 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
 }
 
 template <DictionaryKeyType dictionary_key_type>
-CacheDictionaryUpdateKeys CacheDictionary<dictionary_key_type>::update(VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> & update_units)
+CacheDictionaryUpdateKeys
+CacheDictionary<dictionary_key_type>::update(VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> & update_units)
 {
     /**
     * Update has following flow.

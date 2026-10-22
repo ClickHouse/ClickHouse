@@ -44,23 +44,28 @@ public:
         const Columns & key_columns_,
         const PaddedPODArray<KeyState> & key_index_to_state_from_storage_,
         const DictionaryStorageFetchRequest & request_,
-        size_t keys_to_update_size_)
+        size_t keys_to_update_size_,
+        size_t distinct_keys_to_update_size_)
         : key_columns(key_columns_)
         , key_index_to_state(key_index_to_state_from_storage_.begin(), key_index_to_state_from_storage_.end())
         , request(request_)
         , keys_to_update_size(keys_to_update_size_)
+        , distinct_keys_to_update_size(distinct_keys_to_update_size_)
         , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, keys_to_update_size)
     {}
 
     CacheDictionaryUpdateUnit()
         : keys_to_update_size(0)
+        , distinct_keys_to_update_size(0)
         , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, 0)
     {}
 
     const Columns key_columns;
     const PaddedPODArray<KeyState> key_index_to_state;
     const DictionaryStorageFetchRequest request;
+    /// Rows of the block whose key is expired or not found.
     const size_t keys_to_update_size;
+    const size_t distinct_keys_to_update_size;
 
     /// Shared by all units of one update batch, so they are read-only after the update.
     std::shared_ptr<const HashMap<KeyType, size_t>> requested_keys_to_fetched_columns_during_update_index;
@@ -121,7 +126,8 @@ class CacheDictionaryUpdateQueue
 public:
     /// Client of update queue must provide this function in constructor and perform update using update unit.
     /// Gets one unit for complex keys, and one or more units for simple keys.
-    using UpdateFunction = std::function<CacheDictionaryUpdateKeys (VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> &)>;
+    using UpdateFunction
+        = std::function<CacheDictionaryUpdateKeys(VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> &)>;
 
     CacheDictionaryUpdateQueue(
         String dictionary_name_for_logs_,

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# Many concurrent queries miss keys of CACHE and SSD_CACHE dictionaries with one update thread and a slow source,
+# no-parallel: the test reads the global counters of system.events.
+# Many concurrent queries miss the same keys of CACHE and SSD_CACHE dictionaries with one update thread and a slow source,
 # so the update queue holds several units and they are updated in batches. Every value must be correct.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -42,13 +43,14 @@ LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 65536 MAX_THREADS_FOR_UPDATES 1 ALLOW_REA
 
 function check_simple()
 {
-    local dictionary=$1 seed=$2
-    for _ in {1..20}; do
+    local dictionary=$1
+    # All clients request the same keys in the same iteration, so their units share keys and are updated in batches.
+    for iteration in {1..20}; do
         # Keys 20000..20099 do not exist in the source and must return the default value.
         $CLICKHOUSE_CLIENT -q "
             SELECT countIf(v != if(k < 20000, toString(k * 3), 'missing')), countIf(h != (k < 20000))
             FROM (
-                SELECT (number * 7919 + $seed) % 20100 AS k,
+                SELECT (number * 7919 + $iteration) % 20100 AS k,
                        dictGetString('$dictionary', 'value', k) AS v,
                        dictHas('$dictionary', k) AS h
                 FROM numbers(3000)
@@ -66,20 +68,33 @@ function check_complex()
     done
 }
 
-for i in {1..8}; do
-    check_simple cache_dict_batch "$i" > "${CLICKHOUSE_TMP}/batch_simple_$i.out" 2>&1 &
-done
-for i in {1..4}; do
-    check_simple ssd_cache_dict_batch "$i" > "${CLICKHOUSE_TMP}/batch_ssd_$i.out" 2>&1 &
-done
+function duplicate_keys()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.events WHERE event = 'DictCacheKeysRequestedDuplicate'"
+}
+
+# Runs the clients of one simple key dictionary. The first line is 1 if some units were updated in a batch with
+# shared keys, and each next line is the number of wrong values of one query, which must be 0.
+function check_simple_clients()
+{
+    local dictionary=$1 clients=$2
+    local before
+    before=$(duplicate_keys)
+    for i in $(seq "$clients"); do
+        check_simple "$dictionary" > "${CLICKHOUSE_TMP}/batch_${dictionary}_$i.out" 2>&1 &
+    done
+    wait
+    echo $(( $(duplicate_keys) > before ))
+    cat "${CLICKHOUSE_TMP}"/batch_"${dictionary}"_*.out | sort | uniq -c | sed -E 's/^ *[0-9]+ //'
+}
+
+check_simple_clients cache_dict_batch 8
+check_simple_clients ssd_cache_dict_batch 4
+
 for i in {1..2}; do
     check_complex "$i" > "${CLICKHOUSE_TMP}/batch_complex_$i.out" 2>&1 &
 done
 wait
-
-# Each line is the number of wrong values of one query; all of them must be 0.
-cat "${CLICKHOUSE_TMP}"/batch_simple_*.out | sort | uniq -c | sed -E 's/^ *[0-9]+ //'
-cat "${CLICKHOUSE_TMP}"/batch_ssd_*.out | sort | uniq -c | sed -E 's/^ *[0-9]+ //'
 cat "${CLICKHOUSE_TMP}"/batch_complex_*.out | sort | uniq -c | sed -E 's/^ *[0-9]+ //'
 
 $CLICKHOUSE_CLIENT -m -q "
