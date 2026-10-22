@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <mutex>
+#include <vector>
 
 
 namespace DB
@@ -14,14 +15,18 @@ namespace DB
 namespace
 {
 
-/// The per-thread slot holding the reservation shared by the guards created on that thread.
+/// The per-thread slot holding the live reservations taken on that thread, at most one per
+/// query: guards of the same query share one. A pooled thread can run guards of several queries
+/// while suspended guards of earlier ones are still alive, so every live reservation stays
+/// discoverable here until its last guard is destroyed - a query returning to the thread shares
+/// its existing charge instead of taking another one. The list is tiny (usually one element).
 /// A guard can be destroyed on another thread (a fiber resumed there, or executor destruction
 /// on cancellation), so the slot is protected by a mutex and kept alive by a `shared_ptr`
 /// for as long as any reservation taken through it exists, even after its thread exits.
 struct Slot
 {
     std::mutex mutex;
-    SpeculativeMemoryReservation::State * state = nullptr;
+    std::vector<SpeculativeMemoryReservation::State *> states;
 };
 
 thread_local std::shared_ptr<Slot> current_slot;
@@ -50,16 +55,21 @@ SpeculativeMemoryReservation::SpeculativeMemoryReservation()
     /// a guard for another query while a suspended guard of the previous one is still alive;
     /// that guard must take its own charge, credited to its own query, instead of inheriting
     /// the credit and tracker of the previous query. The comparison is safe from pointer reuse
-    /// because the installed state keeps the thread group owning its tracker alive.
+    /// because every listed state keeps the thread group owning its tracker alive.
     MemoryTracker * query_tracker = CurrentMemoryTracker::getQueryTrackerForGlobal();
     {
         std::lock_guard lock(current_slot->mutex);
-        if (current_slot->state && current_slot->state->credited_query_tracker == query_tracker)
+        for (State * existing : current_slot->states)
         {
-            ++current_slot->state->references;
-            state = current_slot->state;
-            return;
+            if (existing->credited_query_tracker == query_tracker)
+            {
+                ++existing->references;
+                state = existing;
+                return;
+            }
         }
+        /// Reserve room up front, so the insertion after a successful charge cannot throw.
+        current_slot->states.reserve(current_slot->states.size() + 1);
     }
 
     const Int64 requested = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
@@ -79,12 +89,12 @@ SpeculativeMemoryReservation::SpeculativeMemoryReservation()
     [[maybe_unused]] MemoryTracker * credited_query_tracker = CurrentMemoryTracker::allocGlobal(requested);
     chassert(credited_query_tracker == query_tracker);
 
-    /// Only this thread installs a state into its own slot. A state of another query that is
-    /// still installed (its guards are alive elsewhere) is replaced: its guards keep it alive
-    /// through their own references, and it no longer receives new guards.
+    /// Only this thread inserts states into its own slot, so no state of this query has appeared
+    /// since the lookup above, and the capacity reserved there is still available (other threads
+    /// only erase elements).
     std::lock_guard lock(current_slot->mutex);
     state = new_state.release();
-    current_slot->state = state;
+    current_slot->states.push_back(state);
 }
 
 SpeculativeMemoryReservation::~SpeculativeMemoryReservation()
@@ -98,8 +108,7 @@ SpeculativeMemoryReservation::~SpeculativeMemoryReservation()
         std::lock_guard lock(state->slot->mutex);
         if (--state->references > 0)
             return;
-        if (state->slot->state == state)
-            state->slot->state = nullptr;
+        std::erase(state->slot->states, state);
     }
 
     std::unique_ptr<State> last_state(state);

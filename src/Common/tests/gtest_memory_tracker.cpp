@@ -534,6 +534,22 @@ TEST(MemoryTracker, SpeculativeReservationIsNotSharedAcrossQueries)
             EXPECT_EQ(credit(group_b->memory_tracker), reservation);
         }
 
+        /// Query B leaves the thread, and query A returns to it while its suspended guard is
+        /// still alive: the new guard of A shares A's existing charge.
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+        DB::CurrentThread::attachToGroup(group_a);
+        {
+            DB::SpeculativeMemoryReservation returned_guard_of_a;
+            EXPECT_EQ(returned_guard_of_a.getSize(), reservation);
+            EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+            EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+            EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+        }
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+        DB::CurrentThread::attachToGroup(group_b);
+
         /// Query A finishes, then its suspended guard is destroyed on another thread.
         group_a.reset();
         std::thread([&] { suspended_guard_of_a.reset(); }).join();
@@ -543,6 +559,63 @@ TEST(MemoryTracker, SpeculativeReservationIsNotSharedAcrossQueries)
         guard_of_b.reset();
         EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
         EXPECT_EQ(credit(group_b->memory_tracker), 0);
+
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+}
+
+TEST(MemoryTracker, SpeculativeReservationIsSharedWhenQueryReturnsToThread)
+{
+    /// A -> B -> A on one pooled thread: query A leaves a suspended guard alive, query B takes
+    /// its own charge and finishes, then A gets another activation on the thread. A must share
+    /// its existing charge instead of taking a second one for the same untracked-memory buffer.
+    constexpr Int64 reservation = 4 * MB;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    additional_memory_tracking_per_thread.store(reservation);
+    SCOPE_EXIT({ additional_memory_tracking_per_thread.store(setting_before); });
+
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    auto credit = [](MemoryTracker & tracker)
+    {
+        return tracker.getOvercommitRatio(1).committed - tracker.getOvercommitRatio().committed;
+    };
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto context = getContext().context;
+
+        auto group_a = std::make_shared<DB::ThreadGroup>(context, 0);
+        DB::CurrentThread::attachToGroup(group_a);
+        auto suspended_guard_of_a = std::make_unique<DB::SpeculativeMemoryReservation>();
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        {
+            auto group_b = std::make_shared<DB::ThreadGroup>(context, 0);
+            DB::CurrentThread::attachToGroup(group_b);
+            {
+                DB::SpeculativeMemoryReservation guard_of_b;
+                EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+            }
+            EXPECT_EQ(credit(group_b->memory_tracker), 0);
+            DB::CurrentThread::detachFromGroupIfNotDetached();
+        }
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+
+        DB::CurrentThread::attachToGroup(group_a);
+        {
+            DB::SpeculativeMemoryReservation returned_guard_of_a;
+            EXPECT_EQ(returned_guard_of_a.getSize(), reservation);
+            EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+            EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+        }
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+        suspended_guard_of_a.reset();
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+        EXPECT_EQ(credit(group_a->memory_tracker), 0);
 
         DB::CurrentThread::detachFromGroupIfNotDetached();
     }).join();
