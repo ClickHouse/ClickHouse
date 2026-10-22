@@ -1170,10 +1170,14 @@ private:
         stream.hot_buckets.clear();
     }
 
+    /// As in `Aggregator`, the threshold is compared with the memory of the whole query, which another operator, such as a
+    /// hash join, may hold. The tracker of the state is under the one of the query when the keys are spilled.
+    Int64 queryMemoryUsage() const { return getMemoryTracker()->getParent()->get(); }
+
     /// A set over the spill threshold would be spilled right away, and allocated again by the next switch to it.
     bool setWouldSpill(size_t set_bytes) const
     {
-        return spill_scope && getMemoryTracker()->get() + static_cast<Int64>(set_bytes) > static_cast<Int64>(max_bytes_before_spill);
+        return spill_scope && queryMemoryUsage() + static_cast<Int64>(set_bytes) > static_cast<Int64>(max_bytes_before_spill);
     }
 
     static size_t keysBytes(const Stream & stream) { return (stream.num_buffered + stream.local_set.capacity()) * sizeof(Key); }
@@ -1188,7 +1192,7 @@ private:
         /// skips such a stream until its keys fill that space.
         const size_t keys_bytes = keysBytes(stream);
         if (keys_bytes <= stream.bytes_at_last_spill_check
-            || getMemoryTracker()->get() <= static_cast<Int64>(max_bytes_before_spill))
+            || queryMemoryUsage() <= static_cast<Int64>(max_bytes_before_spill))
             return;
 
         stream.bytes_at_last_spill_check = keys_bytes;
@@ -1228,7 +1232,7 @@ private:
         /// the threshold: the free blocks are of the classes that the buffers outgrew, and they would hold the memory.
         const size_t arena_bytes = stream.arena->allocatedBytes();
         if (!from_set && stream.num_buffered * sizeof(Key) * 2 <= arena_bytes
-            && getMemoryTracker()->get() - static_cast<Int64>(arena_bytes / 2) <= static_cast<Int64>(max_bytes_before_spill))
+            && queryMemoryUsage() - static_cast<Int64>(arena_bytes / 2) <= static_cast<Int64>(max_bytes_before_spill))
         {
             compact(stream);
             stream.bytes_at_last_spill_check = keysBytes(stream);
@@ -1247,12 +1251,13 @@ private:
 
         LOG_TRACE(
             getLogger("RadixUniqExactTransform"),
-            "Spilled {} keys ({}) of a stream with an arena of {} and a set of {}, the state uses {}",
+            "Spilled {} keys ({}) of a stream with an arena of {} and a set of {}, the state uses {}, the query {}",
             stream.num_buffered,
             ReadableSize(stream.num_buffered * sizeof(Key)),
             ReadableSize(stream.arena->allocatedBytes()),
             ReadableSize(stream.local_set.capacity() * sizeof(Key)),
-            ReadableSize(getMemoryTracker()->get()));
+            ReadableSize(getMemoryTracker()->get()),
+            ReadableSize(queryMemoryUsage()));
 
         stream.local_buffers.assign(num_buckets, Buffer{});
         stream.local_cursors.assign(num_buckets, Cursor{});

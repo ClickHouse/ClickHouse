@@ -66,8 +66,8 @@ class IDataType;
 /// The copies of a few frequent keys would pile up in their buffers until the stream exceeds its budget, so such a buffer
 /// is deduplicated on its own.
 ///
-/// With `max_bytes_before_external_group_by`, a stream over the threshold drops the repeated keys of its buffers and writes
-/// them to a file of its own, so that spills take no lock. The build of a bucket reads its frames from the files of all
+/// With `max_bytes_before_external_group_by`, once the query is over the threshold, as in `Aggregator`, a growing stream
+/// drops the repeated keys of its buffers and writes them to a file of its own, so that spills take no lock. The build of a bucket reads its frames from the files of all
 /// the streams (see `TemporaryFileFrameReader`). A key may be written by several spills.
 ///
 /// After a query, `RadixUniqExactEntry` keeps in the statistics of hash tables: the result, the medians over the streams
@@ -116,8 +116,7 @@ public:
     size_t claimBucket() { return next_bucket.fetch_add(1, std::memory_order_relaxed); }
 
     /// The memory of the buffers and sets across all threads is accounted to a tracker of the state, as `Aggregator`
-    /// does, so that `EXPLAIN ANALYZE` reports it and the spills compare it with their threshold. The transforms switch to
-    /// it while they work (see `useOwnTracker`).
+    /// does, so that `EXPLAIN ANALYZE` reports it. The transforms switch to it while they work (see `useOwnTracker`).
     MemoryTracker * getMemoryTracker() const { return memory_tracker.get(); }
     bool useOwnTracker() const;
     std::optional<UInt64> getPeakMemoryUsage() const;
