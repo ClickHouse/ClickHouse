@@ -84,6 +84,10 @@ SELECT countIf(materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' =
 SELECT count() FROM numbers(2) WHERE materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT count() FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT arraySort(groupArray(e)) FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
+SELECT tuple('1', 0) < tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)'), 1), materialize(tuple('1', 0)) < tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)'), 1) SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT tuple(tuple('1'), 0) < tuple(tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)')), 1), materialize(tuple(tuple('1'), 0)) < tuple(tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)')), 1) SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT tuple('1', 0) < tuple(CAST(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') AS Dynamic), 1), materialize(tuple('1', 0)) < tuple(CAST(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') AS Dynamic), 1) SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT count() FROM numbers(2) WHERE materialize(tuple('1', 0)) < tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)'), 1) SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT count() FROM t_enum_number_chain WHERE x < e AND e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
 
 -- equality keeps the primary key of a string column
