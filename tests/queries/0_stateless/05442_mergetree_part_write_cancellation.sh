@@ -5,7 +5,6 @@
 # minutes without a per-granule cancellation check, so `KILL QUERY ... SYNC` must return within the bound.
 #
 # Every setting the timing depends on is pinned in the query or table SETTINGS:
-# * max_rows_to_read = 0: the CI 'default' profile caps it at 20M (tests/config/users.d/limits.yaml).
 # * async_insert = 0: an async INSERT is written by a background flush, not by the query we KILL.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -41,7 +40,7 @@ for part_type in Compact Wide; do
         INSERT INTO t_write_cancel (c1)
         SETTINGS max_block_size = $num_rows, max_insert_block_size = $num_rows,
             min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
-            max_insert_threads = 1, max_rows_to_read = 0, async_insert = 0
+            max_insert_threads = 1, async_insert = 0
         SELECT toUInt8(number % 256) FROM numbers($num_rows)" >/dev/null 2>"$insert_err" &
     insert_pid=$!
 
@@ -61,7 +60,8 @@ for part_type in Compact Wide; do
         echo "$part_type: did not observe the part write"
         echo "--- INSERT client output ---"
         cat "$insert_err"
-    elif timeout 10 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
+    # KILL over HTTP: the bound then measures the server-side cancellation, not a client startup.
+    elif timeout 10 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
     then
         echo "$part_type: killed promptly"
     else
