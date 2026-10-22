@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="apply_deleted_mask">
-  ## apply_deleted_mask
-</div>
+## apply_deleted_mask {#apply_deleted_mask}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Active le filtrage des lignes supprimées à l’aide de lightweight DELETE. Si cette option est désactivée, une requête pourra lire ces lignes. Cela est utile pour le débogage et les scénarios de « restauration »
 
-<div id="apply_mutations_on_fly">
-  ## apply_mutations_on_fly
-</div>
+## apply_mutations_on_fly {#apply_mutations_on_fly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si cette valeur est définie sur true, les mutations (UPDATE et DELETE) qui ne sont pas matérialisées dans la data part seront appliquées lors des SELECT.
 
-<div id="apply_prewhere_after_final">
-  ## apply_prewhere_after_final
-</div>
+## apply_prewhere_after_final {#apply_prewhere_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -40,32 +34,39 @@ Si cette valeur est définie sur true, les mutations (UPDATE et DELETE) qui ne s
 Lorsqu&#39;il est activé, les conditions PREWHERE sont appliquées après le traitement FINAL pour ReplacingMergeTree et les moteurs similaires.
 Cela peut être utile lorsque PREWHERE fait référence à des colonnes pouvant avoir des valeurs différentes d&#39;une ligne dupliquée à l&#39;autre,
 et que vous souhaitez que FINAL sélectionne la ligne retenue avant le filtrage. Lorsqu&#39;il est désactivé, PREWHERE est appliqué lors de la lecture.
-Remarque : si apply&#95;row&#95;level&#95;security&#95;after&#95;final est activé et que la politique de ligne utilise des colonnes qui ne font pas partie de la clé de tri, PREWHERE sera également
-différé afin de préserver le bon ordre d&#39;exécution (la politique de ligne doit être appliquée avant PREWHERE).
+Remarque : PREWHERE est également différé, indépendamment de ce paramètre, chaque fois qu&#39;une politique de ligne est différée par
+`apply_row_policy_after_final`, car la politique de ligne doit être appliquée avant PREWHERE. C&#39;est le cas lorsque
+l&#39;expression de la politique est non déterministe, lit une colonne qui ne figure pas dans l&#39;ORDER BY, ou lit une colonne de l&#39;ORDER BY
+dont le type est un type à virgule flottante ou en contient un.
 
-<div id="apply_row_policy_after_final">
-  ## apply_row_policy_after_final
-</div>
+Valeurs possibles :
+
+* 0 — PREWHERE est appliqué avant FINAL, sauf si une politique de ligne différée entraîne également son report (par défaut).
+* 1 — PREWHERE est appliqué après FINAL.
+
+## apply_row_policy_after_final {#apply_row_policy_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1"},{"label": "Le paramètre a été ajouté pour corriger la régression post-#87303, où les politiques de ligne et PREWHERE étaient appliqués avant FINAL. La PR #91065 a introduit ce paramètre, et la PR #97279 a défini true comme valeur par défaut afin de garantir l’exactitude. Enregistré sous la forme {true, true} afin que compatibility ne revienne jamais au comportement false d’avant le correctif."}]}]} />
 
-Lorsqu’il est activé, les politiques de ligne et PREWHERE sont appliqués après le traitement FINAL pour les tables *MergeTree. (En particulier pour ReplacingMergeTree)
+Lorsqu’il est activé, les politiques de ligne sont appliquées après le traitement FINAL pour les tables *MergeTree. (En particulier pour ReplacingMergeTree)
+Lorsque la politique est ainsi différée, PREWHERE est différé avec elle, de sorte que la politique reste appliquée en premier
+(voir `apply_prewhere_after_final` pour différer PREWHERE de manière inconditionnelle).
 Lorsqu’il est désactivé, les politiques de ligne sont appliquées avant FINAL, ce qui peut produire des résultats différents lorsque la politique
 filtre des lignes qui devraient être utilisées pour la déduplication dans ReplacingMergeTree ou des moteurs similaires.
 
-Si l’expression de la politique de ligne dépend uniquement des colonnes de ORDER BY, elle sera tout de même appliquée avant FINAL par optimisation,
-car un tel filtrage ne peut pas affecter le résultat de la déduplication.
+Si l’expression de la politique de ligne est déterministe et dépend uniquement de colonnes de ORDER BY qui ne sont pas à virgule flottante, elle sera tout de même
+appliquée avant FINAL par optimisation, car un tel filtrage ne peut pas affecter le résultat de la déduplication. Les colonnes à virgule flottante
+ou contenant des valeurs à virgule flottante (telles que `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
+sont exclues, car `-0.0` et `0.0` sont dédupliquées comme une seule et même clé, alors qu’une condition de politique peut les distinguer.
 
-Valeurs possibles :
+Valeurs possibles :
 
-* 0 — La politique de ligne et PREWHERE sont appliqués avant FINAL (par défaut).
-* 1 — La politique de ligne et PREWHERE sont appliqués après FINAL.
+* 0 — La politique de ligne est appliquée avant FINAL.
+* 1 — La politique de ligne est appliquée après FINAL (par défaut).
 
-<div id="apply_settings_from_server">
-  ## apply_settings_from_server
-</div>
+## apply_settings_from_server {#apply_settings_from_server}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -78,5 +79,36 @@ Cela n’affecte que les opérations effectuées côté client, en particulier l
 Normalement, ce paramètre doit être défini dans le profil utilisateur (`users.xml` ou via des requêtes comme `ALTER USER`), et non via le client (arguments de ligne de commande du client, requête `SET` ou section `SETTINGS` d’une requête `SELECT`). Côté client, il peut être défini sur `false`, mais pas sur `true` (car le serveur n’enverra pas les paramètres si le profil utilisateur contient `apply_settings_from_server = false`).
 
 Notez qu’au départ (24.12), il existait un paramètre serveur (`send_settings_to_client`), mais il a ensuite été remplacé par ce paramètre côté client, pour une meilleure ergonomie.
+
+## apply_string_filters_during_scan {#apply_string_filters_during_scan}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de pousser (pushdown) les conditions de recherche de sous-chaînes sur les colonnes de type String depuis PREWHERE vers le parcours de colonne."}]}]} />
+
+Pousse (pushdown) les conditions de recherche de sous-chaînes sur les colonnes de type `String` depuis `PREWHERE` vers le parcours de colonne.
+
+Lorsqu’une condition `PREWHERE` contient un terme de conjonction qui recherche une sous-chaîne non vide dans une colonne `String` (ou `Nullable(String)`)
+(`LIKE`, `position`, `startsWith`, `endsWith` ou égalité avec une chaîne non vide), le lecteur évalue chaque valeur par rapport à cette condition
+pendant la désérialisation et lit les valeurs qui ne correspondent pas comme des chaînes vides. La lecture est ainsi plus rapide et la consommation de mémoire réduite lorsque la condition
+est sélective, car les données des valeurs non correspondantes ne sont pas copiées dans la colonne. Le résultat de la requête reste inchangé,
+car les lignes contenant des valeurs non correspondantes sont nécessairement éliminées par `PREWHERE`, et de telles conditions ne correspondent jamais à une chaîne vide.
+
+Le filtre est désactivé de manière adaptative lors de l’exécution s’il s’avère peu sélectif.
+
+Permet également à l’optimisation qui déplace les conditions de `WHERE` vers `PREWHERE` de déplacer les conditions de recherche de sous-chaînes (`LIKE`, `position`, `startsWith`, `endsWith`)
+même lorsqu’elles portent sur toutes les colonnes interrogées (ce qui est normalement inutile, mais avec ce paramètre, le parcours lui-même devient moins coûteux).
+Pour cette raison, l’égalité avec une chaîne constante n’est pas déplacée : elle reste appliquée pendant le parcours lorsqu’elle figure déjà dans `PREWHERE`.
+
+Pris en charge pour la lecture depuis les tables `MergeTree` et depuis le format `Parquet`.
+
+Notez que l’estimation des octets en entrée, collectée pour la décision automatique concernant les répliques parallèles
+(`RuntimeDataflowStatisticsInputBytes`), repose sur la taille en mémoire des blocs lus ; elle sous-estime donc
+la quantité de données lues sur le disque lorsque les valeurs sont remplacées par des chaînes vides.
+
+Valeurs possibles :
+
+* 0 — Désactivé.
+* 1 — Activé.
 
 {/*AUTOGENERATED_END*/}

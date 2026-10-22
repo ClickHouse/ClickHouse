@@ -1,0 +1,13 @@
+-- RESTORE from an S3-backed disk without READ ON DISK: denied
+denied
+-- and it names the missing grant
+1
+-- READ ON S3 does not authorize it: the requirement is the locator, not the backing store
+denied
+-- with READ ON DISK: allowed and the row is readable
+allowed
+42
+-- BACKUP to an S3-backed disk without WRITE ON DISK: denied
+denied
+-- with WRITE ON DISK: allowed
+allowed

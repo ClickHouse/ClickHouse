@@ -34,6 +34,10 @@ public:
 
     Pipe read(size_t num_streams);
 
+    /// Complex keys in the dictionary's arenas, kept alive by `dictionary`. Each block deserializes its own
+    /// range of them and puts the result before its `key_columns_with_type`. Call before `read`.
+    void setSerializedKeys(PaddedPODArray<std::string_view> && serialized_keys_);
+
     explicit DictionarySourceCoordinator(
         std::shared_ptr<const IDictionary> dictionary_,
         const Names & column_names,
@@ -114,12 +118,17 @@ private:
 
     void initialize(const Names & column_names);
 
+    size_t getKeysSize() const;
+
     static ColumnsWithTypeAndName cutColumns(const ColumnsWithTypeAndName & columns_with_type, size_t start, size_t length);
 
     std::shared_ptr<const IDictionary> dictionary;
 
     ColumnsWithTypeAndName key_columns_with_type;
     ColumnsWithTypeAndName data_columns_with_type;
+
+    PaddedPODArray<std::string_view> serialized_keys;
+    bool has_serialized_keys = false;
 
     SharedHeader header;
 

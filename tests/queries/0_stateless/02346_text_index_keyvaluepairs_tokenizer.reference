@@ -1,0 +1,91 @@
+-- exact key-value lookup
+1
+3
+2
+3
+-- no match across pairs: the value of service is never the value of level
+0
+-- a key that does not exist
+0
+-- token layout
+6C6576656C6572726F720A	2
+6C6576656C7761726E0A	1
+736572766963656170690E	2
+736572766963657765620E	1
+-- the token of the level-error pair is the key, the value, then char(5 * 2)
+1
+-- the index prunes granules
+Granules: 2/2
+Name: idx
+Granules: 1/2
+-- exact direct read: the predicate is replaced by a text index virtual column
+1
+-- both accessor forms work: arrayElement and the m.key_<key> subcolumn
+subcolumns=0	1
+subcolumns=0	3
+subcolumns=1	1
+subcolumns=1	3
+subcolumns=0	1
+subcolumns=1	1
+-- AND / OR / NOT, with and without the index
+and idx	3
+and scan	3
+or idx	2
+or idx	3
+or scan	2
+or scan	3
+not idx	2
+not idx	4
+not scan	2
+not scan	4
+-- comparing to the empty string is true for rows without the key too, and those have no token: the index is bypassed
+idx	4
+scan	4
+not replaced	0
+-- a FixedString needle carries padding bytes, so it must not silently drop rows
+idx	[1,3]
+scan	[1,3]
+-- duplicate keys: m[key] is the value of the first occurrence
+first idx	1
+first scan	1
+second idx	2
+second scan	2
+-- the later duplicate is a distinct token: is_rest = 1 sets the lowest bit of the trailer
+['6B666972737402','6B7365636F6E6402','6B7365636F6E6403']
+-- key lengths around the varint boundary: 63 bytes still fit one byte, 64 need two
+key 63	1
+key 64	1
+key 65	1
+no false match	0
+varint 1 byte	1
+varint 2 bytes	1
+varint 2 bytes	1
+-- arbitrary bytes in keys and values, and empty keys and values
+-- the trailing length keeps the pairs ab-c and a-bc apart: their tokens differ only in it
+1
+2
+-- NUL bytes, high bytes and an empty key are all searchable
+3
+6
+7
+-- an empty value cannot be answered by the index, but the result must stay correct
+idx	7
+scan	7
+-- every pair has a token, including the empty key and the empty value
+['00','61006278007906','61626302','61626304','656B00','6B02','FFFF02']
+-- LowCardinality keys and values
+idx	1
+scan	1
+['6C6576656C6572726F720A','6C6576656C7761726E0A']
+-- a mix of LowCardinality and String is accepted
+created
+-- a part without a materialized index must not lose rows under exact direct read
+some part has no materialized index	1
+subcolumns=0	1
+subcolumns=0	2
+subcolumns=1	1
+subcolumns=1	2
+scan	1
+scan	2
+-- rejected index definitions
+-- the tokenizer does not tokenize strings

@@ -1,0 +1,10 @@
+1	-0	2
+1	-0	2
+0
+NaN payloads
+1	2
+a non-float partition column still prunes
+1	10	1
+1
+a float column the partition key does not read still prunes
+1

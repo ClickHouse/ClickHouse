@@ -1,0 +1,22 @@
+part types	t_lwu_rr_compact	['Compact']
+part types	t_lwu_rr_nonadaptive	['Wide']
+part types	t_lwu_rr_v2	['Wide']
+part types	t_lwu_rr_wide	['Wide']
+rows left	t_lwu_rr_wide	995	0
+rows left	t_lwu_rr_compact	995	0
+rows left	t_lwu_rr_v2	995	0
+rows left	t_lwu_rr_nonadaptive	995	0
+scan sum	t_lwu_rr_wide	498840
+scan sum	t_lwu_rr_compact	498840
+scan sum	t_lwu_rr_v2	498840
+scan sum	t_lwu_rr_nonadaptive	498840
+delete read_rows	t_lwu_rr_compact	2
+delete read_rows	t_lwu_rr_compact	8
+delete read_rows	t_lwu_rr_nonadaptive	64
+delete read_rows	t_lwu_rr_nonadaptive	128
+delete read_rows	t_lwu_rr_v2	2
+delete read_rows	t_lwu_rr_v2	8
+delete read_rows	t_lwu_rr_wide	2
+delete read_rows	t_lwu_rr_wide	8
+scan read_rows	4	1	1
+nonadaptive scan read_rows	1000
