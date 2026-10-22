@@ -335,6 +335,7 @@ public:
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
         , filter_context(context)
+        , enable_url_encoding(context->getSettingsRef()[Setting::enable_url_encoding])
     {
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
         /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
@@ -517,8 +518,10 @@ private:
 
         std::vector<String> paths;
         paths.reserve(uris.size());
+        /// Parse the address exactly as the reader does, or the filter sees another `_path` / `_file`
+        /// than the one the reader materializes and wrongly drops the address.
         for (const auto & uri : uris)
-            paths.push_back(Poco::URI(encodeSpacesInURI(uri)).getPath());
+            paths.push_back(Poco::URI(encodeSpacesInURI(uri), enable_url_encoding).getPath());
 
         VirtualColumnUtils::filterByPathOrFile(
             uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
@@ -537,6 +540,7 @@ private:
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
     const ContextPtr filter_context;
+    const bool enable_url_encoding;
 
     Strings batch TSA_GUARDED_BY(mutex);
     size_t batch_index TSA_GUARDED_BY(mutex) = 0;

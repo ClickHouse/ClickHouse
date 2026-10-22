@@ -2,6 +2,7 @@
 
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/encodeSpacesInURI.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -268,6 +269,9 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     archive_pattern.reset();
     if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
         std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url);
+    /// After the archive split, whose ` :: ` separator holds spaces. Index pages link to entries with
+    /// spaces as `%20`, so the encoded path matches them, and the URLs built from it are valid.
+    url = encodeSpacesInURI(url);
 
     const auto scheme_pos = url.find("://");
     const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;

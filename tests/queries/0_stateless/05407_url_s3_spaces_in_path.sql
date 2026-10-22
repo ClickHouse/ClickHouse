@@ -22,6 +22,11 @@ SELECT * FROM url('http://localhost:11111/test/05407 dir/c d.csv.gz');
 SELECT x FROM url('http://localhost:11111/test/05407 dir/{a b,e f}.csv', 'CSV', 'x UInt32') ORDER BY x;
 SELECT x FROM url('http://localhost:11111/test/05407 dir/a b.csv', 'CSV', 'x UInt32') SETTINGS enable_url_encoding = 0;
 SELECT x FROM urlCluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/05407 dir/a b.csv', 'CSV', 'x UInt32');
+-- `_file` and `_path` predicates see the same values the reader returns.
+SELECT x, _file FROM url('http://localhost:11111/test/05407 dir/a b.csv', 'CSV', 'x UInt32') WHERE _file = 'a%20b.csv';
+SELECT x, _path FROM url('http://localhost:11111/test/05407 dir/{a b,e f}.csv', 'CSV', 'x UInt32') WHERE _path = '/test/05407%20dir/e%20f.csv';
+SELECT x, _file FROM url('http://localhost:11111/test/05407 dir/{a b,e f}.csv', 'CSV', 'x UInt32') WHERE _file = 'a b.csv' SETTINGS enable_url_encoding = 1;
+SELECT x FROM urlCluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/05407 dir/{a b,e f}.csv', 'CSV', 'x UInt32') WHERE _file = 'e%20f.csv';
 
 SELECT 'URL engine';
 DROP TABLE IF EXISTS t_05407_url;

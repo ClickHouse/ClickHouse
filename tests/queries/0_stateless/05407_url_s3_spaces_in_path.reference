@@ -14,6 +14,10 @@ url
 3
 1
 1
+1	a%20b.csv
+3	/test/05407%20dir/e%20f.csv
+1	a b.csv
+3
 URL engine
 1
 URL(\'http://localhost:11111/test/05407 dir/a b.csv\', \'CSV\')

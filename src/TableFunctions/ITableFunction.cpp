@@ -4,6 +4,7 @@
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
+#include <Common/encodeSpacesInURI.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
 
@@ -101,7 +102,8 @@ String ITableFunction::getFunctionURINormalized() const
 {
     try
     {
-        Poco::URI uri(getFunctionURI());
+        /// Spaces are encoded as the storages do, so a literal space and `%20` match the same grants.
+        Poco::URI uri(encodeSpacesInURI(getFunctionURI()));
         uri.normalize();
         return uri.toString();
     }

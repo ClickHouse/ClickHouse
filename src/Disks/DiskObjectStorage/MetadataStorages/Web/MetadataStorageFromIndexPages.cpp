@@ -445,7 +445,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
 
         if (candidate_uri.isRelative())
         {
-            Poco::URI resolved(listing_url);
+            Poco::URI resolved(listing_url, false);
             resolved.resolve(candidate_uri);
             candidate_uri = resolved;
         }
@@ -496,7 +496,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
 
             if (candidate_uri.isRelative())
             {
-                Poco::URI resolved(listing_url);
+                Poco::URI resolved(listing_url, false);
                 resolved.resolve(candidate_uri);
                 candidate_uri = resolved;
             }
