@@ -13,6 +13,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryPlanProfiler.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
@@ -311,8 +313,28 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     /// The last moment the plan is worth reading: the index analysis and the child plans built
     /// along the way exist now, and nothing after this needs the plan at all.
+    ///
+    /// The two readings are owned differently. The captured plan goes to the profiler, which the
+    /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
+    /// and analyzers go to the pipeline, which must be their only owner, so that they are freed
+    /// with it rather than living as long as the context does.
     if (profiler)
-        profiler->capturePlanStructure(*this, pretty_names);
+    {
+        /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
+        MemoryTrackerBlockerInThread block_memory_tracker;
+
+        try
+        {
+            profiler->capturePlanStructure(*this, pretty_names);
+            last_pipeline->setStepProfiler(
+                std::make_shared<StepProfiler>(*this, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            profiler->dropCapturedPlan();
+        }
+    }
 
     return last_pipeline;
 }

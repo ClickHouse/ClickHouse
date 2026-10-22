@@ -10,6 +10,9 @@
 namespace DB
 {
 
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
+
 class QueryPipelineProcessorsCollector;
 
 struct AggregatingTransformParams;
@@ -209,6 +212,9 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
 
+    /// Carried only so that `getPipeline` can hand it to the pipeline, which owns it from then on.
+    void setStepProfiler(StepProfilerPtr step_profiler_) { step_profiler = std::move(step_profiler_); }
+
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
     {
@@ -270,6 +276,7 @@ private:
     bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
+    StepProfilerPtr step_profiler;
     ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();

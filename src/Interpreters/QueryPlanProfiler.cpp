@@ -111,30 +111,14 @@ void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const Prett
     /// One plan per query, and nothing is asked of the profiler before this.
     chassert(!captured);
 
-    /// Runs while the query is still being set up, so an exception here would fail a query that
-    /// would otherwise have run. Capturing is a diagnostic; it does not get to do that.
-    MemoryTrackerBlockerInThread block_memory_tracker;
-
-    try
-    {
-        /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
-        captured = capturePlan(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
-
-        /// Walks the plan for the analyzers and a clock per stage, so it has to be built here.
-        step_profiler = std::make_shared<StepProfiler>(plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        captured.reset();
-        step_profiler.reset();
-    }
+    /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
+    captured = capturePlan(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 }
 
 void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
 {
-    /// The pipeline has owned it since `instrumentPipeline`, which is why it is read back from
-    /// there rather than kept here: nothing of the query outlives the pipeline.
+    /// The pipeline has owned it since it was built, which is why it is read back from there
+    /// rather than kept here: nothing of the query outlives the pipeline.
     const StepProfilerPtr profiler = pipeline.getStepProfiler();
 
     if (!captured || !profiler)
@@ -164,15 +148,6 @@ void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-}
-
-void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline)
-{
-    /// Built with the plan, back when there was one, and handed over here. The pipeline is its
-    /// only owner from now on, so everything it holds -- the clocks, and the analyzers with the
-    /// `IJoin`s and their hash tables -- is freed when the pipeline is.
-    if (step_profiler)
-        pipeline.setStepProfiler(std::move(step_profiler));
 }
 
 }
