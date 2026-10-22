@@ -981,7 +981,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressesAcrossRepeti
 /// block: its copies compress against each other even when one copy is incompressible on its own, and
 /// scaling one copy's `sample_bytes` and `compressed_bytes` by the row count keeps the one-copy ratio,
 /// overstating `output_bytes` by the repeated payload's real compression ratio.
-static void checkConstantNestedPayloadCompression(size_t rows, size_t cache_key)
+static void checkConstantNestedPayloadCompression(size_t rows, size_t cache_key, const CompressionCodecPtr & codec = nullptr)
 {
     tryRegisterAggregateFunctions();
 
@@ -1023,13 +1023,13 @@ static void checkConstantNestedPayloadCompression(size_t rows, size_t cache_key)
     auto materialized = array_column->cloneEmpty();
     for (size_t row = 0; row < rows; ++row)
         materialized->insertFrom(*array_column, 0);
-    const size_t exact_compressed_bytes = compressedColumnSize({std::move(materialized), array_type, "materialized"});
+    const size_t exact_compressed_bytes = compressedColumnSize({std::move(materialized), array_type, "materialized"}, codec);
     /// The identical copies compress: an estimate that keeps the one-copy ratio of ~1 lands at the whole
     /// uncompressed payload, far above the 2x margin asserted below.
     ASSERT_LT(exact_compressed_bytes * 8, rows * elements_in_array * string_size);
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, codec));
 
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, array_type, "constant_array_of_states"});
@@ -1047,6 +1047,15 @@ static void checkConstantNestedPayloadCompression(size_t rows, size_t cache_key)
 TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcrossRepetitions)
 {
     checkConstantNestedPayloadCompression(/*rows=*/32, /*cache_key=*/0x111985 + 7);
+}
+
+/// `LZ4`'s 64 KiB limit is a sliding match distance, not a block boundary: each ~16 KiB copy references the
+/// one right before it, so all copies within the 1 MiB compressed block compress together. Measuring only the
+/// copies that fit 64 KiB and scaling them would overestimate the repeated payload several-fold.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcrossLZ4Block)
+{
+    checkConstantNestedPayloadCompression(
+        /*rows=*/48, /*cache_key=*/0x111985 + 24, CompressionCodecFactory::instance().get("LZ4", {}));
 }
 
 /// With enough repetitions the copies outgrow the measurement budget, which is also the size of one
@@ -1431,6 +1440,176 @@ TEST(RuntimeDataflowStatisticsStateSampling, UnsampledStateLeafIsNotExtrapolated
     ASSERT_GT(wire_bytes, rows * elements_in_state * sizeof(UInt64));
 
     const size_t cache_key = 0x111985 + 20;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, 2 * rows, none));
+        updater.recordOutputChunk(Chunk(Columns{first}, rows), header);
+        updater.recordOutputChunk(Chunk(Columns{second}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes * 5, wire_bytes * 4);
+    EXPECT_LE(stats->output_bytes * 4, wire_bytes * 5);
+}
+
+/// The normalization of component samples must also reach inside a carrier: its state-free subtrees can
+/// have very different row counts, so the estimates sample different fractions of them. Here every outer row
+/// of `Tuple(Array(Tuple(AggregateFunction(count), UInt64)), String)` holds 10000 array elements of random
+/// numbers and an 80000-byte compressible string. Both subtrees are about 8 MB, but the numbers are sampled
+/// at 10% and the strings in full; pooled raw, the strings get ten times the weight in the ratio and the
+/// incompressible numbers are priced as if they compressed like the strings.
+TEST(RuntimeDataflowStatisticsStateSampling, NestedMixedOutputNormalizesSubtreeSamples)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 100;
+    constexpr size_t elements_in_array = 10000;
+    constexpr size_t string_size = 80000;
+
+    AggregateFunctionProperties properties;
+    const auto count_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, DataTypes{}, Array{}, properties);
+    const auto count_type = std::make_shared<DataTypeAggregateFunction>(count_function, DataTypes{}, Array{});
+
+    auto states = ColumnAggregateFunction::create(count_function);
+    auto numbers = ColumnUInt64::create();
+    for (size_t i = 0; i < rows * elements_in_array; ++i)
+    {
+        states->insertDefault();
+        numbers->insertValue(UInt64(i + 1) * 0x9E3779B97F4A7C15ULL);
+    }
+    Columns element_columns;
+    element_columns.emplace_back(std::move(states));
+    element_columns.emplace_back(std::move(numbers));
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    for (size_t row = 0; row < rows; ++row)
+        offsets->insertValue((row + 1) * elements_in_array);
+    ColumnPtr array_column = ColumnArray::create(ColumnTuple::create(std::move(element_columns)), std::move(offsets));
+
+    auto string_column = ColumnString::create();
+    const std::string value(string_size, 'a');
+    for (size_t row = 0; row < rows; ++row)
+        string_column->insertData(value.data(), value.size());
+
+    Columns tuple_elements;
+    tuple_elements.emplace_back(std::move(array_column));
+    tuple_elements.emplace_back(std::move(string_column));
+    ColumnPtr tuple = ColumnTuple::create(std::move(tuple_elements));
+    const auto element_type = std::make_shared<DataTypeTuple>(DataTypes{count_type, std::make_shared<DataTypeUInt64>()});
+    const auto tuple_type
+        = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeArray>(element_type), std::make_shared<DataTypeString>()});
+
+    const auto exact_compressed_bytes = compressedColumnSize({tuple, tuple_type, "nested_state_and_string"});
+    /// The random numbers dominate the compressed payload.
+    ASSERT_GT(exact_compressed_bytes, rows * elements_in_array * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 22;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, tuple_type, "nested_state_and_string"});
+        updater.recordOutputChunk(Chunk(Columns{tuple}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// Leaves must be identified by their structural path, not by their traversal ordinal: `ColumnVariant` visits
+/// its alternatives in the local storage order, which can differ between two columns of the same type. Here
+/// both alternatives of `Variant(Array(AggregateFunction(groupArray, UInt64)), Tuple(AggregateFunction(groupArray,
+/// UInt64)))` hold the same state type. The first, sampled block stores the array alternative first and fills
+/// it with empty states; the second, unsampled block stores the tuple alternative first and fills it with
+/// large states. By ordinal, the tuple leaf of the second block would reuse the array leaf's one-byte figure.
+TEST(RuntimeDataflowStatisticsStateSampling, StateLeafIdentityFollowsTheGlobalVariantOrder)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 100;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const DataTypePtr array_type = std::make_shared<DataTypeArray>(state_type);
+    const DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{state_type});
+
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{array_type, tuple_type});
+    const auto & variants = variant_type->getVariants();
+    ASSERT_EQ(variants.size(), 2);
+    const UInt8 array_global = variants[0]->getName() == array_type->getName() ? 0 : 1;
+    const UInt8 tuple_global = 1 - array_global;
+
+    /// The array alternative: one empty state per row.
+    auto make_array = [&](size_t array_rows)
+    {
+        auto array_states = ColumnAggregateFunction::create(function);
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        for (size_t row = 0; row < array_rows; ++row)
+        {
+            array_states->insertDefault();
+            offsets->insertValue(row + 1);
+        }
+        return ColumnArray::create(std::move(array_states), std::move(offsets));
+    };
+    /// The tuple alternative: one large state per row.
+    auto make_tuple = [&](size_t tuple_rows)
+    {
+        auto tuple_states = ColumnAggregateFunction::create(function);
+        for (size_t row = 0; row < tuple_rows; ++row)
+            tuple_states->insertFrom(*source_state, 0);
+        MutableColumns elements;
+        elements.emplace_back(std::move(tuple_states));
+        return ColumnTuple::create(std::move(elements));
+    };
+    /// A block whose values all belong to the local alternative 0, which is `first_global`.
+    auto make_variant = [&](UInt8 first_global)
+    {
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < rows; ++row)
+        {
+            discriminators->insertValue(0);
+            offsets->insertValue(row);
+        }
+        MutableColumns alternatives;
+        if (first_global == array_global)
+        {
+            alternatives.emplace_back(make_array(rows));
+            alternatives.emplace_back(make_tuple(0));
+        }
+        else
+        {
+            alternatives.emplace_back(make_tuple(rows));
+            alternatives.emplace_back(make_array(0));
+        }
+        const VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global{first_global, static_cast<UInt8>(1 - first_global)};
+        return ColumnPtr(ColumnVariant::create(std::move(discriminators), std::move(offsets), std::move(alternatives), local_to_global));
+    };
+
+    const auto first = make_variant(array_global);
+    const auto second = make_variant(tuple_global);
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state"});
+
+    /// Without compression the estimate is the uncompressed size, so the ground truth is what `NativeWriter`
+    /// writes for both blocks to a peer of the current revision.
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(header.cloneEmpty()));
+    for (const auto & column : {first, second})
+    {
+        Block block = header.cloneEmpty();
+        block.getByPosition(0).column = column;
+        writer.write(block);
+    }
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size();
+    ASSERT_GT(wire_bytes, rows * elements_in_state * sizeof(UInt64));
+
+    const size_t cache_key = 0x111985 + 23;
     {
         RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, 2 * rows, none));
         updater.recordOutputChunk(Chunk(Columns{first}, rows), header);

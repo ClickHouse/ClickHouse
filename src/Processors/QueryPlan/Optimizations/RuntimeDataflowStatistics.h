@@ -141,8 +141,8 @@ struct RuntimeDataflowStatisticsBlock
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
         size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
-        /// Keyed by the identity of the leaf (the output column, the state type and its position among
-        /// the leaves of that type in the column): states of different leaves can differ in size by orders
+        /// Keyed by the identity of the leaf (the output column, the structural path of the leaf in it and
+        /// the state type): states of different leaves can differ in size by orders
         /// of magnitude, so a leaf is extrapolated only from samples of its own values.
         std::unordered_map<String, SerializedStates> serialized_states TSA_GUARDED_BY(mutex);
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
