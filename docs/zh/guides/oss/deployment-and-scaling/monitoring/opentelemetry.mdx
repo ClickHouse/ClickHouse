@@ -8,17 +8,13 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) 是一种开放标准，用于从分布式应用程序中收集链路追踪和指标。ClickHouse 对 OpenTelemetry 提供了一定的支持。
 
-<div id="supplying-trace-context-to-clickhouse">
-  ## 向 ClickHouse 传递 trace 上下文
-</div>
+## 向 ClickHouse 传递 trace 上下文 {#supplying-trace-context-to-clickhouse}
 
 ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context/)中定义的 trace 上下文 HTTP 请求头。它也接受通过原生协议传递的 trace 上下文，该协议用于 ClickHouse 服务器之间或客户端与服务器之间的通信。进行手动测试时，可以使用 `--opentelemetry-traceparent` 和 `--opentelemetry-tracestate` 标志，向 `clickhouse-client` 传入符合 Trace Context 建议的 trace 上下文请求头。
 
 如果未提供父 trace 上下文，或者提供的 trace 上下文不符合上述 W3C 标准，ClickHouse 可以启动一个新的 trace，其概率由 [opentelemetry&#95;start&#95;trace&#95;probability](/zh/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 设置控制。
 
-<div id="propagating-the-trace-context">
-  ## 传播 trace 上下文
-</div>
+## 传播 trace 上下文 {#propagating-the-trace-context}
 
 在以下情况下，trace 上下文 会传递到下游服务：
 
@@ -26,15 +22,27 @@ ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context
 
 * [url](/zh/reference/functions/table-functions/url) 表函数。trace 上下文 信息会通过 HTTP 请求头 发送。
 
-<div id="tracing-clickhouse-keeper-requests">
-  ## 追踪 ClickHouse Keeper 请求
-</div>
+## 分布式查询的 span {#spans-of-distributed-queries}
+
+对于分布式 `SELECT`，从每个远程 shard 的读取都由一个 `RemoteQueryExecutor::execute` span 覆盖。这些 span 带有用于标识该 query fragment 的属性：
+
+* `clickhouse.cluster` 和 `clickhouse.shard_num` — executor 所读取的 cluster 和 shard；
+* `clickhouse.query_id` 和 `clickhouse.initial_query_id` — 从发起服务器视角看到的 query id；
+* `clickhouse.target_host` — 已建立的 connection 的地址。
+
+此类 span 的 `status_code` 表明该 fragment 的结束方式：
+
+* `OK` — 该 shard 返回了完整结果。
+* `ERROR` — 该 fragment 失败：shard 返回了 exception、发起服务器读取数据失败，或取消 shard 失败。
+* `UNSET` — 既非成功也非失败。此类 span 会带有一个属性以提供更多 context。
+
+对 `Distributed` 表执行的 `INSERT` 查询会在 `DistributedSink` 中产生类似的 span，并使用相同的 `clickhouse.cluster` 和 `clickhouse.shard_num` 属性键。
+
+## 追踪 ClickHouse Keeper 请求 {#tracing-clickhouse-keeper-requests}
 
 ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/keeper/index) 请求进行 OpenTelemetry 追踪 (ClickHouse 的兼容 ZooKeeper 语义的协调服务) 。该功能可让你详细了解 Keeper 操作的整个生命周期，从客户端提交请求到服务端处理。
 
-<div id="enabling-keeper-tracing">
-  ### 启用 Keeper 追踪
-</div>
+### 启用 Keeper 追踪 {#enabling-keeper-tracing}
 
 要为 Keeper 请求启用追踪，请在 ZooKeeper/Keeper 客户端配置中设置以下参数：
 
@@ -51,11 +59,9 @@ ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/k
 </clickhouse>
 ```
 
-<div id="keeper-span-types">
-  ### Keeper Span 类型
-</div>
+### Keeper Span 类型 {#keeper-span-types}
 
-启用 tracing 后，ClickHouse 会为客户端和服务端的 Keeper 操作创建 spans：
+启用追踪后，ClickHouse 会为客户端和服务端的 Keeper 操作创建 spans：
 
 **客户端 spans：**
 
@@ -74,20 +80,16 @@ ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/k
 * `keeper.dispatcher.requests_queue` — dispatcher 中的请求排队
 * `keeper.write.pre_commit` — 在 Raft commit 之前预处理写入请求
 * `keeper.write.commit` — 在 Raft commit 之后处理写入请求
-* `keeper.read.wait_for_write` — 读取请求等待其依赖的写入完成
+* `keeper.read.wait_for_write` — 读取请求排在尚在传输中的请求批次之后等待
 * `keeper.read.process` — 处理读取请求
 * `keeper.dispatcher.responses_queue` — dispatcher 中的响应排队
 * `keeper.send_response` — 向客户端发送响应
 
-<div id="sampling-and-performance">
-  ### 采样与性能
-</div>
+### 采样与性能 {#sampling-and-performance}
 
 为控制追踪开销，Keeper 实现了动态采样。采样率会根据请求大小在 1/10,000 到 1/10 之间自动调整。所有请求 (无论是否被采样) 都会将其耗时记录到直方图指标中，以便进行性能监控。
 
-<div id="tracing-the-clickhouse-itself">
-  ## 追踪 ClickHouse 自身
-</div>
+## 追踪 ClickHouse 自身 {#tracing-the-clickhouse-itself}
 
 ClickHouse 会为每个查询以及查询执行的某些阶段 (例如查询计划或分布式查询) 创建 `trace spans`。
 
@@ -97,15 +99,11 @@ ClickHouse 会为每个查询以及查询执行的某些阶段 (例如查询计�
 
 标签或属性以两个并行数组的形式保存，分别包含键和值。使用 [ARRAY JOIN](/zh/reference/statements/select/array-join) 来处理它们。
 
-<div id="log-query-settings">
-  ## 日志查询设置
-</div>
+## 日志查询设置 {#log-query-settings}
 
 设置 [log&#95;query&#95;settings](/zh/reference/settings/session-settings/log-query#log_query_settings) 允许记录查询执行期间对查询设置所做的更改。启用后，对查询设置进行的任何修改都会记录到 OpenTelemetry span 日志中。此功能在生产环境中尤其有用，可用于跟踪可能影响查询性能的配置变更。
 
-<div id="integration-with-monitoring-systems">
-  ## 与监控系统集成
-</div>
+## 与监控系统集成 {#integration-with-monitoring-systems}
 
 目前，还没有现成的工具可将 ClickHouse 中的 tracing 数据导出到监控系统。
 
@@ -132,8 +130,6 @@ FROM system.opentelemetry_span_log
 
 如果发生任何错误，出错的那部分日志数据会在无任何提示的情况下丢失。如果数据未到达，请查看服务器日志中的错误信息。
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[使用 ClickHouse 构建可观测性解决方案 (第 2 部分) ：链路追踪](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

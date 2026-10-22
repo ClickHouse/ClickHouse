@@ -55,7 +55,7 @@ SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT b, s FROM lazy_mat_filter_
 # reread is only generation-safe on `S3` with the ETag-pinned GET.
 # `query_plan_max_limit_for_lazy_materialization` is pinned because the CI settings randomizer may
 # lower it below the `LIMIT` of these queries.
-# `query_plan_optimize_prewhere` and `optimize_move_to_prewhere` are pinned so that the filter on
+# `optimize_move_to_prewhere` is pinned so that the filter on
 # the defaulted column is actually pushed down into the read step.
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_object_storage = $enabled"
@@ -64,7 +64,6 @@ for enabled in 1 0; do
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
-        --query_plan_optimize_prewhere=1 \
         --optimize_move_to_prewhere=1 \
         --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
         --query "$QUERIES"

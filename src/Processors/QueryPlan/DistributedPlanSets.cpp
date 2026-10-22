@@ -76,7 +76,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
         /// Some steps own whole subplans (e.g. `ReadFromMerge` children). The root node of such
         /// a subplan cannot be removed from here, so only its sets are taken out; an emptied
         /// `DelayedCreatingSetsStep` does nothing and the serializer skips it.
-        for (auto * child_plan : node->step->getChildPlans())
+        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
         {
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)

@@ -39,10 +39,10 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
     using NearestResultType = NearestFieldType<T>;
     const auto field_type = Field::TypeToEnum<NearestResultType>::value;
     const ASTLiteral * argument = nullptr;
+    if (arguments && arguments->children.size() > argument_index)
+        argument = arguments->children[argument_index]->as<ASTLiteral>();
 
-    if (!arguments || arguments->children.size() <= argument_index
-        || !(argument = arguments->children[argument_index]->as<ASTLiteral>())
-        || argument->value.getType() != field_type)
+    if (!argument || argument->value.getType() != field_type)
     {
         if constexpr (Kind == ArgumentKind::Optional)
             return {};

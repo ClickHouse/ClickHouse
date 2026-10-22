@@ -11,7 +11,6 @@ SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 -- Pin the new-planner prewhere optimization: the runner disables it with 5% probability,
 -- which would make the "optimization still fires" EXPLAIN assertion below flaky.
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS t_04545_summing;
 

@@ -52,7 +52,7 @@ INSERT INTO traces_04627 VALUES ('cluster1', 1, 'trace007');
 --                              The match is form-agnostic (` AND 1` trailing, or ` 1 AND ` if
 --                              reordered) because the predicate prints in function form
 --                              (`equals(...) AND 1`) or operator form (`cluster = '...' AND 1`)
---                              depending on the randomized `query_plan_optimize_prewhere`.
+--                              depending on the randomized `optimize_move_to_prewhere`.
 WITH plan AS
 (
     SELECT rowNumberInAllBlocks() AS rn, explain

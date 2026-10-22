@@ -1,10 +1,12 @@
-#include <limits>
 #include <memory>
+#include <stack>
+#include <unordered_map>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -17,6 +19,7 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/QueryPlan/LazilyReadFromFile.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Storages/StorageFile.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
@@ -31,38 +34,8 @@ namespace DB::QueryPlanOptimizations
 
 using StepStack = std::vector<IQueryPlanStep *>;
 
-static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
-{
-    /// A STREAM read selects its parts and ranges during execution, so the range set captured
-    /// here is not the one that will be read.
-    if (reading->getQueryInfo().isStream())
-        return false;
-
-    /// Allow FINAL only for ReplacingMergeTree.
-    if (reading->isQueryWithFinal()
-        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
-
-    if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->getMutationsSnapshot()->hasPatchParts())
-        return false;
-
-    return true;
-}
-
-/// A DAG input that has no counterpart in the step's input header. A step can legitimately carry
-/// such a dangling input when no output depends on it — e.g. `optimizePrewhere` moves a filter
-/// into a reading step whose header shrinks after applying a row-level filter, while the remaining
-/// `ExpressionStep`'s DAG keeps the now-unused input. Execution tolerates it (`ExpressionActions`
-/// only requires inputs its outputs depend on), so the mapping must tolerate it as well; it is an
-/// error only if such an input turns out to be required.
-static constexpr size_t POSITION_NOT_FOUND = std::numeric_limits<size_t>::max();
-
 /// Returns two vectors of total size equal to the number of columns in the header.
-/// The first vector (size of `inputs.size()`) contains positions of the inputs in the header
-/// (or POSITION_NOT_FOUND for a dangling input).
+/// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
 static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
@@ -76,10 +49,7 @@ static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPosi
     {
         auto & lst = name_to_position[input->result_name];
         if (lst.empty())
-        {
-            positions.push_back(POSITION_NOT_FOUND);
-            continue;
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", input->result_name);
 
         positions.push_back(lst.front());
         lst.pop_front();
@@ -135,15 +105,8 @@ static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, cons
     const auto & inputs = dag.getInputs();
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
     for (size_t i = 0; i < inputs.size(); ++i)
-    {
-        if (!required_nodes.contains(inputs[i]))
-            continue;
-
-        if (header_positions[i] == POSITION_NOT_FOUND)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required input '{}' is missing from the header", inputs[i]->result_name);
-
-        required_input_positions[header_positions[i]] = true;
-    }
+        if (required_nodes.contains(inputs[i]))
+            required_input_positions[header_positions[i]] = true;
 
     /// Used columns which are not DAG outputs should be forwarded to the input header.
     size_t num_outputs = dag.getOutputs().size();
@@ -176,6 +139,57 @@ static void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_outpu
     }
 
     required_output_positions[i] = true;
+}
+
+/// A function whose result depends on the block it runs on: a stateful one (`rowNumberInAllBlocks`,
+/// `runningDifference`) or one not deterministic within a query (`rowNumberInBlock`, `blockSize`, `rand`).
+/// Such a function must not be moved into the lazy half, because there it would run on the rows that
+/// survived the `LIMIT` instead of the original blocks, and return different values.
+static bool dependsOnItsBlock(const ActionsDAG::Node & node)
+{
+    return node.type == ActionsDAG::ActionType::FUNCTION
+        && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery());
+}
+
+/// Mark as required the outputs of the DAG that are computed by a function depending on its block,
+/// so that they are calculated in the main half, before the `LIMIT`.
+static void markBlockDependentOutputsAsRequired(const ActionsDAG & dag, std::vector<bool> & required_output_positions)
+{
+    std::unordered_map<const ActionsDAG::Node *, bool> depends;
+    std::stack<std::pair<const ActionsDAG::Node *, size_t>> stack;
+
+    auto calculate = [&](const ActionsDAG::Node * root)
+    {
+        if (depends.contains(root))
+            return depends[root];
+
+        stack.push({root, 0});
+        while (!stack.empty())
+        {
+            auto & [node, next_child] = stack.top();
+            if (next_child < node->children.size())
+            {
+                const auto * child = node->children[next_child++];
+                if (!depends.contains(child))
+                    stack.push({child, 0});
+                continue;
+            }
+
+            bool result = dependsOnItsBlock(*node);
+            for (const auto * child : node->children)
+                result = result || depends[child];
+            depends[node] = result;
+            stack.pop();
+        }
+
+        return depends[root];
+    };
+
+    const auto & outputs = dag.getOutputs();
+    size_t num_matched_outputs = std::min(outputs.size(), required_output_positions.size());
+    for (size_t i = 0; i < num_matched_outputs; ++i)
+        if (!required_output_positions[i] && calculate(outputs[i]))
+            required_output_positions[i] = true;
 }
 
 struct SplitExpressionStepResult
@@ -221,7 +235,7 @@ static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std
     std::unordered_set<const ActionsDAG::Node *> visited;
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child = 0;
     };
     std::stack<Frame> stack;
@@ -286,7 +300,7 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        if (header_positions[i] != POSITION_NOT_FOUND && required_inputs[header_positions[i]])
+        if (required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
     }
 
@@ -343,7 +357,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
-        if (header_positions[i] != POSITION_NOT_FOUND && required_inputs[header_positions[i]])
+        if (required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
 
     for (size_t i = 0; i < outputs.size(); ++i)
@@ -405,9 +419,9 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset = false;
-    bool added_part_offset = false;
-    reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
+    const auto part_offset_columns = reading_step.addStartingPartOffsetAndPartOffset();
+    const bool added_part_starting_offset = part_offset_columns.added_part_starting_offset;
+    const bool added_part_offset = part_offset_columns.added_part_offset;
     ActionsDAG dag;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     dag.addInput("_part_starting_offset", uint64_type);
@@ -434,7 +448,7 @@ static IQueryPlanStep * findReadingStep(QueryPlan::Node & node, StepStack & back
     backward_path.push_back(step);
 
     if (typeid_cast<ReadFromMergeTree *>(step) || typeid_cast<ReadFromObjectStorageStep *>(step)
-        || typeid_cast<ReadFromFile *>(step))
+        || typeid_cast<ReadFromFile *>(step) || typeid_cast<ReadFromMemoryStorageStep *>(step))
         return step;
 
     if (node.children.size() != 1)
@@ -518,6 +532,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     auto * merge_tree_reading_step = typeid_cast<ReadFromMergeTree *>(reading_step);
     auto * object_storage_reading_step = typeid_cast<ReadFromObjectStorageStep *>(reading_step);
     auto * file_reading_step = typeid_cast<ReadFromFile *>(reading_step);
+    auto * memory_reading_step = typeid_cast<ReadFromMemoryStorageStep *>(reading_step);
 
     if (merge_tree_reading_step && !canUseLazyMaterializationForReadingStep(merge_tree_reading_step))
         return false;
@@ -528,6 +543,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     if (file_reading_step
         && !(settings.optimize_lazy_materialization_for_file && file_reading_step->canUseLazyMaterialization()))
+        return false;
+
+    if (memory_reading_step && !memory_reading_step->canUseLazyMaterialization())
         return false;
 
     if (!allExpressionsSuitableForLazyMaterialization(chain_top_node))
@@ -572,6 +590,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             /// `tryExecuteFunctionsAfterSorting` in `liftUpFunctions.cpp`.
             if (expr.hasArrayJoin())
                 return false;
+            markBlockDependentOutputsAsRequired(expr, required_columns);
             /// The number of DAG outputs can be less than the number of columns in the header.
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *expr_step->getInputHeaders().front() , std::move(required_columns));
@@ -584,6 +603,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             if (expr.hasArrayJoin())
                 return false;
             updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
+            markBlockDependentOutputsAsRequired(expr, required_columns);
             step_to_split.required_positions.insert(step_to_split.required_positions.end(), required_columns.begin(), required_columns.begin() + expr.getOutputs().size());
             required_columns = getRequiredHeaderPositions(expr, *filter_step->getInputHeaders().front(), std::move(required_columns));
             has_filter = true;
@@ -598,7 +618,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(node->step.get());
     auto * read_from_file = typeid_cast<ReadFromFile *>(node->step.get());
-    if (node->step.get() != reading_step || (!read_from_merge_tree && !read_from_object_storage && !read_from_file))
+    auto * read_from_memory = typeid_cast<ReadFromMemoryStorageStep *>(node->step.get());
+    if (node->step.get() != reading_step || (!read_from_merge_tree && !read_from_object_storage && !read_from_file && !read_from_memory))
         return false;
 
     /// (typeid_cast to the intermediate base class SourceStepWithFilter would return nullptr
@@ -613,9 +634,14 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (read_from_object_storage->getPrewhereInfo() || read_from_object_storage->getRowLevelFilter())
             has_filter = true;
     }
-    else
+    else if (read_from_file)
     {
         if (read_from_file->getPrewhereInfo() || read_from_file->getRowLevelFilter())
+            has_filter = true;
+    }
+    else
+    {
+        if (read_from_memory->getPrewhereInfo() || read_from_memory->getRowLevelFilter())
             has_filter = true;
     }
 
@@ -627,7 +653,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// Without a sorting step, defer columns only for FINAL with a filter: the filter cannot
     /// be moved to PREWHERE (it would run before the FINAL merge and change its result), so
     /// this is the only way to avoid reading all columns for every scanned row. For non-FINAL
-    /// reads, PREWHERE already covers this shape. Object storage and file reads have no FINAL,
+    /// reads, PREWHERE already covers this shape. Object storage, file and memory reads have no FINAL,
     /// so the no-sorting case never applies to them.
     if (!sorting_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
         return false;
@@ -635,6 +661,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     std::unique_ptr<LazilyReadFromMergeTree> merge_tree_lazy_reading;
     std::unique_ptr<LazilyReadFromObjectStorage> object_storage_lazy_reading;
     std::unique_ptr<LazilyReadFromFile> file_lazy_reading;
+    std::unique_ptr<LazilyReadFromMemoryStorage> memory_lazy_reading;
     {
         auto initial_header = reading_step->getOutputHeader();
         const auto & cols = initial_header->getColumnsWithTypeAndName();
@@ -671,10 +698,16 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             if (!object_storage_lazy_reading)
                 return false;
         }
-        else
+        else if (read_from_file)
         {
             file_lazy_reading = read_from_file->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
             if (!file_lazy_reading)
+                return false;
+        }
+        else
+        {
+            memory_lazy_reading = read_from_memory->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
+            if (!memory_lazy_reading)
                 return false;
         }
 
@@ -728,7 +761,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     main_plan.addStep(std::move(node->step));
 
     /// For MergeTree, `__global_row_index` is calculated from the `_part_starting_offset` and
-    /// `_part_offset` virtual columns; for object storage and file reads the reading step
+    /// `_part_offset` virtual columns; for object storage, file and memory reads the reading step
     /// produces it directly.
     if (read_from_merge_tree)
     {
@@ -793,12 +826,19 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         lazy_materializing_rows = std::move(object_storage_rows);
         lazy_plan.addStep(std::move(object_storage_lazy_reading));
     }
-    else
+    else if (read_from_file)
     {
         auto file_rows = std::make_shared<FileLazyMaterializingRows>(read_from_file->getLazyRowIndexRegistry());
         file_lazy_reading->setLazyMaterializingRows(file_rows);
         lazy_materializing_rows = std::move(file_rows);
         lazy_plan.addStep(std::move(file_lazy_reading));
+    }
+    else
+    {
+        auto memory_rows = std::make_shared<MemoryLazyMaterializingRows>();
+        memory_lazy_reading->setLazyMaterializingRows(memory_rows);
+        lazy_materializing_rows = std::move(memory_rows);
+        lazy_plan.addStep(std::move(memory_lazy_reading));
     }
 
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
