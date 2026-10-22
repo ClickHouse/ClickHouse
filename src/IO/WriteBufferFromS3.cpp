@@ -52,6 +52,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_part_number;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -117,7 +118,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , idempotency_id(getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH))
+    , idempotency_id(request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "")
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -423,7 +424,7 @@ void WriteBufferFromS3::createMultipartUpload()
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
         req.setUploadChecksumAlgorithm(*checksum_algorithm);
@@ -745,7 +746,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetMetadata(metadataWithIdempotencyId());
     req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
         req.setUploadChecksumAlgorithm(*checksum_algorithm);
@@ -767,7 +768,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
 ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
 {
     auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+    if (!idempotency_id.empty())
+        metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;
 }
 

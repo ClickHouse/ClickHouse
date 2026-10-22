@@ -346,19 +346,9 @@ namespace
     String getQueryDescription(const GRPCQueryInfo & query_info)
     {
         String str;
+        /// Not the text: it can contain secrets, and `executeQuery` logs it with them hidden.
         if (!query_info.query().empty())
-        {
-            std::string_view query = query_info.query();
-            constexpr size_t max_query_length_to_log = 64;
-            if (query.length() > max_query_length_to_log)
-                query.remove_suffix(query.length() - max_query_length_to_log);
-            if (size_t format_pos = query.find(" FORMAT "); format_pos != String::npos)
-                query.remove_suffix(query.length() - format_pos - strlen(" FORMAT "));
-            str.append("\"").append(query);
-            if (query != query_info.query())
-                str.append("...");
-            str.append("\"");
-        }
+            str.append("query: ").append(std::to_string(query_info.query().size())).append(" bytes");
         if (!query_info.query_id().empty())
             str.append(str.empty() ? "" : ", ").append("query_id: ").append(query_info.query_id());
         if (!query_info.input_data().empty())
