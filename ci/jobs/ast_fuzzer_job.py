@@ -331,6 +331,200 @@ def get_run_command(
     )
 
 
+# What La Casa del Dolor's load generator may exit with when the run ends normally: it is
+# killed (negative codes from Python's `subprocess`) or loses the server it was talking to.
+# Same set as `BuzzHouseGenerator.validate_exit_code` in `tests/casa_del_dolor/generators.py`.
+SERVER_FUZZER_EXIT_CODES = (-9, -15, -2, 0, 32, 130, 137, 143, 210)
+
+
+def analyze_job_logs(
+    paths: list[Path],
+    server_died: bool,
+    server_exit_code: int,
+    fuzzer_exit_code: int,
+    is_sanitized: bool,
+    fuzzer_out: Path,
+    extra_results: list[Result] | None = None,
+    server_fuzzer: bool = False,
+) -> Result:
+    """Judge the run from the logs in `JOB_ARTIFACTS`, which La Casa del Dolor writes too."""
+    server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
+    # parse runner script exit status
+    status = Result.Status.FAIL
+    info = []
+    is_failed = True
+    # A fuzzer finding reported by the client while the server stayed alive
+    finding = None
+    if server_died:
+        # Server died - status will be determined after OOM checks
+        is_failed = True
+    elif fuzzer_exit_code in (
+        SERVER_FUZZER_EXIT_CODES if server_fuzzer else (0, 137, 143)
+    ):
+        # normal exit with timeout or OOM kill
+        is_failed = False
+        status = Result.Status.OK
+        if fuzzer_exit_code == 0:
+            info.append("Fuzzer exited with success")
+        elif fuzzer_exit_code == 137:
+            info.append("Fuzzer killed")
+        else:
+            info.append("Fuzzer exited with timeout")
+        info.append("\n")
+    elif _is_benign_memory_limit(
+        server_died,
+        fuzzer_exit_code,
+        _fuzzer_log_terminal_block_has_server_mle(fuzzer_log),
+    ):
+        # Server hit its memory cap on a fuzzed query but stayed alive; see
+        # _is_benign_memory_limit. Not a crash or a finding.
+        is_failed = False
+        status = Result.Status.OK
+        info.append("Server hit its memory limit (Code 241) but stayed alive")
+        info.append("\n")
+    elif fuzzer_exit_code == BUZZHOUSE_ORACLE_EXIT_CODE and (
+        oracle_error := _last_exception(
+            fuzzer_log, BUZZHOUSE_ORACLE_ERROR_CODE, "BUZZHOUSE_ORACLE"
+        )
+    ):
+        # A BuzzHouse oracle or the disallowed error code check caught the server misbehaving
+        name = oracle_error.splitlines()[0].removeprefix(
+            f"Code: {BUZZHOUSE_ORACLE_ERROR_CODE}. DB::Exception: "
+        )
+        name = name.removesuffix(" (BUZZHOUSE_ORACLE)").removesuffix(".")
+        finding = Result(
+            # The name is the CIDB test name, so drop ports, counts and metric values
+            name=re.sub(r"\d+", "N", name),
+            info=oracle_error,
+            status=Result.Status.FAIL,
+        )
+        info.append(f"BuzzHouse oracle failure: {oracle_error}")
+    elif fuzzer_exit_code == AST_FUZZER_ORACLE_EXIT_CODE and (
+        oracle_error := _oracle_mismatch_block(fuzzer_log)
+    ):
+        # The marker block (with the reproducer) tells this apart from other codes ending in 138
+        finding = Result(
+            name="AST fuzzer oracle mismatch",
+            info=oracle_error,
+            status=Result.Status.FAIL,
+        )
+        info.append("AST fuzzer oracle mismatch")
+    else:
+        status = Result.Status.ERROR
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
+        info.append("Client failure (see logs)")
+        info.append("---\nFuzzer log (last 200 lines):")
+        info.extend(
+            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+        )
+
+    results = [finding] if finding else []
+
+    # The OOM checks explain a dead server; a finding came from a live one
+    if is_failed and not finding:
+        if is_sanitized:
+            # The AST fuzzer merges the sanitizer output into server.log, La Casa del Dolor
+            # leaves it in stderr.log only.
+            oom_logs = " ".join(
+                str(log) for log in (server_log, stderr_log) if Path(log).exists()
+            )
+            sanitizer_oom = oom_logs and Shell.get_output(
+                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {oom_logs}"
+            )
+            # Sanitizer shadow memory is invisible to the server's memory tracker,
+            # so the kernel OOM killer may SIGKILL the server before any limit
+            # fires. It may also kill the watchdog, losing the "terminated by
+            # signal 9" message in the server log. A SIGKILLed server (exit 137)
+            # with no sanitizer report is an OOM, not a bug.
+            has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
+            kernel_oom_kill = (
+                server_died and server_exit_code == 137 and not has_sanitizer_report
+            )
+            if sanitizer_oom or kernel_oom_kill:
+                print("Sanitizer OOM")
+                if sanitizer_oom:
+                    info.append("WARNING: Sanitizer OOM - test considered passed")
+                else:
+                    info.append(
+                        "WARNING: Server was killed by the kernel OOM killer "
+                        "(sanitizer build) - test considered passed"
+                    )
+                status = Result.Status.OK
+                is_failed = False
+        else:
+            # Check for OOM in dmesg for non-sanitized builds
+            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
+                # CIDB takes `test_name` from a sub-result's name, so an OOM kill
+                # needs a named one to stay greppable. The grep is negated: it
+                # exits non-zero exactly when an OOM line is present, and
+                # `with_info_on_failure` captures that line into `info`.
+                oom_result = Result.from_commands_run(
+                    name="OOM in dmesg",
+                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' -e 'Memory cgroup out of memory: Killed process' -e 'oom-kill:constraint=CONSTRAINT_MEMCG' | tee /dev/stderr | grep -q .",
+                )
+                if not oom_result.is_ok():
+                    # ERROR, not FAIL: `Result.create_from` resolves an ERROR
+                    # sub-result to a job-level `error`, a `FAIL` one to `failure`.
+                    oom_result.set_status(Result.Status.ERROR)
+                    results.append(oom_result)
+                    info.append("ERROR: OOM in dmesg")
+                    status = Result.Status.ERROR
+            else:
+                print("WARNING: dmesg not enabled")
+
+    if is_failed and status != Result.Status.ERROR and not finding:
+        # died server - lets fetch failure from log
+        fuzzer_log_parser = FuzzerLogParser(
+            server_log=str(server_log),
+            stderr_log=str(stderr_log),
+            fuzzer_log=str(fuzzer_out),
+        )
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+
+        if parsed_name:
+            results.append(
+                Result(
+                    name=parsed_name,
+                    info=parsed_info,
+                    status=Result.Status.FAIL,
+                    files=files,
+                )
+            )
+
+    result = Result.create_from(
+        results=(extra_results or []) + results,
+        status=status if not results else None,
+        info=info,
+    )
+
+    if is_failed:
+        # generate fatal log
+        Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
+
+    # Attach logs whenever the fuzzer did not finish cleanly: any non-zero exit (failure,
+    # oracle mismatch, SIGTERM / SIGKILL from the FUZZ_TIME_LIMIT wrapper), so a timeout does
+    # not look like a silent pass. Not for La Casa del Dolor: it ends every run with a kill and
+    # attaches the artifacts itself when it reports.
+    if is_failed or (not server_fuzzer and fuzzer_exit_code != 0):
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                result.set_files(file)
+    elif (jemalloc_profiles := WORKSPACE_PATH / "jemalloc.tar.zst").exists() and Shell.check(
+        f"rg -Fqa 'after total memory exceeded' {server_log}"
+    ):
+        # The fuzzer keeps going after a server-side MEMORY_LIMIT_EXCEEDED, so a run
+        # that hit the total limit can still finish cleanly; that flush is the reason
+        # the profiles are collected.
+        result.set_files(jemalloc_profiles)
+
+    return result
+
+
 def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
@@ -521,174 +715,15 @@ def run_fuzz_job(check_name: str):
                 early_result.set_files(file)
         early_result.complete_job()
 
-    # parse runner script exit status
-    status = Result.Status.FAIL
-    info = []
-    is_failed = True
-    # A fuzzer finding reported by the client while the server stayed alive
-    finding = None
-    if server_died:
-        # Server died - status will be determined after OOM checks
-        is_failed = True
-    elif fuzzer_exit_code in (0, 137, 143):
-        # normal exit with timeout or OOM kill
-        is_failed = False
-        status = Result.Status.OK
-        if fuzzer_exit_code == 0:
-            info.append("Fuzzer exited with success")
-        elif fuzzer_exit_code == 137:
-            info.append("Fuzzer killed")
-        else:
-            info.append("Fuzzer exited with timeout")
-        info.append("\n")
-    elif _is_benign_memory_limit(
+    result = analyze_job_logs(
+        paths,
         server_died,
+        server_exit_code,
         fuzzer_exit_code,
-        _fuzzer_log_terminal_block_has_server_mle(fuzzer_log),
-    ):
-        # Server hit its memory cap on a fuzzed query but stayed alive; see
-        # _is_benign_memory_limit. Not a crash or a finding.
-        is_failed = False
-        status = Result.Status.OK
-        info.append("Server hit its memory limit (Code 241) but stayed alive")
-        info.append("\n")
-    elif fuzzer_exit_code == BUZZHOUSE_ORACLE_EXIT_CODE and (
-        oracle_error := _last_exception(
-            fuzzer_log, BUZZHOUSE_ORACLE_ERROR_CODE, "BUZZHOUSE_ORACLE"
-        )
-    ):
-        # A BuzzHouse oracle or the disallowed error code check caught the server misbehaving
-        name = oracle_error.splitlines()[0].removeprefix(
-            f"Code: {BUZZHOUSE_ORACLE_ERROR_CODE}. DB::Exception: "
-        )
-        name = name.removesuffix(" (BUZZHOUSE_ORACLE)").removesuffix(".")
-        finding = Result(
-            # The name is the CIDB test name, so drop ports, counts and metric values
-            name=re.sub(r"\d+", "N", name),
-            info=oracle_error,
-            status=Result.Status.FAIL,
-        )
-        info.append(f"BuzzHouse oracle failure: {oracle_error}")
-    elif fuzzer_exit_code == AST_FUZZER_ORACLE_EXIT_CODE and (
-        oracle_error := _oracle_mismatch_block(fuzzer_log)
-    ):
-        # The marker block (with the reproducer) tells this apart from other codes ending in 138
-        finding = Result(
-            name="AST fuzzer oracle mismatch",
-            info=oracle_error,
-            status=Result.Status.FAIL,
-        )
-        info.append("AST fuzzer oracle mismatch")
-    else:
-        status = Result.Status.ERROR
-        # The server was alive, but the fuzzer returned some error. This might
-        # be some client-side error detected by fuzzing, or a problem in the
-        # fuzzer itself. Don't grep the server log in this case, because we will
-        # find a message about normal server termination (Received signal 15),
-        # which is confusing.
-        info.append("Client failure (see logs)")
-        info.append("---\nFuzzer log (last 200 lines):")
-        info.extend(
-            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
-        )
-
-    results = [finding] if finding else []
-
-    # The OOM checks explain a dead server; a finding came from a live one
-    if is_failed and not finding:
-        if is_sanitized:
-            sanitizer_oom = Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
-            )
-            # Sanitizer shadow memory is invisible to the server's memory tracker,
-            # so the kernel OOM killer may SIGKILL the server before any limit
-            # fires. It may also kill the watchdog, losing the "terminated by
-            # signal 9" message in the server log. A SIGKILLed server (exit 137)
-            # with no sanitizer report is an OOM, not a bug.
-            has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
-            kernel_oom_kill = (
-                server_died and server_exit_code == 137 and not has_sanitizer_report
-            )
-            if sanitizer_oom or kernel_oom_kill:
-                print("Sanitizer OOM")
-                if sanitizer_oom:
-                    info.append("WARNING: Sanitizer OOM - test considered passed")
-                else:
-                    info.append(
-                        "WARNING: Server was killed by the kernel OOM killer "
-                        "(sanitizer build) - test considered passed"
-                    )
-                status = Result.Status.OK
-                is_failed = False
-        else:
-            # Check for OOM in dmesg for non-sanitized builds
-            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
-                # CIDB takes `test_name` from a sub-result's name, so an OOM kill
-                # needs a named one to stay greppable. The grep is negated: it
-                # exits non-zero exactly when an OOM line is present, and
-                # `with_info_on_failure` captures that line into `info`.
-                oom_result = Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' -e 'Memory cgroup out of memory: Killed process' -e 'oom-kill:constraint=CONSTRAINT_MEMCG' | tee /dev/stderr | grep -q .",
-                )
-                if not oom_result.is_ok():
-                    # ERROR, not FAIL: `Result.create_from` resolves an ERROR
-                    # sub-result to a job-level `error`, a `FAIL` one to `failure`.
-                    oom_result.set_status(Result.Status.ERROR)
-                    results.append(oom_result)
-                    info.append("ERROR: OOM in dmesg")
-                    status = Result.Status.ERROR
-            else:
-                print("WARNING: dmesg not enabled")
-
-    if is_failed and status != Result.Status.ERROR and not finding:
-        # died server - lets fetch failure from log
-        fuzzer_log_parser = FuzzerLogParser(
-            server_log=str(server_log),
-            stderr_log=str(stderr_log),
-            fuzzer_log=str(
-                WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log
-            ),
-        )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
-
-        if parsed_name:
-            results.append(
-                Result(
-                    name=parsed_name,
-                    info=parsed_info,
-                    status=Result.Status.FAIL,
-                    files=files,
-                )
-            )
-
-    result = Result.create_from(
-        results=extra_results + results,
-        status=status if not results else None,
-        info=info,
+        is_sanitized,
+        WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log,
+        extra_results,
     )
-
-    if is_failed:
-        # generate fatal log
-        Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
-        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
-
-    # Attach logs whenever the fuzzer did not finish cleanly. A clean finish is
-    # exit code 0; any non-zero exit (real failure, oracle mismatch, SIGTERM /
-    # SIGKILL from the FUZZ_TIME_LIMIT timeout wrapper) is informative enough
-    # that we want the artifacts uploaded — otherwise timeouts look like silent
-    # passes with no logs to diagnose them from.
-    if is_failed or fuzzer_exit_code != 0:
-        for file in paths:
-            if file.exists() and file.stat().st_size > 0:
-                result.set_files(file)
-    elif jemalloc_profiles.exists() and Shell.check(
-        f"rg -Fqa 'after total memory exceeded' {server_log}"
-    ):
-        # The fuzzer keeps going after a server-side MEMORY_LIMIT_EXCEEDED, so a run
-        # that hit the total limit can still finish cleanly; that flush is the reason
-        # the profiles are collected.
-        result.set_files(jemalloc_profiles)
 
     result.complete_job()
 

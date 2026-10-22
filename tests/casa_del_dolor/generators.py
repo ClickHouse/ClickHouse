@@ -1,5 +1,6 @@
 from abc import abstractmethod
 import json
+import math
 import os
 import pathlib
 import random
@@ -7,30 +8,46 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 from environment import set_environment_variables
-from integration.helpers.client import CommandRequest
-from integration.helpers.cluster import ClickHouseInstance
-from integration.helpers.config_cluster import (
+from properties import (
+    KEEPER_SESSION_EXPIRE_SLEEP_SECONDS,
+    SERVER_SETTLE_SLEEP_SECONDS,
+    SERVER_START_WAIT_SECONDS,
+    SERVER_STOP_WAIT_SECONDS,
+)
+from tests.integration.helpers.client import CommandRequest
+from tests.integration.helpers.cluster import ClickHouseInstance
+from tests.integration.helpers.config_cluster import (
     pg_pass,
     mysql_pass,
     mongo_pass,
 )
 
+# A restart of `node0` takes the load generator's connection down, so its reconnect budget
+# outlasts a whole restart (stop, binary swap, start), or it reports the deliberate downtime as
+# a lost server. A server that died for real is still reported at once: `dolor.py` notices the
+# missing process within a second and kills the generator itself.
+BUZZHOUSE_RECONNECT_SLEEP_SECONDS = 3
+# `Client::tryToReconnect` tries at once and sleeps only between attempts, hence the extra one.
+BUZZHOUSE_RECONNECT_ATTEMPTS = 1 + math.ceil(
+    (
+        SERVER_STOP_WAIT_SECONDS
+        + SERVER_SETTLE_SLEEP_SECONDS
+        + KEEPER_SESSION_EXPIRE_SLEEP_SECONDS
+        + SERVER_START_WAIT_SECONDS
+    )
+    / BUZZHOUSE_RECONNECT_SLEEP_SECONDS
+)
+
 
 class Generator:
-    def __init__(
-        self,
-        binary: pathlib.Path,
-        config: pathlib.Path,
-        tmpdir: pathlib.Path,
-        _suffix: Optional[str],
-    ):
-        self.binary: pathlib.Path = binary
-        self.config: pathlib.Path = config
-        if _suffix is not None:
-            self.temp = tempfile.NamedTemporaryFile(dir=tmpdir, suffix=_suffix)
+    # Display name used in log messages; lacasadeldolor_job.py greps for
+    # "<name> exited with code", so keep the two in sync.
+    name = "Load generator"
+
+    def __init__(self):
+        pass
 
     @abstractmethod
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
@@ -54,10 +71,11 @@ class Generator:
 
 
 class BuzzHouseGenerator(Generator):
+    name = "BuzzHouse"
+
     def __init__(self, args, cluster, catalog_server, server_settings):
-        super().__init__(
-            args.client_binary, args.client_config, args.tmp_files_dir, ".json"
-        )
+        super().__init__()
+        self.binary: pathlib.Path = args.client_binary
 
         if server_settings is None:
             root = ET.Element("clickhouse")
@@ -74,6 +92,12 @@ class BuzzHouseGenerator(Generator):
                 buzz_config = json.load(file1)
 
         buzz_config["seed"] = random.randint(1, 18446744073709551615)
+
+        # Outlast a deliberate restart of the server the generator is attached to
+        buzz_config["max_reconnection_attempts"] = BUZZHOUSE_RECONNECT_ATTEMPTS
+        buzz_config["time_to_sleep_between_reconnects"] = (
+            BUZZHOUSE_RECONNECT_SLEEP_SECONDS * 1000
+        )
 
         # Set paths
         buzz_config["client_file_path"] = (
@@ -169,34 +193,30 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
-        if (
-            args.with_spark
-            or args.with_glue
-            or args.with_hms
-            or args.with_rest
-            or args.with_unity
-            or args.with_kafka
-        ):
+        # Dolor stops the servers itself and requires a graceful shutdown. A failpoint left enabled
+        # can park a background task in a sleep, and shutdown waits on that task's mutex forever
+        buzz_config["enable_failpoints"] = False
+        if args.with_spark or args.with_kafka:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "client_hostname": catalog_server.host,
                 "port": catalog_server.port,
             }
-            if args.with_glue:
+            if args.with_spark and args.with_glue:
                 buzz_config["dolor"]["glue"] = {
                     "server_hostname": "glue",
                     "region": "us-east-1",
                     "port": 3000,
                     "warehouse": "warehouse-glue",
                 }
-            if args.with_hms:
+            if args.with_spark and args.with_hms:
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
                     "region": "us-east-1",
                     "port": 9083,
                     "warehouse": "warehouse-hms",
                 }
-            if args.with_rest:
+            if args.with_spark and args.with_rest:
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
                     "region": "us-east-1",
@@ -204,7 +224,7 @@ class BuzzHouseGenerator(Generator):
                     "path": "/v1",
                     "warehouse": "warehouse-rest",
                 }
-            if args.with_unity:
+            if args.with_spark and args.with_unity:
                 buzz_config["dolor"]["unity"] = {
                     "server_hostname": "host.docker.internal",
                     "port": 8085,
@@ -219,8 +239,15 @@ class BuzzHouseGenerator(Generator):
                     "password": "",
                 }
 
-        with open(self.temp.name, "w+") as file2:
-            file2.write(json.dumps(buzz_config))
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir,
+            mode="w",
+            prefix="buzzhouse_",
+            suffix=".json",
+            delete=False,
+        ) as temp_file:
+            self.temp_name = temp_file.name
+            json.dump(buzz_config, temp_file, indent=4)
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         return [
@@ -231,8 +258,8 @@ class BuzzHouseGenerator(Generator):
             "--port",
             "9000",
             "--max_memory_usage_in_client=1000000000",
-            f"--buzz-house-config={self.temp.name}",
+            f"--buzz-house-config={self.temp_name}",
         ]
 
     def validate_exit_code(self, exit_code: int) -> bool:
-        return exit_code in (0, 137, 143)
+        return exit_code in (-9, -15, -2, 0, 32, 130, 137, 143, 210)

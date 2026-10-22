@@ -1825,17 +1825,21 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-
     )
-    buzz_fuzzer_jobs = Job.Config(
-        name=JobNames.BUZZHOUSE,
+    lacasadeldolor_jobs = Job.Config(
+        name=JobNames.LACASADELDOLOR,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/buzzhouse_job.py",
+        command="python3 ./ci/jobs/lacasadeldolor_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/fuzzer",
-                "./ci/jobs/buzzhouse_job.py",
+                "./ci/docker/integration",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/lacasadeldolor_job.py",
+                "./ci/jobs/scripts/cidb_cluster.py",
+                "./ci/jobs/scripts/clickhouse_service.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                "./ci/jobs/scripts/integration_tests_configs.py",
                 "./ci/jobs/scripts/log_parser.py",
                 # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
                 "./ci/jobs/scripts/clickhouse_proc.py",
@@ -1843,21 +1847,30 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
-                # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/config.d/clusters.xml",
-                "./tests/config/config.d/core_dump.yaml",
-                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
-                "./tests/config/config.d/jemalloc_flush_profile.yaml",
-                "./tests/config/config.d/listen.xml",
-                "./tests/config/config.d/secure_ports.xml",
-                "./tests/config/config.d/ssl_certs.xml",
-                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
-                "./tests/config/server.crt",
-                "./tests/config/server.key",
-                "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/server_fuzzer/",
+                "./tests/casa_del_dolor/",
+                # The whole tree, as Keeper Stress does: listing only the imported modules
+                # misses the configs `cluster.py` reads through `write_embedded_config`.
+                "./tests/integration/helpers/",
+                # The service definitions `cluster.py` starts (Keeper, MinIO and whatever else `dolor.py` enables)
+                "./tests/integration/compose/",
+                # `dolor.py` mounts the TLS material out of `tests/config` as `main_configs`, and
+                # `cluster.py` copies these two out of `CLICKHOUSE_TESTS_BASE_CONFIG_DIR`.
+                "./tests/config/",
+                "./programs/server/config.xml",
+                "./programs/server/users.xml",
                 "./ci/docker/fuzzer",
             ],
         ),
+        # Same DinD containment contract as `common_integration_test_job_config`: Dolor's servers
+        # are nested containers too, so without `--cgroupns=private` and the `CI_DIND_*` budgets
+        # `docker_in_docker.sh` starts an uncontained daemon, `--memory` bounds only the harness,
+        # and a nested OOM spills onto the runner instead of being classified here.
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
+        # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
+        # this its containers, images and volumes outlive the run and the next job on the runner
+        # inherits them. Same hook the other integration-tests-runner jobs register.
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",

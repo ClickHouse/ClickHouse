@@ -1,7 +1,6 @@
 import argparse
 import atexit
 import logging
-import mmap
 import os
 import pathlib
 import random
@@ -12,10 +11,15 @@ import time
 import signal
 import sys
 
+# The sibling modules below are imported by bare name, which relies on Python putting this
+# script's own directory on `sys.path`. Praktika's runner exports `PYTHONSAFEPATH=1`, which
+# disables exactly that, so put it back for this entry point.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
+from tests.integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
     get_unique_free_ports,
     create_spark_http_server,
@@ -26,20 +30,25 @@ from sparkserver import (
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
 from environment import set_environment_variables
-from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from integration.helpers.postgres_utility import get_postgres_conn
-from integration.helpers.s3_tools import (
+from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from tests.integration.helpers.postgres_utility import get_postgres_conn
+from tests.integration.helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
     LocalDownloader,
     prepare_s3_bucket,
 )
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
+from tests.integration.helpers.config_cluster import minio_access_key, minio_secret_key
+from tests.casa_del_dolor.binary import detect_private_binary
 from generators import Generator, BuzzHouseGenerator
 from leaks import ElOracloDeLeaks
 from oracles import ElOraculoDeTablas
 from properties import (
+    KEEPER_SESSION_EXPIRE_SLEEP_SECONDS,
+    SERVER_SETTLE_SLEEP_SECONDS,
+    SERVER_START_WAIT_SECONDS,
+    SERVER_STOP_WAIT_SECONDS,
     modify_server_settings,
     modify_user_settings,
     modify_keeper_settings,
@@ -371,6 +380,17 @@ if len(args.replica_values) != len(args.shard_values):
         f"The length of replica values {len(args.replica_values)} is not the same as shard values {len(args.shard_values)}"
     )
 
+# Configs are generated once for whichever binary starts first, but restarts can switch to any of them
+private_binaries = {val: detect_private_binary(val) for val in args.server_binaries}
+if len(set(private_binaries.values())) > 1:
+    kinds = [
+        f"{k} ({'private' if v else 'public'})" for k, v in private_binaries.items()
+    ]
+    raise Exception(
+        f"Server binaries mix private and public builds: {', '.join(kinds)}"
+    )
+is_private_binary = next(iter(private_binaries.values()))
+
 logging.basicConfig(
     filename=args.log_path,
     filemode="w",
@@ -379,6 +399,91 @@ logging.basicConfig(
     force=True,
 )
 logger = logging.getLogger(__name__)
+
+# The watchdog logs this as `<Fatal>` whenever its child is SIGKILLed, which is exactly what
+# `stop_clickhouse(kill=True)` does on the restarts driven by `--kill-server-prob`. Expected
+# here, so the teardown check below skips it - `ClickHouseCluster.shutdown` skips the same
+# line (see `tests/integration/helpers/cluster.py`).
+EXPECTED_KILL_FATAL = "Child process was terminated by signal 9 (KILL)"
+
+# `grep_in_log` globs `<filename>*`, and `clickhouse-server.err.log` does not match
+# `clickhouse-server.log*`, so the default filename alone leaves the error log unscanned.
+SERVER_LOG_FILES = ("clickhouse-server.log", "clickhouse-server.err.log")
+
+
+def grep_server_logs(server, substring: str) -> list[str]:
+    """Grep both server log families. They are not interchangeable: only the main log
+    rotates on size as well as on every restart, so it purges the oldest history first and
+    can lose a fatal that the error log, holding the same `<count>` of files, still has.
+    """
+    lines = []
+    for filename in SERVER_LOG_FILES:
+        # `grep_in_log` globs `<filename>*`, and `zgrep` prefixes every hit with `<path>:` once
+        # that glob matches more than one file - so from the first rotation onwards, which here
+        # is every restart. Strip it against the path that was asked for: a record begins with
+        # its own timestamp, so cutting at the first colon would eat into `11:30:15` instead.
+        prefix = f"{server.logs_dir}/{filename}"
+        for line in server.grep_in_log(
+            substring, from_host=True, filename=filename
+        ).splitlines():
+            if line.startswith(prefix):
+                _, separator, rest = line[len(prefix) :].partition(":")
+                if separator:
+                    line = rest
+            lines.append(line)
+    return lines
+
+
+# A log record opens with `<date> <time> [ <tid> ] {<query-id>} <Level> <Logger>: `, and only
+# there does a level name belong to the record itself. Anywhere else it is message text.
+LOG_RECORD_RE = re.compile(
+    r"^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+ \[ *\d+ *\] (?:\{[^}]*\} )?"
+    r"<(?P<level>\w+)> (?P<message>.*)$"
+)
+
+# A record quotes the query it is about after one of these, so everything from the marker on
+# is the client's text rather than the server's. Same markers, and the same before-the-match
+# rule, as `FuzzerLogParser.QUERY_TEXT_MARKERS` in `ci/jobs/scripts/log_parser.py`.
+QUERY_TEXT_MARKERS = ("(in query:", "(query:")
+
+
+def server_log_records(server, substring: str):
+    """Yield `(level, message, line)` for the log records matching `substring`. A server
+    echoes the query it reports on, e.g. a fuzzed `SELECT '<Fatal>'`, so lines that are not a
+    record header are dropped and the quoted query is cut off the message."""
+    for line in grep_server_logs(server, substring):
+        record = LOG_RECORD_RE.match(line)
+        if record is None:
+            continue
+        message = record.group("message")
+        for marker in QUERY_TEXT_MARKERS:
+            message = message.split(marker, 1)[0]
+        yield record.group("level"), message, line
+
+
+# Attempts to stop Distributed sends before a shutdown, as the stress suite does.
+DISTRIBUTED_SENDS_STOP_ATTEMPTS = 30
+DISTRIBUTED_SENDS_STOP_TIMEOUT = 10
+
+
+def stop_distributed_sends(server) -> None:
+    """Ask a server to stop Distributed sends before shutting it down, as `stop_server` in
+    `tests/docker_scripts/stress_tests.lib` does: a send in flight can hold the shutdown past
+    its window and get the server force killed. Used by restarts and the final teardown.
+    Refs: https://github.com/ClickHouse/ClickHouse/issues/72557"""
+    last_error = None
+    for _ in range(DISTRIBUTED_SENDS_STOP_ATTEMPTS):
+        try:
+            server.query(
+                "SYSTEM STOP DISTRIBUTED SENDS", timeout=DISTRIBUTED_SENDS_STOP_TIMEOUT
+            )
+            return
+        except Exception as ex:
+            last_error = ex
+            if server.get_process_pid("clickhouse") is None:
+                return  # already gone, nothing left to ask
+    logger.warning(f"Could not stop Distributed sends on {server.name}: {last_error}")
+
 
 # Set seed first
 seed = args.seed
@@ -418,13 +523,6 @@ for val in args.server_binaries:
     if val != first_server:
         sorted_binaries.append(val)
 
-# Find if private binary is being used
-is_private_binary = False
-with open(first_server, "rb") as f:
-    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-    is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
-    mm.close()
-
 logger.info(f"Private binary {'' if is_private_binary else 'not '}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
 
@@ -463,12 +561,12 @@ test_env_variables = set_environment_variables(logger, args, "cluster")
 server_settings = args.server_config
 user_settings = args.user_config
 modified_server_settings = modified_user_settings = False
-generated_clusters = 0
+generated_clusters: list[str] = []
 if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
         modify_server_settings(args, cluster, is_private_binary, server_settings)
     )
-    if generated_clusters > 0:
+    if generated_clusters:
         modified_user_settings, user_settings = modify_user_settings(
             args, user_settings, generated_clusters
         )
@@ -516,7 +614,9 @@ for i in range(0, len(args.replica_values)):
 server_versions = {}
 for server in servers:
     server_versions[server.name] = first_server
-cluster.start(300)
+start_timeout = 300
+os.environ["KEEPER_CONNECT_TIMEOUT_SEC"] = str(start_timeout)
+cluster.start(start_timeout)
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
@@ -555,7 +655,7 @@ if args.with_postgresql:
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
-generator: Generator = Generator(pathlib.Path(), pathlib.Path(), pathlib.Path(), None)
+generator: Generator = Generator()
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Starting load generator")
@@ -570,35 +670,14 @@ def dolor_cleanup():
         if client.process.poll() is None:
             client.process.kill()
             client.process.wait()
-        logger.info(f"Load generator exited with code: {client.process.returncode}")
-
         try:
             cluster.shutdown(kill=True, ignore_fatal=False)
         except:
             pass
         close_spark_http_server(catalog_server)
-        if modified_server_settings:
-            try:
-                os.unlink(server_settings)
-            except FileNotFoundError:
-                pass
-        if modified_user_settings:
-            try:
-                os.unlink(user_settings)
-            except FileNotFoundError:
-                pass
-        try:
-            os.unlink(generator.temp.name)
-        except FileNotFoundError:
-            pass
         if args.with_minio:
             try:
                 os.unlink(credentials_file.name)
-            except FileNotFoundError:
-                pass
-        for entry in keeper_configs:
-            try:
-                os.unlink(entry)
             except FileNotFoundError:
                 pass
         everything_cleaned = True
@@ -655,24 +734,6 @@ test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
 reached_limit = False
 
 
-def explain_returncode(rc: int) -> str:
-    if rc == 0:
-        return "successfully (0)."
-    if rc < 0:
-        sig = -rc
-        try:
-            name = signal.Signals(sig).name
-        except ValueError:
-            name = f"SIG{sig}"
-        try:
-            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
-        except Exception:
-            reason = ""
-        extra = f" - {reason}" if reason else ""
-        return f"terminated by signal {sig} ({name}){extra}."
-    return f"with status {rc}."
-
-
 while all_running and (not reached_limit):
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
@@ -683,18 +744,14 @@ while all_running and (not reached_limit):
 
     while all_running and (not reached_limit) and start < finish:
         if client.process.poll() is not None:
-            logger.info(
-                f"Load generator finished {explain_returncode(client.process.returncode)}"
-            )
+            # Not "exited with code": `lacasadeldolor_job.py` parses that line from the teardown.
+            logger.info(f"{generator.name} stopped during the workload")
             all_running = False
-            good_exit = good_exit and generator.validate_exit_code(
-                client.process.returncode
-            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
-                logger.info(f"The server {server.name} is not running")
-                all_running = good_exit = False
+                logger.info(f"The server {server.name} stopped during the workload")
+                all_running = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")
@@ -731,12 +788,51 @@ while all_running and (not reached_limit):
         )
 
         try:
-            next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+            if not kill_server:
+                # Only for a graceful stop: a SIGKILL never waits on a send anyway.
+                stop_distributed_sends(next_pick)
+            stopped = next_pick.stop_clickhouse(
+                stop_wait_sec=SERVER_STOP_WAIT_SECONDS, kill=kill_server
+            )
+            if stopped is False:
+                # `False` (not an exception) means it was already gone: `start_clickhouse`
+                # below would then wipe `clickhouse_exec_id`/`clickhouse_last_exit_code`
+                # before teardown can classify the death. Not falsy - the escalation path
+                # returns `None` too, so it is read off the flag below instead. Not a failure by
+                # itself: teardown judges the death by its exit code, which an OOM kill passes.
+                logger.error(
+                    f"The server {next_pick.name} was already gone before the scheduled restart could stop it"
+                )
+                all_running = False
+            if next_pick.clickhouse_forced_stop:
+                # Escalation only: an intentional `kill=True` never sets this, so it marks a
+                # graceful stop that hung. Log the message the report keys on before
+                # `start_clickhouse` clears the flag, or the hang is lost and the run can
+                # still finish green once the replacement server comes up.
+                logger.error(
+                    f"Server {next_pick.name} did not shut down gracefully and had to be "
+                    "force killed during a scheduled restart"
+                )
+                good_exit = False
+            if next_pick.get_process_pid("clickhouse") is not None:
+                # `stop_clickhouse` swallowed an error and returned without force killing.
+                # Going on would reach `start_clickhouse`, which takes a live pid for
+                # "already running", so the restart would silently never happen.
+                logger.error(
+                    f"Server {next_pick.name} is still running after a stop attempt "
+                    "during a scheduled restart"
+                )
+                good_exit = False
+                all_running = False
         except Exception as ex:
-            logger.error(f"Failed to stop ClickHouse: {ex}")
-            logger.info(f"The server {next_pick.name} is not running")
-            all_running = good_exit = False
-        time.sleep(1)
+            # The server may have stopped cleanly before the exception, so teardown would pass it.
+            logger.error(
+                f"Server {next_pick.name} failed to stop during a scheduled restart: {ex}"
+            )
+            logger.info(f"Ending the run after the failed restart of {next_pick.name}")
+            good_exit = False
+            all_running = False
+        time.sleep(SERVER_SETTLE_SLEEP_SECONDS)
         # Replace server binary, using a new temporary symlink
         if (
             all_running
@@ -763,13 +859,18 @@ while all_running and (not reached_limit):
             )
             server_versions[next_pick.name] = next_server
         if all_running:
-            time.sleep(3)  # Let the keeper session expire
+            time.sleep(KEEPER_SESSION_EXPIRE_SLEEP_SECONDS)
             try:
-                next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
+                next_pick.start_clickhouse(
+                    start_wait_sec=SERVER_START_WAIT_SECONDS, retry_start=False
+                )
             except Exception as ex:
-                logger.error(f"Failed to start ClickHouse: {ex}")
-                logger.info(f"The server {next_pick.name} is not running")
-                all_running = good_exit = False
+                logger.error(
+                    f"Server {next_pick.name} failed to start during a scheduled restart: {ex}"
+                )
+                logger.info(f"Ending the run after the failed restart of {next_pick.name}")
+                good_exit = False
+                all_running = False
             if all_running and args.with_leak_detection and next_pick.name == "node0":
                 # Has to reset leak detector
                 leak_detector.reset_and_capture_baseline(cluster)
@@ -805,5 +906,85 @@ while all_running and (not reached_limit):
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
+
+
+# The generator's own `time_to_run` and `--timeout` are the same budget, so either clock can
+# win: a self-exit with 0 is a normal end of run. Any other code means it died, and
+# `validate_exit_code` cannot judge that - it accepts the codes a killed generator reports.
+killed_during_cleanup = client.process.poll() is None
+if killed_during_cleanup:
+    client.process.kill()
+    client.process.wait()
+logger.info(f"{generator.name} exited with code: {client.process.returncode}")
+if killed_during_cleanup:
+    good_exit = good_exit and generator.validate_exit_code(client.process.returncode)
+elif client.process.returncode != 0:
+    logger.error(
+        f"{generator.name} exited on its own with code {client.process.returncode} before the run finished"
+    )
+    good_exit = False
+
+for server in servers:
+    if server.get_process_pid("clickhouse") is None:
+        logger.info(f"The server {server.name} is not running")
+    else:
+        stop_distributed_sends(server)
+        server.stop_clickhouse(stop_wait_sec=SERVER_STOP_WAIT_SECONDS, kill=False)
+    if server.get_process_pid("clickhouse") is not None:
+        # `stop_clickhouse` swallowed something and never reached its own force kill.
+        logger.error(f"Instance {server.name} is still running after a stop attempt")
+        server.dump_backtrace("still running after stop")
+        good_exit = False
+    else:
+        # A server that went away on its own still has its exec to read the code from.
+        server.capture_clickhouse_exit()
+        exit_code = server.clickhouse_last_exit_code
+        if exit_code is None:
+            logger.error(f"Exit code unaccounted for: none recorded for {server.name}")
+            good_exit = False
+        else:
+            logger.info(f"The server {server.name} exited with code: {exit_code}")
+            # 137 is SIGKILL, 143 is SIGTERM
+            good_exit = good_exit and exit_code in (-9, -15, 0, 137, 143)
+    # A SIGKILL exit code is accepted above because the run kills servers on purpose,
+    # so it cannot distinguish a deliberate kill from a shutdown that hung. Only the
+    # escalation flag can, and a final shutdown that had to be forced is a failure.
+    if server.clickhouse_forced_stop:
+        logger.error(
+            f"Server {server.name} did not shut down gracefully and had to be force killed"
+        )
+        good_exit = False
+    # The server reports one at `<Error>`, or at `<Fatal>` when it took the process down.
+    # Only its own message counts: a fuzzed literal reaches the log through the query text
+    # every record quotes, and would otherwise fail a run that never had an exception.
+    if any(
+        level in ("Error", "Fatal") and "Logical error:" in message
+        for level, message, _ in server_log_records(server, "Logical error:")
+    ):
+        logger.error(f"Logical error in instance '{server.name}'")
+        good_exit = False
+    # Likewise a level is only a level in the record header, never in a message body.
+    # `grep_in_log` reads the rotated logs too, so the expected kill fatals from every
+    # earlier forced restart are still in scope here. Filter them line by line rather than
+    # dropping the whole match: a genuine fatal logged next to one must still fail the run.
+    unexpected_fatals = [
+        line
+        for level, message, line in server_log_records(server, "<Fatal>")
+        if level == "Fatal" and EXPECTED_KILL_FATAL not in message
+    ]
+    if unexpected_fatals:
+        logger.error(
+            f"Crash in instance '{server.name}':\n" + "\n".join(unexpected_fatals)
+        )
+        good_exit = False
+    # `Sanitizer:` alone misses a bare UBSan report, which names no sanitizer on the line.
+    # Plain substrings, not the parser's `RUNTIME_ERROR_PATTERN`: `grep_in_log` hands these
+    # to `zgrep`, whose default BRE would read the `|` alternation as a literal character.
+    for needle in ("Sanitizer:", "runtime error: "):
+        if server.grep_in_log(needle, filename="stderr.log", from_host=True):
+            logger.error(
+                f"Sanitizer error in instance '{server.name}': found '{needle}'"
+            )
+            good_exit = False
 
 sys.exit(0 if good_exit else 1)
