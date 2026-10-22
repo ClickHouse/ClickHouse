@@ -284,17 +284,51 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// The row-level filter is not applied, see the comment for `ReadFromFormatInfo::prewhere_info`.
     new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, /*row_level_filter=*/ nullptr, prewhere_info);
 
-    /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
-    /// don't need to replace subcolumns with their nested columns etc.
-    new_info.source_header = new_info.format_header;
-
+    NameSet format_columns_used;
     NamesAndTypesList columns_added_after_reading;
     for (const auto & column : info.requested_columns)
     {
-        if (!info.format_header.has(column.getNameInStorage()) && !new_info.format_header.has(column.name))
+        if (new_info.format_header.has(column.name))
+        {
+            new_info.requested_columns.push_back(column);
+            format_columns_used.insert(column.name);
+        }
+        else if (column.isSubcolumn() && new_info.format_header.has(column.getNameInStorage()))
+        {
+            new_info.requested_columns.push_back(column);
+            format_columns_used.insert(column.getNameInStorage());
+        }
+        else if (!info.format_header.has(column.getNameInStorage()))
+        {
             columns_added_after_reading.push_back(column);
+        }
     }
+
+    for (const auto & col : new_info.format_header)
+    {
+        if (info.format_header.has(col.name))
+        {
+            /// Column read from file.
+            new_info.columns_description.add(info.columns_description.get(col.name));
+        }
+        else
+        {
+            /// Column produced by prewhere expression.
+            new_info.columns_description.add(ColumnDescription(col.name, col.type));
+        }
+
+        if (!format_columns_used.contains(col.name))
+            new_info.requested_columns.emplace_back(col.name, col.type);
+    }
+
     for (const auto & column : columns_added_after_reading)
+    {
+        new_info.requested_columns.push_back(column);
+        if (info.columns_description.has(column.name))
+            new_info.columns_description.add(info.columns_description.get(column.name));
+    }
+
+    for (const auto & column : new_info.requested_columns)
         new_info.source_header.insert({column.type->createColumn(), column.type, column.name});
 
     /// Hive partition columns come from the file path, not the data file, so prewhere column
@@ -308,28 +342,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
-
-    for (const auto & col : new_info.format_header)
-    {
-        new_info.requested_columns.emplace_back(col.name, col.type);
-        if (info.format_header.has(col.name))
-        {
-            /// Column read from file.
-            new_info.columns_description.add(info.columns_description.get(col.name));
-        }
-        else
-        {
-            /// Column produced by prewhere expression.
-            new_info.columns_description.add(ColumnDescription(col.name, col.type));
-        }
-    }
-
-    for (const auto & column : columns_added_after_reading)
-    {
-        new_info.requested_columns.push_back(column);
-        if (info.columns_description.has(column.name))
-            new_info.columns_description.add(info.columns_description.get(column.name));
-    }
 
     return new_info;
 }

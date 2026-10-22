@@ -1,0 +1,14 @@
+parquet prewhere size0	3
+parquet prewhere null	1
+parquet prewhere column and size0	[0,1,2,3]	4
+parquet prewhere tuple element	12	2
+parquet where size0	3	1
+parquet moved to prewhere	1
+delta prewhere size0	3
+delta prewhere null	1
+delta where size0	3	1
+delta moved to prewhere	1
+cdf where	10	0	9
+cdf where with output	10	u10@x	insert
+cdf where with output	11	u11@x	insert
+cdf not moved to prewhere	0

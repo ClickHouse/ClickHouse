@@ -1865,6 +1865,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 if (schema_transform->tryFindInOutputs(column.name))
                     needed_names.push_back(column.name);
+                else if (column.isSubcolumn() && schema_transform->tryFindInOutputs(column.getNameInStorage()))
+                    needed_names.push_back(column.getNameInStorage());
             }
             auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
             {

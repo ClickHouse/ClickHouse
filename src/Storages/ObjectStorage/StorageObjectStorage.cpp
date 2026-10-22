@@ -466,12 +466,21 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 
 bool StorageObjectStorage::supportsPrewhere() const
 {
-    return supports_prewhere;
+    if (!supports_prewhere)
+        return false;
+
+    if (configuration->isDataLakeConfiguration())
+    {
+        auto context = CurrentThread::tryGetQueryContext();
+        if (context && context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1)
+            return false;
+    }
+    return true;
 }
 
 bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 {
-    return supports_prewhere;
+    return supportsPrewhere();
 }
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
