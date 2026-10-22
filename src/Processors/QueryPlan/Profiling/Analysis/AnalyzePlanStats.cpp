@@ -4,8 +4,10 @@
 #include <unordered_map>
 #include <variant>
 #include <Processors/Port.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -13,6 +15,7 @@
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -229,6 +232,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(
     const auto & processors = pipeline.getProcessors();
 
     collectIOStats(processors);
+    collectSpillStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(step_profiler, processors);
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts();
@@ -289,6 +293,40 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
             }
         }
     }
+}
+
+void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
+{
+    /// By id rather than by step: the processors outlive the plan, and so does this.
+    const auto creates_a_set = [this](const String & step_id)
+    {
+        const auto it = std::ranges::find(plan_snapshot.shape, step_id, &PlanShapeNode::id);
+        return it != plan_snapshot.shape.end() && it->is_creating_set;
+    };
+
+    std::unordered_map<const TemporaryDataOnDiskScope *, String> steps_by_scope;
+    for (const auto & processor : processors)
+    {
+        const String & step_id = processor->getStepUniqID();
+        if (step_id.empty())
+            continue;
+
+        for (const auto * spillable : processor->getSpillables())
+        {
+            const auto * scope = spillable->getSpillScope();
+            if (!scope)
+                continue;
+
+            /// A set's builder and consumers share its scope. Attribute its lifetime total to
+            /// `CreatingSet` when present; sets built during index analysis have only consumers here.
+            auto [it, inserted] = steps_by_scope.try_emplace(scope, step_id);
+            if (!inserted && creates_a_set(step_id))
+                it->second = step_id;
+        }
+    }
+
+    for (const auto & [scope, step_id] : steps_by_scope)
+        spilled_bytes_by_step[step_id] += scope->getSpilledBytes();
 }
 
 AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStats(const StepProfiler & step_profiler, const Processors & processors)
@@ -431,6 +469,14 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const String & step_id) const
             step_processors = processors_it->second;
 
         raw_report = analyzer.reporter(step_processors);
+    }
+
+    if (const auto it = spilled_bytes_by_step.find(step_id); it != spilled_bytes_by_step.end() && it->second)
+    {
+        auto * spill_group = findGroup(raw_report, MetricGroupKey::Spill);
+        if (!spill_group)
+            spill_group = &raw_report.emplace_back(MetricGroupKey::Spill, MetricList{});
+        spill_group->metrics.emplace_back(MetricKey::Spilled, it->second);
     }
 
     auto context_for_step = makeContext(step_id, analyzer);

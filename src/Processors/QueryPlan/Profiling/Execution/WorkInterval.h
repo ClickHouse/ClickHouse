@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -17,8 +17,8 @@ struct WorkInterval
     String step_id;
 };
 
-using WorkIntervals = std::vector<WorkInterval>;
+using WorkIntervals = VectorWithMemoryTracking<WorkInterval>;
 
-using WorkIntervalsPerThread = std::vector<WorkIntervals>;
+using WorkIntervalsPerThread = VectorWithMemoryTracking<WorkIntervals>;
 
 }

@@ -1,0 +1,274 @@
+---
+slug: /cloud/managed-postgres/guides/drizzle
+sidebarTitle: 'Drizzle ORM'
+title: 'ClickHouse Managed Postgres で Drizzle ORM を使用する'
+description: 'Drizzle ORM と node-postgres を使用して TypeScript アプリを ClickHouse Managed Postgres に接続し、drizzle-kit で移行を実行したうえで、検証済みの TLS 接続でクエリを実行します'
+keywords: ['managed postgres', 'drizzle', 'drizzle orm', 'drizzle-kit', 'typescript', 'node.js', 'node-postgres', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
+
+[Drizzle ORM](https://orm.drizzle.team/) は SQL ライクなクエリビルダーを備えた TypeScript 製の ORM で、`drizzle-kit` は移行の生成と実行を行うための付属 CLI です。このガイドでは、TypeScript で `todos` テーブルを定義し、`drizzle-kit` の移行でテーブルを作成したうえで、小さな Node.js HTTP サーバーから作成・読み取り・更新・削除 (CRUD) のクエリを実行します。すべての接続で、証明書を完全に検証する TLS を使用します。
+
+## 前提条件 {#prerequisites}
+
+* [Node.js](https://nodejs.org/) 20 以降
+* ClickHouse Cloud アカウント
+* データベース作成用の [`psql`](https://www.postgresql.org/download/)。`CREATE DATABASE` ステートメントは [SQL コンソール](/ja/integrations/connectors/sql-clients/sql-console) で実行することもできます。
+
+## ClickHouse Managed Postgres サービスを作成する {#create-service}
+
+ClickHouse Cloud コンソールで **New service** をクリックし、**Postgres** を選択します。インスタンスは数分で利用可能になります。詳しい手順については、[クイックスタート](/ja/products/managed-postgres/quickstart)を参照してください。
+
+## 接続情報を取得する {#connection-details}
+
+サービスの左サイドバーで **Connect** をクリックします。表示されるモーダルには、ユーザー名、パスワード、サーバー、ポートが表示されるほか、**Directly** / **via PgBouncer** のトグルがあります。
+
+このガイドでは、2 つの接続文字列を使用します。
+
+* **Direct(ポート `5432`)**: `drizzle-kit` で使用します。移行では DDL を実行するため長時間かかる場合があり、`SET lock_timeout` などのセッション状態に依存することもあります。そのため、Postgres に直接接続する必要があります。
+* **PgBouncer(ポート `6432`)**: アプリケーションで使用します。同梱の [PgBouncer](/ja/products/managed-postgres/connection#pgbouncer) はトランザクションプーリングモードで動作するため、サーバーレス関数を含む多数のアプリインスタンスで少数の Postgres 接続を共有できます。
+
+<Tip>
+  長時間稼働する Node.js サーバーを 1 つだけ実行する場合は、`node-postgres` が独自の接続プールを保持するため、アプリの接続先を直接接続にしてもかまいません。多数のプロセスにスケールアウトする場合や、サーバーレスプラットフォーム上で実行する場合は、PgBouncer 接続を使用してください。
+</Tip>
+
+**Directly** を選択した状態で、**Use SSL** をオンにします。すると、**url** タブの接続 URL の末尾が `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem` になり、ポートは `5432` になります。**via PgBouncer** を選択すると、プール接続の接続情報が表示されます。この場合、ポートは `6432` に変わり、URL には常に `sslmode=verify-full` が含まれます。
+
+モーダルで **Download CA certificate** をクリックします。**Settings → CA Certificate** からダウンロードすることもできます。この証明書はインスタンスごとに固有のものであるため、ドライバーはこれを使って接続先が自分のサーバーであることを検証できます。
+
+## プロジェクトのセットアップ {#project-setup}
+
+プロジェクトを作成し、Drizzle ORM、[`node-postgres`](https://node-postgres.com/) ドライバー (`pg`) 、および `drizzle-kit` をインストールします。
+
+```bash
+mkdir drizzle-managed-postgres && cd drizzle-managed-postgres
+npm init -y
+npm pkg set type=module
+npm install drizzle-orm pg dotenv
+npm install -D drizzle-kit tsx @types/pg
+```
+
+<Tip>
+  **既存のアプリケーションに追加する場合**
+
+  `mkdir`、`npm init`、`npm pkg set type=module` の各コマンドは不要です。プロジェクト内で `npm install drizzle-orm pg dotenv` と `npm install -D drizzle-kit tsx @types/pg` を実行してから、[接続を設定する](#configure-connection) に進んでください。
+</Tip>
+
+## 接続を構成する {#configure-connection}
+
+ダウンロードした CA 証明書をプロジェクトディレクトリに移動し、ファイル名を `ca-certificate.pem` にリネームします。
+
+アプリ用のデータベースを作成します。`<PASSWORD>` とホストは、**Connect** モーダルに表示される値に置き換えてください。
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_drizzle;"
+```
+
+```text
+CREATE DATABASE
+```
+
+両方の接続文字列を、プロジェクトルートの `.env` ファイル (既存の `.env` がある場合はそのファイル) に追加します。2 つの接続文字列はポートが異なるだけで、どちらも `guide_drizzle` データベースを参照します。
+
+```bash title=".env"
+# Runtime queries go through PgBouncer (port 6432)
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_drizzle?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+# drizzle-kit migrations connect directly to Postgres (port 5432)
+DIRECT_DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_drizzle?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+`node-postgres` は URL から `sslmode=verify-full` と `sslrootcert` を読み取ります。CA ファイルを読み込み、証明書チェーンとホスト名の両方を検証するため、TLS 用のコードを別途記述する必要はありません。`sslrootcert` のパスは、コマンドを実行するディレクトリを基準とした相対パスとして解決されます。`.env` はバージョン管理の対象に含めないでください。
+
+<Note>
+  CA が見つからない、または正しくない場合、接続は `unable to verify the first certificate` というエラーで失敗します。ホスト名が証明書と一致しない場合は、`ERR_TLS_CERT_ALTNAME_INVALID` で失敗します。パスワードに `@`、`/`、`#` などの特殊文字が含まれる場合は、URL エンコードしてください。
+</Note>
+
+## スキーマを定義する {#schema}
+
+`src/db/schema.ts` を作成します。
+
+```ts title="src/db/schema.ts"
+import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+export const todos = pgTable("todos", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  title: text().notNull(),
+  done: boolean().notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+```
+
+プロジェクトのルートに `drizzle.config.ts` を作成します。このファイルで、`drizzle-kit` が参照するスキーマと直接接続を指定します：
+
+```ts title="drizzle.config.ts"
+import "dotenv/config";
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    // Migrations use the direct connection (port 5432)
+    url: process.env.DIRECT_DATABASE_URL!,
+  },
+});
+```
+
+## 移行を実行する {#migrations}
+
+スキーマから SQL の移行ファイルを生成します。
+
+```bash
+npx drizzle-kit generate --name init
+```
+
+```text
+1 tables
+todos 4 columns 0 indexes 0 fks
+
+[✓] Your SQL migration file ➜ drizzle/0000_init.sql 🚀
+```
+
+生成された `drizzle/0000_init.sql` には `CREATE TABLE` ステートメントが含まれています。内容を確認し、`drizzle` フォルダをコードと一緒にコミットしてください。その後、次のコマンドで適用します。
+
+```bash
+npx drizzle-kit migrate
+```
+
+```text
+Using 'pg' driver for database querying
+[✓] migrations applied successfully!
+```
+
+`drizzle-kit migrate` は、適用済みの移行を `drizzle.__drizzle_migrations` テーブルに記録し、以降の実行では未適用の移行のみを実行します。`schema.ts` を変更するたびに、`generate` を実行してから再度 `migrate` を実行してください。
+
+<Tip>
+  `drizzle-kit migrate` は、接続できない場合 (たとえば `sslrootcert` のパスやパスワードが誤っている場合) 、エラーメッセージを出力せずにステータス `1` で終了します。その場合は、まず `psql` で `DIRECT_DATABASE_URL` に接続できるか確認してください。
+</Tip>
+
+`drizzle-kit push` は、移行ファイルを使わずにスキーマ変更を直接適用します。プロトタイピングには便利ですが、本番環境では `generate` と `migrate` を使用してください。レビュー可能な SQL ファイルと変更履歴が残ります。
+
+## データベースにクエリを実行する {#query}
+
+`src/db/index.ts` を作成します。このファイルでは、PgBouncer 経由の接続を使用し、`node-postgres` の pool 上に Drizzle クライアントを作成します。
+
+```ts title="src/db/index.ts"
+import "dotenv/config";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+// The app uses the PgBouncer connection (port 6432)
+export const db = drizzle(process.env.DATABASE_URL!);
+```
+
+ルートごとに Drizzle のクエリを 1 つ実行する小さな HTTP サーバー、`src/server.ts` を作成します。既存のアプリケーションの場合は、代わりに独自のルートハンドラーから同じ `db` クエリを呼び出すこともできます。
+
+```ts title="src/server.ts"
+import { createServer } from "node:http";
+import { desc, eq, not } from "drizzle-orm";
+import { db } from "./db";
+import { todos } from "./db/schema";
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const id = Number(url.pathname.split("/")[2]);
+  let body: unknown;
+
+  try {
+    if (req.method === "GET" && url.pathname === "/todos") {
+      // Read
+      body = await db.select().from(todos).orderBy(desc(todos.id));
+    } else if (req.method === "POST" && url.pathname === "/todos") {
+      // Create
+      const title = url.searchParams.get("title") ?? "Untitled";
+      [body] = await db.insert(todos).values({ title }).returning();
+    } else if (req.method === "PATCH" && id) {
+      // Update: toggle the done flag
+      [body] = await db
+        .update(todos)
+        .set({ done: not(todos.done) })
+        .where(eq(todos.id, id))
+        .returning();
+    } else if (req.method === "DELETE" && id) {
+      // Delete
+      [body] = await db.delete(todos).where(eq(todos.id, id)).returning();
+    } else {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body, null, 2) + "\n");
+  } catch (err) {
+    console.error(err);
+    res.writeHead(500).end("Database error\n");
+  }
+});
+
+server.listen(3101, () => console.log("Listening on http://localhost:3101/todos"));
+```
+
+<Note>
+  PgBouncer を使用する場合でも、ドライバー側の設定は不要です。Drizzle のクエリはデフォルトで名前なしステートメントを使用します。また、同梱の PgBouncer はトランザクションプーリングモードでも、Drizzle の `.prepare` で作成するような名前付きプリペアドステートメントをサポートしています。ただし、`LISTEN` やセッションアドバイザリロックなどのセッションレベルの機能は、PgBouncer 経由では使用できません。詳しくは[よくある質問](/ja/products/managed-postgres/faq#prepared-statement-errors)を参照してください。
+</Note>
+
+## 実行と検証 {#verify}
+
+サーバーを起動します：
+
+```bash
+npx tsx src/server.ts
+```
+
+```text
+Listening on http://localhost:3101/todos
+```
+
+別の端末で、todoを2つ作成し、1つ目を完了にしてから2つ目を削除します。
+
+```bash
+curl -X POST "http://localhost:3101/todos?title=Try%20Drizzle%20ORM"
+curl -X POST "http://localhost:3101/todos?title=Write%20a%20migration"
+curl -X PATCH http://localhost:3101/todos/1
+curl -X DELETE http://localhost:3101/todos/2
+```
+
+`PATCH` リクエストを実行すると、更新された行が返されます：
+
+```json
+{
+  "id": 1,
+  "title": "Try Drizzle ORM",
+  "done": true,
+  "createdAt": "2026-09-30T16:45:14.610Z"
+}
+```
+
+ブラウザで `http://localhost:3101/todos` を開くと、残りの todo の一覧が表示されます。レスポンスは次のようになります。
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try Drizzle ORM",
+    "done": true,
+    "createdAt": "2026-09-30T16:45:14.610Z"
+  }
+]
+```
+
+コンソールでデータを確認するには、サービスの左サイドバーで **SQL コンソール** を開き、`guide_drizzle`、`public` の順に展開して、`todos` テーブルをクリックします。`drizzle` スキーマには移行履歴テーブルが格納されています。`todos` テーブルには、残った行が 1 件表示されます。
+
+| id | title           | done | created&#95;at                |
+| -- | --------------- | ---- | ----------------------------- |
+| 1  | Try Drizzle ORM | true | 2026-09-30 16:45:14.610099+00 |
+
+## 次のステップ {#next-steps}
+
+* [接続](/ja/products/managed-postgres/connection): 接続文字列、PgBouncer、TLS
+* [設定](/ja/products/managed-postgres/settings): `max_connections` などの Postgres および PgBouncer のパラメータ
+* [読み取りレプリカ](/ja/products/managed-postgres/read-replicas): Drizzle の [`withReplicas`](https://orm.drizzle.team/docs/read-replicas) による読み取り処理のスケーリング
+* [セキュリティ](/ja/products/managed-postgres/security): IP Access List とプライベートネットワーク接続

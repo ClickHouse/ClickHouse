@@ -156,7 +156,7 @@ public:
     virtual bool supportsFullyQualifiedPaths() const { return false; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
@@ -311,6 +311,13 @@ public:
         return nullptr;
     }
 
+    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/)
+    {
+        return {};
+    }
+
+    virtual std::string getMetadataLocationURI() const;
+
     virtual bool optimize(
         ObjectStoragePtr /*object_storage*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -385,7 +392,12 @@ public:
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
+    /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
+
+    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
+    /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
+    bool is_replayed_definition = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not

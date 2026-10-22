@@ -9,8 +9,8 @@ SET optimize_trivial_group_by_limit_query = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- The shard-side heap only exists when each node plans the query text itself;
--- with serialized plans the initiator's plan is shipped instead and top-K is
--- (deliberately) not serialized.  Pin the text path, which is what this test covers.
+-- with serialized plans the shipped plan is a separate Planner product that EXPLAIN
+-- does not render.  Pin the text path, which is what this test covers.
 SET serialize_query_plan = 0;
 -- The partial pushdown is derived in the analyzer's Planner
 -- (`applyTopKPushdownToPartialAggregation`); the old analyzer plans through a
