@@ -86,6 +86,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -94,6 +95,7 @@
 #include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -6045,6 +6047,92 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         bool is_initial_alter = true;
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
             is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+            is_initial_alter = false;
+#endif
+
+        /// A definition the ALTER changes may not have an alias. One that an older server stored is kept while the
+        /// definition stays as it was, up to a column rename.
+        if (is_initial_alter)
+        {
+            std::vector<RenameColumnData> renames;
+            for (const auto & command : commands)
+                if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
+                    renames.push_back({command.column_name, command.rename_to});
+
+            auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
+            {
+                if (!new_ast)
+                    return;
+                if (old_ast)
+                {
+                    ASTPtr renamed = old_ast->clone();
+                    for (auto & rename : renames)
+                        RenameColumnVisitor(rename).visit(renamed);
+                    if (renamed->getTreeHash(/*ignore_aliases=*/ false) == new_ast->getTreeHash(/*ignore_aliases=*/ false))
+                        return;
+                }
+                KeyDescription::checkNoAlias(new_ast.get(), clause);
+            };
+            check(old_metadata.sorting_key.definition_ast, new_metadata.sorting_key.definition_ast, "ORDER BY");
+            check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
+            check(old_metadata.table_ttl.definition_ast, new_metadata.table_ttl.definition_ast, "TTL");
+
+            /// The column each column was renamed from; a column the ALTER adds has none.
+            std::unordered_map<String, std::optional<String>> old_names;
+            for (const auto & column : old_metadata.columns)
+                old_names.emplace(column.name, column.name);
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+                if (command.type == AlterCommand::ADD_COLUMN)
+                    old_names.try_emplace(command.column_name, std::nullopt);
+                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+                    old_names.erase(command.column_name);
+                else if (command.type == AlterCommand::RENAME_COLUMN)
+                {
+                    if (auto node = old_names.extract(command.column_name))
+                    {
+                        node.key() = command.rename_to;
+                        old_names.insert(std::move(node));
+                    }
+                }
+            }
+
+            for (const auto & index : new_metadata.secondary_indices)
+            {
+                /// An implicit index is named after its column.
+                String old_name = index.name;
+                if (index.isImplicitlyCreated() && index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                {
+                    auto it = old_names.find(index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)));
+                    old_name = it != old_names.end() && it->second ? IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + *it->second : "";
+                }
+                const auto * old_index = old_metadata.secondary_indices.has(old_name)
+                    ? &old_metadata.secondary_indices.getByName(old_name) : nullptr;
+                check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
+                check(old_index ? old_index->expression_list_ast : nullptr, index.expression_list_ast, "INDEX " + index.name);
+                check(old_index ? old_index->arguments : nullptr, index.arguments, "INDEX " + index.name);
+            }
+
+            for (const auto & constraint : new_metadata.constraints.getConstraints())
+            {
+                ASTPtr old_constraint;
+                for (const auto & candidate : old_metadata.constraints.getConstraints())
+                    if (candidate->as<ASTConstraintDeclaration &>().name == constraint->as<ASTConstraintDeclaration &>().name)
+                        old_constraint = candidate;
+                check(old_constraint, constraint, "CONSTRAINT");
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                auto it = old_names.find(column.name);
+                const auto * old_column = it != old_names.end() && it->second ? old_metadata.columns.tryGet(*it->second) : nullptr;
+                check(old_column ? old_column->ttl : nullptr, column.ttl, "TTL");
+            }
+        }
 
         bool changes_order_by = false;
         for (const auto & command : commands)
