@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMerge.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -27,6 +28,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -50,6 +53,12 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
     for (auto * child : node->children)
         if (hasCorrelatedExpressions(child))
             return true;
+
+    /// `ReadFromMerge` creates its child plans once, on first access. Drop the ones created here, so that they are
+    /// created again with the filters pushed down into the read.
+    auto * merge = typeid_cast<ReadFromMerge *>(node->step.get());
+    const bool drop_child_plans = merge && !merge->hasChildPlans();
+    SCOPE_EXIT(if (drop_child_plans) merge->resetChildPlans());
 
     for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
         if (child_plan && hasCorrelatedExpressions(child_plan->getRootNode()))
