@@ -19,10 +19,14 @@ SYSTEM DROP QUERY CACHE;
 
 DROP TABLE IF EXISTS t_qrc_set_source_big;
 DROP TABLE IF EXISTS t_qrc_set_source_small;
+DROP TABLE IF EXISTS t_qrc_set_source_memory;
 CREATE TABLE t_qrc_set_source_big (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_qrc_set_source_small (id UInt64) ENGINE = MergeTree ORDER BY id;
+-- A read from a `Memory` table is not serializable, so a set source over it cannot be distributed.
+CREATE TABLE t_qrc_set_source_memory (id UInt64) ENGINE = Memory;
 INSERT INTO t_qrc_set_source_big SELECT number FROM numbers(1000);
 INSERT INTO t_qrc_set_source_small SELECT number FROM numbers(100);
+INSERT INTO t_qrc_set_source_memory SELECT number FROM numbers(100);
 
 -- Subquery caching is a Planner feature: with the old analyzer no subquery cache entry is created at
 -- all, so the checks below would trivially return 0. Pin the analyzer, because some CI jobs run the
@@ -47,10 +51,11 @@ SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' 
 SYSTEM DROP QUERY CACHE;
 
 SELECT '-- a set source that cannot be distributed still builds locally and caches';
-SELECT count() FROM t_qrc_set_source_big WHERE k IN (SELECT number FROM numbers(50) GROUP BY number SETTINGS use_query_cache = 1)
+SELECT count() FROM t_qrc_set_source_big WHERE k IN (SELECT id FROM t_qrc_set_source_memory WHERE id < 50 SETTINGS use_query_cache = 1)
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
-SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%numbers(50) GROUP BY number%';
+SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' || currentDatabase() || '.t_qrc_set_source_memory WHERE id < 50%';
 
 DROP TABLE t_qrc_set_source_big;
 DROP TABLE t_qrc_set_source_small;
+DROP TABLE t_qrc_set_source_memory;
 SYSTEM DROP QUERY CACHE;
