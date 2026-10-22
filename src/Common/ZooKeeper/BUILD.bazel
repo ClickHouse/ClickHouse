@@ -89,6 +89,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -217,6 +218,7 @@ ch_cc_library(
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -285,6 +287,7 @@ ch_cc_library(
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -339,7 +342,6 @@ ch_cc_library(
         ],
     ),
     clickhouse_code = True,
-    source_headers = False,
     strip_include_prefix = "/src",
     deps = [
         "//base:common",

@@ -7,7 +7,6 @@ ch_cc_library(
     srcs = ["widechar_width.cpp"],
     hdrs = ["widechar_width.h"],
     clickhouse_code = True,
-    deps = ["@clickhouse_llvm_project//:unwind"],
     includes = ["."],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -15,5 +14,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = False,
+    deps = ["@clickhouse_llvm_project//:unwind"],
 )

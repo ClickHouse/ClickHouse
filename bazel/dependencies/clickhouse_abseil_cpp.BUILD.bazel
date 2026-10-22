@@ -318,7 +318,6 @@ ch_cc_library(
     srcs = [
         "absl/crc/internal/crc.cc",
         "absl/crc/internal/crc_x86_arm_combined.cc",
-    ] + [
         "absl/crc/internal/crc_internal.h",
     ],
     hdrs = [
@@ -347,7 +346,6 @@ ch_cc_library(
         "absl/debugging/internal/vdso_support.cc",
         "absl/debugging/internal/decode_rust_punycode.cc",
         "absl/debugging/internal/utf8_for_code_point.cc",
-    ] + [
         "absl/debugging/internal/bounded_utf8_length_sequence.h",
         "absl/debugging/internal/utf8_for_code_point.h",
     ],
@@ -374,7 +372,6 @@ ch_cc_library(
     srcs = [
         "absl/debugging/internal/demangle.cc",
         "absl/debugging/internal/demangle_rust.cc",
-    ] + [
         "absl/debugging/internal/demangle_rust.h",
     ],
     hdrs = [
@@ -867,7 +864,6 @@ ch_cc_library(
     name = "absl_log_flags",
     srcs = [
         "absl/log/flags.cc",
-    ] + [
         "absl/log/internal/flags.h",
     ],
     hdrs = [
@@ -1474,7 +1470,6 @@ ch_cc_library(
     name = "absl_raw_hash_set",
     srcs = [
         "absl/container/internal/raw_hash_set.cc",
-    ] + [
         "absl/container/internal/raw_hash_set_resize_impl.h",
     ],
     hdrs = [
@@ -1611,7 +1606,6 @@ ch_cc_library(
         "absl/status/internal/status_internal.cc",
         "absl/status/status.cc",
         "absl/status/status_payload_printer.cc",
-    ] + [
         "absl/status/status_payload_printer.h",
     ],
     hdrs = [
@@ -1659,7 +1653,6 @@ ch_cc_library(
     deps = [
         ":absl_has_ostream_operator",
         ":absl_status",
-    ] + [
         ":absl_base",
         ":absl_base_config",
         ":absl_source_location",
@@ -1688,7 +1681,6 @@ ch_cc_library(
     copts = _ABSL_COPTS,
     implementation_deps = [
         ":absl_function_ref",
-    ] + [
         ":absl_bits",
         ":absl_strings_internal",
     ],
@@ -1696,7 +1688,6 @@ ch_cc_library(
     deps = [
         ":absl_inlined_vector_internal",
         ":absl_strings",
-    ] + [
         ":absl_base_config",
         ":absl_int128",
         ":absl_span",
@@ -1737,7 +1728,6 @@ ch_cc_library(
         "absl/strings/str_replace.cc",
         "absl/strings/str_split.cc",
         "absl/strings/substitute.cc",
-    ] + [
         "absl/strings/internal/charconv_bigint.h",
         "absl/strings/internal/charconv_parse.h",
         "absl/strings/internal/memutil.h",
@@ -1772,7 +1762,6 @@ ch_cc_library(
         ":absl_iterator_traits_internal",
         ":absl_source_location",
         ":absl_strings_internal",
-    ] + [
         ":absl_base",
         ":absl_base_config",
         ":absl_hardening",
@@ -1799,14 +1788,12 @@ ch_cc_library(
     copts = _ABSL_COPTS,
     implementation_deps = [
         ":absl_base",
-    ] + [
         ":absl_raw_logging_internal",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_hardening",
         ":absl_throw_delegate",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -1872,14 +1859,12 @@ ch_cc_library(
         ":absl_malloc_internal",
         ":absl_stacktrace",
         ":absl_symbolize",
-    ] + [
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_kernel_timeout_internal",
-    ] + [
         ":absl_base",
         ":absl_base_config",
         ":absl_time",
@@ -1947,7 +1932,6 @@ ch_cc_library(
         "absl/time/internal/cctz/src/time_zone_lookup.cc",
         "absl/time/internal/cctz/src/time_zone_posix.cc",
         "absl/time/internal/cctz/src/zone_info_source.cc",
-    ] + [
         "absl/time/internal/cctz/src/time_zone_fixed.h",
         "absl/time/internal/cctz/src/time_zone_if.h",
         "absl/time/internal/cctz/src/time_zone_impl.h",
@@ -1981,14 +1965,12 @@ ch_cc_library(
     implementation_deps = [
         ":absl_log_internal_fnmatch",
         ":absl_synchronization",
-    ] + [
         ":absl_base",
         ":absl_spinlock_wait",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_strings",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2006,7 +1988,6 @@ cc_library(
     deps = [
         ":absl_hardening",
         ":absl_iterator_traits_internal",
-    ] + [
         ":absl_base_config",
         ":absl_type_traits",
     ],
@@ -2020,7 +2001,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_utility",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2059,7 +2039,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_inlined_vector_internal",
-    ] + [
         ":absl_type_traits",
         ":absl_utility",
     ],
@@ -2074,7 +2053,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_base",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2089,7 +2067,6 @@ cc_library(
     deps = [
         ":absl_hardening",
         ":absl_utility",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2102,7 +2079,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_type_traits",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2115,7 +2091,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_hash",
-    ] + [
         ":absl_base_config",
         ":absl_memory",
         ":absl_type_traits",
@@ -2134,7 +2109,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_utility",
-    ] + [
         ":absl_base_config",
         ":absl_type_traits",
     ],
@@ -2164,7 +2138,6 @@ cc_library(
         ":absl_memory",
         ":absl_span",
         ":absl_utility",
-    ] + [
         ":absl_algorithm",
         ":absl_base_config",
         ":absl_hardening",
@@ -2183,7 +2156,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_hardening",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2196,7 +2168,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_type_traits",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2212,7 +2183,6 @@ cc_library(
     deps = [
         ":absl_log_internal_check_op",
         ":absl_log_internal_conditions",
-    ] + [
         ":absl_base_config",
         ":absl_log_internal_message",
     ],
@@ -2237,7 +2207,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_type_traits",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2250,7 +2219,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_utility",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2263,7 +2231,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_type_traits",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2281,7 +2248,6 @@ cc_library(
     deps = [
         ":absl_bits",
         ":absl_int128",
-    ] + [
         ":absl_base_config",
         ":absl_type_traits",
     ],
@@ -2299,7 +2265,6 @@ cc_library(
         ":absl_random_internal_entropy_pool",
         ":absl_random_internal_randen",
         ":absl_random_seed_sequences",
-    ] + [
         ":absl_base",
         ":absl_base_config",
         ":absl_type_traits",
@@ -2328,7 +2293,6 @@ cc_library(
         ":absl_algorithm",
         ":absl_throw_delegate",
         ":absl_weakly_mixed_integer",
-    ] + [
         ":absl_base_config",
         ":absl_hardening",
         ":absl_type_traits",
@@ -2354,7 +2318,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_type_traits",
-    ] + [
         ":absl_base_config",
     ],
 )
@@ -2367,7 +2330,6 @@ cc_library(
     includes = ["."],
     deps = [
         ":absl_utility",
-    ] + [
         ":absl_base_config",
     ],
 )

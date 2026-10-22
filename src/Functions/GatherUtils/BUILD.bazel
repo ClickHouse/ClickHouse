@@ -114,6 +114,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["../../../" + "bazel/gen"],
+    source_headers = True,
     deps = [
         ":headers",
         "@clickhouse_arrow//:_arrow",

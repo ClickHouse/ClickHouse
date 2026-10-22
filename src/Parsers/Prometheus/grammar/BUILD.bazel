@@ -32,7 +32,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = False,
     deps = [
         "@clickhouse_antlr4_cpp_runtime//:_ch_contrib_antlr4_cpp_runtime",
         "@clickhouse_llvm_project//:clang_rt_builtins",

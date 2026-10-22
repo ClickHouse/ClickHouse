@@ -78,7 +78,6 @@ ch_cc_library(
         "@clickhouse_aws_c_auth//:aws_c_auth",
         "@clickhouse_aws_c_cal//:aws_c_cal",
         "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
-    ] + [
         "@clickhouse_aws_c_common//:aws_c_common",
         "@clickhouse_aws_c_http//:aws_c_http",
         "@clickhouse_aws_c_io//:aws_c_io",

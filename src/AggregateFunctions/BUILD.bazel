@@ -73,8 +73,6 @@ _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS = [
     "TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h",
 ]
 
-
-
 ch_cc_library(
     name = "clickhouse_aggregate_functions__compile_0",
     srcs = ([
@@ -279,6 +277,7 @@ ch_cc_library(
     local_includes = [
         "../../" + "bazel/gen",
     ],
+    source_headers = True,
     deps = [
         "//src/Common:memory_tracking_api",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
@@ -395,6 +394,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [
             "//src/Common:memory_tracking_api",

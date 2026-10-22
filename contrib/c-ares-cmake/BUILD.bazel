@@ -2,11 +2,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "linux/ares_build.h",
-    "linux/ares_config.h",
-])
-
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),

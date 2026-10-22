@@ -133,7 +133,6 @@ ch_cc_library(
         "-w",
     ],
     local_defines = _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES,
-    source_headers = False,
 )
 
 _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
@@ -318,12 +317,18 @@ ch_cc_library(
     implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [":clickhouse_storages_system_information_schema"],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
+    source_headers = True,
     deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"],
 )
 
 ch_cc_library(
     name = "clickhouse_storages_system_information_schema",
-    srcs = ["//bazel:gen/embedded/src/Storages/System/attachInformationSchemaTables.cpp"] + _PRIVATE_STORAGES_SYSTEM_1_HEADERS + _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["hdrs"],
+    srcs = [
+        "//bazel:gen/embedded/src/Storages/System/attachInformationSchemaTables.cpp",
+        "attachSystemTablesImpl.h",
+        "SystemTableSourceRegistry.h",
+        "attachInformationSchemaTables.h",
+    ],
     hdrs = [],
     additional_compiler_inputs = [
         "//bazel:gen/embedded/src/Storages/System/information_schema/character_sets.sql",
@@ -341,6 +346,7 @@ ch_cc_library(
     implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
+    source_headers = True,
     deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"],
 )
 

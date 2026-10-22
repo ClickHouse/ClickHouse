@@ -1771,7 +1771,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Transforms/AggressiveInstCombine/AggressiveInstCombine.cpp",
         "llvm/lib/Transforms/AggressiveInstCombine/TruncInstCombine.cpp",
-    ] + [
         "llvm/lib/Transforms/AggressiveInstCombine/AggressiveInstCombineInternal.h",
     ],
     copts =
@@ -2068,7 +2067,6 @@ ch_cc_library(
         "llvm/lib/CodeGen/AsmPrinter/WasmException.cpp",
         "llvm/lib/CodeGen/AsmPrinter/WinCFGuard.cpp",
         "llvm/lib/CodeGen/AsmPrinter/WinException.cpp",
-    ] + [
         "llvm/lib/CodeGen/AsmPrinter/AddressPool.h",
         "llvm/lib/CodeGen/AsmPrinter/CodeViewDebug.h",
         "llvm/lib/CodeGen/AsmPrinter/DwarfCompileUnit.h",
@@ -2167,7 +2165,6 @@ ch_cc_library(
         "llvm/lib/Bitcode/Writer/BitcodeWriterPass.cpp",
         "llvm/lib/Bitcode/Writer/BitWriter.cpp",
         "llvm/lib/Bitcode/Writer/ValueEnumerator.cpp",
-    ] + [
         "llvm/lib/Bitcode/Writer/ValueEnumerator.h",
     ],
     copts =
@@ -3292,7 +3289,6 @@ ch_cc_library(
         "llvm/lib/Transforms/Instrumentation/ThreadSanitizer.cpp",
         "llvm/lib/Transforms/Instrumentation/TypeSanitizer.cpp",
         "llvm/lib/Transforms/Instrumentation/ValueProfileCollector.cpp",
-    ] + [
         "llvm/lib/Transforms/Instrumentation/ValueProfileCollector.h",
         "llvm/lib/Transforms/Instrumentation/ValueProfilePlugins.inc",
     ],
@@ -3341,7 +3337,6 @@ ch_cc_library(
     srcs = [
         "llvm/lib/Linker/IRMover.cpp",
         "llvm/lib/Linker/LinkModules.cpp",
-    ] + [
         "llvm/lib/Linker/LinkDiagnosticInfo.h",
     ],
     hdrs = [
@@ -3578,7 +3573,6 @@ ch_cc_library(
         "llvm/lib/Object/WindowsMachineFlag.cpp",
         "llvm/lib/Object/WindowsResource.cpp",
         "llvm/lib/Object/XCOFFObjectFile.cpp",
-    ] + [
         "llvm/lib/Object/RecordStreamer.h",
     ],
     hdrs = [
@@ -4381,7 +4375,6 @@ ch_cc_library(
         "llvm/lib/TargetParser/Triple.cpp",
         "llvm/lib/TargetParser/X86TargetParser.cpp",
         "llvm/lib/TargetParser/XtensaTargetParser.cpp",
-    ] + [
         "llvm/lib/TargetParser/Unix/Host.inc",
     ],
     hdrs = [
@@ -4823,7 +4816,6 @@ ch_cc_library(
         "gen/llvm/lib/Target/X86",
         "llvm/lib/Target/X86",
     ],
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     private_hdrs = select({
         "@platforms//cpu:x86_64": [
             "llvm/lib/Target/X86/X86GenRegisterBankInfo.def",
@@ -4831,6 +4823,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
         ":LLVMSelectionDAG",
         ":LLVMAsmPrinter",
@@ -4892,13 +4885,13 @@ ch_cc_library(
         "gen/llvm/lib/Target/X86",
         "llvm/lib/Target/X86",
     ],
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     private_hdrs = select({
         "@platforms//cpu:x86_64": [
             "llvm/lib/Target/X86/MCTargetDesc/X86EncodingOptimizationForImmediate.def",
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
         ":LLVMMCDisassembler",
         ":llvm_headers",
@@ -12055,13 +12048,13 @@ ch_cc_library(
         "gen/llvm/lib/Target/AArch64",
         "llvm/lib/Target/AArch64",
     ],
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     private_hdrs = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "llvm/lib/Target/AArch64/AArch64GenRegisterBankInfo.def",
         ],
     }),
+    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_1,
     deps = [
         ":LLVMSelectionDAG",
         ":LLVMAsmPrinter",

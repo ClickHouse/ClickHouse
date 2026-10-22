@@ -522,6 +522,7 @@ ch_cc_library(
     copts = _GRPC_COPTS,
     implementation_deps = [],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -534,7 +535,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    libcxx_headers = False,
 )
 
 _GENERATED_COPTS_1 = [
@@ -584,7 +584,6 @@ ch_cc_library(
         "src/core/util/windows/thd.cc",
         "src/core/util/windows/time.cc",
         "src/core/util/windows/tmpfile.cc",
-    ] + [
         "src/core/config/load_config.h",
         "src/core/util/tchar.h",
         "src/core/util/tmpfile.h",
@@ -645,6 +644,14 @@ ch_cc_library(
         "src/core/util/useful.h",
     ] + glob(["include/grpc/event_engine/**/*.h"]),
     copts = _GENERATED_COPTS_1,
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_base",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+        "@clickhouse_abseil_cpp//:absl_flags_marshalling",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -669,14 +676,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_synchronization",
         "@clickhouse_abseil_cpp//:absl_time",
         "@clickhouse_abseil_cpp//:absl_utility",
-    ],
-    implementation_deps = [
-        "@clickhouse_abseil_cpp//:absl_log_globals",
-        "@clickhouse_abseil_cpp//:absl_base",
-        "@clickhouse_abseil_cpp//:absl_die_if_null",
-        "@clickhouse_abseil_cpp//:absl_flags_internal",
-        "@clickhouse_abseil_cpp//:absl_flags_marshalling",
-        "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
 )
 
@@ -1317,6 +1316,21 @@ ch_cc_library(
     ]),
     hdrs = _GRPC_CORE_PUBLIC_HEADERS + _GRPC_TLS_HEADERS,
     copts = _GENERATED_COPTS_2,
+    implementation_deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        ":address_sorting",
+        ":upb_json_lib",
+        "@clickhouse_abseil_cpp//:absl_bind_front",
+        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_c_ares//:_c-ares",
+        "@clickhouse_re2//:_re2",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -1356,21 +1370,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_type_traits",
         "@clickhouse_abseil_cpp//:absl_utility",
         "@clickhouse_openssl//:crypto",
-    ],
-    implementation_deps = [
-        "@clickhouse_zlib_ng//:_zlib",
-        ":address_sorting",
-        ":upb_json_lib",
-        "@clickhouse_abseil_cpp//:absl_bind_front",
-        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
-        "@clickhouse_abseil_cpp//:absl_log_globals",
-        "@clickhouse_abseil_cpp//:absl_algorithm",
-        "@clickhouse_abseil_cpp//:absl_cord",
-        "@clickhouse_abseil_cpp//:absl_memory",
-        "@clickhouse_abseil_cpp//:absl_optional",
-        "@clickhouse_abseil_cpp//:absl_random_distributions",
-        "@clickhouse_c_ares//:_c-ares",
-        "@clickhouse_re2//:_re2",
     ],
 )
 
@@ -1661,6 +1660,7 @@ ch_cc_library(
     ],
     implementation_deps = [],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -1676,7 +1676,6 @@ ch_cc_library(
         ":upb_mini_table_lib",
         ":upb_reflection_lib",
     ],
-    libcxx_headers = False,
 )
 
 cc_library(
@@ -1684,25 +1683,27 @@ cc_library(
     includes = [
         "include",
     ],
-    deps = ["@clickhouse_zlib_ng//:_zlib", ":address_sorting", ":gpr", ":upb_json_lib", ":upb_textformat_lib", ":grpc__compile_0", ":grpc__compile_1"],
+    deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        ":address_sorting",
+        ":gpr",
+        ":upb_json_lib",
+        ":upb_textformat_lib",
+        ":grpc__compile_0",
+        ":grpc__compile_1",
+    ],
 )
 
 # grpc_cpp_plugin emits ports_def.inc and ports_undef.inc in generated
 # headers and sources. The gRPC runtime itself does not include this pair.
 cc_library(
     name = "grpc_codegen_headers",
-    textual_hdrs = glob(["include/grpcpp/*.inc"]),
     includes = ["include"],
+    textual_hdrs = glob(["include/grpcpp/*.inc"]),
 )
 
 ch_cc_library(
     name = "grpc++",
-    implementation_deps = [
-        ":upb_mini_table_lib",
-        "@clickhouse_abseil_cpp//:absl_base_config",
-        "@clickhouse_abseil_cpp//:absl_statusor",
-        "@clickhouse_abseil_cpp//:absl_str_format_internal",
-    ],
     srcs = [
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
@@ -1760,7 +1761,14 @@ ch_cc_library(
         "src/cpp/server/health/default_health_check_service.h",
         "src/cpp/thread_manager/thread_manager.h",
     ] + glob(["src/cpp/server/*.h"]),
+    hdrs = _GRPC_CPP_PUBLIC_HEADERS,
     copts = _GENERATED_COPTS_2,
+    implementation_deps = [
+        ":upb_mini_table_lib",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         ".",
@@ -1785,17 +1793,10 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_synchronization",
         "@clickhouse_abseil_cpp//:absl_time",
     ],
-    hdrs = _GRPC_CPP_PUBLIC_HEADERS,
 )
 
 ch_cc_library(
     name = "grpc++_unsecure",
-    implementation_deps = [
-        ":upb_mini_table_lib",
-        "@clickhouse_abseil_cpp//:absl_base_config",
-        "@clickhouse_abseil_cpp//:absl_statusor",
-        "@clickhouse_abseil_cpp//:absl_str_format_internal",
-    ],
     srcs = [
         "src/core/client_channel/virtual_channel.cc",
         "src/cpp/client/call_context_registry.cc",
@@ -1844,7 +1845,14 @@ ch_cc_library(
         "src/cpp/server/thread_pool_interface.h",
         "src/cpp/thread_manager/thread_manager.h",
     ],
+    hdrs = _GRPC_CPP_PUBLIC_HEADERS,
     copts = _GENERATED_COPTS_1,
+    implementation_deps = [
+        ":upb_mini_table_lib",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -1870,14 +1878,14 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_synchronization",
         "@clickhouse_abseil_cpp//:absl_time",
     ],
-    hdrs = _GRPC_CPP_PUBLIC_HEADERS,
 )
 
 cc_binary(
     name = "grpc_cpp_plugin",
     srcs = [
         "src/compiler/cpp_plugin.cc",
-    ] + ["src/compiler/cpp_plugin.h"],
+        "src/compiler/cpp_plugin.h",
+    ],
     copts = [
         "--no-default-config",
         "-fdiagnostics-color=always",
@@ -2019,8 +2027,49 @@ cc_binary(
         "-lpthread",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins", "@clickhouse_llvm_project//:clang_rt_xray", "@clickhouse_llvm_project//:libllvmlibc", "@clickhouse_google_protobuf//:_libprotobuf", "@clickhouse_google_protobuf//:_libprotoc", "@clickhouse_zlib_ng//:_zlib", "@clickhouse_abseil_cpp//:absl_base_cpu_detect", "@clickhouse_abseil_cpp//:absl_examine_stack", "@clickhouse_abseil_cpp//:absl_exponential_biased", "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor", "@clickhouse_abseil_cpp//:absl_flags_program_name", "@clickhouse_abseil_cpp//:absl_graphcycles_internal", "@clickhouse_abseil_cpp//:absl_leak_check", "@clickhouse_abseil_cpp//:absl_log_globals", "@clickhouse_abseil_cpp//:absl_log_internal_fnmatch", "@clickhouse_abseil_cpp//:absl_log_internal_format", "@clickhouse_abseil_cpp//:absl_log_internal_globals", "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set", "@clickhouse_abseil_cpp//:absl_malloc_internal", "@clickhouse_abseil_cpp//:absl_stacktrace", "@clickhouse_abseil_cpp//:absl_strerror", "@clickhouse_abseil_cpp//:absl_symbolize", "@clickhouse_llvm_project//:cxx", "@clickhouse_llvm_project//:cxxabi", "@clickhouse//base/glibc-compatibility", ":grpc_plugin_support", "@clickhouse_llvm_project//:unwind", "@clickhouse_google_protobuf//:utf8_validity", "@llvm-project//compiler-rt:headers", "@llvm-project//libc:libc_headers", "@llvm-project//libunwind:headers"],
-    local_includes = [".", "include", "third_party/address_sorting/include", "src/core/ext/upb-gen", "src/core/ext/upbdefs-gen", "third_party/upb", "third_party/utf8_range", "third_party/xxhash"],
+    local_includes = [
+        ".",
+        "include",
+        "third_party/address_sorting/include",
+        "src/core/ext/upb-gen",
+        "src/core/ext/upbdefs-gen",
+        "third_party/upb",
+        "third_party/utf8_range",
+        "third_party/xxhash",
+    ],
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:libllvmlibc",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_google_protobuf//:_libprotoc",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_abseil_cpp//:absl_base_cpu_detect",
+        "@clickhouse_abseil_cpp//:absl_examine_stack",
+        "@clickhouse_abseil_cpp//:absl_exponential_biased",
+        "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor",
+        "@clickhouse_abseil_cpp//:absl_flags_program_name",
+        "@clickhouse_abseil_cpp//:absl_graphcycles_internal",
+        "@clickhouse_abseil_cpp//:absl_leak_check",
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_log_internal_fnmatch",
+        "@clickhouse_abseil_cpp//:absl_log_internal_format",
+        "@clickhouse_abseil_cpp//:absl_log_internal_globals",
+        "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set",
+        "@clickhouse_abseil_cpp//:absl_malloc_internal",
+        "@clickhouse_abseil_cpp//:absl_stacktrace",
+        "@clickhouse_abseil_cpp//:absl_strerror",
+        "@clickhouse_abseil_cpp//:absl_symbolize",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse//base/glibc-compatibility",
+        ":grpc_plugin_support",
+        "@clickhouse_llvm_project//:unwind",
+        "@clickhouse_google_protobuf//:utf8_validity",
+        "@llvm-project//compiler-rt:headers",
+        "@llvm-project//libc:libc_headers",
+        "@llvm-project//libunwind:headers",
+    ],
 )
 
 ch_cc_library(
@@ -2034,7 +2083,6 @@ ch_cc_library(
         "src/compiler/proto_parser_helper.cc",
         "src/compiler/python_generator.cc",
         "src/compiler/ruby_generator.cc",
-    ] + [
         "src/compiler/csharp_generator.h",
         "src/compiler/csharp_generator_helpers.h",
         "src/compiler/node_generator.h",
@@ -2082,19 +2130,6 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    implementation_deps = [
-        "@clickhouse_zlib_ng//:_zlib",
-        ":address_sorting",
-        "@clickhouse_abseil_cpp//:absl_bind_front",
-        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
-        "@clickhouse_abseil_cpp//:absl_log_globals",
-        "@clickhouse_abseil_cpp//:absl_algorithm",
-        "@clickhouse_abseil_cpp//:absl_cord",
-        "@clickhouse_abseil_cpp//:absl_memory",
-        "@clickhouse_abseil_cpp//:absl_optional",
-        "@clickhouse_abseil_cpp//:absl_random_distributions",
-        "@clickhouse_c_ares//:_c-ares",
-    ],
     srcs = glob(["src/core/call/call_*.cc"]) + ([
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
@@ -2537,6 +2572,19 @@ ch_cc_library(
     ]),
     hdrs = _GRPC_CORE_PUBLIC_HEADERS,
     copts = _GENERATED_COPTS_1,
+    implementation_deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        ":address_sorting",
+        "@clickhouse_abseil_cpp//:absl_bind_front",
+        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_c_ares//:_c-ares",
+    ],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -2605,6 +2653,7 @@ ch_cc_library(
     copts = _GRPC_COPTS,
     implementation_deps = [],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -2620,7 +2669,6 @@ ch_cc_library(
         ":upb_mini_table_lib",
         ":upb_reflection_lib",
     ],
-    libcxx_headers = False,
 )
 
 cc_library(
@@ -2628,7 +2676,14 @@ cc_library(
     includes = [
         "include",
     ],
-    deps = ["@clickhouse_zlib_ng//:_zlib", ":address_sorting", ":gpr", ":upb", ":grpc_unsecure__compile_0", ":grpc_unsecure__compile_1"],
+    deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        ":address_sorting",
+        ":gpr",
+        ":upb",
+        ":grpc_unsecure__compile_0",
+        ":grpc_unsecure__compile_1",
+    ],
 )
 
 ch_cc_library(
@@ -2649,6 +2704,11 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
     ] + ["third_party/upb/upb/lex/strtod.h"],
+    hdrs = [
+        "third_party/upb/upb/lex/atoi.h",
+        "third_party/upb/upb/lex/round_trip.h",
+        "third_party/upb/upb/lex/unicode.h",
+    ],
     copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_message_lib",
@@ -2656,6 +2716,7 @@ ch_cc_library(
         ":upb_wire_lib",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2670,12 +2731,6 @@ ch_cc_library(
     deps = [
         ":upb_mini_table_lib",
     ],
-    hdrs = [
-        "third_party/upb/upb/lex/atoi.h",
-        "third_party/upb/upb/lex/round_trip.h",
-        "third_party/upb/upb/lex/unicode.h",
-    ],
-    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2683,7 +2738,12 @@ ch_cc_library(
     srcs = [
         "third_party/upb/upb/json/decode.c",
         "third_party/upb/upb/json/encode.c",
-    ] + ["third_party/upb/upb/json/decode.h"],
+        "third_party/upb/upb/json/decode.h",
+    ],
+    hdrs = [
+        "third_party/upb/upb/json/encode.h",
+        "third_party/upb/upb/port/vsnprintf_compat.h",
+    ],
     copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_message_lib",
@@ -2692,6 +2752,7 @@ ch_cc_library(
         ":upb",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2707,11 +2768,6 @@ ch_cc_library(
         ":upb_reflection_lib",
         ":upb_mini_table_lib",
     ],
-    hdrs = [
-        "third_party/upb/upb/json/encode.h",
-        "third_party/upb/upb/port/vsnprintf_compat.h",
-    ],
-    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2725,22 +2781,8 @@ ch_cc_library(
         "third_party/upb/upb/message/map.c",
         "third_party/upb/upb/message/map_sorter.c",
         "third_party/upb/upb/message/message.c",
-    ] + ["third_party/upb/upb/message/compat.h"],
-    copts = _GRPC_COPTS,
-    implementation_deps = [],
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "include",
-        ".",
-        "third_party/address_sorting/include",
-        "src/core/ext/upb-gen",
-        "src/core/ext/upbdefs-gen",
-        "third_party/upb",
-        "third_party/utf8_range",
-        "third_party/xxhash",
+        "third_party/upb/upb/message/compat.h",
     ],
-    deps = [":upb_mini_table_lib"],
     hdrs = [
         "third_party/upb/upb/base/internal/endian.h",
         "third_party/upb/upb/message/accessors.h",
@@ -2756,7 +2798,22 @@ ch_cc_library(
         "third_party/upb/upb/message/message.h",
         "third_party/upb/upb/message/value.h",
     ],
+    copts = _GRPC_COPTS,
+    implementation_deps = [],
+    language = "C",
     libcxx_headers = False,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "include",
+        ".",
+        "third_party/address_sorting/include",
+        "src/core/ext/upb-gen",
+        "src/core/ext/upbdefs-gen",
+        "third_party/upb",
+        "third_party/utf8_range",
+        "third_party/xxhash",
+    ],
+    deps = [":upb_mini_table_lib"],
 )
 
 ch_cc_library(
@@ -2772,11 +2829,19 @@ ch_cc_library(
         "third_party/upb/upb/wire/decode_fast/data.h",
         "third_party/upb/upb/wire/decode_fast/select.h",
     ],
+    hdrs = [
+        "third_party/upb/upb/base/status.h",
+        "third_party/upb/upb/mini_descriptor/internal/encode.h",
+        "third_party/upb/upb/mini_descriptor/internal/modifiers.h",
+        "third_party/upb/upb/mini_table/sub.h",
+        "third_party/upb/upb/wire/decode_fast/combinations.h",
+    ] + glob(["third_party/upb/upb/mini_descriptor/*.h"]),
     copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_message_lib",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2792,14 +2857,6 @@ ch_cc_library(
         ":upb_mini_table_lib",
         ":upb_wire_lib",
     ],
-    hdrs = [
-        "third_party/upb/upb/base/status.h",
-        "third_party/upb/upb/mini_descriptor/internal/encode.h",
-        "third_party/upb/upb/mini_descriptor/internal/modifiers.h",
-        "third_party/upb/upb/mini_table/sub.h",
-        "third_party/upb/upb/wire/decode_fast/combinations.h",
-    ] + glob(["third_party/upb/upb/mini_descriptor/*.h"]),
-    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2839,6 +2896,7 @@ ch_cc_library(
     copts = _GRPC_COPTS,
     implementation_deps = [],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2851,7 +2909,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2893,26 +2950,6 @@ ch_cc_library(
         "third_party/upb/upb/reflection/internal/upb_edition_defaults.h",
         "third_party/upb/upb/reflection/message_reserved_range.h",
     ],
-    copts = _GRPC_COPTS,
-    implementation_deps = [],
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "include",
-        ".",
-        "third_party/address_sorting/include",
-        "src/core/ext/upb-gen",
-        "src/core/ext/upbdefs-gen",
-        "third_party/upb",
-        "third_party/utf8_range",
-        "third_party/xxhash",
-    ],
-    deps = [
-        ":upb_mini_descriptor_lib",
-        ":upb_wire_lib",
-        ":upb_message_lib",
-        ":upb_mini_table_lib",
-    ],
     hdrs = [
         "src/core/ext/upb-gen/google/protobuf/descriptor.upb.h",
         "src/core/ext/upb-gen/google/protobuf/descriptor.upb_minitable.h",
@@ -2941,7 +2978,27 @@ ch_cc_library(
         "third_party/upb/upb/reflection/stage0/google/protobuf/descriptor.upb.h",
         "third_party/upb/upb/wire/decode_fast/field_parsers.h",
     ],
+    copts = _GRPC_COPTS,
+    implementation_deps = [],
+    language = "C",
     libcxx_headers = False,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "include",
+        ".",
+        "third_party/address_sorting/include",
+        "src/core/ext/upb-gen",
+        "src/core/ext/upbdefs-gen",
+        "third_party/upb",
+        "third_party/utf8_range",
+        "third_party/xxhash",
+    ],
+    deps = [
+        ":upb_mini_descriptor_lib",
+        ":upb_wire_lib",
+        ":upb_message_lib",
+        ":upb_mini_table_lib",
+    ],
 )
 
 ch_cc_library(
@@ -2949,7 +3006,12 @@ ch_cc_library(
     srcs = [
         "third_party/upb/upb/text/encode.c",
         "third_party/upb/upb/text/internal/encode.c",
-    ] + ["third_party/upb/upb/text/internal/encode.h"],
+        "third_party/upb/upb/text/internal/encode.h",
+    ],
+    hdrs = [
+        "third_party/upb/upb/text/encode.h",
+        "third_party/upb/upb/text/options.h",
+    ],
     copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_json_lib",
@@ -2959,6 +3021,7 @@ ch_cc_library(
         ":upb",
     ],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2974,11 +3037,6 @@ ch_cc_library(
         ":upb_reflection_lib",
         ":upb_mini_table_lib",
     ],
-    hdrs = [
-        "third_party/upb/upb/text/encode.h",
-        "third_party/upb/upb/text/options.h",
-    ],
-    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -2990,10 +3048,22 @@ ch_cc_library(
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/internal/decoder.c",
         "third_party/upb/upb/wire/reader.c",
-    ] + ["third_party/upb/upb/message/internal/iterator.h"],
+        "third_party/upb/upb/message/internal/iterator.h",
+    ],
+    hdrs = [
+        "third_party/upb/upb/base/error_handler.h",
+        "third_party/upb/upb/wire/decode.h",
+        "third_party/upb/upb/wire/decode_fast/dispatch.h",
+        "third_party/upb/upb/wire/encode.h",
+        "third_party/upb/upb/wire/eps_copy_input_stream.h",
+        "third_party/upb/upb/wire/reader.h",
+        "third_party/upb/upb/wire/types.h",
+        "third_party/upb/upb/wire/writer.h",
+    ] + glob(["third_party/upb/upb/wire/internal/*.h"]),
     copts = _GRPC_COPTS,
     implementation_deps = [],
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -3010,17 +3080,6 @@ ch_cc_library(
         ":utf8_range_lib",
         ":upb_mini_table_lib",
     ],
-    hdrs = [
-        "third_party/upb/upb/base/error_handler.h",
-        "third_party/upb/upb/wire/decode.h",
-        "third_party/upb/upb/wire/decode_fast/dispatch.h",
-        "third_party/upb/upb/wire/encode.h",
-        "third_party/upb/upb/wire/eps_copy_input_stream.h",
-        "third_party/upb/upb/wire/reader.h",
-        "third_party/upb/upb/wire/types.h",
-        "third_party/upb/upb/wire/writer.h",
-    ] + glob(["third_party/upb/upb/wire/internal/*.h"]),
-    libcxx_headers = False,
 )
 
 ch_cc_library(
@@ -3036,8 +3095,8 @@ ch_cc_library(
     }),
     hdrs = ["third_party/utf8_range/utf8_range.h"],
     copts = _GRPC_COPTS,
-    libcxx_headers = False,
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",

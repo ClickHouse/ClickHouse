@@ -770,6 +770,8 @@ class BuildFile:
                 and all(group['language'] in GLOBAL_COMPILE_OPTIONS for group in copts.groups.values())):
             kind = 'ch_cc_library'
             self.loads.setdefault('@clickhouse//bazel/rules:ch_cc_library.bzl', set()).add(kind)
+            if attrs.get('clickhouse_code', False):
+                attrs.setdefault('source_headers', True)
             languages = {group['language'] for group in copts.groups.values()}
             if len(languages) != 1:
                 raise ValueError(f'{name}: expected one native compiler language, got {languages}')

@@ -111,13 +111,12 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = True,
     deps = [
         "//src:core_types",
-        "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
         "@clickhouse_llvm_project//:LLVMBitstreamReader",
-        "@clickhouse_llvm_project//:LLVMCFGuard",
         "@clickhouse_llvm_project//:LLVMCodeGenTypes",
         "@clickhouse_llvm_project//:LLVMHipStdPar",
         "@clickhouse_llvm_project//:LLVMIRPrinter",
@@ -127,7 +126,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-    ] + [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",

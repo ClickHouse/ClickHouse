@@ -2,12 +2,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "pg_config.h",
-    "pg_config_os.h",
-    "pg_config_paths.h",
-])
-
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),

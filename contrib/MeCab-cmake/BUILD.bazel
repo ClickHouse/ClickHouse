@@ -2,8 +2,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["config.h"])
-
 cc_library(
     name = "mecab_config_headers",
     hdrs = ["config.h"],

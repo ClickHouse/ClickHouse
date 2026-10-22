@@ -91,6 +91,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = True,
     deps = [
         "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",

@@ -23,16 +23,15 @@ ch_cc_library(
         "PoolWithFailover.cpp",
     ],
     hdrs = glob(["mysqlxx/*.h"]),
-    includes = ["."],
     clickhouse_code = True,
     implementation_deps = [
         "//src:headers",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_mariadb_connector_c//:_mariadbclient",
-    ] + [
         "//base:common",
         "//base:pcg_random",
     ],
+    includes = ["."],
     link_runtime = True,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -97,7 +96,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = False,
     deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_aws//:_aws",

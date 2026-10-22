@@ -523,7 +523,6 @@ ch_cc_library(
     implementation_deps = _ALLOCATOR_IMPLEMENTATION_DEPS,
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    source_headers = False,
     alwayslink = True,
 )
 
@@ -531,10 +530,9 @@ ch_cc_library(
     name = "clickhouse_new_delete",
     srcs = ["AllocationInterceptors.cpp"],
     clickhouse_code = True,
-    deps = ["@clickhouse_llvm_project//:unwind"],
     implementation_deps = _ALLOCATOR_IMPLEMENTATION_DEPS + ["@clickhouse_llvm_project//:cxxabi"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    source_headers = False,
+    deps = ["@clickhouse_llvm_project//:unwind"],
 )
 
 ch_cc_library(
@@ -544,7 +542,6 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-Wno-reserved-identifier"],
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
-    source_headers = False,
     strip_include_prefix = "/src",
     deps = [
         ":Common",
@@ -574,7 +571,10 @@ _PRIVATE_DBMS_HEADERS = [
     "Scheduler/Workload/WorkloadEntityKeeperStorage.h",
 ]
 
-exports_files(_PRIVATE_DBMS_HEADERS, visibility = ["//src:__pkg__"])
+exports_files(
+    _PRIVATE_DBMS_HEADERS,
+    visibility = ["//src:__pkg__"],
+)
 
 _PRIVATE_COMMON_IO_HEADERS = [
     "FieldVisitorToJSONElement.h",
@@ -587,7 +587,10 @@ _PRIVATE_COMMON_IO_HEADERS = [
     "randomNumber.h",
 ]
 
-exports_files(_PRIVATE_COMMON_IO_HEADERS, visibility = ["//src:__pkg__"])
+exports_files(
+    _PRIVATE_COMMON_IO_HEADERS,
+    visibility = ["//src:__pkg__"],
+)
 
 _MEMORY_TRACKING_API_HEADERS = [
     "AllocationInterceptors.h",
@@ -601,7 +604,6 @@ ch_cc_library(
     name = "memory_tracking_api",
     hdrs = _MEMORY_TRACKING_API_HEADERS,
     clickhouse_code = True,
-    source_headers = False,
     strip_include_prefix = "/src",
     deps = [
         "//base:common",
@@ -637,7 +639,6 @@ ch_cc_library(
         "@clickhouse_zstd//:_zstd",
     ],
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
-    source_headers = False,
     deps = [
         "//src:core_types",
         ":memory_tracking_api",

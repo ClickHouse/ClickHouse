@@ -65,7 +65,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = False,
     strip_include_prefix = "/bazel/gen/src/Server/grpc_protos",
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",

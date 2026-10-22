@@ -465,6 +465,12 @@ ch_cc_library(
         "-w",
         "-std=c++17",
     ],
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_overload",
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_time",
+    ],
     includes = ["src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -490,12 +496,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_strings",
         "@clickhouse_abseil_cpp//:absl_strings_internal",
         "@clickhouse_abseil_cpp//:absl_synchronization",
-    ],
-    implementation_deps = [
-        "@clickhouse_abseil_cpp//:absl_overload",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_abseil_cpp//:absl_algorithm",
-        "@clickhouse_abseil_cpp//:absl_time",
     ],
 )
 
@@ -544,16 +544,17 @@ ch_cc_library(
         "-w",
         "-std=c++17",
     ],
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_overload",
+    ],
     includes = ["src"],
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = [":utf8_validity"] + [
+    deps = [
+        ":utf8_validity",
         "@clickhouse_abseil_cpp//:absl_die_if_null",
         "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
         "@clickhouse_abseil_cpp//:absl_statusor",
-    ],
-    implementation_deps = [
-        "@clickhouse_abseil_cpp//:absl_overload",
     ],
 )
 
@@ -775,6 +776,16 @@ ch_cc_library(
         "-w",
         "-std=c++17",
     ],
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_log_globals",
+        ":_libprotoc__compile_1",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_log_severity",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+    ],
     includes = ["src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = ["."],
@@ -790,16 +801,6 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_statusor",
         "@clickhouse_abseil_cpp//:absl_strings",
         "@clickhouse_abseil_cpp//:absl_synchronization",
-    ],
-    implementation_deps = [
-        "@clickhouse_abseil_cpp//:absl_log_globals",
-        ":_libprotoc__compile_1",
-        "@clickhouse_abseil_cpp//:absl_algorithm",
-        "@clickhouse_abseil_cpp//:absl_cord",
-        "@clickhouse_abseil_cpp//:absl_die_if_null",
-        "@clickhouse_abseil_cpp//:absl_function_ref",
-        "@clickhouse_abseil_cpp//:absl_log_severity",
-        "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
 )
 
@@ -915,10 +916,13 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    includes = [".", "upb/reflection/cmake"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    includes = [
+        ".",
+        "upb/reflection/cmake",
+    ],
     language = "C",
     llvm_headers = True,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [":utf8_validity"],
 )
 
@@ -1109,9 +1113,9 @@ ch_cc_library(
         "third_party/utf8_range/range2-sse.c",
     ],
     copts = _UTF8_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
     language = "C",
     libcxx_headers = False,
+    local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )
 
@@ -1126,9 +1130,9 @@ ch_cc_library(
     hdrs = ["third_party/utf8_range/utf8_range.h"],
     copts = _UTF8_COPTS,
     includes = ["third_party/utf8_range"],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
     language = "C",
     libcxx_headers = False,
+    local_defines = _GENERATED_LOCAL_DEFINES_1,
 )
 
 ch_cc_library(

@@ -6,13 +6,17 @@ package(default_visibility = ["//visibility:public"])
 ch_cc_library(
     name = "loggers",
     srcs = glob(["*.cpp"]),
-    hdrs = ["OwnJSONPatternFormatter.h"],
+    hdrs = [
+        "ExtendedLogMessage.h",
+        "OwnFormattingChannel.h",
+        "OwnJSONPatternFormatter.h",
+        "OwnPatternFormatter.h",
+    ],
     clickhouse_code = True,
     implementation_deps = [
         "//src:core_types",
         "//base:common",
         "//src:headers",
-        "//src/Common",
         "//src:clickhouse_common_io__compile_0",
         "//base/poco/Net:_poco_net",
     ],
@@ -101,7 +105,9 @@ ch_cc_library(
     local_includes = [
         "../../" + "bazel/gen",
     ],
+    source_headers = True,
     deps = [
+        "//src/Common",
         ":headers",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -149,7 +155,10 @@ ch_cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(["*.h"], exclude = ["OwnJSONPatternFormatter.h"]),
+    hdrs = [
+        "Loggers.h",
+        "OwnSplitChannel.h",
+    ],
     strip_include_prefix = "/src",
     deps = [
         "//base:common",

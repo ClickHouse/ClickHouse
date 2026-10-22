@@ -23,7 +23,7 @@ def ch_cc_library(
         additional_compiler_inputs = [],
         copts = [],
         clickhouse_code = False,
-        source_headers = None,
+        source_headers = False,
         language = "CXX",
         arches = ["x86_64", "aarch64"],
         libcxx_headers = True,
@@ -37,16 +37,13 @@ def ch_cc_library(
     llvm_headers supplies LLVM compiler-rt, libc and libunwind headers for
     libraries which request them. libcxx_headers supplies the pinned libc++
     headers to C/ASM. link_runtime adds libc++, libc++abi and libunwind libs.
-    source_headers supplies //src:clickhouse_source_headers privately and
-    defaults to clickhouse_code.
+    source_headers adds //src:clickhouse_source_headers privately when True.
     """
     cpu_flags = select({
         str(Label("@platforms//cpu:" + arch)): flags
         for arch, flags in CLICKHOUSE_TARGET_FLAGS.items()
     } | {"//conditions:default": []})
     code_flags = CLICKHOUSE_CODE_FLAGS if clickhouse_code else []
-    if source_headers == None:
-        source_headers = clickhouse_code
     if source_headers:
         headers = [Label("@clickhouse//src:clickhouse_source_headers")]
         kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + select({

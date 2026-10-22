@@ -1,0 +1,87 @@
+"""Local compiler definitions shared by the ClickHouse program libraries."""
+
+_PROGRAM_FEATURE_DEFINES = [
+    "AI_SDK_HAS_ANTHROPIC=1",
+    "AI_SDK_HAS_OPENAI=1",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "ARROW_HAVE_AVX2",
+        "ARROW_HAVE_BMI2",
+        "ARROW_HAVE_RUNTIME_AVX2",
+        "ARROW_HAVE_RUNTIME_BMI2",
+        "ARROW_HAVE_RUNTIME_SSE4_2",
+        "ARROW_HAVE_SSE4_2",
+    ],
+    "@platforms//cpu:aarch64": [
+        "ARM_ACLE",
+        "ARM_ASM_HWCAP",
+        "ARM_AUXV_HAS_CRC32",
+        "ARM_AUXV_HAS_NEON",
+        "ARM_FEATURES",
+        "ARM_NEON",
+        "ARM_NEON_HASLD4",
+        "ARROW_HAVE_NEON",
+    ],
+}) + [
+    "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+    "BOOST_ASIO_STANDALONE=1",
+    "BOOST_TIMER_ENABLE_DEPRECATED=1",
+    "ENABLE_DISTRIBUTED_CACHE=0",
+    "FIU_ENABLE",
+] + select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": ["HAVE_ARM_ACLE_H"],
+}) + [
+    "HAVE_ATTRIBUTE_ALIGNED",
+    "HAVE_BUILTIN_CTZ",
+    "HAVE_BUILTIN_CTZLL",
+    "HAVE_CONFIG_H",
+    "HAVE_POSIX_MEMALIGN",
+] + select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": ["HAVE_SYS_AUXV_H"],
+}) + [
+    "HAVE_VISIBILITY_HIDDEN",
+    "HAVE_VISIBILITY_INTERNAL",
+    "JEMALLOC_NO_RENAME",
+    "PICOJSON_USE_LOCALE=0",
+    "POCO_ENABLE_CPP11",
+    "POCO_OS_FAMILY_UNIX",
+    "SIMSIMD_DYNAMIC_DISPATCH",
+    "SIMSIMD_NATIVE_BF16=0",
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+]
+
+_PROGRAM_SEARCH_DEFINES = [
+    "UNALIGNED_OK",
+    "USEARCH_CAN_COMPILE_BF16=0",
+    "USEARCH_CAN_COMPILE_FLOAT16",
+    "USEARCH_USE_FP16LIB",
+    "USEARCH_USE_SIMSIMD",
+    "USE_CLICKHOUSE_THREADS=1",
+    "WITH_COVERAGE=0",
+    "WITH_COVERAGE_DEPTH=0",
+    "WITH_GZFILEOP",
+    "X86_64",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "X86_AVX2",
+        "X86_FEATURES",
+        "X86_PCLMULQDQ_CRC",
+        "X86_SSE2",
+        "X86_SSE42",
+        "X86_SSSE3",
+    ],
+    "@platforms//cpu:aarch64": [],
+})
+
+_PROGRAM_LIBCXX_DEFINES = [
+    "ZLIB_COMPAT",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
+
+CLICKHOUSE_PROGRAM_DEFINES = _PROGRAM_FEATURE_DEFINES + _PROGRAM_SEARCH_DEFINES + _PROGRAM_LIBCXX_DEFINES
+
+CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES = _PROGRAM_FEATURE_DEFINES + ["SZ_DYNAMIC_DISPATCH=1"] + _PROGRAM_SEARCH_DEFINES + ["XXH_INLINE_ALL"] + _PROGRAM_LIBCXX_DEFINES

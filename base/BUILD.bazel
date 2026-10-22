@@ -62,7 +62,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = False,
     deps = [
         "@clickhouse_cctz//:_cctz",
         "//base/poco/Foundation:_poco_foundation",

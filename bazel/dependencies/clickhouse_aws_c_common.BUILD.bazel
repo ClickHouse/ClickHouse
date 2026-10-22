@@ -151,7 +151,7 @@ ch_cc_library(
 ch_cc_library(
     name = "aws_c_common__compile_2",
     srcs = select({
-        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"] + [] + [],
+        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"],
         "@platforms//cpu:aarch64": [],
     }),
     arches = [

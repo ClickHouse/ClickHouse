@@ -89,6 +89,7 @@ ch_cc_library(
     srcs = ["benchmark_compute_hash_into.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src:dbms__compile_0",
         "@clickhouse_google_benchmark//:google_benchmark",
         "//src/Common",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
@@ -207,6 +208,7 @@ ch_cc_library(
     srcs = ["benchmark_column_insert_many_from.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src:dbms__compile_0",
         "@clickhouse_google_benchmark//:google_benchmark",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMAnalysis",

@@ -46,7 +46,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_aws_c_auth//:aws_c_auth"] + [
+    deps = [
+        "@clickhouse_aws_c_auth//:aws_c_auth",
         "@clickhouse_aws_c_common//:aws_c_common",
         "@clickhouse_aws_c_io//:aws_c_io",
     ],

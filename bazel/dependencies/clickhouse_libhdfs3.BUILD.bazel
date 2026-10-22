@@ -255,7 +255,6 @@ ch_cc_library(
     name = "_hdfs3__compile_1",
     srcs = [
         "src/rpc/RpcClient.cpp",
-    ] + [
         "src/client/KerberosName.h",
         "src/client/Token.h",
         "src/client/UserInfo.h",
@@ -286,7 +285,6 @@ ch_cc_library(
         "src/rpc/RpcRemoteCall.h",
         "src/rpc/RpcServerInfo.h",
         "src/rpc/SaslClient.h",
-    ] + [
         "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
         ":config/contrib/libhdfs3-cmake/platform.h",
     ],

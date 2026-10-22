@@ -17,7 +17,7 @@ ch_cc_library(
         "source/hkdf.c",
         "source/hmac.c",
         "source/rsa.c",
-    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + [] + glob(["include/**/private/**/*.h"]),
+    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + glob(["include/**/private/**/*.h"]),
     hdrs = glob(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],

@@ -7,6 +7,8 @@ ch_cc_library(
     srcs = ["benchmark_statistics.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src:clickhouse_common_io__compile_0",
+        "//src:dbms__compile_0",
         "@clickhouse_google_benchmark//:google_benchmark",
         "//bazel:clickhouse_config_headers",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",

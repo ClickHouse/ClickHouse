@@ -190,10 +190,15 @@ _PRIVATE_FUNCTIONS_OBJ_0_HEADERS = glob(
     "nowSubsecond.h",
     "replicate.h",
     "runningDifference.h",
+    "DivisionUtils.h",
+    "FunctionsNumericIndexedVectorHelper.h",
+    "ITupleFunction.h",
+    "PositionImpl.h",
+    "ReplaceStringImpl.h",
+    "isDistinctFrom.h",
 ]
 
-_GENERATED_HDRS_0 = [
-] + glob(
+_GENERATED_HDRS_0 = glob(
     [
         "AI/*.h",
     ],
@@ -204,7 +209,6 @@ _GENERATED_HDRS_0 = [
     "ComparisonNames.h",
     "ComparisonOrderDomain.h",
     "DateTimeTransforms.h",
-    "DivisionUtils.h",
     "FieldInterval.h",
     "FunctionDateOrDateTimeAddInterval.h",
     "FunctionDateOrDateTimeToSomething.h",
@@ -225,7 +229,6 @@ _GENERATED_HDRS_0 = [
     "FunctionsExternalDictionaries.h",
     "FunctionsMiscellaneous.h",
     "FunctionsNullSafeCmp.h",
-    "FunctionsNumericIndexedVectorHelper.h",
     "FunctionsRandom.h",
     "FunctionsRound.h",
     "FunctionsStringSearch.h",
@@ -235,15 +238,12 @@ _GENERATED_HDRS_0 = [
     "IFunction.h",
     "IFunctionAdaptors.h",
     "IFunctionDateOrDateTime.h",
-    "ITupleFunction.h",
     "IsOperation.h",
     "LowCardinalityExecutionHelpers.h",
     "MatchImpl.h",
     "MultiSearchImpl.h",
     "PolygonUtils.h",
-    "PositionImpl.h",
     "Regexps.h",
-    "ReplaceStringImpl.h",
     "StringHelpers.h",
     "TransformDateTime64.h",
     "TransformTime64.h",
@@ -265,7 +265,6 @@ _GENERATED_HDRS_0 = [
     "identity.h",
     "if.h",
     "indexHint.h",
-    "isDistinctFrom.h",
     "isNotDistinctFrom.h",
     "isNull.h",
     "like.h",
@@ -991,6 +990,7 @@ ch_cc_library(
     local_includes = [
         "../../" + "bazel/gen",
     ],
+    source_headers = True,
     deps = [
         "//src:dbms__compile_1",
         "//src/Common:memory_tracking_api",
@@ -1079,6 +1079,7 @@ ch_cc_library(
     local_includes = [
         "../../" + "bazel/gen",
     ],
+    source_headers = True,
     deps = [
     ],
     alwayslink = True,
@@ -1215,6 +1216,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
+    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

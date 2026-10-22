@@ -178,6 +178,7 @@ ch_cc_library(
     local_includes = [
         "../../" + "bazel/gen",
     ],
+    source_headers = True,
     deps = [
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",

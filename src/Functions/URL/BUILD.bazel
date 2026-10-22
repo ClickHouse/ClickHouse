@@ -115,6 +115,7 @@ ch_cc_library(
     local_includes = [
         "../../../" + "bazel/gen",
     ],
+    source_headers = True,
     deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -150,7 +151,6 @@ ch_cc_library(
     local_includes = [
         "../../../" + "bazel/gen",
     ],
-    source_headers = False,
     deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",

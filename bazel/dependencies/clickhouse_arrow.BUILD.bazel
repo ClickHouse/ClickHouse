@@ -367,7 +367,6 @@ ch_cc_library(
             "**/*test_common.h",
             "**/*benchmark*.h",
             "**/s3_test_*.h",
-        ] + [
             "cpp/src/arrow/compute/row/row_util_avx2_internal.h",
             "cpp/src/arrow/extension/tensor_internal.h",
             "cpp/src/arrow/filesystem/gcsfs_internal.h",
@@ -453,9 +452,6 @@ cc_library(
 
 ch_cc_library(
     name = "_arrow_flight",
-    additional_compiler_inputs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-    ],
     srcs = [
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
         "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
@@ -490,6 +486,9 @@ ch_cc_library(
             "**/*test_util*.h",
         ],
     ),
+    additional_compiler_inputs = [
+        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -586,7 +585,6 @@ ch_cc_library(
             "cpp/src/parquet/arrow/test_util.h",
             "cpp/src/parquet/encryption/test_encryption_util.h",
             "cpp/src/parquet/test_util.h",
-        ] + [
             "cpp/src/parquet/level_comparison_inc.h",
             "cpp/src/parquet/level_conversion_inc.h",
         ],

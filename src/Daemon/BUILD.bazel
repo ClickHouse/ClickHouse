@@ -12,8 +12,8 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = [
-        "//src/Loggers:loggers",
         "//src/Loggers:headers",
+        "//src/Loggers:loggers",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -79,6 +79,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    source_headers = True,
     deps = [
         ":headers",
         "@clickhouse_llvm_project//:LLVMSupport",

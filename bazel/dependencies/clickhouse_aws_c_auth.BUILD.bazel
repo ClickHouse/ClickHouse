@@ -42,7 +42,6 @@ ch_cc_library(
     deps = [
         "@clickhouse_aws_c_http//:aws_c_http",
         "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
-    ] + [
         "@clickhouse_aws_c_common//:aws_c_common",
         "@clickhouse_aws_c_io//:aws_c_io",
     ],
