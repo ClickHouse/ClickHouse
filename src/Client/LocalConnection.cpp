@@ -627,6 +627,10 @@ bool LocalConnection::isSendDataNeeded() const
 
 void LocalConnection::sendCancel()
 {
+    /// No query is in flight: like the TCP server, ignore the cancel.
+    if (!state)
+        return;
+
     state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
