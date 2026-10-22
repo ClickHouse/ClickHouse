@@ -357,24 +357,25 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
         if (!node.is_join)
             continue;
 
-        const auto inputs_it = plan_snapshot.inputs.find(node.id);
-        if (inputs_it == plan_snapshot.inputs.end() || !inputs_it->second.join || !inputs_it->second.join->join)
+        const auto analyzer_it = plan_snapshot.analyzers.find(node.id);
+        if (analyzer_it == plan_snapshot.analyzers.end() || !analyzer_it->second.join_cardinality)
             continue;
 
         const auto processors_it = processors_by_step.find(node.id);
         if (processors_it == processors_by_step.end())
             continue;
 
+        const StepAnalyzer & analyzer = analyzer_it->second;
+
         StepAnalysisReport report;
-        if (const auto reporter_it = plan_snapshot.reporters.find(node.id); reporter_it != plan_snapshot.reporters.end())
-            report = reporter_it->second(processors_it->second);
+        if (analyzer.reporter)
+            report = analyzer.reporter(processors_it->second);
 
         UInt64 output_rows = 0;
         if (const auto io_it = stats_by_step.find(node.id); io_it != stats_by_step.end())
             output_rows = io_it->second.output_rows;
 
-        const auto & table_join = inputs_it->second.join->join->getTableJoin();
-        cardinality_by_join_step[node.id] = joinMatchedOutputRows(report, output_rows, table_join.kind(), table_join.strictness());
+        cardinality_by_join_step[node.id] = analyzer.join_cardinality(report, output_rows);
 
         join_raw_reports.emplace(node.id, std::move(report));
     }
@@ -388,24 +389,19 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
     }
 }
 
-StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const
+StepStatsContext AnalyzeStepsStats::makeContext(
+    const String & step_id, const StepAnalyzer & analyzer, const IQueryPlanStep * step_for_interval_timings) const
 {
     StepStatsContext context;
     context.execution_query_time_ns = execution_query_time_ns;
     context.max_num_threads_per_query = max_num_threads_per_query;
-
-    /// The snapshot was taken by the same walk over the same plan that produced the steps being
-    /// analysed here, so every one of them has inputs. Without them the step would be shaped as a
-    /// plain single-stage step -- no stages, no join -- and say nothing about itself, quietly.
-    const auto inputs_it = plan_snapshot.inputs.find(step_id);
-    chassert(inputs_it != plan_snapshot.inputs.end(), "a step is being analysed that the plan snapshot does not know");
-    if (inputs_it != plan_snapshot.inputs.end())
-        context.inputs = inputs_it->second;
+    context.groups = analyzer.groups;
+    context.group_names = analyzer.group_names;
 
     if (const auto step_stats_it = stats_by_step.find(step_id); step_stats_it != stats_by_step.end())
         context.io = step_stats_it->second;
 
-    for (size_t group : context.inputs.groups)
+    for (size_t group : context.groups)
         if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group)); group_stats_it != stats_by_step_group.end())
             context.group_stats[group] = group_stats_it->second;
 
@@ -428,29 +424,33 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const String & step_id) const
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStepImpl(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const
 {
+    /// Every step analysed here comes from the walk that filled the snapshot, so it has an entry.
+    /// One without would be shaped as a plain single-stage step and report none of its metrics.
+    const auto analyzer_it = plan_snapshot.analyzers.find(step_id);
+    chassert(analyzer_it != plan_snapshot.analyzers.end(), "a step is being analysed that the plan snapshot does not know");
+    static const StepAnalyzer unknown_step;
+    const StepAnalyzer & analyzer = analyzer_it != plan_snapshot.analyzers.end() ? analyzer_it->second : unknown_step;
+
     StepAnalysisReport raw_report;
     if (const auto report_it = join_raw_reports.find(step_id); report_it != join_raw_reports.end())
     {
+        /// A join's report was already read, to accumulate the branch costs.
         raw_report = report_it->second;
     }
-    else if (const auto reporter_it = plan_snapshot.reporters.find(step_id); reporter_it != plan_snapshot.reporters.end())
+    else if (analyzer.reporter)
     {
         StepProcessors step_processors;
         if (const auto processors_it = processors_by_step.find(step_id); processors_it != processors_by_step.end())
             step_processors = processors_it->second;
 
-        raw_report = reporter_it->second(step_processors);
+        raw_report = analyzer.reporter(step_processors);
     }
 
-    auto context_for_step = makeContext(step_id, step_for_interval_timings);
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(context_for_step.inputs);
+    auto context_for_step = makeContext(step_id, analyzer, step_for_interval_timings);
+    if (analyzer.finish)
+        return analyzer.finish(context_for_step, std::move(raw_report));
 
-    /// Use the service of a generator, which takes the context (e.g. i/o, total time)
-    /// some internal raw metrics, which are specific for each step,  that
-    /// with the knowledge of the step will pre-process the metrics before printing
-    AnalyzedStepData result = step_stats_generator(context_for_step, std::move(raw_report));
-
-    return result;
+    return analyzeDefaultStep(context_for_step, std::move(raw_report));
 }
 
 void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const

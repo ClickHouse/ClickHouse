@@ -273,16 +273,11 @@ void inlineGroupIntoStage(AnalyzedStepData & step_data, MetricGroupKey group_key
 
 }
 
-AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report)
+AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report, const JoinAnalysisInputs & join_inputs)
 {
     /// The block nested loop join is a plan step of its own rather than an `IJoin`. It never swaps its
     /// inputs and reports no per-stage metrics, so the derived per-side numbers and the spill group
     /// are all there is to shape.
-    if (!context.inputs.join)
-        return buildAnalyzedStepData(context, std::move(report));
-
-    const JoinAnalysisInputs & join_inputs = *context.inputs.join;
-
     if (join_inputs.is_block_nested_loop)
     {
         enrichJoinSides(

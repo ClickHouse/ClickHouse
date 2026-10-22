@@ -5,7 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Profiling/Analysis/StepAnalysisInputs.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <functional>
 #include <span>
@@ -41,15 +41,6 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
-using StepProcessors = std::span<IProcessor * const>;
-
-/// Builds the analysis report of one step from the processors that ran it.
-///
-/// A step hands one of these out instead of reporting on itself, so that the report can be built
-/// after the step is gone: the closure holds what it needs by value, or by `shared_ptr` for the
-/// objects the processors share with it, such as the `IJoin`. An empty reporter means the step has
-/// nothing to report.
-using StepReporter = std::function<StepAnalysisReport(StepProcessors)>;
 
 /// Identity of a plan step, unique within a query.
 class PlanStepIndex
@@ -232,12 +223,10 @@ public:
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
 
-    /// See `StepReporter`. The default reports nothing.
-    virtual StepReporter makeReporter() const { return {}; }
-
-    /// Everything the analysis reads from this step, as values, so that it can be shaped after
-    /// the step is gone. The default describes the stages; a step with more to say overrides it.
-    virtual StepAnalysisInputs captureAnalysisInputs() const;
+    /// An analyzer for this step: its stages, how to read its processors, and how to shape what
+    /// comes out. It captures what it needs by value and runs after the step is gone.
+    /// The default reports no metrics of its own and shapes the stages the ordinary way.
+    virtual StepAnalyzer captureAnalyzer() const;
 
 protected:
     virtual void updateOutputHeader() = 0;

@@ -79,7 +79,7 @@ private:
     void computeJoinBranchCosts();
 
     AnalyzedStepData analyzeStepImpl(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const;
-    StepStatsContext makeContext(const String & step_id, const IQueryPlanStep * step_for_interval_timings) const;
+    StepStatsContext makeContext(const String & step_id, const StepAnalyzer & analyzer, const IQueryPlanStep * step_for_interval_timings) const;
     void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;

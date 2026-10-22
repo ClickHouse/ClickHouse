@@ -91,8 +91,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepReporter makeReporter() const override;
-    StepAnalysisInputs captureAnalysisInputs() const override;
+    StepAnalyzer captureAnalyzer() const override;
 
     const JoinEstimation & getEstimation() const { return estimation; }
     UInt64 getClusterId() const { return cluster_id; }
@@ -152,8 +151,7 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    StepReporter makeReporter() const override;
-    StepAnalysisInputs captureAnalysisInputs() const override;
+    StepAnalyzer captureAnalyzer() const override;
 
 private:
     void updateOutputHeader() override;

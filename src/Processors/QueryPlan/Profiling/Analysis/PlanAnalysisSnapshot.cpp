@@ -63,10 +63,7 @@ PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan, bool 
 
         snapshot.join_nodes.push_back(std::move(branch_node));
 
-        if (auto reporter = step.makeReporter())
-            snapshot.reporters.emplace(step_id, std::move(reporter));
-
-        snapshot.inputs.emplace(step_id, step.captureAnalysisInputs());
+        snapshot.analyzers.emplace(step_id, step.captureAnalyzer());
     }
 
     return snapshot;

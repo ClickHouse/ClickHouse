@@ -4,6 +4,7 @@
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -352,27 +353,26 @@ String BlockNestedLoopJoinStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown block nested loop join stage {}", group);
 }
 
-StepAnalysisInputs BlockNestedLoopJoinStep::captureAnalysisInputs() const
+StepAnalyzer BlockNestedLoopJoinStep::captureAnalyzer() const
 {
-    StepAnalysisInputs inputs = IQueryPlanStep::captureAnalysisInputs();
+    /// A plan is analysed only under `EXPLAIN ANALYZE` or `log_query_plans`, and both turn the
+    /// analyze mode on for the whole query before the interpreter is built.
+    chassert(analyze_mode != JoinAnalyzeMode::None, "BlockNestedLoopJoinStep analyzed without the analyze mode");
+
+    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
 
     JoinAnalysisInputs join_inputs;
     join_inputs.is_block_nested_loop = true;
     join_inputs.block_nested_loop_kind = getKind();
     join_inputs.block_nested_loop_strictness = getStrictness();
-    inputs.join = std::move(join_inputs);
 
-    return inputs;
-}
-
-StepReporter BlockNestedLoopJoinStep::makeReporter() const
-{
-    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
-    /// so every join it reaches must have been told to collect statistics.
-    chassert(analyze_mode != JoinAnalyzeMode::None, "BlockNestedLoopJoinStep analyzed without the analyze mode");
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
 
     /// Everything the report needs comes from the probe transforms; nothing of the step is captured.
-    return [](StepProcessors step_processors) -> StepAnalysisReport
+    analyzer.reporter = [](StepProcessors step_processors) -> StepAnalysisReport
     {
         const BlockNestedLoopJoinData * data = nullptr;
         UInt64 probe_rows = 0;
@@ -411,6 +411,8 @@ StepReporter BlockNestedLoopJoinStep::makeReporter() const
 
         return report;
     };
+
+    return analyzer;
 }
 
 }

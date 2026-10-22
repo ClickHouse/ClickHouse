@@ -83,7 +83,7 @@ MetricGroup makeConcurrencyReport(const StepStatsContext & context)
 AnalyzedStages buildAnalyzedStages(const StepStatsContext & context)
 {
     AnalyzedStages stages;
-    for (size_t group : context.inputs.groups)
+    for (size_t group : context.groups)
     {
         const auto group_it = context.group_stats.find(group);
         if (group_it == context.group_stats.end())
@@ -93,8 +93,8 @@ AnalyzedStages buildAnalyzedStages(const StepStatsContext & context)
 
         AnalyzedStage stage;
         stage.group_id = group;
-        const auto name_it = context.inputs.group_names.find(group);
-        stage.name = name_it == context.inputs.group_names.end() ? String{} : name_it->second;
+        const auto name_it = context.group_names.find(group);
+        stage.name = name_it == context.group_names.end() ? String{} : name_it->second;
         stage.wall_clock_time_ns = timing.wall_clock_time_ns;
         stage.total_num_processors = timing.total_num_processors;
         stage.share_of_query_time = context.execution_query_time_ns != 0
@@ -133,14 +133,6 @@ AnalyzedStepData buildAnalyzedStepData(const StepStatsContext & context, StepAna
 AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report)
 {
     return buildAnalyzedStepData(context, std::move(report));
-}
-
-StepStatsAnalyzer getStepStatsAnalyzer(const StepAnalysisInputs & inputs)
-{
-    /// A step whose statistics are shaped as a join's is the one that captured a join block.
-    if (inputs.join)
-        return &analyzeJoinStep;
-    return &analyzeDefaultStep;
 }
 
 }

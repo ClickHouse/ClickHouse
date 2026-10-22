@@ -7,6 +7,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
@@ -495,13 +496,21 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
-StepAnalysisInputs IQueryPlanStep::captureAnalysisInputs() const
+StepAnalyzer IQueryPlanStep::captureAnalyzer() const
 {
-    StepAnalysisInputs inputs;
-    inputs.groups = getStepGroups();
-    for (size_t group : inputs.groups)
-        inputs.group_names[group] = getStepGroupName(group);
-    return inputs;
+    StepAnalyzer analyzer;
+
+    analyzer.groups = getStepGroups();
+    for (size_t group : analyzer.groups)
+        analyzer.group_names[group] = getStepGroupName(group);
+
+    /// No reporter: a step reports no metrics of its own unless it overrides this.
+    analyzer.finish = [](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeDefaultStep(context, std::move(report));
+    };
+
+    return analyzer;
 }
 
 String IQueryPlanStep::getUniqID() const

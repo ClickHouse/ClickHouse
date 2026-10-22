@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
-#include <Processors/QueryPlan/Profiling/Analysis/StepAnalysisInputs.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <base/types.h>
 
 namespace DB
@@ -24,9 +24,8 @@ struct PlanAnalysisSnapshot
     /// The shape, for accumulating the cost of each join's branch.
     JoinBranchNodes join_nodes;
 
-    /// Per step, keyed by `IQueryPlanStep::getUniqID`.
-    std::unordered_map<String, StepReporter> reporters;
-    std::unordered_map<String, StepAnalysisInputs> inputs;
+    /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`.
+    std::unordered_map<String, StepAnalyzer> analyzers;
 
     /// Walks the plan and the child plans its steps own.
     ///

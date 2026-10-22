@@ -20,6 +20,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 #include <unordered_set>
@@ -336,32 +337,38 @@ static JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_process
     return counters;
 }
 
-StepAnalysisInputs JoinStep::captureAnalysisInputs() const
+StepAnalyzer JoinStep::captureAnalyzer() const
 {
-    StepAnalysisInputs inputs = IQueryPlanStep::captureAnalysisInputs();
+    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
 
     JoinAnalysisInputs join_inputs;
     join_inputs.join = join;
-    join_inputs.can_swap_streams = true;
     join_inputs.swapped = swap_streams;
     join_inputs.has_estimation = true;
     join_inputs.estimation = getEstimation();
     join_inputs.input_columns = QueryPlanFormat::collectJoinInputColumns(*this);
-    inputs.join = std::move(join_inputs);
 
-    return inputs;
-}
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
 
-StepReporter JoinStep::makeReporter() const
-{
-    /// A join gathers these metrics only when the query runs with the analyze mode on.
-    /// Report no metrics at all, rather than zeros that look measured.
+    /// `JoinStep` is the only step in the branch-cost phase, so it is the only one reading this.
+    analyzer.join_cardinality = [join_ptr = join](const StepAnalysisReport & report, UInt64 output_rows)
+    {
+        const auto & table_join = join_ptr->getTableJoin();
+        return joinMatchedOutputRows(report, output_rows, table_join.kind(), table_join.strictness());
+    };
+
+    /// A join counts nothing unless the query runs with the analyze mode on, so with it off there
+    /// is no report to build -- zeros here would be indistinguishable from measured ones. The
+    /// estimation and input columns that `finish` adds do not depend on the mode.
     if (!join->getTableJoin().collectAnalyzeStats())
-        return {};
+        return analyzer;
 
     /// The `IJoin` is shared with the processors that run it, so holding it keeps the report
     /// available after the step is gone. Nothing else of the step is captured.
-    return [join_ptr = join](StepProcessors step_processors) -> StepAnalysisReport
+    analyzer.reporter = [join_ptr = join](StepProcessors step_processors) -> StepAnalysisReport
     {
         /// Case of Y-shaped join
         if (typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()))
@@ -381,6 +388,8 @@ StepReporter JoinStep::makeReporter() const
         /// Case for one join, stored in the JoinStep directly
         return join_ptr->getAnalysisReport();
     };
+
+    return analyzer;
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -599,24 +608,25 @@ void FilledJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
 
-StepAnalysisInputs FilledJoinStep::captureAnalysisInputs() const
+StepAnalyzer FilledJoinStep::captureAnalyzer() const
 {
-    StepAnalysisInputs inputs = IQueryPlanStep::captureAnalysisInputs();
+    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
 
     /// A filled join always keeps the storage on the right and never carries an estimation.
     JoinAnalysisInputs join_inputs;
     join_inputs.join = join;
-    inputs.join = std::move(join_inputs);
 
-    return inputs;
-}
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
 
-StepReporter FilledJoinStep::makeReporter() const
-{
     if (!join->getTableJoin().collectAnalyzeStats())
-        return {};
+        return analyzer;
 
-    return [join_ptr = join](StepProcessors) { return join_ptr->getAnalysisReport(); };
+    analyzer.reporter = [join_ptr = join](StepProcessors) { return join_ptr->getAnalysisReport(); };
+
+    return analyzer;
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
