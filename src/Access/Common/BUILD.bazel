@@ -8,7 +8,10 @@ ch_cc_library(
     srcs = glob(["*.cpp"]),
     hdrs = glob(
         ["*.h"],
-        exclude = ["SQLSecurityDefs.h"],
+        exclude = [
+            "AccessEntityType.h",
+            "SQLSecurityDefs.h",
+        ],
     ),
     clickhouse_code = True,
     implementation_deps = [
@@ -92,6 +95,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
+        ":headers",
         "//src:core_types",
         "//src/Common",
         "//src:headers",
@@ -103,7 +107,10 @@ ch_cc_library(
 
 ch_cc_library(
     name = "headers",
-    hdrs = ["SQLSecurityDefs.h"],
+    hdrs = [
+        "AccessEntityType.h",
+        "SQLSecurityDefs.h",
+    ],
     clickhouse_code = True,
     deps = ["//src:core_types"],
 )

@@ -2,15 +2,26 @@ load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_XML_PRIVATE_HEADERS = [
+    "include/Poco/DOM/AttrMap.h",
+    "include/Poco/DOM/ChildNodesList.h",
+    "include/Poco/DOM/DOMBuilder.h",
+    "include/Poco/DOM/DOMSerializer.h",
+    "include/Poco/DOM/DTDMap.h",
+    "include/Poco/DOM/ElementsByTagNameList.h",
+    "include/Poco/DOM/EventDispatcher.h",
+    "include/Poco/SAX/EntityResolverImpl.h",
+]
+
 poco_cc_library(
     name = "_poco_xml",
     srcs = glob(["src/*.cpp"]) + [
         "src/hash_table.h",
         "src/siphash.h",
-    ],
+    ] + _XML_PRIVATE_HEADERS,
     hdrs = glob(
         ["include/**/*.h"],
-        exclude = ["include/Poco/XML/expat*.h"],
+        exclude = ["include/Poco/XML/expat*.h"] + _XML_PRIVATE_HEADERS,
     ),
     copts = [
         "-Wno-c99-extensions",

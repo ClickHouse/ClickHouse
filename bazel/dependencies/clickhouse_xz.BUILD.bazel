@@ -50,7 +50,6 @@ ch_cc_library(
         ],
     ),
     hdrs = ["src/liblzma/api/lzma.h"],
-    textual_hdrs = glob(["src/liblzma/api/lzma/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
@@ -130,5 +129,6 @@ ch_cc_library(
         "src/liblzma/simple",
         "src/common",
     ],
+    textual_hdrs = glob(["src/liblzma/api/lzma/*.h"]),
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

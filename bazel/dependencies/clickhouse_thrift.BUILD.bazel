@@ -91,7 +91,10 @@ ch_cc_library(
         "lib/cpp/src/thrift/concurrency/Mutex.cpp",
     ],
     hdrs = [":config/contrib/thrift-cmake/thrift/config.h"] + glob(
-        ["lib/cpp/src/**/*.h", "lib/cpp/src/**/*.tcc"],
+        [
+            "lib/cpp/src/**/*.h",
+            "lib/cpp/src/**/*.tcc",
+        ],
         exclude = [
             "lib/cpp/src/thrift/windows/**",
             "lib/cpp/src/thrift/qt/**",

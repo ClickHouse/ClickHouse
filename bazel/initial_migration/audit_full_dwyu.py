@@ -30,6 +30,208 @@ FIELDS = {
 OTHER_CC = {"cc_import", "cc_proto_library", "cc_shared_library",
             "rust_import", "rust_library", "rust_static_library"}
 
+DECLARED_CC = NATIVE_CC | {"ch_cc_library", "poco_cc_library", "ch_grpc_cc_library"}
+FIXTURE_PACKAGE = "bazel/initial_migration/dwyu_regressions/"
+
+
+def read_production_census(path, digest, workspace=Path(".")):
+    """Validate an externally prepared census against the BUILD files under audit."""
+    raw = path.read_bytes()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest or "") or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError("production census SHA-256 mismatch")
+    census = json.loads(raw)
+    if (set(census) != {"schema", "revision", "tree", "inventory_sha256", "build_files", "declarations"}
+            or census["schema"] != 1
+            or not re.fullmatch(r"[0-9a-f]{40}", census["revision"])
+            or not re.fullmatch(r"[0-9a-f]{40}", census["tree"])
+            or not re.fullmatch(r"[0-9a-f]{64}", census["inventory_sha256"])
+            or not isinstance(census["build_files"], dict) or not census["build_files"]
+            or not isinstance(census["declarations"], dict) or not census["declarations"]):
+        raise ValueError("invalid production census")
+    repositories = set()
+    for name, record in census["build_files"].items():
+        relative = Path(name)
+        if (relative.is_absolute() or ".." in relative.parts or
+                not (name.endswith("/BUILD.bazel") or name == "BUILD.bazel" or name.endswith(".BUILD.bazel")) or
+                set(record) != {"sha1", "owner", "repo", "package", "declarations"} or
+                record["owner"] not in ("workspace", "contrib", "other-overlay")):
+            raise ValueError("invalid census BUILD file: " + name)
+        body = (workspace / relative).read_bytes()
+        git_blob = hashlib.sha1(b"blob " + str(len(body)).encode() + b"\0" + body).hexdigest()
+        if git_blob != record["sha1"]:
+            raise ValueError("census BUILD file changed: " + name)
+        if record["owner"] == "workspace":
+            if record["repo"] != "":
+                raise ValueError("workspace BUILD claims an external repository: " + name)
+            repositories.add("//")
+        elif record["owner"] == "contrib":
+            repo = record["repo"]
+            if (not isinstance(repo, str) or not re.fullmatch(r"@clickhouse_[a-z0-9_]+", repo)
+                    or name != "bazel/dependencies/" + repo[1:] + ".BUILD.bazel"):
+                raise ValueError("contrib repository differs from BUILD metadata: " + name)
+            repositories.add(census_canonical(repo + "//"))
+    production, fixtures = {}, {}
+    for label, decl in census["declarations"].items():
+        query_labels([label])
+        if (set(decl) != {"label", "file", "kind", "line", "owner"} or decl["label"] != label or
+                decl["kind"] not in DECLARED_CC or type(decl["line"]) is not int or decl["line"] < 1):
+            raise ValueError("invalid census declaration: " + label)
+        build = census["build_files"].get(decl["file"])
+        if not build or decl["owner"] != build["owner"]:
+            raise ValueError("census declaration lacks its BUILD file: " + label)
+        prefix = build["repo"] + "//" + build["package"] + ":"
+        if not label.startswith(prefix):
+            raise ValueError("declaration disagrees with BUILD package: " + label)
+        if decl["file"].startswith(FIXTURE_PACKAGE):
+            package = build["package"]
+            if (decl["owner"] != "workspace" or
+                    not (package == FIXTURE_PACKAGE.rstrip("/") or package.startswith(FIXTURE_PACKAGE))):
+                raise ValueError("non-fixture declaration claimed as fixture: " + label)
+            fixtures[label] = decl
+        elif decl["owner"] in ("workspace", "contrib"):
+            production[label] = decl
+    if not production:
+        raise ValueError("production census has no owned C/C++ declarations")
+    if "//" not in repositories or any(
+            label_repository(census_canonical(label)) not in repositories for label in production):
+        raise ValueError("production declarations are outside their verified repositories")
+    return {
+        "source": sha_file(path), "revision": census["revision"], "tree": census["tree"],
+        "inventory_sha256": census["inventory_sha256"], "production": production,
+        "owned_repositories": sorted(repositories),
+        "fixture_declarations_not_scored": fixtures,
+        "fixture_expectations": "not tested by production closure; test controls separately",
+    }
+
+
+def census_canonical(label):
+    """Bzlmod's checked-in contrib module creates these repository names."""
+    if label.startswith("@clickhouse_") and "//" in label:
+        return "@@+contrib+" + label[1:]
+    return canonical(label)
+
+
+def label_repository(label):
+    """Return the exact repository of a --consistent_labels query result."""
+    repo, separator, _ = canonical(label).partition("//")
+    if not separator or (repo and not re.fullmatch(r"@@[a-zA-Z0-9_.+~-]+", repo)):
+        raise ValueError("query did not return a canonical repository: " + label)
+    return repo + "//"
+
+
+def read_compatibility(path, rows):
+    """Bind a Starlark provider observation to a unique config(expr, target) row."""
+    by_label = defaultdict(list)
+    for key, row in rows.items():
+        by_label[row["label"]].append(key)
+    seen = {}
+    for line in path.read_text().splitlines():
+        event = json.loads(line)
+        if (not isinstance(event, dict) or set(event) != {"label", "incompatible"} or
+                not isinstance(event["label"], str) or type(event["incompatible"]) is not bool):
+            raise ValueError("invalid cquery platform provider observation")
+        label = canonical(event["label"])
+        if len(by_label.get(label, [])) != 1:
+            raise ValueError("platform provider has no unique top-level configuration: " + label)
+        key = by_label[label][0]
+        if key in seen:
+            raise ValueError("duplicate platform provider observation: " + key)
+        seen[key] = event["incompatible"]
+    if set(seen) != set(rows):
+        raise ValueError("missing platform provider observations: " + repr(sorted(set(rows) - set(seen))))
+    return seen
+
+
+def choose_production_roots(audit, census, initial):
+    first = audit.query("initial-closure", "cquery", "deps(" + query_labels(initial) + ")")
+    reachable, skipped = read_cquery(first)
+    known = {row["label"] for row in reachable.values() if not row["is_tool"]}
+    candidates = [label for label in census["production"] if census_canonical(label) not in known]
+    result = {"initial": initial, "initial_skipped": skipped, "candidate_count": len(candidates),
+              "incompatible": {}, "added_roots": []}
+    if not candidates:
+        return initial, result
+    expr = "config(" + query_labels(candidates) + ", target)"
+    top = audit.query("standalone-candidates", "cquery", expr)
+    top_rows, omitted = read_cquery(top)
+    result["omitted_candidates"] = omitted
+    result["candidate_queries"] = {"configured": sha_file(top)}
+    expected = {census_canonical(label) for label in candidates}
+    observed = {row["label"] for row in top_rows.values() if not row["is_tool"]}
+    if expected != observed or omitted:
+        raise ValueError("standalone configured census differs from requested declarations: " +
+                         repr({"missing": sorted(expected - observed), "unexpected": sorted(observed - expected),
+                               "omitted": omitted}))
+    query_file = audit.out / "standalone-platform.query"
+    query_file.write_text(expr + "\n")
+    provider_file = audit.out / "standalone-platform.cquery"
+    provider_file.write_text(
+        'def format(target):\n'
+        '    p = providers(target)\n'
+        '    return json.encode({"label": str(target.label), '
+        '"incompatible": None if p == None else "IncompatiblePlatformProvider" in p})\n'
+    )
+    run = audit.command("standalone-platform", "cquery", [
+        "--query_file=" + str(query_file), "--output=starlark", "--consistent_labels",
+        "--starlark:file=" + str(provider_file),
+    ], output=True)
+    if run["exit_code"]:
+        raise RuntimeError("cquery standalone platform providers failed: " + run["log"]["file"])
+    result["candidate_queries"]["platform"] = run["stdout"]
+    compatible = read_compatibility(Path(run["stdout"]["file"]), top_rows)
+    apparent = {census_canonical(label): label for label in candidates}
+    for key, incompatible in compatible.items():
+        row = top_rows[key]
+        if incompatible:
+            result["incompatible"][key] = {
+                "label": row["label"], "checksum": row["checksum"],
+                "evidence": "IncompatiblePlatformProvider in matched cquery target configuration",
+            }
+        else:
+            result["added_roots"].append(apparent[row["label"]])
+    return initial + sorted(result["added_roots"]), result
+
+
+def ordinary_reachability(bep, rows, roots):
+    """Only a successful ordinary BEP root grants ordinary coverage to its configured deps."""
+    requested = {census_canonical(label) for label in roots}
+    success = set()
+    invocations = []
+    with bep.open() as stream:
+        for line in stream:
+            event = json.loads(line)
+            if "started" in event:
+                invocations.append(event["started"].get("uuid"))
+            target = event.get("id", {}).get("targetCompleted")
+            if not target or target.get("aspect") or canonical(target.get("label", "")) not in requested:
+                continue
+            key = identity(target["label"], target.get("configuration", {}).get("id", ""))
+            if key not in rows:
+                raise ValueError("ordinary completed root outside configured closure: " + key)
+            groups = event.get("completed", {}).get("outputGroup", [])
+            if any(g.get("name") == "dwyu" for g in groups):
+                raise ValueError("DWYU completion in ordinary root coverage")
+            if event.get("completed", {}).get("success") is True:
+                success.add(key)
+    if len(invocations) != 1 or not invocations[0]:
+        raise ValueError("ordinary BEP requires one invocation")
+    reachable = set()
+    remaining = list(success)
+    while remaining:
+        key = remaining.pop()
+        if key in reachable:
+            continue
+        reachable.add(key)
+        for dep in rows[key]["configured_inputs"]:
+            checksum = dep.get("configurationChecksum")
+            if not checksum:  # Source files and unconfigured rules carry no configured C++ proof.
+                continue
+            child = identity(dep["label"], checksum)
+            if child in rows:
+                remaining.append(child)
+    return {"invocation_uuid": invocations[0], "successful_roots": sorted(success),
+            "reachable": reachable, "bep": sha_file(bep)}
+
 
 def sha_file(path):
     digest = hashlib.sha256()
@@ -275,14 +477,48 @@ def add_actions(path, rules):
 
 
 def query_labels(labels):
-    if any(not re.fullmatch(r"(@{0,2}[a-zA-Z0-9_.+~-]*)?//[^\s'\"()]*", l) for l in labels):
+    if any(not isinstance(label, str) or not re.fullmatch(
+            r"(@{1,2}[a-zA-Z0-9_.+~-]+)?//[a-zA-Z0-9_./+~=-]*(?::[a-zA-Z0-9_./+~=-]+)?", label
+    ) or label.endswith("//") or "..." in label.split("//", 1)[1] for label in labels):
         raise ValueError("not an explicit Bazel label: " + repr(labels))
-    return "set(" + " ".join(labels) + ")"
+    # Bazel's query lexer treats '+' in an apparent label as an operator.
+    return "set(" + " ".join('"' + label + '"' for label in labels) + ")"
+
+
+def failed_query_details(log, extra):
+    """Retain a bounded, redacted query diagnostic and the original file hashes."""
+    queries = [Path(arg[len("--query_file="):]) for arg in extra
+               if arg.startswith("--query_file=")]
+    if len(queries) != 1:
+        raise ValueError("query command needs exactly one query file")
+    original = log.read_bytes()
+    text = original.decode("utf-8", errors="replace")
+    invocation_ids = re.findall(
+        r"(?im)^INFO:\s+Invocation ID:\s*([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\s*$", text)
+    # Redact complete lines before truncation: a tail that starts partway
+    # through a credential must not contain even the end of its value.
+    text = re.sub(
+        r"(?im)(\b(?:x-buildbuddy-api-key|authorization|buildbuddy_api_key)\b\s*[:=]\s*)[^\r\n]*",
+        r"\1[REDACTED]", text)
+    text = re.sub(r"(?im)(--remote(?:_cache|_exec)?_header(?:=|\s+))[^\r\n]*",
+                  r"\1[REDACTED]", text)
+    redacted = text.encode()
+    limit = 8192
+    head = redacted[:limit].decode("utf-8", errors="ignore")
+    tail = redacted[-limit:].decode("utf-8", errors="ignore") if len(redacted) > limit else ""
+    if len(redacted) <= limit * 2:
+        tail = redacted[limit:].decode("utf-8", errors="ignore")
+    return {"query_file": sha_file(queries[0]),
+            "original_stderr": sha_file(log),
+            "invocation_ids": invocation_ids,
+            "stderr_head": head, "stderr_tail": tail,
+            "redacted_bytes_omitted": max(0, len(redacted) - limit * 2)}
 
 
 class Audit:
     def __init__(self, args):
         self.args = args
+        self.production_census = bool(getattr(args, "production_census", None))
         self.out = args.out.resolve()
         self.out.mkdir(parents=True, exist_ok=False)
         self.bazel = ["bazel", "--host_jvm_args=-Xmx20g"]
@@ -309,6 +545,8 @@ class Audit:
         run = {"name": name, "command": command, "exit_code": rc,
                "seconds": round(time.monotonic() - start, 2),
                "stdout": sha_file(stdout), "log": sha_file(log)}
+        if rc and subcommand in ("cquery", "aquery"):
+            run["failed_query"] = failed_query_details(log, extra)
         self.runs.append(run)
         print("FULL_DWYU_RUN=" + json.dumps(run, sort_keys=True), flush=True)
         return run
@@ -406,7 +644,8 @@ def configured_analyzers(path):
 def audit_closure(audit, roots, rows, eligible, manifest):
     """Apply DWYU to roots in their original configurations, then audit each action."""
     expr = "outputs('.*(_dwyu_report[.]json|[.]dwyu_owned_headers[.]json)', deps(" + query_labels(roots) + "))"
-    aspect = "--aspects=//bazel/rules:dwyu.bzl%dwyu_closure"
+    aspect = "--aspects=//bazel/rules:dwyu.bzl%" + (
+        "dwyu_production_closure" if audit.production_census else "dwyu_closure")
     actions = audit.query("closure-analyzers", "aquery", expr, (
         aspect, "--include_aspects", "--include_artifacts", "--include_file_write_contents",
         "--output_groups=dwyu",
@@ -416,13 +655,17 @@ def audit_closure(audit, roots, rows, eligible, manifest):
     manifest["ambiguous_analyzers"] = {
         key: value for key, value in owners.items() if len(value) != 1
     }
+    if audit.production_census:
+        manifest["analyzers_outside_production"] = sorted(
+            key for key in owners if key in rows and (
+                rows[key]["is_tool"] or not rows[key]["owned_repository"]))
     info = audit.command("closure-execution-root", "info", ["execution_root"])
     if info["exit_code"]:
         raise RuntimeError("bazel info execution_root failed")
     execroot = Path(Path(info["stdout"]["file"]).read_text().strip())
 
-    # Remove only the declared DWYU outputs so neither stale reports nor
-    # different top-level configurations can qualify an owner.
+    # Successful output qualification below requires the original BEP digest,
+    # so the production audit need not remove cached output files.
     deleted = {}
     for key, paths in owners.items():
         for relative in paths:
@@ -431,19 +674,33 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             if ".." in relative_output.parts:
                 raise ValueError("DWYU output outside bazel-out: " + str(path))
             removed = path.is_file() or path.is_symlink()
-            deleted[key] = removed
-            if removed:
+            deleted[key] = removed and not audit.production_census
+            if deleted[key]:
                 path.unlink()
     bep = audit.out / "closure-strict.bep.json"
+    native_bep = audit.out / "closure-ordinary.bep.json"
     native = audit.command("closure-ordinary", "build", [
         "--keep_going", "--remote_download_outputs=minimal",
-        "--build_event_json_file=" + str(audit.out / "closure-ordinary.bep.json"),
+        "--build_event_json_file=" + str(native_bep),
     ] + roots)
-    for row in eligible.values():
-        row["ordinary"] = {
-            "status": "passed" if native["exit_code"] == 0 else "not_proved",
-            "reason": "original configured root build" if native["exit_code"] == 0 else "original root build failed",
-        }
+    if audit.production_census:
+        coverage = ordinary_reachability(native_bep, rows, roots)
+        for key, row in eligible.items():
+            covered = key in coverage["reachable"]
+            row["ordinary"] = {
+                "status": "passed" if covered else "not_proved",
+                "reason": "reachable from an original successful configured root" if covered
+                          else "no successful original configured root reaches this owner",
+                "invocation_uuid": coverage["invocation_uuid"],
+            }
+        manifest["ordinary_coverage"] = {k: v for k, v in coverage.items() if k != "reachable"}
+        manifest["ordinary_coverage"]["reachable_count"] = len(coverage["reachable"])
+    else:
+        for row in eligible.values():
+            row["ordinary"] = {
+                "status": "passed" if native["exit_code"] == 0 else "not_proved",
+                "reason": "original configured root build" if native["exit_code"] == 0 else "original root build failed",
+            }
     run = audit.command("closure-strict", "build", [
         "--keep_going", aspect, "--output_groups=dwyu",
         "--remote_download_outputs=toplevel", "--build_event_publish_all_actions",
@@ -466,7 +723,7 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             if "namedSet" in event.get("id", {}):
                 filesets[event["id"]["namedSet"]["id"]] = event["namedSetOfFiles"]
             target = event.get("id", {}).get("targetCompleted", {})
-            if canonical(target.get("label", "")) in roots:
+            if canonical(target.get("label", "")) in {census_canonical(label) for label in roots}:
                 remaining.extend(
                     f["id"] for group in event.get("completed", {}).get("outputGroup", [])
                     if group.get("name") == "dwyu" for f in group.get("fileSets", [])
@@ -482,6 +739,8 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         remaining.extend(f["id"] for f in entry.get("fileSets", []))
         for item in entry.get("files", []):
             name = str(Path(*item.get("pathPrefix", [])) / item["name"])
+            if name in named_files and named_files[name] != item:
+                raise ValueError("inconsistent BEP named artifact: " + name)
             named_files[name] = item
     for key, row in eligible.items():
         paths = owners.get(key, [])
@@ -505,8 +764,20 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             report["status"] = "failed" if any(not a.get("success") for _, a in actions_for_output) else "missing"
             report["reason"] = "configured report was not produced"
             continue
-        report["report"] = sha_file(path)
-        source = json.loads(path.read_bytes())
+        raw = path.read_bytes()
+        report["report"] = {"file": str(path), "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+        candidates = [a["primaryOutput"] for _, a in actions_for_output if a.get("success") and "primaryOutput" in a]
+        if relative in named_files:
+            candidates.append(named_files[relative])
+        matched_file = next((f for f in candidates if bep_file_matches(f, report["report"])), None)
+        proved = matched_file is not None
+        if proved and audit.production_census:
+            report["bep_file"] = matched_file
+        if audit.production_census and not proved:
+            report["status"] = "not_proved"
+            report["reason"] = "existing or failed output has no matching original successful BEP digest"
+            continue
+        source = json.loads(raw)
         if canonical(source.get("analyzed_target", "")) != row["label"] or any(
             not isinstance(source.get(field), typ) for field, typ in FIELDS.items()
         ) or not isinstance(source.get("unverified_compilation_deps"), list) or any(
@@ -524,10 +795,6 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             continue
         report["findings"] = {field: len(source[field]) for field in FIELDS}
         report["findings"]["unverified_link_deps"] = len(source.get("unverified_link_deps", []))
-        candidates = [a["primaryOutput"] for _, a in actions_for_output if a.get("success") and "primaryOutput" in a]
-        if relative in named_files:
-            candidates.append(named_files[relative])
-        proved = any(bep_file_matches(f, report["report"]) for f in candidates)
         if source.get("unchecked_link_inputs") or configured_headers[0]["contents"]["unchecked_link_inputs"]:
             report["status"] = "unchecked_link_inputs"
         elif source["unentered_owned_files"]:
@@ -644,7 +911,15 @@ def main():
     parser.add_argument("--audit-target", action="append", default=[],
                         help="audit only these explicitly chosen reachable owners; others remain not_tested")
     parser.add_argument("--enumerate-only", action="store_true")
+    parser.add_argument("--production-census", type=Path,
+                        help="SHA-bound prepared inventory of owned ClickHouse BUILD declarations")
+    parser.add_argument("--production-census-sha256",
+                        help="SHA-256 of --production-census from the prepared source record")
     args = parser.parse_args()
+    if bool(args.production_census) != bool(args.production_census_sha256):
+        parser.error("--production-census and --production-census-sha256 must be supplied together")
+    if args.production_census and (args.audit_target or args.seed):
+        parser.error("production census discovers its own roots; --audit-target and --seed would reduce coverage")
     if Path(".bazelversion").read_text().strip() != "9.3.0":
         raise SystemExit("This inventory requires the pinned Bazel 9.3.0 analysis_v2 schema")
     audit = Audit(args)
@@ -653,17 +928,40 @@ def main():
                 "config": args.config, "bazel_version": "9.3.0", "runs": audit.runs,
                 "rules": {}, "audit_passed": False}
     try:
+        if args.production_census:
+            census = read_production_census(args.production_census, args.production_census_sha256)
+            # Use the same build setting for every production query and both
+            # ordinary/strict builds so their configuration checksums match.
+            audit.options.append("--//bazel/rules:dwyu_production_repositories=" +
+                                 ",".join(census["owned_repositories"]))
+            roots, discovered = choose_production_roots(audit, census, ["//:clickhouse", "//src:unit_tests_dbms"])
+            manifest["scope"] = "owned ClickHouse C/C++ declarations and their complete configured dependency closure"
+            manifest["roots"] = roots
+            manifest["production_census"] = census
+            manifest["discovered_roots"] = discovered
         expr = "deps(" + query_labels(roots) + ")"
         cq = audit.query("closure", "cquery", expr)
         rows, skipped = read_cquery(cq)
         manifest["rules"] = rows
         manifest["unconfigured_and_files"] = skipped
+        if args.production_census:
+            declared = {census_canonical(label) for label in census["production"]}
+            reached = {row["label"] for row in rows.values() if not row["is_tool"]}
+            incompatible = {r["label"] for r in discovered["incompatible"].values()}
+            manifest["census_unreached_declarations"] = sorted(declared - reached - incompatible)
+            if manifest["census_unreached_declarations"]:
+                raise ValueError("final closure omitted census declarations: " +
+                                 repr(manifest["census_unreached_declarations"]))
         aq = audit.query("actions", "aquery", expr)
         manifest["actions_not_matched_to_configured_rules"] = add_actions(aq, rows)
         eligible = {}
         for key, row in rows.items():
+            if args.production_census:
+                row["owned_repository"] = label_repository(row["label"]) in census["owned_repositories"]
             if row["is_tool"]:
                 row["category"] = "tool_configuration"
+            elif args.production_census and not row["owned_repository"]:
+                row["category"] = "unowned_closure"
             elif row["rule_class"] in NATIVE_CC:
                 if any(count is None for count in row["sources"].values()):
                     row["category"] = "unresolved_native_sources"
@@ -772,7 +1070,7 @@ def main():
             if row["category"] not in ("tool_configuration", "other_rule_or_generator")
             or row["label"] in [canonical(label) for label in roots]
         }
-        blockers = ("unresolved_native_sources", "unsupported_compiled_or_cc_provider")
+        blockers = ("unresolved_native_sources", "unsupported_compiled_or_cc_provider", "unowned_closure")
         manifest["audit_passed"] = bool(eligible) and not manifest["tool_cc_rules"] and not manifest.get(
             "ambiguous_analyzers") and not manifest.get("analyzers_not_in_original_closure") and not any(
             row["category"] in blockers for row in rows.values()) and not manifest[
@@ -780,16 +1078,37 @@ def main():
                     "requested_not_in_eligible_closure") and all(
                         row["ordinary"]["status"] == "passed" and row["strict"]["status"] == "clean"
                         for row in eligible.values())
+        if args.production_census:
+            # The universal result above remains false for unchecked tools and
+            # unsupported providers. Do not rename these providers to 'clean'.
+            # Unknown non-native C++ compile actions prevent a production pass.
+            unsupported_cpp = {
+                key: row for key, row in rows.items()
+                if row["owned_repository"] and not row["is_tool"] and row["rule_class"] not in NATIVE_CC
+                and any(name in ("CppCompile", "CppCompileHeader", "CppModuleCompile")
+                        for name in row["actions"])
+            }
+            manifest["unsupported_production_cpp"] = sorted(unsupported_cpp)
+            manifest["production_cpp_passed"] = bool(eligible) and not unsupported_cpp and not any(
+                row["category"] == "unresolved_native_sources" for row in rows.values()
+            ) and not any(manifest.get(field) for field in (
+                "ambiguous_analyzers", "analyzers_not_in_original_closure",
+                "analyzers_outside_production", "actions_not_matched_to_configured_rules", "census_unreached_declarations",
+                "requested_not_in_eligible_closure",
+            )) and all(row["ordinary"]["status"] == "passed" and row["strict"]["status"] == "clean"
+                      for row in eligible.values())
     except (OSError, ValueError, KeyError, RuntimeError) as exc:
         manifest["error"] = type(exc).__name__ + ": " + str(exc)
     path = audit.out / "manifest.json"
     write_json(path, manifest)
     print("FULL_DWYU_MANIFEST=" + json.dumps({
         **sha_file(path), "audit_passed": manifest["audit_passed"],
+        "production_cpp_passed": manifest.get("production_cpp_passed"),
         "categories": manifest.get("categories"), "ordinary": manifest.get("ordinary"),
         "strict": manifest.get("strict"), "error": manifest.get("error")
     }, sort_keys=True), flush=True)
-    return 0 if manifest["audit_passed"] else 1
+    passed = manifest.get("production_cpp_passed", False) if args.production_census else manifest["audit_passed"]
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

@@ -48,15 +48,16 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = ["@clickhouse_postgres//:_libpq"],
+    includes = [
+        "config/contrib/libpqxx-cmake",
+        "include",
+    ],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    includes = [
-        "config/contrib/libpqxx-cmake",
-        "include",
     ],
     textual_hdrs = glob(
         ["include/**/*.hxx"],
@@ -66,5 +67,4 @@ ch_cc_library(
             "include/pqxx/internal/libpq-forward.hxx",
         ],
     ) + ["include/pqxx/internal/gates/connection-stream_from.hxx"],
-    implementation_deps = ["@clickhouse_postgres//:_libpq"],
 )

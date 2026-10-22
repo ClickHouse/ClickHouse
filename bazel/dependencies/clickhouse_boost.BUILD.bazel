@@ -67,7 +67,6 @@ ch_cc_library(
         ":_boost_context",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -116,7 +115,7 @@ ch_cc_library(
         ":boost_config",
         ":boost_headers",
         "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_zstd//:_zstd",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -163,7 +162,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_zstd//:_zstd"],
 )
 
 ch_cc_library(
@@ -244,6 +242,11 @@ cc_library(
             "boost/**/*.ipp",
         ],
         exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + [
+            "boost/compute.hpp",
+            "boost/compute/**",
+            "boost/numeric/odeint/external/compute/**",
+            "boost/numeric/ublas/opencl.hpp",
+            "boost/numeric/ublas/opencl/**",
             "boost/program_options/detail/config_file.hpp",
         ],
     ),

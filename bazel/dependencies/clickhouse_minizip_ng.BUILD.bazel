@@ -32,8 +32,18 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_bzip2//:_bzip2", "@clickhouse_xz//:_liblzma", "@clickhouse_zstd//:_zstd__compile_0", "@clickhouse_openssl//:crypto"],
+    implementation_deps = [
+        "@clickhouse_bzip2//:_bzip2",
+        "@clickhouse_xz//:_liblzma",
+        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_openssl//:crypto",
+    ],
+    includes = [
+        ".",
+        "compat",
+    ],
     language = "C",
+    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
@@ -86,7 +96,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_zlib_ng//:_zlib","@clickhouse_zstd//:_zstd","@clickhouse//contrib/minizip-ng-cmake:headers"],
-    includes = [".", "compat"],
-    libcxx_headers = False,
+    deps = [
+        "@clickhouse_zlib_ng//:_zlib",
+        "@clickhouse_zstd//:_zstd",
+    ],
 )

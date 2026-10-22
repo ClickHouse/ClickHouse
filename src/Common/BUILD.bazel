@@ -10,7 +10,6 @@ exports_files(
 )
 
 exports_files([
-    "ActionLock.cpp",
     "AddressToLineCache.cpp",
     "AggregatedMetrics.cpp",
     "AlignedBuffer.cpp",
@@ -40,7 +39,6 @@ exports_files([
     "Crypto/OpenSSLInitializer.cpp",
     "Crypto/X509Certificate.cpp",
     "CurrentMemoryTracker.cpp",
-    "CurrentMetrics.cpp",
     "CurrentThread.cpp",
     "CurrentThreadHelpers.cpp",
     "DNSPTRResolverProvider.cpp",
@@ -202,7 +200,6 @@ exports_files([
     "SeccompFilter.cpp",
     "SensitiveDataMasker.cpp",
     "SettingsChanges.cpp",
-    "SharedMutex.cpp",
     "ShellCommand.cpp",
     "ShellCommandSettings.cpp",
     "ShellCommandsHolder.cpp",
@@ -597,7 +594,15 @@ _MEMORY_TRACKING_API_HEADERS = [
     "AllocationTrace.h",
     "AllocatorWithMemoryTracking.h",
     "CurrentMemoryTracker.h",
+    "DequeWithMemoryTracking.h",
+    "ListWithMemoryTracking.h",
+    "MapWithMemoryTracking.h",
+    "PODArray_fwd.h",
+    "SetWithMemoryTracking.h",
+    "StackWithMemoryTracking.h",
+    "UnorderedMapWithMemoryTracking.h",
     "UnorderedSetWithMemoryTracking.h",
+    "VectorWithMemoryTracking.h",
 ]
 
 ch_cc_library(
@@ -605,10 +610,73 @@ ch_cc_library(
     hdrs = _MEMORY_TRACKING_API_HEADERS,
     clickhouse_code = True,
     strip_include_prefix = "/src",
+    textual_hdrs = ["Allocator_fwd.h"],
     deps = [
+        "//src:core_defines",
         "//base:common",
         "//bazel:clickhouse_config_headers",
         "@clickhouse_jemalloc//:_jemalloc",
+    ],
+)
+
+ch_cc_library(
+    name = "stopwatch",
+    srcs = ["Stopwatch.cpp"],
+    hdrs = ["Stopwatch.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "action_lock",
+    srcs = ["ActionLock.cpp"],
+    hdrs = [
+        "ActionLock.h",
+        "ActionBlocker.h",
+    ],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+)
+
+ch_cc_library(
+    name = "current_metrics",
+    srcs = ["CurrentMetrics.cpp"],
+    hdrs = ["CurrentMetrics.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "shared_mutex",
+    srcs = ["SharedMutex.cpp"],
+    hdrs = ["SharedMutex.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    textual_hdrs = ["futex.h"],
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "exception_api",
+    hdrs = [
+        "Exception.h",
+        "FramePointers.h",
+        "LoggingFormatStringHelpers.h",
+        "TypePromotion.h",
+        "typeid_cast.h",
+    ],
+    clickhouse_code = True,
+    deps = [
+        "//src:core_types",
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_fmtlib//:_fmt",
     ],
 )
 
@@ -617,7 +685,6 @@ ch_cc_library(
     srcs = [
         "Exception.cpp",
         "ProfileEvents.cpp",
-        "Stopwatch.cpp",
     ],
     hdrs = glob(
         ["**/*.h"],
@@ -629,7 +696,19 @@ ch_cc_library(
             "WKB.h",
             "LLVMCoverageMapping.h",
             "MachO.h",
+            "Stopwatch.h",
+            "ActionLock.h",
+            "ActionBlocker.h",
+            "CurrentMetrics.h",
+            "SharedMutex.h",
+            "futex.h",
+            "Allocator_fwd.h",
             "**/tests/**/*.h",
+            "Exception.h",
+            "FramePointers.h",
+            "LoggingFormatStringHelpers.h",
+            "TypePromotion.h",
+            "typeid_cast.h",
         ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS,
     ),
     clickhouse_code = True,
@@ -642,6 +721,7 @@ ch_cc_library(
     deps = [
         "//src:core_types",
         ":memory_tracking_api",
+        ":stopwatch",
         "//src/Parsers:headers",
         "//src:headers",
         "//base:common",
@@ -663,5 +743,6 @@ ch_cc_library(
         "@clickhouse_re2//:_re2",
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_stringzilla//:_stringzilla",
+        ":exception_api",
     ],
 )

@@ -355,5 +355,6 @@ ch_cc_library(
         "//src/Parsers:headers",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
+        "//src/Common:exception_api",
     ],
 )

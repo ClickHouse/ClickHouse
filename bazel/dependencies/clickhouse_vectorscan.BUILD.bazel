@@ -186,7 +186,11 @@ ch_cc_library(
         ],
     }),
     hdrs = _VECTORSCAN_API_HEADERS,
-    copts = ["-w", "-std=gnu11", "-g1"],
+    copts = [
+        "-w",
+        "-std=gnu11",
+        "-g1",
+    ],
     implementation_deps = ["@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers"],
     includes = [
         "src",
@@ -612,10 +616,11 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["src/util/supervector/arch/x86/impl.cpp"],
         "@platforms//cpu:aarch64": ["src/util/supervector/arch/arm/impl.cpp"],
     }),
-    copts = ["-w", "-std=c++17", "-g1"],
-    local_defines = _VECTORSCAN_LOCAL_DEFINES,
-    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
-
+    copts = [
+        "-w",
+        "-std=c++17",
+        "-g1",
+    ],
     implementation_deps = [
         ":_vectorscan__compile_0",
         "@clickhouse_boost//:boost_headers",
@@ -623,6 +628,8 @@ ch_cc_library(
         "@clickhouse//contrib/vectorscan-cmake:headers",
         "@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers",
     ],
+    local_defines = _VECTORSCAN_LOCAL_DEFINES,
+    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
 )
 
 ch_cc_library(
@@ -706,13 +713,12 @@ ch_cc_library(
             "-Wno-c++11-narrowing",
         ],
     }),
-    local_defines = _VECTORSCAN_LOCAL_DEFINES,
-    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
-
     implementation_deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers",
     ],
+    local_defines = _VECTORSCAN_LOCAL_DEFINES,
+    local_includes = _VECTORSCAN_LOCAL_INCLUDES,
 )
 
 cc_library(

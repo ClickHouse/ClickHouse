@@ -46,10 +46,14 @@ ch_cc_library(
         "src/register.c",
         "src/base64.c",
         "src/md5pwd.c",
-    ]) + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(["digest-md5/*.c"]) + glob(["login/*.c"]) + glob(["gssapi/*.c"]) + glob(
+    ]) + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(
+        ["digest-md5/*.c"],
+        exclude = ["digest-md5/test-parser.c"],
+    ) + glob(["login/*.c"]) + glob(["gssapi/*.c"]) + glob(
         ["**/*.h"],
         exclude = [
             "src/gsasl*.h",
+            "linux_x86_64/include/alloca.h",
             "gl/float+.h",
             "gl/size_max.h",
             "gl/str-two-way.h",
@@ -81,10 +85,10 @@ ch_cc_library(
         ".",
         "gl",
         "digest-md5",
+        "configured/private",
     ],
     deps = [
         "@clickhouse_krb5//:_krb5",
-        "@clickhouse//contrib/libgsasl-cmake:libgsasl_config_headers",
         "@clickhouse_openssl//:crypto",
     ],
 )

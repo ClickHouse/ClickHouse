@@ -1,5 +1,3 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
 config_setting(
@@ -18,51 +16,16 @@ config_setting(
     ],
 )
 
-cc_library(
-    name = "headers",
-    hdrs = select({
-        ":linux_x86_64": [
-            "linux_x86_64/include/lber_types.h",
-            "linux_x86_64/include/ldap_features.h",
-        ],
-        ":linux_aarch64": [
-            "linux_aarch64/include/lber_types.h",
-            "linux_aarch64/include/ldap_features.h",
-        ],
-    }),
-    includes = select({
-        ":linux_x86_64": ["linux_x86_64/include"],
-        ":linux_aarch64": ["linux_aarch64/include"],
-    }),
-    deps = ["@clickhouse_openldap//:_config_support"],
-)
-
-# Both C libraries include portable.h before using SIZEOF_* or HAVE_*.
-cc_library(
-    name = "private_config",
-    hdrs = select({
-        ":linux_x86_64": [
-            "linux_x86_64/include/ldap_config.h",
-            "linux_x86_64/include/portable.h",
-        ],
-        ":linux_aarch64": [
-            "linux_aarch64/include/ldap_config.h",
-            "linux_aarch64/include/portable.h",
-        ],
-    }),
-    includes = select({
-        ":linux_x86_64": ["linux_x86_64/include"],
-        ":linux_aarch64": ["linux_aarch64/include"],
-    }),
-    # portable.h sets HAVE_*, FD_SETSIZE, LDAP_DEBUG and LDAP_LOCALIZE
-    # before including these fragments. They are checked in that context.
-    textual_hdrs = [
-        "@clickhouse_openldap//:include/ac/assert.h",
-        "@clickhouse_openldap//:include/ac/fdset.h",
-        "@clickhouse_openldap//:include/ac/localize.h",
+exports_files(
+    [
+        "linux_aarch64/include/lber_types.h",
+        "linux_aarch64/include/ldap_config.h",
+        "linux_aarch64/include/ldap_features.h",
+        "linux_aarch64/include/portable.h",
+        "linux_x86_64/include/lber_types.h",
+        "linux_x86_64/include/ldap_config.h",
+        "linux_x86_64/include/ldap_features.h",
+        "linux_x86_64/include/portable.h",
     ],
-    deps = [
-        ":headers",
-        "@clickhouse_openldap//:_config_support",
-    ],
+    visibility = ["@clickhouse_openldap//:__pkg__"],
 )

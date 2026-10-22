@@ -1,9 +1,10 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a91e8ef07 100644
+index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109bbcddaee9 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
 -load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME")
++load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 +load("@rules_cc//cc:action_names.bzl", "ASSEMBLE_ACTION_NAME", "CPP_COMPILE_ACTION_NAME", "C_COMPILE_ACTION_NAME", "PREPROCESS_ASSEMBLE_ACTION_NAME")
  load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
  load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
@@ -11,7 +12,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
  load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
  load("//dwyu/cc/cc_info_mapping:providers.bzl", "DwyuCcInfoMappingInfo")
  load("//dwyu/private:utils.bzl", "make_param_file_args", "string_to_bool")
-@@ -28,7 +29,7 @@ _CPLUSPLUS_VERSIONS_MAP = {
+@@ -28,7 +30,7 @@ _CPLUSPLUS_VERSIONS_MAP = {
      "98": "199711",
  }
  
@@ -20,7 +21,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
  
  def _is_verbose(ctx):
      return ctx.attr.dwyu_verbose
-@@ -158,6 +159,11 @@ def _get_includes(ctx, target_cc):
+@@ -158,6 +160,11 @@ def _get_includes(ctx, target_cc):
              if impl_dep_cc.system_includes:
                  system_includes.append(impl_dep_cc.system_includes)
  
@@ -32,7 +33,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
      return includes, quote_includes, external_includes, system_includes
  
  def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -171,6 +177,13 @@ def _process_target(ctx, target, config, output_path, is_target_under_inspection
+@@ -171,6 +178,13 @@ def _process_target(ctx, target, config, output_path, is_target_under_inspection
      args.add("--target", str(target.label))
      args.add("--output", processing_output)
      args.add_all("--header_files", header_files, expand_directories = True, omit_if_empty = False)
@@ -46,7 +47,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
      if is_target_under_inspection:
          args.add("--is_target_under_inspection")
      if _is_verbose(ctx):
-@@ -363,7 +376,11 @@ def _dywu_results_from_deps(deps):
+@@ -363,7 +377,11 @@ def _dywu_results_from_deps(deps):
      """
      We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
      """
@@ -59,7 +60,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
  
  def _gather_transitive_reports(ctx):
      """
-@@ -373,9 +390,29 @@ def _gather_transitive_reports(ctx):
+@@ -373,9 +391,29 @@ def _gather_transitive_reports(ctx):
      """
      reports = []
      if ctx.attr._recursive:
@@ -92,7 +93,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +423,311 @@ def _return_on_skip(ctx):
+@@ -386,12 +424,318 @@ def _return_on_skip(ctx):
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -348,12 +349,19 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
 +            "-Xclang",
 +            "-sys-header-deps",
 +        ])
-+        ctx.actions.run(
-+            executable = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name),
++        compiler = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name)
++        ctx.actions.run_shell(
++            command = """compiler="$1"; pp="$2"; headers="$3"; shift 3
++"$compiler" "$@" || {
++    status=$?
++    rm -f -- "$pp" "$headers" || :
++    exit "$status"
++}
++""",
 +            inputs = inputs,
 +            tools = cc_toolchain.all_files,
 +            outputs = [compiler_output, compiler_headers],
-+            arguments = [args],
++            arguments = [compiler, compiler_output.path, compiler_headers.path, args],
 +            mnemonic = "DwyuCompilerPreprocess",
 +        )
 +        if capture != None:
@@ -406,7 +414,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +776,107 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
+@@ -440,7 +784,109 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
  
          preprocessor_results.append(pp_output)
  
@@ -493,7 +501,9 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
 +if "$1" --format=posix --print-file-name --extern-only --no-demangle "$2" > "$3"; then
 +    printf '0\\n' > "$4"
 +else
-+    printf '%s\\n' "$?" > "$4"
++    nm_status=$?
++    rm -f -- "$3" "$4" || exit "$nm_status"
++    exit "$nm_status"
 +fi
 +""",
 +            mnemonic = "DwyuArchiveSymbols",
@@ -515,7 +525,34 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
  
  def dwyu_cc_aspect_impl(target, ctx):
      """
-@@ -510,8 +946,17 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -458,10 +904,26 @@ def dwyu_cc_aspect_impl(target, ctx):
+     # Check whether DWYU should run on this target
+     #
+ 
++    if ctx.attr._follow_configured_closure and cc_common.CcToolchainInfo in target:
++        return []
++
+     # We might extend the list of supported rules eventually, but right now we only support and test the core cc_* rules.
+     if not ctx.rule.kind in ["cc_binary", "cc_library", "cc_test"]:
+         return _return_on_skip(ctx)
+ 
++    # The configured closure inventories tools but audits production C++.
++    # Keep descendants: an incoming transition below a tool may leave exec.
++    if ctx.attr._follow_configured_closure and ctx.configuration.is_tool_configuration():
++        return _return_on_skip(ctx)
++
++    if hasattr(ctx.attr, "_production_repositories"):
++        repositories = ctx.attr._production_repositories[BuildSettingInfo].value
++        if "//" not in repositories:
++            fail("production DWYU requires the source-validated repository setting")
++        repository = "@@" + target.label.repo_name + "//" if target.label.repo_name else "//"
++        if repository not in repositories:
++            return _return_on_skip(ctx)
++
+     # Skip targets which the user explicitly excluded from the analysis.
+     # In contrast to the other skipping mechanisms we still propagate the reports of the dependencies.
+     # Excluding a single target from the analysis shall not stop the recursive analysis below it.
+@@ -510,8 +972,17 @@ def dwyu_cc_aspect_impl(target, ctx):
      #
  
      config = _make_dwyu_config(ctx)
@@ -535,7 +572,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
      processed_target = _process_target(
          ctx,
          target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +974,39 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -529,26 +1000,39 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -577,7 +614,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +1018,29 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,18 +1044,30 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -611,7 +648,8 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
 +        transitive = compile_inputs,
      )
      ctx.actions.run(
-@@ -584,3 +1054,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+         executable = ctx.executable._tool_analyze_includes,
+@@ -584,3 +1080,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -799,7 +837,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a
 +    )
 +    return [DefaultInfo(files = depset([report])), OutputGroupInfo(dwyu_consumer = depset([report]))]
 diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
-index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9959cd1b0 100644
+index bd8a74564ca993c5dada35fe4f73cdb0714b921b..92d900b15271b7330ed490e08af1af51439b96b7 100644
 --- a/dwyu/cc/aspect/factory.bzl
 +++ b/dwyu/cc/aspect/factory.bzl
 @@ -2,7 +2,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
@@ -811,15 +849,17 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
  
  _LEGACY_SKIPPED_TAGS = ["no-dwyu"]
  _MANDATORY_SKIPPED_TAGS = ["dwyu:skip"]
-@@ -36,6 +36,7 @@ def dwyu_cc_aspect_factory(
+@@ -35,7 +35,9 @@ def dwyu_cc_aspect_factory(
+         ignored_includes = None,
          ignored_unused_deps = [],
          preprocessing_mode = "full",
++        production_repositories = None,
          recursive = False,
 +        follow_configured_closure = False,
          recursion_stops_on_skip = False,
          skip_external_targets = False,
          skip_features = [],
-@@ -44,6 +45,10 @@ def dwyu_cc_aspect_factory(
+@@ -44,6 +46,10 @@ def dwyu_cc_aspect_factory(
          skip_toolchain_features = [],
          skipped_tags = [],
          target_mapping = None,
@@ -830,7 +870,7 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
          verbose = False):
      """
      Create and configure a "**D**epend on **W**hat **Y**ou **U**se" (DWYU) aspect.
-@@ -131,6 +136,8 @@ def dwyu_cc_aspect_factory(
+@@ -131,6 +137,8 @@ def dwyu_cc_aspect_factory(
                     You can change this to recursively analyzing dependencies following the `deps` and `implementation_deps` attributes by setting this to True.<br>
                     This feature is demonstrated in the [recursion example](/examples/recursion).
  
@@ -839,13 +879,15 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
          recursion_stops_on_skip: If `True`, skipping a target will also stop the recursive analysis of its dependencies.
                                   This does not just influence the behavior of the `skip_*` options, but also skipping to inbuilt logic (e.g. skipping incompatible rule types).
  
-@@ -187,15 +194,21 @@ def dwyu_cc_aspect_factory(
+@@ -187,15 +195,25 @@ def dwyu_cc_aspect_factory(
                          For the full details see the `dwyu_make_cc_info_mapping` documentation.<br>
                          This feature is demonstrated in the [target_mapping example](/examples/target_mapping).
  
 +        tool_analyze_includes: Optional executable label for include analysis.
 +        tool_preprocessing: Optional executable label for source preprocessing.
 +        tool_process_target: Optional executable label for processing target metadata.
++        production_repositories: Optional string-list build setting of canonical repository names.
++                                 Requires configured closure traversal; skipped owners still forward descendants.
 +
          verbose: If `True`, print debugging information about the individual DWYU actions.<br>
                   This flag can also be controlled in a Bazel config or on the command line via `--aspects_parameters=dwyu_verbose=[True|False]`.
@@ -855,6 +897,8 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
      """
 +    if follow_configured_closure and not recursive:
 +        fail("follow_configured_closure requires recursive=True")
++    if production_repositories != None and not follow_configured_closure:
++        fail("production_repositories requires follow_configured_closure=True")
      attr_aspects = []
      if recursive:
 -        attr_aspects = ["implementation_deps", "deps"]
@@ -862,7 +906,7 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
      aspect_ignored_includes = [ignored_includes] if ignored_includes else []
  
      if skip_tags != _DEFAULT_SKIPPED_TAGS and skipped_tags:
-@@ -218,9 +231,12 @@ def dwyu_cc_aspect_factory(
+@@ -218,9 +236,12 @@ def dwyu_cc_aspect_factory(
          implementation = dwyu_cc_aspect_impl,
          attr_aspects = attr_aspects,
          fragments = ["cpp"],
@@ -877,7 +921,7 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
              "dwyu_analysis_ignores_private_headers_from_deps": attr.bool(
                  default = analysis_ignores_private_headers_from_deps,
              ),
-@@ -272,19 +288,26 @@ def dwyu_cc_aspect_factory(
+@@ -272,23 +293,81 @@ def dwyu_cc_aspect_factory(
                  default = aspect_target_mapping,
              ),
              "_tool_analyze_includes": attr.label(
@@ -907,9 +951,10 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..c085215b6c7d5fcba5c89b0be9411da9
                  executable = True,
                  cfg = "exec",
                  doc = "Tool for processing the target under inspection and its dependencies. We have to perform this" +
-@@ -292,3 +315,54 @@ def dwyu_cc_aspect_factory(
+                       " as separate action, since otherwise we can't look into TreeArtifact sources.",
              ),
-         },
+-        },
++        } | ({"_production_repositories": attr.label(default = production_repositories)} if production_repositories != None else {}),
      )
 +
 +# A cheap recursive aspect records the configured compilation graph. Only the
@@ -1201,7 +1246,7 @@ index b0697ed43d4bf1e536194bb8f32bdb3e38d8fa4e..8e619c9c3517f81ccf5d1ebe8a7cd593
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f205baab56 100644
+index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb92d1d4e1 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
 @@ -6,11 +6,16 @@
@@ -1241,7 +1286,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,343 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+@@ -71,6 +82,344 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
      return options;
  }
  
@@ -1562,13 +1607,14 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +                dep->usage.update(TargetUsage::Status::Private);
 +                result.forwarded[dep->name] = forwarded.at(dep->name);
 +            }
++            const bool source_free_forwarder = own_files.empty() && owner_forwards && linking_deps.count(dep->name);
 +            if (!proven.count(dep->name) && !forwarded.count(dep->name) &&
-+                ((opaque && linking_deps.count(dep->name)) || (own_files.empty() && owner_forwards) ||
++                ((opaque && linking_deps.count(dep->name)) || source_free_forwarder ||
 +                 forwarded_deps.count(dep->name) || retained_deps.count(dep->name) || ambiguous.count(dep->name))) {
 +                result.unverified.push_back(dep->name);
 +                result.hold_reasons[dep->name] = {
 +                    {"forwarded_inputs", bool(forwarded_deps.count(dep->name))},
-+                    {"source_free_forwarder", own_files.empty() && owner_forwards},
++                    {"source_free_forwarder", source_free_forwarder},
 +                    {"input_reasons", retained_inputs[dep->name]},
 +                    {"opaque_input_reasons", (opaque && linking_deps.count(dep->name)) ? opaque_inputs : std::vector<size_t>{}},
 +                    {"ambiguous_symbols", ambiguous_symbols.contains(dep->name)
@@ -1585,7 +1631,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +439,84 @@ int main_impl(const ProgramOptions& options) {
+@@ -91,21 +440,84 @@ int main_impl(const ProgramOptions& options) {
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
@@ -1676,7 +1722,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
      }
      else {
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c5718100dd22 100644
+index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..cb5795ef75844cc5402fe51db84d8aed85076422 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
 @@ -39,7 +39,32 @@ Result::Result(std::string target) : target_{std::move(target)} {}
@@ -1750,7 +1796,7 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c571
      // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
      // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/private/analyze_includes/result.h
-index 4129d2d6190284c2174857a095afbada91b1a1dc..f66f625d3a3735ba6e8efe72f8b0c033950a1b7c 100644
+index 4129d2d6190284c2174857a095afbada91b1a1dc..ff6a1766705cc476dea47fd1b5bd91333ec6b42e 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.h
 @@ -16,6 +16,10 @@ class Result {

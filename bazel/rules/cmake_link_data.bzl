@@ -440,7 +440,12 @@ CMAKE_LINK = {
     "//src/Common",
     "//src:clickhouse_common_io_embedded",
     "//src:dbms_embedded",
-    "//src/Storages/System:clickhouse_storages_system_information_schema"
+    "//src/Storages/System:clickhouse_storages_system_information_schema",
+    "//src/Common:stopwatch",
+    "//src/Common:action_lock",
+    "//src/Common:current_metrics",
+    "//src/Common:shared_mutex",
+    "//src/Functions/array:array_distance_transposed"
   ],
   "expected_objects": [
     170,
@@ -449,7 +454,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    428,
+    425,
     1,
     1,
     1,
@@ -637,7 +642,7 @@ CMAKE_LINK = {
     1,
     88,
     1,
-    85,
+    84,
     432,
     21,
     124,
@@ -676,7 +681,7 @@ CMAKE_LINK = {
     1,
     1,
     25,
-    216,
+    214,
     16,
     10,
     6,
@@ -856,7 +861,7 @@ CMAKE_LINK = {
     1,
     27,
     1,
-    71,
+    70,
     1,
     2,
     1,
@@ -877,9 +882,14 @@ CMAKE_LINK = {
     1,
     1,
     1,
-    3,
+    2,
     1,
     5,
+    1,
+    1,
+    1,
+    1,
+    1,
     1
   ],
   "archives": [
@@ -942,83 +952,7 @@ CMAKE_LINK = {
       "name": "src/libclickhouse_new_delete.a"
     },
     {
-      "objects": [
-        [
-          6,
-          0,
-          18
-        ],
-        [
-          7,
-          0,
-          1
-        ],
-        [
-          6,
-          18,
-          46
-        ],
-        [
-          434,
-          0,
-          1
-        ],
-        [
-          6,
-          46,
-          62
-        ],
-        [
-          435,
-          0,
-          1
-        ],
-        [
-          6,
-          62,
-          74
-        ],
-        [
-          8,
-          0,
-          1
-        ],
-        [
-          6,
-          74,
-          119
-        ],
-        [
-          434,
-          1,
-          2
-        ],
-        [
-          6,
-          119,
-          152
-        ],
-        [
-          434,
-          2,
-          3
-        ],
-        [
-          6,
-          152,
-          166
-        ],
-        [
-          9,
-          0,
-          1
-        ],
-        [
-          6,
-          166,
-          428
-        ]
-      ],
+      "objects": [[439, 0, 1], [6, 0, 17], [7, 0, 1], [6, 17, 26], [440, 0, 1], [6, 26, 44], [434, 0, 1], [6, 44, 60], [435, 0, 1], [6, 60, 72], [8, 0, 1], [6, 72, 117], [434, 1, 2], [6, 117, 137], [441, 0, 1], [6, 137, 149], [438, 0, 1], [6, 149, 163], [9, 0, 1], [6, 163, 425]],
       "name": "src/libclickhouse_common_io.a"
     },
     {
@@ -2236,7 +2170,7 @@ CMAKE_LINK = {
     },
     {
       "name": "contrib/libgsasl-cmake/lib_gsasl.a",
-      "objects": [[194, 0, 23], [194, 25, 27], [194, 28, 29], [194, 23, 25], [194, 27, 28], [194, 29, 61], [194, 62, 63], [194, 61, 62], [194, 64, 66], [194, 63, 64], [194, 66, 85]]
+      "objects": [[194, 0, 23], [194, 25, 27], [194, 28, 29], [194, 23, 25], [194, 27, 28], [194, 29, 61], [194, 62, 63], [194, 61, 62], [194, 64, 66], [194, 63, 64], [194, 66, 84]]
     },
     {
       "name": "contrib/krb5-cmake/lib_krb5.a",
@@ -2402,7 +2336,7 @@ CMAKE_LINK = {
         [
           233,
           0,
-          213
+          211
         ],
         [
           234,
@@ -2411,8 +2345,8 @@ CMAKE_LINK = {
         ],
         [
           233,
-          213,
-          216
+          211,
+          214
         ]
       ],
       "name": "contrib/arrow-cmake/lib_arrow.a"
@@ -7479,6 +7413,7 @@ CMAKE_LINK = {
       413,
       58
     ],
+    ["object", 442, 0],
     [
       "object",
       413,
@@ -7533,11 +7468,6 @@ CMAKE_LINK = {
       "object",
       413,
       69
-    ],
-    [
-      "object",
-      413,
-      70
     ],
     [
       "object",

@@ -9,9 +9,12 @@ exports_files([
 ch_cc_library(
     name = "_stringzilla",
     srcs = glob(["c/stringzilla/*.c"]) + glob(["c/stringzilla/**/*.h"]),
-    hdrs = glob(["include/stringzilla/**/*.h", "include/stringzilla/**/*.hpp"]),
-    copts = ["-w"],
+    hdrs = glob([
+        "include/stringzilla/**/*.h",
+        "include/stringzilla/**/*.hpp",
+    ]),
     conlyopts = ["-std=gnu11"],
+    copts = ["-w"],
     includes = [
         "include",
     ],

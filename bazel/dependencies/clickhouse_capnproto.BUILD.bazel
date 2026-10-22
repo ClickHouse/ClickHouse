@@ -129,10 +129,10 @@ ch_cc_library(
         ],
     ),
     copts = _CAPNPROTO_COPTS,
+    implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     includes = [
         "c++/src",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     textual_hdrs = ["c++/src/kj/async-inl.h"],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

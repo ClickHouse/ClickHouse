@@ -24,6 +24,10 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = select({
+        "@platforms//cpu:aarch64": [":_fastops_sve"],
+        "//conditions:default": [],
+    }),
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
@@ -31,10 +35,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
-    implementation_deps = select({
-        "@platforms//cpu:aarch64": [":_fastops_sve"],
-        "//conditions:default": [],
-    }),
 )
 
 ch_cc_library(

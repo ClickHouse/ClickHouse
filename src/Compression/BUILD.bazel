@@ -35,7 +35,6 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//bazel/rust:pco_cc",
         "@clickhouse_openssl//:crypto",
-        "//contrib/libdivide-cmake:headers",
         "@clickhouse_libdivide//:libdivide",
         "//contrib/cityhash102:_cityhash",
         "@clickhouse_zxc//:_zxc",

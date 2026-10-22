@@ -6,6 +6,38 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_ARROW_PRIVATE_HEADERS = [
+    "cpp/src/arrow/array/dict_internal.h",
+    "cpp/src/arrow/compute/kernels/base_arithmetic_internal.h",
+    "cpp/src/arrow/compute/kernels/copy_data_internal.h",
+    "cpp/src/arrow/compute/kernels/gather_internal.h",
+    "cpp/src/arrow/compute/kernels/ree_util_internal.h",
+    "cpp/src/arrow/compute/kernels/scalar_cast_internal.h",
+    "cpp/src/arrow/compute/kernels/scalar_string_internal.h",
+    "cpp/src/arrow/compute/kernels/temporal_internal.h",
+    "cpp/src/arrow/compute/kernels/vector_selection_filter_internal.h",
+    "cpp/src/arrow/compute/kernels/vector_selection_internal.h",
+    "cpp/src/arrow/compute/kernels/vector_selection_take_internal.h",
+    "cpp/src/arrow/compute/kernels/vector_sort_internal.h",
+    "cpp/src/arrow/tensor/converter_internal.h",
+    "cpp/src/arrow/util/bpacking_scalar_generated_internal.h",
+    "cpp/src/arrow/util/chrono_internal.h",
+    "cpp/src/arrow/util/date_internal.h",
+    "cpp/src/arrow/util/decimal_internal.h",
+    "cpp/src/arrow/util/dict_util_internal.h",
+    "cpp/src/arrow/util/memory_internal.h",
+    "cpp/src/arrow/util/slice_util_internal.h",
+    "cpp/src/arrow/util/union_util.h",
+]
+
+_PARQUET_PRIVATE_HEADERS = [
+    "cpp/src/parquet/chunker_internal_generated.h",
+    "cpp/src/parquet/encryption/openssl_internal.h",
+    "cpp/src/parquet/geospatial/util_json_internal.h",
+    "cpp/src/parquet/level_comparison_avx2_internal.h",
+    "cpp/src/parquet/level_conversion_bmi2_internal.h",
+]
+
 exports_files([
     "LICENSE.txt",
     "cpp/src/arrow/ipc/feather.fbs",
@@ -247,12 +279,10 @@ ch_cc_library(
     ) + [
         "cpp/src/arrow/ipc/dictionary.cc",
         "cpp/src/arrow/ipc/feather.cc",
-        "cpp/src/arrow/ipc/file_to_stream.cc",
         "cpp/src/arrow/ipc/message.cc",
         "cpp/src/arrow/ipc/metadata_internal.cc",
         "cpp/src/arrow/ipc/options.cc",
         "cpp/src/arrow/ipc/reader.cc",
-        "cpp/src/arrow/ipc/stream_to_file.cc",
         "cpp/src/arrow/ipc/writer.cc",
         "cpp/src/arrow/memory_pool.cc",
         "cpp/src/arrow/pretty_print.cc",
@@ -338,7 +368,7 @@ ch_cc_library(
         "cpp/src/arrow/io/hdfs_internal.h",
         "cpp/src/arrow/testing/extension_type.h",
         "cpp/src/arrow/testing/visibility.h",
-    ],
+    ] + _ARROW_PRIVATE_HEADERS,
     hdrs = glob(
         [
             "cpp/src/arrow/*.h",
@@ -373,7 +403,7 @@ ch_cc_library(
             "cpp/src/arrow/filesystem/s3_internal.h",
             "cpp/src/arrow/io/mman.h",
             "cpp/src/arrow/io/hdfs_internal.h",
-        ],
+        ] + _ARROW_PRIVATE_HEADERS,
     ),
     copts = [
         "-w",
@@ -507,7 +537,6 @@ ch_cc_library(
         ":_arrow",
         ":_arrow__compile_0",
         "@clickhouse_grpc//:grpc++",
-        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_abseil_cpp//:absl_synchronization",
         "@clickhouse_abseil_cpp//:absl_status",
     ],
@@ -574,7 +603,7 @@ ch_cc_library(
             "cpp/src/parquet/bloom_filter_avx2.cc",
         ],
         "@platforms//cpu:aarch64": [],
-    }),
+    }) + _PARQUET_PRIVATE_HEADERS,
     hdrs = glob(
         [
             "cpp/src/parquet/**/*.h",
@@ -587,7 +616,7 @@ ch_cc_library(
             "cpp/src/parquet/test_util.h",
             "cpp/src/parquet/level_comparison_inc.h",
             "cpp/src/parquet/level_conversion_inc.h",
-        ],
+        ] + _PARQUET_PRIVATE_HEADERS,
     ),
     copts = [
         "-w",

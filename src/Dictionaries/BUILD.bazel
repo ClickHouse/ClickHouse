@@ -603,5 +603,11 @@ cc_library(
         ],
         exclude = _PRIVATE_DICTIONARIES_0_HEADERS + _PRIVATE_DICTIONARIES_1_HEADERS + _PRIVATE_DICTIONARIES_2_HEADERS,
     ),
-    deps = ["//base/poco/Util:_poco_util"],
+    deps = [
+        "//base/poco/Util:_poco_util",
+        "//src:headers",
+        "//src:core_types",
+        "//base:common",
+        "//src/Common:exception_api",
+    ],
 )

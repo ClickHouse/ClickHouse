@@ -17,6 +17,10 @@ ch_cc_library(
         "-w",
         "-std=c++17",
     ],
+    implementation_deps = [
+        "@clickhouse_boost//:_boost_iostreams",
+        "@clickhouse_snappy//:_snappy",
+    ],
     includes = [
         "lang/c++/api",
     ],
@@ -31,8 +35,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = ["@clickhouse_boost//:boost_headers"],
-    implementation_deps = [
-        "@clickhouse_boost//:_boost_iostreams",
-        "@clickhouse_snappy//:_snappy",
-    ],
 )

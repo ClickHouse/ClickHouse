@@ -21,13 +21,27 @@ ch_cc_library(
         "util/rune.cc",
         "util/strutil.cc",
     ] + glob(
-        ["re2/*.h", "util/*.h"],
-        exclude = _RE2_PUBLIC_HEADERS + ["util/malloc_counter.h", "util/pcre.h"],
+        [
+            "re2/*.h",
+            "util/*.h",
+        ],
+        exclude = _RE2_PUBLIC_HEADERS + [
+            "util/malloc_counter.h",
+            "util/pcre.h",
+        ],
     ),
     hdrs = _RE2_PUBLIC_HEADERS,
     copts = [
         "-w",
         "-std=c++23",
+    ],
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_hash",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
     ],
     includes = [
         ".",
@@ -44,13 +58,5 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_strings",
         "@clickhouse_abseil_cpp//:absl_die_if_null",
         "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
-    ],
-    implementation_deps = [
-        "@clickhouse_abseil_cpp//:absl_hash",
-        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
-        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
-        "@clickhouse_abseil_cpp//:absl_span",
-        "@clickhouse_abseil_cpp//:absl_str_format_internal",
-        "@clickhouse_abseil_cpp//:absl_synchronization",
     ],
 )

@@ -46,9 +46,10 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    includes = ([
+    includes = [
         "src/h3lib/include",
-    ]) + ["config/contrib/h3/src/h3lib/include"],
+        "config/contrib/h3/src/h3lib/include",
+    ],
     language = "C",
     libcxx_headers = False,
     local_defines = [

@@ -1,9 +1,15 @@
 """Rules and tools used to build ClickHouse."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_list_flag")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load(":dwyu_tool.bzl", "dwyu_tool")
 
 package(default_visibility = ["//visibility:public"])
+
+string_list_flag(
+    name = "dwyu_production_repositories",
+    build_setting_default = [],
+)
 
 exports_files([
     "contrib_repositories.json",

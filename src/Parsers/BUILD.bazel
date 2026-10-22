@@ -220,6 +220,7 @@ ch_cc_library(
         "//rust/workspace:polyglot_headers",
         "//base/poco/JSON:_poco_json",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
+        "//src/Functions/URL:clickhouse_functions_url__compile_1",
     ],
     link_runtime = True,
     local_defines = select({
@@ -285,7 +286,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = True,
     deps = [
         "//src:core_types",
         ":headers",
@@ -322,5 +322,11 @@ cc_library(
             "**/tests/**",
         ],
     ),
-    deps = ["//base/poco/JSON:_poco_json"],
+    deps = [
+        "//base/poco/JSON:_poco_json",
+        "//src:headers",
+        "//src:core_types",
+        "//base:common",
+        "//src/Common:exception_api",
+    ],
 )

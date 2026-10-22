@@ -18,7 +18,6 @@ ch_cc_library(
         "-Wno-reserved-id-macro",
         "-Wno-disabled-macro-expansion",
     ],
-    deps = ["@clickhouse_llvm_project//:unwind"],
     implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
     includes = [
         ".",
@@ -32,4 +31,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    deps = ["@clickhouse_llvm_project//:unwind"],
 )

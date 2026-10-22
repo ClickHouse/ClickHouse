@@ -1,9 +1,3 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = ["."],
-)
+exports_files(["mz_config.h"])

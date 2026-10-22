@@ -3,6 +3,13 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_NET_SSL_PRIVATE_HEADERS = [
+    "include/Poco/Net/HTTPSSessionInstantiator.h",
+    "include/Poco/Net/KeyConsoleHandler.h",
+    "include/Poco/Net/KeyFileHandler.h",
+    "include/Poco/Net/SecureServerSocketImpl.h",
+]
+
 exports_files([
     "src/EmbeddedCertificates.cpp",
 ])
@@ -95,8 +102,11 @@ poco_cc_library(
             "src/EmbeddedCertificates.cpp",
             "src/SecureSocketImpl.cpp",
         ],
+    ) + _NET_SSL_PRIVATE_HEADERS,
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = _NET_SSL_PRIVATE_HEADERS,
     ),
-    hdrs = glob(["include/**/*.h"]),
     copts = _NET_SSL_COPTS,
     includes = ["include"],
     local_defines = _NET_SSL_DEFINES,

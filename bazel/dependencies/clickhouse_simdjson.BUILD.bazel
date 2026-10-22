@@ -69,20 +69,6 @@ ch_cc_library(
         ] + glob(["include/simdjson/arm64/**/*.h"]),
     }),
     hdrs = ["include/simdjson.h"],
-    private_textual_srcs = [
-        "src/from_chars.cpp",
-        "src/implementation.cpp",
-        "src/to_chars.cpp",
-    ] + glob(["src/internal/*.cpp"]) + select({
-        "@platforms//cpu:x86_64": [
-            "src/haswell.cpp",
-            "src/icelake.cpp",
-        ],
-        "@platforms//cpu:aarch64": [
-            "src/arm64.cpp",
-            "src/fallback.cpp",
-        ],
-    }),
     copts = [
         "-w",
         "-std=c++23",
@@ -105,5 +91,19 @@ ch_cc_library(
     local_includes = [
         "src",
     ],
+    private_textual_srcs = [
+        "src/from_chars.cpp",
+        "src/implementation.cpp",
+        "src/to_chars.cpp",
+    ] + glob(["src/internal/*.cpp"]) + select({
+        "@platforms//cpu:x86_64": [
+            "src/haswell.cpp",
+            "src/icelake.cpp",
+        ],
+        "@platforms//cpu:aarch64": [
+            "src/arm64.cpp",
+            "src/fallback.cpp",
+        ],
+    }),
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

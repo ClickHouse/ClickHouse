@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -98,7 +97,7 @@ ch_cc_library(
         "-w",
         "-std=c++23",
         "-include",
-        repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h",
+        "google/protobuf/stubs/port.h",
     ],
     implementation_deps = [
         "@lz4//:lz4",

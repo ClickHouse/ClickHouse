@@ -1,12 +1,1 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
-package(default_visibility = ["//visibility:public"])
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["**/*.h"]),
-    includes = select({
-        "@platforms//cpu:x86_64": ["x86_64/sse42"],
-        "@platforms//cpu:aarch64": ["aarch64"],
-    }),
-)
+package()

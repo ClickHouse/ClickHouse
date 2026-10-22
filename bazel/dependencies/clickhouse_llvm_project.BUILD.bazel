@@ -1033,34 +1033,8 @@ cc_library(
         "llvm/lib/Support/*.h",
         "llvm/lib/Support/rpmalloc/*.h",
         "llvm/lib/TableGen/*.h",
-        "llvm/lib/Target/**/*.inc",
         "llvm/lib/Target/AArch64/Disassembler/*.h",
-        "llvm/lib/Target/AMDGPU/**/*.h",
-        "llvm/lib/Target/AMDGPU/*.def",
-        "llvm/lib/Target/ARC/**/*.h",
-        "llvm/lib/Target/ARM/**/*.h",
-        "llvm/lib/Target/AVR/**/*.h",
-        "llvm/lib/Target/BPF/**/*.h",
-        "llvm/lib/Target/CSKY/**/*.h",
-        "llvm/lib/Target/DirectX/**/*.h",
-        "llvm/lib/Target/Hexagon/**/*.h",
-        "llvm/lib/Target/Lanai/**/*.h",
-        "llvm/lib/Target/LoongArch/**/*.h",
-        "llvm/lib/Target/M68k/**/*.h",
-        "llvm/lib/Target/MSP430/**/*.h",
-        "llvm/lib/Target/Mips/**/*.h",
-        "llvm/lib/Target/NVPTX/**/*.h",
-        "llvm/lib/Target/PowerPC/**/*.h",
-        "llvm/lib/Target/PowerPC/*.def",
-        "llvm/lib/Target/RISCV/**/*.h",
-        "llvm/lib/Target/SPIRV/**/*.h",
-        "llvm/lib/Target/Sparc/**/*.h",
-        "llvm/lib/Target/SystemZ/**/*.h",
-        "llvm/lib/Target/VE/**/*.h",
-        "llvm/lib/Target/WebAssembly/**/*.h",
         "llvm/lib/Target/X86/AsmParser/*.h",
-        "llvm/lib/Target/XCore/**/*.h",
-        "llvm/lib/Target/Xtensa/**/*.h",
     ]) + [
         "llvm/include/llvm/ABI/Types.h",
         "llvm/include/llvm/Analysis/AliasAnalysis.h",
@@ -1710,13 +1684,6 @@ cc_library(
         "llvm/lib/ExecutionEngine/Orc/TargetProcess/OrcRTBootstrap.h",
         "llvm/lib/FileCheck/FileCheckImpl.h",
         "llvm/lib/Support/Unix/Unix.h",
-        "llvm/lib/Target/BPF/BPFPassRegistry.def",
-        "llvm/lib/Target/DirectX/DirectXPassRegistry.def",
-        "llvm/lib/Target/Hexagon/HexagonPassRegistry.def",
-        "llvm/lib/Target/NVPTX/NVPTXPassRegistry.def",
-        "llvm/lib/Target/RISCV/RISCVPassRegistry.def",
-        "llvm/lib/Target/SPIRV/SPIRVPassRegistry.def",
-        "llvm/lib/Target/VE/VVPNodes.def",
         "llvm/lib/Target/X86/Disassembler/X86DisassemblerDecoder.h",
         "llvm/lib/Target/X86/MCA/X86CustomBehaviour.h",
         "llvm/lib/Target/X86/MCTargetDesc/X86ATTInstPrinter.h",
@@ -1780,7 +1747,6 @@ ch_cc_library(
         ":LLVMTransformUtils",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -2155,7 +2121,6 @@ ch_cc_library(
         ":LLVMCore",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -2174,7 +2139,6 @@ ch_cc_library(
         ":LLVMCore",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -2186,9 +2150,9 @@ ch_cc_library(
         _LLVM_PROJECT_COPTS,
     implementation_deps = [
         ":llvm_headers",
+        ":LLVMSupport",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMSupport"],
 )
 
 ch_cc_library(
@@ -2203,7 +2167,6 @@ ch_cc_library(
         ":llvm_headers",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -3219,9 +3182,9 @@ ch_cc_library(
     implementation_deps = [
         ":LLVMCore",
         ":llvm_headers",
+        ":LLVMAnalysis",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":LLVMAnalysis"],
 )
 
 ch_cc_library(
@@ -3234,11 +3197,9 @@ ch_cc_library(
     implementation_deps = [
         ":llvm_headers",
         ":LLVMAsmParser",
-    ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [
         ":LLVMBitReader",
     ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
 )
 
 ch_cc_library(
@@ -3255,7 +3216,6 @@ ch_cc_library(
         ":LLVMTransformUtils",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -3514,7 +3474,6 @@ ch_cc_library(
         ":LLVMMC",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -3531,7 +3490,6 @@ ch_cc_library(
         ":LLVMTransformUtils",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -4033,7 +3991,6 @@ ch_cc_library(
         ":LLVMCodeGen",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -4213,7 +4170,6 @@ ch_cc_library(
         ":llvm_headers",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_library(
@@ -4237,8 +4193,6 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [],
-    deps = [],
 )
 
 _GENERATED_LOCAL_DEFINES_1 = select({
@@ -4280,8 +4234,6 @@ ch_cc_library(
     language = "ASM",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [],
-    deps = [],
 )
 
 ch_cc_library(
@@ -4310,8 +4262,6 @@ ch_cc_library(
     language = "ASM",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [],
-    deps = [],
 )
 
 filegroup(
@@ -11793,7 +11743,6 @@ llvm_runtime_objects(
         "-fPIE",
         "-O3",
         "-DNDEBUG",
-        "-std=gnu11",
         "-D",
         "OS_LINUX",
         "-gz=zlib",

@@ -3,9 +3,27 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_ZSTD_LEGACY_HEADERS = glob(["lib/legacy/*.h"])
+
 exports_files([
     "LICENSE",
 ])
+
+_ZSTD_PRIVATE_HEADERS = [
+    "lib/compress/clevels.h",
+    "lib/compress/zstd_compress_literals.h",
+    "lib/compress/zstd_compress_sequences.h",
+    "lib/compress/zstd_compress_superblock.h",
+    "lib/compress/zstd_double_fast.h",
+    "lib/compress/zstd_fast.h",
+    "lib/compress/zstd_lazy.h",
+    "lib/compress/zstd_ldm.h",
+    "lib/compress/zstd_ldm_geartab.h",
+    "lib/compress/zstd_opt.h",
+    "lib/decompress/zstd_ddict.h",
+    "lib/dictBuilder/cover.h",
+    "lib/dictBuilder/divsufsort.h",
+]
 
 _ZSTD_LOCAL_DEFINES = [
     "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -29,10 +47,10 @@ ch_cc_library(
         "lib/compress/zstdmt_compress.c",
         "lib/compress/zstd_opt.c",
         "lib/compress/zstd_preSplit.c",
-    ] + glob(["lib/decompress/*.c"])) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]),
+    ] + glob(["lib/decompress/*.c"])) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]) + _ZSTD_LEGACY_HEADERS + _ZSTD_PRIVATE_HEADERS,
     hdrs = glob(
         ["lib/**/*.h"],
-        exclude = ["lib/common/portability_macros.h"],
+        exclude = ["lib/common/portability_macros.h"] + _ZSTD_LEGACY_HEADERS + _ZSTD_PRIVATE_HEADERS,
     ),
     copts = [
         "-w",

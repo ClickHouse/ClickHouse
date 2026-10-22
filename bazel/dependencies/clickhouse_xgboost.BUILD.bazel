@@ -25,7 +25,6 @@ ch_cc_library(
     hdrs = glob(["include/**/*.h"]),
     copts = [
         "-w",
-        "-std=c++23",
         "-std=c++17",
         "-include",
         "exception",

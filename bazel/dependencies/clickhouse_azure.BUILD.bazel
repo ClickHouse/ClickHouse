@@ -28,18 +28,21 @@ ch_cc_library(
         "sdk/core/azure-core/src/resource_identifier.cpp",
         "sdk/core/azure-core/src/tracing/tracing.cpp",
         "sdk/core/azure-core/src/uuid.cpp",
-    ] + glob(["sdk/identity/azure-identity/src/*.cpp"]) + glob(["sdk/storage/azure-storage-blobs/src/**/*.cpp"]) + glob(["sdk/storage/azure-storage-common/src/*.cpp"]) + glob(["sdk/storage/azure-storage-files-datalake/src/*.cpp"]) + glob([
-        "sdk/core/azure-core/src/**/*.hpp",
-        "sdk/identity/azure-identity/src/**/*.hpp",
-        "sdk/storage/azure-storage-blobs/src/**/*.hpp",
-        "sdk/storage/azure-storage-common/src/**/*.hpp",
-        "sdk/storage/azure-storage-files-datalake/src/**/*.hpp",
-    ], exclude = [
-        "sdk/core/azure-core/src/http/curl/**",
-        "sdk/core/azure-core/src/http/winhttp/**",
-        "sdk/core/azure-core/src/private/package_version.hpp",
-        "sdk/storage/azure-storage-common/src/private/package_version.hpp",
-    ]),
+    ] + glob(["sdk/identity/azure-identity/src/*.cpp"]) + glob(["sdk/storage/azure-storage-blobs/src/**/*.cpp"]) + glob(["sdk/storage/azure-storage-common/src/*.cpp"]) + glob(["sdk/storage/azure-storage-files-datalake/src/*.cpp"]) + glob(
+        [
+            "sdk/core/azure-core/src/**/*.hpp",
+            "sdk/identity/azure-identity/src/**/*.hpp",
+            "sdk/storage/azure-storage-blobs/src/**/*.hpp",
+            "sdk/storage/azure-storage-common/src/**/*.hpp",
+            "sdk/storage/azure-storage-files-datalake/src/**/*.hpp",
+        ],
+        exclude = [
+            "sdk/core/azure-core/src/http/curl/**",
+            "sdk/core/azure-core/src/http/winhttp/**",
+            "sdk/core/azure-core/src/private/package_version.hpp",
+            "sdk/storage/azure-storage-common/src/private/package_version.hpp",
+        ],
+    ),
     hdrs = glob([
         "sdk/core/azure-core/inc/**/*.hpp",
         "sdk/identity/azure-identity/inc/**/*.hpp",
@@ -50,6 +53,11 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
+    ],
+    implementation_deps = [
+        "@clickhouse_libxml2//:_libxml2",
+        "@clickhouse//contrib/libxml2-cmake:libxml2_config_headers",
+        "@clickhouse_openssl//:crypto",
     ],
     includes = [
         "sdk/core/azure-core/inc",
@@ -64,10 +72,5 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    implementation_deps = [
-        "@clickhouse_libxml2//:_libxml2",
-        "@clickhouse//contrib/libxml2-cmake:libxml2_config_headers",
-        "@clickhouse_openssl//:crypto",
     ],
 )

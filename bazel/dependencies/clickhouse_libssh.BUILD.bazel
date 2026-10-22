@@ -116,7 +116,10 @@ ch_cc_library(
         "src/server.c",
         ":private_config",
     ] + glob(
-        ["src/**/*.h", "include/**/*.h"],
+        [
+            "src/**/*.h",
+            "include/**/*.h",
+        ],
         exclude = _LIBSSH_PUBLIC_C_HEADERS + [
             "include/libssh/dh-gex.h",
             "include/libssh/ed25519.h",
@@ -130,7 +133,10 @@ ch_cc_library(
         ],
     ),
     hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + _LIBSSH_PUBLIC_C_HEADERS,
-    copts = ["-w", "-std=gnu11"],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
     ],
@@ -139,7 +145,6 @@ ch_cc_library(
         "config/contrib/libssh/include",
     ],
     language = "C",
-    local_includes = ["config/private"],
     libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -147,6 +152,7 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    local_includes = ["config/private"],
 )
 
 ch_cc_library(

@@ -57,6 +57,16 @@ ch_cc_library(
         "-std=c++23",
         "-g1",
     ],
+    implementation_deps = [
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_http//:aws_c_http",
+    ],
+    includes = [
+        "src/aws-cpp-sdk-core/include",
+        "generated/src/aws-cpp-sdk-s3/include",
+        "generated/src/aws-cpp-sdk-glue/include",
+        "config/contrib/aws-cmake/include",
+    ],
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
@@ -74,36 +84,10 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    includes = [
-        "src/aws-cpp-sdk-core/include",
-        "generated/src/aws-cpp-sdk-s3/include",
-        "generated/src/aws-cpp-sdk-glue/include",
-        "config/contrib/aws-cmake/include",
-    ],
-    implementation_deps = [
-        "@clickhouse_aws_c_auth//:aws_c_auth",
-        "@clickhouse_aws_c_http//:aws_c_http",
-    ],
     deps = [
         "@clickhouse_aws_c_common//:aws_c_common",
         "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
         "@clickhouse_aws_crt_cpp//:aws_crt_cpp",
-    ],
-)
-
-cc_library(
-    name = "_aws__compile_1",
-    deps = [
-        "@clickhouse_aws_c_auth//:aws_c_auth",
-        "@clickhouse_aws_c_cal//:aws_c_cal",
-        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
-        "@clickhouse_aws_c_common//:aws_c_common",
-        "@clickhouse_aws_checksums//:aws_checksums",
-        "@clickhouse_aws_c_io//:aws_c_io",
-        "@clickhouse_aws_c_http//:aws_c_http",
-        "@clickhouse_aws_c_compression//:aws_c_compression",
-        "@clickhouse_aws_c_s3//:aws_c_s3",
-        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
     ],
 )
 
@@ -124,7 +108,16 @@ cc_library(
     name = "_aws",
     deps = [
         ":_aws__compile_0",
-        ":_aws__compile_1",
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_cal//:aws_c_cal",
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_aws_checksums//:aws_checksums",
+        "@clickhouse_aws_c_io//:aws_c_io",
+        "@clickhouse_aws_c_http//:aws_c_http",
+        "@clickhouse_aws_c_compression//:aws_c_compression",
+        "@clickhouse_aws_c_s3//:aws_c_s3",
+        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
         ":_aws__compile_2",
         ":_aws__compile_3",
     ],

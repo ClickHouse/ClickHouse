@@ -23,8 +23,8 @@ ch_cc_library(
         "src/lib/zxc_seekable.c",
     ] + glob(["src/lib/**/*.h"]),
     hdrs = glob(["include/**/*.h"]),
-    includes = ["include"],
     copts = _ZXC_COPTS,
+    includes = ["include"],
     language = "C",
     libcxx_headers = False,
     local_defines = [

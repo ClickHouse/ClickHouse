@@ -8,7 +8,10 @@ exports_files([
 
 cc_library(
     name = "aws_c_mqtt",
-    hdrs = glob(["include/aws/mqtt/**/*.h"], exclude = ["include/aws/mqtt/private/**/*.h"]),
+    hdrs = glob(
+        ["include/aws/mqtt/**/*.h"],
+        exclude = ["include/aws/mqtt/private/**/*.h"],
+    ),
     includes = ["include"],
     deps = [
         "@clickhouse_aws_c_io//:aws_c_io",

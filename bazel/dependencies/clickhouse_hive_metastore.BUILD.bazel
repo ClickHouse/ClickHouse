@@ -12,7 +12,10 @@ exports_files([
 ch_cc_library(
     name = "_hivemetastore",
     srcs = glob(["*.cpp"]) + ["hive_metastore_constants.h"],
-    hdrs = ["ThriftHiveMetastore.h", "hive_metastore_types.h"],
+    hdrs = [
+        "ThriftHiveMetastore.h",
+        "hive_metastore_types.h",
+    ],
     copts = [
         "-w",
         "-std=c++23",

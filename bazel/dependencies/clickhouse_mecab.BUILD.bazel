@@ -36,7 +36,7 @@ ch_cc_library(
             "mecab/src/ucstable.h",
             "mecab/src/winmain.h",
         ],
-    ),
+    ) + ["configured/private/config.h"],
     hdrs = ["mecab/src/mecab.h"],
     copts = [
         "-w",
@@ -54,8 +54,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    local_includes = ["configured/private"],
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
-        "@clickhouse//contrib/MeCab-cmake:mecab_config_headers",
     ],
 )

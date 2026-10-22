@@ -28,14 +28,16 @@ ch_cc_library(
         "src/crc32c_round_up.h",
         "src/crc32c_sse42.h",
         "src/crc32c_sse42_check.h",
-    ],
+    ] + select({
+        "@platforms//cpu:x86_64": ["configured/x86_64/crc32c/crc32c_config.h"],
+        "@platforms//cpu:aarch64": ["configured/aarch64/crc32c/crc32c_config.h"],
+    }),
     hdrs = glob(["include/**/*.h"]),
     copts =
         [
             "-w",
             "-std=c++23",
         ],
-    implementation_deps = ["@clickhouse//contrib/crc32c-cmake:headers"],
     includes = [
         "include",
     ],
@@ -45,5 +47,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    local_includes = select({
+        "@platforms//cpu:x86_64": ["configured/x86_64"],
+        "@platforms//cpu:aarch64": ["configured/aarch64"],
+    }),
 )

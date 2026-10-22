@@ -1744,9 +1744,6 @@
     "name": "clickhouse_llvm_project",
     "repository": "https://github.com/ClickHouse/llvm-project",
     "commit": "86b7fe802669a4513da4931d909c36f4728729b9",
-    "url": "https://codeload.github.com/ClickHouse/llvm-project/tar.gz/86b7fe802669a4513da4931d909c36f4728729b9",
-    "sha256": "3e94c55b88716c8814d3d8627b3c58c6cce6ce7cf98a73473b4efcebdbde0d1d",
-    "strip_prefix": "llvm-project-86b7fe802669a4513da4931d909c36f4728729b9",
     "remove_build_files": [
       "utils/bazel/BUILD.bazel",
       "utils/bazel/llvm-project-overlay/bolt/BUILD.bazel",

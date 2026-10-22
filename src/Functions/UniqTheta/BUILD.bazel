@@ -15,6 +15,7 @@ ch_cc_library(
         "//src:dbms",
         "//src/Common",
         "//src/Functions:clickhouse_functions_obj__compile_0",
+        "//src:dbms__compile_1",
     ],
     link_runtime = True,
     local_defines = [

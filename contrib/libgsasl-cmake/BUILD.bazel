@@ -1,9 +1,3 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "libgsasl_config_headers",
-    hdrs = ["linux_x86_64/include/config.h"],
-    includes = ["linux_x86_64/include"],
-)
+exports_files(["linux_x86_64/include/config.h"])

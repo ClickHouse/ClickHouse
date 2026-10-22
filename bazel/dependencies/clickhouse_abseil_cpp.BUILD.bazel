@@ -162,7 +162,6 @@ ch_cc_library(
         "absl/strings/internal/cord_rep_flat.h",
     ],
     copts = _ABSL_COPTS,
-    implementation_deps = [],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
         ":absl_container_memory",

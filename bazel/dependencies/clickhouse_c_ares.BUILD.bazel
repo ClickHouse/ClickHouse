@@ -75,11 +75,10 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    includes = ["include"],
-    local_includes = [
-        "src/lib",
-        "src/lib/include",
+    implementation_deps = [
+        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
+    includes = ["include"],
     language = "C",
     libcxx_headers = False,
     local_defines = [
@@ -92,8 +91,8 @@ ch_cc_library(
         "_POSIX_C_SOURCE=199309L",
         "_XOPEN_SOURCE=600",
     ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-        "@clickhouse//contrib/c-ares-cmake:headers",
+    local_includes = [
+        "src/lib",
+        "src/lib/include",
     ],
 )

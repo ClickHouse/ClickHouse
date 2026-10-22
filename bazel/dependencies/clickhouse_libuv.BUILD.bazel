@@ -41,10 +41,6 @@ ch_cc_library(
         "include/uv/linux.h",
         "include/uv/version.h",
     ],
-    textual_hdrs = [
-        "include/uv/threadpool.h",
-        "include/uv/unix.h",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -65,6 +61,10 @@ ch_cc_library(
     ],
     local_includes = [
         "src",
+    ],
+    textual_hdrs = [
+        "include/uv/threadpool.h",
+        "include/uv/unix.h",
     ],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

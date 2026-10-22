@@ -40,18 +40,6 @@ ch_cc_library(
         ]),
     }),
     hdrs = glob(["include/**/*.h"]),
-    private_hdrs = [
-        "src/encoding_types.cpp",
-        "src/error.cpp",
-        "src/implementation.cpp",
-        "src/simdutf_c.cpp",
-    ] + select({
-        "@platforms//cpu:x86_64": glob([
-            "src/haswell/*.cpp",
-            "src/icelake/*.cpp",
-        ]),
-        "@platforms//cpu:aarch64": glob(["src/arm64/*.cpp"]),
-    }),
     copts = [
         "-w",
         "-std=c++23",
@@ -68,5 +56,17 @@ ch_cc_library(
     local_includes = [
         "src",
     ],
+    private_hdrs = [
+        "src/encoding_types.cpp",
+        "src/error.cpp",
+        "src/implementation.cpp",
+        "src/simdutf_c.cpp",
+    ] + select({
+        "@platforms//cpu:x86_64": glob([
+            "src/haswell/*.cpp",
+            "src/icelake/*.cpp",
+        ]),
+        "@platforms//cpu:aarch64": glob(["src/arm64/*.cpp"]),
+    }),
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

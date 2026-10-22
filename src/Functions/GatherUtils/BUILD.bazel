@@ -24,7 +24,6 @@ ch_cc_library(
     ] + glob(["sliceFrom*.cpp"]) + [
         "starts_with.cpp",
     ]),
-    hdrs = ["GatherUtils.h"],
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
@@ -164,4 +163,9 @@ ch_cc_library(
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
+    deps = [
+        "//src:headers",
+        "//base:common",
+        "//src/Common:exception_api",
+    ],
 )

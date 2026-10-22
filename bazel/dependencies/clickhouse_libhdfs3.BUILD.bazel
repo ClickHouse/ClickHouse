@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -218,7 +217,7 @@ ch_cc_library(
         "-include",
         "contrib/libhdfs3-cmake/absl_log_undef.h",
         "-include",
-        repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h",
+        "google/protobuf/stubs/port.h",
     ],
     implementation_deps = [
         ":_hdfs3__compile_1",
@@ -294,7 +293,7 @@ ch_cc_library(
         "-include",
         "contrib/libhdfs3-cmake/absl_log_undef.h",
         "-include",
-        repository_path("contrib/google-protobuf") + "/src/google/protobuf/stubs/port.h",
+        "google/protobuf/stubs/port.h",
         "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1",
     ],
     implementation_deps = [
@@ -303,10 +302,7 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libgsasl//:_gsasl",
         "@clickhouse//bazel:hdfs3_proto_headers",
-    ] + select({
-        "@platforms//cpu:x86_64": ["@clickhouse_isa_l//:_isal"],
-        "@platforms//cpu:aarch64": [],
-    }),
+    ],
     local_defines = _HDFS3_LOCAL_DEFINES,
     local_includes = [
         "src",

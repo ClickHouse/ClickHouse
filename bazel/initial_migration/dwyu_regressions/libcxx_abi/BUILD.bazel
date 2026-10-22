@@ -15,22 +15,38 @@ package(default_visibility = ["//visibility:private"])
     for mode, standard, flags in [
         ("cxx23", "c++23", []),
         ("cxx03_default", "c++03", []),
-        ("cxx03_frozen", "c++03", ["-D_LIBCPP_USE_FROZEN_CXX03_HEADERS"]),
+        (
+            "cxx03_frozen",
+            "c++03",
+            ["-D_LIBCPP_USE_FROZEN_CXX03_HEADERS"],
+        ),
     ]
-    for header in ["vector", "cstddef", "wchar.h", "algorithm", "string"]
+    for header in [
+        "vector",
+        "cstddef",
+        "wchar.h",
+        "algorithm",
+        "string",
+    ]
 ]
 
 ch_cc_library(
     name = "provider_a",
-    link_runtime = True,
     srcs = ["provider.cc"],
-    copts = ["-std=c++23", "-DMIGRATION_PREFIX=a"],
+    copts = [
+        "-std=c++23",
+        "-DMIGRATION_PREFIX=a",
+    ],
+    link_runtime = True,
 )
 
 ch_cc_library(
     name = "provider_b_cxx23",
     srcs = ["provider.cc"],
-    copts = ["-std=c++23", "-DMIGRATION_PREFIX=b"],
+    copts = [
+        "-std=c++23",
+        "-DMIGRATION_PREFIX=b",
+    ],
 )
 
 ch_cc_library(
@@ -55,18 +71,24 @@ ch_cc_library(
 
 cc_test(
     name = "cxx23_exception_control",
-    linkstatic = True,
     srcs = ["exception_test.cc"],
     copts = ["-std=c++23"],
-    deps = [":provider_a", ":provider_b_cxx23"],
+    linkstatic = True,
+    deps = [
+        ":provider_a",
+        ":provider_b_cxx23",
+    ],
 )
 
 cc_test(
     name = "mixed_exception_abi",
-    linkstatic = True,
     srcs = ["exception_test.cc"],
     copts = ["-std=c++23"],
-    deps = [":provider_a", ":provider_b_frozen"],
+    linkstatic = True,
+    deps = [
+        ":provider_a",
+        ":provider_b_frozen",
+    ],
 )
 
 # The same test must reject an intentionally incompatible exception layout.
@@ -74,9 +96,12 @@ cc_test(
 # with a cc_test attribute or treated as a successful runtime test.
 cc_test(
     name = "negative_wrong_exception_abi",
-    linkstatic = True,
-    tags = ["manual"],
     srcs = ["exception_test.cc"],
     copts = ["-std=c++23"],
-    deps = [":provider_a", ":provider_b_wrong_abi"],
+    linkstatic = True,
+    tags = ["manual"],
+    deps = [
+        ":provider_a",
+        ":provider_b_wrong_abi",
+    ],
 )

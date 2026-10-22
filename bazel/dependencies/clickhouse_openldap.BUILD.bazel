@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -8,21 +9,44 @@ exports_files([
     "build/mkversion",
 ])
 
-# These are include fragments of the ClickHouse-generated portable.h.
-# Only that configuration owner may refer to their source labels.
-exports_files(
-    [
-        "include/ac/assert.h",
-        "include/ac/fdset.h",
-        "include/ac/localize.h",
-    ],
-    visibility = ["@clickhouse//contrib/openldap-cmake:__pkg__"],
+copy_file(
+    name = "lber_types",
+    src = select({
+        "@clickhouse//contrib/openldap-cmake:linux_x86_64": "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/lber_types.h",
+        "@clickhouse//contrib/openldap-cmake:linux_aarch64": "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/lber_types.h",
+    }),
+    out = "include/lber_types.h",
+    allow_symlink = True,
 )
 
-cc_library(
-    name = "_config_support",
-    hdrs = ["include/ldap_cdefs.h"],
-    includes = ["include"],
+copy_file(
+    name = "ldap_features",
+    src = select({
+        "@clickhouse//contrib/openldap-cmake:linux_x86_64": "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/ldap_features.h",
+        "@clickhouse//contrib/openldap-cmake:linux_aarch64": "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/ldap_features.h",
+    }),
+    out = "include/ldap_features.h",
+    allow_symlink = True,
+)
+
+copy_file(
+    name = "ldap_config",
+    src = select({
+        "@clickhouse//contrib/openldap-cmake:linux_x86_64": "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/ldap_config.h",
+        "@clickhouse//contrib/openldap-cmake:linux_aarch64": "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/ldap_config.h",
+    }),
+    out = "include/ldap_config.h",
+    allow_symlink = True,
+)
+
+copy_file(
+    name = "portable",
+    src = select({
+        "@clickhouse//contrib/openldap-cmake:linux_x86_64": "@clickhouse//contrib/openldap-cmake:linux_x86_64/include/portable.h",
+        "@clickhouse//contrib/openldap-cmake:linux_aarch64": "@clickhouse//contrib/openldap-cmake:linux_aarch64/include/portable.h",
+    }),
+    out = "include/portable.h",
+    allow_symlink = True,
 )
 
 # liblber/debug.c includes ldap_pvt.h -> openldap.h -> ldap.h -> lber.h.
@@ -31,14 +55,14 @@ cc_library(
 cc_library(
     name = "_api",
     hdrs = [
+        ":lber_types",
+        ":ldap_features",
         "include/lber.h",
         "include/ldap.h",
+        "include/ldap_cdefs.h",
         "include/openldap.h",
     ],
     includes = ["include"],
-    deps = [
-        "@clickhouse//contrib/openldap-cmake:headers",
-    ],
 )
 
 ch_cc_library(
@@ -57,6 +81,8 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
     ],
     hdrs = [
+        ":ldap_config",
+        ":portable",
         "include/ac/ctype.h",
         "include/ac/errno.h",
         "include/ac/signal.h",
@@ -77,13 +103,6 @@ ch_cc_library(
         "libraries/liblber/lber-int.h",
         "libraries/liblunicode/ucdata/ucdata.h",
     ],
-    # These shared headers require portable.h's SIZEOF_* definitions. Both
-    # real libraries enter them after portable.h, including liblber/debug.c.
-    textual_hdrs = [
-        "include/ac/bytes.h",
-        "include/ldap_pvt.h",
-        "include/ldap_pvt_uc.h",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
@@ -101,11 +120,18 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["libraries/liblber"],
+    # These shared headers require portable.h's SIZEOF_* definitions. Both
+    # real libraries enter them after portable.h, including liblber/debug.c.
+    textual_hdrs = [
+        "include/ac/assert.h",
+        "include/ac/bytes.h",
+        "include/ac/fdset.h",
+        "include/ac/localize.h",
+        "include/ldap_pvt.h",
+        "include/ldap_pvt_uc.h",
+    ],
     deps = [
         ":_api",
-        ":_config_support",
-        "@clickhouse//contrib/openldap-cmake:headers",
-        "@clickhouse//contrib/openldap-cmake:private_config",
     ],
 )
 
@@ -205,7 +231,6 @@ ch_cc_library(
     ],
     implementation_deps = [
         ":_lber",
-        "@clickhouse//contrib/openldap-cmake:private_config",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
     ],
@@ -221,7 +246,5 @@ ch_cc_library(
     local_includes = ["libraries/libldap"],
     deps = [
         ":_api",
-        ":_config_support",
-        "@clickhouse//contrib/openldap-cmake:headers",
     ],
 )

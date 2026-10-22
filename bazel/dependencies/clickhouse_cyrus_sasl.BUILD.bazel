@@ -29,7 +29,7 @@ ch_cc_library(
         "include/saslplug.h",
         "include/saslutil.h",
         "saslauthd/md5global.h",
-    ] + glob(["lib/*.h"]),
+    ] + glob(["lib/*.h"]) + ["configured/private/config.h"],
     hdrs = [
         "include/prop.h",
         "include/sasl.h",
@@ -39,7 +39,6 @@ ch_cc_library(
         "-std=gnu11",
     ],
     implementation_deps = [
-        "@clickhouse//contrib/cyrus-sasl-cmake:cyrus_sasl_config_headers",
         "@clickhouse_krb5//:_krb5",
     ],
     include_prefix = "sasl",
@@ -62,6 +61,7 @@ ch_cc_library(
         "lib",
         "common",
         "saslauthd",
+        "configured/private",
     ],
     strip_include_prefix = "include",
 )

@@ -186,7 +186,6 @@ ch_cc_library(
         "//src:core_types",
         "@clickhouse_llvm_project//:llvm_headers",
         "@clickhouse_libdivide//:libdivide",
-        "//contrib/libdivide-cmake:headers",
         "//contrib/pdqsort:headers",
         "//src/Compression:clickhouse_compression",
         "//src/Functions:headers",
@@ -688,5 +687,8 @@ cc_library(
     ),
     deps = [
         "@clickhouse_croaring//:_roaring",
+        "//src:headers",
+        "//base:common",
+        "//src/Common:exception_api",
     ],
 )

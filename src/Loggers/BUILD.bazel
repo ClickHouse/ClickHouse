@@ -19,6 +19,7 @@ ch_cc_library(
         "//src:headers",
         "//src:clickhouse_common_io__compile_0",
         "//base/poco/Net:_poco_net",
+        ":headers",
     ],
     link_runtime = True,
     local_defines = [
@@ -108,7 +109,6 @@ ch_cc_library(
     source_headers = True,
     deps = [
         "//src/Common",
-        ":headers",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",

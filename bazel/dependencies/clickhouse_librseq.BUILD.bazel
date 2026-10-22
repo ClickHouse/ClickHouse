@@ -13,22 +13,18 @@ ch_cc_library(
         "src/smp.c",
     ] + glob(
         ["src/**/*.h"],
-        exclude = ["src/list.h", "src/rseq-utils.h"],
+        exclude = [
+            "src/list.h",
+            "src/rseq-utils.h",
+        ],
     ),
     hdrs = glob(
         ["include/**/*.h"],
-        exclude = ["include/rseq/arch.h", "include/rseq/arch/**/*.h"],
+        exclude = [
+            "include/rseq/arch.h",
+            "include/rseq/arch/**/*.h",
+        ],
     ),
-    textual_hdrs = [
-        "include/rseq/arch.h",
-        "include/rseq/arch/generic/common.h",
-    ] + glob(["include/rseq/arch/templates/**/*.h"]) + select({
-        "@platforms//cpu:x86_64": ["include/rseq/arch/x86.h"] + glob(["include/rseq/arch/x86/**/*.h"]),
-        "@platforms//cpu:aarch64": [
-            "include/rseq/arch/aarch64.h",
-            "include/rseq/arch/generic/thread-pointer.h",
-        ] + glob(["include/rseq/arch/aarch64/**/*.h"]),
-    }),
     copts = [
         "-w",
         "-std=gnu11",
@@ -48,5 +44,15 @@ ch_cc_library(
     local_includes = [
         "src",
     ],
+    textual_hdrs = [
+        "include/rseq/arch.h",
+        "include/rseq/arch/generic/common.h",
+    ] + glob(["include/rseq/arch/templates/**/*.h"]) + select({
+        "@platforms//cpu:x86_64": ["include/rseq/arch/x86.h"] + glob(["include/rseq/arch/x86/**/*.h"]),
+        "@platforms//cpu:aarch64": [
+            "include/rseq/arch/aarch64.h",
+            "include/rseq/arch/generic/thread-pointer.h",
+        ] + glob(["include/rseq/arch/aarch64/**/*.h"]),
+    }),
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

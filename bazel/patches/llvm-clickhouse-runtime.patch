@@ -1127,3 +1127,138 @@ diff --git a/toolchain/runtimes/with_cfg_runtimes_common.bzl b/toolchain/runtime
      builder.set("copt", [])
      builder.set("cxxopt", [])
      builder.set("conlyopt", [])
+diff --git a/private/llvm_project_archive.bzl b/private/llvm_project_archive.bzl
+--- a/private/llvm_project_archive.bzl
++++ b/private/llvm_project_archive.bzl
+@@ -12,16 +12,7 @@
+     "update_attrs",
+ )
+ load("//:http_bsdtar_archive.bzl", "download_remote_files")
+-load(":llvm_project_common.bzl", "LLVM_PROJECT_OVERLAY", "write_llvm_project_files")
+-
+-_DEFAULT_OVERLAY_FILES = {
+-    "compiler-rt/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/compiler-rt:compiler-rt.BUILD.bazel"),
+-    "libc/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libc:libc.BUILD.bazel"),
+-    "libcxx/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxx:libcxx.BUILD.bazel"),
+-    "libcxxabi/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxxabi:libcxxabi.BUILD.bazel"),
+-    "libunwind/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libunwind:libunwind.BUILD.bazel"),
+-    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
+-}
++load(":llvm_project_common.bzl", "LLVM_PROJECT_OVERLAY", "LLVM_PROJECT_OVERLAY_FILES", "copy_llvm_project_files", "write_llvm_project_files")
+
+ def _default_excludes():
+     excludes = [
+@@ -133,15 +124,6 @@
+         overlay_prefix.count("/") + 1,
+     )
+
+-def _copy_files(rctx):
+-    files = dict(rctx.attr.overlay_files)
+-    files.update(rctx.attr.files)
+-    for path, label in files.items():
+-        source = rctx.path(label)
+-        if not source.exists:
+-            fail("Input {} does not exist".format(label))
+-        rctx.file(path, rctx.read(source), executable = False)
+-
+ def _update_integrity_attrs(rctx, archive_info, remote_files_info, remote_patches_info):
+     overrides = {}
+     if not rctx.attr.sha256 and not rctx.attr.integrity:
+@@ -179,7 +161,7 @@
+
+     remote_files_info = download_remote_files(rctx)
+     remote_patches_info = patch(rctx)
+-    _copy_files(rctx)
++    copy_llvm_project_files(rctx)
+     write_llvm_project_files(rctx)
+
+     return _update_integrity_attrs(rctx, archive_info, remote_files_info, remote_patches_info)
+@@ -194,7 +176,7 @@
+     "canonical_id": attr.string(),
+     "strip_prefix": attr.string(),
+     "files": attr.string_keyed_label_dict(default = {}),
+-    "overlay_files": attr.string_keyed_label_dict(default = _DEFAULT_OVERLAY_FILES),
++    "overlay_files": attr.string_keyed_label_dict(default = LLVM_PROJECT_OVERLAY_FILES),
+     "type": attr.string(),
+     "patches": attr.label_list(default = []),
+     "remote_file_urls": attr.string_list_dict(default = {}),
+diff --git a/private/llvm_project_common.bzl b/private/llvm_project_common.bzl
+--- a/private/llvm_project_common.bzl
++++ b/private/llvm_project_common.bzl
+@@ -1,6 +1,24 @@
+ LLVM_PROJECT_OVERLAY = "utils/bazel/llvm-project-overlay"
+
+ _MAX_OVERLAY_DIRECTORIES = 1000000
++
++LLVM_PROJECT_OVERLAY_FILES = {
++    "compiler-rt/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/compiler-rt:compiler-rt.BUILD.bazel"),
++    "libc/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libc:libc.BUILD.bazel"),
++    "libcxx/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxx:libcxx.BUILD.bazel"),
++    "libcxxabi/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxxabi:libcxxabi.BUILD.bazel"),
++    "libunwind/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libunwind:libunwind.BUILD.bazel"),
++    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
++}
++
++def copy_llvm_project_files(rctx):
++    files = dict(rctx.attr.overlay_files)
++    files.update(rctx.attr.files)
++    for path, label in files.items():
++        source = rctx.path(label)
++        if not source.exists:
++            fail("Input {} does not exist".format(label))
++        rctx.file(path, rctx.read(source), executable = False)
+
+ def _extract_cmake_settings(rctx, path):
+     settings = {
+diff --git a/private/llvm_project_from_git.bzl b/private/llvm_project_from_git.bzl
+--- a/private/llvm_project_from_git.bzl
++++ b/private/llvm_project_from_git.bzl
+@@ -3,6 +3,9 @@
+ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "patch")
+ load(
+     ":llvm_project_common.bzl",
++    "LLVM_PROJECT_OVERLAY",
++    "LLVM_PROJECT_OVERLAY_FILES",
++    "copy_llvm_project_files",
+     "copy_overlay",
+     "write_llvm_project_files",
+ )
+@@ -23,12 +26,14 @@
+         for entry in source_root.readdir():
+             rctx.symlink(entry, entry.basename)
+
++    copy_overlay(rctx, source_root)
++    rctx.delete(source_root.get_child(LLVM_PROJECT_OVERLAY))
+     patch(rctx)
+-    copy_overlay(rctx, source_root)
++    copy_llvm_project_files(rctx)
+     rctx.delete(git_root.get_child(".git"))
+     write_llvm_project_files(rctx)
+
+-    return rctx.repo_metadata(reproducible = False)
++    return rctx.repo_metadata(reproducible = bool(rctx.attr.commit))
+
+ llvm_project_from_git = repository_rule(
+     implementation = _llvm_project_from_git_impl,
+@@ -41,6 +46,9 @@
+         "init_submodules": attr.bool(default = False),
+         "recursive_init_submodules": attr.bool(default = False),
+         "strip_prefix": attr.string(),
++        "sparse_checkout_patterns": attr.string_list(),
++        "files": attr.string_keyed_label_dict(default = {}),
++        "overlay_files": attr.string_keyed_label_dict(default = LLVM_PROJECT_OVERLAY_FILES),
+         "patches": attr.label_list(default = []),
+         "patch_args": attr.string_list(default = []),
+         "patch_cmds": attr.string_list(default = []),
+diff --git a/extensions/llvm.bzl b/extensions/llvm.bzl
+--- a/extensions/llvm.bzl
++++ b/extensions/llvm.bzl
+@@ -265,6 +265,8 @@
+         "init_submodules": attr.bool(default = False),
+         "recursive_init_submodules": attr.bool(default = False),
+         "strip_prefix": attr.string(default = ""),
++        "sparse_checkout_patterns": attr.string_list(),
++        "files": attr.string_keyed_label_dict(default = {}),
+         "patches": attr.label_list(default = []),
+         "patch_args": attr.string_list(default = ["-p0"]),
+         "patch_cmds": attr.string_list(default = []),

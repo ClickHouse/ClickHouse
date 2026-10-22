@@ -14,6 +14,12 @@ ch_cc_library(
     implementation_deps = [
         "//src/Loggers:headers",
         "//src/Loggers:loggers",
+        ":headers",
+        "//src/Common/Config:clickhouse_common_config",
+        "//src/Common",
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
     ],
     local_defines = select({
         "@platforms//cpu:x86_64": [],
@@ -81,21 +87,14 @@ ch_cc_library(
     ],
     source_headers = True,
     deps = [
-        ":headers",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@llvm-project//third-party/siphash",
-        "//src/Common/Config:clickhouse_common_config",
-        "//src/Common",
-        "//base:common",
-        "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
-        "//base/poco/Util:_poco_util",
     ],
 )
 
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]) + ["//src/Common/Config:ConfigProcessor.h"],
+    hdrs = glob(["**/*.h"]),
     strip_include_prefix = "/src",
     deps = [
         "//base:common",
@@ -106,5 +105,6 @@ cc_library(
         "//src/Common",
         "//base/poco/Util:_poco_util",
         "//src/Loggers:headers",
+        "//src/Common/Config:config_processor_api",
     ],
 )

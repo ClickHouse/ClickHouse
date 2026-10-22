@@ -616,31 +616,30 @@ cc_binary(
     deps = [":negative_spaced_symbol"],
 )
 
-
 cc_library(
     name = "partial_link_only",
     srcs = ["idle.cpp"],
-    textual_hdrs = ["not_entered.h"],
     implementation_deps = [":unrelated_without_header"],
+    textual_hdrs = ["not_entered.h"],
 )
 
 cc_library(
     name = "partial_alwayslink",
     srcs = ["consumer.cpp"],
-    textual_hdrs = ["not_entered.h"],
     implementation_deps = [
         ":always_bridge",
         ":api",
     ],
+    textual_hdrs = ["not_entered.h"],
 )
 
 cc_library(
     name = "partial_opaque",
     srcs = ["consumer.cpp"],
-    textual_hdrs = ["not_entered.h"],
     implementation_deps = [
         ":api",
         ":bridge",
         ":link_flags",
     ],
+    textual_hdrs = ["not_entered.h"],
 )

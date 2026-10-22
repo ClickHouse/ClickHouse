@@ -38,7 +38,10 @@ ch_cc_library(
         "src/setup.c",
         "src/syscall.c",
         "src/version.c",
-    ] + glob(["src/*.h", "src/arch/*.h"]) + select({
+    ] + glob([
+        "src/*.h",
+        "src/arch/*.h",
+    ]) + select({
         "@platforms//cpu:x86_64": glob(["src/arch/x86/**/*.h"]),
         "@platforms//cpu:aarch64": glob(["src/arch/aarch64/**/*.h"]),
     }),
@@ -49,7 +52,6 @@ ch_cc_library(
         ["src/include/**/*.h"],
         exclude = ["src/include/liburing/io_uring.h"],
     ),
-    textual_hdrs = ["src/include/liburing/io_uring.h"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -69,5 +71,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    textual_hdrs = ["src/include/liburing/io_uring.h"],
     deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

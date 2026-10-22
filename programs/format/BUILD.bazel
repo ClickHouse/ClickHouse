@@ -16,6 +16,9 @@ ch_cc_library(
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "//src/Parsers:clickhouse_parsers",
         "//src/TableFunctions:headers",
+        "//src:dbms__compile_1",
+        "//src/Dictionaries:clickhouse_dictionaries",
+        "//src/TableFunctions:clickhouse_table_functions",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
@@ -26,7 +29,5 @@ ch_cc_library(
     source_headers = True,
     deps = [
         "//src/AggregateFunctions:clickhouse_aggregate_functions",
-        "//src/Dictionaries:clickhouse_dictionaries",
-        "//src/TableFunctions:clickhouse_table_functions",
     ],
 )

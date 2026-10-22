@@ -632,12 +632,6 @@ ch_cc_library(
         ],
     }),
     hdrs = _CRYPTO_PUBLIC_HDRS,
-    private_hdrs = [
-        "crypto/LPdir_unix.c",
-        "crypto/des/ncbc_enc.c",
-        "providers/implementations/macs/blake2_mac_impl.c",
-    ],
-    includes = ["include"],
     copts = [
         "-w",
         "-std=gnu11",
@@ -647,10 +641,16 @@ ch_cc_library(
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":crypto__compile_1",
     ],
+    includes = ["include"],
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
+    private_hdrs = [
+        "crypto/LPdir_unix.c",
+        "crypto/des/ncbc_enc.c",
+        "providers/implementations/macs/blake2_mac_impl.c",
+    ],
 )
 
 ch_cc_library(

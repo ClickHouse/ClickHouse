@@ -1332,3 +1332,15 @@ plain-stripped hash differed from the reference hash. The current normalized
 comparison and its reproduction commands are recorded above.
 
 </details>
+
+
+### Native build and hash verification for Bazel snapshot `c607864d1`
+
+Both architectures passed the 43 native targets, including the registered SQL and CRC32C checks. Raw and normalized binary SHA256 values and lengths match the native CMake references. This is a native build and hash verification only. DWYU is still a work in progress: scoped CPP and full-production CPP have not qualified. Full-census llvm-nm controls have not qualified. No failed CPP preprocessing action is counted as a success.
+
+The original collector rejected `source_stages_incomplete: CPP/native source overlay differs in baseline_native`: it compared the 43-target build against the earlier 41-target fixture. A separate replay authenticated the originally submitted 43-target SQL/CRC fixture, both original Runs and their native status artifacts. The original rejection and strict CPP qualification remain unchanged. The CPP numbers below are diagnostic counts from the original scoped stage reports, not a CPP or whole-repository qualification.
+
+| CPU | Run submitted | BuildBuddy | Raw SHA256 (bytes) | Normalized SHA256 (bytes) | Remaining CPP diagnostic |
+| --- | --- | --- | --- | --- | --- |
+| x86-64 | 2026-10-22 18:13:45 UTC | [8388606c](https://app.buildbuddy.io/invocation/8388606c-bc18-4105-bf85-cffd5a6fa0bc) | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` (929619680 B) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` (710693736 B) | 2551 failed CPP preprocess actions on 14 reported owners; 222 rows with findings |
+| ARM64 | 2026-10-22 18:13:42 UTC | [6921aee2](https://app.buildbuddy.io/invocation/6921aee2-d0d4-4f38-b009-1fcd24086a16) | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` (907067440 B) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` (637316696 B) | 2557 failed CPP preprocess actions on 15 reported owners; 211 rows with findings |

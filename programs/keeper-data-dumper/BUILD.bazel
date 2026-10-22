@@ -12,6 +12,7 @@ ch_cc_library(
         "//src/Common",
         "@clickhouse_nuraft//:_nuraft",
         "//src/Common/ZooKeeper:headers",
+        "//src/Dictionaries:clickhouse_dictionaries",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
@@ -20,7 +21,4 @@ ch_cc_library(
         "../../" + "bazel/gen",
     ],
     source_headers = True,
-    deps = [
-        "//src/Dictionaries:clickhouse_dictionaries",
-    ],
 )

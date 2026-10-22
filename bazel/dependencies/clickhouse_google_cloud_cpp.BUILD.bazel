@@ -78,135 +78,135 @@ _GOOGLE_CLOUD_CPP_COPTS = [
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_annotations_protos",
-    proto = "@clickhouse//bazel:google_api_annotations_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_annotations_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_auth_protos",
-    proto = "@clickhouse//bazel:google_api_auth_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_auth_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_backend_protos",
-    proto = "@clickhouse//bazel:google_api_backend_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_backend_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_billing_protos",
-    proto = "@clickhouse//bazel:google_api_billing_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_billing_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_client_protos",
-    proto = "@clickhouse//bazel:google_api_client_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_client_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_config_change_protos",
-    proto = "@clickhouse//bazel:google_api_config_change_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_config_change_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_consumer_protos",
-    proto = "@clickhouse//bazel:google_api_consumer_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_consumer_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_context_protos",
-    proto = "@clickhouse//bazel:google_api_context_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_context_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_control_protos",
-    proto = "@clickhouse//bazel:google_api_control_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_control_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_distribution_protos",
-    proto = "@clickhouse//bazel:google_api_distribution_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_distribution_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_documentation_protos",
-    proto = "@clickhouse//bazel:google_api_documentation_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_documentation_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_endpoint_protos",
-    proto = "@clickhouse//bazel:google_api_endpoint_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_endpoint_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_error_reason_protos",
-    proto = "@clickhouse//bazel:google_api_error_reason_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_error_reason_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_field_behavior_protos",
-    proto = "@clickhouse//bazel:google_api_field_behavior_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_field_behavior_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_field_info_protos",
-    proto = "@clickhouse//bazel:google_api_field_info_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_field_info_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_http_protos",
-    proto = "@clickhouse//bazel:google_api_http_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_http_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_httpbody_protos",
-    proto = "@clickhouse//bazel:google_api_httpbody_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_httpbody_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_label_protos",
-    proto = "@clickhouse//bazel:google_api_label_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_label_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_launch_stage_protos",
-    proto = "@clickhouse//bazel:google_api_launch_stage_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_launch_stage_proto",
 )
 
 ch_grpc_cc_library(
@@ -246,9 +246,9 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_policy_protos",
-    proto = "@clickhouse//bazel:google_api_policy_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_policy_proto",
 )
 
 ch_grpc_cc_library(
@@ -260,16 +260,16 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_resource_protos",
-    proto = "@clickhouse//bazel:google_api_resource_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_resource_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_routing_protos",
-    proto = "@clickhouse//bazel:google_api_routing_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_routing_proto",
 )
 
 ch_grpc_cc_library(
@@ -281,16 +281,16 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_source_info_protos",
-    proto = "@clickhouse//bazel:google_api_source_info_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_source_info_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_system_parameter_protos",
-    proto = "@clickhouse//bazel:google_api_system_parameter_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_system_parameter_proto",
 )
 
 ch_grpc_cc_library(
@@ -302,9 +302,9 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_api_visibility_protos",
-    proto = "@clickhouse//bazel:google_api_visibility_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_visibility_proto",
 )
 
 ch_grpc_cc_library(
@@ -316,9 +316,9 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_cloud_extended_operations_protos",
-    proto = "@clickhouse//bazel:google_cloud_extended_operations_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_cloud_extended_operations_proto",
 )
 
 ch_grpc_cc_library(
@@ -330,9 +330,9 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_cloud_orgpolicy_v1_orgpolicy_protos",
-    proto = "@clickhouse//bazel:google_cloud_orgpolicy_v1_orgpolicy_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_cloud_orgpolicy_v1_orgpolicy_proto",
 )
 
 _GENERATED_LOCAL_DEFINES_1 = [
@@ -772,23 +772,23 @@ ch_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_rpc_code_protos",
-    proto = "@clickhouse//bazel:google_rpc_code_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_code_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_rpc_context_attribute_context_protos",
-    proto = "@clickhouse//bazel:google_rpc_context_attribute_context_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_context_attribute_context_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_rpc_error_details_protos",
-    proto = "@clickhouse//bazel:google_rpc_error_details_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_error_details_proto",
 )
 
 ch_grpc_cc_library(
@@ -940,119 +940,119 @@ ch_grpc_cc_library(
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_calendar_period_protos",
-    proto = "@clickhouse//bazel:google_type_calendar_period_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_calendar_period_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_color_protos",
-    proto = "@clickhouse//bazel:google_type_color_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_color_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_date_protos",
-    proto = "@clickhouse//bazel:google_type_date_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_date_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_datetime_protos",
-    proto = "@clickhouse//bazel:google_type_datetime_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_datetime_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_dayofweek_protos",
-    proto = "@clickhouse//bazel:google_type_dayofweek_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_dayofweek_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_decimal_protos",
-    proto = "@clickhouse//bazel:google_type_decimal_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_decimal_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_expr_protos",
-    proto = "@clickhouse//bazel:google_type_expr_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_expr_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_fraction_protos",
-    proto = "@clickhouse//bazel:google_type_fraction_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_fraction_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_interval_protos",
-    proto = "@clickhouse//bazel:google_type_interval_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_interval_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_latlng_protos",
-    proto = "@clickhouse//bazel:google_type_latlng_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_latlng_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_localized_text_protos",
-    proto = "@clickhouse//bazel:google_type_localized_text_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_localized_text_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_money_protos",
-    proto = "@clickhouse//bazel:google_type_money_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_money_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_month_protos",
-    proto = "@clickhouse//bazel:google_type_month_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_month_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_phone_number_protos",
-    proto = "@clickhouse//bazel:google_type_phone_number_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_phone_number_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_postal_address_protos",
-    proto = "@clickhouse//bazel:google_type_postal_address_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_postal_address_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_quaternion_protos",
-    proto = "@clickhouse//bazel:google_type_quaternion_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_quaternion_proto",
 )
 
 ch_grpc_cc_library(
     name = "google_cloud_cpp_type_timeofday_protos",
-    proto = "@clickhouse//bazel:google_type_timeofday_proto",
     copts = _GOOGLE_CLOUD_CPP_COPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_timeofday_proto",
 )

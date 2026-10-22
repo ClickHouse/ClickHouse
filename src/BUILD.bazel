@@ -260,10 +260,12 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Disks/DiskObjectStorage/ObjectStorages/IOSchedulingSettings.h",
     "Disks/DiskObjectStorage/ObjectStorages/S3/DiskS3Utils.h",
     "Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h",
+    "Disks/FakeDiskTransaction.h",
     "Disks/IO/IOUringReader.h",
     "Disks/IO/ReadBufferFromWebServer.h",
     "Disks/IO/ThreadPoolReader.h",
     "Disks/IO/getIOUringReader.h",
+    "Disks/ReadOnlyDiskWrapper.h",
     "Disks/VolumeJBOD.h",
     "Disks/createVolume.h",
     "Disks/getDiskConfigurationFromAST.h",
@@ -309,6 +311,7 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Interpreters/DirectJoin.h",
     "Interpreters/DirectJoinMergeTreeEntity.h",
     "Interpreters/DiskSetBuilder.h",
+    "Interpreters/DiskSetImpl.h",
     "Interpreters/DistributedQueryStatusSource.h",
     "Interpreters/DuplicateOrderByVisitor.h",
     "Interpreters/ExecuteScalarSubqueriesVisitor.h",
@@ -381,6 +384,7 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Interpreters/SpillingHashJoin.h",
     "Interpreters/Streaming/Utils.h",
     "Interpreters/SubstituteColumnOptimizer.h",
+    "Interpreters/SystemLogDefaultFlushPolicy.h",
     "Interpreters/TableOverrideUtils.h",
     "Interpreters/TreeCNFConverter.h",
     "Interpreters/TreeOptimizer.h",
@@ -428,7 +432,15 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Processors/FractionalOffsetTransform.h",
     "Processors/IInflatingTransform.h",
     "Processors/LimitRangeTransform.h",
+    "Processors/Merges/AggregatingSortedTransform.h",
     "Processors/Merges/Algorithms/MergeTreeReadInfo.h",
+    "Processors/Merges/CoalescingSortedTransform.h",
+    "Processors/Merges/CollapsingSortedTransform.h",
+    "Processors/Merges/FinishAggregatingInOrderTransform.h",
+    "Processors/Merges/GraphiteRollupSortedTransform.h",
+    "Processors/Merges/ReplacingSortedTransform.h",
+    "Processors/Merges/SummingSortedTransform.h",
+    "Processors/Merges/VersionedCollapsingTransform.h",
     "Processors/NegativeLimitTransform.h",
     "Processors/NegativeOffsetTransform.h",
     "Processors/OffsetTransform.h",
@@ -476,6 +488,10 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h",
     "Processors/QueryPlan/Optimizations/conflictDetector.h",
     "Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h",
+    "Processors/QueryPlan/Optimizations/dpTable.h",
+    "Processors/QueryPlan/Optimizations/enumeratorChecker.h",
+    "Processors/QueryPlan/Optimizations/joinEnum.h",
+    "Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h",
     "Processors/QueryPlan/Optimizations/joinOrderBitSet.h",
     "Processors/QueryPlan/Optimizations/joinOrderDP.h",
     "Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h",
@@ -515,10 +531,14 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Processors/Sources/ArrowFlightSource.h",
     "Processors/Sources/DelayedSource.h",
     "Processors/Sources/LazyUnorderedReadFromMergeTreeSource.h",
+    "Processors/Sources/ReadFromCommonBufferSource.h",
     "Processors/Sources/ReadFromDistributedPlanSource.h",
     "Processors/Sources/RecursiveCTESource.h",
     "Processors/Sources/SQLiteSource.h",
     "Processors/Sources/SQLiteStatementReader.h",
+    "Processors/Sources/SourceFromPrimes.h",
+    "Processors/Sources/ThrowingExceptionSource.h",
+    "Processors/Sources/WaitForAsyncInsertSource.h",
     "Processors/Transforms/AggregatingInOrderTransform.h",
     "Processors/Transforms/ApplySquashingTransform.h",
     "Processors/Transforms/ArrayJoinTransform.h",
@@ -627,6 +647,7 @@ _PRIVATE_DBMS_0_HEADERS = glob(
     "Storages/MergeTree/DataPartStorageOnDiskPacked.h",
     "Storages/MergeTree/DeserializationPrefixesCache.h",
     "Storages/MergeTree/IndexReadRangesRefiner.h",
+    "Storages/MergeTree/LeaderElection.h",
     "Storages/MergeTree/MergeProjectionPartsTask.h",
     "Storages/MergeTree/MergeTreeBlockReadUtils.h",
     "Storages/MergeTree/MergeTreeDataPartCompact.h",
@@ -944,17 +965,13 @@ ch_cc_library(
         "@clickhouse_libbcrypt//:_bcrypt",
         "@clickhouse_boost//:_boost_context",
         "@clickhouse_boost//:_boost_coroutine",
-        "@clickhouse_boost//:_boost_filesystem",
         "@clickhouse_boost//:_boost_iostreams",
-        "@clickhouse_boost//:_boost_program_options",
-        "@clickhouse_boost//:_boost_regex",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_c_ares//:_c-ares",
         "@clickhouse_capnproto//:_capnp",
         "@clickhouse_capnproto//:_capnpc",
-        "@clickhouse_cctz//:_cctz",
         "@clickhouse_antlr4_cpp_runtime//:_ch_contrib_antlr4_cpp_runtime",
         "//contrib/cityhash102:_cityhash",
         "//contrib/consistent-hashing:_consistent_hashing",
@@ -1018,7 +1035,6 @@ ch_cc_library(
         "@clickhouse_rocksdb//:_rocksdb",
         "@clickhouse_s2geometry//:_s2",
         "@clickhouse_cyrus_sasl//:_sasl2",
-        "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_silk//:_silk_util",
     ] + select({
@@ -1033,10 +1049,8 @@ ch_cc_library(
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_sqlite_amalgamation//:_sqlite",
         "@clickhouse_libssh//:_ssh",
-        "@clickhouse_libstemmer_c//:_stemmer",
         "@clickhouse_stringzilla//:_stringzilla",
         "@clickhouse_thrift//:_thrift",
-        "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_vectorscan//:_vectorscan",
         "@clickhouse_yaml_cpp//:_yaml_cpp",
         "@clickhouse_zlib_ng//:_zlib",
@@ -1202,7 +1216,7 @@ _IO_0_COMPILE_ATTRIBUTES = dict(
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
-        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl",
         "//contrib/cityhash102:_cityhash",
         "//src/Common",
         "@clickhouse_aws//:_aws",
@@ -1227,7 +1241,6 @@ _IO_0_COMPILE_ATTRIBUTES = dict(
 ch_cc_library(
     name = "clickhouse_common_io__compile_0",
     srcs = [
-        "//src/Common:ActionLock.cpp",
         "//src/Common:AddressToLineCache.cpp",
         "//src/Common:AggregatedMetrics.cpp",
         "//src/Common:AlignedBuffer.cpp",
@@ -1254,7 +1267,6 @@ ch_cc_library(
         "//src/Common:CoverageCollection.cpp",
         "//src/Common:CoverageRegions.cpp",
         "//src/Common:CurrentMemoryTracker.cpp",
-        "//src/Common:CurrentMetrics.cpp",
         "//src/Common:CurrentThread.cpp",
         "//src/Common:CurrentThreadHelpers.cpp",
         "//src/Common:DNSPTRResolverProvider.cpp",
@@ -1366,7 +1378,6 @@ ch_cc_library(
         "//src/Common:SeccompFilter.cpp",
         "//src/Common:SensitiveDataMasker.cpp",
         "//src/Common:SettingsChanges.cpp",
-        "//src/Common:SharedMutex.cpp",
         "//src/Common:ShellCommand.cpp",
         "//src/Common:ShellCommandSettings.cpp",
         "//src/Common:ShellCommandsHolder.cpp",
@@ -1506,8 +1517,42 @@ ch_cc_library(
 
 ch_cc_library(
     name = "clickhouse_common_io_embedded",
-    srcs = ["//bazel:gen/embedded/src/Common/FrequencyHolder.cpp"] + _IO_0_PRIVATE_SRC_HEADERS + _IO_0_COMPILE_ATTRIBUTES["hdrs"],
-    hdrs = [],
+    srcs = [
+        "//bazel:gen/embedded/src/Common/FrequencyHolder.cpp",
+        "IO/AutoFinalizedWriteBuffer.h",
+        "IO/BufferBase.h",
+        "IO/BufferWithOwnMemory.h",
+        "IO/ByteRange.h",
+        "IO/ByteRangeSet.h",
+        "IO/CompressedReadBufferWrapper.h",
+        "IO/CompressionMethod.h",
+        "IO/DoubleConverter.h",
+        "IO/IsTriviallySerializable.h",
+        "IO/OpenedFile.h",
+        "IO/OpenedFileCache.h",
+        "IO/ReadBuffer.h",
+        "IO/ReadBufferFromFile.h",
+        "IO/ReadBufferFromFileBase.h",
+        "IO/ReadBufferFromFileDescriptor.h",
+        "IO/ReadBufferFromMemory.h",
+        "IO/ReadBufferFromString.h",
+        "IO/ReadBufferWrapperBase.h",
+        "IO/ReadHelpers.h",
+        "IO/SeekableReadBuffer.h",
+        "IO/SnappyMode.h",
+        "IO/VarInt.h",
+        "IO/WithFileName.h",
+        "IO/WithFileSize.h",
+        "IO/WriteBuffer.h",
+        "IO/WriteBufferFromString.h",
+        "IO/WriteBufferFromVector.h",
+        "IO/WriteHelpers.h",
+        "IO/WriteIntText.h",
+        "IO/ZstdContext.h",
+        "IO/ZstdInflatingReadBuffer.h",
+        "IO/readFloatText.h",
+        "IO/readIntText.h",
+    ],
     additional_compiler_inputs = ["//bazel:gen/embedded/contrib/nlp-data/charset.zst"],
     clickhouse_code = _IO_0_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = _IO_0_COMPILE_ATTRIBUTES["implementation_deps"],
@@ -1634,6 +1679,13 @@ cc_library(
     ],
 )
 
+_CORE_TYPE_HEADERS = [
+    "Core/Types.h",
+    "Core/TypeId.h",
+    "Core/Types_fwd.h",
+    "Core/LogsLevel.h",
+]
+
 _GENERATED_HDRS_1 = glob(
     [
         "Access/**/*.h",
@@ -1691,7 +1743,7 @@ _GENERATED_HDRS_1 = glob(
     [
         "Core/**/*.h",
     ],
-    exclude = _PRIVATE_DBMS_0_HEADERS + ["Core/YTsaurus/YTsaurusQueries.h"],
+    exclude = _PRIVATE_DBMS_0_HEADERS + _CORE_TYPE_HEADERS + ["Core/YTsaurus/YTsaurusQueries.h"],
 ) + glob(
     [
         "DataTypes/**/*.h",
@@ -1832,10 +1884,7 @@ _DBMS_LOCAL_DEFINES = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_DBMS_0_PRIVATE_SRC_HEADERS = [
-    "//bazel:clickstack_header",
-    "//bazel:gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
-] + _PRIVATE_DBMS_0_HEADERS + [
+_DBMS_0_PRIVATE_SRC_HEADERS = _PRIVATE_DBMS_0_HEADERS + [
     "//src/Common:SQLDefinedHandlers/SQLDefinedHandlerFromAST.h",
     "//src/Common:Scheduler/Workload/WorkloadEntityConfigStorage.h",
     "//src/Common:Scheduler/Workload/WorkloadEntityDiskStorage.h",
@@ -1971,7 +2020,6 @@ _DBMS_0_COMPILE_ATTRIBUTES = dict(
         "//base/poco/XML:_poco_xml",
         "//base/widechar_width",
         "//contrib/cityhash102:_cityhash",
-        "//contrib/libdivide-cmake:headers",
         "//contrib/librdkafka-cmake:rdhttp_poco_transport",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
@@ -2775,7 +2823,10 @@ ch_cc_library(
     ] + glob(["Processors/Formats/Impl/Parquet/*.cpp"]) + glob(["Processors/Formats/Impl/ArrowIPC/*.cpp"]) + glob(["Coordination/*.cpp"]) + glob(["Coordination/Storage/*.cpp"]) + _DBMS_0_PRIVATE_SRC_HEADERS,
     hdrs = _DBMS_0_COMPILE_ATTRIBUTES["hdrs"],
     clickhouse_code = _DBMS_0_COMPILE_ATTRIBUTES["clickhouse_code"],
-    implementation_deps = _DBMS_0_COMPILE_ATTRIBUTES["implementation_deps"] + [":dbms_embedded"],
+    implementation_deps = _DBMS_0_COMPILE_ATTRIBUTES["implementation_deps"] + [
+        ":dbms_embedded",
+        ":clickhouse_common_io__compile_3",
+    ],
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
     local_defines = _DBMS_0_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _DBMS_0_COMPILE_ATTRIBUTES["local_includes"],
@@ -2787,16 +2838,6 @@ ch_cc_library(
 _DBMS_EMBEDDED_PRIVATE_HEADERS = [
     "//bazel:clickstack_header",
     "//bazel:gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
-    "Analyzer/Resolve/CorrelatedColumnsCollector.h",
-    "Analyzer/Resolve/QueryExpressionsAliasVisitor.h",
-    "Analyzer/Resolve/ReplaceColumnsVisitor.h",
-    "Analyzer/Resolve/TableExpressionsAliasVisitor.h",
-    "Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h",
-    "Interpreters/AggregateFunctionOfGroupByKeysVisitor.h",
-    "Interpreters/ArrayJoinedColumnsVisitor.h",
-    "Interpreters/FunctionMaskingArgumentCheckVisitor.h",
-    "Interpreters/GroupByFunctionKeysVisitor.h",
-    "Interpreters/RedundantFunctionsInOrderByVisitor.h",
     "Access/AuthenticationData.h",
     "Access/Credentials.h",
     "Backups/BackupsInMemoryHolder.h",
@@ -2857,12 +2898,10 @@ _DBMS_EMBEDDED_PRIVATE_HEADERS = [
     "Core/ColumnsWithTypeAndName.h",
     "Core/CompareHelper.h",
     "Core/DecimalFunctions.h",
-    "Core/Defines.h",
     "Core/ExternalTable.h",
     "Core/Field.h",
     "Core/Joins.h",
     "Core/LoadBalancing.h",
-    "Core/LogsLevel.h",
     "Core/MergeSelectorAlgorithm.h",
     "Core/MergeTreeSerializationEnums.h",
     "Core/MultiEnum.h",
@@ -2883,9 +2922,6 @@ _DBMS_EMBEDDED_PRIVATE_HEADERS = [
     "Core/SettingsTierType.h",
     "Core/ShortCircuitFunctionEvaluation.h",
     "Core/StreamingHandleErrorMode.h",
-    "Core/TypeId.h",
-    "Core/Types.h",
-    "Core/Types_fwd.h",
     "Core/UUID.h",
     "DataTypes/DataTypeEnum.h",
     "DataTypes/EnumValues.h",
@@ -3025,7 +3061,6 @@ ch_cc_library(
         "//bazel:gen/embedded/src/Server/WebTerminalRequestHandler.cpp",
         "//bazel:gen/embedded/src/Server/WebUIRequestHandler.cpp",
     ] + _DBMS_EMBEDDED_PRIVATE_HEADERS,
-    hdrs = [],
     additional_compiler_inputs = [
         "//bazel:gen/embedded/programs/keeper/dashboard.html",
         "//bazel:gen/embedded/programs/server/binary.html",
@@ -3056,7 +3091,6 @@ ch_cc_library(
     local_defines = _DBMS_0_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _DBMS_0_COMPILE_ATTRIBUTES["local_includes"],
     source_headers = True,
-    textual_hdrs = [],
     deps = _DBMS_0_COMPILE_ATTRIBUTES["deps"],
 )
 
@@ -3143,7 +3177,6 @@ ch_cc_library(
             "../" + "bazel/gen",
         ],
     }),
-    deps = [],
 )
 
 ch_cc_library(
@@ -3178,7 +3211,6 @@ ch_cc_library(
             "../" + "bazel/gen",
         ],
     }),
-    deps = [],
 )
 
 ch_cc_library(
@@ -3189,7 +3221,6 @@ ch_cc_library(
     }),
     arches = ["x86_64"],
     clickhouse_code = True,
-    copts = [],
     implementation_deps = select({
         "@platforms//cpu:x86_64": [":dbms__compile_0"],
         "@platforms//cpu:aarch64": [
@@ -3328,20 +3359,19 @@ ch_cc_library(
             "//base/readpassphrase",
             "//base/widechar_width",
             "//contrib/arrow-cmake:arrow_cmake_headers",
-            "//contrib/c-ares-cmake:headers",
             "//contrib/cityhash102:_cityhash",
             "//contrib/consistent-hashing:_consistent_hashing",
             "//contrib/driftsort:headers",
             "//contrib/ipnsort:headers",
             "@clickhouse_jemalloc//:_jemalloc",
-            "//contrib/libdivide-cmake:headers",
+            "@clickhouse_libdivide//:libdivide",
             "//contrib/librdkafka-cmake:rdhttp_poco_transport",
-            "//contrib/openldap-cmake:headers",
+            "@clickhouse_openldap//:_api",
             "@clickhouse_openssl//:crypto",
             "@clickhouse_openssl//:ssl",
             "//contrib/pdqsort:headers",
             "//contrib/postgres-cmake:headers",
-            "//contrib/sz3-cmake:headers",
+            "@clickhouse_sz3//:sz3",
             "//contrib/vectorscan-cmake:headers",
             "//base:common",
             "//src/Access/Common:clickhouse_common_access",
@@ -4252,11 +4282,13 @@ cc_test(
     ] + ["@clickhouse_sz3//:sz3"],
 )
 
-_CORE_TYPE_HEADERS = [
-    "Core/Types.h",
-    "Core/TypeId.h",
-    "Core/Types_fwd.h",
-]
+ch_cc_library(
+    name = "core_defines",
+    hdrs = ["Core/Defines.h"],
+    clickhouse_code = True,
+    includes = ["."],
+    deps = ["//base:common"],
+)
 
 ch_cc_library(
     name = "core_types",
@@ -4271,99 +4303,6 @@ ch_cc_library(
 
 cc_library(
     name = "clickhouse_source_headers",
-    hdrs = glob(
-        [
-            "Access/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Analyzer/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Backups/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + [
-        "BridgeHelper/IBridgeHelper.h",
-        "BridgeHelper/XDBCBridgeHelper.h",
-    ] + glob(
-        [
-            "Client/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS + ["Client/BuzzHouse/**/*.h"],
-    ) + glob(
-        [
-            "Columns/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Coordination/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS + ["Coordination/tests/gtest_coordination_common.h"],
-    ) + glob(
-        [
-            "Core/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS + _CORE_TYPE_HEADERS,
-    ) + glob(
-        [
-            "DataTypes/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Databases/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Disks/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + [
-        "Examples/clickhouse_examples.h",
-        "Examples/storage_memory_profiler.h",
-    ] + glob(
-        [
-            "Formats/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        ["IO/**/*.h"],
-        exclude = _PRIVATE_IO_HEADERS + _IO_COMPILED_API_HEADERS,
-    ) + glob(
-        ["Interpreters/**/*.h"],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Planner/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Processors/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "QueryPipeline/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Server/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(
-        [
-            "Storages/**/*.h",
-        ],
-        exclude = _PRIVATE_DBMS_0_HEADERS,
-    ) + glob(["WindowFunctions/*.h"]),
     includes = [
         ".",
     ],
@@ -4391,6 +4330,7 @@ cc_library(
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
+        "//src/Common:memory_tracking_api",
     ],
 )
 
@@ -4403,6 +4343,8 @@ cc_library(
         exclude = _PRIVATE_IO_HEADERS + _PRIVATE_DBMS_0_HEADERS + _IO_COMPILED_API_HEADERS + _CORE_TYPE_HEADERS + [
             "Client/BuzzHouse/**/*.h",
             "Coordination/tests/gtest_coordination_common.h",
+            "Core/Defines.h",
+            "Access/GSSAcceptor.h",
         ],
     ),
     includes = [
@@ -4410,10 +4352,12 @@ cc_library(
     ],
     deps = [
         ":core_types",
+        "//src/Common:action_lock",
+        "//src/Common:current_metrics",
+        "//src/Common:shared_mutex",
         "@clickhouse_hive_metastore//:_hivemetastore",
         "@clickhouse_sqlite_amalgamation//:_sqlite",
         "@clickhouse_cppkafka//:_cppkafka",
-        "//contrib/libdivide-cmake:headers",
         "@clickhouse_libdivide//:libdivide",
         "//src/Access/Common:headers",
         "@clickhouse_double_conversion//:_double-conversion",
@@ -4423,5 +4367,7 @@ cc_library(
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
         "@clickhouse_azure//:_azure_sdk",
+        "//src/Common:memory_tracking_api",
+        "//src/Common:exception_api",
     ],
 )

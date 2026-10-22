@@ -140,9 +140,12 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = RDKAFKA_LOCAL_DEFINES,
-    local_includes = ["config/contrib/librdkafka-cmake", "src"],
-    strip_include_prefix = "src",
+    local_includes = [
+        "config/contrib/librdkafka-cmake",
+        "src",
+    ],
     private_hdrs = ["src/rdkafka_conf.c"],
+    strip_include_prefix = "src",
 )
 
 cc_library(

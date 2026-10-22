@@ -1,5 +1,6 @@
 """Fetch ClickHouse's pinned third-party sources independently of Git submodules."""
 
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 def _shell_quote(value):
@@ -65,6 +66,38 @@ def _openssl_configured_files(module_ctx):
         files["configured/" + relative] = Label("//contrib/openssl-cmake:" + relative)
     return files
 
+_CONFIGURED_FILES = {
+    "clickhouse_c_ares": {
+        "include/ares_build.h": Label("//contrib/c-ares-cmake:linux/ares_build.h"),
+        "src/lib/include/ares_config.h": Label("//contrib/c-ares-cmake:linux/ares_config.h"),
+    },
+    "clickhouse_crc32c": {
+        "configured/x86_64/crc32c/crc32c_config.h": Label("//contrib/crc32c-cmake:x86_64/sse42/crc32c/crc32c_config.h"),
+        "configured/aarch64/crc32c/crc32c_config.h": Label("//contrib/crc32c-cmake:aarch64/crc32c/crc32c_config.h"),
+    },
+    "clickhouse_libarchive": {
+        "configured/private/config.h": Label("//contrib/libarchive-cmake:config.h"),
+    },
+    "clickhouse_mecab": {
+        "configured/private/config.h": Label("//contrib/MeCab-cmake:config.h"),
+    },
+    "clickhouse_cyrus_sasl": {
+        "configured/private/config.h": Label("//contrib/cyrus-sasl-cmake:config.h"),
+    },
+    "clickhouse_libgsasl": {
+        "configured/private/config.h": Label("//contrib/libgsasl-cmake:linux_x86_64/include/config.h"),
+    },
+    "clickhouse_minizip_ng": {
+        "mz_config.h": Label("//contrib/minizip-ng-cmake:mz_config.h"),
+    },
+    "clickhouse_libdivide": {
+        "libdivide-config.h": Label("//contrib/libdivide-cmake:libdivide-config.h"),
+    },
+    "clickhouse_sz3": {
+        "include/SZ3/version.hpp": Label("//contrib/sz3-cmake:SZ3/version.hpp"),
+    },
+}
+
 def _contrib_impl(module_ctx):
     repositories = json.decode(module_ctx.read(Label("//bazel/rules:contrib_repositories.json")))
     for repository in repositories.values():
@@ -91,6 +124,15 @@ def _contrib_impl(module_ctx):
             ]
         else:
             commands = ["rm -f -- " + " ".join([_shell_quote(path) for path in remove])] if remove else []
+        if repository["name"] == "clickhouse_llvm_project":
+            git_repository(
+                name = repository["name"],
+                remote = repository["repository"] + ".git",
+                commit = repository["commit"],
+                build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
+                patch_cmds = commands,
+            )
+            continue
         http_archive(
             name = repository["name"],
             urls = [repository["url"]],
@@ -98,7 +140,7 @@ def _contrib_impl(module_ctx):
             strip_prefix = repository["strip_prefix"],
             type = "tar.gz",
             build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
-            files = _openssl_configured_files(module_ctx) if repository["name"] == "clickhouse_openssl" else {},
+            files = _openssl_configured_files(module_ctx) if repository["name"] == "clickhouse_openssl" else _CONFIGURED_FILES.get(repository["name"], {}),
             patches = {
                 "clickhouse_librdkafka": [Label("//bazel/patches:librdkafka-config-include.patch")],
                 "clickhouse_mongo_cxx_driver": [Label("//bazel/patches:mongo-bsoncxx-enum-compatibility.patch")],

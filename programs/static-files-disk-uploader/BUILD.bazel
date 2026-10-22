@@ -12,14 +12,12 @@ ch_cc_library(
         "//src:dbms__compile_0",
         "@clickhouse_boost//:boost_headers",
         "//src/Common",
+        "//src:dbms",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_DEFINES,
     local_includes = [
         ".",
         "../../" + "bazel/gen",
-    ],
-    deps = [
-        "//src:dbms",
     ],
 )

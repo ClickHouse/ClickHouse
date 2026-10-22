@@ -104,6 +104,13 @@ _FOUNDATION_PRIVATE_HEADERS = [
     "include/Poco/Environment_UNIX.h",
     "include/Poco/Path_UNIX.h",
     "include/Poco/SharedMemory_POSIX.h",
+    "include/Poco/ASCIIEncoding.h",
+    "include/Poco/ActiveDispatcher.h",
+    "include/Poco/ArchiveStrategy.h",
+    "include/Poco/Debugger.h",
+    "include/Poco/FileStreamFactory.h",
+    "include/Poco/PurgeStrategy.h",
+    "include/Poco/CompressedLogFile.h",
 ]
 
 _PCRE_INTERNAL_HEADERS = [

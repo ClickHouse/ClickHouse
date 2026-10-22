@@ -2,6 +2,15 @@ load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_S2_PRIVATE_HEADERS = [
+    "src/s2/s2random.h",
+    "src/s2/s2testing.h",
+    "src/s2/util/bitmap/bitmap.h",
+    "src/s2/util/coding/nth-derivative.h",
+    "src/s2/util/coding/transforms.h",
+    "src/s2/util/task/status_macros.h",
+]
+
 exports_files([
     "LICENSE",
 ])
@@ -109,9 +118,7 @@ ch_cc_library(
         "src/s2/util/math/exactfloat/exactfloat.cc",
         "src/s2/util/math/mathutil.cc",
         "src/s2/util/units/length-units.cc",
-        "src/s2/s2random.h",
-        "src/s2/s2testing.h",
-    ],
+    ] + _S2_PRIVATE_HEADERS,
     hdrs = glob(
         ["src/**/*.h"],
         # These belong to upstream s2_testing_headers; only the two compiled
@@ -122,15 +129,19 @@ ch_cc_library(
             "src/s2/s2cell_iterator_testing.h",
             "src/s2/s2closest_edge_query_testing.h",
             "src/s2/s2coder_testing.h",
-            "src/s2/s2random.h",
             "src/s2/s2shapeutil_testing.h",
-            "src/s2/s2testing.h",
             "src/s2/thread_testing.h",
-        ],
+        ] + _S2_PRIVATE_HEADERS,
     ),
     copts = [
         "-w",
         "-std=c++23",
+    ],
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
     ],
     includes = [
         "src",
@@ -168,11 +179,5 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_throw_delegate",
         "@clickhouse_abseil_cpp//:absl_type_traits",
         "@clickhouse_abseil_cpp//:absl_utility",
-    ],
-    implementation_deps = [
-        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
-        "@clickhouse_abseil_cpp//:absl_random_distributions",
-        "@clickhouse_abseil_cpp//:absl_memory",
-        "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
     ],
 )

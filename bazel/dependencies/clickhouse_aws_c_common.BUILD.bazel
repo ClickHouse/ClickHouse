@@ -105,7 +105,6 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = [],
     includes = [
         "include",
         "config/contrib/aws-cmake/include",

@@ -8,7 +8,10 @@ package(
 ch_cc_library(
     name = "_wnb",
     srcs = glob(["wnb/core/*.cc"]),
-    hdrs = ["wnb/nltk_similarity.hh", "wnb/std_ext.hh"] + glob(["wnb/core/*.hh"]),
+    hdrs = [
+        "wnb/nltk_similarity.hh",
+        "wnb/std_ext.hh",
+    ] + glob(["wnb/core/*.hh"]),
     copts = [
         "-w",
         "-std=c++23",

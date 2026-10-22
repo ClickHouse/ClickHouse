@@ -135,8 +135,24 @@ ch_cc_library(
     local_defines = _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES,
 )
 
+_STORAGES_SYSTEM_LLVM_DEPS = [
+    "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
+    "@clickhouse_llvm_project//:LLVMBitReader",
+    "@clickhouse_llvm_project//:LLVMBitWriter",
+    "@clickhouse_llvm_project//:LLVMBitstreamReader",
+    "@clickhouse_llvm_project//:LLVMCFGuard",
+    "@clickhouse_llvm_project//:LLVMCodeGenTypes",
+    "@clickhouse_llvm_project//:LLVMHipStdPar",
+    "@clickhouse_llvm_project//:LLVMIRPrinter",
+    "@clickhouse_llvm_project//:LLVMIRReader",
+    "@clickhouse_llvm_project//:LLVMInstCombine",
+    "@clickhouse_llvm_project//:LLVMMCDisassembler",
+    "@clickhouse_llvm_project//:LLVMObjCARCOpts",
+    "@clickhouse_llvm_project//:LLVMSandboxIR",
+    "@clickhouse_llvm_project//:LLVMSupport",
+]
+
 _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
-    hdrs = _PUBLIC_STORAGES_SYSTEM_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "//src:core_types",
@@ -168,20 +184,7 @@ _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
     ],
     deps = [
         "//bazel:clickhouse_config_headers",
-        "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
-        "@clickhouse_llvm_project//:LLVMBitReader",
-        "@clickhouse_llvm_project//:LLVMBitWriter",
-        "@clickhouse_llvm_project//:LLVMBitstreamReader",
-        "@clickhouse_llvm_project//:LLVMCFGuard",
-        "@clickhouse_llvm_project//:LLVMCodeGenTypes",
-        "@clickhouse_llvm_project//:LLVMHipStdPar",
-        "@clickhouse_llvm_project//:LLVMIRPrinter",
-        "@clickhouse_llvm_project//:LLVMIRReader",
-        "@clickhouse_llvm_project//:LLVMInstCombine",
-        "@clickhouse_llvm_project//:LLVMMCDisassembler",
-        "@clickhouse_llvm_project//:LLVMObjCARCOpts",
-        "@clickhouse_llvm_project//:LLVMSandboxIR",
-        "@clickhouse_llvm_project//:LLVMSupport",
+    ] + _STORAGES_SYSTEM_LLVM_DEPS + [
         "//base/glibc-compatibility",
         "//base:common",
         "//src:headers",
@@ -312,13 +315,12 @@ ch_cc_library(
         "extractTablesFilter.cpp",
         "getQueriedColumnsMaskAndHeader.cpp",
     ] + _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
-    hdrs = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["hdrs"],
     clickhouse_code = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [":clickhouse_storages_system_information_schema"],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
     source_headers = True,
-    deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"],
+    deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"] + [":headers"],
 )
 
 ch_cc_library(
@@ -329,7 +331,6 @@ ch_cc_library(
         "SystemTableSourceRegistry.h",
         "attachInformationSchemaTables.h",
     ],
-    hdrs = [],
     additional_compiler_inputs = [
         "//bazel:gen/embedded/src/Storages/System/information_schema/character_sets.sql",
         "//bazel:gen/embedded/src/Storages/System/information_schema/collations.sql",
@@ -343,11 +344,36 @@ ch_cc_library(
         "//bazel:gen/embedded/src/Storages/System/information_schema/views.sql",
     ],
     clickhouse_code = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["clickhouse_code"],
-    implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"],
+    implementation_deps = [
+        "//src:core_types",
+        "@clickhouse_nuraft//:_nuraft",
+        "@clickhouse_icu//:_icuuc",
+        "//src:clickhouse_common_io__compile_0",
+        "@clickhouse_fmtlib//:_fmt",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/JSON:_poco_json",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_jemalloc//:_jemalloc",
+        "//src/AggregateFunctions:headers",
+        "//src/Common/ZooKeeper:headers",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
+        "//src/Compression:clickhouse_compression",
+        "//src/Dictionaries:headers",
+        "//src/Functions:headers",
+        "//src/Parsers:headers",
+        "//src/Access/Common:clickhouse_common_access",
+        "//src:headers",
+    ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
     source_headers = True,
-    deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"],
+    deps = _STORAGES_SYSTEM_LLVM_DEPS + [
+        "//base/glibc-compatibility",
+        "//base:common",
+        "//src/Common",
+    ],
 )
 
 cc_library(
@@ -595,4 +621,8 @@ cc_library(
 cc_library(
     name = "headers",
     hdrs = _PUBLIC_STORAGES_SYSTEM_HEADERS,
+    deps = [
+        "//src:headers",
+        "//base:common",
+    ],
 )

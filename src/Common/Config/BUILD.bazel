@@ -3,6 +3,20 @@ load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
+    name = "config_processor_api",
+    hdrs = ["ConfigProcessor.h"],
+    clickhouse_code = True,
+    strip_include_prefix = "/src",
+    deps = [
+        "//bazel:clickhouse_config_headers",
+        "//src/Common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//base/poco/XML:_poco_xml",
+    ],
+)
+
+ch_cc_library(
     name = "clickhouse_common_config",
     srcs = [
         "AbstractConfigurationComparison.cpp",
@@ -16,7 +30,10 @@ ch_cc_library(
         "ConfigHelper.cpp",
         "parseConnectionCredentials.cpp",
     ],
-    hdrs = glob(["*.h"]),
+    hdrs = glob(
+        ["*.h"],
+        exclude = ["ConfigProcessor.h"],
+    ),
     clickhouse_code = True,
     implementation_deps = [
         "//src:headers",
@@ -127,5 +144,6 @@ ch_cc_library(
         "//base/poco/XML:_poco_xml",
         "//bazel:clickhouse_config_headers",
         "//base:common",
+        ":config_processor_api",
     ],
 )

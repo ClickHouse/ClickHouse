@@ -14,7 +14,10 @@ ch_cc_library(
     srcs = [
         "xxhash.c",
     ],
-    hdrs = ["xxhash.h", "xxh3.h"],
+    hdrs = [
+        "xxhash.h",
+        "xxh3.h",
+    ],
     copts = [
         "-w",
         "-std=gnu11",
