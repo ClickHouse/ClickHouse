@@ -17,3 +17,22 @@ for create in 'LIKE `t0`' '(KEY `k` (`x`)) ENGINE=InnoDB' '(CONSTRAINT `c` CHECK
     dump "$create" | $CLICKHOUSE_LOCAL --input-format MySQLDump --query "DESCRIBE TABLE table"
     dump "$create" | $CLICKHOUSE_LOCAL --input-format MySQLDump --query "SELECT * FROM table"
 done
+
+# The `INSERT` immediately following the `CREATE TABLE` must not be skipped.
+
+function dump_single_insert()
+{
+    printf 'CREATE TABLE `t1` %s;\nINSERT INTO `t1` VALUES (1,'"'"'a'"'"'),(2,'"'"'b'"'"');\n' "$1"
+}
+
+function dump_multiple_inserts()
+{
+    printf 'CREATE TABLE `t1` %s;\nINSERT INTO `t1` VALUES (1,'"'"'a'"'"');\nINSERT INTO `t1` VALUES (2,'"'"'b'"'"');\nINSERT INTO `t1` VALUES (3,'"'"'c'"'"');\n' "$1"
+}
+
+for create in 'LIKE `t0`' '(KEY `k` (`x`)) ENGINE=InnoDB' '(CONSTRAINT `c` CHECK (`x` > 0)) ENGINE=InnoDB' '(`x` int, `y` varchar(10)) ENGINE=InnoDB'; do
+    echo "$create"
+    dump_single_insert "$create" | $CLICKHOUSE_LOCAL --input-format MySQLDump --query "SELECT * FROM table"
+    dump_multiple_inserts "$create" | $CLICKHOUSE_LOCAL --input-format MySQLDump --query "SELECT * FROM table"
+    dump_multiple_inserts "$create" | $CLICKHOUSE_LOCAL --input-format MySQLDump --structure 'x UInt32, y String' --query "SELECT * FROM table"
+done
