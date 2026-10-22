@@ -20,35 +20,29 @@ DateTime([timezone])
 
 分解能: 1 秒。
 
-<div id="speed">
-  ## 速度
-</div>
+## 速度 {#speed}
 
 `Date` データ型は、*ほとんどの* 条件で `DateTime` より高速です。
 
 `Date` 型に必要なストレージは 2 バイトですが、`DateTime` では 4 バイト必要です。ただし、圧縮時には `Date` と `DateTime` のサイズ差はさらに大きくなります。これは、`DateTime` に含まれる分や秒が圧縮されにくいためです。また、`DateTime` ではなく `Date` に対してフィルタリングや集計を行うほうが高速です。
 
-<div id="usage-remarks">
-  ## 使用上の注意
-</div>
+## 使用上の注意 {#usage-remarks}
 
 時点は、タイムゾーン や夏時間に関係なく、[Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) として保存されます。タイムゾーン は、`DateTime` 型の値がテキスト形式でどのように表示されるか、および文字列として指定された値 (`'2020-01-01 05:00:01'`) がどのように解析されるかに影響します。
 
-タイムゾーン に依存しない Unix timestamp が table に保存され、タイムゾーン は、データのインポート/エクスポート時にそれをテキスト形式に変換したり、その逆変換を行ったり、値に対してカレンダー計算を行ったりするために使用されます (例: `toDate`、`toHour` 関数など) 。タイムゾーン は table の行 (または resultset) には保存されず、カラムのメタデータに保存されます。
+タイムゾーン に依存しない Unix timestamp が テーブル に保存され、タイムゾーン は、データのインポート/エクスポート時にそれをテキスト形式に変換したり、その逆変換を行ったり、値に対してカレンダー計算を行ったりするために使用されます (例: `toDate`、`toHour` 関数など) 。タイムゾーン は テーブル の行 (または resultset) には保存されず、カラムのメタデータに保存されます。
 
-サポートされている タイムゾーン の一覧は、[IANA Time Zone Database](https://www.iana.org/time-zones) で確認でき、`SELECT * FROM system.time_zones` で問い合わせることもできます。[その一覧](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) は Wikipedia でも参照できます。
+サポートされるタイムゾーン名は、`SELECT * FROM system.time_zones` で一覧表示されるものに限られます。これらはサーバーに同梱された [IANA Time Zone Database](https://www.iana.org/time-zones) に基づくため、結果はホスト側のデータベースに依存しません。[その一覧](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) は Wikipedia でも参照できます。`Fixed/UTC±HH:MM:SS` と表記する UTC からの固定オフセット (例: `Fixed/UTC+05:30:00`) も使用できます。固定オフセットのタイムゾーンを持つ Arrow または ORC のタイムスタンプカラムを読み取ると、この形式の名前が生成されます。それ以外の名前は拒否されます。
 
-table の作成時に、`DateTime` 型のカラムに対して明示的に タイムゾーン を設定できます。例: `DateTime('UTC')`。タイムゾーン が設定されていない場合、ClickHouse は server settings の [timezone](/ja/reference/settings/server-settings/settings/other#timezone) parameter の値、または ClickHouse server の起動時点における operating system の設定を使用します。
+テーブル の作成時に、`DateTime` 型のカラムに対して明示的に タイムゾーン を設定できます。例: `DateTime('UTC')`。タイムゾーン が設定されていない場合、ClickHouse は server settings の [timezone](/ja/reference/settings/server-settings/settings/other#timezone) パラメータ の値、または ClickHouse server の起動時点における operating system の設定を使用します。
 
-[clickhouse-client](/ja/concepts/features/interfaces/client) は、データ型の初期化時に タイムゾーン が明示的に設定されていない場合、デフォルトで server の タイムゾーン を適用します。client の タイムゾーン を使用するには、`clickhouse-client` を `--use_client_time_zone` parameter 付きで実行します。
+[clickhouse-client](/ja/concepts/features/interfaces/client) は、データ型の初期化時に タイムゾーン が明示的に設定されていない場合、デフォルトで server の タイムゾーン を適用します。client の タイムゾーン を使用するには、`clickhouse-client` を `--use_client_time_zone` パラメータ 付きで実行します。
 
-ClickHouse は、[date&#95;time&#95;output&#95;format](/ja/reference/settings/formats/date-time#date_time_output_format) setting の値に応じて値を出力します。デフォルトのテキスト形式は `YYYY-MM-DD hh:mm:ss` です。さらに、[formatDateTime](/ja/reference/functions/regular-functions/date-time-functions#formatDateTime) 関数で出力形式を変更できます。
+ClickHouse は、[date&#95;time&#95;output&#95;format](/ja/reference/settings/formats/date-time#date_time_output_format) SETTING の値に応じて値を出力します。デフォルトのテキスト形式は `YYYY-MM-DD hh:mm:ss` です。さらに、[formatDateTime](/ja/reference/functions/regular-functions/date-time-functions#formatDateTime) 関数で出力形式を変更できます。
 
-ClickHouse にデータを insert する際は、[date&#95;time&#95;input&#95;format](/ja/reference/settings/formats/date-time#date_time_input_format) setting の値に応じて、さまざまな日付と時刻の文字列形式を使用できます。
+ClickHouse にデータを insert する際は、[date&#95;time&#95;input&#95;format](/ja/reference/settings/formats/date-time#date_time_input_format) SETTING の値に応じて、さまざまな日付と時刻の文字列形式を使用できます。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 **1.** `DateTime` 型のカラムを持つテーブルを作成し、データを挿入する例:
 
@@ -134,9 +128,7 @@ FROM dt
 
 タイムゾーン の変換はメタデータを変更するだけなので、この操作に計算コストは発生しません。
 
-<div id="limitations-on-time-zones-support">
-  ## タイムゾーンのサポートに関する制限
-</div>
+## タイムゾーンのサポートに関する制限 {#limitations-on-time-zones-support}
 
 一部のタイムゾーンは完全にはサポートされていない場合があります。主なケースは次のとおりです。
 
@@ -150,9 +142,7 @@ UTC からのオフセットが 15 分の倍数でない場合、時間と分の
 
 複数日にまたがる時刻のシフト。一部の太平洋の島々では、タイムゾーン オフセットを UTC+14 から UTC-12 に変更しました。これは問題ありませんが、切り替えが行われた日の過去の時点についてその タイムゾーン で計算を行うと、多少の不正確さが生じる可能性があります。
 
-<div id="handling-daylight-saving-time-dst">
-  ## 夏時間 (DST) の扱い
-</div>
+## 夏時間 (DST) の扱い {#handling-daylight-saving-time-dst}
 
 タイムゾーン付きの ClickHouse の DateTime 型は、夏時間 (DST) の切り替え時に予期しない挙動を示すことがあります。特に、次のような場合です。
 
@@ -193,9 +183,7 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 
 この場合、ClickHouse は存在しない時刻 `2023-03-26 01:30:00` を `2023-03-26 00:30:00` に戻します。
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [型変換関数](/ja/reference/functions/regular-functions/type-conversion-functions)
 * [日付と時刻を扱う関数](/ja/reference/functions/regular-functions/date-time-functions)

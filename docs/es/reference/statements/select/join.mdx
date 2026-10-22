@@ -22,7 +22,7 @@ FROM <left_table>
 
 Las expresiones de la cláusula `ON` y las columnas de la cláusula `USING` se denominan &quot;claves de JOIN&quot;. A menos que se indique lo contrario, un `JOIN` produce un [producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de las filas con &quot;claves de JOIN&quot; coincidentes, lo que puede generar resultados con muchas más filas que las tablas de origen.
 
-## Tipos de JOIN compatibles
+## Tipos de unión compatibles {#supported-types-of-join}
 
 Se admiten todos los tipos estándar de [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)):
 
@@ -32,7 +32,7 @@ Se admiten todos los tipos estándar de [SQL JOIN](https://en.wikipedia.org/wiki
 | `LEFT OUTER JOIN`  | además de las filas coincidentes, se devuelven las filas no coincidentes de la tabla izquierda.                                                                                                                                                                                                                     |
 | `RIGHT OUTER JOIN` | además de las filas coincidentes, se devuelven las filas no coincidentes de la tabla derecha.                                                                                                                                                                                                                       |
 | `FULL OUTER JOIN`  | además de las filas coincidentes, se devuelven las filas no coincidentes de ambas tablas.                                                                                                                                                                                                                           |
-| `CROSS JOIN`       | produce el producto cartesiano de las tablas completas; no se especifican &quot;claves de JOIN&quot;.                                                                                                                                                                                                               |
+| `CROSS JOIN`       | produce el producto cartesiano de las tablas completas; no se especifican &quot;join keys&quot;.                                                                                                                                                                                                               |
 | `NATURAL JOIN`     | une automáticamente todas las columnas con el mismo nombre en ambas tablas; cada columna común aparece una sola vez en el resultado. Admite las variantes `INNER` (predeterminada), `LEFT`, `RIGHT` y `FULL`. Equivale a `JOIN ... USING (col1, col2, ...)`, donde la lista de columnas se obtiene automáticamente. |
 
 * `JOIN` sin especificar un tipo implica `INNER`.
@@ -40,21 +40,91 @@ Se admiten todos los tipos estándar de [SQL JOIN](https://en.wikipedia.org/wiki
 * Una sintaxis alternativa para `CROSS JOIN` consiste en especificar varias tablas en la [cláusula `FROM`](/es/reference/statements/select/from), separadas por comas.
 * Si no hay columnas coincidentes para un `NATURAL JOIN`, funciona como un `CROSS JOIN`.
 
-Los tipos de join adicionales disponibles en ClickHouse son:
+Los tipos de unión adicionales disponibles en ClickHouse son:
 
 | Tipo                                                | Descripción                                                                                                                                                  |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Una lista de permitidos sobre &quot;claves de JOIN&quot;, sin generar un producto cartesiano.                                                               |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Una lista de bloqueados sobre &quot;claves de JOIN&quot;, sin generar un producto cartesiano.                                                               |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Una lista de permitidos sobre &quot;join keys&quot;, sin generar un producto cartesiano.                                                                |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Una lista de bloqueados sobre &quot;join keys&quot;, sin generar un producto cartesiano.                                                                |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Desactiva parcial (para el lado opuesto de `LEFT` y `RIGHT`) o completamente (para `INNER` y `FULL`) el producto cartesiano de los tipos estándar de `JOIN`. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`                       | Une secuencias con una coincidencia no exacta. El uso de `ASOF JOIN` se describe a continuación.                                                             |
 | `PASTE JOIN`                                        | Realiza una concatenación horizontal de dos tablas.                                                                                                          |
 
 <Note>
-  Cuando [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm) se establece en `partial_merge`, `RIGHT JOIN` y `FULL JOIN` solo son compatibles con strictness `ALL` (`SEMI`, `ANTI`, `ANY` y `ASOF` no son compatibles).
+  Al usar el analizador, si se deshabilita la configuración `semi_join_include_columns_from_both_sides` o `anti_join_include_columns_from_both_sides`, la unión correspondiente solo expone su lado preservado a las expresiones que se resuelven una vez formado el resultado de la unión.
+
+  * `LEFT SEMI JOIN` y `LEFT ANTI JOIN` solo exponen las columnas del lado izquierdo.
+  * `RIGHT SEMI JOIN` y `RIGHT ANTI JOIN` solo exponen las columnas del lado derecho.
+  * Esto afecta a cláusulas como `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY` y `LIMIT BY`, incluidos los comodines calificados como `t1.*`.
+  * La expresión `ON` del mismo `JOIN` puede seguir haciendo referencia a ambos lados.
+
+  Cuando estas configuraciones están habilitadas (opción predeterminada), ClickHouse conserva el comportamiento heredado: ambos lados siguen siendo accesibles y `SELECT *` expande las columnas de ambas tablas.
 </Note>
 
-## Configuración
+<Note>
+  Cuando [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm) se establece en `partial_merge`, `RIGHT JOIN` y `FULL JOIN` solo son compatibles con estrictez `ALL` (`SEMI`, `ANTI`, `ANY` y `ASOF` no son compatibles).
+</Note>
+
+## LATERAL JOIN {#lateral-join}
+
+`JOIN LATERAL` permite que la subconsulta situada en el lado derecho de una unión haga referencia a columnas de las expresiones de tabla
+de su lado izquierdo; la subconsulta se evalúa para cada combinación distinta de los valores de columna del lado izquierdo
+a los que hace referencia, y su resultado se une a cada fila del lado izquierdo que presente esa combinación:
+
+```sql
+SELECT ...
+FROM <left_table>
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+```
+
+El predicado `ON true` es obligatorio, al igual que en cualquier otro `INNER` o `LEFT JOIN`; omitirlo produce un error de sintaxis.
+
+Es una funcionalidad experimental y está deshabilitada de forma predeterminada; habilítela con la configuración
+[`allow_experimental_lateral_join`](/es/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join).
+
+Por ahora solo se admite el siguiente subconjunto; cualquier otra cosa se rechaza con un error:
+
+* Solo `INNER JOIN LATERAL` y `LEFT JOIN LATERAL`; las uniones `RIGHT`, `FULL`, `PASTE` y `NATURAL` no son compatibles, y `LATERAL` no puede combinarse en ningún caso con una unión `CROSS` o con coma.
+* Solo la estrictez predeterminada `ALL`; `ANY`, `SEMI`, `ANTI` y `ASOF` no son compatibles.
+* No se admite ningún predicado de unión distinto de `ON true` (también se acepta `ON 1`); `USING` no es compatible y el predicado
+  no puede omitirse. Coloque los filtros que relacionan ambos lados en la cláusula `WHERE` de la subconsulta lateral.
+* Los modificadores de unión `GLOBAL` y `LOCAL` no son compatibles.
+* La subconsulta lateral debe hacer referencia al menos a una columna del lado izquierdo. Para una subconsulta no correlacionada,
+  use una unión normal.
+* La subconsulta lateral se evalúa una vez por cada valor distinto de las columnas del lado izquierdo a las que hace referencia, no
+  una vez por cada fila izquierda, por lo que no debe contener funciones que no sean deterministas dentro de una consulta, como
+  `rand` o `generateUUIDv4`, ni funciones de tabla que generen filas aleatorias, como `generateRandom`.
+  Sí se permiten las funciones que son constantes dentro de una consulta, como `now`.
+* Solo se admite una subconsulta como expresión de tabla lateral. Las formas de origen de tabla de PostgreSQL
+  `LATERAL unnest(...)` y `CROSS JOIN UNNEST(...)` no son compatibles; en su lugar, use la cláusula
+  [`ARRAY JOIN`](/es/reference/statements/select/array-join).
+* Los `GROUP BY` y `ORDER BY` de la subconsulta lateral se ejecutan una sola vez sobre el conjunto de todas las evaluaciones, por lo que
+  los límites `max_rows_to_group_by`, `max_rows_to_sort` y `max_bytes_to_sort` cuentan las filas de todas las evaluaciones,
+  no las de una sola. Solo se admiten con el modo de desbordamiento `throw`; `any` y `break` se rechazan.
+* Las filas de todas las evaluaciones se emparejan con las filas izquierdas mediante una única unión. Como en cualquier hash unión,
+  `max_rows_in_join` y `max_bytes_in_join` limitan el lado de esta unión que se mantiene en memoria, y es el
+  planificador quien elige ese lado: con la configuración predeterminada (`correlated_subqueries_use_in_memory_buffer = 1`)
+  es el lado izquierdo de `JOIN LATERAL`, ya que las filas izquierdas deben leerse por completo antes de evaluar la
+  subconsulta lateral; de lo contrario, pueden ser los resultados de todas las evaluaciones en conjunto. Los límites siempre
+  se aplican como si `join_overflow_mode` fuera `throw`: con `break`, la unión descartaría silenciosamente filas izquierdas no relacionadas.
+
+**Ejemplo**
+
+```sql
+SELECT u.id, o.total
+FROM users AS u
+LEFT JOIN LATERAL
+(
+    SELECT total
+    FROM orders
+    WHERE orders.user_id = u.id
+    ORDER BY total DESC
+    LIMIT 1
+) AS o ON true
+SETTINGS allow_experimental_lateral_join = 1;
+```
+
+## Configuración {#settings}
 
 El tipo de JOIN predeterminado puede sobrescribirse mediante la configuración [`join_default_strictness`](/es/reference/settings/session-settings/join#join_default_strictness).
 
@@ -71,21 +141,21 @@ El comportamiento del servidor ClickHouse en las operaciones `ANY JOIN` depende 
 
 Use la configuración `cross_to_inner_join_rewrite` para definir el comportamiento cuando ClickHouse no consigue reescribir un `CROSS JOIN` como un `INNER JOIN`. El valor predeterminado es `1`, lo que permite que el JOIN continúe, aunque será más lento. Establezca `cross_to_inner_join_rewrite` en `0` si desea que se genere un error, y en `2` si no quiere ejecutar los cross joins, sino forzar la reescritura de todos los comma/cross joins. Si la reescritura falla cuando el valor es `2`, recibirá un mensaje de error que indica &quot;Please, try to simplify `WHERE` section&quot;.
 
-## Condiciones de la sección `ON`
+## Condiciones de la sección `ON` {#on-section-conditions}
 
-Una sección `ON` puede contener varias condiciones combinadas con los operadores `AND` y `OR`. Las condiciones que especifican claves de `JOIN` deben:
+Una sección `ON` puede contener varias condiciones combinadas con los operadores `AND` y `OR`. Las condiciones que especifican join keys deben:
 
 * hacer referencia tanto a la tabla izquierda como a la derecha
 * usar el operador de igualdad
 
-Las demás condiciones pueden usar otros operadores lógicos, pero deben hacer referencia a la tabla izquierda o a la derecha de una consulta.
+Las demás condiciones pueden usar otros operadores y pueden hacer referencia a la tabla izquierda de una consulta, a la derecha o a ambas.
 
 Las filas se unen si se cumple toda la condición compuesta. Si no se cumplen las condiciones, las filas pueden seguir incluyéndose en el resultado según el tipo de `JOIN`. Tenga en cuenta que, si las mismas condiciones se colocan en una sección `WHERE` y no se cumplen, las filas siempre se excluyen del resultado.
 
-El operador `OR` dentro de la cláusula `ON` funciona con el algoritmo hash join: para cada argumento `OR` con claves de `JOIN` para `JOIN`, se crea una tabla hash independiente, por lo que el consumo de memoria y el tiempo de ejecución de la consulta aumentan linealmente a medida que crece el número de expresiones `OR` en la cláusula `ON`.
+El operador `OR` dentro de la cláusula `ON` funciona con el algoritmo hash unión: para cada argumento `OR` con join keys para `JOIN`, se crea una tabla hash independiente, por lo que el consumo de memoria y el tiempo de ejecución de la consulta aumentan linealmente a medida que crece el número de expresiones `OR` en la cláusula `ON`.
 
 <Note>
-  Si una condición hace referencia a columnas de distintas tablas, por ahora solo se admite el operador de igualdad (`=`).
+  Solo el operador de igualdad (`=`) convierte una condición en una join key. Se admiten otros operadores entre columnas de distintas tablas, pero si no hay ninguna igualdad, la unión tiene que examinar cada par de filas y resulta mucho más lento; consulte [Unión con una condición ON arbitraria](#join-with-an-arbitrary-on-condition).
 </Note>
 
 **Ejemplo**
@@ -100,14 +170,14 @@ Considere `table_1` y `table_2`:
 └────┴──────┘     └────┴────────────────┴────────┘
 ```
 
-Consulta con una condición sobre una clave de join y una condición adicional para `table_2`:
+Consulta con una condición sobre una join key y una condición adicional para `table_2`:
 
 ```sql title="Query"
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
 
-Ten en cuenta que el resultado contiene la fila con el nombre `C` y la columna de texto vacía. Se incluye en el resultado porque se usa un join de tipo `OUTER`.
+Ten en cuenta que el resultado contiene la fila con el nombre `C` y la columna de texto vacía. Se incluye en el resultado porque se usa una unión de tipo `OUTER`.
 
 ```response title="Response"
 ┌─name─┬─text───┐
@@ -117,7 +187,7 @@ Ten en cuenta que el resultado contiene la fila con el nombre `C` y la columna d
 └──────┴────────┘
 ```
 
-Consulta con JOIN de tipo `INNER` y múltiples condiciones:
+Consulta con unión de tipo `INNER` y múltiples condiciones:
 
 ```sql title="Query"
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
@@ -130,7 +200,7 @@ SELECT name, text, scores FROM table_1 INNER JOIN table_2
 └──────┴────────┴────────┘
 ```
 
-Consulta con un join de tipo `INNER` y una condición con `OR`:
+Consulta con una unión de tipo `INNER` y una condición con `OR`:
 
 ```sql title="Query"
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
@@ -154,12 +224,11 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
 └───┴────┴─────┘
 ```
 
-Consulta con un join de tipo `INNER` y condiciones con `OR` y `AND`:
+Consulta con una unión de tipo `INNER` y condiciones con `OR` y `AND`:
 
 <Note>
-  De forma predeterminada, se admiten condiciones de desigualdad siempre que usen columnas de la misma tabla.
-  Por ejemplo, `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, porque `t1.b > 0` usa únicamente columnas de `t1` y `t2.b > t2.c` usa únicamente columnas de `t2`.
-  Sin embargo, puede probar la compatibilidad experimental con condiciones como `t1.a = t2.key AND t1.b > t2.key`; consulte la sección siguiente para obtener más información.
+  Una condición de desigualdad que usa columnas de una sola tabla, como `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, se aplica únicamente a esa tabla: `t1.b > 0` usa únicamente columnas de `t1` y `t2.b > t2.c` usa únicamente columnas de `t2`.
+  También se admiten condiciones de desigualdad que comparan columnas de tablas diferentes, como `t1.a = t2.key AND t1.b > t2.key`; consulte las secciones siguientes para obtener más información.
 </Note>
 
 ```sql title="Query"
@@ -174,9 +243,15 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-## JOIN con condiciones de desigualdad para columnas de diferentes tablas
+## Unión con condiciones de desigualdad para columnas de diferentes tablas {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-Actualmente, ClickHouse admite `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` con condiciones de desigualdad además de las condiciones de igualdad. Las condiciones de desigualdad solo se admiten con los algoritmos de join `hash`, `parallel_hash` y `grace_hash`. Una condición de no equivalencia evaluada durante el join no puede contener `arrayJoin`, ya que debe conservar el número de filas; las condiciones que se aplican a un solo lado y una clave de igualdad sobre `arrayJoin` se extraen antes del join y no se ven afectadas; una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada, ya que en ese caso se aplica después del join. Cuando la expansión depende de un solo lado, muévala a un `ARRAY JOIN` en una subconsulta antes del join; una condición cuyo argumento de `arrayJoin` lee columnas de ambos lados debe reestructurarse.
+ClickHouse admite `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` con condiciones de desigualdad además de las condiciones de igualdad.
+
+Cuando la sección `ON` contiene, junto a la desigualdad, una igualdad entre las dos tablas, la igualdad actúa como join key y la desigualdad se comprueba sobre las filas que esta empareja. Este tipo de condición mixta solo se ejecuta con los algoritmos de unión `hash`, `parallel_hash` y `grace_hash`.
+
+Cuando la sección `ON` no contiene ninguna igualdad entre las dos tablas, no hay ninguna join key con la que emparejar filas. Este tipo de unión se ejecuta mediante [`ie_join`](/es/reference/settings/session-settings/join#join_algorithm) cuando la condición es un par de desigualdades o, en caso contrario, como una [block nested loop unión](#join-with-an-arbitrary-on-condition).
+
+Una condición evaluada durante la unión no puede contener `arrayJoin`, ya que debe conservar el número de filas; en su lugar, utilice `ARRAY JOIN` en una subconsulta.
 
 **Ejemplo**
 
@@ -224,7 +299,50 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-## Valores `NULL` y `NaN` en las claves de `JOIN`
+## Unión con una condición ON arbitraria {#join-with-an-arbitrary-on-condition}
+
+La sección `ON` puede ser cualquier expresión boolean sobre las columnas de ambas tablas, como una comprobación de rango, una comparación aritmética o una llamada a una función escalar. Si no contiene ninguna igualdad entre las dos tablas, no hay ninguna join key con la que emparejar las filas. Un par de condiciones de desigualdad se ejecuta mediante `ie_join` cuando ese algoritmo figura en [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm), como sucede de forma predeterminada. Cualquier otra condición se ejecuta como una [block nested loop unión](https://en.wikipedia.org/wiki/Nested_loop_join): la tabla derecha se materializa y la condición se evalúa para cada par de filas. Un `ALL INNER JOIN` equivale a un `CROSS JOIN` con la condición aplicada como filtro.
+
+La block nested loop unión admite todos los tipos de unión y niveles de estrictez, salvo `ASOF JOIN`, `PASTE JOIN` y `ANY FULL JOIN`. No figura entre los valores de `join_algorithm`: es el último recurso y solo se utiliza cuando ningún otro algoritmo puede ejecutar la condición. En la salida de `EXPLAIN` aparece como un paso `BlockNestedLoopJoin`. Cuando [`allow_block_nested_loop_join`](/es/reference/settings/session-settings/allow#allow_block_nested_loop_join) está deshabilitado, cualquier consulta que lo necesite se rechaza con `INVALID_JOIN_ON_EXPRESSION`.
+
+**Ejemplo**
+
+```sql title="Query"
+CREATE TABLE orders (id UInt32, amount UInt32) ENGINE = Memory;
+CREATE TABLE discounts (min_amount UInt32, max_amount UInt32, pct UInt32) ENGINE = Memory;
+
+INSERT INTO orders VALUES (1, 50), (2, 150), (3, 300);
+INSERT INTO discounts VALUES (100, 199, 5), (200, 1000, 10);
+
+SELECT o.id, o.amount, d.pct
+FROM orders AS o
+LEFT JOIN discounts AS d ON o.amount BETWEEN d.min_amount AND d.max_amount
+ORDER BY o.id;
+```
+
+```response title="Response"
+┌─id─┬─amount─┬─pct─┐
+│  1 │     50 │   0 │
+│  2 │    150 │   5 │
+│  3 │    300 │  10 │
+└────┴────────┴─────┘
+```
+
+La fila que no coincidió con nada se rellena según [`join_use_nulls`](/es/reference/settings/session-settings/join#join_use_nulls), como en cualquier otra unión: con un valor predeterminado en el ejemplo anterior y con `NULL` cuando la configuración está habilitada.
+
+**Estrictez**
+
+`ANY` y `SEMI` normalmente conservan una fila por cada grupo de filas que comparten una join key. Aquí no existe tal grupo, por lo que conservan una fila por cada fila de la tabla que dirige la unión: `LEFT ANY` y `LEFT SEMI` emiten cada fila izquierda como máximo una vez, y `RIGHT ANY` y `RIGHT SEMI`, cada fila derecha como máximo una vez. `ANY INNER` limita ambos lados a la vez: cada fila de cualquiera de las dos tablas se usa como máximo una vez, por lo que el resultado no puede tener más filas que la tabla más pequeña. Qué pares forman dicho resultado es arbitrario, tal como implica `ANY`, y puede variar entre dos ejecuciones de la misma consulta. En el caso de `ANY INNER`, esto se extiende también al número de filas: al emparejar de forma voraz cada fila de ambos lados, en el orden en que se examinen las filas, puede quedar un número distinto de filas sin emparejar, por lo que el resultado de `count()` sobre una unión `ANY INNER` sin join key no es reproducible y depende del número de threads y del orden físico de la tabla derecha.
+
+**Rendimiento**
+
+Se examina cada par de filas, por lo que el trabajo crece con el *producto* del número de filas de ambas tablas y no con su suma. Por ello, una block nested loop unión es varios órdenes de magnitud más costosa que una hash unión sobre los mismos datos, y la diferencia aumenta a medida que crecen las tablas. Si una consulta puede escribirse con al menos una igualdad en su sección `ON`, escríbala así.
+
+Las uniones `LEFT ANY`, `ANY INNER`, `LEFT SEMI` y `LEFT ANTI` dejan de escanear la tabla derecha al encontrar la primera fila coincidente para cada fila izquierda, lo que normalmente las hace menos costosas que la unión `ALL` correspondiente. Sus equivalentes dirigidas por la derecha (`RIGHT ANY`, `RIGHT SEMI`, `RIGHT ANTI`) examinan todos los pares, porque el resultado depende de qué filas derechas coincidieron. [`join_any_take_last_row`](/es/reference/settings/session-settings/join#join_any_take_last_row) no tiene efecto aquí: sin join key no existe ningún grupo de filas coincidentes del que tomar la última.
+
+El consumo de memoria está acotado por la tabla derecha materializada y no crece con el tamaño del resultado. La tabla derecha está sujeta a la misma configuración que en otros algoritmos de unión, descrita en [Limitaciones de memoria](#memory-limitations): [`max_rows_in_join`](/es/reference/settings/session-settings/max-rows#max_rows_in_join), [`max_bytes_in_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join) y [`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode) la limitan, y [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) hace que se vuelque a disco.
+
+## Valores `NULL` y `NaN` en las claves de `JOIN` {#null-values-in-join-keys}
 
 `NULL` no es igual a ningún valor, incluido él mismo. Esto significa que, si una clave de `JOIN` tiene un valor `NULL` en una tabla, no coincidirá con un valor `NULL` de la otra tabla.
 
@@ -285,7 +403,7 @@ No dependa de un comportamiento específico.
 Si necesita que las filas con `NaN` no coincidan, asígnelas a valores `NULL`: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
 En un `ASOF JOIN`, la columna de coincidencia más próxima se compara mediante ordenación, algo que `NaN` no admite; filtre esas filas en ambos lados.
 
-## Uso de ASOF JOIN
+## Uso de ASOF JOIN {#asof-join-usage}
 
 `ASOF JOIN` es útil cuando necesitas unir registros que no tienen una correspondencia exacta.
 
@@ -339,7 +457,7 @@ Por ejemplo, considere las siguientes tablas:
   **No** es compatible con el motor de tabla [Join](/es/reference/engines/table-engines/special/join).
 </Note>
 
-## Uso de PASTE JOIN
+## Uso de PASTE JOIN {#paste-join-usage}
 
 El resultado de `PASTE JOIN` es una tabla que contiene todas las columnas de la subconsulta izquierda, seguidas de todas las columnas de la subconsulta derecha.
 Las filas se emparejan según su posición en las tablas originales (el orden de las filas debe estar definido).
@@ -397,7 +515,7 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-## JOIN distribuido
+## JOIN distribuido {#distributed-join}
 
 Hay dos formas de ejecutar un JOIN que implica tablas distribuidas:
 
@@ -406,7 +524,7 @@ Hay dos formas de ejecutar un JOIN que implica tablas distribuidas:
 
 Tenga cuidado al usar `GLOBAL`. Para obtener más información, consulte la sección [Subconsultas distribuidas](/es/reference/statements/in#distributed-subqueries).
 
-## Conversión implícita de tipos
+## Conversión implícita de tipos {#implicit-type-conversion}
 
 Las consultas `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` y `FULL JOIN` admiten la conversión implícita de tipos para las &quot;claves de JOIN&quot;. Sin embargo, la consulta no puede ejecutarse si las claves de JOIN de las tablas izquierda y derecha no pueden convertirse a un único tipo (por ejemplo, no existe ningún tipo de dato que pueda contener todos los valores de `UInt64` e `Int64`, o de `String` e `Int32`).
 
@@ -448,21 +566,21 @@ devuelve el conjunto:
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-## Recomendaciones de uso
+## Recomendaciones de uso {#usage-recommendations}
 
-### Procesamiento de celdas vacías o NULL
+### Procesamiento de celdas vacías o NULL {#processing-of-empty-or-null-cells}
 
 Al unir tablas, pueden aparecer celdas vacías. La configuración [join&#95;use&#95;nulls](/es/reference/settings/session-settings/join#join_use_nulls) define cómo ClickHouse completa estas celdas.
 
 Si las claves de `JOIN` son campos [Nullable](/es/reference/data-types/nullable), las filas en las que al menos una de las claves tiene el valor [NULL](/es/reference/syntax#null) no se unen.
 
-### Sintaxis
+### Sintaxis {#syntax}
 
 Las columnas especificadas en `USING` deben tener los mismos nombres en ambas subconsultas, y las demás columnas deben llamarse de forma diferente. Puede usar alias para cambiar los nombres de las columnas en las subconsultas.
 
 La cláusula `USING` especifica una o varias columnas para el join, lo que establece la igualdad entre ellas. La lista de columnas se indica sin paréntesis. No se admiten condiciones de join más complejas.
 
-### Limitaciones de sintaxis
+### Limitaciones de sintaxis {#syntax-limitations}
 
 Para varias cláusulas `JOIN` en una sola consulta `SELECT`:
 
@@ -474,7 +592,7 @@ Para las cláusulas `ON`, `WHERE` y `GROUP BY`:
 
 * No se pueden usar expresiones arbitrarias en las cláusulas `ON`, `WHERE` y `GROUP BY`, pero puede definir una expresión en una cláusula `SELECT` y luego usarla en estas cláusulas mediante un alias.
 
-### Rendimiento
+### Rendimiento {#performance}
 
 Al ejecutar un `JOIN`, no se optimiza el orden de ejecución con respecto a otras etapas de la consulta. El `JOIN` (una búsqueda en la tabla de la derecha) se ejecuta antes del filtrado en `WHERE` y antes de la agregación.
 
@@ -484,7 +602,7 @@ En algunos casos, es más eficiente usar [IN](/es/reference/statements/in) en lu
 
 Si necesita un `JOIN` para unir tablas de dimensiones (tablas relativamente pequeñas que contienen propiedades de dimensión, como nombres de campañas publicitarias), puede que `JOIN` no sea la opción más adecuada, ya que se vuelve a acceder a la tabla de la derecha en cada consulta. Para esos casos, existe la funcionalidad de &quot;diccionarios&quot;, que debería usar en lugar de `JOIN`. Para obtener más información, consulte la sección [Diccionarios](/es/reference/statements/create/dictionary).
 
-### Limitaciones de memoria
+### Limitaciones de memoria {#memory-limitations}
 
 De forma predeterminada, ClickHouse usa el algoritmo [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse toma la right&#95;table y crea una tabla hash para ella en la RAM. Si `join_algorithm = 'auto'` está habilitado, al superar cierto umbral de consumo de memoria, ClickHouse cambia al algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join. Para ver la descripción de los algoritmos `JOIN`, consulte la configuración [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm).
 
@@ -512,7 +630,7 @@ decide cómo se vuelca un join — `grace_hash` particiona la tabla derecha desd
 en memoria y cambian cuando se supera el umbral — no si se aplican estas configuraciones. La única excepción es
 `legacy_join_size_limits_trigger_spilling`: al activarlo, `grace_hash` independiente ignora ambos umbrales y se vuelca según los dos límites estrictos.
 
-## Ejemplos
+## Ejemplos {#examples}
 
 Ejemplo:
 
@@ -555,7 +673,7 @@ LIMIT 10
 └───────────┴────────┴────────┘
 ```
 
-## Contenido relacionado
+## Contenido relacionado {#related-content}
 
 * Blog: [ClickHouse: un DBMS rapidísimo con soporte completo para SQL JOIN - Parte 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 * Blog: [ClickHouse: un DBMS rapidísimo con soporte completo para SQL JOIN - Por dentro - Parte 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)

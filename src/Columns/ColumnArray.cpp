@@ -1447,12 +1447,14 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
     ColumnPtr offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
+    Columns parts{data_compressed, offsets_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_data_compressed = std::move(data_compressed), my_offsets_compressed = std::move(offsets_compressed)]
         {
             return ColumnArray::create(my_data_compressed->decompress(), my_offsets_compressed->decompress());
-        });
+        },
+        std::move(parts));
 }
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
