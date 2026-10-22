@@ -18,6 +18,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
+#include <Storages/StorageLoop.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
@@ -100,7 +101,7 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPt
     auto can_see = [&](const StorageID & id) { return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name); };
     auto check = [&](bool granted) { checkCanSeeReadTables(granted, storage); };
 
-    /// A materialized view, a `Buffer` and a `Merge` table hand the filter to the read of their targets, but do not list
+    /// A materialized view, a `Buffer`, a `Loop` and a `Merge` table hand the filter to the read of their targets, but do not list
     /// them as underlying storages, because the targets' own policies must not apply to them
     if (const auto * view = typeid_cast<const StorageMaterializedView *>(&storage))
     {
@@ -112,6 +113,11 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPt
     {
         check(!buffer->getDestinationId() || can_see(buffer->getDestinationId()));
         return {buffer->getDestinationTable()};
+    }
+    if (const auto * loop = typeid_cast<const StorageLoop *>(&storage))
+    {
+        check(can_see(loop->getInnerStorage()->getStorageID()));
+        return {loop->getInnerStorage()};
     }
     if (const auto * merge = typeid_cast<const StorageMerge *>(&storage))
     {
