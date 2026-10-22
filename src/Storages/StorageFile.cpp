@@ -186,12 +186,18 @@ constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 /// Collapses runs of `/`, leaving `.` and `..` as written: redundant separators are the only
 /// part of a path's spelling that no filesystem lookup depends on. A `..` resolves against the
 /// target of a preceding symlink, not against that symlink's parent, so dropping one lexically
-/// can name a different file.
+/// can name a different file. The root name is kept as written: on Windows the leading `//` of a
+/// UNC path (`//server/share/...`) names the network share, and collapsing it would name a path on
+/// the current drive instead. On POSIX the root name is always empty.
 std::string collapseRedundantSeparators(const std::string & path)
 {
-    std::string result;
+    std::string root_name = pathToGenericString(pathFromString(path).root_name());
+    if (!path.starts_with(root_name))
+        root_name.clear();
+
+    std::string result = root_name;
     result.reserve(path.size());
-    for (char c : path)
+    for (char c : std::string_view(path).substr(root_name.size()))
     {
         if (c == '/' && !result.empty() && result.back() == '/')
             continue;
