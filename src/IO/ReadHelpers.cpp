@@ -214,6 +214,11 @@ void throwNumberWithoutDigits()
     throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
+void throwIntegerTextOverflow()
+{
+    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Integer is out of range of the destination type");
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
