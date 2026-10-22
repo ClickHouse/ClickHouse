@@ -437,7 +437,7 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
 
 
 def test_iceberg_drop_with_data_deletion_keeps_files(started_cluster):
-    """Unity cannot drop a table, so a `DROP` that also deletes its files must fail before deleting any."""
+    """Unity keeps the files of an external table, so a `DROP` that also deletes them must fail before deleting any."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_iceberg_drop")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
@@ -451,7 +451,7 @@ def test_iceberg_drop_with_data_deletion_keeps_files(started_cluster):
         f"DROP TABLE {db_name}.`{UNIFORM_TABLE}`",
         settings={"iceberg_delete_data_on_drop": 1},
     )
-    assert "NOT_IMPLEMENTED" in error
+    assert "SUPPORT_IS_DISABLED" in error
     assert table_files() == files
     assert_seeded_rows(node, db_name, UNIFORM_TABLE)
 
