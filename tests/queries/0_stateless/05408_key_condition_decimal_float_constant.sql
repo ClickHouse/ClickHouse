@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS t_decimal_float_minmax;
 DROP TABLE IF EXISTS t_decimal_float_expression_key;
 DROP TABLE IF EXISTS t_decimal_float_expression_minmax;
 DROP TABLE IF EXISTS t_datetime64_float_key;
+DROP TABLE IF EXISTS t_decimal_exact_float_key;
+DROP TABLE IF EXISTS t_decimal_exact_float_hash_key;
 
 CREATE TABLE t_decimal_float_key (d Decimal(38, 18), ts UInt32)
 ENGINE = MergeTree ORDER BY (d, ts) SETTINGS index_granularity = 1;
@@ -70,8 +72,43 @@ INSERT INTO t_datetime64_float_key VALUES ('2026-01-01 00:00:00', 10), ('2026-01
 SELECT arraySort(groupArray(ts)) FROM t_datetime64_float_key WHERE d = toFloat64(1767225600);
 SELECT arraySort(groupArray(ts)) FROM t_datetime64_float_key WHERE d <= toFloat64(1767225600);
 
+-- The float elements of a subquery set are cast to the key type in another place, with the same problem.
+SELECT 'IN';
+
+SELECT arraySort(groupArray(ts)) FROM t_decimal_float_key WHERE d IN (SELECT toFloat32(1));
+SELECT arraySort(groupArray(ts)) FROM t_decimal_float_key WHERE d IN (SELECT toFloat64(1));
+SELECT count() FROM t_decimal_float_key WHERE d NOT IN (SELECT toFloat32(1));
+SELECT count() FROM t_decimal_float_key WHERE d IN (SELECT toBFloat16(1));
+SELECT count() FROM t_decimal_float_minmax WHERE d IN (SELECT toFloat32(1));
+
+-- In a `Decimal` of at most 15 digits, every value is a different `Float64`. A float that converts to the type and back
+-- unchanged then equals exactly one value, so the key analysis still uses it, as for `d = 20.00`: the literal is a `Float64`.
+SELECT 'exact float';
+
+CREATE TABLE t_decimal_exact_float_key (d Decimal(10, 2), ts UInt32)
+ENGINE = MergeTree ORDER BY (d, ts) SETTINGS index_granularity = 1;
+
+INSERT INTO t_decimal_exact_float_key VALUES ('0.28', 10), ('0.29', 20), ('0.30', 30), ('20', 40), ('20.01', 50);
+
+SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_key WHERE d = 20.00 SETTINGS force_primary_key = 1;
+SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_key WHERE d IN (SELECT 20.00) SETTINGS force_primary_key = 1;
+-- `0.29` is `0.28999999999999998` as a float, which the cast truncates to `0.28`.
+SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_key WHERE d = 0.29;
+
+-- A deterministic function of the column as the key, like the bucket partitions of Iceberg: the constant is cast to the
+-- column type before the function is applied.
+CREATE TABLE t_decimal_exact_float_hash_key (d Decimal(10, 2), ts UInt32)
+ENGINE = MergeTree ORDER BY cityHash64(d) SETTINGS index_granularity = 1;
+
+INSERT INTO t_decimal_exact_float_hash_key SELECT d, ts FROM t_decimal_exact_float_key;
+
+SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_hash_key WHERE d = 20.00 SETTINGS force_primary_key = 1;
+SELECT arraySort(groupArray(ts)) FROM t_decimal_exact_float_hash_key WHERE d = 0.29;
+
 DROP TABLE t_decimal_float_key;
 DROP TABLE t_decimal_float_minmax;
 DROP TABLE t_decimal_float_expression_key;
 DROP TABLE t_decimal_float_expression_minmax;
 DROP TABLE t_datetime64_float_key;
+DROP TABLE t_decimal_exact_float_key;
+DROP TABLE t_decimal_exact_float_hash_key;

@@ -5,6 +5,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -2309,15 +2310,56 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
-/// A float and a `Decimal`, `DateTime64` or `Time64` value are compared as `Float64` (see `FunctionsComparison.h`),
-/// where many values of such a type equal the same float. Casting the float constant to such a key expression input
-/// names a single key point instead, which misses those values, and the cast itself can be inexact: `toFloat32(1)`
-/// becomes `0.99999998430674944` in `Decimal(38, 18)`. `Float32` is stored as `Float64` in a `Field`, also inside
-/// a `Dynamic` constant.
-static bool floatConstantIsComparedAsFloat64(const Field & value, const IDataType & key_expression_input_type)
+static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
+
+/// A float and a `Decimal`, `DateTime64` or `Time64` value are compared as `Float64` (see `FunctionsComparison.h`), where
+/// many values of such a type can equal the same float, and the cast of a float to such a type can be inexact:
+/// `toFloat32(1)` becomes `0.99999998430674944` in `Decimal(38, 18)`, and `0.29` becomes `0.28` in `Decimal(9, 2)`.
+/// Casting the float to such a key expression input then names a key point that misses matching values.
+///
+/// The cast is exact for a `Decimal` of at most 15 digits, whose values all convert to different `Float64` values, when the
+/// cast value converts back to the same float: it is then the only value of the type that equals the float, and compares
+/// with the other values the same way. So `d = 20.00` still uses the index over `d Decimal(10, 2)`. Any other float is
+/// reported, also a `BFloat16` or one inside a `Dynamic` value: `Float32` is stored as `Float64` in a `Field` as well.
+static bool floatValuesMissKeyValues(ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type)
 {
-    return anyFieldSatisfies(value, [](const Field & field) { return field.getType() == Field::Types::Float64; })
-        && anyInTypeTree(key_expression_input_type, [](const IDataType & type) { return isColumnedAsDecimal(type); });
+    if (!anyInTypeTree(*key_expression_input_type, [](const IDataType & input_type) { return isColumnedAsDecimal(input_type); }))
+        return false;
+
+    column = column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    type = removeLowCardinality(type);
+    /// A NULL value holds the default value of the nested column, which converts exactly.
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        column = nullable_column->getNestedColumnPtr();
+        type = removeNullable(type);
+    }
+
+    const DataTypePtr decimal_type = removeLowCardinalityAndNullable(key_expression_input_type);
+    if (!WhichDataType(*type).isNativeFloat() || !isDecimal(decimal_type)
+        || getDecimalPrecision(*decimal_type) > std::numeric_limits<Float64>::digits10)
+    {
+        for (size_t i = 0, size = column->size(); i < size; ++i)
+            if (anyFieldSatisfies((*column)[i], [](const Field & field) { return field.getType() == Field::Types::Float64; }))
+                return true;
+        return false;
+    }
+
+    /// The same cast as the key analysis applies, and the same conversion to `Float64` as the comparison.
+    const ColumnPtr cast_column = tryCastColumnAccurateOrNull({column, type, ""}, decimal_type);
+    if (!cast_column)
+        return true;
+
+    const ColumnPtr full_cast_column = cast_column->convertToFullColumnIfConst();
+    const auto & cast_nullable_column = assert_cast<const ColumnNullable &>(*full_cast_column);
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const ColumnPtr back_column = castColumn({cast_nullable_column.getNestedColumnPtr(), decimal_type, ""}, float64_type);
+    const ColumnPtr float64_column = castColumn({column, type, ""}, float64_type);
+    for (size_t i = 0, size = column->size(); i < size; ++i)
+        if (cast_nullable_column.isNullAt(i) || (*back_column)[i] != (*float64_column)[i])
+            return true;
+
+    return false;
 }
 
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
@@ -2411,7 +2453,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
-                || floatConstantIsComparedAsFloat64(value, *transform_input_type)
+                || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type)
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
             makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
@@ -3164,7 +3206,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
-            || floatConstantIsComparedAsFloat64(value, *candidate.dag.input_type))
+            || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type))
             continue;
 
         auto normalized_constant = constant;
@@ -3459,6 +3501,12 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !element_type->equals(*predicate_column_type))
                 return false;
         }
+
+        /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
+        /// as a float constant does, unless the cast is exact (see `floatValuesMissKeyValues`).
+        if (floatValuesMissKeyValues(
+                set_column, set_element_type, mapping.set_transform ? mapping.set_transform->input_type : key_column_type))
+            return false;
 
         if (mapping.set_transform)
         {
