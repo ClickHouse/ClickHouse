@@ -23,6 +23,7 @@ struct OptimizerContext
     bool distributed_plan_force_shuffle_aggregation = false;
     /// Byte budget for a result replicated to every node (`distributed_plan_max_bytes_to_broadcast`); 0 for none.
     UInt64 max_bytes_to_broadcast = 1000000000;
+    bool distributed_plan_partial_aggregation_before_shuffle = true;
     bool cascades_aggregation_pushdown = true;
     bool exact_rows_before_limit = false;
     /// Sort settings taken from the query (size limits, spill thresholds), used when

@@ -33,6 +33,9 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
+#if USE_GPU
+#include <GPU/GPUDevice.h>
+#endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
@@ -496,6 +499,9 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+#if USE_GPU
+    extern const int GPU_ERROR;
+#endif
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -711,6 +717,9 @@ struct ContextSharedPart : boost::noncopyable
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
+#if USE_GPU
+    std::unique_ptr<GPU::GPUDevice> gpu;    /// Set at the start of the server, before any query, so read without the mutex.
+#endif
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -1385,6 +1394,11 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_access_control.reset();
 
+#if USE_GPU
+        /// After everything that may still hold device or pinned memory.
+        gpu.reset();
+#endif
+
         total_memory_tracker.resetOvercommitTracker();
         total_memory_tracker.resetPageCache();
     }
@@ -1504,6 +1518,15 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
+/// An entry of `ContextData::scalars`. `from_client` is true when the block arrived from the client
+/// over the wire (`Context::addClientScalar`) rather than being computed by the server, so that
+/// `Context::hasComputedScalar` can keep such a block out of the analyzer's scalar-subquery cache.
+struct ScalarEntry
+{
+    Block block;
+    bool from_client = false;
+};
+
 ContextData::ContextData()
 {
     settings = std::make_unique<Settings>();
@@ -1569,8 +1592,8 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
-    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
+    is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -1584,6 +1607,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
     streaming_cursor(o.streaming_cursor),
+    query_execution_started_callback(o.query_execution_started_callback),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -2975,7 +2999,10 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
 Scalars Context::getScalars() const
 {
     std::lock_guard lock(mutex);
-    return scalars;
+    Scalars res;
+    for (const auto & [name, entry] : scalars)
+        res.emplace(name, entry.block);
+    return res;
 }
 
 
@@ -2990,7 +3017,7 @@ Block Context::getScalar(const String & name) const
         // often, so 'bad arguments' for now.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
-    return it->second;
+    return it->second.block;
 }
 
 std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
@@ -3144,7 +3171,18 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
-    scalars[name] = block;
+    /// A server-computed value overrides any client-supplied one of the same name and is trusted.
+    scalars[name] = ScalarEntry{block, /*from_client=*/ false};
+}
+
+
+void Context::addClientScalar(const String & name, const Block & block)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    scalars[name] = ScalarEntry{block, /*from_client=*/ true};
 }
 
 
@@ -3165,6 +3203,16 @@ bool Context::hasScalar(const String & name) const
 
     std::lock_guard lock(mutex);
     return scalars.contains(name);
+}
+
+bool Context::hasComputedScalar(const String & name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    auto it = scalars.find(name);
+    return it != scalars.end() && !it->second.from_client;
 }
 
 void Context::addQueryAccessInfo(
@@ -4509,6 +4557,7 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
+        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -4889,6 +4938,23 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
+void Context::stopDDLWorkerAndWaitAllBackupsAndRestores() const
+{
+    /// A worker that has not started yet must never start, because its startup job would undo the stop.
+    if (shared->ddl_worker_startup_task)
+        getAsyncLoader().remove(shared->ddl_worker_startup_task->goals());
+
+    DDLWorker * ddl_worker = nullptr;
+    {
+        SharedLockGuard lock(shared->mutex);
+        ddl_worker = shared->ddl_worker.get();
+    }
+    if (ddl_worker)
+        ddl_worker->shutdown();
+
+    waitAllBackupsAndRestores();
+}
+
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
@@ -5078,6 +5144,23 @@ void Context::setPageCache(std::chrono::milliseconds history_window,
         history_window, cache_policy, size_ratio,
         min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
+
+#if USE_GPU
+void Context::setGPU(const ServerSettings & server_settings)
+{
+    if (shared->gpu)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU has been already set.");
+
+    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromServerSettings(server_settings));
+}
+
+GPU::GPUDevice & Context::getGPU() const
+{
+    if (!shared->gpu)
+        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
+    return *shared->gpu;
+}
+#endif
 
 PageCachePtr Context::getPageCache() const
 {
@@ -9072,6 +9155,22 @@ void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
 Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
 {
     return ddl_additional_checks_on_enqueue;
+}
+
+void Context::setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback)
+{
+    query_execution_started_callback = std::move(callback);
+}
+
+const QueryExecutionStartedCallback & Context::getQueryExecutionStartedCallback() const
+{
+    return query_execution_started_callback;
+}
+
+void Context::onQueryExecutionStarted() const
+{
+    if (query_execution_started_callback)
+        query_execution_started_callback();
 }
 
 

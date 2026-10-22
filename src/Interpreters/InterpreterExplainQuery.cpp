@@ -8,7 +8,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -52,7 +51,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -114,13 +112,9 @@ namespace ErrorCodes
 namespace
 {
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
-    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
-    ///
-    /// In the analyzer path, without this expansion the query tree would show the unexpanded
-    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
-    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
-    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
-    /// parameterized views that appear on the right side of a JOIN as well.
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` and `EXPLAIN AST optimize = 1` show
+    /// the resolved query. Without this expansion the query tree would show the unexpanded table
+    /// function call, on either side of a JOIN.
     struct ExpandParameterizedViewsMatcher
     {
         struct Data : public WithContext
@@ -243,31 +237,42 @@ namespace
     {
         struct Data : public WithContext
         {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
+            Data(ContextPtr context_, bool run_passes_, Int64 passes_, bool only_analyze_)
+                : WithContext(context_), run_passes(run_passes_), passes(passes_), only_analyze(only_analyze_)
+            {
+            }
+
+            bool run_passes;
+            Int64 passes;
+            bool only_analyze;
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
-            return !node->as<ASTSelectQuery>();
+            return !node->as<ASTSelectWithUnionQuery>();
         }
 
         static void visit(ASTPtr & ast, Data & data)
         {
-            if (auto * select = ast->as<ASTSelectQuery>())
-                visit(*select, ast, data);
-        }
+            auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>();
+            if (!select_with_union_query)
+                return;
 
-        static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
-        {
-            InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+            auto query_tree = buildQueryTree(ast, data.getContext());
 
-            const SelectQueryInfo & query_info = interpreter.getQueryInfo();
-            if (query_info.view_query)
+            if (data.run_passes)
             {
-                ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
+                QueryTreePassManager query_tree_pass_manager(data.getContext());
+                addQueryTreePasses(query_tree_pass_manager, data.only_analyze);
+                size_t pass_index = data.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(data.passes);
+                query_tree_pass_manager.run(query_tree, pass_index);
             }
+
+            ConvertToASTOptions ast_options;
+            ast_options.use_source_expression_for_constants = true;
+            auto analyzed_query = query_tree->toAST(ast_options);
+
+            *select_with_union_query = analyzed_query->as<ASTSelectWithUnionQuery &>();
         }
     };
 
@@ -1107,7 +1112,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+                ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+                ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
+
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1148,8 +1156,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (explain_ok)
                 break;
 
-            /// Not a `SELECT`: there is no query tree to dump, so the query is shown as parsed.
-            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+            /// Not a `SELECT`: the query is shown as parsed, with every `SELECT` inside it converted through the query tree.
+            ExplainAnalyzedSyntaxVisitor::Data data(query_context, settings.run_query_tree_passes, settings.query_tree_passes, /*only_analyze=*/ false);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);

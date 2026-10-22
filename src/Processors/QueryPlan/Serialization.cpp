@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Common/checkStackSize.h>
 
 #include <stack>
 
@@ -292,6 +293,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
 {
+    /// It is called recursively for plans of sets from subqueries.
+    checkStackSize();
+
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
     DeserializedSetsRegistry sets_registry;

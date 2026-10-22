@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -36,6 +37,7 @@ public:
         /// Steps with specialized implementation rules.
         if (typeid_cast<const AggregatingStep *>(step) != nullptr
             || typeid_cast<const DistinctStep *>(step) != nullptr
+            || typeid_cast<const MergingAggregatedStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
             || typeid_cast<const WindowStep *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)

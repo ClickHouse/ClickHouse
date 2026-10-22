@@ -75,3 +75,20 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT SEMI 
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l FULL JOIN numbers(3) AS r ON l.number = r.number AND l.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS a INNER JOIN numbers(3) AS b ON a.number = b.number INNER JOIN numbers(3) AS c ON a.number + b.number = c.number AND c.number < 2) WHERE explain LIKE '%function_name: less,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number = r.number AND arraySum(x -> x + r.number, [0]) = r.number AND r.number < 2) WHERE explain LIKE '%function_name: less,%';
+
+SELECT 'hint for the non-preserved side';
+DROP TABLE IF EXISTS t_chain_rj;
+CREATE TABLE t_chain_rj (a UInt64, b UInt64, k UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 1024, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_chain_rj SELECT number, number + 1, number FROM numbers(65536);
+SELECT l.a, r.number FROM t_chain_rj AS l RIGHT JOIN numbers(3) AS r ON l.k = r.number AND l.a < l.b AND l.b < 1000 ORDER BY r.number;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_chain_rj AS l RIGHT JOIN numbers(3) AS r ON l.k = r.number AND l.a < l.b AND l.b < 1000) WHERE explain LIKE '%function_name: indexHint%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT l.a FROM t_chain_rj AS l RIGHT JOIN numbers(3) AS r ON l.k = r.number AND l.a < l.b AND l.b < 1000) WHERE explain LIKE '%Granules: 1/64%';
+
+SELECT 'hint in a subquery in ON';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT 1 FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number = r.number AND r.number IN (SELECT a FROM t_chain_rj WHERE a < b AND b < 1000)) WHERE explain LIKE '%function_name: indexHint%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT l.number, r.number FROM numbers(3) AS l LEFT JOIN numbers(3) AS r ON l.number = r.number AND r.number IN (SELECT a FROM t_chain_rj WHERE a < b AND b < 1000)) WHERE explain LIKE '%Granules: 1/64%' SETTINGS parallel_replicas_local_plan = 1;
+
+SELECT 'global right join swapped to left';
+SELECT l.a, r.number FROM remote('127.0.0.{1,2}', currentDatabase(), t_chain_rj) AS l GLOBAL RIGHT JOIN numbers(3) AS r ON l.k = r.number AND l.a < l.b AND l.b < 1000 ORDER BY r.number, l.a;
+DROP TABLE t_chain_rj;
