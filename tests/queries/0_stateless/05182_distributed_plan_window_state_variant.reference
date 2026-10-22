@@ -36,3 +36,6 @@ Variant shape distributes
 -- lambda with the window state as argument and capture: distributed then local
 0.075652
 0.075652
+-- array of window states through an external sort: spilled then not spilled
+16564983051024262348
+16564983051024262348

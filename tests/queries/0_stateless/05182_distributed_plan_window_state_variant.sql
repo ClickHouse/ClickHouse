@@ -150,4 +150,16 @@ SELECT round(contingencyMerge(arrayFirst(x -> finalizeAggregation(s) >= 0, [s]))
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0;
 
+-- A spilled block is read back under a header that names the window state inside the Array. Plan
+-- optimizations would build the array above the sort, and the spill threshold is divided by the streams.
+SELECT '-- array of window states through an external sort: spilled then not spilled';
+SELECT sum(cityHash64(v, arrayMap(x -> round(finalizeAggregation(x), 6), a)))
+FROM (SELECT v, [contingencyState(b, c) OVER (PARTITION BY p ORDER BY v)] AS a FROM t_window_state_variant_gather ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 1000,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+SELECT sum(cityHash64(v, arrayMap(x -> round(finalizeAggregation(x), 6), a)))
+FROM (SELECT v, [contingencyState(b, c) OVER (PARTITION BY p ORDER BY v)] AS a FROM t_window_state_variant_gather ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+
 DROP TABLE t_window_state_variant_gather;
