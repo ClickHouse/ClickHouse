@@ -596,20 +596,20 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
         /// scaling the one-copy figure would pin the repeated payload's compression ratio to one copy's.
         ///
         /// How many copies can compress against each other is a property of the codec and of the *full*
-        /// copy, not of the sample: `LZ4` cannot reference data farther than 64 KiB back, `ZSTD` reaches
-        /// the whole compressed block, and a new block - with a new window - starts every
-        /// `DBMS_DEFAULT_BUFFER_SIZE`. So measure exactly as many copies as fit that window at full size
-        /// and scale the measured figure by the ratio of the uncompressed sizes: the wire repeats a block of
-        /// the measured shape. Measuring more copies of a *truncated* sample than the full payload can pack
-        /// into one window would invent cross-copy compression the actual output cannot have, and
-        /// extrapolating the marginal cost of one more copy within a block would assume a window spanning
-        /// the whole output and understate an incompressible payload several-fold.
-        const size_t copies_within_window = compressionMatchWindowSize(*sample_codec) / std::max<size_t>(estimated_one_copy_bytes, 1);
+        /// copy, not of the sample: a new compressed block starts every `DBMS_DEFAULT_BUFFER_SIZE`, and a
+        /// copy larger than the codec's match distance (64 KiB for `LZ4`) cannot reference the previous one
+        /// at all, see `compressionCopiesPerBlock`. So measure exactly as many copies as one block holds at
+        /// full size and scale the measured figure by the ratio of the uncompressed sizes: the wire repeats
+        /// a block of the measured shape. Measuring more copies of a *truncated* sample than the full
+        /// payload can pack into one block would invent cross-copy compression the actual output cannot
+        /// have, and extrapolating the marginal cost of one more copy within a block would assume a block
+        /// spanning the whole output and understate an incompressible payload several-fold.
+        const size_t copies_within_window = compressionCopiesPerBlock(*sample_codec, estimated_one_copy_bytes);
         /// Serializing states is not free, so the measurement gets a budget of its own on top of that.
         static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
         const size_t measured_repetitions = std::min(
             {repetitions,
-             std::max<size_t>(copies_within_window, 1),
+             copies_within_window,
              std::max<size_t>(max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1), 1)});
 
         if (measured_repetitions <= 1)

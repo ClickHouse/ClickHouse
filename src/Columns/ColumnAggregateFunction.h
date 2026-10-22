@@ -243,7 +243,7 @@ public:
     /// `repetitions` is how many times the whole column appears on the wire: `NativeWriter::writeData`
     /// materializes constants, so a state-bearing `ColumnConst` sends its stored payload once per row of
     /// the block. All three figures describe the repeated payload. Identical copies compress far better
-    /// than one copy suggests (and not at all once a copy outgrows the codec's match window), so the
+    /// than one copy suggests (and not at all once a copy outgrows the codec's match distance), so the
     /// compressed figure is measured on a repeated sample rather than scaled from one copy.
     /// `skip_rows` omits leading values not written by their carrier, such as `ColumnSparse`'s implicit default.
     ///
@@ -254,7 +254,7 @@ public:
     ///
     /// `codec` is the codec the measured payload is compressed with - the interserver codec for a wire
     /// estimate - and decides both what the sample is compressed with and how far a copy can be matched
-    /// against the previous ones (`compressionMatchWindowSize`). The factory default is used when it is null.
+    /// against the previous ones (`compressionCopiesPerBlock`). The factory default is used when it is null.
     SampledStateSizes sampledStateSizes(
         size_t max_states_to_serialize,
         size_t repetitions = 1,

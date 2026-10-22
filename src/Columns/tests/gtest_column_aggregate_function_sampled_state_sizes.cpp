@@ -2,13 +2,16 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/Defines.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/NativeWriter.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
@@ -203,6 +206,34 @@ TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadCompressesAcrossCo
     /// one-copy figure, but still at least a copy.
     EXPECT_LT(repeated.compressed_bytes * 4, repeated.sample_bytes);
     EXPECT_GE(repeated.compressed_bytes * 2, one_copy.compressed_bytes);
+}
+
+/// `LZ4`'s 64 KiB limit is a sliding match distance, not a block boundary: a ~16 KiB copy references its
+/// immediate predecessor all along the 1 MiB compressed block, so all 48 copies compress together. Capping
+/// the measurement at the copies that fit 64 KiB and scaling that figure would overestimate the payload
+/// about tenfold.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadCompressesAcrossLZ4Block)
+{
+    tryRegisterAggregateFunctions();
+
+    auto column = createDistinctGroupArrayColumn(/*elements=*/2000);
+    const auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+
+    constexpr size_t repetitions = 48;
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions, /*skip_rows=*/0, lz4);
+
+    /// The materialized payload: the same state serialized `repetitions` times into one compressed stream.
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf, lz4);
+    for (size_t repetition = 0; repetition < repetitions; ++repetition)
+        column->getAggregateFunction()->serialize(column->getData()[0], compressed_buf, std::nullopt);
+    compressed_buf.finalize();
+    ASSERT_LT(compressed_buf.count(), DBMS_DEFAULT_BUFFER_SIZE);
+    const size_t actual_compressed_bytes = null_buf.count();
+
+    EXPECT_EQ(repeated.sample_bytes, compressed_buf.count());
+    EXPECT_LE(repeated.compressed_bytes, actual_compressed_bytes * 2);
+    EXPECT_GE(repeated.compressed_bytes * 2, actual_compressed_bytes);
 }
 
 /// The flip side: once one copy outgrows the codec's match window, the copies do not compress against each

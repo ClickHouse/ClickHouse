@@ -10,6 +10,8 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+
 namespace CurrentMetrics
 {
     extern const Metric Compressing;
@@ -124,12 +126,23 @@ uint8_t ICompressionCodec::readMethod(const char * source)
 }
 
 
-size_t compressionMatchWindowSize(const ICompressionCodec & codec)
+size_t compressionMatchDistance(const ICompressionCodec & codec)
 {
     /// `LZ4` and `LZ4HC` share the method byte.
     if (codec.getMethodByte() == static_cast<uint8_t>(CompressionMethodByte::LZ4))
         return 64 * 1024;
     return DBMS_DEFAULT_BUFFER_SIZE;
+}
+
+size_t compressionCopiesPerBlock(const ICompressionCodec & codec, size_t copy_bytes)
+{
+    copy_bytes = std::max<size_t>(copy_bytes, 1);
+    /// A copy farther from its predecessor than the codec can reach is compressed on its own.
+    if (copy_bytes > compressionMatchDistance(codec))
+        return 1;
+    /// Otherwise every copy references the one right before it, so the match distance slides along the
+    /// whole compressed block: only the block boundary restarts the compression.
+    return std::max<size_t>(DBMS_DEFAULT_BUFFER_SIZE / copy_bytes, 1);
 }
 
 }
