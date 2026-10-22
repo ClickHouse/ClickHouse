@@ -110,7 +110,6 @@ void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const Prett
 {
     /// One plan per query, and nothing is asked of the profiler before this.
     chassert(!captured);
-    chassert(!finished);
 
     /// Runs while the query is still being set up, so an exception here would fail a query that
     /// would otherwise have run. Capturing is a diagnostic; it does not get to do that.
@@ -134,9 +133,11 @@ void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const Prett
 
 void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
 {
-    chassert(!finished);
+    /// The pipeline has owned it since `instrumentPipeline`, which is why it is read back from
+    /// there rather than kept here: nothing of the query outlives the pipeline.
+    const StepProfilerPtr profiler = pipeline.getStepProfiler();
 
-    if (!captured || !step_profiler)
+    if (!captured || !profiler)
         return;
 
     /// Runs on the query-finish path after the client has already received the result. An exception
@@ -149,9 +150,9 @@ void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
         /// duration does not include whatever the query-finish path does afterwards.
         const AnalyzeStepsStats stats(
             pipeline,
-            *step_profiler,
-            step_profiler->getExecutionStartNs(),
-            step_profiler->getExecutionTimeNs());
+            *profiler,
+            profiler->getExecutionStartNs(),
+            profiler->getExecutionTimeNs());
 
         for (auto & node : captured->nodes)
             node.statistics = stats.analyzeStep(node.id);
@@ -167,26 +168,11 @@ void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
 
 void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline)
 {
-    /// Built with the plan, back when there was one.
+    /// Built with the plan, back when there was one, and handed over here. The pipeline is its
+    /// only owner from now on, so everything it holds -- the clocks, and the analyzers with the
+    /// `IJoin`s and their hash tables -- is freed when the pipeline is.
     if (step_profiler)
-        pipeline.setStepProfiler(step_profiler);
-}
-
-void QueryPlanProfiler::releaseRunningState()
-{
-    if (finished)
-        return;
-
-    /// A query that threw keeps the plan captured when its pipeline was built, without statistics.
-    /// One that threw before the pipeline was built captured nothing, and has no plan to show:
-    /// there is no executed plan for a query that never got one.
-    /// Explicitly, rather than by dropping the pointer: the pipeline holds one too, and the hash
-    /// tables the analyzers keep alive are too large to leave to whichever reference dies last.
-    if (step_profiler)
-        step_profiler->releaseAnalyzers();
-
-    step_profiler.reset();
-    finished = true;
+        pipeline.setStepProfiler(std::move(step_profiler));
 }
 
 }

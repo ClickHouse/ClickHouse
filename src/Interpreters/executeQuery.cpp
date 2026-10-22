@@ -756,10 +756,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     }
 
     if (auto plan_profiler = context->getPlanProfiler())
-    {
         plan_profiler->captureStatistics(query_pipeline);
-        plan_profiler->releaseRunningState();
-    }
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -778,10 +775,6 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
     auto plan_profiler = context->getPlanProfiler();
     if (!plan_profiler)
         return;
-
-    /// A query that failed before its pipeline finished has not released yet; one that succeeded
-    /// released on the pipeline path and this does nothing.
-    plan_profiler->releaseRunningState();
 
     const auto & captured = plan_profiler->getCapturedPlan();
     if (!captured)

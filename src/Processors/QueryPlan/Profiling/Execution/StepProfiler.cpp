@@ -29,11 +29,6 @@ StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_,
 {
 }
 
-void StepProfiler::releaseAnalyzers()
-{
-    plan_snapshot.analyzers.clear();
-}
-
 StepWallClock * StepProfiler::findClockForStep(const String & step_id, size_t group) const
 {
     auto it = clocks.find({step_id, group});

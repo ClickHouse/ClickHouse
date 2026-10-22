@@ -36,15 +36,9 @@ public:
     /// the statistics out of it.
     void captureStatistics(QueryPipeline & pipeline);
 
-    /// Attaches a StepProfiler to the pipeline, otherwise the processors would report
-    /// 0.00 ns as executed time.
+    /// Hands the `StepProfiler` to the pipeline, which owns it from then on. Without it the
+    /// processors would report 0.00 ns as executed time.
     void instrumentPipeline(QueryPipeline & pipeline);
-
-    /// Frees what was only needed while the query was being profiled: the clocks, and the
-    /// analyzers, which hold the `IJoin`s and with them their hash tables.
-    /// What was captured stays. Idempotent: a query that failed before its pipeline finished
-    /// reaches this at logging time instead.
-    void releaseRunningState();
 
     /// The captured plan, if there is one. Rendering it is the caller's business: the profiler
     /// captures, and only the places that write a plan out decide in what form.
@@ -57,12 +51,9 @@ private:
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
 
-    /// Built while the plan is still around, because it walks it for the clocks and the analyzers,
-    /// then attached to the pipeline so the processors can time their steps and read back once the
-    /// query has run.
+    /// Built while the plan is still around, because it walks it for the clocks and the analyzers.
+    /// Null again after `instrumentPipeline`: this object lives in the `Context`, which outlives
+    /// the query, so holding it here would keep the analyzers' hash tables alive with it.
     StepProfilerPtr step_profiler;
-
-    /// The order the methods above must come in is asserted against this in debug builds.
-    bool finished = false;
 };
 }

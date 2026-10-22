@@ -43,11 +43,6 @@ public:
 
     const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
 
-    /// Drops the analyzers once the statistics have been produced. They hold the `IJoin`s, and with
-    /// them their hash tables, so this is not merely tidying up. The clocks and the timings stay,
-    /// because a caller may still read them.
-    void releaseAnalyzers();
-
     /// Stamped by the executor when it finishes, so the duration excludes everything the
     /// query-finish path does afterwards -- serializing and sending the result, in particular.
     void markExecutionFinished();
@@ -64,7 +59,7 @@ private:
     const bool collect_work_intervals;
 
     /// Declared before `clocks`: the clocks are keyed by the stages the analyzers report.
-    PlanAnalysisSnapshot plan_snapshot;
+    const PlanAnalysisSnapshot plan_snapshot;
     const StepWallClocks clocks;
 
     const UInt64 execution_start_ns = clock_gettime_ns();
