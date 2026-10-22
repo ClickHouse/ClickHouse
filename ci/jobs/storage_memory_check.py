@@ -307,8 +307,18 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         total_master += master_bytes
         total_pr += pr_bytes
 
-        absolute_change = abs(change)
-        baseline = abs(master_bytes)
+        # A scenario that releases memory (e.g. `DROP TABLE`) frees what the
+        # earlier scenarios allocated, so its delta mirrors their differences:
+        # if the PR allocated less before, it also frees less here. Judge it by
+        # the memory that is still live after it instead.
+        if master_bytes < 0:
+            compared_master, compared_pr = total_master, total_pr
+        else:
+            compared_master, compared_pr = master_bytes, pr_bytes
+        compared_change = compared_pr - compared_master
+
+        absolute_change = abs(compared_change)
+        baseline = abs(compared_master)
         percent_change = (
             absolute_change / baseline * 100
             if baseline
@@ -318,12 +328,12 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
             absolute_change > STORAGE_CHANGE_THRESHOLD_BYTES
             and percent_change > CHANGE_THRESHOLD_PCT
         )
-        if significant and change > 0:
+        if significant and compared_change > 0:
             status = Result.Status.FAIL
             regressions += 1
         else:
             status = Result.Status.OK
-            if significant and change < 0:
+            if significant and compared_change < 0:
                 improvements += 1
 
         master_stacks = master_analysis["stack_diffs"]
@@ -335,9 +345,14 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         info = (
             f"Scenario: {scenario.name}\n"
             f"Live allocation delta: master={master_bytes:+,} bytes, "
-            f"PR={pr_bytes:+,} bytes, change={change:+,} bytes "
-            f"({percent_change:.1f}%)"
+            f"PR={pr_bytes:+,} bytes, change={change:+,} bytes"
         )
+        if master_bytes < 0:
+            info += (
+                f"\nLive after the scenario: master={total_master:+,} bytes, "
+                f"PR={total_pr:+,} bytes"
+            )
+        info += f"\nCompared change: {compared_change:+,} bytes ({percent_change:.1f}%)"
         scenario_results.append(Result(name=scenario.name, status=status, info=info))
         html_data.append(
             {
@@ -347,6 +362,15 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
                 "master_bytes": master_bytes,
                 "pr_bytes": pr_bytes,
                 "change": change,
+                **(
+                    {
+                        "compared_label": "Live after the scenario",
+                        "compared_master": compared_master,
+                        "compared_pr": compared_pr,
+                    }
+                    if master_bytes < 0
+                    else {}
+                ),
                 "status": status,
                 "master_stacks": master_stacks,
                 "pr_stacks": pr_stacks,
