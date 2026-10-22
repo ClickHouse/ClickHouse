@@ -75,6 +75,15 @@ def write_shared(path, day):
 
 write_shared(f"{out}/shared_in_range.arrows", 19000)
 write_shared(f"{out}/shared_out_of_range.arrows", 3000000)
+
+# A named struct inside a struct whose only field has an empty name.
+inner = pa.StructArray.from_arrays([pa.array([7], type=pa.int32())], fields=[pa.field("x", pa.int32())])
+outer = pa.StructArray.from_arrays([inner], fields=[pa.field("", inner.type)])
+nested = pa.schema([pa.field("s", outer.type)])
+with ipc.new_file(f"{out}/nested.arrow", nested) as writer:
+    writer.write_batch(pa.record_batch([outer], names=["s"]))
+with ipc.new_stream(f"{out}/nested.arrows", nested) as writer:
+    writer.write_batch(pa.record_batch([outer], names=["s"]))
 EOF
 
 $CLICKHOUSE_LOCAL -q "
@@ -83,4 +92,10 @@ $CLICKHOUSE_LOCAL -q "
     SELECT s FROM file('$DATA_DIR/shared_in_range.arrows', ArrowStream, 's Tuple(Int64, Date32)');
     SELECT s FROM file('$DATA_DIR/shared_out_of_range.arrows', ArrowStream, 's Tuple(Int64, Int64)');
     SELECT s FROM file('$DATA_DIR/shared_out_of_range.arrows', ArrowStream, 's Tuple(Int64, Date32)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+"
+
+# Case-insensitive matching still applies to named structs nested in such a struct, which is matched by position.
+$CLICKHOUSE_LOCAL -q "
+    SELECT s FROM file('$DATA_DIR/nested.arrow', Arrow, 's Tuple(payload Tuple(X Int32))') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+    SELECT s FROM file('$DATA_DIR/nested.arrows', ArrowStream, 's Tuple(payload Tuple(X Int32))') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
 "
