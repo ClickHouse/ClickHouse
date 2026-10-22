@@ -52,9 +52,9 @@ Valores possíveis:
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração para controlar o spill automático de hash join em disco. Um valor diferente de zero habilita o spill e define o limite em bytes."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração para controlar o spill automático de hash join em disco. Um valor diferente de zero habilita o spill e define o limiar em bytes."}]}]} />
 
-Se for definido com um valor diferente de zero, o hash join será convertido automaticamente em grace hash join para permitir o spill em disco quando os dados do lado direito excederem essa quantidade de bytes. Junto com `max_bytes_ratio_before_external_join`, este é o gatilho de spill baseado em limiar para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, que exige que um dos dois seja diferente de zero. Quando um limiar diferente de zero torna uma junção capaz de realizar spill, `enable_adaptive_memory_spill_scheduler` pode forçá-la a realizar spill sob pressão de memória antes que o limiar seja atingido; com ambas as configurações em `0`, a junção nunca realiza spill, portanto o scheduler não tem nada para acionar. A exceção é `legacy_join_size_limits_trigger_spilling`: quando habilitada, `grace_hash` independente ignora ambas e realiza spill com base em `max_rows_in_join` / `max_bytes_in_join`. Quando definido como 0 (padrão), esse limite absoluto em bytes fica desabilitado, mas o spill automático ainda pode ocorrer por meio de `max_bytes_ratio_before_external_join` (cujo valor padrão é `0.5`); defina ambos como `0` para desabilitar completamente o spill automático. Isso impede a otimização de leitura read in order por meio de join.
+Se for definido com um valor diferente de zero e `join_algorithm` for `hash`, `parallel_hash`, `default` ou `auto`, o hash join será convertido automaticamente em grace hash join para permitir o spill em disco quando os dados do lado direito excederem essa quantidade de bytes. Junto com `max_bytes_ratio_before_external_join`, este é o gatilho de spill baseado em limiar para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, que exige que um dos dois seja diferente de zero. Quando um limiar diferente de zero torna uma junção capaz de realizar spill, `enable_adaptive_memory_spill_scheduler` pode forçá-la a realizar spill sob pressão de memória antes que o limiar seja atingido. Quando definido como `0` (padrão), esse limiar absoluto em bytes fica desabilitado, mas o spill automático ainda pode ocorrer por meio de `max_bytes_ratio_before_external_join` (cujo valor padrão é `0.5`). Com ambas as configurações em `0`, a junção nunca realiza spill, portanto o scheduler não tem nada para acionar. A exceção é `legacy_join_size_limits_trigger_spilling`: quando habilitada, `grace_hash` independente ignora ambas as configurações e realiza spill com base em `max_rows_in_join` / `max_bytes_in_join`. Isso impede a otimização de leitura read in order por meio de join. O limiar também limita o lado direito materializado pelo [block nested loop join](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition), independentemente do valor definido em `join_algorithm`.
 
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
@@ -106,7 +106,7 @@ Se uma consulta contiver várias junções, o ClickHouse verificará essa config
 resultado intermediário. Trata-se de um limite rígido para todo `join_algorithm` baseado em hash: quando o limite
 é atingido, a consulta lança um erro ou interrompe conforme
 [`join_overflow_mode`](/pt-BR/reference/settings/session-settings/join#join_overflow_mode).
-Ela nunca faz uma junção gravar em disco (spill) — essa decisão cabe a
+Ela nunca faz uma junção fazer spill — essa decisão cabe a
 [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
 e
 [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
@@ -120,6 +120,12 @@ para a parte de uma junção que já é executada em disco.
 O limite contabiliza o que as tabelas hash armazenam, de modo que uma junção que fez spill o atinge à
 medida que cada bucket é carregado, e não enquanto o lado direito é lido: ela pode ler mais
 do lado direito antes de parar do que um hash join em memória faria.
+
+Quando uma seção `ON` não determina nenhuma chave de junção, não há algoritmo a escolher: o limite
+se aplica ao lado direito materializado pelo
+[block nested loop join](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition),
+incluindo os blocos que passaram por spill, e a ação em caso de estouro é definida por
+[`join_overflow_mode`](/pt-BR/reference/settings/session-settings/join#join_overflow_mode).
 
 Valores possíveis:
 

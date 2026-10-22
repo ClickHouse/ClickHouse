@@ -2,6 +2,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -40,6 +41,7 @@ public:
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
 
     String getName() const override { return "FilterTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     Status prepare() override;
 
@@ -51,6 +53,7 @@ public:
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
     String filter_column_name;
     bool remove_filter_column;
     bool on_totals;
@@ -81,6 +84,8 @@ private:
     void removeFilterIfNeed(Columns & columns) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
+    /// For a chunk that is filtered only partially, see `MarkRangesInfo::rows_per_mark`.
+    void writeMarksWithoutMatchesIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description);
 };
 
 }

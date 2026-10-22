@@ -1,4 +1,5 @@
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -7,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LIMIT_EXCEEDED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 bool AIQuotaTracker::quotasExceededLocked()
@@ -39,14 +41,31 @@ bool AIQuotaTracker::quotasExceededLocked()
     return false;
 }
 
+void AIQuotaTracker::throwIfCancelled() const
+{
+    auto status = query_status.lock();
+    if (!status)
+        return;
+
+    /// `checkTimeLimit` throws on `KILL QUERY` and when `max_execution_time` is exceeded.
+    /// Under `timeout_overflow_mode = 'break'`, it returns false instead of throwing.
+    /// A function cannot return fewer rows than it received, so throw in that case too.
+    if (!status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in an AI function");
+}
+
 bool AIQuotaTracker::checkQuotas()
 {
+    throwIfCancelled();
+
     std::lock_guard lock(mutex);
     return quotasExceededLocked();
 }
 
 bool AIQuotaTracker::recordApiCall()
 {
+    throwIfCancelled();
+
     std::lock_guard lock(mutex);
 
     /// Don't start a new request once any quota is known-exhausted (e.g. another thread's response

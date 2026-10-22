@@ -1,0 +1,6 @@
+gzip http_zlib_compression_level=9: 200 100000	4999950000
+xz http_zlib_compression_level=12: 200 100000	4999950000
+zstd http_zlib_compression_level=12: 200 100000	4999950000
+lz4 http_zlib_compression_level=12: 200 100000	4999950000
+zstd ignores http_zlib_compression_level
+zstd uses output_format_compression_level

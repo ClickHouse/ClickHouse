@@ -27,7 +27,7 @@ public:
         UInt64 prefer_external_sort_block_bytes = DEFAULT_BLOCK_SIZE * 256;
 
         /// The pipeline combines these thresholds into the smaller enabled spill trigger.
-        /// Setting both to zero disables external `DISTINCT`.
+        /// Setting both to zero disables threshold-triggered spilling; the scheduler may still request it.
         UInt64 max_bytes_before_external_distinct = 0;
         double max_bytes_ratio_before_external_distinct = 0.;
 
@@ -101,8 +101,22 @@ public:
     void preserveInputOrder() { preserve_input_order = true; }
     bool preservesInputOrder() const { return preserve_input_order; }
 
+    /// Allow final deduplication to run in parallel by partitioning streams by the hash of the `DISTINCT`
+    /// columns. Input-order requirements and sorted deduplication take precedence.
+    void enableParallelDistinct() { parallel_distinct = true; }
+
+    /// Merge the small output chunks of a preliminary step before a parallel final step scatters them (see
+    /// `DistinctTransform`). The transform bounds the delay by the input rows it consumes, so this is enabled
+    /// only when the input comes straight from a read and cannot stall behind a step that suppresses rows.
+    /// This affects only performance, so it is not serialized.
+    void coalesceOutput() { coalesce_output = true; }
+
 private:
     void updateOutputHeader() override;
+
+    /// Partition by the hash of the `DISTINCT` keys when there are multiple streams, threads, and
+    /// non-constant keys. Return whether partitioning was applied; otherwise leave the pipeline intact.
+    bool tryScatterStreams(QueryPipelineBuilder & pipeline) const;
 
     Settings settings;
     UInt64 limit_hint;
@@ -110,7 +124,9 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool parallel_distinct = false;
     bool preserve_input_order = false;
+    bool coalesce_output = false;
 };
 
 }

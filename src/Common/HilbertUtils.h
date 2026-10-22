@@ -142,9 +142,7 @@ inline std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1
 template <typename F>
 void hilbertIntervalToHyperrectangles2D(UInt64 first, UInt64 last, F && callback)
 {
-    const auto equal_bits_count = getLeadingZeroBits(last | first);
-    const auto even_equal_bits_count = equal_bits_count - equal_bits_count % 2;
-    segmentBinaryPartition(first, last, static_cast<UInt8>(64 - even_equal_bits_count), [&](HilbertDetails::Segment range)
+    auto unpack_segment = [&](HilbertDetails::Segment range)
     {
         auto interval1 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<3>::decode(range.begin);
         auto interval2 = DB::FunctionHilbertDecode2DWIthLookupTableImpl<3>::decode(range.end);
@@ -154,5 +152,17 @@ void hilbertIntervalToHyperrectangles2D(UInt64 first, UInt64 last, F && callback
             std::get<0>(interval2), std::get<1>(interval2));
 
         callback(unpacked_range);
-    });
+    };
+
+    /// A single-code interval is its own cover. The partitioning below is sized from the number of
+    /// significant bits in the bounds, and emits nothing when that count is zero, as it is for [0, 0].
+    if (first == last)
+    {
+        unpack_segment(HilbertDetails::Segment{.begin = first, .end = last});
+        return;
+    }
+
+    const auto equal_bits_count = getLeadingZeroBits(last | first);
+    const auto even_equal_bits_count = equal_bits_count - equal_bits_count % 2;
+    segmentBinaryPartition(first, last, static_cast<UInt8>(64 - even_equal_bits_count), unpack_segment);
 }

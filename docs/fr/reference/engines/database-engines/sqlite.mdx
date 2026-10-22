@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 Permet de se connecter à une base de données [SQLite](https://www.sqlite.org/index.html) et d’exécuter des requêtes `INSERT` et `SELECT` pour échanger des données entre ClickHouse et SQLite.
 
-<div id="creating-a-database">
-  ## Création d’une base de données
-</div>
+## Création d’une base de données {#creating-a-database}
 
 ```sql
     CREATE DATABASE sqlite_database
@@ -26,21 +24,17 @@ Permet de se connecter à une base de données [SQLite](https://www.sqlite.org/i
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Prise en charge des types de données
-</div>
+## Prise en charge des types de données {#data-types-support}
 
-Le tableau ci-dessous montre la correspondance de types par défaut lorsque ClickHouse déduit automatiquement le schéma depuis SQLite :
+Le tableau ci-dessous montre la correspondance de types par défaut lorsque ClickHouse déduit automatiquement le schéma depuis SQLite :
 
-| SQLite  | ClickHouse                              |
-| ------- | --------------------------------------- |
-| INTEGER | [Int32](/fr/reference/data-types/int-uint) |
-| REAL    | [Float32](/fr/reference/data-types/float)  |
-| TEXT    | [String](/fr/reference/data-types/string)  |
-| TEXT    | [UUID](/fr/reference/data-types/uuid)      |
-| BLOB    | [String](/fr/reference/data-types/string)  |
+| Type déclaré dans SQLite                 | ClickHouse                                |
+| ---------------------------------------- | ----------------------------------------- |
+| Le nom du type contient `INT`            | [`Int64`](/fr/reference/data-types/int-uint) |
+| `REAL`, `FLOAT`, `DOUBLE`                | [`Float64`](/fr/reference/data-types/float)  |
+| Autres types, y compris `TEXT` et `BLOB` | [`String`](/fr/reference/data-types/string)  |
 
-Lorsque vous définissez explicitement une table avec des types ClickHouse spécifiques à l’aide du [moteur de table SQLite](/fr/reference/engines/table-engines/integrations/sqlite), les types ClickHouse suivants peuvent être interprétés à partir de colonnes SQLite de type TEXT :
+Lorsque vous définissez explicitement une table avec des types ClickHouse spécifiques à l’aide du [moteur de table SQLite](/fr/reference/engines/table-engines/integrations/sqlite), les types ClickHouse suivants peuvent être interprétés à partir de colonnes SQLite de type TEXT :
 
 * [Date](/fr/reference/data-types/date), [Date32](/fr/reference/data-types/date32)
 * [DateTime](/fr/reference/data-types/datetime), [DateTime64](/fr/reference/data-types/datetime64)
@@ -48,21 +42,17 @@ Lorsque vous définissez explicitement une table avec des types ClickHouse spéc
 * [Enum8, Enum16](/fr/reference/data-types/enum)
 * [Decimal32, Decimal64, Decimal128, Decimal256](/fr/reference/data-types/decimal)
 * [FixedString](/fr/reference/data-types/fixedstring)
-* Tous les types entiers ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/fr/reference/data-types/int-uint))
+* Tous les types entiers ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/fr/reference/data-types/int-uint))
 * [Float32, Float64](/fr/reference/data-types/float)
 
 SQLite utilise un typage dynamique, et ses fonctions d’accès aux types effectuent automatiquement une coercition de type. Par exemple, la lecture d’une colonne TEXT comme un entier renverra 0 si le texte ne peut pas être interprété comme un nombre. Cela signifie que si une table ClickHouse est définie avec un type différent de celui de la colonne SQLite sous-jacente, les valeurs peuvent être converties silencieusement au lieu de générer une erreur.
 
-<div id="specifics-and-recommendations">
-  ## Spécificités et recommandations
-</div>
+## Spécificités et recommandations {#specifics-and-recommendations}
 
 SQLite stocke l’ensemble de la base de données (définitions, tables, index et données proprement dites) dans un seul fichier multiplateforme sur la machine hôte. Lors de l’écriture, SQLite verrouille l’intégralité du fichier de base de données ; par conséquent, les opérations d’écriture sont effectuées de manière séquentielle. Les opérations de lecture peuvent être effectuées en parallèle.
 SQLite ne nécessite pas de gestion de service (comme des scripts de démarrage) ni de contrôle d’accès via `GRANT` et des mots de passe. Le contrôle d’accès est assuré au moyen des permissions du système de fichiers accordées au fichier de base de données lui-même.
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#usage-example}
 
 Base de données dans ClickHouse, connectée à SQLite :
 

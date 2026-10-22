@@ -1,0 +1,384 @@
+---
+slug: /cloud/managed-postgres/guides/prisma
+sidebarTitle: 'Prisma'
+title: 'استخدام Prisma مع ClickHouse Managed Postgres'
+description: 'اربط تطبيق TypeScript بـ ClickHouse Managed Postgres باستخدام Prisma ORM، ونفّذ عمليات الترحيل باستخدام Prisma Migrate، وأرسل الاستعلامات عبر PgBouncer باتصال TLS موثَّق'
+keywords: ['managed postgres', 'prisma', 'prisma orm', 'prisma migrate', 'typescript', 'node.js', 'orm', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-prisma-beta" />
+
+[Prisma ORM](https://www.prisma.io/orm) هي أداة ربط الكائنات بقواعد البيانات مكتوبة بلغة TypeScript، توفّر مخططًا تصريحيًا وأداة ترحيل (Prisma Migrate) وعميلًا مُولَّدًا آمنًا من حيث الأنواع. ستربط في هذا الدليل Prisma بخدمة ClickHouse Managed Postgres، وتنشئ جدولًا عبر عملية ترحيل، ثم تستعلم عنه من برنامج نصي ومن نقطة نهاية HTTP بسيطة.
+
+يعتمد هذا الدليل على Prisma ORM 7 (جرى اختباره على الإصدار `7.10.0`)، وهو الإصدار المستقر الحالي.
+
+## المتطلبات الأساسية {#prerequisites}
+
+* Node.js بالإصدار 20.19 أو 22.12 أو 24 فما فوق
+* خدمة ClickHouse Managed Postgres
+* [`psql`](https://www.postgresql.org/download/)، لإنشاء قاعدة البيانات. ويمكنك أيضًا تنفيذ عبارة `CREATE DATABASE` في [SQL console](/ar/integrations/connectors/sql-clients/sql-console).
+* على نظام macOS: ‏[Docker](https://docs.docker.com/get-started/get-docker/)، لتشغيل Prisma Migrate (راجع [تشغيل الترحيل](#migrate))
+
+## إنشاء خدمة ClickHouse Managed Postgres {#create-service}
+
+في وحدة تحكم ClickHouse Cloud، انقر على **New service** ثم اختر **Postgres**. سيصبح المثيل جاهزًا في غضون دقائق قليلة. للاطلاع على شرح مفصّل للخطوات، راجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart).
+
+## احصل على بيانات الاتصال {#connection-details}
+
+انقر على **Connect** في الشريط الجانبي الأيسر لخدمتك. تعرض النافذة المنبثقة اسم المستخدم وكلمة المرور والخادم والمنفذ، إلى جانب سلاسل اتصال جاهزة للاستخدام.
+
+يستخدم هذا الدليل اتصالين، لأن Prisma يتضمن مكوّنين يتواصلان مع قاعدة البيانات:
+
+* **تطبيقك (Prisma Client)** يتصل **عبر PgBouncer** على المنفذ `6432`. يتولى PgBouncer تجميع الاتصالات، ما يتيح للعديد من عمليات التطبيق أو مثيلات serverless مشاركة عدد محدود من الاتصالات الخلفية بـ Postgres.
+* **واجهة سطر الأوامر الخاصة بـ Prisma (Prisma Migrate)** تتصل **مباشرةً** على المنفذ `5432`. يحصل Prisma Migrate على قفل استشاري على مستوى الـ session طوال مدة تشغيله. وفي وضع تجميع المعاملات (transaction pooling) في PgBouncer، قد يظل هذا القفل محجوزًا على اتصال خلفي مُجمَّع يخدم عملاء آخرين لاحقًا، فتتعطل عمليات الترحيل التالية في انتظار تحريره.
+
+في أعلى النافذة المنبثقة، بدّل بين **Directly** و**via PgBouncer** لعرض منفذ كل منهما. الخادم وبيانات الاعتماد واحدة في كلا الاتصالين؛ والاختلاف الوحيد هو المنفذ.
+
+عند تحديد **via PgBouncer**، انقر على **Download CA certificate**. أما عند تحديد **Directly**، ففعّل **Use SSL** أولًا لإظهار الزر. يحمل الملف الاسم `<service-name>-ca-certificate.pem`، ويمكنك العثور عليه أيضًا ضمن **Settings → CA Certificate**. هذه الشهادة خاصة بمثيلك وحده، وتستخدمها للاتصال مع `sslmode=verify-full`، الذي يتحقق من أنك تتصل بخادمك أنت فعلًا.
+
+## إعداد المشروع {#setup}
+
+أنشئ مشروع TypeScript، ثم ثبّت واجهة سطر الأوامر الخاصة بـ Prisma، وPrisma Client، وadapter المشغّل [node-postgres](https://node-postgres.com/)، و`dotenv`:
+
+```bash
+mkdir hello-prisma
+cd hello-prisma
+npm init -y
+npm pkg set type=module
+npm install typescript tsx @types/node @types/pg --save-dev
+npm install prisma@7 --save-dev
+npm install @prisma/client@7 @prisma/adapter-pg pg dotenv
+```
+
+<Note>
+  ثبّت `prisma@7` و`@prisma/client@7` صراحةً. فحتى وقت كتابة هذا الدليل، يشير الوسم `latest` للحزمة `prisma` في npm إلى إصدار مرشح من Prisma 8، يعتمد طريقة إعداد تختلف عن تلك الموضحة في هذا الدليل.
+</Note>
+
+أنشئ ملف `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2023",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  }
+}
+```
+
+<Tip>
+  **هل تُضيفه إلى تطبيق قائم؟**
+
+  تخطَّ خطوات `mkdir` و`npm init` وملف `tsconfig.json`. شغّل في مشروعك الأمرين `npm install tsx @types/pg prisma@7 --save-dev` و`npm install @prisma/client@7 @prisma/adapter-pg pg dotenv`، ثم انتقل إلى قسم [تهيئة Prisma](#init).
+</Tip>
+
+## تهيئة Prisma {#init}
+
+<Steps>
+  <Step title="تشغيل prisma init">
+    ```bash
+    npx prisma init --datasource-provider postgresql --output ../generated/prisma
+    ```
+
+    ينشئ هذا الأمر الملف `prisma/schema.prisma` وملف إعداد Prisma المسمى `prisma7.config.ts`، ويضيف عنصرًا نائبًا للمتغير `DATABASE_URL` إلى `.env` والعميل المُولَّد إلى `.gitignore` (مع إنشاء أيٍّ من الملفين عند الحاجة)، كما يضيف مهارات Prisma لوكلاء البرمجة المعتمدين على الذكاء الاصطناعي. تُسمّي إصدارات Prisma 7.10 وما بعدها ملف الإعداد `prisma7.config.ts` تجنّبًا للتعارض مع صيغة Prisma 8.
+  </Step>
+
+  <Step title="إضافة شهادة CA">
+    انقل شهادة CA التي نزّلتها إلى الدليل الجذر للمشروع وأعد تسميتها إلى `ca-certificate.pem`:
+
+    ```bash
+    mv ~/Downloads/<service-name>-ca-certificate.pem ca-certificate.pem
+    ```
+
+    تُحدَّد مسارات الشهادات النسبية انطلاقًا من الدليل الذي تشغّل منه الأوامر، لذا شغّل جميع الأوامر الواردة في هذا الشرح من الدليل الجذر للمشروع.
+  </Step>
+</Steps>
+
+## تهيئة الاتصال {#configure}
+
+<Steps>
+  <Step title="إنشاء قاعدة بيانات">
+    أنشئ قاعدة بيانات للتطبيق. استبدل `<PASSWORD>` والمضيف بالقيم الظاهرة في النافذة المنبثقة **Connect**:
+
+    ```bash
+    psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_prisma;"
+    ```
+
+    ```text
+    CREATE DATABASE
+    ```
+  </Step>
+
+  <Step title="تعيين عناوين URL للاتصال">
+    في الملف `.env`، استبدل العنصر النائب `DATABASE_URL` الذي أضافه الأمر `prisma init` بعنواني URL الاتصال التاليين، ويشير كلاهما إلى قاعدة البيانات `guide_prisma`. استخدم كلمة المرور الظاهرة في النافذة المنبثقة Connect:
+
+    ```bash
+    # Prisma Client (تطبيقك): عبر PgBouncer، المنفذ 6432
+    DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_prisma?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+
+    # Prisma CLI (عمليات الترحيل): اتصال مباشر، المنفذ 5432
+    DIRECT_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_prisma?sslmode=require&sslaccept=strict&sslcert=ca-certificate.pem"
+    ```
+
+    يستخدم العنوانان معلمات TLS مختلفة لأن كلًّا منهما يقرؤه مشغّل مختلف:
+
+    * **`DATABASE_URL`** يقرؤه node-postgres عبر `@prisma/adapter-pg`، وهو يدعم معلمات `sslmode=verify-full&sslrootcert=...` القياسية، أي المعلمات نفسها المعروضة في النافذة المنبثقة Connect.
+    * **`DIRECT_URL`** يقرؤه محرك المخطط التابع لواجهة سطر الأوامر في Prisma، وله معلماته الخاصة: `sslcert` هو مسار شهادة CA، و`sslaccept=strict` يفعّل التحقق من الشهادة ومن اسم المضيف.
+
+    <Warning>
+      لا تستخدم `sslmode=verify-full&sslrootcert=...` في عنوان URL الخاص بواجهة سطر الأوامر في Prisma؛ إذ يتجاهل محرك المخطط `sslrootcert`، ولا يتحقق من شهادة الخادم إطلاقًا في غياب `sslaccept=strict`، فيكون الاتصال مشفّرًا لكنه غير موثَّق.
+    </Warning>
+  </Step>
+
+  <Step title="توجيه Prisma CLI إلى الاتصال المباشر">
+    استبدل محتويات الملف `prisma7.config.ts` بما يلي:
+
+    ```typescript
+    import "dotenv/config";
+    import { defineConfig, env } from "prisma/config";
+
+    export default defineConfig({
+      schema: "prisma/schema.prisma",
+      migrations: {
+        path: "prisma/migrations",
+      },
+      datasource: {
+        url: env("DIRECT_URL"),
+      },
+    });
+    ```
+
+    في Prisma 7، لا يُستخدم عنوان URL الموجود في ملف الإعداد إلا من قِبل واجهة سطر الأوامر. أما Prisma Client فيحصل على اتصاله من adapter المشغّل، الذي ستهيّئه في [الاستعلام عن قاعدة البيانات](#query).
+  </Step>
+</Steps>
+
+## تعريف المخطط وتشغيل عملية الترحيل {#migrate}
+
+<Steps>
+  <Step title="إضافة نموذج">
+    أضف النموذج `Todo` إلى نهاية الملف `prisma/schema.prisma`:
+
+    ```prisma
+    model Todo {
+      id        Int      @id @default(autoincrement())
+      title     String
+      done      Boolean  @default(false)
+      createdAt DateTime @default(now())
+    }
+    ```
+  </Step>
+
+  <Step title="تشغيل عملية الترحيل">
+    على Linux، شغّل Prisma Migrate مباشرةً:
+
+    ```bash
+    npx prisma migrate dev --name init
+    ```
+
+    على macOS، شغّل الأمر نفسه داخل حاوية Linux:
+
+    ```bash
+    docker run --rm -it -v "$PWD":/app -w /app node:24 npx prisma migrate dev --name init
+    ```
+
+    <Warning>
+      لا تقبل ClickHouse Managed Postgres سوى TLS 1.3. وعلى macOS، يعتمد محرك المخطط في واجهة سطر الأوامر الخاصة بـ Prisma على مكتبة TLS الخاصة بالنظام، وهي لا تستطيع الاتصال بهذه الإعدادات. فيفشل الأمر بالخطأ `P1011: Error opening a TLS connection: One or more parameters passed to a function were not valid`، أو بالخطأ `bad protocol version` إذا أزلت `sslcert` ([prisma/orm#29600](https://github.com/prisma/orm/issues/29600)). ويقتصر ذلك على أوامر واجهة سطر الأوامر التي تتصل بقاعدة البيانات، مثل `prisma migrate` و`prisma db pull`. أما Prisma Client فلا يتأثر، لأنه يتصل عبر node-postgres. ولتجاوز هذه المشكلة، شغّل واجهة سطر الأوامر داخل حاوية Linux، أو ضمن مسار CI القائم على Linux لديك.
+    </Warning>
+
+    تُنشئ Prisma ملف ترحيل SQL في `prisma/migrations/` ثم تطبّقه:
+
+    ```text
+    Applying migration `20260930165244_init`
+
+    The following migration(s) have been created and applied from new schema changes:
+
+    prisma/migrations/
+      └─ 20260930165244_init/
+        └─ migration.sql
+
+    Your database is now in sync with your schema.
+    ```
+  </Step>
+
+  <Step title="توليد Prisma Client">
+    ```bash
+    npx prisma generate
+    ```
+
+    يُولَّد العميل في `generated/prisma`. ولأن هذا الأمر لا يتصل بقاعدة البيانات، يمكنك تشغيله على أي منصة.
+  </Step>
+</Steps>
+
+## الاستعلام من قاعدة البيانات {#query}
+
+<Steps>
+  <Step title="إنشاء Prisma Client">
+    أنشئ الملف `lib/prisma.ts`. يتصل الـ adapter المسمى `PrismaPg` باستخدام `DATABASE_URL` عبر PgBouncer:
+
+    ```typescript
+    import "dotenv/config";
+    import { PrismaPg } from "@prisma/adapter-pg";
+    import { PrismaClient } from "../generated/prisma/client";
+
+    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+
+    export const prisma = new PrismaClient({ adapter });
+    ```
+
+    <Tip>
+      **لا حاجة إلى أي إعدادات خاصة بـ PgBouncer**
+
+      يرسل `@prisma/adapter-pg` كل استعلام على هيئة عبارة مُعدّة مسبقًا (prepared statement) غير مسماة، ولا ينفّذ `DEALLOCATE` أبدًا، ما يجعله متوافقًا مع وضع تجميع المعاملات (transaction pooling) في PgBouncer. كما يتعامل دون أخطاء مع مئات الاستعلامات المختلفة التي تُنفَّذ بالتزامن عبر اتصالات الخلفية المجمّعة. ولم تعد هناك حاجة إلى معلمة URL `pgbouncer=true` التي كانت تُستخدم في إصدارات Prisma الأقدم، إذ لا أثر لها مع adapter المشغّل.
+    </Tip>
+  </Step>
+
+  <Step title="تشغيل استعلامات CRUD">
+    أنشئ الملف `script.ts`:
+
+    ```typescript
+    import { prisma } from "./lib/prisma";
+
+    async function main() {
+      // إنشاء
+      const todo = await prisma.todo.create({
+        data: { title: "Connect Prisma to ClickHouse Managed Postgres" },
+      });
+      console.log("Created:", todo);
+
+      // قراءة
+      const open = await prisma.todo.findMany({ where: { done: false } });
+      console.log("Open todos:", open.length);
+
+      // تحديث
+      const updated = await prisma.todo.update({
+        where: { id: todo.id },
+        data: { done: true },
+      });
+      console.log("Updated:", updated);
+
+      // حذف
+      await prisma.todo.delete({ where: { id: todo.id } });
+      console.log("Deleted todo", todo.id);
+    }
+
+    main().finally(() => prisma.$disconnect());
+    ```
+
+    شغّله:
+
+    ```bash
+    npx tsx script.ts
+    ```
+
+    ```text
+    Created: {
+      id: 1,
+      title: 'Connect Prisma to ClickHouse Managed Postgres',
+      done: false,
+      createdAt: 2026-09-30T16:52:57.116Z
+    }
+    Open todos: 1
+    Updated: {
+      id: 1,
+      title: 'Connect Prisma to ClickHouse Managed Postgres',
+      done: true,
+      createdAt: 2026-09-30T16:52:57.116Z
+    }
+    Deleted todo 1
+    ```
+  </Step>
+
+  <Step title="تقديم البيانات عبر HTTP">
+    أنشئ الملف `server.ts`، وهو خادم HTTP بسيط يُنشئ المهام عبر `POST /todos` ويعرضها عند تلقّي أي طلب `GET`:
+
+    ```typescript
+    import { createServer } from "node:http";
+    import { prisma } from "./lib/prisma";
+
+    const port = Number(process.env.PORT ?? 3000);
+
+    createServer(async (req, res) => {
+      if (req.method === "POST" && req.url === "/todos") {
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        const todo = await prisma.todo.create({ data: { title: JSON.parse(body).title } });
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(todo));
+        return;
+      }
+
+      const todos = await prisma.todo.findMany({ orderBy: { id: "asc" } });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(todos, null, 2));
+    }).listen(port, () => console.log(`Listening on http://localhost:${port}`));
+    ```
+
+    شغّل الخادم:
+
+    ```bash
+    npx tsx server.ts
+    ```
+
+    في طرفية أخرى، أضف مهمتين:
+
+    ```bash
+    curl -X POST localhost:3000/todos -H "Content-Type: application/json" -d '{"title": "Try Prisma with ClickHouse Managed Postgres"}'
+    curl -X POST localhost:3000/todos -H "Content-Type: application/json" -d '{"title": "Add a read replica"}'
+    ```
+
+    افتح [http://localhost:3000/todos](http://localhost:3000/todos) في متصفحك لعرضهما. ستبدو الاستجابة على النحو التالي:
+
+    ```json
+    [
+      {
+        "id": 2,
+        "title": "Try Prisma with ClickHouse Managed Postgres",
+        "done": false,
+        "createdAt": "2026-09-30T16:53:06.098Z"
+      },
+      {
+        "id": 3,
+        "title": "Add a read replica",
+        "done": false,
+        "createdAt": "2026-09-30T16:53:06.184Z"
+      }
+    ]
+    ```
+  </Step>
+</Steps>
+
+## التحقق في SQL console {#verify}
+
+في وحدة تحكم ClickHouse Cloud، افتح **SQL console** الخاصة بخدمتك، ثم وسّع قاعدة بياناتك والمخطط `public`، واختر الجدول `Todo`. ستجد أيضًا الجدول `_prisma_migrations`، الذي يسجّل فيه Prisma Migrate عمليات الترحيل المطبّقة.
+
+يحتوي الجدول `Todo` على الصفّين اللذين أضفتهما عبر نقطة نهاية HTTP:
+
+| id | title                                       | done  | createdAt               |
+| -- | ------------------------------------------- | ----- | ----------------------- |
+| 2  | Try Prisma with ClickHouse Managed Postgres | false | 2026-09-30 16:53:06.098 |
+| 3  | Add a read replica                          | false | 2026-09-30 16:53:06.184 |
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+| الخطأ                                                                                                                         | السبب والحل                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1011: Error opening a TLS connection: One or more parameters passed to a function were not valid` أو `bad protocol version` | تعمل واجهة سطر الأوامر الخاصة بـ Prisma على macOS. شغّلها داخل حاوية Linux، كما هو موضح في [تشغيل عملية الترحيل](#migrate).                 |
+| `P1011: ... certificate verify failed`                                                                                        | تعذّر على واجهة سطر الأوامر الخاصة بـ Prisma التحقق من الخادم. تأكّد من أن `sslcert` في `DIRECT_URL` يشير إلى شهادة CA الخاصة بالمثيل لديك. |
+| `P1011: ... cert file not found`                                                                                              | المسار المحدد في `sslcert` ضمن `DIRECT_URL` غير صحيح. شغّل واجهة سطر الأوامر من الدليل الجذر للمشروع، أو استخدم مسارًا مطلقًا.              |
+| `unable to verify the first certificate`                                                                                      | تعذّر على Prisma Client التحقق من الخادم. تأكّد من أن `sslrootcert` في `DATABASE_URL` يشير إلى شهادة CA الخاصة بالمثيل لديك.                |
+| `ENOENT: no such file or directory`                                                                                           | المسار المحدد في `sslrootcert` ضمن `DATABASE_URL` غير صحيح. شغّل تطبيقك من الدليل الجذر للمشروع، أو استخدم مسارًا مطلقًا.                   |
+
+## الخطوات التالية {#next-steps}
+
+* [الاتصال](/ar/products/managed-postgres/connection): سلاسل الاتصال وPgBouncer وTLS
+* [الإعدادات](/ar/products/managed-postgres/settings): ضبط معلمات Postgres وPgBouncer
+* [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas): توسيع نطاق أعباء العمل كثيفة القراءة
+* [التطوير المحلي](/ar/products/managed-postgres/local-development): التطوير على نسخة Postgres محلية في Docker
+* [Prisma Migrate في بيئة الإنتاج](https://www.prisma.io/docs/orm/prisma-migrate/workflows/development-and-production): استخدم `prisma migrate deploy` ضمن مسار CI لديك

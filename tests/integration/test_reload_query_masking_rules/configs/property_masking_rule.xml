@@ -1,0 +1,8 @@
+<clickhouse>
+    <query_masking_rules>
+        <rule>
+            <regexp>${application.name}_${system.env.MASK_PATTERN}</regexp>
+            <replace>[property-hidden]</replace>
+        </rule>
+    </query_masking_rules>
+</clickhouse>

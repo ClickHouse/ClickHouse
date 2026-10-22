@@ -40,6 +40,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const std::optional<ReadSettings> & read_settings = std::nullopt,
     bool allow_page_cache = true);
 
+/// Fetches the metadata of an object to read (e.g. by an S3 `HEAD` request), when its size and ETag are not
+/// known from listing or table metadata. Every metadata request of the read path must go through these
+/// functions, so that it is accounted in `ObjectStorageMetadataFetchedForRead` and `ObjectStorageMetadataFetchMicroseconds`.
+ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags);
+/// Same as `getObjectMetadataForRead`, but returns `std::nullopt` if the object does not exist.
+std::optional<ObjectMetadata> tryGetObjectMetadataForRead(
+    const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags);
+
 /// Joins an object's path under a storage prefix (a namespace, or a data source description).
 /// A leading separator is dropped only when there is a prefix to join under, since `fs::path`
 /// would otherwise treat the path as absolute and discard the prefix. An empty prefix leaves the

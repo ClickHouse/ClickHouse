@@ -11,6 +11,8 @@ namespace DB
 class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+struct ObjectStorageTopKQueryConditionCacheKey;
+using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -47,6 +49,10 @@ public:
     /// identity partitions rewrite the values the reader returns).
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+    bool isSelectedForTopKFilterOptimization() const { return top_k_filter != nullptr; }
+    /// A filter above the read whose contents the key does not cover (a join runtime filter) changes the
+    /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
+    void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
@@ -74,10 +80,16 @@ public:
     /// step append a `__global_row_index` column to the output, and returns a step that lazily
     /// reads the removed columns. Returns nullptr if there is nothing to defer.
     std::unique_ptr<LazilyReadFromObjectStorage> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names);
+    /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
+    /// them.
+    NameSet getLazilyReadColumns(const NameSet & required_names) const;
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
+    /// What the main read keeps besides `required_names` when columns are split off.
+    NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
+
     StorageID storage_id;
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
@@ -95,6 +107,7 @@ private:
     const size_t max_num_streams;
     const bool distributed_processing;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+    bool allow_top_k_query_condition_cache = true;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
@@ -105,6 +118,8 @@ private:
 #endif
 
     void createIterator();
+
+    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 };
 
 }

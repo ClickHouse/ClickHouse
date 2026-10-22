@@ -755,6 +755,10 @@ void registerStorageBigQuery(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto configuration = StorageBigQuery::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
+            /// Skipped for a stored definition so that a forbidden header does not block server startup;
+            /// requests still check it.
+            if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+                configuration.checkHeaders(args.getLocalContext());
             return std::make_shared<StorageBigQuery>(
                 args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, args.getLocalContext());
         },

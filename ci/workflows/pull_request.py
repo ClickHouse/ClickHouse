@@ -62,12 +62,12 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 
 # Pull requests run the integration tests only in targeted jobs (the changed tests, the
 # tests covering the changed lines and the tests that failed in the PR before, each run
-# once), except for the full `arm_binary` run below and, with the `ci-coverage` label, the full
-# LLVM coverage run and the tests excluded from it.
+# once), except for the full `arm_binary` run below and, with the `ci-coverage` or
+# `ci-llvm-coverage` label, the full LLVM coverage run and the tests excluded from it.
 INTEGRATION_TARGETED_JOBS = JobConfigs.integration_test_targeted_pr_jobs
 
-# The LLVM coverage jobs run in pull requests only with the `ci-coverage` label (see
-# `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
+# The LLVM coverage jobs run in pull requests only with the `ci-coverage` or `ci-llvm-coverage`
+# label (see `should_skip_job`); by default these `arm_binary` jobs run the same configurations instead.
 # Master runs the coverage jobs on every commit.
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = (
     JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs

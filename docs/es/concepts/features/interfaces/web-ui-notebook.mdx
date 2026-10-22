@@ -1,0 +1,73 @@
+---
+description: 'Documentación del modo notebook de la interfaz web SQL integrada (`/play`), que convierte una pestaña en una secuencia de celdas de consulta y de texto'
+sidebarTitle: 'Modo notebook de la interfaz web'
+slug: /interfaces/web-ui-notebook
+title: 'Modo notebook de la interfaz web'
+doc_type: 'reference'
+sidebar: false
+---
+
+La interfaz web SQL integrada (`play.html`, disponible en la ruta [`/play`](/es/concepts/features/interfaces/http) de cualquier puerto HTTP de ClickHouse) puede convertir una pestaña en un notebook: una secuencia ordenada de celdas, cada una de las cuales contiene una consulta con su propio resultado o un bloque de texto en Markdown. Es el mismo tipo de documento que Jupyter, Observable, Hex o Deepnote, y tiene la misma finalidad: reunir en una sola página una cadena de consultas junto con el razonamiento que las conecta.
+
+El modo notebook se configura por pestaña. Una pestaña puede ser un notebook mientras otra sigue siendo un editor sencillo de una sola consulta, y cada pestaña conserva su propio notebook aunque se recargue la página.
+
+## Añadir celdas {#adding-cells}
+
+Una pestaña comienza con una única celda de consulta y tiene exactamente el mismo aspecto que el editor simple: sin encabezados, sin el marco visual de las celdas y sin ningún notebook visible. En cuanto una consulta genera un resultado, aparece debajo un botón grande `[+]`, atenuado a propósito para que no le reste protagonismo al resultado. Al hacer clic en él, se despliegan los dos tipos de celda que se pueden añadir:
+
+* **Query**: una nueva celda de consulta. Recibe el foco del editor de inmediato, para que pueda empezar a escribir.
+* **Text**: una nueva celda de Markdown, que se abre en modo de edición.
+
+Al añadir la segunda celda se activa el modo notebook en esa pestaña.
+
+## Encabezados de celda {#cell-headers}
+
+A partir de dos celdas, cada celda muestra un encabezado con su posición y su tipo, como `1. Query` o `2. Text`. Las celdas de consulta también muestran un punto de estado mientras hay una ejecución en curso, y uno rojo si ha fallado; las celdas finalizadas no llevan ninguna marca, ya que su resultado aparece justo debajo.
+
+Las acciones del encabezado aparecen al pasar el cursor sobre la celda o cuando esta tiene el foco:
+
+| Acción    | Significado                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------- |
+| `▶`       | Ejecutar esta celda (solo celdas de consulta)                                                            |
+| `✎`       | Editar esta celda: tomar el control del editor o volver a mostrar el código fuente de una celda de texto |
+| `＋`       | Insertar una nueva celda antes de esta; aparece en línea la misma opción Query/Text                      |
+| `↑` / `↓` | Mover la celda hacia arriba o hacia abajo                                                                |
+| `✕`       | Eliminar la celda                                                                                        |
+
+Una pestaña siempre conserva al menos una celda de consulta, ya que en ella reside el editor compartido; por eso, `✕` está deshabilitado en la última celda de consulta restante.
+
+## Celdas de consulta {#query-cells}
+
+En la página solo hay un editor de consultas: el editor completo, con resaltado de sintaxis, autocompletado y campos para los parámetros de consulta. En el modo notebook, se acopla a la celda de consulta que esté activa y solo se muestra mientras tiene el foco: en cuanto el foco sale de él, esa celda también se contrae, de modo que un notebook que se está leyendo no muestra ningún área de texto abierta. Al hacer clic en una consulta contraída, esta recupera el editor (que se traslada allí si pertenecía a otra celda). Mover el foco dentro del editor —a un campo de parámetro de consulta o a una sugerencia de autocompletado— no lo contrae.
+
+Una celda de consulta contraída muestra su consulta en una sola línea: con resaltado de sintaxis, con las secuencias de espacios en blanco (incluidas la sangría y los saltos de línea) reducidas a un solo espacio y con el final difuminado a la derecha cuando no cabe. No tiene fondo propio, por lo que una celda contraída se lee como texto de la página y no como otro cuadro de entrada.
+
+El botón `Run`, la línea de progreso y las acciones de copiar/descargar salen del encabezado de la página y se acoplan debajo de la consulta que se está editando, entre ella y su resultado: ahí es donde se sitúa la ejecución que describen y donde resulta evidente cómo ejecutar esa celda. Forman parte del editor, por lo que aparecen y desaparecen con él a medida que la celda recibe y pierde el foco.
+
+En el modo notebook, los resultados se muestran de forma más compacta: con una fuente más pequeña, un relleno de celda reducido en proporción y una tabla que ocupa, como máximo, un cuarto de la altura de la ventana. Arrastre el borde inferior de un resultado para darle más o menos espacio, igual que se redimensiona el editor de consultas; el editor de Markdown de una celda de texto tiene el mismo control. La propia tabla es el contenedor de desplazamiento —vertical y horizontal—, de modo que sus finas barras de desplazamiento quedan en sus propios bordes, un resultado largo o ancho no desplaza el resto del notebook hacia abajo ni lo ensancha, y los encabezados de columna permanecen fijos en la parte superior de la tabla mientras se desplaza. Como el encabezado queda entonces en la parte más alta de la tabla, el tipo de cada columna aparece justo debajo de él, sobre las primeras filas, en lugar de encima, como ocurre en una tabla que se desplaza con la página.
+
+La ejecución funciona como siempre: `Ctrl/Cmd+Enter` (o el botón `Run`) ejecuta la consulta del editor, es decir, la de la celda activa. Solo se ejecuta una consulta a la vez por pestaña; iniciar una ejecución en otra celda de la misma pestaña, o pulsar `Stop`, detiene la anterior.
+
+Las vistas `Logs` y `Metrics` y los medidores de recursos de la línea de progreso pertenecen a la celda cuyo resultado describen: cada celda conserva su propia selección y sus propios medidores, y los toggles compartidos muestran lo que produjo la celda activa. Al cambiar de celda, se recuperan los logs, las métricas y los medidores propios de esa celda. Mientras una consulta se ejecuta, la línea se mantiene en la celda donde se está ejecutando: mover el editor a otra celda para escribir la siguiente consulta no borra el progreso en tiempo real ni redirige esos toggles al resultado de la otra celda.
+
+La codificación por colores de columnas, las columnas fijadas y la [estructura del resultado](/es/concepts/features/interfaces/web-ui-result-shaping) —la ordenación, los filtros y la página— también pertenecen a una celda: se eligen sobre un resultado, así que van ligadas a él. Ordenar o filtrar el resultado de una celda vuelve a ejecutarla, y antes toma el editor si estaba en otra. Si el `Run all` de una celda produjo varias tablas, todas comparten una misma configuración, y cada celda conserva la suya; el enlace compartido y el historial del navegador recogen la configuración de la celda activa, mientras que las demás se conservan en su propia celda.
+
+## Celdas de texto {#text-cells}
+
+Una celda de texto contiene Markdown. Mientras la edita, el área de texto muestra el código fuente con sus marcadores resaltados: los encabezados, el énfasis, los fragmentos de código, los enlaces, las viñetas de lista y las citas en bloque aparecen coloreados, pero no se renderizan, de modo que siempre edita el código fuente. El área de texto se amplía a medida que crece su contenido.
+
+Al salir del área de texto (haciendo clic en otro lugar o pulsando `Escape` o `Ctrl/Cmd+Enter`), finaliza la edición y el área se sustituye por el Markdown renderizado. Al hacer clic en el texto renderizado, se vuelve al modo de edición.
+
+Las celdas de texto usan la misma fuente monoespaciada que las consultas en ambos estados, de modo que el notebook se lee como un único documento y la tipografía no cambia bruscamente cuando una celda alterna entre su código fuente y el resultado renderizado.
+
+Se admiten encabezados, énfasis, código en línea y bloques de código delimitados, enlaces e imágenes, URL enlazadas automáticamente, listas ordenadas y no ordenadas, citas en bloque, líneas horizontales y tablas con barras verticales. El HTML sin procesar de una celda de texto se escapa en lugar de renderizarse, y las URL de enlaces e imágenes se limitan a `http`, `https`, `mailto` y destinos relativos: un enlace relativo normal como `[guide](guide.md)` o `![pic](images/pic.png)` funciona, mientras que un esquema como `javascript:` o `data:`, así como una URL relativa al protocolo `//host/...` (que apunta a otro origen, no a un destino relativo), se muestran como texto sin formato.
+
+## Persistencia {#persistence}
+
+El notebook completo de una pestaña (todas sus celdas, su contenido y las pequeñas instantáneas de resultados) se almacena en IndexedDB junto con el resto del workspace y se restaura al recargar la página, con el mismo comportamiento de mejor esfuerzo y los mismos límites de tamaño de resultados descritos en [interfaz web SQL](/es/concepts/features/interfaces/web-sql).
+
+La URL y el historial del navegador siguen a la celda ACTIVA: el fragmento `#` contiene la consulta de esa celda, y los botones de atrás y adelante permiten moverse entre las celdas (y pestañas) que haya visitado. Al compartir la URL de un notebook, se comparte la consulta de la celda activa, no el notebook completo.
+
+Al duplicar una pestaña, se duplica el notebook completo, sin los resultados.
+
+Al guardar las pestañas como Markdown (con el botón de guardar de la barra de pestañas), se escriben todas las celdas de un notebook en orden: cada celda de consulta, como un bloque de código delimitado seguido de sus parámetros y tablas de resultados, y cada celda de texto, como un bloque de código delimitado con la cadena de información `markdown`. Al cargar un documento de este tipo, se restauran todas las pestañas con todas sus celdas; los resultados no se restauran, por lo que las celdas de consulta cargadas quedan sin ejecutar.

@@ -31,6 +31,14 @@ with engine.connect() as conn:
     print(version)
 ```
 
+如果同时安装了 `clickhouse-sqlalchemy`，请使用这些显式 URL 格式。
+导入 `clickhouse_connect.cc_sqlalchemy` 时，该软件包对 `clickhouse://` 的
+注册会保持不变。如果其他已安装的提供商导致我们的别名无法
+注册，导入时会发出 `UserWarning`，建议改用显式的
+ClickHouse Connect URL。已有的运行时注册会保持不变，且不会
+发出警告。如果没有其他提供商占用 `clickhouse://`，此导入会将其
+注册为 ClickHouse Connect 的兼容性别名。
+
 ### ClickHouse 会话 ID {#sqlalchemy-session-ids}
 
 默认情况下，无论使用同步还是异步方言，每个池化连接都会生成一个独立的 ClickHouse 会话 ID。只要该连接的请求到达同一个 ClickHouse 服务器进程，通过 `SET` 修改的设置以及临时表就会在该连接上持续保留。命名会话状态和同一会话的重叠检查仅在进程内生效。在同一个服务器进程上，针对相同用户和会话 ID 的重叠请求会被立即拒绝并返回服务器错误码 373，而不会进入队列等待。如果您配置了固定的 `session_id`，请使用 `pool_size=1, max_overflow=0`，或在请求到达 ClickHouse 之前将访问串行化。在 ClickHouse Cloud 或其他采用负载均衡的部署中，具有相同会话 ID 的请求可能会被路由到不同的服务器，因此请勿将固定的 `session_id` 用作分布式状态或分布式互斥锁。
@@ -133,7 +141,9 @@ with engine.connect() as conn:
 
 ### 错误处理 {#sqlalchemy-error-handling}
 
-驱动通过 SQLAlchemy 连接引发的错误，使用的是从 `clickhouse_connect.dbapi` 导出的 DB-API 类。这些类与 `clickhouse_connect.driver.exceptions` 中的对应类是同一个类对象，因此 SQLAlchemy 会将其包装为相应的 `sqlalchemy.exc.DBAPIError` 子类。`StreamFailureError` 属于 `OperationalError`，会被包装为 `sqlalchemy.exc.OperationalError`。
+驱动程序通过 SQLAlchemy 连接引发的错误，使用的是从 `clickhouse_connect.dbapi` 导出的 DB-API 类。这些类与 `clickhouse_connect.driver.exceptions` 中的对应类是同一个类对象，因此 SQLAlchemy 会将其包装为相应的 `sqlalchemy.exc.DBAPIError` 子类。`StreamFailureError` 属于 `OperationalError`，会被包装为 `sqlalchemy.exc.OperationalError`。
+
+SQL 执行遵循驱动程序的 [HTTP 重试策略](/zh/integrations/language-clients/python/driver-api#http-retries)。Native 格式的批量插入则遵循[插入重试策略](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
 
 如果调用方的取消操作可能会中断显式调用的 `AsyncConnection.invalidate()`，请在自行管理的任务中执行失效操作，并等待该任务完成后再传播取消。这样 SQLAlchemy 便能完成连接记录的簿记工作：
 
@@ -432,6 +442,8 @@ ClickHouse 不支持递归 materialized CTE。若同时设置 `recursive=True` �
 
 ClickHouse Connect 提供 ClickHouse 数据类型、表引擎、字典结构、数据库 DDL 和表反射功能。
 
+`clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` 中的 `Nullable()` 和 `LowCardinality()` 接受 ClickHouse SQLAlchemy 类型的类或实例，并为类型检查器保留其具体类型。例如，`Nullable(String)` 返回一个 `String` 实例，可直接传给 `Column`。类型检查器会将 `[Nullable(String)]` 推断为 `list[String]`。如果该列表中还包含其他 ClickHouse 类型，请将其注解为 `list[ChSqlaType]`，并从 `clickhouse_connect.cc_sqlalchemy.datatypes.base` 导入 `ChSqlaType`。
+
 独立的 `Variant` 列通过 SQLAlchemy 内部类型进行反射，Alembic 自动生成会保留其规范的原始类型名称，不会反复产生类型变更。`Geometry` 和 `MultiPoint` 列则反射为公开的 SQLAlchemy 类型。
 
 ```python
@@ -460,7 +472,24 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-反射出的列会为 `DEFAULT` 表达式带上 `server_default`，并在存在时包含方言特有的属性，例如 `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized` 和 `clickhouse_alias`。
+反射出的列会为 `DEFAULT` 表达式带上 `server_default`。反射出的
+SQLAlchemy 对象在存在相应设置时，会使用方言特有的选项，例如 `clickhousedb_codec`、
+`clickhousedb_ttl`、`clickhousedb_materialized` 和 `clickhousedb_alias`。
+`Inspector.get_columns()` 返回的公开字典仍保留
+对应的 `clickhouse_*` 键。
+
+在新的表和列声明中，请使用 `clickhousedb_*`。驱动程序生成的
+元数据和 Alembic 修订版本均使用这些名称。ClickHouse Connect 也会读取
+显式指定的旧版 `clickhouse_*` 选项，但 SQLAlchemy 会依据拥有 `clickhouse` 前缀的
+方言对其进行校验。在混合安装环境中，ClickHouse Connect 的选项
+(如 `clickhouse_engine`、`clickhouse_ttl`、`clickhouse_settings`、
+`clickhouse_table_type` 和 `clickhouse_dictionary_*`) 可能会引发 `ArgumentError`。
+请将它们重命名为 `clickhousedb_*`。
+
+ClickHouse Connect 仅从 `clickhousedb` 读取默认值。请通过
+`Table.argument_for("clickhousedb", ...)` 或
+`Column.argument_for("clickhousedb", ...)` 注册默认值。Alembic 操作参数 (如
+`op.add_column(..., clickhouse_settings={...})`) 保持原有名称不变。
 
 `DEFAULT`、`MATERIALIZED`、`ALIAS` 和 `TTL` 子句中的 String 值使用 ClickHouse 字符串转义。相同的转义规则也适用于表、字典和列注释，包括 Alembic 生成的注释。
 
@@ -550,6 +579,10 @@ alembic init -t async alembic
 生成的 `alembic.ini` 使用 `script_location = %(here)s/alembic`。如果迁移目录名为 `alembic`，请保留该设置；否则，请将其改为传递给 `alembic init` 的目录。将 `alembic/env.py` 替换为仓库中提供的[异步 Alembic `env.py` 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)，然后在 `alembic.ini` 中设置 `sqlalchemy.url`。
 
 在 Alembic 的 `env.py` 中导入 `clickhouse_connect.cc_sqlalchemy.alembic`，以注册方言集成。自动生成支持常见的表结构变更，包括创建和删除表、添加/修改/删除列、默认值以及注释。表和列的重命名请使用手动操作。在应用每个生成的迁移之前，都应先进行审查。
+
+如果元数据中未指定 `AggregateFunction` 的状态版本，自动生成会沿用反射得到的现有版本。例如，`AggregateFunction(uniq, UInt32)` 会与反射得到的 `AggregateFunction(1, uniq, UInt32)` 匹配。该规则同样适用于嵌套类型。如果更改了聚合函数本身、其参数或参数类型，仍会产生类型变更。
+
+元数据中显式指定的版本必须与反射得到的版本一致。不带版本的旧版反射类型会与显式版本 `0` 匹配。服务器升级后，省略版本并不意味着要求升级现有的状态格式。如需更改状态格式，请显式声明版本。
 
 Alembic 的迁移函数仍然是同步的。异步环境会创建 `AsyncEngine`，打开 `AsyncConnection`，并将同步迁移函数传给 `await connection.run_sync(...)`。离线迁移则直接调用 `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})`，不会创建引擎。仓库中提供的[异步 Alembic `env.py` 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)同时涵盖这两种路径，并通过 Alembic 标准的 `sqlalchemy.url` 配置读取连接 URL。该示例保留了完整示例中的 ClickHouse Alembic 钩子和选项，包括 `include_object`、`make_include_name(...)`、`clickhouse_writer` 和 `version_table`。请勿使用 `engine.sync_engine` 来运行异步迁移或释放其资源。
 

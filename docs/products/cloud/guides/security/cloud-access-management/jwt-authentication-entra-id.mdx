@@ -1,0 +1,330 @@
+---
+sidebarTitle: 'JWT authentication with Entra ID'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'JWT authentication with Microsoft Entra ID'
+description: 'How to configure Microsoft Entra ID to issue JWTs for a ClickHouse Cloud service, with Entra ID app roles mapped to ClickHouse roles'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'app roles', 'authentication', 'identity provider']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider"/>
+
+This guide shows how to set up **Microsoft Entra ID** (formerly Azure Active Directory) so that users and applications connect to a ClickHouse Cloud service with Entra ID access tokens instead of database passwords. Entra ID app roles map to ClickHouse roles, so you control access by assigning users, groups, and applications to app roles in Entra ID.
+
+<Tip>
+This guide covers the Entra ID side and the values to enter in ClickHouse Cloud. For general information about JWT providers, see [JWT authentication setup](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). For token claims and how ephemeral users work, see the [JWT Authentication](/concepts/features/security/external-authenticators/jwt) reference.
+</Tip>
+
+## Before you begin {#before-you-begin}
+
+You'll need:
+
+- An organization on the **Enterprise** plan and a service running **ClickHouse version 26.4 or later**.
+- A ClickHouse Cloud role with the `control-plane:service:manage` permission on the service (for example, **Admin** or **Service admin**) to add the JWT provider.
+- Access to the **Microsoft Entra admin center** with at least the **Cloud Application Administrator** role.
+- Microsoft Entra ID P1 or P2 if you want to assign groups, rather than individual users, to app roles.
+- The [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) and [`clickhouse-client`](/concepts/features/interfaces/client) to test the setup.
+- A list of the ClickHouse roles you want to grant through Entra ID. Each one becomes an Entra ID app role with the same name. This guide uses two:
+
+  | App role value | ClickHouse privileges |
+  |---|---|
+  | `ch_analyst` | `SELECT` and `INSERT` on `analytics.*` |
+  | `ch_readonly` | `SELECT` on `*.*` |
+
+## How it works {#how-it-works}
+
+1. You register an application in Entra ID that represents your ClickHouse Cloud service, and define one app role for each ClickHouse role.
+2. You assign Entra ID users, groups, and applications to those app roles.
+3. A user signs in with Azure CLI or `clickhouse-client --login`, or an application uses the client credentials grant. Entra ID issues a v2.0 access token whose `aud` claim is the application (client) ID and whose `roles` claim lists the app roles assigned to the caller.
+4. ClickHouse Cloud verifies the token signature against the Entra ID public keys, checks the `iss` and `aud` claims, and creates an ephemeral user with the privileges of the ClickHouse roles named in the `roles` claim, capped by the privileges of the `default` user.
+
+## Register ClickHouse in Entra ID {#register-in-entra-id}
+
+<Steps>
+<Step title="Create the app registration" id="create-app-registration">
+
+In the Microsoft Entra admin center, open **App registrations** and select **New registration**:
+
+- **Name**: a display name, for example `clickhouse-cloud-production`.
+- **Supported account types**: single tenant. Depending on the portal version, this option is labeled **Single tenant only** or **Accounts in this organizational directory only**.
+- **Redirect URI**: leave empty. Users sign in with the device code flow, which doesn't use a redirect URI.
+
+<Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Register an application form in the Microsoft Entra admin center with a single-tenant account type and no redirect URI"/>
+
+Select **Register**. On the **Overview** page, copy these values:
+
+- **Application (client) ID**, referred to below as `<CLIENT_ID>`. It becomes the `aud` claim of the tokens.
+- **Directory (tenant) ID**, referred to below as `<TENANT_ID>`. It's part of the issuer and the JWKS URL.
+</Step>
+<Step title="Request v2.0 access tokens" id="request-v2-tokens">
+
+By default, Entra ID issues v1.0 access tokens, whose issuer is `https://sts.windows.net/<TENANT_ID>/`. Configure the application to receive v2.0 tokens instead, whose issuer is `https://login.microsoftonline.com/<TENANT_ID>/v2.0` and whose `aud` claim is always the client ID.
+
+In your app registration, open **Manifest**, set the access token version to `2`, and select **Save**. The property name depends on the manifest format the editor shows:
+
+- Microsoft Graph format: `requestedAccessTokenVersion` in the `api` section.
+- Azure AD Graph format: the top-level `accessTokenAcceptedVersion`, as in the screenshot below.
+
+<Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Application manifest editor with accessTokenAcceptedVersion set to 2"/>
+</Step>
+<Step title="Expose an API" id="expose-an-api">
+
+Open **Expose an API**:
+
+1. Next to **Application ID URI**, select **Add**, accept the default value `api://<CLIENT_ID>`, and save. Clients use this URI to request tokens for ClickHouse. It doesn't change the `aud` claim of v2.0 tokens, which stays the client ID.
+
+   <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Expose an API page with the Application ID URI panel showing the default api:// value"/>
+
+2. Select **Add a scope** and fill in the form. Users request this scope when they sign in. Applications that authenticate as themselves don't use it.
+
+   | Field | Value |
+   |---|---|
+   | **Scope name** | `access_as_application` |
+   | **Who can consent?** | **Admins only** |
+   | **Admin consent display name** | For example, `Access ClickHouse as the signed-in user` |
+   | **Admin consent description** | Any description |
+   | **State** | **Enabled** |
+
+   <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Add a scope panel with the access_as_application scope, consent limited to admins, and the state set to Enabled"/>
+</Step>
+<Step title="Authorize a client application for user sign-in" id="authorize-client-application">
+
+Users get tokens through a public client application. Pre-authorizing that application for the `access_as_application` scope means users aren't asked to consent. This guide uses Azure CLI, whose client ID is `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, both for `az` and for `clickhouse-client --login`.
+
+In **Expose an API**, under **Authorized client applications**, select **Add a client application**. Enter `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, select the `api://<CLIENT_ID>/access_as_application` scope, and select **Add application**.
+
+<Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Add a client application panel with the Azure CLI client ID and the access_as_application scope selected"/>
+
+<Note>
+To use your own client application instead of Azure CLI, register a separate application, set **Allow public client flows** to **Yes** under **Authentication**, and pre-authorize its client ID here. Then pass that client ID as `--oauth-client-id` when you [sign in with clickhouse-client](#sign-in-with-clickhouse-client). If your tenant doesn't allow user consent, an administrator also has to grant consent for the `openid`, `profile`, and `offline_access` permissions of that application.
+</Note>
+</Step>
+<Step title="Create app roles" id="create-app-roles">
+
+Each app role corresponds to one ClickHouse role. The app role's **Value** is what appears in the `roles` claim of the token, and it must match the name of the ClickHouse role exactly, including case.
+
+Open **App roles** and select **Create app role** for each ClickHouse role:
+
+| Field | Value |
+|---|---|
+| **Display name** | A readable name, for example `ClickHouse analyst` |
+| **Allowed member types** | **Both (Users/Groups + Applications)**. Choose **Users/Groups** if only people connect, or **Applications** if only applications connect. |
+| **Value** | The ClickHouse role name, for example `ch_analyst` |
+| **Description** | Any description |
+| **Do you want to enable this app role?** | Selected |
+
+The following example defines three app roles whose values are ClickHouse role names:
+
+<Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="App roles page listing ClickHouse Admin, ClickHouse Analyst DB, and ClickHouse Read Only with the values ch_admin, ch_analyst, and ch_readonly"/>
+</Step>
+<Step title="Require assignment" id="require-assignment">
+
+By default, any user in your tenant can get a token for the application. To limit tokens to the users, groups, and applications you assign to an app role, open **Enterprise applications**, select the application with the same name as your app registration, open **Properties**, set **Assignment required?** to **Yes**, and select **Save**.
+
+<Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Enterprise application properties with Assignment required set to Yes"/>
+</Step>
+<Step title="Assign users and groups to app roles" id="assign-users-and-groups">
+
+In the same enterprise application, open **Users and groups** and select **Add user/group**. Select a user or group, select an app role, and select **Assign**. Repeat for each user or group.
+
+<Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Users and groups page of the enterprise application showing a user assigned to the ClickHouse Read Only app role"/>
+
+A user who is assigned several app roles, directly or through groups, gets all of them in the `roles` claim.
+
+<Note>
+Assigning groups to app roles requires Microsoft Entra ID P1 or P2. Nested groups aren't supported: only direct members of an assigned group receive its app role.
+</Note>
+</Step>
+</Steps>
+
+## Create matching roles in ClickHouse {#create-clickhouse-roles}
+
+Connect to your service as the `default` user, for example from the SQL console, and create a role for each app role value:
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+Keep in mind:
+
+- Role names are case-sensitive and must match the app role values.
+- ClickHouse ignores names in the `roles` claim that don't match an existing role on the service.
+- The permission limit for JWT providers in ClickHouse Cloud is the `default` user. ClickHouse drops any privileges of a role that the `default` user doesn't have.
+
+## Add Entra ID as a JWT provider {#add-jwt-provider}
+
+Follow the steps in [Add a JWT provider](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider) and enter these values:
+
+| Field | Value |
+|---|---|
+| **Name** | Any name, for example `entra-id` |
+| **Issuer** | `https://login.microsoftonline.com/<TENANT_ID>/v2.0` |
+| **Audience** | `<CLIENT_ID>`, the application (client) ID. Don't use `api://<CLIENT_ID>`. |
+| **JWKS URL** | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys` |
+| **Roles claim** | `roles` |
+
+<Warning>
+Set **Roles claim** to `roles`. If you leave it empty, ClickHouse reads roles from the `clickhouse:roles` claim, which Entra ID tokens don't contain, and users authenticate without any privileges.
+</Warning>
+
+## Connect as a user {#connect-as-a-user}
+
+Set the values from your app registration and your service hostname as shell variables:
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### Pass an Azure CLI token {#pass-an-azure-cli-token}
+
+Sign in with Azure CLI, request an access token for the ClickHouse application, and pass it to `clickhouse-client` with `--jwt`:
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+The same token works with the HTTP interface:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Entra ID access tokens are valid for 60 to 90 minutes by default. Request a new token when it expires, or use `--login` for long sessions.
+
+### Sign in with clickhouse-client {#sign-in-with-clickhouse-client}
+
+`clickhouse-client` can run the OAuth 2.0 device code flow itself and renew the token during the session:
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+The client prints a URL and a code. Open the URL, enter the code, and sign in with your Entra ID account. Keep `offline_access` in the scope: it makes Entra ID return a refresh token, which the client uses to renew the access token. Without it, you have to sign in again when the access token expires.
+
+## Connect as an application {#connect-as-an-application}
+
+Applications such as ETL jobs and backend services authenticate as themselves with the OAuth 2.0 client credentials grant. The app roles you grant to an application must allow the **Applications** member type.
+
+1. In **App registrations**, register a separate application for the workload. Under **Certificates & secrets**, create a client secret or upload a certificate. The commands below refer to the workload's client ID and secret as `<WORKLOAD_CLIENT_ID>` and `<WORKLOAD_CLIENT_SECRET>`.
+2. In the workload's app registration, open **API permissions** and select **Add a permission**. Under **APIs my organization uses**, find the ClickHouse application, select **Application permissions**, select the app roles the workload needs, and select **Add permissions**.
+3. Select **Grant admin consent** to assign the app roles to the workload.
+
+Request a token from the Entra ID token endpoint and send it to ClickHouse:
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+In production code, use the [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) or the Azure Identity library for your language. They cache tokens and request new ones before the old ones expire.
+
+## Verify {#verify}
+
+After connecting, check the identity and privileges of the session:
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| Query | Expected result |
+|---|---|
+| `SELECT currentUser()` | A name of the form `JWT::<sub>::<hash>`, where `<sub>` is the `sub` claim of the token |
+| `SHOW GRANTS` | The privileges of the roles in the token's `roles` claim, for example `GRANT SELECT ON *.* TO ...` for `ch_readonly` |
+| `SHOW CURRENT ROLES` | No rows |
+
+ClickHouse doesn't grant the roles themselves to the ephemeral user. It collects the privileges of the roles named in the token, intersects them with the privileges of the `default` user, and grants the result to the user directly. That's why `SHOW CURRENT ROLES` returns no rows.
+
+For user tokens, Entra ID sets `sub` to an opaque identifier that is unique to the combination of user and application. It isn't the user's email address or object ID.
+
+## Best practices {#best-practices}
+
+### Assign groups, not individual users {#assign-groups}
+
+Assign one Entra ID group to each app role, then grant or revoke access by changing group membership. Nobody has to edit the application when people join or leave a team.
+
+### Use a separate app registration for each environment {#separate-app-registrations}
+
+Tokens carry the client ID of their app registration in the `aud` claim. With separate app registrations for production and staging, a token issued for one environment can't authenticate to the other.
+
+### Expect role changes to apply on the next token {#role-changes}
+
+Entra ID writes the `roles` claim when it issues a token. After you change the app role assignments of a user, the change takes effect when the user gets a new token. Tokens that are already issued keep their roles until they expire. With Azure CLI, run `az logout` and `az login` to get a new token immediately.
+
+## Troubleshooting {#troubleshooting}
+
+<AccordionGroup>
+
+<Accordion title="The token is rejected and its issuer starts with https://sts.windows.net" id="v1-token">
+
+Entra ID issued a v1.0 token. Set `requestedAccessTokenVersion` to `2` in the application manifest, as described in [Request v2.0 access tokens](#request-v2-tokens), and request a new token.
+</Accordion>
+
+<Accordion title="The token is rejected because of its audience" id="audience-mismatch">
+
+- The **Audience** of the provider in ClickHouse Cloud must be the client ID, not `api://<CLIENT_ID>`.
+- Check that you requested a token for the ClickHouse application. Without `--resource`, `az account get-access-token` returns a token for Azure Resource Manager instead.
+</Accordion>
+
+<Accordion title="Entra ID returns AADSTS65001 or asks for consent" id="consent-required">
+
+The client application isn't pre-authorized for the `access_as_application` scope. Add its client ID under **Expose an API → Authorized client applications**, as described in [Authorize a client application for user sign-in](#authorize-client-application).
+</Accordion>
+
+<Accordion title="Entra ID returns AADSTS50105 or AADSTS501051" id="not-assigned">
+
+The user or application isn't assigned to the ClickHouse application, and **Assignment required?** is set to **Yes**. Assign the user, one of their groups, or the application to an app role. If you assigned a group, make sure the user is a direct member of it.
+</Accordion>
+
+<Accordion title="Authentication succeeds but queries fail with ACCESS_DENIED" id="no-privileges">
+
+The ephemeral user doesn't have the privileges the query needs. Check that:
+
+- The **Roles claim** of the provider is set to `roles`.
+- The token contains a `roles` claim. It's missing when the caller is assigned to the application without an app role.
+- Each value in the `roles` claim matches an existing ClickHouse role on the service, including case.
+- The `default` user has the privileges you granted to the role.
+
+To see the claims in a token, decode its payload locally:
+
+```bash
+python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+```
+</Accordion>
+
+<Accordion title="The token is rejected after configuring a claims-mapping policy" id="app-signing-key">
+
+If you configured a claims-mapping policy or a custom signing key for the application, Entra ID signs its tokens with a key that isn't in the tenant's JWKS. Set the **JWKS URL** of the provider to `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`.
+</Accordion>
+
+</AccordionGroup>
+
+## Related {#related}
+
+- [JWT authentication setup](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup): add, update, and remove JWT providers in the Cloud console.
+- [JWT Authentication](/concepts/features/security/external-authenticators/jwt): token claims, ephemeral users, and client usage.

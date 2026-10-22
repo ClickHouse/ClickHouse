@@ -106,6 +106,20 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
+    /// Documentation-only, and intentionally so: like CAST, `dateTrunc` computes a result type that
+    /// is not a pure function of its argument types. `dateTrunc(unit, datetime[, timezone])` maps the
+    /// const `unit` string (year/quarter/month/week -> `Date`; day/hour/minute/second -> `DateTime`;
+    /// millisecond/microsecond/nanosecond -> `DateTime64` with scale 3/6/9) and then, when the source
+    /// is a negative-capable `Date32`/`DateTime64`, widens `Date` -> `Date32` and `DateTime` ->
+    /// `DateTime64` — but only under the `function_date_trunc_return_type_behavior` setting. That
+    /// widening depends on a query setting, which the declarative signature machinery (and its type
+    /// functions) cannot see, so the legacy `getReturnTypeImpl` below stays authoritative. The
+    /// signature string is purely descriptive; it is only rendered, never applied.
+    String getSignatureString() const override
+    {
+        return "(const unit String, DateOrDateTime, [const timezone String]) -> Date | Date32 | DateTime | DateTime64";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// The first argument is a constant string with the name of datepart.

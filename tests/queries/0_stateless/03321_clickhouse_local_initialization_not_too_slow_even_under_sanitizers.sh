@@ -10,5 +10,5 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # that are very difficult to debug. To make it easier, we have this, "canary" test. It will fail earlier and show the problem.
 
 # How many times in ten seconds the app can start, run the query, and finish (threshold is 5 to account for sanitizer overhead):
-start=$SECONDS; while true; do [[ $((SECONDS - start)) -gt 10 ]] && break; ${CLICKHOUSE_LOCAL} -q 1; done | wc -l |
+start=$SECONDS; while clickhouse_test_time_left; do [[ $((SECONDS - start)) -gt 10 ]] && break; ${CLICKHOUSE_LOCAL} -q 1; done | wc -l |
     ${CLICKHOUSE_LOCAL} --input-format TSV --query "SELECT c1 >= 5 ? 'Ok' : ('Fail: ' || c1) FROM table"

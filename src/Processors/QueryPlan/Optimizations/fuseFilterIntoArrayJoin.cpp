@@ -24,8 +24,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     auto * child_node = parent_node->children.front();
     auto * array_join = typeid_cast<ArrayJoinStep *>(child_node->step.get());
-    /// skip LEFT: optimizeReadInOrder keeps LIMIT through it, but a fused filter drops rows
-    if (!array_join || array_join->isLeft() || array_join->hasElementFilter())
+    if (!array_join || array_join->hasElementFilter())
         return 0;
 
     auto & expression = filter->getExpression();

@@ -118,7 +118,7 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_);
+    explicit QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -367,6 +367,9 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
+    const bool positional_arguments_already_resolved;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

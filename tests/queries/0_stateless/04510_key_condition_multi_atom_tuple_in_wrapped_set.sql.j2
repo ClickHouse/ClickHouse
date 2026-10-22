@@ -1,0 +1,42 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+-- A tuple membership predicate builds wrapped-set atoms per tuple component: a key column that
+-- is a deterministic function of one component is constrained by transforming that component of
+-- the set elements, in addition to the direct atom over the components themselves.
+CREATE TABLE test_tuple_in (s String, x UInt64) ENGINE = MergeTree ORDER BY (concat(s, '_x'), s, x)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tuple_in SELECT char(97 + intDiv(number, 4)), number FROM numbers(24);
+
+{{ check('test_tuple_in', "(s, x) IN (('b', 5))", condition = true) }}
+-- A multi-element set spanning two values of the leading column.
+{{ check('test_tuple_in', "(s, x) IN (('b', 5), ('d', 14))") }}
+-- NOT IN must not build the relaxed wrapped atoms and must not prune wrongly.
+{{ check('test_tuple_in', "(s, x) NOT IN (('b', 5))", condition = true) }}
+
+-- Both components have derived key columns: each contributes its own wrapped atom.
+CREATE TABLE test_tuple_in_two (s String, x UInt64) ENGINE = MergeTree ORDER BY (concat(s, '_x'), x * 2, s, x)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tuple_in_two SELECT char(97 + intDiv(number, 4)), number FROM numbers(24);
+
+{{ check('test_tuple_in_two', "(s, x) IN (('b', 5))", condition = true) }}
+
+-- The same through `has` with an array of tuples.
+CREATE TABLE test_tuple_has (s String, x UInt64) ENGINE = MergeTree ORDER BY (concat(s, '_x'), s, x)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_tuple_has SELECT char(97 + intDiv(number, 4)), number FROM numbers(24);
+
+{{ check('test_tuple_has', "has([('b', 5), ('d', 14)], (s, x))") }}

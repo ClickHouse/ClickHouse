@@ -39,10 +39,10 @@ SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = 256, join_use_nul
 -- assert both of them separately.
 SYSTEM FLUSH LOGS query_log, text_log;
 
--- The right table is the build side only while the join is not swapped, and 1000 left rows are
--- probed 2464 times only while the block is split; a swapped join reads 1000 build rows and 3
--- probes, and an unsplit one probes exactly 1000.
-SELECT build_rows = 2 AND probe_rows > 1000 AS split
+-- The right table is the build side only while the join is not swapped. Splitting the probe
+-- candidates at max_joined_block_size_rows must not resubmit the unprocessed left suffix: each
+-- of the 1000 left rows is accounted for exactly once.
+SELECT build_rows = 2 AND probe_rows = 1000 AS split
 FROM (
     SELECT ProfileEvents['JoinBuildTableRowCount'] AS build_rows,
            ProfileEvents['JoinProbeTableRowCount'] AS probe_rows
@@ -69,3 +69,85 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
       ORDER BY event_time_microseconds DESC
       LIMIT 1
   );
+
+-- Exercise scattered continuations through ConcurrentHashJoin too.
+SELECT count(), sum(coalesce(r.a, 0)), sum(coalesce(r.b, 0))
+FROM (SELECT number % 2 AS k FROM numbers(1000)) AS l
+LEFT JOIN (SELECT toNullable(number) AS a, number AS b FROM numbers(2)) AS r
+  ON (l.k = r.a) AND (l.k > r.b)
+SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 256, join_use_nulls = 1,
+         log_comment = '04612_nullable_parallel';
+
+SELECT count(), sum(coalesce(r.a, 0)), sum(coalesce(r.b, 0))
+FROM (SELECT number % 2 AS k FROM numbers(1000)) AS l
+LEFT JOIN (SELECT number AS a, number AS b FROM numbers(2)) AS r
+  ON (l.k = r.a) AND (l.k > r.b)
+SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 256, join_use_nulls = 0;
+
+SELECT count(), sum(coalesce(r.a, 0)), sum(coalesce(r.b, 0))
+FROM (SELECT number % 2 AS k FROM numbers(1000)) AS l
+LEFT JOIN (SELECT toNullable(number) AS a, number - 1 AS b FROM numbers(2)) AS r
+  ON (l.k = r.a) AND (l.k > r.b)
+SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 256, join_use_nulls = 1;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['JoinBuildTableRowCount'] = 2
+   AND ProfileEvents['JoinProbeTableRowCount'] = 1000 AS probe_once
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = '04612_nullable_parallel'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- Compare both cardinality and a checksum with the default block limit.
+-- The small limit forces continuation through the multi-disjunct candidate loop.
+DROP TABLE IF EXISTS continuation_baseline;
+CREATE TABLE continuation_baseline ENGINE = Memory AS
+SELECT count() AS rows, sum(cityHash64(l.n, r.n)) AS checksum
+FROM
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(1000)
+) AS l
+ALL INNER JOIN
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(64)
+) AS r
+ON l.k1 = r.k1 OR l.k2 = r.k2
+SETTINGS join_algorithm = 'hash', max_threads = 1, max_block_size = 1000;
+
+SELECT
+    (count(), sum(cityHash64(l.n, r.n)))
+    = (SELECT rows, checksum FROM continuation_baseline) AS same_result
+FROM
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(1000)
+) AS l
+ALL INNER JOIN
+(
+    SELECT number AS n, number % 4 AS k1, number % 8 AS k2
+    FROM numbers(64)
+) AS r
+ON l.k1 = r.k1 OR l.k2 = r.k2
+SETTINGS join_algorithm = 'hash',
+         max_threads = 2,
+         max_block_size = 1000,
+         max_joined_block_size_rows = 64,
+         query_plan_join_swap_table = 'false',
+         log_comment = '04612_multi_disjunct_hash';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['JoinProbeTableRowCount'] = 1000 AS probe_once
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = '04612_multi_disjunct_hash'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE continuation_baseline;

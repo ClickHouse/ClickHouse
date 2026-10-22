@@ -19,15 +19,16 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <array>
 #include <chrono>
 #include <memory>
+#include <mutex>
 
 
 namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+    extern const Metric WaitingQuery;
 }
 
 namespace ProfileEvents
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
+    extern const SettingsUInt64 min_bytes_to_spill;
     extern const SettingsMilliseconds workload_admission_timeout_ms;
 }
 
@@ -174,7 +176,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link, client_info.current_query_id, settings[Setting::reserve_memory], settings[Setting::min_bytes_to_spill], admission_deadline);
             }
         }
     }
@@ -551,6 +554,7 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
+    , is_ddl_or_on_cluster_internal(context_->isDDLOrOnClusterInternal())
 {
     if (!is_internal)
         num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
@@ -575,7 +579,11 @@ void QueryStatus::releaseQuerySlot()
 
 void QueryStatus::releaseMemoryReservation()
 {
-    memory_reservation.reset();
+    MemoryReservationPtr delete_memory_reservation;
+    {
+        std::lock_guard lock(memory_reservation_mutex);
+        delete_memory_reservation = std::move(memory_reservation);
+    }
 }
 
 QueryStatus::~QueryStatus()
@@ -936,7 +944,7 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 }
 
 
-void ProcessList::killAllQueries()
+void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
 {
     std::vector<QueryStatusPtr> cancelled_processes;
 
@@ -952,6 +960,11 @@ void ProcessList::killAllQueries()
         cancelled_processes.reserve(processes.size());
         for (auto & process : processes)
         {
+            if (except_ddl_backups_and_restores
+                && (process->query_kind == IAST::QueryKind::Backup || process->query_kind == IAST::QueryKind::Restore)
+                && process->is_ddl_or_on_cluster_internal)
+                continue;
+
             cancelled_processes.push_back(process);
             process->is_cancelling = true;
         }
@@ -1013,6 +1026,11 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         }
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+    }
+    {
+        std::lock_guard lock(memory_reservation_mutex);
+        if (auto * reservation = memory_reservation.get())
+            res.spillable_memory_bytes = reservation->getTotalReclaimable();
     }
 
     if (get_settings)
@@ -1157,6 +1175,85 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+void ProcessList::increaseWaitingQueryAmount()
+{
+    const UInt64 limit = max_waiting_queries_amount.load();
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (limit && value >= limit)
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                            "Too many simultaneous waiting queries. Maximum: {}, waiting: {}",
+                            limit, value);
+        if (waiting_queries_amount.compare_exchange_weak(value, value + 1))
+            break;
+    }
+
+    /// WARNING: do not throw below this point, or the matching `decreaseWaitingQueryAmount` is never called.
+
+    CurrentMetrics::add(CurrentMetrics::WaitingQuery);
+}
+
+void ProcessList::decreaseWaitingQueryAmount()
+{
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (value == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
+        if (waiting_queries_amount.compare_exchange_weak(value, value - 1))
+            break;
+    }
+
+    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
+}
+
+void ProcessList::incrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        increaseWaitingQueryAmount();
+    ++status->waiting_threads;
+}
+
+void ProcessList::decrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
+
+    if (--status->waiting_threads == 0)
+        decreaseWaitingQueryAmount();
+}
+
+/// Process list and the query to account for, or nullptr when the waiter is not a counted query:
+/// server or `clickhouse-local` startup, an AsyncLoader worker, or an internal query. A query's
+/// process list element does not change, so one wait's increment and decrement always agree.
+static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return nullptr;
+    status = query_context->getProcessListElementSafe();
+    if (!status || status->isInternal())
+        return nullptr;
+    return &query_context->getGlobalContext()->getProcessList();
+}
+
+void onLoadJobWaitersIncrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->incrementWaiters(status);
+}
+
+void onLoadJobWaitersDecrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->decrementWaiters(status);
 }
 
 }

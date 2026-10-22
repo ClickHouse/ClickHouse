@@ -8,16 +8,14 @@ doc_type: 'reference'
 
 تطبيق عميل للتفاعل مع clickhouse-keeper باستخدام بروتوكوله الأصلي.
 
-<div id="clickhouse-keeper-client">
-  ## الخيارات
-</div>
+## الخيارات {#clickhouse-keeper-client}
 
 * `-q QUERY`, `--query=QUERY` — الاستعلام المراد تنفيذه. إذا لم يتم تمرير هذا المعامل، فسيبدأ `clickhouse-keeper-client` في الوضع التفاعلي.
 * `-h HOST`, `--host=HOST` — مضيف الخادم. القيمة الافتراضية: `localhost`.
 * `-p N`, `--port=N` — منفذ الخادم. القيمة الافتراضية: 9181
-* `-c FILE_PATH`, `--config-file=FILE_PATH` — تعيين مسار ملف الإعدادات للحصول على سلسلة الاتصال. القيمة الافتراضية: `config.xml`.
-* `--password=PASSWORD` — كلمة المرور للمصادقة. يمكن أيضًا تعيينها عبر متغير البيئة `CLICKHOUSE_KEEPER_PASSWORD` أو في ملف إعدادات XML ضمن `<zookeeper><password>`.
-* `--identity=IDENTITY` — الهوية لمخطط المصادقة `digest`. يمكن أيضًا تعيينها عبر متغير البيئة `CLICKHOUSE_KEEPER_IDENTITY` أو في ملف إعدادات XML ضمن `<zookeeper><identity>`.
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — تعيين مسار ملف الإعدادات للحصول على سلسلة الاتصال. افتراضيًا، يُستخدم أول ملف موجود في الدليل الحالي من بين `config.xml` و`config.yaml` و`config.yml`.
+* `--password=PASSWORD` — كلمة المرور للمصادقة. يمكن أيضًا تعيينها عبر متغير البيئة `CLICKHOUSE_KEEPER_PASSWORD` أو في ملف التهيئة ضمن `<zookeeper><password>` (`zookeeper.password` في YAML).
+* `--identity=IDENTITY` — الهوية لمخطط المصادقة `digest`. يمكن أيضًا تعيينها عبر متغير البيئة `CLICKHOUSE_KEEPER_IDENTITY` أو في ملف التهيئة ضمن `<zookeeper><identity>` (`zookeeper.identity` في YAML).
 * `--connection-timeout=TIMEOUT` — تعيين مهلة الاتصال بالثواني. القيمة الافتراضية: 10s.
 * `--session-timeout=TIMEOUT` — تعيين مهلة الجلسة بالثواني. القيمة الافتراضية: 10s.
 * `--operation-timeout=TIMEOUT` — تعيين مهلة العملية بالثواني. القيمة الافتراضية: 10s.
@@ -26,26 +24,24 @@ doc_type: 'reference'
 * `--no-confirmation` — عند تعيينه، لن يطلب تأكيدًا لبعض الأوامر. القيمة الافتراضية هي `false` في الوضع التفاعلي و`true` للاستعلام
 * `--help` — يعرض رسالة المساعدة.
 
-<div id="clickhouse-keeper-client-env">
-  ## متغيرات البيئة
-</div>
+## متغيرات البيئة {#clickhouse-keeper-client-env}
 
 * `CLICKHOUSE_KEEPER_PASSWORD` — يُستخدم ككلمة المرور الافتراضية إذا لم يتم تمرير `--password` في سطر الأوامر.
 * `CLICKHOUSE_KEEPER_IDENTITY` — يُستخدم كهوية افتراضية إذا لم يتم تمرير `--identity` في سطر الأوامر.
 
-<div id="clickhouse-keeper-client-auth">
-  ## المصادقة
-</div>
+## المصادقة {#clickhouse-keeper-client-auth}
 
-عند الاتصال بخادم Keeper يتطلب المصادقة، تُحدَّد كلمة المرور وفق ترتيب الأولوية التالي (تُعتمد أول قيمة مطابقة):
+عند الاتصال بخادم Keeper يتطلب المصادقة، تُحدَّد كلمة المرور وفق ترتيب الأولوية التالي (تُعتمد أول قيمة مطابقة):
 
 1. وسيطة سطر الأوامر `--password`
 2. متغير البيئة `CLICKHOUSE_KEEPER_PASSWORD`
-3. `<zookeeper><password>` في ملف إعدادات XML المحدد بواسطة `--config-file`
+3. `<zookeeper><password>` في ملف التهيئة المُحمَّل
+
+ملف التهيئة في الخطوة 3 هو الملف المحدد بواسطة `--config-file`، أو، عند إغفال هذا الخيار، أول ملف يُعثر عليه في الدليل الحالي من بين `config.xml` و`config.yaml` و`config.yml`. تُقرأ صيغتا XML وYAML كلتاهما، لذا فإن `zookeeper.password` في ملف `config.yaml` يعمل تمامًا مثل `<zookeeper><password>` في ملف `config.xml`.
 
 وينطبق ترتيب الأولوية نفسه على `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
 
-مثال على ملف إعدادات XML يتضمن إعدادات المصادقة:
+مثال على ملف تهيئة يتضمن إعدادات المصادقة:
 
 ```xml
 <clickhouse>
@@ -59,9 +55,7 @@ doc_type: 'reference'
 </clickhouse>
 ```
 
-<div id="clickhouse-keeper-client-example">
-  ## مثال
-</div>
+## مثال {#clickhouse-keeper-client-example}
 
 ```bash
 ./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
@@ -83,9 +77,7 @@ keeper foo bar
 2
 ```
 
-<div id="clickhouse-keeper-client-commands">
-  ## الأوامر
-</div>
+## الأوامر {#clickhouse-keeper-client-commands}
 
 * `ls '[path]' [watch_id]` -- يسرد العقد للمسار المحدد (الافتراضي: cwd). ويمكنه اختياريًا تعيين watch على العقد الفرعية معرّف بواسطة `watch_id`
 * `cd '[path]'` -- يغيّر مسار العمل (الافتراضي `.`)

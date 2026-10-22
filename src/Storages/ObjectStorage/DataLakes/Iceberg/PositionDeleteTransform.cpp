@@ -78,7 +78,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
 
         auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
+        auto object_metadata = getObjectMetadataForRead(*object_storage, RelativePathWithMetadata(object_path), /*with_tags=*/ false);
         auto object_info = RelativePathWithMetadata{object_path, object_metadata};
 
 

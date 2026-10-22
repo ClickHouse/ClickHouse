@@ -452,7 +452,7 @@ static HashJoin::Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & ke
         return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
+    if (all_fixed && keys_bytes <= HashJoin::max_packed_keys_bytes)
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
@@ -759,7 +759,12 @@ bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
-    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+    /// `auto` may switch HashJoin -> MergeJoin (which keeps all left columns), so pruning would
+    /// desync block structure; keep `grace_hash` conservative too. A spill threshold alone only
+    /// switches HashJoin -> GraceHashJoin (same result path), so it must not disable pruning.
+    const bool keep_left_columns = table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return !table_join.hasUsing() && !keep_left_columns && table_join.strictness() != JoinStrictness::RightAny;
 }
 
 bool HashJoin::isUsedByAnotherAlgorithm() const
@@ -963,6 +968,18 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     if (!memory_usage_before_adding_blocks)
         memory_usage_before_adding_blocks = JoinCommon::getCurrentQueryMemoryUsage();
 
+    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
+    ColumnPtrMap all_key_columns(right_key_names.size());
+    for (const auto & column_name : right_key_names)
+    {
+        const auto & column = block.getByName(column_name).column;
+        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
+        if (!isLowCardinalityType(data->type))
+            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = prepared_key_column;
+    }
+
     if (strictness == JoinStrictness::Asof)
     {
         chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
@@ -983,7 +1000,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             }
             else
             {
-                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
+                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).getNullMapData();
 
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();
@@ -1000,17 +1017,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     }
 
     const size_t rows = selector.size();
-    const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
-    ColumnPtrMap all_key_columns(right_key_names.size());
-    for (const auto & column_name : right_key_names)
-    {
-        const auto & column = block.getByName(column_name).column;
-        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
-        if (!isLowCardinalityType(data->type))
-            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
-    }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     if (shrink_blocks)
@@ -1380,6 +1386,45 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
+/// Keeps selector-backed probe continuations inside HashJoin so an unprocessed left suffix
+/// is not materialized and resubmitted while preserving the joined-block size limit.
+class HashJoin::ContinuationResult final : public IJoinResult
+{
+public:
+    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+        : join(join_)
+        , current_result(std::move(current_result_))
+    {
+    }
+
+    JoinResultBlock next() override
+    {
+        auto result = current_result->next();
+
+        if (result.is_last)
+        {
+            addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
+
+            if (result.next_block)
+                current_result = join.runJoinDispatch(std::move(*result.next_block));
+            else
+                current_result.reset();
+        }
+
+        return {std::move(result.block), nullptr, !current_result};
+    }
+
+    std::optional<size_t> getMatchedRightRows() const override
+    {
+        return matched_right_rows;
+    }
+
+private:
+    HashJoin & join;
+    JoinResultPtr current_result;
+    std::optional<size_t> matched_right_rows = 0;
+};
+
 JoinResultPtr HashJoin::joinBlock(Block block)
 {
     if (!data)
@@ -1394,7 +1439,8 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    return runJoinDispatch(ScatteredBlock(std::move(block)));
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
@@ -1415,7 +1461,8 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             cond_column_name.second);
     }
 
-    return runJoinDispatch(std::move(block));
+    auto result = runJoinDispatch(std::move(block));
+    return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)

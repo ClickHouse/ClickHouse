@@ -1,0 +1,370 @@
+---
+slug: /cloud/managed-postgres/guides/nodejs
+sidebarTitle: 'Node.js'
+title: 'استخدام Node.js مع ClickHouse Managed Postgres'
+description: 'اربط تطبيق Node.js بـ ClickHouse Managed Postgres باستخدام node-postgres (pg)، مع الاستفادة من مجمّع الاتصالات، واتصال TLS موثَّق، والاستعلامات ذات المعلمات، والمعاملات'
+keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'javascript', 'connection pool', 'tls', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
+
+تُعدّ [node-postgres](https://node-postgres.com/) (الحزمة `pg`) أكثر مشغّلات Postgres استخدامًا في Node.js. في هذا الدليل، ستتصل بخدمة ClickHouse Managed Postgres عبر `pg.Pool` مع تحقق كامل من شهادة TLS، ثم تُنشئ جدولين، وتُحوّل الأموال بين الحسابات ضمن معاملة واحدة، وأخيرًا تعرض البيانات عبر خادم `node:http` صغير.
+
+## المتطلبات الأساسية {#prerequisites}
+
+* [Node.js](https://nodejs.org/) الإصدار 20.6 أو أحدث (للاستفادة من العلامة المدمجة `--env-file`). اختُبر هذا الدليل باستخدام Node.js 24.21.0 و`pg` 8.23.1.
+* حساب على ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/)، لإنشاء قاعدة البيانات
+
+## إنشاء خدمة ClickHouse Managed Postgres {#create-service}
+
+في وحدة تحكم ClickHouse Cloud، انقر على **New service** ثم اختر **Postgres**. سيصبح المثيل جاهزًا في غضون دقائق معدودة. للاطلاع على شرح تفصيلي للخطوات، راجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart).
+
+## الحصول على بيانات الاتصال {#connection-details}
+
+انقر على **Connect** في الشريط الجانبي الأيسر لخدمتك. بعد تحديد **Directly**، انسخ URL الاتصال من علامة التبويب **url**. اترك **Use SSL** معطّلاً، إذ يمرّر التطبيق شهادة CA ضمن الشيفرة بدلاً من تضمينها في URL (راجع [تهيئة مجمّع الاتصالات](#configure-pool)).
+
+يتصل هذا الدليل **مباشرةً** بـ Postgres على المنفذ `5432`. فخادم Node.js الذي يعمل لفترات طويلة يحتفظ أصلاً بمجمّع اتصالات خاص به عبر `pg.Pool`، لذا لا حاجة إلى أداة تجميع اتصالات ثانية أمام Postgres. أما إذا كنت تشغّل عمليات كثيرة أو دوالاً بلا خادم، فاستخدم PgBouncer المضمّن بدلاً من ذلك؛ راجع [استخدام PgBouncer](#pgbouncer).
+
+بعد ذلك، نزّل شهادة CA الخاصة بمثيلك. فعّل **Use SSL** وانقر على **Download CA certificate**، أو انتقل إلى **Settings → CA Certificate → Download CA certificate**. هذه الشهادة خاصة بمثيلك وحده.
+
+## إعداد المشروع {#project-setup}
+
+أنشئ مشروعًا وثبّت `pg`:
+
+```bash
+mkdir node-pg-app && cd node-pg-app
+npm init -y
+npm install pg
+```
+
+<Tip>
+  **هل تُضيف ذلك إلى تطبيق قائم؟**
+
+  تخطَّ الأمرين `mkdir` و`npm init -y`. شغّل `npm install pg` داخل مشروعك، ثم انتقل إلى [إنشاء قاعدة البيانات](#create-database).
+</Tip>
+
+الأمثلة الواردة في هذا الدليل مكتوبة كوحدات ES بالامتداد `.mjs`، ولذلك تعمل سواء كان ملف `package.json` في مشروعك يستخدم CommonJS أو وحدات ES.
+
+## إنشاء قاعدة البيانات {#create-database}
+
+انقل ملف `<service-name>-ca-certificate.pem` الذي نزّلته إلى دليل المشروع، وأعِد تسميته إلى `ca-certificate.pem`، ثم أنشئ قاعدة بيانات للتطبيق:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c 'CREATE DATABASE guide_nodejs;'
+```
+
+أنشئ ملف `.env` يتضمن URL الاتصال الذي نسخته بعد تغيير اسم قاعدة البيانات فيه إلى `guide_nodejs`، إضافةً إلى مسار الشهادة:
+
+```bash .env
+DATABASE_URL=postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_nodejs
+DATABASE_CA_CERT=./ca-certificate.pem
+```
+
+إذا كانت كلمة المرور تحتوي على محارف مثل `@` أو `/` أو `#`، فاستخدم ترميز النسبة المئوية (percent-encoding) لترميزها في عنوان URL.
+
+## تهيئة مجمّع الاتصالات {#configure-pool}
+
+أنشئ الملف `db.mjs`. يُصدِّر هذا الملف مجمّع اتصالات واحدًا تتشاركه بقية أجزاء التطبيق:
+
+```javascript db.mjs
+import fs from 'node:fs';
+import pg from 'pg';
+
+export const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    // Trust only your instance's CA; the hostname is verified too (verify-full).
+    ca: fs.readFileSync(process.env.DATABASE_CA_CERT, 'utf8'),
+  },
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
+
+// An idle client can be disconnected by the server (for example, during a failover).
+// Without this handler, the error would crash the process.
+pool.on('error', (err) => {
+  console.error('Idle client error:', err.message);
+});
+```
+
+يمنحك تمرير `ssl: { ca }` ما يعادل `sslmode=verify-full`: إذ تتحقق `pg` من أن شهادة الخادم موقَّعة من CA الخاص بالمثيل لديك، ومن أنها تطابق اسم المضيف. القيمة الافتراضية لـ `rejectUnauthorized` هي `true`؛ فلا تضبطها على `false`.
+
+<Warning>
+  **لا تجمع بين `ssl` ومعلمات SSL في عنوان URL**
+
+  إذا احتوى `DATABASE_URL` على `sslmode` أو `sslrootcert`، فإن `pg` تبني إعدادات TLS انطلاقًا من عنوان URL وتتجاهل الكائن `ssl`. فعلى سبيل المثال، إذا انتهى عنوان URL بـ `?sslmode=verify-full` دون `sslrootcert`، فإنه يحل محل `ca` الخاص بك، ويفشل الاتصال بالخطأ `unable to verify the first certificate`. لذا لا تضع معلمات SSL في `DATABASE_URL` عند تمرير `ssl` في الشيفرة.
+
+  لاحظ أيضًا ما يلي:
+
+  * إذا لم يوجد الكائن `ssl` ولا `sslmode` في عنوان URL، فإن `pg` لا تستخدم TLS ولا تتحقق من الخادم.
+  * تقرأ `pg` المتغيرات `PGHOST` و`PGUSER` و`PGPASSWORD` وما شابهها، لكنها لا تقرأ `PGSSLROOTCERT`. ولذلك فإن المتغيرات الموجودة في علامة التبويب **env** ضمن نافذة Connect لا تكفي وحدها للتحقق من الخادم.
+  * إذا كنت تفضّل إبقاء كل شيء في عنوان URL، فإن عنوان URL الذي تعرضه نافذة Connect عند تفعيل **Use SSL** يعمل أيضًا مع `pg`، مثل `...?sslmode=verify-full&sslrootcert=ca-certificate.pem`. وفي هذه الحالة، احذف الخيار `ssl`، ولاحظ أن مسار `sslrootcert` يُحدَّد نسبةً إلى الدليل الذي تشغّل منه Node.js.
+</Warning>
+
+## إنشاء المخطط {#create-schema}
+
+أنشئ الملف `setup.mjs`. يتولى هذا الملف إنشاء الجداول، وإدراج حسابين باستخدام استعلامات ذات معلمات، ثم قراءتهما للتحقق منهما:
+
+```javascript setup.mjs
+import { pool } from './db.mjs';
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    owner   text NOT NULL UNIQUE,
+    balance numeric(12, 2) NOT NULL CHECK (balance >= 0)
+  );
+  CREATE TABLE IF NOT EXISTS transfers (
+    id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    from_id    integer NOT NULL REFERENCES accounts (id),
+    to_id      integer NOT NULL REFERENCES accounts (id),
+    amount     numeric(12, 2) NOT NULL CHECK (amount > 0),
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+`);
+
+const accounts = [
+  ['alice', 100],
+  ['bob', 50],
+];
+for (const [owner, balance] of accounts) {
+  await pool.query(
+    'INSERT INTO accounts (owner, balance) VALUES ($1, $2) ON CONFLICT (owner) DO NOTHING',
+    [owner, balance],
+  );
+}
+
+const { rows } = await pool.query(
+  'SELECT id, owner, balance FROM accounts WHERE owner = ANY($1) ORDER BY id',
+  [['alice', 'bob']],
+);
+console.table(rows);
+
+await pool.end();
+```
+
+مرِّر القيم دائمًا كمعلمات (`$1`، `$2`، ...) بدلًا من دمجها في string الخاص باستعلام SQL. إذ يرسلها `pg` منفصلةً عن نص الاستعلام، ما يحول دون هجمات حقن SQL. كما تُحوَّل مصفوفات JavaScript إلى مصفوفات Postgres، كما هو الحال في الاستعلام `ANY($1)`.
+
+شغِّله:
+
+```bash
+node --env-file=.env setup.mjs
+```
+
+```text
+┌─────────┬────┬─────────┬──────────┐
+│ (index) │ id │ owner   │ balance  │
+├─────────┼────┼─────────┼──────────┤
+│ 0       │ 1  │ 'alice' │ '100.00' │
+│ 1       │ 2  │ 'bob'   │ '50.00'  │
+└─────────┴────┴─────────┴──────────┘
+```
+
+تُعيد مكتبة `pg` قيم `numeric` (و`bigint`) على هيئة سلاسل نصية (strings) تجنّبًا لفقدان الدقة. لذا، حوّلها صراحةً إذا كنت تحتاج إليها كأرقام.
+
+## تنفيذ الاستعلامات ضمن معاملة {#transaction}
+
+يجب أن تُنفَّذ المعاملة على اتصال واحد، لذا احجز عميلًا من مجمّع الاتصالات باستخدام `pool.connect`، واحرص دائمًا على تحريره بعد الانتهاء. أنشئ الملف `transfer.mjs`:
+
+```javascript transfer.mjs
+import { pool } from './db.mjs';
+
+// Moves money between two accounts atomically: either every statement commits, or none do.
+export async function transfer(fromOwner, toOwner, amount) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const debit = await client.query(
+      'UPDATE accounts SET balance = balance - $1 WHERE owner = $2 AND balance >= $1 RETURNING id',
+      [amount, fromOwner],
+    );
+    if (debit.rowCount === 0) {
+      throw new Error(`Insufficient funds or unknown account: ${fromOwner}`);
+    }
+    const credit = await client.query(
+      'UPDATE accounts SET balance = balance + $1 WHERE owner = $2 RETURNING id',
+      [amount, toOwner],
+    );
+    if (credit.rowCount === 0) {
+      throw new Error(`Unknown account: ${toOwner}`);
+    }
+    const { rows } = await client.query(
+      'INSERT INTO transfers (from_id, to_id, amount) VALUES ($1, $2, $3) RETURNING *',
+      [debit.rows[0].id, credit.rows[0].id, amount],
+    );
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+```
+
+لا تستخدم `pool.query` لتنفيذ العبارات داخل المعاملة، إذ قد يُنفَّذ كل استدعاء لـ `pool.query` على اتصال مختلف.
+
+## تقديم البيانات عبر HTTP {#http-server}
+
+أنشئ الملف `server.mjs`. يقدّم هذا الملف الحسابات وعمليات التحويل بتنسيق JSON على المنفذ `3107`، ويستقبل عمليات تحويل جديدة، ويتوقف بشكل سليم عند تلقّي الإشارة `SIGINT` (<kbd>Ctrl</kbd>+<kbd>C</kbd>) أو `SIGTERM`:
+
+```javascript server.mjs
+import http from 'node:http';
+import { pool } from './db.mjs';
+import { transfer } from './transfer.mjs';
+
+const port = Number(process.env.PORT ?? 3107);
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+async function readJson(req) {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  return JSON.parse(body);
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    if (req.method === 'GET' && url.pathname === '/accounts') {
+      const { rows } = await pool.query('SELECT id, owner, balance FROM accounts ORDER BY id');
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'GET' && url.pathname === '/transfers') {
+      const limit = Number(url.searchParams.get('limit') ?? 10);
+      const { rows } = await pool.query(
+        `SELECT t.id, f.owner AS "from", o.owner AS "to", t.amount, t.created_at
+           FROM transfers t
+           JOIN accounts f ON f.id = t.from_id
+           JOIN accounts o ON o.id = t.to_id
+          ORDER BY t.id DESC
+          LIMIT $1`,
+        [limit],
+      );
+      return sendJson(res, 200, rows);
+    }
+    if (req.method === 'POST' && url.pathname === '/transfers') {
+      const { from, to, amount } = await readJson(req);
+      return sendJson(res, 201, await transfer(from, to, amount));
+    }
+    sendJson(res, 404, { error: 'Not found' });
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+  }
+});
+
+server.listen(port, () => console.log(`Listening on http://localhost:${port}`));
+
+// Stop accepting requests, let in-flight ones finish, then close all pool connections.
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(async () => {
+    await pool.end();
+    console.log('Pool closed');
+  });
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+```
+
+استدعِ `pool.end` مرة واحدة فقط عند إيقاف العملية، لا بعد كل طلب؛ إذ ينتظر حتى تُعاد جميع العملاء المستعارة إلى مجمّع الاتصالات، ثم يغلق كل الاتصالات.
+
+## التحقق {#verify}
+
+شغّل الخادم:
+
+```bash
+node --env-file=.env server.mjs
+```
+
+في طرفية ثانية، نفّذ عملية تحويل، ثم جرّب تحويلًا يتجاوز رصيد الحساب، وآخر إلى حساب غير موجود:
+
+```bash
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "bob", "amount": 25}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "bob", "to": "alice", "amount": 1000}'
+curl -X POST localhost:3107/transfers -H 'content-type: application/json' -d '{"from": "alice", "to": "carol", "amount": 10}'
+```
+
+```text
+{
+  "id": 1,
+  "from_id": 1,
+  "to_id": 2,
+  "amount": "25.00",
+  "created_at": "2026-09-30T16:45:56.751Z"
+}
+{
+  "error": "Insufficient funds or unknown account: bob"
+}
+{
+  "error": "Unknown account: carol"
+}
+```
+
+كانت عملية النقل الثالثة قد خصمت المبلغ من حساب `alice` بالفعل عند فشلها، غير أن `ROLLBACK` ألغى هذا الخصم. افتح [http://localhost:3107/accounts](http://localhost:3107/accounts) في متصفحك لعرض الأرصدة. ستبدو الاستجابة على النحو التالي:
+
+```json
+[
+  {
+    "id": 1,
+    "owner": "alice",
+    "balance": "75.00"
+  },
+  {
+    "id": 2,
+    "owner": "bob",
+    "balance": "75.00"
+  }
+]
+```
+
+للتأكد من أن الاتصال يستخدم TLS مع التحقق من الشهادة، نفّذ استعلامًا على `pg_stat_ssl`:
+
+```bash
+node --env-file=.env --input-type=module -e "
+import { pool } from './db.mjs';
+const { rows } = await pool.query('SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
+console.log(rows[0]);
+await pool.end();
+"
+```
+
+```text
+{ ssl: true, version: 'TLSv1.3' }
+```
+
+إذا وجّهت `DATABASE_CA_CERT` إلى أي شهادة أخرى، يفشل الاتصال ويظهر الخطأ `unable to verify the first certificate`، ما يؤكد أن شهادة الخادم يجري التحقق منها فعلاً.
+
+أخيراً، أوقف الخادم بالضغط على <kbd>Ctrl</kbd>+<kbd>C</kbd>. ستظهر الرسالة `SIGINT received, shutting down` تليها `Pool closed`.
+
+يمكنك أيضاً استعراض البيانات في وحدة التحكم. افتح **SQL console**، ثم وسّع قاعدة البيانات `guide_nodejs`، وافتح الجدول `accounts`:
+
+| id | owner | balance |
+| -- | ----- | ------- |
+| 1  | alice | 75.00   |
+| 2  | bob   | 75.00   |
+
+## استخدام PgBouncer {#pgbouncer}
+
+للاتصال عبر [PgBouncer](/ar/products/managed-postgres/connection#pgbouncer) المضمَّن، اختر **via PgBouncer** في نافذة Connect واستخدم المنفذ `6432` في `DATABASE_URL`. لا حاجة إلى أي تغييرات في الشيفرة، فشهادة CA نفسها تعمل كما هي.
+
+يعمل PgBouncer في وضع تجميع المعاملات (transaction pooling)، ما يعني أن كل معاملة قد تُنفَّذ على اتصال Postgres مختلف. عند استخدام `pg`:
+
+* تعمل الاستعلامات ذات المعلمات، والعبارات المُعدّة المسمّاة (`pool.query({ name, text, values })`)، والمعاملات التي تستخدم `pool.connect` كما هو موضّح في هذا الدليل.
+* لا تنتقل عبارتا `PREPARE` و`EXECUTE` على مستوى SQL، ولا إعدادات الجلسة المضبوطة باستخدام `SET`، من معاملة إلى أخرى. استخدم `SET LOCAL` داخل المعاملة بدلاً من ذلك.
+* يعرض `pg_stat_ssl` معلومات الاتصال بين PgBouncer وPostgres، ولذلك يُرجع استعلام التحقق من TLS الوارد أعلاه القيمة `ssl: false`. ومع ذلك، يظل اتصال تطبيقك بـ PgBouncer خاضعاً للتحقق، إذ يفشل الاتصال بالطريقة نفسها عند استخدام شهادة CA خاطئة.
+
+## الخطوات التالية {#next-steps}
+
+* [الاتصال](/ar/products/managed-postgres/connection): سلاسل الاتصال وPgBouncer وTLS
+* [الإعدادات](/ar/products/managed-postgres/settings): تغيير المعلمات مثل `max_connections`
+* [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas): توجيه استعلامات القراءة فقط إلى نسخة متماثلة
+* [التوافر العالي](/ar/products/managed-postgres/high-availability): النسخ الاحتياطية الجاهزة (Standbys) والتحويل التلقائي عند الفشل (Failover)

@@ -1,0 +1,9 @@
+Unsupported type for iceberg Time
+Unsupported type for iceberg Time
+Unsupported type for iceberg Time
+Unsupported type for iceberg Time
+Unsupported type for iceberg Time
+Unsupported type for iceberg Time
+Unsupported type for iceberg Time
+id	Int64
+c	Nullable(Int64)

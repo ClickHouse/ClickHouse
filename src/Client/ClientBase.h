@@ -456,8 +456,13 @@ protected:
 
     /// Buffer that reads from stdin in batch mode.
     std::unique_ptr<ReadBuffer> std_in;
+    /// The reader of the console output went away (a write to it failed with `EPIPE`), as in
+    /// `clickhouse-client -q '...' | head -1`. Then the client stops quietly, without an error
+    /// message and with a zero exit code. Set from the thread that writes the output.
+    /// Declared before `std_out`, which references it.
+    std::atomic<bool> stdout_is_broken = false;
     /// Console output.
-    std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
+    std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// Wrapper for hooking into the flush event.

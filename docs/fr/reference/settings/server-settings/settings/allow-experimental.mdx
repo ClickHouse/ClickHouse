@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le ClickHouse server et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />La découverte des clusters n&#39;est plus expérimentale et est toujours activée pour les clusters comportant une section `discovery` dans `remote_servers`. Ce paramètre est obsolète et n&#39;a aucun effet. Il est conservé en tant que `String` afin que toute valeur auparavant acceptée, y compris une balise vide, continue de l&#39;être.
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Non" />Active la prise en charge expérimentale des drivers pour les fonctions utilisateur exécutables, déclarées via `user_defined_executable_function_drivers_config`. Un driver convertit un extrait de code utilisateur fourni dans `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en une UDF exécutable.
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Non" />Active la prise en charge expérimentale des UDF WebAssembly
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />Ancien nom (expérimental) de `enable_webterminal`. Toujours pris en charge pour la rétrocompatibilité lorsque `enable_webterminal` n’est pas défini. Ce paramètre est déprécié.
 

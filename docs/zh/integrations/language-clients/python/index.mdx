@@ -30,15 +30,15 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 
 ## 要求与兼容性 {#requirements-and-compatibility}
 
-| 组件         | 支持的版本                                                                      |
-| ---------- | -------------------------------------------------------------------------- |
-| Python     | 3.10 至 3.14。实验性支持 3.14t 这类 free-threaded 构建。                               |
-| ClickHouse | 当前仍受支持的 ClickHouse 发行版。CI 会针对较新的长期支持版和稳定版本服务器发行版进行测试。                      |
-| SQLAlchemy | 同步 dialect 需要 1.4.40 或更高版本 (低于 3.0) ；异步 dialect 需要 2.0.44 或更高版本 (低于 3.0) 。 |
-| Pandas     | 2.x 和 3.x                                                                  |
-| Polars     | 1.0 或更高版本                                                                  |
-| aiohttp    | 3.9 或更高版本                                                                  |
-| 平台         | Linux、macOS 和 Windows，支持范围限于各 Python 版本已发布 wheel 的架构                       |
+| 组件         | 支持的版本                                                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python     | 3.10 至 3.14。实验性支持 3.14t 这类 free-threaded 构建。                                                                                                         |
+| ClickHouse | 当前仍受支持的 ClickHouse 发行版。CI 会针对[此处列出的长期支持版和稳定版本发行系列](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json)进行测试。 |
+| SQLAlchemy | 同步 dialect 需要 1.4.40 或更高版本 (低于 3.0) ；异步 dialect 需要 2.0.44 或更高版本 (低于 3.0) 。                                                                           |
+| Pandas     | 2.x 和 3.x                                                                                                                                            |
+| Polars     | 1.0 或更高版本                                                                                                                                            |
+| aiohttp    | 3.9 或更高版本                                                                                                                                            |
+| 平台         | Linux、macOS 和 Windows，支持范围限于各 Python 版本已发布 wheel 的架构                                                                                                 |
 
 该软件包在可用时会提供已编译的 wheel；如果无法构建 Cython 扩展，则会回退为纯 Python 实现。PyArrow 支持 Python 3.10 至 3.14。Python 3.14 需要 PyArrow 22 或更高版本。
 
@@ -61,7 +61,7 @@ pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
-pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[rust]"       # Experimental Rust codec
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 

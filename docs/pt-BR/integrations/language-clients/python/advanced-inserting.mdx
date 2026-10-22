@@ -11,9 +11,11 @@ doc_type: 'reference'
 
 ### InsertContexts {#insertcontexts}
 
-O ClickHouse Connect executa inserções no formato Native, pelos métodos `insert` e `insert_df`, em um `InsertContext`. Os métodos `insert_arrow`, `insert_df_arrow` e `raw_insert` enviam seus payloads diretamente e não usam um `InsertContext`. O `InsertContext` inclui todos os valores enviados como argumentos para o método `insert` do cliente. Além disso, quando um `InsertContext` é criado pela primeira vez, o ClickHouse Connect recupera os tipos de dados das colunas de inserção necessários para inserções eficientes no formato Native. Ao reutilizar o `InsertContext` em várias inserções, essa &quot;pré-consulta&quot; é evitada, e as inserções são executadas com mais rapidez e eficiência.
+O ClickHouse Connect executa inserts no formato Native, pelos métodos `insert` e `insert_df`, em um `InsertContext`. Os métodos `insert_arrow`, `insert_df_arrow` e `raw_insert` enviam suas cargas úteis diretamente e não usam um `InsertContext`. O `InsertContext` inclui todos os valores enviados como argumentos para o método `insert` do cliente. Além disso, quando um `InsertContext` é criado pela primeira vez, o ClickHouse Connect recupera os tipos de dados das colunas de insert necessários para inserts eficientes no formato Native. Ao reutilizar o `InsertContext` em vários inserts, essa &quot;pré-consulta&quot; é evitada, e os inserts são executados com mais rapidez e eficiência.
 
-Um `InsertContext` pode ser obtido usando o método `create_insert_context` do cliente. O método recebe os mesmos argumentos que a função `insert`, exceto o próprio `context`. Observe que, para reutilização, apenas a propriedade `data` dos `InsertContext`s deve ser modificada. Isso está de acordo com seu propósito de fornecer um objeto reutilizável para inserções repetidas de novos dados na mesma tabela.
+O `DESCRIBE TABLE` interno usa seu próprio ID de consulta gerado pelo servidor, enquanto o `INSERT` mantém o `query_id` definido nas configurações de cada insert ou nos padrões do cliente.
+
+Um `InsertContext` pode ser obtido usando o método `create_insert_context` do cliente. O método recebe os mesmos argumentos que a função `insert`, exceto o próprio `context`. Observe que, para reutilização, apenas a propriedade `data` dos `InsertContext`s deve ser modificada. Isso está de acordo com seu propósito de fornecer um objeto reutilizável para inserts repetidos de novos dados na mesma tabela.
 
 ```python
 test_data = [[13, "v1", "v2"], [79, "v3", "v4"]]
@@ -30,6 +32,16 @@ assert qr.first_row[0] == 113
 ```
 
 `InsertContext`s incluem estado mutável que é atualizado durante o processo de insert, portanto não são thread-safe.
+
+### Retentativas de insert e desduplicação {#insert-retries-and-deduplication}
+
+Ambos os clientes HTTP podem tentar novamente `insert` e `insert_df` uma vez após certos fechamentos de conexão remota. O cliente reconstrói os dados do insert Native para a nova tentativa. Uma carga útil do tipo string ou bytes passada para `raw_insert` também pode ser retentada da mesma forma. Já um gerador ou um arquivo aberto não é reenviado. Essas retentativas de insert não usam `query_retries` e não se aplicam a respostas HTTP 429, 503 ou 504.
+
+As retentativas de insert têm semântica at-least-once (pelo menos uma vez). Se a primeira tentativa fizer commit, mas a resposta for perdida, a nova tentativa pode inserir as mesmas linhas novamente. Uma exceção também pode ocorrer depois do commit da primeira tentativa. O cliente não garante inserção exactly-once (exatamente uma vez).
+
+A desduplicação depende do motor de tabela, da versão do servidor e das configurações. Para tabelas MergeTree simples, defina a configuração de tabela `non_replicated_deduplication_window` com um valor diferente de zero e grande o suficiente para cobrir as retentativas. O valor padrão, `0`, desabilita a desduplicação. As variantes Replicated e Shared MergeTree oferecem suporte à desduplicação de insert, mas verifique as configurações efetivas antes de contar com ela. Em especial, inserts assíncronos no lado do servidor não são desduplicados por padrão em versões anteriores ao ClickHouse 26.2 ou com configurações de compatibilidade mais antigas. A desduplicação protege apenas os inserts dentro da janela de desduplicação configurada.
+
+Instruções SQL `INSERT` enviadas pelos métodos query ou command seguem uma [política de retentativa HTTP](/pt-BR/integrations/language-clients/python/driver-api#http-retries) própria.
 
 ### Formatos de escrita {#write-formats}
 

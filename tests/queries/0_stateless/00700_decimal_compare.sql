@@ -54,11 +54,11 @@ SELECT toUInt64(9223372036854775808) AS x, c == x, x == ((c - 42) + x) FROM deci
 
 SELECT g = 10000, (g - g + 10000) == 10000 FROM decimal WHERE a = 42;
 SELECT 10000 = g, 10000 = (g - g + 10000) FROM decimal WHERE a = 42;
-SELECT g = 30000 FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
-SELECT 30000 = g FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
+SELECT g = 30000 FROM decimal WHERE a = 42;
+SELECT 30000 = g FROM decimal WHERE a = 42;
 SELECT h = 30000, (h - g + 30000) = 30000 FROM decimal WHERE a = 42;
 SELECT 30000 = h, 30000 = (h - g + 30000) FROM decimal WHERE a = 42;
-SELECT h = 10000000000 FROM decimal WHERE a = 42; -- { serverError DECIMAL_OVERFLOW }
+SELECT h = 10000000000 FROM decimal WHERE a = 42;
 SELECT i = 10000000000, (i - g + 10000000000) = 10000000000 FROM decimal WHERE a = 42;
 SELECT 10000000000 = i, 10000000000 = (i - g + 10000000000) FROM decimal WHERE a = 42;
 

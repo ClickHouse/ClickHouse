@@ -21,6 +21,7 @@ struct BitWrapperFuncImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(Integer) -> UInt8";
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
     {

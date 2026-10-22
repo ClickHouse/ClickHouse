@@ -365,76 +365,40 @@ size_t DistinctSetFilter::getTotalByteCount() const
 namespace
 {
 
-/// Keeps the set alive while a typed iterator materializes owning columns one batch at a time.
+/// Keeps the set alive while its reader materializes owning columns one batch at a time.
 template <typename Method>
 class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
 {
 public:
     KeyExtractorImpl(
-        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_)
+        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types, Sizes key_sizes)
         : data(std::move(data_))
-        , key_types(std::move(key_types_))
-        , key_sizes(std::move(key_sizes_))
-        , position(method.data.begin())
-        , end(method.data.end())
+        , reader(method, std::move(key_types), std::move(key_sizes))
     {
-        if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
-            unpack_order = Method::State::packedKeysOrder(key_sizes);
     }
 
     MutableColumns next(size_t max_rows, size_t max_bytes) override
     {
-        chassert(max_rows > 0);
-
         if (!data)
             return {};
 
-        MutableColumns columns;
-        std::vector<IColumn *> raw_columns;
-        columns.reserve(key_types.size());
-        raw_columns.reserve(key_types.size());
-        for (const auto & key_type : key_types)
-        {
-            columns.push_back(key_type->createColumn());
-            raw_columns.push_back(columns.back().get());
-        }
-
-        size_t rows = 0;
-        while (position != end && rows < max_rows)
-        {
-            if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
-                Method::insertKeyIntoColumns(
-                    position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
-            else
-                Method::insertKeyIntoColumns(position->getValue(), raw_columns, key_sizes);
-
-            ++position;
-            ++rows;
-
-            if (max_bytes)
-            {
-                size_t bytes = 0;
-                for (const auto & column : columns)
-                    bytes += column->allocatedBytes();
-                if (bytes >= max_bytes)
-                    break;
-            }
-        }
+        auto columns = reader.read(max_rows, max_bytes);
 
         /// Returned columns own their values, including strings extracted from the arena.
-        if (position == end)
+        if (reader.atEnd())
             data.reset();
 
         return columns;
     }
 
+    size_t getTotalByteCount() const override
+    {
+        return data ? data->getTotalByteCount() : 0;
+    }
+
 private:
     std::unique_ptr<SetVariants> data;
-    const DataTypes key_types;
-    const Sizes key_sizes;
-    typename Method::Data::const_iterator position;
-    const typename Method::Data::const_iterator end;
-    std::optional<Sizes> unpack_order;
+    SetMethodKeyReader<Method> reader;
 };
 
 }
@@ -462,13 +426,16 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
     return data->callOnMethod(create_extractor);
 }
 
-ColumnRawPtrs DistinctSetFilter::getKeyColumns(const Columns & columns) const
+DistinctSetFilter::HashedKeyColumns DistinctSetFilter::getHashedKeyColumns(const Columns & columns) const
 {
-    ColumnRawPtrs key_columns;
-    key_columns.reserve(key_columns_pos.size());
+    HashedKeyColumns keys;
+    keys.columns.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
-        key_columns.push_back(columns[pos].get());
-    return key_columns;
+        keys.columns.push_back(columns[pos].get());
+
+    if (skip_null_keys)
+        keys.null_map_holder = extractNestedColumnsAndNullMap(keys.columns, keys.null_map);
+    return keys;
 }
 
 void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)
@@ -479,16 +446,15 @@ void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)
 void DistinctSetFilter::prepareForInsert(Chunk & chunk)
 {
     chassert(hasKeyColumns());
-    chassert(!skip_null_keys);
 
     materializeChunk(chunk, non_constant_columns_pos);
     if (data->empty())
-        initialize(getKeyColumns(chunk.getColumns()));
+        initialize(getHashedKeyColumns(chunk.getColumns()).columns);
 }
 
 size_t DistinctSetFilter::estimateGrowthMemory(const Chunk & chunk) const
 {
-    size_t growth_memory = data->estimateGrowthMemory(getKeyColumns(chunk.getColumns()), 0, chunk.getNumRows());
+    size_t growth_memory = data->estimateGrowthMemory(getHashedKeyColumns(chunk.getColumns()).columns, 0, chunk.getNumRows());
     if (key_columns_pos.size() == 1)
     {
         const size_t bitmap_growth = lc_filter.estimateGrowthMemory(*chunk.getColumns()[key_columns_pos.front()]);
@@ -500,15 +466,16 @@ size_t DistinctSetFilter::estimateGrowthMemory(const Chunk & chunk) const
 
 size_t DistinctSetFilter::estimateFilteringMemory(const Chunk & chunk) const
 {
-    chassert(!skip_null_keys);
-
-    /// The output filter and the optional `LowCardinality` mask can coexist with the copied columns.
-    /// Round up both masks to cover the allocation rounding used when the latter is resized.
+    /// The output filter and the optional `LowCardinality` mask can coexist with the copied columns. In
+    /// `skip_null_keys` mode, so can the mask of the rows without a `NULL` key and the null map that combines
+    /// several `Nullable` key columns. Round up all masks to cover the allocation rounding of those that are
+    /// resized.
     const size_t mask_bytes = roundUpToPowerOfTwoOrZero(
         chunk.getNumRows() * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right);
+    const size_t num_masks = skip_null_keys ? 4 : 2;
     /// Packed keys live through insertion but are released before filtering copies the columns.
     const size_t prepared_keys_bytes = data->estimatePreparedKeysMemory(chunk.getNumRows(), key_sizes);
-    return std::max<size_t>(chunk.allocatedBytes(), prepared_keys_bytes) + 2 * mask_bytes;
+    return std::max<size_t>(chunk.allocatedBytes(), prepared_keys_bytes) + num_masks * mask_bytes;
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
@@ -542,28 +509,24 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
     const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    auto column_ptrs = getKeyColumns(columns);
-
     /// The consumer skips rows with a `NULL` in any key component, so they carry no value downstream.
     /// Instead of pre-filtering the chunk, the `NULL` rows are masked out of the deduplication: they are
     /// neither inserted into the set nor selected for the output, and they leave the chunk together with
-    /// the duplicates in the single filtering at the end. `extractNestedColumnsAndNullMap` also replaces
-    /// the nullable key pointers with their nested columns, so the keys are hashed by the nested values,
-    /// the same way the set fill hashes them (the values at the masked rows are never read).
-    ColumnPtr null_map_holder;
+    /// the duplicates in the single filtering at the end. `getHashedKeyColumns` also replaces the nullable
+    /// key pointers with their nested columns, so the keys are hashed by the nested values, the same way
+    /// the set fill hashes them (the values at the masked rows are never read).
+    auto keys = getHashedKeyColumns(columns);
+    auto & column_ptrs = keys.columns;
 
     /// Declared outside of the branch: the deduplication mask below may point at it.
     IColumn::Filter keep;
     if (skip_null_keys)
     {
-        ConstNullMapPtr null_map = nullptr;
-        null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
-
-        if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
+        if (keys.null_map && !memoryIsZero(keys.null_map->data(), 0, num_rows))
         {
             keep.resize(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
-                keep[i] = !(*null_map)[i];
+                keep[i] = !(*keys.null_map)[i];
         }
 
         /// `LowCardinality(Nullable)` keys are not unwrapped by `extractNestedColumnsAndNullMap`: their

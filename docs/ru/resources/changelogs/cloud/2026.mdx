@@ -1,18 +1,50 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Cloud changelog — 2026'
-description: 'Cloud changelog ClickHouse Cloud с описанием нововведений каждого выпуска ClickHouse Cloud'
+title: 'Журнал изменений Cloud — 2026'
+description: 'Журнал изменений ClickHouse Cloud с описанием нововведений в каждом релизе ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
+keywords: ['журнал изменений', 'примечания к выпуску', 'обновления', 'новые возможности', 'изменения в Cloud']
 rss: true
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-Помимо этого журнала изменений ClickHouse Cloud, см. страницу [Совместимость с Cloud](/ru/products/cloud/guides/cloud-compatibility).
+Помимо этого журнала изменений ClickHouse Cloud, ознакомьтесь также со страницей [Совместимость Cloud](/ru/products/cloud/guides/cloud-compatibility).
 
-<Update label="2026-09-22">
+<Update label="Oct 5, 2026">
+  В релизе этой недели упрощён биллинг для клиентов с несколькими организациями ClickHouse Cloud, расширена поддержка форматов сериализации в ClickPipes для Kafka и Kinesis, а для разработчиков на .NET появилась экспериментальная возможность использовать нативный TCP. Теперь вы можете управлять предоплаченными кредитами в разных организациях через консоль или получать балансы программно; потоковые ClickPipes поддерживают распространённые сценарии работы с Avro и Protobuf; а драйвер .NET предлагает более быстрый нативный клиент с меньшим числом выделений памяти.
+
+  ## Новые возможности
+
+  ### Перенос предоплаченных кредитов между организациями
+
+  Клиенты с несколькими организациями теперь могут переносить предоплаченные кредиты между ними прямо в консоли, не обращаясь в службу поддержки. В едином представлении отображаются предоплаченные кредиты всех ваших организаций, что позволяет отслеживать потребление и планировать продления. Для этого требуется роль Org Admin, Billing Admin или пользовательская роль с правами на биллинг в каждой задействованной организации. Кредиты можно распределять между уровнями, но не между организациями Cloud и BYOC и не между разными облачными маркетплейсами. См. [документацию по самообслуживанию при управлении предоплаченными кредитами](/ru/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+  ## API
+
+  ### Новая конечная точка API для балансов кредитов организации
+
+  Новая конечная точка `GET /v1/organizations/{organizationId}/creditBalances` в OpenAPI ClickHouse Cloud возвращает активные балансы кредитов организации, включая предоплаченные и пробные кредиты. С её помощью можно отслеживать потребление кредитов в собственных инструментах. См. [документацию по самообслуживанию при управлении предоплаченными кредитами](/ru/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+  ## ClickPipes
+
+  ### Поддержка Avro и Protobuf в Kinesis ClickPipes
+
+  Kinesis ClickPipes теперь поддерживают **Avro** и **Protobuf** в дополнение к JSON. Схемы можно получать из **AWS Glue Schema Registry** или из загруженного файла схемы. Теперь Kafka и Kinesis ClickPipes поддерживают одинаковый набор распространённых форматов сериализации; возможность доступна в интерфейсе, OpenAPI и Terraform. См. [документацию по Kinesis ClickPipes](/ru/integrations/clickpipes/kinesis/).
+
+  ### Загрузка файлов схем Protobuf для Kafka ClickPipes
+
+  Kafka ClickPipes теперь принимают схемы Protobuf, загруженные в виде файлов `.proto` или наборов дескрипторов файлов (`.desc`). Если вы не используете реестр схем, теперь можно передать отдельную схему для десериализации. См. [документацию по Kafka ClickPipes](/ru/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic).
+
+  ## Интеграции
+
+  ### В драйвере .NET v1.5.0 появился нативный TCP-клиент
+
+  В драйвере ClickHouse для .NET версии 1.5.0 появился новый нативный TCP-клиент в дополнение к существующему HTTP-клиенту. Он поддерживает пул соединений, сеансы, TLS, сжатие LZ4/ZSTD, параметры запросов и трассировку OpenTelemetry. В тестах производительности на ClickHouse Cloud чтение ускорилось до 2 раз, конкурентные вставки — также до 2 раз, а объём выделяемой памяти сократился на порядки. TCP API является экспериментальным и может измениться; для `ADO.NET`, ORM и необработанных форматов, таких как CSV или Parquet, продолжайте использовать HTTP-клиент. См. [документацию по TCP-клиенту](/ru/integrations/language-clients/csharp/tcp) и [пакет NuGet](https://www.nuget.org/packages/ClickHouse.Driver/1.5.0).
+</Update>
+
+<Update label="Sep 22, 2026">
   Обновления этой недели расширяют охват соответствия требованиям в ClickHouse Cloud на новые регионы APAC, добавляют маршрутизацию с учетом реплик в публичной бета-версии и вводят новые возможности для метрик, вычислительных ресурсов и dbt. Ячейки, регулируемые требованиями HIPAA и PCI, теперь доступны в AWS Seoul и Sydney; клиенты, отвечающие условиям, могут опробовать рабочие нагрузки метрик, совместимые с Prometheus, и On-Demand Compute; а ClickHouse доступен через dbt Core v2 и dbt Platform.
 
   ## Безопасность
@@ -29,7 +61,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   ### Поддержка PromQL в закрытой предварительной версии
 
-  Теперь вы можете хранить метрики Prometheus в движке таблиц `TimeSeries` и обращаться к ним через PromQL напрямую к вашему сервису ClickHouse — без транспилятора и прокси, поэтому существующие сборщики, дашборды Grafana и инструменты Prometheus продолжают работать без изменений. Записывайте данные через Prometheus remote-write v1 и читайте через Prometheus HTTP API либо выполняйте PromQL из SQL-сессии с помощью табличных функций `prometheusQuery` и `prometheusQueryRange`. Доступно избранным клиентам ClickHouse Cloud и BYOC через [лист ожидания закрытой предварительной версии](https://clickhouse.com/cloud/promql-support-waitlist) в AWS, GCP и Azure. См. [документацию по интерфейсу Prometheus](/ru/concepts/features/interfaces/prometheus) и [анонс](https://clickhouse.com/blog/introducing-promql).
+  Теперь вы можете хранить метрики Prometheus в движке таблиц `TimeSeries` и обращаться к ним через PromQL напрямую к вашему сервису ClickHouse — без транспилятора и прокси, поэтому существующие сборщики, панели мониторинга Grafana и инструменты Prometheus продолжают работать без изменений. Записывайте данные через Prometheus remote-write v1 и читайте через Prometheus HTTP API либо выполняйте PromQL из SQL-сеанса с помощью табличных функций `prometheusQuery` и `prometheusQueryRange`. Доступно избранным клиентам ClickHouse Cloud и BYOC через [лист ожидания закрытой предварительной версии](https://clickhouse.com/cloud/promql-support-waitlist) в AWS, GCP и Azure. См. [документацию по интерфейсу Prometheus](/ru/concepts/features/interfaces/prometheus) и [анонс](https://clickhouse.com/blog/introducing-promql).
 
   ### On-Demand Compute теперь в закрытой предварительной версии
 
@@ -70,7 +102,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   SAML-пользователи, состоящие в нескольких SAML-организациях, теперь могут переключаться между ними непосредственно в переключателе организаций, который повторно аутентифицирует их в фоновом режиме. Больше не нужно добавлять в закладки URL каждой организации или вручную выходить из системы и входить снова — просто добавьте в закладки URL основной организации и переключайтесь из неё. Это относится к переключению между SAML-организациями; существующий механизм переключения между организациями без SAML не изменился.
 </Update>
 
-<Update label="17 августа 2026 г.">
+<Update label="17 авг. 2026 г.">
   Обновления этой недели расширяют возможности платформы и улучшают наблюдаемость при эксплуатации. Managed Postgres теперь доступен в GCP для отдельных партнёров по проектированию, ресурсами ClickStack можно управлять через официальный Terraform-провайдер, а новые уведомления о биллинге заранее предупреждают клиентов об истечении кредитов или приостановке сервиса. Мы также улучшили трассировку для ClickHouse Agents и упростили вход через SAML.
 
   ### Managed Postgres теперь доступен в GCP
@@ -94,7 +126,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   Когда пользователь пытается войти через Google или Microsoft, а для его организации настроен SAML, ClickHouse Cloud теперь перенаправляет его в правильный сценарий входа через SAML. Это помогает предотвратить случайное создание отдельной организации, когда пользователь намеревался получить доступ к существующему аккаунту.
 </Update>
 
-<Update label="13 июля 2026 г.">
+<Update label="13 июл. 2026 г.">
   Обновления этой недели включают закреплённую маршрутизацию к реплике по обычному HTTPS, настраиваемые даты начала расчётного периода и новые элементы управления начальной загрузкой для ClickPipes для объектного хранилища.
 
   ### Закреплённая маршрутизация к реплике по HTTPS (закрытая предварительная версия)
@@ -151,7 +183,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   Подробнее см. в разделе [Список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips).
 
-  ### ClickPipes for GCP Pub/Sub (закрытая предварительная версия)
+  ### ClickPipes для GCP Pub/Sub (закрытая предварительная версия)
 
   ClickPipes теперь поддерживает потоковую передачу данных из топиков GCP Pub/Sub напрямую в ClickHouse Cloud, предоставляя командам, работающим в экосистеме GCP, прямой путь к аналитике данных из Cloud Logging, Cloud Monitoring, GKE и других сервисов. Доступно через интерфейс ClickPipes, OpenAPI и Terraform; в период закрытой предварительной версии необходима [регистрация](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 
@@ -159,7 +191,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   ### ClickHouse Agents: агентная аналитика на базе Claude (публичная бета)
 
-  ClickHouse Agents теперь доступен в публичной бета‑версии на [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — собственная агентная платформа на базе Claude для диалогового анализа данных ClickHouse Cloud с учётом схемы. Создавайте пользовательские агенты с помощью безкодового AgentBuilder, подключайте MCP‑серверы (Slack, Linear, Notion и другие), объединяйте рабочие процессы с подагентами и генерируйте запросы, пайплайны и приложения, не покидая беседы. Включает интеграцию с AWS Bedrock AgentCore и управляемые основы LibreChat.
+  ClickHouse Agents теперь доступен в публичной бета‑версии на [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — собственная агентная платформа на базе Claude для диалогового анализа данных ClickHouse Cloud с учётом схемы. Создавайте пользовательские агенты с помощью бескодового AgentBuilder, подключайте MCP‑серверы (Slack, Linear, Notion и другие), объединяйте рабочие процессы с подагентами и генерируйте запросы, пайплайны и приложения, не покидая беседы. Включает интеграцию с AWS Bedrock AgentCore и управляемые основы LibreChat.
 
   Подробнее см. в [документации ClickHouse Agents](/ru/products/cloud/features/ai-ml/agents/index).
 
@@ -169,13 +201,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   Подробнее читайте в [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
-  ### ClickStack Cloud: серверная безсерверная наблюдаемость (закрытая предварительная версия)
+  ### ClickStack Cloud: бессерверная наблюдаемость (закрытая предварительная версия)
 
   ClickStack Cloud — это полностью управляемая бессерверная платформа наблюдаемости на базе ClickHouse Cloud. Направьте свой OpenTelemetry Collector на управляемую конечную точку OTLP и сразу же изучайте журналы, метрики и трассы в интерфейсе ClickStack — ingest, буферизация, масштабирование, хранение, обработка запросов, аутентификация и RBAC полностью обрабатываются за вас. Доступно в ограниченной частной предварительной версии в AWS us-east-1.
 
   Подробнее см. [закрытую предварительную версию ClickStack Cloud](https://clickhouse.com/blog/clickstack-cloud-private-preview) и [список ожидания ClickStack Cloud](https://clickhouse.com/cloud/clickstack-cloud-waitlist).
 
-  ### ИИ-блокноты для Управляемого ClickStack (бета)
+  ### ИИ-блокноты для управляемого ClickStack (бета)
 
   ИИ-блокноты предоставляют постоянное, прозрачное рабочее пространство для расследования инцидентов с помощью ИИ в управляемом ClickStack. Фиксируйте структурированные последовательности подсказок, запросов, диаграмм и рассуждений, создавайте ветвления для проверки нескольких гипотез и делитесь результатами расследований как совместными командными артефактами — при этом все сгенерированные запросы и результаты остаются видимыми и доступны для редактирования. Доступно через левую навигацию в интерфейсе ClickStack.
 
@@ -194,7 +226,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   Новый MCP-сервер ClickStack с открытым исходным кодом предоставляет внешним AI-агентам структурированные инструменты для расследований в области observability на базе ClickStack и ClickHouse. Он открывает семантические примитивы для логов, метрик и трейсов — с поддержкой анализа шаблонов в логах, расследования аномалий в трейсах, корреляционного анализа и отладки по нескольким сигналам — а также позволяет сохранять дашборды, поисковые запросы и алерты, сохраняя при этом нативный доступ к SQL для более глубокого изучения данных. Подключайте агентов, таких как Claude Code, Cursor, Codex или собственные фреймворки.
 
-  Для получения подробной информации см. [документацию ClickStack MCP server](/ru/clickstack/mcp) и [публикацию в блоге Observability MCP server + AI Notebooks](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server).
+  Для получения подробной информации см. [документацию по MCP-серверу ClickStack](/ru/clickstack/mcp) и [публикацию в блоге Observability MCP server + AI Notebooks](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server).
 
   {/* vale off */}
 
@@ -283,7 +315,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ClickHouse Cloud теперь поддерживает новый публичный регион: GCP London (europe-west2). Полный список см. в разделе [поддерживаемых регионов](/ru/products/cloud/reference/supported-regions).
 </Update>
 
-<Update label="25 апреля 2026">
+<Update label="25 апр. 2026">
   ### Сегментирование индекса (закрытая предварительная версия)
 
   Сегментирование индекса теперь доступно в закрытой предварительной версии. Эта возможность распределяет этап анализа индекса между несколькими репликами, снижая использование памяти на реплику и повышая производительность запросов за счет распределенного параллелизма. Это особенно полезно для таблиц с ресурсоемкими вторичными индексами, такими как векторный поиск и полнотекстовый поиск. Подробнее читайте в [записи блога](https://clickhouse.com/blog/index-sharding-clickhouse-cloud-petabyte-scale-indexing).
@@ -293,7 +325,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   Ресурсы ClickPipes в ClickHouse [Terraform-провайдере](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) теперь общедоступны в составе стабильных релизов, а [конечные точки OpenAPI](/ru/products/cloud/api-reference/organization/get-list-of-available-organizations) больше не помечаются как бета-версия. Это включает полное покрытие для CDC-коннекторов (Postgres, MySQL, MongoDB). Подробнее см. [документацию Terraform](/ru/integrations/clickpipes/programmatic-access/terraform), [документацию OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [запись блога](https://clickhouse.com/blog/terraform-ga).
 </Update>
 
-<Update label="17 апреля 2026">
+<Update label="17 апр. 2026">
   ### Возвраты теперь видны в интерфейсе биллинга
 
   Теперь клиенты могут видеть все возвраты непосредственно в интерфейсе биллинга консоли Cloud. Возвраты отображаются после обработки; возвраты на кредитную карту могут появляться в выписках с дополнительной задержкой в зависимости от банка.
@@ -329,7 +361,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Update label="3 апреля 2026 г.">
   * **Более интеллектуальное автомасштабирование с двухоконным рекомендателем:** ClickHouse Cloud теперь использует для вертикального автомасштабирования подход с двумя окнами анализа прошлой нагрузки: вместо прежнего единственного 30-часового окна применяются 3-часовое «малое окно» и 30-часовое «большое окно». Это сокращает задержку scale-down с 30 часов до всего 3 часов, снижая затраты на инфраструктуру для переменных рабочих нагрузок без ущерба для скорости scale-up. Подробнее читайте в [публикации блога](https://clickhouse.com/blog/smarter-auto-scaling).
-  * **Monitoring в консоли Cloud:** Новые обзорные и инфраструктурные панели дают лучшее представление о поведении серверов ClickHouse. Пользователи с ролью Admin теперь получают уведомления по электронной почте о распространенных проблемах при использовании ClickHouse Cloud. Подробнее читайте в [публикации блога](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) для более подробной информации.
+  * **Monitoring в консоли Cloud:** Новые обзорные и инфраструктурные панели мониторинга дают лучшее представление о поведении серверов ClickHouse. Пользователи с ролью Admin теперь получают уведомления по электронной почте о распространенных проблемах при использовании ClickHouse Cloud. Подробнее читайте в [публикации блога](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) для более подробной информации.
   * **Compute-compute separation (хранилища):** Поддержка auto-idling для основных сервисов (также называемых родительскими сервисами) постепенно становится доступной в рамках публичного предварительного просмотра. Если эта возможность еще не включена для вашей организации, [обратитесь в службу поддержки](https://clickhouse.com/support/program), чтобы получить доступ. После выхода этой возможности в общую доступность поведение по умолчанию будет таким: для существующих основных сервисов можно будет включить auto-idling, а для новых основных сервисов он будет включен по умолчанию.
   * **Интеграция с каталогом данных:** ClickHouse Cloud теперь поддерживает Iceberg REST Catalog и Microsoft OneLake как интеграции с каталогами озер данных в интерфейсе источников данных. После подключения каталог отображается как база данных, что позволяет читать таблицы Iceberg напрямую, без дублирования данных.
   * **Собственное облако (BYOC) на GCP теперь общедоступно:** ClickHouse BYOC теперь общедоступен в Google Cloud, что позволяет развертывать сервисы ClickHouse в вашем собственном проекте GCP и соблюдать строгие требования к резидентности данных. Подробнее читайте в [документации](/ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview) и [публикации блога](https://clickhouse.com/blog/byoc-gcp-ga). Вы можете [связаться с нами](https://clickhouse.com/cloud/bring-your-own-cloud), чтобы запросить доступ.
@@ -346,7 +378,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   * **ClickPipes:** Обратные частные конечные точки в неактивном состоянии теперь будут автоматически удаляться по истечении заданного льготного периода. Это гарантирует, что неиспользуемые или неправильно настроенные конечные точки не будут храниться в бэкенде неопределенно долго. Подробнее см. в [документации по автоматической очистке](/ru/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup).
 </Update>
 
-<Update label="13 февраля 2026 г.">
+<Update label="13 февр. 2026 г.">
   * [BigQuery Connector](/ru/integrations/clickpipes/bigquery/overview) теперь находится в стадии закрытой предварительной версии. Прочитайте этот [пост в блоге](https://clickhouse.com/blog/bigquery-clickpipe-private-preview), чтобы узнать подробности, и присоединитесь к [листу ожидания](https://clickhouse.com/cloud/clickpipes/bigquery-connector), чтобы получить доступ.
   * Мы рады сообщить о поддержке PCI-развертываний для Google Cloud. Поддерживаемые регионы:
     * GCP europe-west4 (Нидерланды)
@@ -357,11 +389,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Сбор отчётов о сбоях" />
 </Update>
 
-<Update label="23 января 2026 г.">
+<Update label="23 янв. 2026 г.">
   * ClickPipes теперь доступен в AWS `eu-west-1`. Для новых сервисов ClickHouse Cloud, созданных с 20 января в этом регионе, для ClickPipes будет использоваться соответствующий регион. Для более старых сервисов ClickPipes по умолчанию использует `eu-central-1`. Подробности см. в [документации](/ru/integrations/clickpipes/networking/static-ips).
 </Update>
 
-<Update label="16 января 2026 г.">
+<Update label="16 янв. 2026 г.">
   * **Фильтрация расходов по использованию на уровне сервиса через API:** Наш API теперь поддерживает фильтрацию расходов вашей организации по использованию по определённым тегам сервисов, что упрощает более детальный анализ затрат.
   * **Интеграция с каталогом данных:** Теперь вы можете подключить внешний каталог данных как источник данных. ClickHouse Cloud поддерживает AWS Glue и Unity Catalog (скоро появится поддержка и других каталогов). После подключения каталог отображается как база данных, что позволяет напрямую читать таблицы Iceberg — без дублирования данных. Чтобы получить доступ, обратитесь в службу поддержки.
   * **ClickPipes:**

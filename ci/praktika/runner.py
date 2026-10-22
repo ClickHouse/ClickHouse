@@ -12,7 +12,9 @@ import tempfile
 import sys
 import textwrap
 import traceback
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Optional, Set
+from urllib.parse import unquote, urlparse
 
 from ._environment import _Environment
 from .artifact import Artifact
@@ -312,6 +314,27 @@ class Runner:
 
         return 0
 
+    @staticmethod
+    def _last_upload_names(s3_dir, provided_by) -> Optional[Set[str]]:
+        """File names of the provider's last upload to s3_dir, None if its report is unreadable.
+
+        Uploads never delete, so s3_dir also holds files of the provider's earlier runs.
+        """
+        report_name = f"artifact_report_{Utils.normalize_string(provided_by)}.json"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            if not S3.copy_file_from_s3(
+                s3_path=f"{s3_dir}{report_name}", local_path=tmp_dir, no_strict=True
+            ):
+                return None
+            try:
+                with open(Path(tmp_dir) / report_name, "r", encoding="utf-8") as f:
+                    urls = json.load(f)["build_urls"]
+            except (OSError, ValueError, KeyError, TypeError):
+                return None
+        if not isinstance(urls, list) or not all(isinstance(u, str) for u in urls):
+            return None
+        return {unquote(PurePosixPath(urlparse(u).path).name) for u in urls}
+
     def _pre_run(self, workflow, job, local_job_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
@@ -387,21 +410,35 @@ class Runner:
                     artifact_paths = [artifact.path]
 
                 for artifact_path in artifact_paths:
-                    recursive = False
-                    include_pattern = ""
                     if "*" in artifact_path:
                         s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
-                        recursive = True
                         include_pattern = Path(artifact_path).name
                         assert "*" in include_pattern
+                        names = self._last_upload_names(
+                            s3_path, artifact._provided_by
+                        )
+                        if names is None:
+                            print(
+                                f"ERROR: no readable artifact report for [{artifact._provided_by}] at [{s3_path}]"
+                            )
+                            downloaded = False
+                        else:
+                            matched = sorted(
+                                n for n in names if Path(n).match(include_pattern)
+                            )
+                            downloaded = bool(matched) and all(
+                                S3.copy_file_from_s3(
+                                    s3_path=s3_path + n,
+                                    local_path=Settings.INPUT_DIR,
+                                )
+                                for n in matched
+                            )
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    downloaded = S3.copy_file_from_s3(
-                        s3_path=s3_path,
-                        local_path=Settings.INPUT_DIR,
-                        recursive=recursive,
-                        include_pattern=include_pattern,
-                    )
+                        downloaded = S3.copy_file_from_s3(
+                            s3_path=s3_path,
+                            local_path=Settings.INPUT_DIR,
+                        )
                     if not downloaded:
                         # A missing artifact report is tolerated: its consumers check
                         # whether the file exists. A missing build artifact means the
@@ -1012,20 +1049,19 @@ class Runner:
                             env.add_workflow_error(error)
                             result.set_status(Result.Status.ERROR)
                             is_ok = False
-                if artifact_links:
-                    artifact_report = {"build_urls": artifact_links}
-                    print(
-                        f"Artifact report will be uploaded: [{artifact_report}]"
-                    )
-                    artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
-                    with open(artifact_report_file, "w", encoding="utf-8") as f:
-                        json.dump(artifact_report, f)
-                    link = S3.copy_file_to_s3(
-                        s3_path=s3_path,
-                        local_path=artifact_report_file,
-                        tags=default_tags,
-                    )
-                    result.set_link(link)
+                # Written even when empty: consumers take the report as the list of
+                # this run's files, so an older report must not survive.
+                artifact_report = {"build_urls": artifact_links}
+                print(f"Artifact report will be uploaded: [{artifact_report}]")
+                artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
+                with open(artifact_report_file, "w", encoding="utf-8") as f:
+                    json.dump(artifact_report, f)
+                link = S3.copy_file_to_s3(
+                    s3_path=s3_path,
+                    local_path=artifact_report_file,
+                    tags=default_tags,
+                )
+                result.set_link(link)
 
         # run after post hooks as they might modify workflow kv data
         base_keys = set(env.JOB_KV_DATA_BASE_KEYS or [])

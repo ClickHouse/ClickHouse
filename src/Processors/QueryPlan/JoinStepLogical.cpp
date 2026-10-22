@@ -28,6 +28,7 @@
 #include <Functions/ComparisonNames.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/if.h>
 #include <Functions/isNotDistinctFrom.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
@@ -205,7 +206,7 @@ JoinStepLogical::JoinStepLogical(
     for (const auto * node_after_join : actions_after_join)
     {
         if (!all_nodes_set.contains(node_after_join))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A node after join is not in the expression actions dag");
     }
 #endif
 }
@@ -525,7 +526,17 @@ JoinStepLogical::analyzeUnneededColumns(const std::vector<size_t> & unneeded_out
         if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
             roots.push_back(&node);
     const auto is_folded_constant = [](const ActionsDAG::Node * node) { return node->column && !node->children.empty(); };
-    const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
+    auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
+
+    /// What the join returns, `actions_after_join`, loses the values that do not survive, such as the input under a
+    /// dropped alias. The join has to return a column still, so if none would survive, the first one stays.
+    if (!plan.adds_dummy_output && !actions_after_join.empty()
+        && std::ranges::none_of(actions_after_join, [&](const auto * action) { return surviving_nodes.contains(action); }))
+    {
+        plan.extra_pruning_roots.push_back(actions_after_join.front());
+        roots.push_back(actions_after_join.front());
+        surviving_nodes = findReachableNodes(roots, is_folded_constant);
+    }
 
     plan.removes_any_action = surviving_nodes.size() < actions_dag.getNodes().size();
 
@@ -668,6 +679,13 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         });
 
     dag_outputs.swap(new_outputs);
+
+    /// Removing the unused actions may remove a value the join returns without outputting it, such as the input under
+    /// a dropped alias.
+    std::unordered_set<const ActionsDAG::Node *> remaining_nodes;
+    for (const auto & node : actions_dag.getNodes())
+        remaining_nodes.insert(&node);
+    std::erase_if(new_actions_after_join, [&](const auto * action) { return !remaining_nodes.contains(action); });
     actions_after_join = std::move(new_actions_after_join);
 
     for (size_t side = 0; side < 2; ++side)
@@ -695,6 +713,23 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
         updateInputHeaders({inputs[0].header, inputs[1].header});
 
     return result;
+}
+
+void JoinStepLogical::addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side)
+{
+    const auto * input = expression_actions.addInput(column.name, column.type, side == JoinTableSide::Left ? 0 : 1).getNode();
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
+}
+
+void JoinStepLogical::addInputToOutputs(const ActionsDAG::Node * input)
+{
+    if (input->type != ActionsDAG::ActionType::INPUT
+        || std::ranges::find(expression_actions.getActionsDAG()->getInputs(), input) == expression_actions.getActionsDAG()->getInputs().end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not an input of the join", input->result_name);
+
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
 }
 
 void JoinStepLogical::updateOutputHeader()
@@ -995,24 +1030,105 @@ static void preferNullableRightKey(
     }
 }
 
+/// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
+/// of the nested type. NULL matches NULL through the `isNull` key, and the value key is not nullable, so the join skips
+/// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
+static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
+{
+    const auto value_type = removeLowCardinalityAndNullable(key.getType());
+    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(FunctionFactory::instance().get("isNull", nullptr)));
+    auto value = JoinActionRef::transform(
+        {is_null, key},
+        [&value_type](ActionsDAG & dag, std::vector<JoinExpressionActions::NodeRawPtr> nodes)
+        {
+            const auto & default_value
+                = dag.addColumn(value_type->createColumnConstWithDefaultValue(1), value_type, "__null_safe_key_default_" + value_type->getName());
+            const auto & not_null = dag.addFunction(FunctionFactory::instance().get("assumeNotNull", nullptr), {nodes[1]}, {});
+            return &dag.addFunction(
+                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
+                {nodes[0], &default_value, &not_null},
+                {});
+        });
+    return {std::move(is_null), std::move(value)};
+}
+
+/// An equality key of a join clause before it is added to `TableJoin`.
+struct JoinKey
+{
+    JoinActionRef lhs;
+    JoinActionRef rhs;
+    bool null_safe_comparison;
+    /// A null-safe comparison of nullable keys, which is either split or wrapped in a tuple.
+    bool null_safe_nullable;
+};
+
+/// The bytes a key takes in the packed fixed-width hash key of `HashJoin`, which joins on the nested values of `Nullable`
+/// keys; std::nullopt for a key without a fixed width. A `LowCardinality` column is not fixed-width, but the split key
+/// is: its value is the full column `if` returns.
+static std::optional<size_t> getFixedKeyWidth(const JoinKey & key)
+{
+    const auto & type = key.lhs.getType();
+    if (!key.null_safe_nullable && type->lowCardinality())
+        return std::nullopt;
+
+    const auto value_type = removeLowCardinalityAndNullable(type);
+    if (!value_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return std::nullopt;
+    return value_type->getSizeOfValueInMemory();
+}
+
+/// `HashJoin` packs the keys of a clause into one fixed-width key only if all of them are fixed-width and fit into
+/// `HashJoin::max_packed_keys_bytes` together, otherwise it hashes their serialized values. A split null-safe key adds the
+/// byte of `isNull`, so it pays off only if every key of the clause still fits: a split that does not escape the
+/// serialized path only adds work, and `if` copies a `String` value. A tuple is never fixed-width, so either every
+/// null-safe key of the clause is split or none is.
+///
+/// A null-safe key of a compound nested type, which only a function like `if` produces under `Nullable`, is not
+/// fixed-width and keeps the tuple: the hash join compares nested values with the bytes under their NULLs, which `if`
+/// over a tuple does not reset, so equal NULLs would hash differently. `Nothing` has no value either.
+static bool shouldSplitNullSafeKeys(const std::vector<JoinKey> & keys)
+{
+    bool has_null_safe_nullable_key = false;
+    size_t keys_bytes = 0;
+    for (const auto & key : keys)
+    {
+        const auto width = getFixedKeyWidth(key);
+        if (!width)
+            return false;
+
+        keys_bytes += *width;
+        if (key.null_safe_nullable)
+        {
+            has_null_safe_nullable_key = true;
+            keys_bytes += 1;
+        }
+    }
+    return has_null_safe_nullable_key && keys_bytes <= HashJoin::max_packed_keys_bytes;
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
 {
-    bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
+    std::vector<JoinKey> keys;
 
     for (auto & pred : predicates)
     {
-        auto & predicate = new_predicates.emplace_back(std::move(pred));
-        auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
+        auto [predicate_op, lhs, rhs] = pred.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+        {
+            new_predicates.emplace_back(std::move(pred));
             continue;
+        }
 
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
+        {
+            new_predicates.emplace_back(std::move(pred));
             continue;
+        }
 
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         predicateOperandsToCommonType(
@@ -1020,7 +1136,30 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             /* allow_conversion_to_subtype= */ !null_safe_comparison);
         if (!null_safe_comparison)
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
-        if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
+
+        /// We applied predicate, do not add it to residual conditions; the keys are added below, once the clause is known.
+        bool null_safe_nullable = null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType())
+            && isNullableOrLowCardinalityNullable(rhs.getType());
+        keys.push_back({std::move(lhs), std::move(rhs), null_safe_comparison, null_safe_nullable});
+    }
+
+    /// Keep the tuple for `StorageJoin` and key-value storages: `TableJoin` rejects their null-safe keys,
+    /// and a split key would probe the prebuilt table with a derived key.
+    const bool split_null_safe_keys = !planning_context.is_storage_join && shouldSplitNullSafeKeys(keys);
+    for (auto & [lhs, rhs, null_safe_comparison, null_safe_nullable] : keys)
+    {
+        if (null_safe_nullable && split_null_safe_keys)
+        {
+            auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
+            auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
+            /// The value key goes first: merge joins skip runs of rows only by the first key, and `isNull` is constant on non-NULL rows.
+            table_join_clause.addKey(lhs_value.getColumnName(), rhs_value.getColumnName(), /*null_safe_comparison=*/ false);
+            used_expressions.insert(used_expressions.end(), {lhs_value, rhs_value});
+            lhs = std::move(lhs_null);
+            rhs = std::move(rhs_null);
+            null_safe_comparison = false;
+        }
+        else if (null_safe_nullable)
         {
             /**
                 * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
@@ -1039,19 +1178,14 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
         }
 
-        has_join_predicates = true;
-        // std::cerr << "Adding key " << lhs.getColumnName() << ' ' << rhs.getColumnName() << std::endl;
         table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), null_safe_comparison);
-
-        /// We applied predicate, do not add it to residual conditions
         used_expressions.push_back(lhs);
         used_expressions.push_back(rhs);
-        new_predicates.pop_back();
     }
 
     predicates = std::move(new_predicates);
 
-    return has_join_predicates;
+    return !keys.empty();
 }
 
 /// An inequality (`<`, `<=`, `>`, `>=`) between an expression over the left table and an

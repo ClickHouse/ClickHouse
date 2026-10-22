@@ -38,6 +38,14 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
+bool IProcessor::isAnyOutputNeeded() const
+{
+    for (const auto & output : outputs)
+        if (!output.isFinished() && output.isNeeded())
+            return true;
+    return false;
+}
+
 void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;

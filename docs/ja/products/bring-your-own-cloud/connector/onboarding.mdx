@@ -25,17 +25,17 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * サービス用のネームスペースプレフィックス (デフォルトは `ns-`)
 * クラスターが ClickHouse イメージを取得する方法: ClickHouse Cloud がお客様のアカウント向けに設定するレジストリアクセスを利用するか、独自のミラーを利用するか
 
-その後、ClickHouse Cloud からコネクタエンドポイントと使い捨ての登録トークンが発行されます。このトークンによって環境が識別されるため、登録時に追加の ID は不要です。
+その後、ClickHouse Cloud からコネクタエンドポイント、使い捨ての登録トークン、および ClickHouse クラスターチャートの ECR リポジトリ ARN ([Terraform ルート](/ja/products/bring-your-own-cloud/connector/terraform-aws) の `chart_repository_arn` 入力) が発行されます。Terraform でインストールする場合は、この時点でプラットフォームバンドルも受け取ります。このバンドルは、Helm の場合は `clicklink clctl init --managed --from-terraform --platform-bundle` で、VM の場合は登録後に `clicklink clctl platform approve --bundle` で適用します。それ以外の managed インストールでは、最初のバンドルは後から executor によってステージングされ、[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates) で説明しているとおり `clicklink clctl platform approve` で適用します。`--no-managed` を指定したインストールではバンドルは不要です。このトークンによって環境が識別されるため、登録時に追加の ID は不要です。
 
 ### すべてのインストールで共通 {#prerequisites-every-install}
 
-* **Connector v0.17.0 以降。** それより前のリリースには Managed モード、`platform` コマンド、`instances create` がありません。インストーラーは `--version` を指定しない限り最新のリリースを提供します。
+* **コネクタ v0.17.0 以降。** それより前のリリースには Managed モード、`platform` コマンド、`instances create` がありません。インストーラーは `--version` を指定しない限り最新のリリースを提供します。
 * **[登録](#registration)時に発行されるコネクタエンドポイントと登録トークン**。
-* **ポート 443 での egress**。宛先は `https://<subdomain>.<connector-domain>` と `https://<subdomain>.enroll.<connector-domain>`、さらにインストール時には `releases.clicklink.clickhouse.com` と Amazon ECR Public です。Managed モードでは、プラットフォームの同期や作成処理が ECR から chart を取得する際に、executor が Amazon ECR と STS にも接続します。これらのいずれかに到達できない場合は、[エアギャップ and ミラーインストール](#air-gapped-and-mirrored-installs) を参照してください。
-* Managed モードには **Amazon EKS クラスター** が必要です。`init` はそれ以外のクラスターでは Managed モードを拒否し、executor なしでインストールする方法として `--no-managed` を案内します。
+* **ポート 443 での egress**。宛先は `https://<subdomain>.<connector-domain>` と `https://<subdomain>.enroll.<connector-domain>`、さらにインストール時には `releases.clicklink.clickhouse.com` と Amazon ECR Public です。Managed モードでは、プラットフォームの同期や作成処理が ECR から チャート を取得する際に、executor が Amazon ECR と STS にも接続します。これらのいずれかに到達できない場合は、[エアギャップ and ミラーインストール](#air-gapped-and-mirrored-installs) を参照してください。
+* Managed モードには **Amazon EKS クラスター** が必要です。`init` はそれ以外のクラスターでは Managed モードを拒否し、executor なしでインストールする方法として `--no-managed` を案内します。[Terraform on AWS](/ja/products/bring-your-own-cloud/connector/terraform-aws) では、新規クラスター用と既存クラスター用のルートモジュールに加え、その上にプラットフォームレイヤーをインストールする `init` コマンドが提供されています。
 * **executor の 権限 に必要な クラスター admin 権限。** この 権限 では、executor を自身の prefix 配下の ネームスペース に限定する ClusterRole、ClusterRoleBinding、ValidatingAdmissionPolicy が作成されます。Kubernetes では、`init` の実行に使う kubeconfig にこの権限が必要です。VM ではホストの kubeconfig に必要で、ホストに admin 権限がない場合、`init` は権限を持つホストで実行すべきコマンドを出力します。
-* **ClickHouse はまだ不要です。** Managed インストールは service が存在しない状態から始まり、executor が作成した service が自動的に登録されます。Managed モードの `init` は、自身で運用している ClickHouse を登録しません (Kubernetes では `--instance` と `--instance-namespace` を拒否します) 。そのようなクラスターを監視するには、`--no-managed` を指定して別の connector deployment をインストールしてください。`--ch-user-suffix` を使えば、2 つの deployment が connector の user 名を衝突させることなく同一の instance を共有できます。この deployment には到達可能な native listener が必要で、セキュア接続なら 9440、plaintext なら 9000 を使用し、Kubernetes では自動検出されます。さらに、provisioning のために ClickHouse admin アクセスも必要です。パスワードなしの `default` user、`--ch-admin-password-stdin` もしくはプロンプトで渡すパスワード、または operator 管理の instance の場合は CR injection のいずれかを利用します。
-* **リリースアーティファクトをダウンロードするすべての環境での cosign。** インストーラーは常に SHA-256 checksum を検証します。cosign がインストールされていれば release の署名も検証し、`CLICKLINK_REQUIRE_COSIGN=1` を指定した場合は cosign なしでの処理続行を拒否します。
+* **ClickHouse はまだ不要です。** Managed インストールは サービス が存在しない状態から始まり、executor が作成した サービス が自動的に登録されます。Managed モードの `init` は、自身で運用している ClickHouse を登録しません (Kubernetes では `--instance` と `--instance-namespace` を拒否します) 。そのようなクラスターを監視するには、`--no-managed` を指定して別の コネクタ デプロイメント をインストールしてください。`--ch-user-suffix` を使えば、2 つの デプロイメント が コネクタ の user 名を衝突させることなく同一の インスタンス を共有できます。この デプロイメント には到達可能な native listener が必要で、セキュア接続なら 9440、plaintext なら 9000 を使用し、Kubernetes では自動検出されます。さらに、provisioning のために ClickHouse admin アクセスも必要です。パスワードなしの `default` user、`--ch-admin-password-stdin` もしくはプロンプトで渡すパスワード、または operator 管理の インスタンス の場合は CR injection のいずれかを利用します。
+* **リリースアーティファクトをダウンロードするすべての環境での cosign。** インストーラーは常に SHA-256 checksum を検証します。cosign がインストールされていれば リリース の署名も検証し、`CLICKLINK_REQUIRE_COSIGN=1` を指定した場合は cosign なしでの処理続行を拒否します。
 
 ### Kubernetes (Helm) インストールの場合 {#prerequisites-kubernetes}
 

@@ -16,6 +16,7 @@ public:
     ~MergeTreeSource() override;
 
     std::string getName() const override;
+    std::span<ISpillable * const> getSpillables() override;
 
     Status prepare() override;
 

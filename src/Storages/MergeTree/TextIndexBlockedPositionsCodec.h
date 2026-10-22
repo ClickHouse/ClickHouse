@@ -11,6 +11,8 @@
 namespace DB
 {
 
+struct TokenPostingsInfo;
+
 /// Blocked candidate-driven positions codec (the text index positions layout).
 ///
 /// One token's positions as per-document lists, chunked into blocks of BLOCK_DOCS consecutive
@@ -95,6 +97,14 @@ public:
     /// `expected_num_docs` (header cardinality) and `available_bytes` fail-close every declared size.
     static Directory readDirectory(ReadBuffer & in, UInt64 blob_offset, UInt64 expected_num_docs, size_t available_bytes);
 
+    /// `decodeBlock` in two steps, so that ranks of one parsed block can be emitted several times.
+    static void readBlock(ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch);
+    static void emitRanks(
+        const DecodeScratch & scratch,
+        std::span<const UInt32> local_ranks,
+        PaddedPODArray<UInt32> & offsets,
+        PaddedPODArray<UInt32> & positions);
+
     /// Decodes block `block_idx` (stream at dir.block_offsets[block_idx]); appends each requested
     /// local rank's positions to `positions` and its end offset to `offsets`.
     static void decodeBlock(
@@ -116,6 +126,10 @@ public:
         PaddedPODArray<UInt32> & positions,
         DecodeScratch & scratch);
 };
+
+/// Throws CORRUPTED_DATA if the token has no positions, or if they are outside the stream of `file_size` bytes.
+/// Must be called before seeking to the positions: an offset outside the stream would leave the buffer out of range.
+void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 
 /// Collects one token's positions during the index build and streams them to the encoder.
 class PositionListBuilder

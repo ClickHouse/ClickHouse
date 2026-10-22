@@ -38,7 +38,7 @@ Vous vous êtes familiarisé avec l’[introduction à ClickPipes](/fr/integrati
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Remplir les détails de connexion" size="lg" border />
 
-5. Sélectionnez le stream Kinesis, le **Data format** et l&#39;offset de départ. Pour `Protobuf`, téléversez un fichier `.proto` ou un `FileDescriptorSet` sérialisé (768 Kio maximum). Aucun schema registry n&#39;est requis.
+5. Sélectionnez le stream Kinesis, le **Data format** et l&#39;offset de départ. Les ClickPipes Kinesis prennent en charge JSON, Avro et Protobuf. Pour `Protobuf`, téléversez un fichier `.proto` ou un `FileDescriptorSet` sérialisé (768 Kio maximum), ou configurez un registre de schémas AWS Glue. Pour Avro, configurez un registre de schémas AWS Glue. N&#39;utilisez pas à la fois un schéma Protobuf téléversé et un registre de schémas.
 
    L&#39;UI affiche un échantillon de données provenant du stream sélectionné. L&#39;option **Use Kinesis Enhanced Fan-Out** est activée par défaut. Consultez la [documentation Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) pour plus de détails.
 
@@ -88,7 +88,14 @@ Ainsi que des contrôles pour supprimer le ClickPipe et afficher un récapitulat
 Les formats pris en charge sont :
 
 * [JSON](/fr/reference/formats/JSON/JSON)
+* [Avro](/fr/reference/formats/Avro/AvroConfluent) (avec AWS Glue Schema Registry)
 * [Protobuf](/fr/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+Les ClickPipes Kinesis peuvent résoudre les schémas Avro et Protobuf à partir d&#39;AWS Glue Schema Registry. Sélectionnez **AWS Glue** lors de la création du ClickPipe, puis indiquez la région AWS et le nom du registre. Vous pouvez également fournir un rôle IAM pour accéder au registre ; sinon, ClickPipes utilise l&#39;identité IAM de la source Kinesis. Cette identité doit disposer de la permission `glue:GetSchemaVersion`.
+
+Vous pouvez configurer ces mêmes champs via [OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) ou [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform). Le [guide des registres de schémas](/fr/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry) détaille la politique IAM requise ainsi que la configuration.
 
 <div id="compression">
   ## Compression

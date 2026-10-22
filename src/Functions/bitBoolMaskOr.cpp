@@ -24,6 +24,7 @@ struct BitBoolMaskOrImpl
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static constexpr auto signature = "(UInt8, UInt8) -> UInt8";
 
     template <typename Result = ResultType>
     static Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)

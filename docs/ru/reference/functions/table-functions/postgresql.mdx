@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 Позволяет выполнять запросы `SELECT` и `INSERT` к данным, хранящимся на удаленном сервере PostgreSQL.
 
-## Синтаксис
+## Синтаксис {#syntax}
 
 ```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]} [, SETTINGS name=value, ...])
 ```
 
-## Аргументы
+## Аргументы {#arguments}
 
 | Аргумент      | Описание                                                                                                                              |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,7 +33,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Параметры TLS/SSL передаются в `libpq` и могут быть указаны как ключи именованной коллекции или как аргументы в формате «ключ-значение», добавленные в конце: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`; если не задан, используется значение `prefer` по умолчанию для `libpq`), а также сертификаты и ключ в одной из двух форм. `sslrootcert` (CA‑сертификат или специальное значение `system`), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) задают пути к локальным файлам сервера и могут быть указаны только в именованной коллекции, определённой в файле конфигурации сервера. Вместо них `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают непосредственно содержимое соответствующего файла — например, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — и маскируются в журналах и запросах `SHOW`, как пароль.
 
-## Возвращаемое значение
+## Возвращаемое значение {#returned-value}
 
 Объект таблицы с теми же столбцами, что и исходная таблица PostgreSQL.
 
@@ -41,7 +41,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
   В запросе `INSERT`, чтобы отличить табличную функцию `postgresql(...)` от имени таблицы со списком имён столбцов, необходимо использовать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
 </Note>
 
-## Настройки
+## Настройки {#settings}
 
 Пул соединений, используемый табличной функцией `postgresql` (и [движком таблицы `PostgreSQL`](/ru/reference/engines/table-engines/integrations/postgresql)), можно настроить с помощью завершающей секции `SETTINGS`. Если параметр не указан, по умолчанию используется значение соответствующего параметра уровня запроса `postgresql_*`. Полный список параметров `postgresql_connection_pool_*` и `postgresql_connection_attempt_timeout`, а также их значения по умолчанию см. в разделе [Настройки](/ru/reference/engines/table-engines/integrations/postgresql#settings) для этого движка таблицы.
 
@@ -51,7 +51,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password', SETTINGS postgresql_connection_pool_size = 32);
 ```
 
-## Подробности реализации
+## Подробности реализации {#implementation-details}
 
 `SELECT`-запросы на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри PostgreSQL-транзакции в режиме только для чтения с фиксацией после каждого `SELECT`-запроса.
 
@@ -59,13 +59,21 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 Все JOIN, агрегации, сортировка, условия `IN [ array ]` и ограничение сэмплирования `LIMIT` выполняются в ClickHouse только после завершения запроса к PostgreSQL.
 
-## Передача запроса вместо имени таблицы
+## Передача запроса вместо имени таблицы {#passing-a-query}
 
 Вместо имени таблицы третьим аргументом может быть `SELECT`-запрос, который передается в PostgreSQL как есть. Структура результирующей таблицы определяется по результату запроса. Запрос можно записать либо как подзапрос, либо обернуть в функцию `query`:
 
 ```sql
 SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Передача запроса поддерживается начиная с версии 26.7. Перед отправкой в PostgreSQL ClickHouse оборачивает запрос в `SELECT ... FROM (<query>)`, поэтому запрос не должен заканчиваться точкой с запятой. Аргумент `schema` к переданному запросу не применяется: вместо этого указывайте в запросе имена таблиц вместе со схемой.
+
+При использовании [именованной коллекции](/ru/concepts/features/configuration/server-config/named-collections), например `mypg` из [примеров](#examples), передавайте запрос в ключе `query` вместо `table` — либо в самой коллекции, либо как аргумент вида ключ-значение. `query` и `table` нельзя указывать одновременно:
+
+```sql
+SELECT * FROM postgresql(mypg, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 Это полезно, чтобы проталкивать JOIN, агрегации и любую другую обработку в PostgreSQL. Такая таблица доступна только в режиме только для чтения: `INSERT` в неё не поддерживается. Тот же синтаксис поддерживается движком таблицы [`PostgreSQL`](/ru/reference/engines/table-engines/integrations/postgresql).
@@ -98,7 +106,7 @@ SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database'
 
 Поддерживает приоритеты реплик для источника словаря PostgreSQL. Чем больше число в карте, тем ниже приоритет. Наивысший приоритет — `0`.
 
-## Примеры
+## Примеры {#examples}
 
 Таблица в PostgreSQL:
 
@@ -176,12 +184,12 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-## См. также
+## См. также {#related}
 
 * [Движок таблицы PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql)
 * [Использование PostgreSQL как источника словаря](/ru/reference/statements/create/dictionary/sources/postgresql)
 
-### Репликация или миграция данных Postgres с помощью PeerDB
+### Репликация или миграция данных Postgres с помощью PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > Помимо табличных функций, вы также можете использовать [PeerDB](https://docs.peerdb.io/introduction) от ClickHouse, чтобы настроить непрерывный конвейер передачи данных из Postgres в ClickHouse. PeerDB — это инструмент, специально разработанный для репликации данных из Postgres в ClickHouse с использованием CDC (фиксации изменений данных).
 

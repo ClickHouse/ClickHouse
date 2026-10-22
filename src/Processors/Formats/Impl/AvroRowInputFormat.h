@@ -56,9 +56,10 @@ public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
+    /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
     AvroDeserializer(const AvroDeserializer &) = delete;
     AvroDeserializer & operator=(const AvroDeserializer &) = delete;
-    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer(AvroDeserializer &&) = delete;
     AvroDeserializer & operator=(AvroDeserializer &&) = delete;
 
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;

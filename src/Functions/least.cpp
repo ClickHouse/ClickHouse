@@ -17,7 +17,10 @@ struct LeastBaseImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
+        const auto x = static_cast<Result>(a);
+        const auto y = static_cast<Result>(b);
+        /// Unlike the variadic form, a tie returns the right operand.
+        return candidateReplacesBest<LeastGreatest::Least>(y, x) ? x : y;
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -27,8 +30,9 @@ struct LeastBaseImpl
     {
         if (!left->getType()->isIntegerTy())
         {
-            /// Follows the IEEE-754 semantics for minNum, except for handling of signaling NaNs. This match's the behavior of libc fmin.
-            return b.CreateMinNum(left, right);
+            /// Same as `apply`.
+            auto * left_wins = b.CreateOr(b.CreateFCmpOLT(left, right), b.CreateFCmpUNO(right, right));
+            return b.CreateSelect(left_wins, left, right);
         }
 
         auto * compare_value = is_signed ? b.CreateICmpSLT(left, right) : b.CreateICmpULT(left, right);

@@ -61,6 +61,7 @@ El consumo de recursos calculado para cada intervalo se escribe en el log del se
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ Estas son las cantidades que se pueden restringir:
 `read_bytes` - El tamaño total leído de las tablas para ejecutar la consulta en todos los servidores remotos.
 
 `written_bytes` - El tamaño total de una operación de escritura.
+
+`written_rows` - El número total de filas escritas por consultas `INSERT`.
 
 `execution_time` – El tiempo total de ejecución de la consulta, en segundos (tiempo real transcurrido).
 

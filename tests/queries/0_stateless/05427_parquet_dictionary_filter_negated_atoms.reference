@@ -1,0 +1,10 @@
+dictionaries read:
+s = 'a': 10
+s != '': 0
+s NOT IN ('a', 'x'): 0
+flag: 0
+NOT flag: 10
+NOT flag AND s != '': 10
+row groups pruned by the dictionary filter:
+s != '' AND s = 'absent': {"count":0,"rows_read":0}
+NOT h: {"count":0,"rows_read":0}

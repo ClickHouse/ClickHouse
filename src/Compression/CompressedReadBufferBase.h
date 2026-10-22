@@ -4,6 +4,8 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
 
+#include <city.h>
+
 
 namespace DB
 {
@@ -74,6 +76,17 @@ public:
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
     virtual off_t getPosition() const;
+
+    /// Each compressed block starts with the checksum of its header and compressed data.
+    using Checksum = CityHash_v1_0_2::uint128;
+
+    /// Returns the checksum at the start of the compressed block at `source`.
+    static Checksum readChecksum(const char * source);
+
+    /// Checks that `expected_checksum` is the checksum of the `size` bytes at `data`, the header and the
+    /// compressed data of a block. On a mismatch, throws an exception that tells whether a single flipped bit
+    /// explains it. Its code is `CANNOT_DECOMPRESS` for external data and `CHECKSUM_DOESNT_MATCH` otherwise.
+    static void validateChecksum(const char * data, size_t size, Checksum expected_checksum, bool external_data);
 
     CompressionCodecPtr codec;
 };

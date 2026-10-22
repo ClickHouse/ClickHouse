@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DIR="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}"
 rm -rf "$DIR"
-for T in cols reversed backslash partitioned partitioned_by_dotted plain; do
+for T in cols reversed backslash partitioned partitioned_by_dotted plain prefix; do
     mkdir -p "$DIR/$T/_delta_log"
 done
 mkdir -p "$DIR/partitioned/c-p=x" "$DIR/partitioned_by_dotted/c-ab=x" "$DIR/partitioned_by_dotted/c-ab=y"
@@ -44,6 +44,7 @@ VALUES (2, (3));
 INSERT INTO FUNCTION file('$DIR/plain/data.parquet', Parquet,
     'id Int32, \`x.y\` Nullable(Int32), d Tuple(\`x.y\` Nullable(Int32))')
 VALUES (1, 5, (6)), (2, 7, (8));
+INSERT INTO FUNCTION file('$DIR/prefix/data.parquet', Parquet, '\`c-id\` Int32, \`c-s\` Tuple(\`c-s-a\` Tuple(\`c-s-a-c\` Nullable(Int32)), \`c-s-ab\` Nullable(Int32))') VALUES (1, ((10), 100)), (2, ((20), 200));
 "
 
 python3 - "$DIR" <<'EOF'
@@ -103,6 +104,8 @@ write_log("cols", [
     field("d", struct(field("x.y", "integer", "c-d-xy")), "c-d"),
 ], [("data.parquet", {}, 2)])
 
+write_log("prefix", [field("id", "integer", "c-id"), field("s", struct(field("a", struct(field("c", "integer", "c-s-a-c")), "c-s-a"), field("a.b", "integer", "c-s-ab")), "c-s")], [("data.parquet", {}, 2)])
+
 write_log("reversed", [
     field("id", "integer", "c-id"),
     field("a.b", "integer", "c-ab"),
@@ -153,6 +156,8 @@ SELECT 'nested struct';
 SELECT id, o FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
 SELECT 'nested struct element';
 SELECT id, o.s FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
+SELECT 'a.b next to a struct a without b';
+SELECT id, s.\`a.b\`, s.a.c FROM deltaLakeLocal('$DIR/prefix') ORDER BY id;
 SELECT 'dotted names without a collision';
 SELECT id, \`x.y\`, d FROM deltaLakeLocal('$DIR/cols') ORDER BY id;
 SELECT id, d.\`x.y\` FROM deltaLakeLocal('$DIR/cols') ORDER BY id;

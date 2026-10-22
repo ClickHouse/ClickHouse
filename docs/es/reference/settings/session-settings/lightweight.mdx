@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +27,14 @@ Valores posibles:
 * `lightweight_update` - ejecutar la actualización ligera si es posible; de lo contrario, ejecutar `ALTER UPDATE`.
 * `lightweight_update_force` - ejecutar la actualización ligera si es posible; de lo contrario, generar una excepción.
 
-## lightweight_deletes_sync
+En `DELETE FROM ... ON CLUSTER`, cada host que ejecuta la operación toma el modo de su propia configuración, por lo que
+los hosts cuyos perfiles definen valores predeterminados distintos pueden ejecutar la eliminación en modos diferentes. Un segmento
+replicado se ejecuta en una sola réplica, así que en ese caso es la configuración de dicha réplica la que determina el modo. Si se establece
+en la sesión de la consulta iniciadora, este valor tiene prioridad, ya que la entrada de DDL distribuido incluye los cambios de
+sesión a partir de `distributed_ddl_entry_format_version` 2, requisito que cumple el valor predeterminado.
+Un host que aplica restricciones a esta configuración reajusta el valor dentro de sus límites.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

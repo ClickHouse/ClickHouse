@@ -44,6 +44,9 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::prepare()
 
     if (stage == Stage::Pull)
     {
+        if (!was_output_needed && !isAnyOutputNeeded())
+            return Status::PortFull;
+        was_output_needed = true;
 
         bool has_data_need = false;
         bool has_full_port = false;

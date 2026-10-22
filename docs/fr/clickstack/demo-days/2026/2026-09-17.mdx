@@ -1,0 +1,35 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-17
+title: 'Demo days - 2026-09-17'
+sidebarTitle: '2026-09-17'
+description: 'Demo days ClickStack du 2026-09-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Coloration des nœuds de la carte des services selon le taux d&#39;erreur absolu {#colouring-service-map-nodes-by-absolute-error-rate}
+
+*Démonstration par [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/d8QHorCCgqY" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Des utilisateurs nous ont signalé qu&#39;il était difficile de voir quels services rencontraient réellement des erreurs sur la carte des services. Tous les nœuds arboraient une nuance de rouge, même ceux des services sans erreur. Les couleurs dépendaient aussi du graphique affiché : le service ayant le taux d&#39;erreur le plus élevé était toujours représenté par le rouge le plus foncé, même si ce taux n&#39;était que de 0,3 %.
+
+Le taux d&#39;erreur est désormais représenté par quatre couleurs fixes :
+
+* **0 % :** gris froid
+* **Plus de 0 % et moins de 1 % :** rouge clair
+* **De 1 % à moins de 5 % :** rouge moyen
+* **5 % et plus :** rouge foncé
+
+Un service sans trafic apparaît sous la forme d&#39;un cercle vide. Un service qui reçoit du trafic sans rencontrer d&#39;erreurs apparaît en gris. Si un nœud est rouge, le service rencontre des erreurs.
+
+Le choix du gris est important. Sur un nœud de 32 px, un rose pâle se distingue à peine d&#39;un rose légèrement plus foncé. Le gris froid est bien plus facile à différencier du rouge, et les trois nuances de rouge proviennent de la palette existante.
+
+La légende affiche désormais des paliers distincts, avec `≥5%` en haut. Ce seuil est également utilisé pour la couleur d&#39;alerte dans l&#39;infobulle, ce qui garantit leur cohérence. La latence et le débit utilisent toujours des échelles relatives, car le seuil pertinent dépend de la charge de travail.
+
+Cette approche a une contrepartie : 6 % et 60 % sont désormais représentés par la même couleur. L&#39;infobulle indique toujours le pourcentage exact. Un diagramme en anneau proportionnel pourrait apporter davantage de détails, mais nécessiterait une modification plus importante. Nous ne disposons pas non plus, à l&#39;heure actuelle, des données nécessaires pour distinguer les requêtes réussies, les réponses `4xx` et `5xx` et les requêtes limitées ; la source expose les statuts `Ok`, `Error` et `Unset` d&#39;OpenTelemetry.
+
+Les seuils sont fixes pour le moment. Des surcharges propres à chaque source seraient utiles à terme : un service assorti d&#39;un SLO de `99.9%` et une tâche de traitement par lots n&#39;ont pas la même définition d&#39;un taux d&#39;erreur acceptable.
+
+**PR associée :** [#3125](https://github.com/hyperdxio/hyperdx/pull/3125) Coloration des nœuds de la carte des services selon des seuils absolus de taux d&#39;erreur

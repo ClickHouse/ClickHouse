@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## promql_database
+## promql_database {#promql_database}
 
 <PrivatePreviewBadge />
 
@@ -22,19 +22,19 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Especifica el nombre de la base de datos que usa el dialecto &#39;promql&#39;. Una cadena vacía indica la base de datos actual.
 
-## promql_evaluation_time
+## promql_evaluation_time {#promql_evaluation_time}
 
 <PrivatePreviewBadge />
 
 **Aliases**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "Se cambió el nombre de la configuración. El nombre anterior es `evaluation_time`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "Se cambió el nombre de la configuración. El nombre anterior es `evaluation_time`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "Nueva configuración experimental. En ese momento, la configuración se llamaba `evaluation_time`, que ahora es un alias de esta."}]}]} />
 
-Establece el tiempo de evaluación que se usará con el dialecto promql. &#39;auto&#39; significa la hora actual.
+Establece el tiempo de evaluación que se usará con el dialecto promql, como una marca temporal Unix en segundos con una parte fraccionaria opcional. &#39;auto&#39; significa la hora actual.
 
-## promql_table
+## promql_table {#promql_table}
 
 <PrivatePreviewBadge />
 

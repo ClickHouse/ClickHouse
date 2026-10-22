@@ -28,9 +28,7 @@ SET force_index_by_date = 1
 SET force_index_by_date
 ```
 
-<div id="set-time-zone">
-  ## SET TIME ZONE
-</div>
+## SET TIME ZONE {#set-time-zone}
 
 ```sql
 SET TIME ZONE [=] 'timezone'
@@ -49,13 +47,11 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-Значение часового пояса должно быть корректным именем из [базы данных часовых поясов IANA](https://www.iana.org/time-zones). Некорректное имя часового пояса приведёт к ошибке.
+Значение часового пояса должно быть именем из списка `system.time_zones` (то есть из [базы данных часовых поясов IANA](https://www.iana.org/time-zones), поставляемой вместе с сервером) либо фиксированным смещением в формате `Fixed/UTC±HH:MM:SS`. Любое другое значение, в том числе имя, которое есть только в базе данных часовых поясов операционной системы, приведёт к ошибке.
 
 Дополнительные сведения о настройке `session_timezone` см. в разделе [session&#95;timezone](/ru/reference/settings/session-settings/other#session_timezone).
 
-<div id="setting-query-parameters">
-  ## Настройка параметров запроса
-</div>
+## Настройка параметров запроса {#setting-query-parameters}
 
 Оператор `SET` также можно использовать для задания параметров запроса, добавив префикс `param_` к имени параметра.
 Параметры запроса позволяют писать универсальные запросы с плейсхолдерами, которые подставляются фактическими значениями во время выполнения.

@@ -11,7 +11,7 @@
 # are never searched: a header musl does not provide is a compile error, not a
 # silent fallback to glibc declarations.
 
-target_link_libraries(global-libs INTERFACE musl)
+target_link_libraries(global-libs INTERFACE ${MUSL_LIBC_TARGET})
 
 # The only part of the glibc sysroot that must stay reachable is the Linux kernel
 # (uapi) headers: linux/, asm/, asm-generic/ and a few peripheral directories.

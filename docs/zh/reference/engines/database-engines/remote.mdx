@@ -14,9 +14,9 @@ doc_type: 'reference'
 
 这对于联合多个 ClickHouse 集群，或将较大的 ClickHouse 集群接入 `clickhouse-local` 或较小的集群非常方便。
 
-<div id="creating-a-database">
-  ## 创建数据库
-</div>
+如需按名称 (而非显式指定地址) 访问服务器配置中定义的集群，请使用 [`Cluster`](/zh/reference/engines/database-engines/cluster) 数据库引擎。
+
+## 创建数据库 {#creating-a-database}
 
 <Tabs>
   <Tab title="Remote" id="remote">
@@ -56,20 +56,16 @@ CREATE DATABASE remote_db
 ENGINE = Remote(my_named_collection, database = 'default');
 ```
 
-<div id="notes">
-  ## 注意事项
-</div>
+## 注意事项 {#notes}
 
 * 该引擎是远程服务器的直通视图：不支持对 `Remote` 数据库执行 `CREATE TABLE`、`DROP TABLE`、`ALTER` 等 DDL 语句。请直接在远程服务器上管理 schema。
 * 对已配置的远程用户，访问权限由远程服务器强制执行；本地则按数据库及其表上的常规特权进行控制。
 * 用户无权查看的本地分片表会被视为缺失，而非禁止访问。因此，不能通过 `Remote` 数据库探测用户无权访问的本地数据库中的表名。这既适用于列出表 (`SHOW TABLES`、`EXISTS TABLE`) ，也适用于解析表 (`DESCRIBE TABLE`、`SHOW CREATE TABLE`、`SELECT`) ；此类表也不会通过其所在分片的远程副本提供。只有在本地副本确实没有该表时，才会触发上述回退机制。
 * 列出某个分片的本地副本中存在的数据库的表时，结果还会包含仅存在于该分片远程副本上的表，以确保 `SHOW TABLES` 和 `system.tables` 与会回退到这些副本的 `EXISTS TABLE`、`DESCRIBE TABLE` 和 `SELECT` 保持一致。当所有远程副本均未响应时，将原样返回本地副本的表列表，因为它已是可用副本的响应结果。
 * 如果远程服务器不可用，列出其表 (`SHOW TABLES`、`system.tables`) 时会报告连接错误，而不是返回空表列表，这与对同一数据库执行 `EXISTS TABLE` 和 `SELECT` 时的行为一致。请注意，当此类数据库无法访问时，查询所有数据库的 `system.tables` 的 `SELECT` 也会失败。
-* 一个 `Remote` 数据库可以指向同一服务器上的另一个 `Remote` 数据库。列出和描述此类链中的表无需拥有中间数据库的特权——它既不保存自身的数据，也不保存自身的元数据，并且每一跳都会检查调用方对其所代理对象的权限。相比之下，读取和写入数据需要在链的每一跳都拥有 `SELECT` / `INSERT` 权限，因为查询实际是在中间数据库的表上执行的，这与在另一个 `Distributed` 表之上使用 `Distributed` 表完全相同。上述可见性规则同样适用于该链：中间数据库对调用方隐藏的表，也不会通过外层数据库的远程副本提供。如果本地副本上的中间数据库无法访问其自身的目标，外层分片的本地副本将完全无法响应——就如同该副本本身已宕机——外层数据库会回退到该分片的远程副本。
+* 一个 `Remote` 数据库可以指向同一服务器上的另一个 `Remote` 数据库。列出和描述此类链中的表无需拥有中间数据库的特权——它既不保存自身的数据，也不保存自身的元数据，并且每一跳都会检查调用方对其所代理对象的权限。相比之下，读取和写入数据需要在链的每一跳都拥有 `SELECT` / `INSERT` 权限，因为查询实际是在中间数据库的表上执行的，这与在另一个 `Distributed` 表之上使用 `Distributed` 表完全相同。上述可见性规则同样适用于该链：中间数据库对调用方隐藏的表，也不会通过外层数据库的远程副本提供。如果本地副本上的中间数据库无法访问其自身的目标，外层分片的本地副本将完全无法响应——就如同该副本本身已宕机——外层数据库会回退到该分片的远程副本。同一服务器上回指自身的链 (包括指向自身的数据库) 会在创建使其闭合的那个数据库时被拒绝，并报告 `INFINITE_LOOP` 错误；如果之后仍形成了循环 (例如，重新加载配置后，某个 [`Cluster`](/zh/reference/engines/database-engines/cluster) 数据库的分片变成了本地分片) ，也不会影响其他数据库：`system.tables` 等覆盖整个服务器的列表会跳过该循环链 (它不会列出任何表) ，而针对该链解析表时则会报告 `INFINITE_LOOP`。
 
-<div id="example">
-  ## 示例
-</div>
+## 示例 {#example}
 
 创建一个指向远程服务器 `system` 数据库的 `Remote` 数据库，并从中读取数据：
 

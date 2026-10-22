@@ -965,6 +965,14 @@ inline bool isNaNField(const Field & f)
     return f.isNaN();
 }
 
+/// Check if a Field holds a floating-point zero of either sign. `-0.0` and `+0.0` compare equal, although
+/// a function can tell the two representations apart: `toString(-0.0)` is `'-0'`.
+/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
+inline bool isFloatZeroField(const Field & f)
+{
+    return f.getType() == Field::Types::Float64 && f.safeGet<Float64>() == 0.0;
+}
+
 /// True when `field`, or any Field nested inside it at any depth, satisfies `predicate`.
 /// The predicates above answer for a single value, while `Array`, `Tuple`, `Map` and `Object` hold Fields,
 /// so they say nothing about what a container carries.

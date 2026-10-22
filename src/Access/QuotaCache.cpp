@@ -386,7 +386,8 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
     auto new_quotas = boost::make_shared<Quotas>();
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
-        if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
+        if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles)
+            || access_control.shouldSkipSQLAccessEntityForUser(info.quota_id, enabled.params.user_id))
             continue;
 
         String key = info.calculateKey(enabled);

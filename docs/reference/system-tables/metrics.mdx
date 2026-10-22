@@ -366,6 +366,10 @@ Total number of acquired CPU slots
 
 Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Current number of threads that have parked (released) their CPU slot for a non-CPU wait, such as blocking I/O or having no task to run
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 Total number of preempted threads waiting for CPU slot
@@ -717,6 +721,14 @@ Number of threads in the distributed exchange server handshake thread pool runni
 ### ExchangeServerThreadsScheduled {#exchangeserverthreadsscheduled}
 
 Number of queued or active jobs in the distributed exchange server handshake thread pool.
+
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Total size, in bytes, of the blocks held in the caches of `IN` sets in external memory
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Total number of blocks held in the caches of `IN` sets in external memory
 
 ### FiberStackBytes {#fiberstackbytes}
 
@@ -1106,6 +1118,10 @@ Number of container nodes currently stored in Keeper.
 
 Number of outstanding requests
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Number of Raft event loop threads waiting for the local log entries to be preprocessed after startup. The Raft event loop also runs the listener, the election and heartbeat timers and every RPC completion, so this should stay at zero or one.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Number of threads in the threadpool for keeper server reads.
@@ -1177,6 +1193,10 @@ Total number of currently allocated (approved) bytes for memory reservations
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 Total number of outstanding increase request bytes for memory reservations
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Total number of reclaimable memory
 
 ### MemoryTracking {#memorytracking}
 
@@ -1370,6 +1390,10 @@ Number of threads in the AzureObjectStorage thread pool running a task.
 
 Number of queued or active jobs in the AzureObjectStorage thread pool.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Number of exclusive leases, such as the compaction of an Iceberg table, currently held in object storage by this server.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Size in bytes of ObjectStorageQueue metadata cache.
@@ -1405,6 +1429,10 @@ Number of threads in the S3ObjectStorage thread pool running a task.
 ### ObjectStorageS3ThreadsScheduled {#objectstorages3threadsscheduled}
 
 Number of queued or active jobs in the S3ObjectStorage thread pool.
+
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Number of keys, such as Iceberg snapshots being read, currently leased in object storage by the queries of this server.
 
 ### OpenFileForRead {#openfileforread}
 
@@ -1970,6 +1998,14 @@ Number of threads in the stateless worker thread pool running a task.
 
 Number of queued or active jobs in the stateless worker thread pool.
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Total size of the statistics cache in bytes. Holds the column statistics of data parts of MergeTree tables, one entry per part and column.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Total number of entries (one per data part and column) in the statistics cache
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Number of bytes in buffers of Buffer tables
@@ -2257,6 +2293,10 @@ Number of entries in the vector similarity index cache
 ### VersionInteger {#versioninteger}
 
 Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Number of queries waiting for asynchronous loading or startup to finish, limited by the 'max_waiting_queries' server setting
 
 ### Write {#write}
 

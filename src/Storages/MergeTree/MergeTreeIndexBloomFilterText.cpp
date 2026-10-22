@@ -1158,4 +1158,34 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         args[first_bf_param_idx+2].safeGet<size_t>());
 }
 
+static size_t bloomFilterIndexTextTotalSize(const IndexDescription & index)
+{
+    if (index.type != NgramsTokenizer::getName()
+        && index.type != SplitByNonAlphaTokenizer::getName()
+        && index.type != SparseGramsTokenizer::getBloomFilterIndexName())
+        return 0;
+
+    /// The size of bloom filter is the first of the last three arguments, whatever the tokenizer.
+    /// The arguments are already checked by `bloomFilterIndexTextValidator`, and the size is at most `MAX_BLOOM_FILTER_SIZE`,
+    /// so the multiplication cannot overflow.
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+    return args.at(args.size() - 3).safeGet<size_t>() * index.column_names.size();
+}
+
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index)
+{
+    const size_t total_size = bloomFilterIndexTextTotalSize(index);
+    if (total_size <= MAX_BLOOM_FILTER_SIZE)
+        return;
+
+    /// An index inherited from the old metadata may have been created before this check, so it is accepted as long as it does not grow.
+    if (old_index && bloomFilterIndexTextTotalSize(*old_index) >= total_size)
+        return;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "The total size of bloom filters in a granule of index {} cannot be more than {}: "
+        "the index has {} columns and the total size of their bloom filters is {}",
+        backQuote(index.name), MAX_BLOOM_FILTER_SIZE, index.column_names.size(), total_size);
+}
+
 }

@@ -96,6 +96,15 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — variadic with an optional const-`UInt`
+    /// clear-depth, then per-array (array, optional const-`UInt` depth)
+    /// groups. The result is a nested array of `UInt32` whose depth matches
+    /// the maximum effective input depth — not expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "([const UInt], Array, [const UInt], ...) -> Array(UInt32)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
@@ -112,6 +121,20 @@ public:
             type = std::make_shared<DataTypeArray>(type);
 
         return type;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        /// The documentation signature cannot represent the input-dependent
+        /// nesting depth. Reuse the authoritative implementation so callers
+        /// without columns get the same result where possible, or its normal
+        /// error when a constant depth value is required.
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;

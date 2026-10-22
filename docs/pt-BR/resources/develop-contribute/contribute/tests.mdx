@@ -357,7 +357,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 Os testes de desempenho permitem medir e comparar o desempenho de partes isoladas do ClickHouse com consultas sintéticas.
 Os testes de desempenho ficam em `tests/performance/`.
 Cada teste é representado por um arquivo `.xml` com a descrição do caso de teste.
-Os testes são executados com a ferramenta `docker/test/performance-comparison`. Consulte o arquivo readme para ver como executá-la.
+Os testes são executados pelo job de CI `ci/jobs/performance_tests.py`, na imagem `ci/docker/performance-comparison`.
 
 Cada teste executa uma ou mais consultas (possivelmente com combinações de parâmetros) em loop.
 
@@ -368,7 +368,7 @@ Sempre vale a pena usar `perf top` ou outras ferramentas `perf` durante os teste
 ## Ferramentas e scripts de teste {#test-tools-and-scripts}
 
 Alguns programas no diretório `tests` não são testes prontos, e sim ferramentas de teste.
-Por exemplo, para `Lexer` existe a ferramenta `src/Parsers/tests/lexer`, que apenas faz a tokenização da entrada padrão e grava o resultado colorido na saída padrão.
+Por exemplo, para `Lexer` existe a ferramenta `src/Parsers/examples/lexer.cpp`, que apenas faz a tokenização da entrada padrão e grava o resultado colorido na saída padrão.
 Você pode usar ferramentas desse tipo como exemplos de código e para exploração e testes manuais.
 
 ## Testes diversos {#miscellaneous-tests}
@@ -497,7 +497,7 @@ Atualmente, há um falso positivo conhecido na biblioteca `re2`; veja [este arti
 ## Fuzzing {#fuzzing}
 
 O fuzzing do ClickHouse é implementado tanto com [libFuzzer](https://llvm.org/docs/LibFuzzer.html) quanto com consultas SQL aleatórias.
-Todos os testes de fuzzing devem ser executados com sanitizers (Address e Undefined).
+Todos os testes de fuzzing devem ser executados com sanitizadores (Address e Undefined).
 
 O LibFuzzer é usado para testes de fuzzing isolados de código de biblioteca.
 Os fuzzers são implementados como parte do código de teste e têm o sufixo &quot;&#95;fuzzer&quot; no nome.
@@ -509,7 +509,7 @@ Os fuzzers não são compilados por padrão.
 Para compilar os fuzzers, as opções `-DENABLE_FUZZING=1` e `-DENABLE_TESTS=1` devem ser definidas.
 Recomendamos desabilitar o Jemalloc ao compilar os fuzzers.
 A configuração usada para integrar o fuzzing do ClickHouse ao
-Google OSS-Fuzz pode ser encontrada em `docker/fuzz`.
+Google OSS-Fuzz pode ser encontrada em `tests/fuzz`.
 
 Também usamos um teste de fuzzing simples para gerar consultas SQL aleatórias e verificar se o servidor não falha ao executá-las.
 Você pode encontrá-lo em `00746_sql_fuzzy.python`.
@@ -592,7 +592,7 @@ O ClickHouse fornece diagnósticos que ajudam engenheiros de operações a ident
 
 As regras de estilo de código estão descritas [aqui](/pt-BR/resources/develop-contribute/contribute/style).
 
-Para verificar algumas violações comuns de estilo, você pode usar o script `utils/check-style`.
+Para verificar algumas violações comuns de estilo, você pode usar o script `ci/jobs/scripts/check_style/check_cpp.sh` ou executar localmente a verificação de estilo completa com `python -m ci.praktika run "Style check"`.
 
 Para garantir o estilo adequado do seu código, você pode usar `clang-format`.
 O arquivo `.clang-format` fica na raiz do código-fonte.

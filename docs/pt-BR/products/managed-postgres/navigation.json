@@ -43,6 +43,26 @@
       ]
     },
     {
+      "group": "Guias",
+      "pages": [
+        "pt-BR/products/managed-postgres/guides/bun",
+        "pt-BR/products/managed-postgres/guides/cloudflare-workers",
+        "pt-BR/products/managed-postgres/guides/django",
+        "pt-BR/products/managed-postgres/guides/dotnet",
+        "pt-BR/products/managed-postgres/guides/drizzle",
+        "pt-BR/products/managed-postgres/guides/fastapi",
+        "pt-BR/products/managed-postgres/guides/go",
+        "pt-BR/products/managed-postgres/guides/kysely",
+        "pt-BR/products/managed-postgres/guides/laravel",
+        "pt-BR/products/managed-postgres/guides/nodejs",
+        "pt-BR/products/managed-postgres/guides/phoenix",
+        "pt-BR/products/managed-postgres/guides/prisma",
+        "pt-BR/products/managed-postgres/guides/ruby-on-rails",
+        "pt-BR/products/managed-postgres/guides/rust",
+        "pt-BR/products/managed-postgres/guides/spring-boot"
+      ]
+    },
+    {
       "group": "Preços",
       "pages": [
         "pt-BR/products/managed-postgres/pricing"

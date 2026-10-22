@@ -1,0 +1,20 @@
+3371	168477717
+3371	168477717
+3371	168477717
+0
+3
+6
+read_order_flag_first	1
+read_order_index_first	0
+read_order_index_in_where	1
+read_order_top_k	1
+Same results as without direct read
+3371	168477717
+3371	168477717
+4740	236887142
+4740	236887142
+0
+3
+6
+683	6596949
+683	6596949

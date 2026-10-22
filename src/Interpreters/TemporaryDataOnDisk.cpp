@@ -489,6 +489,23 @@ std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw(size_t buffer_s
     return file_holder->read(buffer_size);
 }
 
+size_t TemporaryDataBuffer::startNewBlock()
+{
+    if (!out_compressed_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file buffer writing has been finished");
+
+    /// After `next` all written data is compressed into the underlying buffer, so the next block starts at its end.
+    next();
+    return out_compressed_buf.getHolder()->count();
+}
+
+std::unique_ptr<ReadBuffer> TemporaryDataBuffer::readFromPosition(size_t position)
+{
+    auto in = readRaw();
+    in->seek(position, SEEK_SET);
+    return std::make_unique<TemporaryDataReadBuffer>(std::move(in));
+}
+
 CompressedWriteBuffer & TemporaryDataBuffer::getCompressedWriteBuffer()
 {
     return *out_compressed_buf;
@@ -561,6 +578,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;
+    if (compressed_delta > 0)
+        spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
 }
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
