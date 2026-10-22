@@ -3,6 +3,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/BSONTypes.h>
 
+#include <Common/StringUtils.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -39,6 +41,11 @@ namespace ErrorCodes
 /// the name early and corrupt the document, so it is written as `\u0000`, as before (see `02593_bson_more_types`).
 static String toValidUTF8String(const String & name)
 {
+    /// Nothing to replace or escape, the usual case: this runs per row for every `Tuple` element name and `Map` key.
+    /// (`isAllASCII` accepts the zero byte, hence the second check.)
+    if (isAllASCII(reinterpret_cast<const UInt8 *>(name.data()), name.size()) && !name.contains('\0'))
+        return name;
+
     WriteBufferFromOwnString buf;
     {
         WriteBufferValidUTF8 validating_buf(buf);
