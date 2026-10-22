@@ -2,8 +2,7 @@
 
 #include <optional>
 #include <unordered_map>
-#include <vector>
-#include <Processors/QueryPlan/Profiling/Analysis/PlanShape.h>
+#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <base/types.h>
 
 namespace DB
@@ -16,7 +15,7 @@ using CardinalityByJoinStep = std::unordered_map<String, std::optional<UInt64>>;
 class JoinBranchCosts
 {
 public:
-    JoinBranchCosts(const PlanShape & shape, const String & root_id, const CardinalityByJoinStep & cardinality_by_join_step);
+    JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, const CardinalityByJoinStep & cardinality_by_join_step);
 
     std::optional<UInt64> getBranchCost(const String & step_id) const;
 

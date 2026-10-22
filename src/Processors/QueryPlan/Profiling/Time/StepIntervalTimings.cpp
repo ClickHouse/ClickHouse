@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
 #include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 
-#include <algorithm>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -23,40 +22,13 @@ std::optional<double> ratio(UInt64 busy_ns, UInt64 total_ns)
     return static_cast<double>(busy_ns) / static_cast<double>(total_ns);
 }
 
-using NodesById = std::unordered_map<String, const PlanShapeNode *>;
-
-/// Children before parents, so that a node's subtree is retired by the time the node is reached.
-std::vector<const PlanShapeNode *> collectPostOrder(const NodesById & nodes_by_id, const String & root_id)
-{
-    const auto root_it = nodes_by_id.find(root_id);
-    if (root_it == nodes_by_id.end())
-        return {};
-
-    std::vector<const PlanShapeNode *> post_order;
-    std::vector<const PlanShapeNode *> to_visit{root_it->second};
-
-    while (!to_visit.empty())
-    {
-        const auto * node = to_visit.back();
-        to_visit.pop_back();
-        post_order.push_back(node);
-
-        for (const auto & child_id : node->children)
-            if (const auto it = nodes_by_id.find(child_id); it != nodes_by_id.end())
-                to_visit.push_back(it->second);
-    }
-
-    std::reverse(post_order.begin(), post_order.end());
-    return post_order;
-}
-
 }
 
 StepIntervalTimings::StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const PlanAnalysisSnapshot & plan_snapshot)
     : concurrency_profile(intervals_per_thread)
 {
-    for (const auto & node : plan_snapshot.shape)
-        timing_by_step.try_emplace(node.id);
+    for (const auto & [step_id, _] : plan_snapshot.analyzers)
+        timing_by_step.try_emplace(step_id);
 
     computeBranchTime(plan_snapshot, collectStepIntervals(intervals_per_thread));
 }
@@ -132,14 +104,9 @@ StepIntervalTimings::TimeIntervalsByStep StepIntervalTimings::collectStepInterva
 
 void StepIntervalTimings::computeBranchTime(const PlanAnalysisSnapshot & plan_snapshot, TimeIntervalsByStep time_intervals_by_step)
 {
-    NodesById nodes_by_id;
-    nodes_by_id.reserve(plan_snapshot.shape.size());
-    for (const auto & node : plan_snapshot.shape)
-        nodes_by_id.emplace(node.id, &node);
-
     TimeIntervalsByStep branch_intervals_by_step;
 
-    for (const auto * node : collectPostOrder(nodes_by_id, plan_snapshot.root_id))
+    for (const auto * node : plan_snapshot.stepsInPostOrder())
     {
         /// The step's own intervals get moved into its branch, so its own metrics come first.
         TimeIntervals current_step_intervals = std::move(time_intervals_by_step.at(node->id));

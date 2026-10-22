@@ -1,16 +1,13 @@
 #pragma once
 
 #include <unordered_map>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/Profiling/Analysis/PlanShape.h>
-#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
+#include <vector>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <base/types.h>
 
 namespace DB
 {
-
-class QueryPlan;
 
 /// Everything the analysis of a query needs from its plan, read out while the plan is alive and
 /// held as values afterwards.
@@ -22,14 +19,17 @@ struct PlanAnalysisSnapshot
 {
     String root_id;
 
-    /// Who is below whom, for the passes that accumulate over a step's subtree:
-    /// the cost of a join's branch, and the time of one.
-    PlanShape shape;
-
-    /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`.
+    /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`. Each one carries
+    /// the ids below it, so this is the shape of the plan as well as the means to analyse it.
     std::unordered_map<String, StepAnalyzer> analyzers;
 
     static PlanAnalysisSnapshot capture(const PlanWalk & walk);
+
+    /// Children before parents, so that a pass accumulating over a step's subtree -- the cost of a
+    /// join's branch, the time of one -- finds its children already retired when it reaches it.
+    std::vector<const StepAnalyzer *> stepsInPostOrder() const;
+
+    const StepAnalyzer * find(const String & step_id) const;
 };
 
 }

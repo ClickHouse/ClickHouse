@@ -42,6 +42,22 @@ using JoinCardinalityReader = std::function<std::optional<UInt64>(const StepAnal
 /// The stages are read before all of it, to gather the per-stage timings the context carries.
 struct StepAnalyzer
 {
+    /// `IQueryPlanStep::getUniqID` of the step this analyses.
+    String id;
+
+    /// The steps below this one: its own children, then the roots of the child plans it holds.
+    /// Filled by the walk, which is the only thing that knows the shape.
+    std::vector<String> children;
+
+    /// What the passes that run across steps need to know about this one. A step declares these
+    /// for itself, so that nothing has to ask what kind of step it is after the fact.
+    bool is_join = false;
+    /// Joins of one cluster share their cost. Zero means the join belongs to no cluster.
+    UInt64 cluster_id = 0;
+    /// A set's builder and its consumers share one spill scope, and the total is attributed to
+    /// the builder when there is one.
+    bool is_creating_set = false;
+
     /// Every step has at least the one unnamed stage.
     std::vector<size_t> groups{0};
     std::unordered_map<size_t, String> group_names;

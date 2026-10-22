@@ -300,8 +300,8 @@ void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
     /// By id rather than by step: the processors outlive the plan, and so does this.
     const auto creates_a_set = [this](const String & step_id)
     {
-        const auto it = std::ranges::find(plan_snapshot.shape, step_id, &PlanShapeNode::id);
-        return it != plan_snapshot.shape.end() && it->is_creating_set;
+        const auto * analyzer = plan_snapshot.find(step_id);
+        return analyzer && analyzer->is_creating_set;
     };
 
     std::unordered_map<const TemporaryDataOnDiskScope *, String> steps_by_scope;
@@ -384,35 +384,29 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
 {
     CardinalityByJoinStep cardinality_by_join_step;
 
-    for (const auto & node : plan_snapshot.shape)
+    for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
     {
-        if (!node.is_join)
+        if (!analyzer.is_join || !analyzer.join_cardinality)
             continue;
 
-        const auto analyzer_it = plan_snapshot.analyzers.find(node.id);
-        if (analyzer_it == plan_snapshot.analyzers.end() || !analyzer_it->second.join_cardinality)
-            continue;
-
-        const auto processors_it = processors_by_step.find(node.id);
+        const auto processors_it = processors_by_step.find(step_id);
         if (processors_it == processors_by_step.end())
             continue;
-
-        const StepAnalyzer & analyzer = analyzer_it->second;
 
         StepAnalysisReport report;
         if (analyzer.reporter)
             report = analyzer.reporter(processors_it->second);
 
         UInt64 output_rows = 0;
-        if (const auto io_it = stats_by_step.find(node.id); io_it != stats_by_step.end())
+        if (const auto io_it = stats_by_step.find(step_id); io_it != stats_by_step.end())
             output_rows = io_it->second.output_rows;
 
-        cardinality_by_join_step[node.id] = analyzer.join_cardinality(report, output_rows);
+        cardinality_by_join_step[step_id] = analyzer.join_cardinality(report, output_rows);
 
-        join_raw_reports.emplace(node.id, std::move(report));
+        join_raw_reports.emplace(step_id, std::move(report));
     }
 
-    const JoinBranchCosts join_branch_costs(plan_snapshot.shape, plan_snapshot.root_id, cardinality_by_join_step);
+    const JoinBranchCosts join_branch_costs(plan_snapshot, cardinality_by_join_step);
     for (auto & [step_id, report] : join_raw_reports)
     {
         MetricGroup cost_group{MetricGroupKey::Cost, {}};

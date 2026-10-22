@@ -348,6 +348,9 @@ StepAnalyzer JoinStep::makeAnalyzer() const
 {
     StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
+    analyzer.is_join = true;
+    analyzer.cluster_id = getClusterId();
+
     JoinAnalysisInputs join_inputs;
     join_inputs.join = join;
     join_inputs.swapped = swap_streams;

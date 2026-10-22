@@ -31,6 +31,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    StepAnalyzer makeAnalyzer() const override;
+
     /// Whether the set fill also feeds an external temporary table (`GLOBAL IN`), attached either at
     /// creation or at pipeline build time (recorded as `external_table_expected` in the latter case).
     bool usesExternalTable() const { return set_and_key->external_table != nullptr || set_and_key->external_table_expected; }
