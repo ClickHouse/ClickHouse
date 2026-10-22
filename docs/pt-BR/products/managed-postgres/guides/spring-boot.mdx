@@ -1,0 +1,348 @@
+---
+slug: /cloud/managed-postgres/guides/spring-boot
+sidebarTitle: 'Spring Boot'
+title: 'Use o Spring Boot com o ClickHouse Managed Postgres'
+description: 'Conecte uma aplicação Spring Boot ao ClickHouse Managed Postgres usando Spring Data JPA, o driver JDBC do PostgreSQL, HikariCP e migrações do Flyway com TLS verificado'
+keywords: ['managed postgres', 'spring boot', 'spring', 'java', 'jdbc', 'pgjdbc', 'spring data jpa', 'hibernate', 'hikaricp', 'flyway', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-spring-boot-beta" />
+
+O [Spring Boot](https://spring.io/projects/spring-boot) se conecta ao Postgres por meio do driver JDBC do PostgreSQL (pgjdbc) e de um pool de conexões HikariCP, e executa as migrações do [Flyway](https://documentation.red-gate.com/flyway) na inicialização da aplicação. Neste guia, você cria uma tabela `todos` com uma migração do Flyway e atende a requisições de criação, leitura, atualização e exclusão por meio de um controller REST do Spring Data JPA. Todas as conexões usam TLS com verificação completa de certificados.
+
+## Pré-requisitos {#prerequisites}
+
+* JDK 17 ou superior, conforme exigido pelo Spring Boot 4. Este guia foi testado com Java 25, Spring Boot 4.1.1, pgjdbc 42.7.13, Hibernate 7.4.5, HikariCP 7.0.2 e Flyway 12.4.0.
+* Uma conta no ClickHouse Cloud
+* [`psql`](https://www.postgresql.org/download/), para criar o banco de dados. Você também pode executar a instrução `CREATE DATABASE` no [SQL Console](/pt-BR/integrations/connectors/sql-clients/sql-console).
+
+## Crie um serviço ClickHouse Managed Postgres {#create-service}
+
+No console do ClickHouse Cloud, clique em **New service** e selecione **Postgres**. A instância fica pronta em poucos minutos. Para um passo a passo, consulte o [guia de início rápido](/pt-BR/products/managed-postgres/quickstart).
+
+## Obtenha os detalhes de conexão {#connection-details}
+
+Clique em **Connect** na barra lateral esquerda do seu serviço. O modal exibe seu nome de usuário, senha, servidor e porta, além de uma chave de alternância **Directly** / **via PgBouncer**.
+
+Com **Directly** selecionado, ative **Use SSL** e abra a aba **jdbc**. Ela exibe uma URL JDBC que você poderá usar no Spring Boot depois de fazer duas alterações, descritas em [Configure a conexão](#configure-connection): o nome do banco de dados e o nome do arquivo do certificado da CA.
+
+```text
+jdbc:postgresql://your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem
+```
+
+A URL JDBC não contém o nome de usuário nem a senha. O Spring Boot os lê de propriedades separadas.
+
+Este guia se conecta **diretamente** ao Postgres na porta `5432`. Uma aplicação Spring Boot é um processo de longa duração que mantém seu próprio pool do HikariCP, com 10 conexões por padrão, então não precisa de um segundo pooler na frente do Postgres. Garanta que o número de instâncias da aplicação multiplicado pelo tamanho do pool fique abaixo do `max_connections` do serviço. Se você executar muitas instâncias, consulte [Usar o PgBouncer](#pgbouncer).
+
+No modal, clique em **Download CA certificate**. Você também pode baixá-lo em **Settings → CA Certificate**. O certificado é único para a sua instância, permitindo que o driver o use para verificar se está se comunicando com o seu servidor.
+
+## Configure o projeto {#project-setup}
+
+Gere um projeto Maven com o [Spring Initializr](https://start.spring.io/), incluindo as dependências Spring Web, Spring Data JPA, Flyway Migration e PostgreSQL Driver:
+
+```bash
+curl https://start.spring.io/starter.tgz \
+  -d type=maven-project \
+  -d dependencies=web,data-jpa,flyway,postgresql \
+  -d artifactId=todos -d name=todos -d baseDir=todos | tar -xzf -
+cd todos
+```
+
+<Tip>
+  **Vai adicionar a uma aplicação existente?**
+
+  Pule o comando `curl`. No seu `pom.xml`, adicione as dependências `spring-boot-starter-data-jpa`, `spring-boot-starter-flyway` e `org.flywaydb:flyway-database-postgresql`, além de `org.postgresql:postgresql` com escopo `runtime`, e remova `com.h2database:h2` se a sua aplicação usar H2. Em seguida, siga para [Configurar a conexão](#configure-connection).
+</Tip>
+
+## Configure a conexão {#configure-connection}
+
+Mova o certificado da CA que você baixou para o diretório do projeto e renomeie-o para `ca-certificate.pem`.
+
+Crie um banco de dados para a aplicação. Substitua `<PASSWORD>` e o host pelos valores exibidos no modal **Connect**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_spring;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Substitua o conteúdo de `src/main/resources/application.properties` pelo seguinte. Em uma aplicação existente, adicione as linhas `spring.datasource` e `spring.jpa` e remova as demais configurações `spring.datasource`, como uma URL do H2. A URL é a mesma da aba **jdbc**, mas com o banco de dados alterado para `guide_spring` e o `sslrootcert` apontando para o arquivo renomeado:
+
+```properties title="src/main/resources/application.properties"
+spring.application.name=todos
+server.port=3113
+
+spring.datasource.url=jdbc:postgresql://your-instance.pg.clickhouse.cloud:5432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem
+spring.datasource.username=postgres
+spring.datasource.password=${DATABASE_PASSWORD}
+
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.open-in-view=false
+```
+
+O pgjdbc lê `sslmode=verify-full` e `sslrootcert` da URL. Ele carrega todos os certificados do arquivo da CA e verifica tanto a cadeia de certificados quanto o hostname, portanto você não precisa de nenhum código TLS adicional. O Spring Boot lê a senha da variável de ambiente `DATABASE_PASSWORD`, de modo que ela não fica no arquivo.
+
+As demais configurações:
+
+* `ddl-auto=validate` faz com que o Hibernate verifique, na inicialização, se suas entidades correspondem às tabelas criadas pelo Flyway. O Hibernate não altera o schema.
+* `open-in-view=false` devolve cada conexão ao pool assim que sua transação termina, em vez de mantê-la até que a resposta HTTP seja gravada.
+
+<Note>
+  Um caminho relativo em `sslrootcert` é resolvido a partir do diretório de trabalho da JVM. `./mvnw spring-boot:run` inicia a aplicação no diretório do projeto, então `ca-certificate.pem` funciona nesse caso. Ao executar o JAR empacotado em outro local, use um caminho absoluto. O pgjdbc não expande `~`.
+
+  Se você copiar a URL com **Use SSL** desativado, ela não terá `sslmode`, e o pgjdbc usará `prefer`: ele criptografa a conexão, mas não verifica o servidor. Com a CA errada, a conexão falha com `PKIX path building failed`. Se o arquivo não existir, ela falha com `Could not open SSL root certificate file`. Se o host não corresponder ao certificado, por exemplo ao conectar por endereço IP, ela falha com `The hostname ... could not be verified by hostnameverifier PgjdbcHostnameVerifier`.
+</Note>
+
+## Crie a tabela com o Flyway {#migrations}
+
+O Flyway executa os arquivos SQL em `src/main/resources/db/migration` por ordem de versão quando a aplicação é iniciada, antes que o Hibernate valide o schema. Crie o arquivo `src/main/resources/db/migration/V1__create_todos.sql`:
+
+```sql title="src/main/resources/db/migration/V1__create_todos.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text        NOT NULL,
+    done       boolean     NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+O Flyway registra cada arquivo aplicado na tabela `flyway_schema_history` e, nas inicializações seguintes, executa apenas os arquivos novos. Para alterar o schema, adicione um novo arquivo, como `V2__add_due_date.sql`, em vez de editar um que já tenha sido executado.
+
+<Note>
+  Uma aplicação que usava H2 normalmente deixava o Hibernate criar as tabelas, porque o padrão de `ddl-auto` é `create-drop` para bancos de dados embutidos. No Postgres, o padrão é `none`; portanto, adicione uma migração que crie as tabelas que você já tem. Um `@Id` com um `@GeneratedValue` simples também exige uma sequência com o nome da entidade, como `employee_seq` para `Employee`, com incremento de `50`, o tamanho de alocação padrão do Hibernate. Caso contrário, a inicialização falha com `Schema validation: missing sequence [employee_seq]` ou, se a sequência tiver incremento de `1`, com `The increment size of the [employee_seq] sequence is set to [50] in the entity mapping but the mapped database sequence increment size is [1]`:
+
+  ```sql
+  CREATE SEQUENCE employee_seq INCREMENT BY 50;
+  ```
+</Note>
+
+## Consultar o banco de dados {#query}
+
+Crie a entidade em `src/main/java/com/example/todos/Todo.java`. O Spring Boot mapeia o campo `createdAt` para a coluna `created_at`:
+
+```java title="src/main/java/com/example/todos/Todo.java"
+package com.example.todos;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+
+@Entity
+@Table(name = "todos")
+public class Todo {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+
+    private boolean done;
+
+    private Instant createdAt = Instant.now();
+
+    protected Todo() {
+    }
+
+    public Todo(String title) {
+        this.title = title;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public boolean isDone() {
+        return done;
+    }
+
+    public void setDone(boolean done) {
+        this.done = done;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+}
+```
+
+Crie um repositório Spring Data em `src/main/java/com/example/todos/TodoRepository.java`. O Spring Data implementa a interface em tempo de execução:
+
+```java title="src/main/java/com/example/todos/TodoRepository.java"
+package com.example.todos;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface TodoRepository extends JpaRepository<Todo, Long> {
+}
+```
+
+Crie um controller REST em `src/main/java/com/example/todos/TodoController.java`, com uma chamada ao repositório por rota:
+
+```java title="src/main/java/com/example/todos/TodoController.java"
+package com.example.todos;
+
+import java.util.List;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+@RestController
+@RequestMapping("/todos")
+public class TodoController {
+
+    record NewTodo(String title) {
+    }
+
+    private final TodoRepository todos;
+
+    public TodoController(TodoRepository todos) {
+        this.todos = todos;
+    }
+
+    // Read
+    @GetMapping
+    public List<Todo> list() {
+        return todos.findAll(Sort.by("id"));
+    }
+
+    // Create
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Todo create(@RequestBody NewTodo body) {
+        return todos.save(new Todo(body.title()));
+    }
+
+    // Update: toggle the done flag
+    @PatchMapping("/{id}")
+    public Todo toggle(@PathVariable Long id) {
+        Todo todo = todos.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        todo.setDone(!todo.isDone());
+        return todos.save(todo);
+    }
+
+    // Delete
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        todos.deleteById(id);
+    }
+}
+```
+
+Cada chamada ao repositório é executada em sua própria transação, usando uma conexão do pool do HikariCP. Para agrupar várias chamadas em uma única transação, coloque-as em um método anotado com `@Transactional`.
+
+## Executar e verificar {#verify}
+
+Defina a senha e inicie a aplicação:
+
+```bash
+export DATABASE_PASSWORD='<PASSWORD>'
+./mvnw spring-boot:run
+```
+
+Na primeira inicialização, o Flyway aplica a migração antes de o servidor web iniciar. O log inclui as linhas abaixo, mostradas aqui sem os timestamps e os nomes das threads:
+
+```text
+o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "1 - create todos"
+o.f.core.internal.command.DbMigrate      : Successfully applied 1 migration to schema "public", now at version v1 (execution time 00:00.236s)
+org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.5.Final
+o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 3113 (http) with context path '/'
+com.example.todos.TodosApplication       : Started TodosApplication in 5.619 seconds (process running for 5.744)
+```
+
+Em um segundo terminal, crie duas tarefas, marque a primeira como concluída e exclua a segunda:
+
+```bash
+curl -w '\n' -X POST localhost:3113/todos -H 'Content-Type: application/json' -d '{"title": "Try Spring Boot"}'
+curl -w '\n' -X POST localhost:3113/todos -H 'Content-Type: application/json' -d '{"title": "Write a Flyway migration"}'
+curl -w '\n' -X PATCH localhost:3113/todos/1
+curl -X DELETE localhost:3113/todos/2
+```
+
+As requisições `POST` retornam as novas linhas, e a requisição `PATCH` retorna a linha atualizada. O `-w '\n'` adiciona uma quebra de linha após cada resposta:
+
+```json
+{"title":"Try Spring Boot","createdAt":"2026-10-01T14:49:40.595598759Z","done":false,"id":1}
+{"title":"Write a Flyway migration","createdAt":"2026-10-01T14:49:40.794631917Z","done":false,"id":2}
+{"title":"Try Spring Boot","createdAt":"2026-10-01T14:49:40.595599Z","done":true,"id":1}
+```
+
+Abra [http://localhost:3113/todos](http://localhost:3113/todos) no navegador para listar as tarefas pendentes. A resposta será semelhante a esta:
+
+```json
+[{"title":"Try Spring Boot","createdAt":"2026-10-01T14:49:40.595599Z","done":true,"id":1}]
+```
+
+Para confirmar que as conexões da aplicação usam TLS, consulte `pg_stat_ssl` com a aplicação em execução:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SELECT ssl, version, count(*) AS connections FROM pg_stat_ssl JOIN pg_stat_activity USING (pid) WHERE datname = 'guide_spring' AND application_name = 'PostgreSQL JDBC Driver' GROUP BY ssl, version;"
+```
+
+```text
+ ssl | version | connections
+-----+---------+-------------
+ t   | TLSv1.3 |          10
+(1 row)
+```
+
+As 10 conexões correspondem ao pool do HikariCP. Encerre a aplicação com <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+
+Para ver os dados no console, abra o **SQL Console** na barra lateral esquerda do seu serviço, expanda `guide_spring` e depois `public` e clique na tabela `todos`. Ao lado dela, a tabela `flyway_schema_history` armazena o histórico de migrações. A tabela `todos` contém a linha restante:
+
+| id | title           | done | created&#95;at                |
+| -- | --------------- | ---- | ----------------------------- |
+| 1  | Try Spring Boot | true | 2026-10-01 14:49:40.595599+00 |
+
+## Use o PgBouncer {#pgbouncer}
+
+Quando o conjunto de instâncias da aplicação se aproximar do limite de conexões do Postgres, conecte a aplicação por meio do [PgBouncer](/pt-BR/products/managed-postgres/connection#pgbouncer) incluído, na porta `6432`, e mantenha o Flyway na conexão direta. Em `application.properties`, altere a porta em `spring.datasource.url` para `6432` e adicione as linhas `spring.flyway` logo abaixo:
+
+```properties title="src/main/resources/application.properties"
+spring.datasource.url=jdbc:postgresql://your-instance.pg.clickhouse.cloud:6432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem
+spring.flyway.url=jdbc:postgresql://your-instance.pg.clickhouse.cloud:5432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem
+spring.flyway.user=postgres
+spring.flyway.password=${DATABASE_PASSWORD}
+```
+
+Quando `spring.flyway.url` está definido, o Flyway abre sua própria conexão e não usa o nome de usuário e a senha de `spring.datasource`; portanto, defina também `spring.flyway.user` e `spring.flyway.password`. O mesmo certificado de CA serve para as duas portas.
+
+O PgBouncer opera no modo de pooling de transações, então cada transação pode ser executada em uma conexão Postgres diferente. Com o Spring Boot:
+
+* **Prepared statements** funcionam com as configurações padrão do driver, então você não precisa de `prepareThreshold=0`. A partir da quinta execução de uma instrução em uma conexão (`prepareThreshold`), o pgjdbc passa a usar um prepared statement nomeado do lado do servidor. Ele libera as instruções com uma mensagem `Close` no nível do protocolo, que o PgBouncer incluído sabe tratar.
+* **pgjdbc 42.7.5 ou posterior** é obrigatório. Versões mais antigas enviam o parâmetro de inicialização `extra_float_digits`, e o PgBouncer rejeita a conexão com `FATAL: unsupported startup parameter: extra_float_digits`. O Spring Boot 4 já inclui um pgjdbc mais recente. Em versões mais antigas do Spring Boot, defina `<postgresql.version>42.7.13</postgresql.version>` na seção `<properties>` do `pom.xml`.
+* **As configurações de sessão não persistem.** Instruções `SET` e `Connection.setSchema`, usado pela propriedade `spring.datasource.hikari.schema` do HikariCP, se aplicam apenas à conexão Postgres que as executa e podem vazar para outros clientes. Os parâmetros de URL `currentSchema` e `options` falham com `FATAL: unsupported startup parameter`. Use nomes de tabela qualificados com o schema ou `SET LOCAL` dentro de uma transação.
+* **Flyway** funciona através do PgBouncer por padrão, pois adquire um advisory lock no nível da transação. Migrações que executam `CREATE INDEX CONCURRENTLY` exigem `spring.flyway.postgresql.transactional-lock=false`, o que faz o Flyway passar a usar um bloqueio no nível da sessão. Através do PgBouncer, esse bloqueio falha com `Unable to release PostgreSQL advisory lock` e continua retido em uma conexão do pool; portanto, use a conexão direta para o Flyway.
+* **Tamanho do pool**: cada conexão do HikariCP é uma conexão de cliente de baixo custo com o PgBouncer. O PgBouncer limita as conexões Postgres que abre para cada banco de dados e usuário (`default_pool_size`), independentemente de quantas conexões de cliente as instâncias da sua aplicação abram. Transações acima desse limite aguardam no PgBouncer por até `query_wait_timeout` (120 segundos por padrão), em vez de falharem no HikariCP. Um pool maior no HikariCP só aumenta a concorrência até esse limite, então o padrão de 10 por instância é um bom ponto de partida. Consulte [Limites de conexão do PgBouncer e do Postgres](/pt-BR/products/managed-postgres/faq#pgbouncer-vs-pg-connections).
+
+O `pg_stat_ssl` mostra a conexão entre o PgBouncer e o Postgres, portanto a consulta de TLS em [Executar e verificar](#verify) não exibe as conexões da aplicação feitas através do PgBouncer. Ainda assim, a conexão da aplicação com o PgBouncer é verificada: um certificado de CA incorreto falha da mesma forma.
+
+## Próximos passos {#next-steps}
+
+* [Conexão](/pt-BR/products/managed-postgres/connection): strings de conexão, PgBouncer e TLS
+* [Configurações](/pt-BR/products/managed-postgres/settings): parâmetros do Postgres e do PgBouncer, como `max_connections`
+* [Réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas): envie consultas read-only para uma réplica
+* [Segurança](/pt-BR/products/managed-postgres/security): listas de acesso por IP e rede privada

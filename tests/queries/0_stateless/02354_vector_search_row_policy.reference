@@ -1,0 +1,22 @@
+no policy, prefilter: uses the index
+1
+policy, prefilter: exact search
+0
+policy, postfilter: uses the index
+1
+policy on a non-vector column, no rescoring: uses _distance
+1
+policy hides the nearest neighbours, multiplier 1: too few rows
+policy hides the nearest neighbours, multiplier 3: the next visible rows
+8
+9
+10
+11
+policy on the vector column, no rescoring: correct result
+0
+policy on the vector column, rescoring: correct result
+0
+policy on the vector column, FINAL, no rescoring: correct result
+0
+policy on the vector column, FINAL, rescoring: correct result
+0

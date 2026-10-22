@@ -1,0 +1,23 @@
+--- the whole part is read when it fits the budget, and the estimate is exact ---
+b < 100: sampled 0, real inside the span 1
+--- a key spread over the parent order, sampled ---
+b < 100: sampled 1, real inside the span 1
+b = 7: sampled 1, real inside the span 1
+--- a key that follows the parent order, sampled ---
+c >= 100 AND c < 110: sampled 1, real inside the span 1
+c = 42: sampled 1, real inside the span 1
+--- a key that repeats along the parent order, sampled ---
+d < 300: sampled 1, real inside the span 1
+--- max_rows_to_read below the whole-part scan ---
+status: applicable
+source: empirical
+empirical_status: ok
+--- max_rows_to_read below the smallest sample ---
+empirical_status: unsupported
+over max_rows_to_read
+--- the largest step that keeps 30 granules ---
+empirical_status: ok
+sampled_marks: 30 / 59
+--- an offset filter on a sampled estimate ---
+status: applicable
+empirical_status: unsupported
