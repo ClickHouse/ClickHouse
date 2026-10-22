@@ -45,7 +45,8 @@ echo '-- remote, no local plan'
 ${PR_CLIENT} --parallel_replicas_local_plan 0 -q "SELECT x FROM mt WHERE ${remote_in} ORDER BY x"
 
 echo '-- remote, custom key'
-${PR_CLIENT} --parallel_replicas_mode custom_key_sampling --parallel_replicas_custom_key x \
+# The custom-key mode does not support `serialize_query_plan`, which the distributed-plan CI job turns on.
+${PR_CLIENT} --parallel_replicas_mode custom_key_sampling --parallel_replicas_custom_key x --serialize_query_plan 0 \
     -q "SELECT x FROM mt WHERE ${remote_in} ORDER BY x"
 
 echo '-- remote, insert select'
