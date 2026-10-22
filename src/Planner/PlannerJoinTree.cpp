@@ -1828,12 +1828,20 @@ void setParallelReplicasImplementationForSubqueries(const QueryTreeNodePtr & nod
     /// reading without parallel replicas at all. Every carrier of a subquery - a table expression, an
     /// `IN` set, a materialized CTE, a correlated subquery - has its own context whose `SETTINGS` clause
     /// can name the other implementation, and the traversal reaches all of them.
-    traverseQueryTree(node, Everything{}, [plan_based](const QueryTreeNodePtr & current_node)
+    /// Only where the context disagrees: writing the value it already holds would mark the setting as
+    /// changed on contexts that never asked for it, which is visible in `system.settings`.
+    auto set_if_differs = [plan_based](const ContextMutablePtr & context)
+    {
+        if (context->getSettingsRef()[Setting::parallel_replicas_plan_based] != plan_based)
+            context->setSetting("parallel_replicas_plan_based", Field{plan_based});
+    };
+
+    traverseQueryTree(node, Everything{}, [&set_if_differs](const QueryTreeNodePtr & current_node)
     {
         if (auto * query_node = current_node->as<QueryNode>())
-            query_node->getMutableContext()->setSetting("parallel_replicas_plan_based", Field{plan_based});
+            set_if_differs(query_node->getMutableContext());
         else if (auto * union_node = current_node->as<UnionNode>())
-            union_node->getMutableContext()->setSetting("parallel_replicas_plan_based", Field{plan_based});
+            set_if_differs(union_node->getMutableContext());
     });
 }
 
