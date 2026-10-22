@@ -73,7 +73,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 from ci.jobs.scripts.agent import (
-    AGENT_MODEL,
+    CYBER_RISK_FLAG,
+    FALLBACK_MODEL,
+    MODEL,
     ROBOT_NAMES,
     openai_api_key,
     repo_from_pr_url,
@@ -116,6 +118,8 @@ CREDENTIAL_ENV_RE = re.compile(
 )
 
 MAX_ATTEMPTS = 2
+# Set once `MODEL` refuses this job's input as a cybersecurity risk: later agent runs use `FALLBACK_MODEL`.
+_cyber_risk_flagged = False
 # Only a fast failure (auth, network, CLI start-up) is retried; a slow one, a
 # timeout above all, would just spend the budget a second time.
 RETRY_IF_FASTER_THAN_SEC = 300
@@ -771,7 +775,20 @@ def _run_to_agent_log(command, env):
         ).returncode
 
 
-def _run_codex_once(prompt, timeout_sec, effort, output_file):
+def _agent_model():
+    return FALLBACK_MODEL if _cyber_risk_flagged else MODEL
+
+
+def _logged_since(offset, text):
+    """Whether AGENT_LOG got `text` after byte `offset`."""
+    if not AGENT_LOG.exists():
+        return False
+    with open(AGENT_LOG, "rb") as log:
+        log.seek(offset)
+        return text in log.read().decode("utf-8", "replace")
+
+
+def _run_codex_once(prompt, timeout_sec, effort, output_file, model):
     _drop_stale_output(output_file)
     workdir = TRIAGE_DIR.resolve()
     tmpdir = workdir / "tmp"
@@ -791,7 +808,7 @@ def _run_codex_once(prompt, timeout_sec, effort, output_file):
                 "codex",
                 "exec",
                 "-m",
-                AGENT_MODEL,
+                model,
                 "-c",
                 f"model_reasoning_effort={effort}",
                 "-c",
@@ -872,18 +889,26 @@ def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
     """Run the agent and return `load(output_file)`.
 
     Each attempt gets `cap_sec`, cut to what is left before `deadline`
-    (`time.monotonic()`). Only a fast failure is retried.
+    (`time.monotonic()`). Only a fast failure is retried, and a refusal of
+    `MODEL` as a cybersecurity risk, which switches to `FALLBACK_MODEL`.
     """
+    global _cyber_risk_flagged
     last_error = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    attempt = 0
+    while attempt < MAX_ATTEMPTS:
+        attempt += 1
         timeout_sec = int(min(cap_sec, deadline - time.monotonic()))
         if timeout_sec < MIN_AGENT_RUN_SEC:
             raise RuntimeError(
                 f"triage budget exhausted after {attempt - 1} attempts: {last_error}"
             )
+        model = _agent_model()
+        log_offset = AGENT_LOG.stat().st_size if AGENT_LOG.exists() else 0
         started = time.monotonic()
         try:
-            exit_code = _run_codex_once(prompt, timeout_sec, effort, output_file)
+            exit_code = _run_codex_once(
+                prompt, timeout_sec, effort, output_file, model
+            )
             # A valid output counts even on non-zero exit (e.g. the timeout
             # fired after the file was already written).
             try:
@@ -903,6 +928,13 @@ def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
         print(f"WARNING: triage attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+        if model != FALLBACK_MODEL and _logged_since(log_offset, CYBER_RISK_FLAG):
+            # The model refused the input, which another try with it would not change: switch
+            # however long it took, without spending an attempt. Later runs start on the fallback.
+            print(f"WARNING: {model} flagged the triage as a cybersecurity risk, switching to {FALLBACK_MODEL}")
+            _cyber_risk_flagged = True
+            attempt -= 1
+            continue
         if time.monotonic() - started >= RETRY_IF_FASTER_THAN_SEC:
             raise RuntimeError(f"triage failed, not retried: {last_error}")
         if attempt < MAX_ATTEMPTS:

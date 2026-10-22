@@ -34,7 +34,9 @@ import time
 import traceback
 
 from ci.jobs.scripts.agent import (
-    AGENT_MODEL,
+    CYBER_RISK_FLAG,
+    FALLBACK_MODEL,
+    MODEL,
     ROBOT_NAMES,
     codex_login,
     gh_auth_with_robot_token,
@@ -51,12 +53,6 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # transient 5xx / authorization error that no single inner subprocess controls.
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
-
-MODEL = "gpt-6.1-sol"
-# `gpt-6.1-sol` refuses some reviews with "This content was flagged for possible
-# cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`.
-FALLBACK_MODEL = AGENT_MODEL
-CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 
 
 def _join_prompt(*sections):

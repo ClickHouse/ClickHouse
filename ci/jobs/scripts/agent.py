@@ -28,7 +28,11 @@ OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
 # One model for every agent consumer, so review and triage quality
 # stay comparable across backends and jobs.
-AGENT_MODEL = "gpt-5.4"
+MODEL = "gpt-6.1-sol"
+# `gpt-6.1-sol` refuses some inputs with "This content was flagged for possible
+# cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`.
+FALLBACK_MODEL = "gpt-5.4"
+CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 
 
 def repo_from_pr_url(pr_url):
