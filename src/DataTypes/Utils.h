@@ -39,4 +39,16 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
+/** Returns true if `<`, `>`, `<=` or `>=` between `left` and `right` compares an `Enum` with a `String` or a
+  * `FixedString`, as a whole or in aligned elements of tuples. Such a comparison converts the string to the
+  * `Enum` and compares the numbers, so it does not follow the order of the strings. `Nullable` and
+  * `LowCardinality` are looked through.
+  *
+  * Examples:
+  * `String` and `Enum8('b' = 1, 'a' = 2)` returns true.
+  * `Tuple(Nullable(String), UInt8)` and `Tuple(Enum8('b' = 1, 'a' = 2), UInt8)` returns true.
+  * `String` and `Tuple(Enum8('b' = 1, 'a' = 2))` returns false.
+  */
+bool comparesEnumWithString(const DataTypePtr & left, const DataTypePtr & right);
+
 }

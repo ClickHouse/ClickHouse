@@ -359,4 +359,26 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
+bool comparesEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
+{
+    const auto left_type = removeLowCardinalityAndNullable(left);
+    const auto right_type = removeLowCardinalityAndNullable(right);
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (comparesEnumWithString(left_elements[i], right_elements[i]))
+                return true;
+        return false;
+    }
+
+    return (isEnum(left_type) && isStringOrFixedString(right_type)) || (isStringOrFixedString(left_type) && isEnum(right_type));
+}
+
 }

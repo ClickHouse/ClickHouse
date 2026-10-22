@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
@@ -974,6 +975,17 @@ public:
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
     bool isNameInsensitive() const override { return true; }
+
+    /// Ordering an `Enum` with a string converts the string to the `Enum`, which throws for an unused default value
+    /// of a `LowCardinality` dictionary and for a value behind a NULL.
+    bool canBeExecutedOnDefaultArguments(const DataTypes & arguments) const override
+    {
+        if constexpr (IsOperation<Op>::equals || IsOperation<Op>::not_equals)
+            return true;
+        else
+            return arguments.size() != 2 || !comparesEnumWithString(arguments[0], arguments[1]);
+    }
+
 private:
     const ComparisonParams params;
 
