@@ -407,6 +407,14 @@ CancellationCode IStorage::killPartMoveToShard(const UUID & /*task_uuid*/)
 
 StorageID IStorage::getStorageID() const
 {
+    /// A lazily loaded table that has been replaced in its database by the loaded storage keeps being
+    /// held by queries that resolved it before the replacement. From then on, a rename updates only the
+    /// loaded storage (e.g. a move from an `Atomic` to an `Ordinary` database clears the UUID), so the
+    /// proxy answers with the identity of that storage, never with a stale copy of its own. The
+    /// lifecycle checks in lockForShare and tryLockForShare depend on whether the table has a UUID.
+    if (auto loaded = getLoadedLazyTable())
+        return loaded->getStorageID();
+
     std::lock_guard lock(id_mutex);
     return storage_id;
 }

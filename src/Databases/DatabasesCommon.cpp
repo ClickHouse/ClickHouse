@@ -572,9 +572,8 @@ StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::ite
     if (!real_table)
         return proxy;
 
-    auto table_id = proxy->getStorageID();
-    /// A rename updates the proxy and the storage it stands for together, under this same mutex.
-    chassert(real_table->getStorageID() == table_id);
+    /// A loaded proxy answers with the identity of the storage it stands for, see `IStorage::getStorageID`.
+    auto table_id = real_table->getStorageID();
 
     /// The UUID mapping has to be updated as well: `DatabaseCatalog::getTableImpl` answers a
     /// StorageID that already carries a UUID straight from it, without asking the database.
