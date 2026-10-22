@@ -51,7 +51,7 @@ private:
     template <typename Method>
     size_t buildFilter(Method & method, IColumnFilter & filter, size_t continued_rows, size_t chunk_rows);
 
-    /// Inlined, so that the state does not escape `buildFilter` and stays in registers in the row loop.
+    /// Inlined so that `state` stays in registers in the row loop.
     template <typename Method, typename State>
     ALWAYS_INLINE size_t buildFilterForRange(Method & method, State & state, IColumnFilter & filter, size_t range_begin, size_t range_end);
 

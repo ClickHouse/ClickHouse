@@ -84,8 +84,7 @@ template <typename Method>
 size_t DistinctSortedStreamTransform::buildFilter(
     Method & method, IColumnFilter & filter, const size_t continued_rows, const size_t chunk_rows)
 {
-    /// One state serves every range of the chunk. A new range starts from an empty set and an empty last-key cache;
-    /// the first `continued_rows` rows extend the previous chunk's last range, whose set is kept.
+    /// The first `continued_rows` rows continue the previous chunk's last range, so they are checked against its set.
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
     size_t count = buildFilterForRange(method, state, filter, 0, continued_rows);
     size_t range_begin = continued_rows;
