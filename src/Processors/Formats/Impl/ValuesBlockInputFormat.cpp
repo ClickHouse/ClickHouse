@@ -585,6 +585,109 @@ namespace
         /// The member was replaced with a default, so its column no longer holds it.
         return convertFieldToType(value, *to, from.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
     }
+
+    /// The same as `convertExpressionValueToType`, but for a destination type with dynamic structure (`Dynamic`,
+    /// `JSON`, or a composite containing them): a `Field` cannot be inserted into such a column without losing its
+    /// type, so the value is assembled as a size-1 column of type `to`. A member that was not replaced with a
+    /// default is cast from its source column, so neither the type it carries into a `Dynamic` member nor its
+    /// rendering into a `String` member depends on the `Field` read from the column.
+    ColumnPtr convertExpressionValueToColumn(
+        const IColumn & column,
+        const DataTypePtr & from,
+        const Field & value,
+        const DataTypePtr & to,
+        const FormatSettings & format_settings)
+    {
+        checkStackSize();
+
+        if (!to->hasDynamicStructure())
+        {
+            auto res = to->createColumn();
+            res->insert(convertExpressionValueToType(column, from, value, to, format_settings));
+            return res;
+        }
+
+        if (value == column[0])
+            return castColumn(ColumnWithTypeAndName(column.getPtr(), from, ""), to, nullptr)->convertToFullColumnIfConst();
+
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+        {
+            if (!column_nullable->isNullAt(0))
+                return convertExpressionValueToColumn(
+                    column_nullable->getNestedColumn(), removeNullable(from), value, to, format_settings);
+        }
+        else if (typeid_cast<const ColumnVariant *>(&column) || typeid_cast<const ColumnDynamic *>(&column))
+        {
+            const ActiveAlternative alternative = resolveActiveAlternative(column, from, 0);
+            if (alternative.column != &column)
+            {
+                ColumnPtr nested = alternative.column->cut(alternative.row, 1);
+                return convertExpressionValueToColumn(*nested, alternative.type, value, to, format_settings);
+            }
+        }
+
+        const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+        const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column);
+        if (to_tuple && from_tuple && column_tuple && value.getType() == Field::Types::Tuple
+            && !to_tuple->getElements().empty()
+            && to_tuple->getElements().size() == from_tuple->getElements().size()
+            && value.safeGet<Tuple>().size() == from_tuple->getElements().size())
+        {
+            const auto & src_tuple = value.safeGet<Tuple>();
+            Columns elements(src_tuple.size());
+            for (size_t i = 0; i < src_tuple.size(); ++i)
+                elements[i] = convertExpressionValueToColumn(
+                    column_tuple->getColumn(i), from_tuple->getElements()[i], src_tuple[i], to_tuple->getElements()[i], format_settings);
+            return ColumnTuple::create(elements);
+        }
+
+        const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+        const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+        const auto * column_array = typeid_cast<const ColumnArray *>(&column);
+        if (to_array && from_array && column_array && value.getType() == Field::Types::Array
+            && value.safeGet<Array>().size() == column_array->getOffsets()[0])
+        {
+            const auto & src_array = value.safeGet<Array>();
+            auto data = to_array->getNestedType()->createColumn();
+            for (size_t i = 0; i < src_array.size(); ++i)
+            {
+                ColumnPtr element = column_array->getData().cut(i, 1);
+                data->insertFrom(
+                    *convertExpressionValueToColumn(*element, from_array->getNestedType(), src_array[i], to_array->getNestedType(), format_settings),
+                    0);
+            }
+            return ColumnArray::create(std::move(data), ColumnArray::ColumnOffsets::create(1, src_array.size()));
+        }
+
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+        const auto * column_map = typeid_cast<const ColumnMap *>(&column);
+        if (to_map && from_map && column_map && value.getType() == Field::Types::Map
+            && value.safeGet<Map>().size() == column_map->getNestedColumn().getOffsets()[0])
+        {
+            const auto & src_map = value.safeGet<Map>();
+            const auto & keys = column_map->getNestedData().getColumn(0);
+            const auto & values = column_map->getNestedData().getColumn(1);
+            auto res_keys = to_map->getKeyType()->createColumn();
+            auto res_values = to_map->getValueType()->createColumn();
+            for (size_t i = 0; i < src_map.size(); ++i)
+            {
+                const auto & src_entry = src_map[i].safeGet<Tuple>();
+                res_keys->insertFrom(
+                    *convertExpressionValueToColumn(*keys.cut(i, 1), from_map->getKeyType(), src_entry[0], to_map->getKeyType(), format_settings),
+                    0);
+                res_values->insertFrom(
+                    *convertExpressionValueToColumn(*values.cut(i, 1), from_map->getValueType(), src_entry[1], to_map->getValueType(), format_settings),
+                    0);
+            }
+            return ColumnMap::create(std::move(res_keys), std::move(res_values), ColumnArray::ColumnOffsets::create(1, src_map.size()));
+        }
+
+        /// The member was replaced with a default, so its column no longer holds it.
+        ColumnPtr const_column = from->createColumnConst(1, value);
+        return castColumn(ColumnWithTypeAndName(const_column, from, ""), to, nullptr)->convertToFullColumnIfConst();
+    }
 }
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
@@ -817,12 +920,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
-    /// Instead try to create a column with single element and cast it to the destination type.
+    /// Instead cast the evaluated column to the destination type, member by member where defaults were substituted.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = expression_type->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, expression_type, ""), type.getPtr(), nullptr);
-        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+        ColumnPtr casted_column = convertExpressionValueToColumn(*expression_column, expression_type, expression_value, type.getPtr(), format_settings);
+        column.insertFrom(*casted_column, 0);
     }
     else
     {
