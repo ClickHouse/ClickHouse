@@ -5,7 +5,7 @@
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
 #include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/NoDumpAllocator.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
@@ -249,7 +249,13 @@ private:
 
     std::atomic<size_t> max_credentials;
     std::mutex mutex;
-    UnorderedMapWithMemoryTracking<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
+    std::unordered_map<
+        CredentialsProviderKey,
+        typename CredentialsLRUQueue::iterator,
+        CredentialsKeyHash,
+        std::equal_to<CredentialsProviderKey>,
+        NoDumpAllocator<std::pair<const CredentialsProviderKey, typename CredentialsLRUQueue::iterator>>>
+        cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 
