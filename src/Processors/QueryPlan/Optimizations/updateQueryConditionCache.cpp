@@ -5,7 +5,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -106,17 +106,17 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         return;
 
     /// Non-deterministic conditions must not be cached under their own hash (issues #81506 and #84508),
-    /// except for conditions that are non-deterministic only because of folded constants of time
-    /// comparisons, e.g. `time >= now() - INTERVAL 10 DAY` (issue #115504): the hash includes the value
+    /// except for conditions that are non-deterministic only because of folded constants of their
+    /// bounds, e.g. `time >= now() - INTERVAL 10 DAY` (issue #115504): the hash includes the value
     /// of the constant, so an entry states that no rows of a granule match the condition with this value.
-    /// Later queries with another value reuse such entries, see `TimeBoundsCondition`.
+    /// Later queries with another value reuse such entries, see `ConditionBounds`.
     /// A TopK read does not store entries for such conditions.
     const bool is_top_k_read = read_from_merge_tree->isSelectedForTopKFilterOptimization();
-    const bool cache_time_conditions = optimization_settings.use_query_condition_cache_for_time_conditions && !is_top_k_read;
+    const bool cache_conditions_with_bounds = optimization_settings.use_query_condition_cache_for_changing_bounds && !is_top_k_read;
 
     auto is_deterministic_or_time_condition = [&](const ActionsDAG::Node * node)
     {
-        return isDeterministicAllowingTopKFilter(node) || (cache_time_conditions && isDeterministicExceptTimeBounds(node));
+        return isDeterministicAllowingTopKFilter(node) || (cache_conditions_with_bounds && isDeterministicExceptBounds(node));
     };
 
     for (const auto * output : outputs)

@@ -9,7 +9,7 @@
 #include <city.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PredicateStatisticsLog.h>
@@ -267,8 +267,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
     /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
     /// condition cache. A deterministic PREWHERE condition is cached under its own hash, and so is a
-    /// condition that is non-deterministic only because of folded constants of time comparisons (e.g.
-    /// `time >= now() - INTERVAL 10 DAY`, see `TimeBoundsCondition`), whose hash includes their values.
+    /// condition that is non-deterministic only because of folded constants of its bounds (e.g.
+    /// `time >= now() - INTERVAL 10 DAY`, see `ConditionBounds`), whose hash includes their values.
     if (prewhere_info && reader_settings.use_query_condition_cache)
     {
         for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
@@ -300,7 +300,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                 {
                     condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
                 }
-                else if (reader_settings.use_query_condition_cache_for_time_conditions && isDeterministicExceptTimeBounds(output))
+                else if (reader_settings.use_query_condition_cache_for_changing_bounds && isDeterministicExceptBounds(output))
                 {
                     condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
                 }

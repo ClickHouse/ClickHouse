@@ -1,14 +1,17 @@
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 
 #include <base/defines.h>
+
+#include <cmath>
 
 namespace DB
 {
@@ -43,13 +46,21 @@ enum class HashTag : UInt8
 {
     DeterministicSubtree = 0xD1,
     MonotoneFunction = 0xD2,
-    TimeBound = 0xD4,
+    Bound = 0xD4,
 };
 
 bool isTimeType(const DataTypePtr & type)
 {
     WhichDataType which(removeLowCardinalityAndNullable(type));
     return which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
+}
+
+/// The literal `100` is a `UInt8` and `300` a `UInt16`, but the comparisons with them differ only in the
+/// value, so constants of native numeric types are told apart only by the type of their `Field`.
+bool isNativeIntegerOrFloat(const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    return which.isNativeInteger() || which.isFloat();
 }
 
 /// A constant, possibly folded from a non-deterministic expression like `now()`.
@@ -59,25 +70,26 @@ bool isConstant(const ActionsDAG::Node * node)
         && (node->type == ActionsDAG::ActionType::COLUMN || isDeterministicSubtree(node));
 }
 
-/// The kinds of constants a time comparison may have: a value of a date/time type, which can be
-/// ordered by its `Field`, or a string compared with an expression of a date/time type (parsed by the
-/// comparison), which cannot.
-enum class TimeBoundKind : uint8_t
+/// The kinds of constants a bound may have: a number (including `Decimal` and the date/time types),
+/// which can be ordered by its `Field`, or a string compared with an expression of a date/time type
+/// (parsed by the comparison), which cannot.
+enum class BoundKind : uint8_t
 {
     None,
     Ordered,
     Unordered,
 };
 
-TimeBoundKind getTimeBoundKind(const DataTypePtr & constant_type, const DataTypePtr & expression_type)
+BoundKind getBoundKind(const DataTypePtr & constant_type, const DataTypePtr & expression_type)
 {
     if (constant_type->isNullable() || constant_type->lowCardinality())
-        return TimeBoundKind::None;
-    if (isTimeType(constant_type))
-        return TimeBoundKind::Ordered;
+        return BoundKind::None;
+    WhichDataType which(constant_type);
+    if (which.isNativeInteger() || which.isFloat() || which.isDecimal() || isTimeType(constant_type))
+        return BoundKind::Ordered;
     if (isStringOrFixedString(constant_type) && isTimeType(expression_type))
-        return TimeBoundKind::Unordered;
-    return TimeBoundKind::None;
+        return BoundKind::Unordered;
+    return BoundKind::None;
 }
 
 String mirrorComparison(const String & name)
@@ -102,12 +114,12 @@ String negateComparison(const String & name)
     return "less";
 }
 
-struct TimeBoundsAbstractor
+struct BoundsAbstractor
 {
-    TimeBoundsCondition & result;
+    ConditionBounds & result;
 
     /// Returns false if the condition is non-deterministic in another way than by the constants of
-    /// time comparisons.
+    /// the bounds.
     bool visit(const ActionsDAG::Node * node, bool negated, SipHash & hash) const
     {
         const auto * function_node = skipAliases(node);
@@ -137,27 +149,35 @@ struct TimeBoundsAbstractor
                 {
                     const auto * constant = lhs_is_constant ? lhs : rhs;
                     const auto * expression = lhs_is_constant ? rhs : lhs;
-                    auto kind = getTimeBoundKind(constant->result_type, expression->result_type);
+                    auto kind = getBoundKind(constant->result_type, expression->result_type);
+                    Field value = (*constant->column)[0];
+                    /// A comparison with NaN is never true, whatever the value of the expression, so the
+                    /// condition is not monotone in such a constant, and NaN cannot be ordered either.
+                    if (value.getType() == Field::Types::Float64 && std::isnan(value.safeGet<Float64>()))
+                        kind = BoundKind::None;
                     /// The value of a non-deterministic constant is all that tells two variants of the
                     /// condition apart, so it has to be ordered: a string is not.
-                    if (!isDeterministicSubtree(constant) && kind != TimeBoundKind::Ordered)
-                        kind = TimeBoundKind::None;
-                    if (kind != TimeBoundKind::None && isDeterministicSubtree(expression))
+                    if (!isDeterministicSubtree(constant) && kind != BoundKind::Ordered)
+                        kind = BoundKind::None;
+                    if (kind != BoundKind::None && isDeterministicSubtree(expression))
                     {
                         String function_name = lhs_is_constant ? mirrorComparison(name) : name;
 
-                        hash.update(HashTag::TimeBound);
+                        hash.update(HashTag::Bound);
                         hash.update(function_name);
                         hash.update(function_node->result_type->getName());
-                        hash.update(constant->result_type->getName());
+                        if (isNativeIntegerOrFloat(constant->result_type))
+                            hash.update(value.getType());
+                        else
+                            hash.update(constant->result_type->getName());
                         hash.update(HashTag::DeterministicSubtree);
                         expression->updateHash(hash);
 
-                        result.bounds.push_back(TimeBoundsCondition::Bound{
+                        result.bounds.push_back(ConditionBounds::Bound{
                             .expression = expression,
                             .function_name = std::move(function_name),
                             .type = constant->result_type,
-                            .value = (*constant->column)[0],
+                            .value = std::move(value),
                             .negated = negated,
                         });
                         return true;
@@ -176,7 +196,7 @@ struct TimeBoundsAbstractor
 
 }
 
-std::vector<Field> TimeBoundsCondition::values() const
+std::vector<Field> ConditionBounds::values() const
 {
     std::vector<Field> res;
     res.reserve(bounds.size());
@@ -185,27 +205,27 @@ std::vector<Field> TimeBoundsCondition::values() const
     return res;
 }
 
-std::optional<TimeBoundsCondition> abstractTimeBounds(const ActionsDAG::Node * condition)
+std::optional<ConditionBounds> abstractConditionBounds(const ActionsDAG::Node * condition)
 {
     if (!condition)
         return std::nullopt;
 
-    TimeBoundsCondition result;
+    ConditionBounds result;
     SipHash hash;
-    if (!TimeBoundsAbstractor{result}.visit(condition, /*negated=*/ false, hash) || result.bounds.empty())
+    if (!BoundsAbstractor{result}.visit(condition, /*negated=*/ false, hash) || result.bounds.empty())
         return std::nullopt;
 
     result.structure_hash = hash.get64();
     return result;
 }
 
-bool isDeterministicExceptTimeBounds(const ActionsDAG::Node * condition)
+bool isDeterministicExceptBounds(const ActionsDAG::Node * condition)
 {
-    return condition && !isDeterministicSubtree(condition) && abstractTimeBounds(condition).has_value();
+    return condition && !isDeterministicSubtree(condition) && abstractConditionBounds(condition).has_value();
 }
 
-std::optional<ActionsDAG> buildTimeBoundsBand(
-    const TimeBoundsCondition & condition, const std::vector<Field> & earlier_values, const ContextPtr & context)
+std::optional<ActionsDAG> buildConditionBoundsBand(
+    const ConditionBounds & condition, const std::vector<Field> & earlier_values, const ContextPtr & context)
 {
     chassert(condition.bounds.size() == earlier_values.size());
 
@@ -214,7 +234,7 @@ std::optional<ActionsDAG> buildTimeBoundsBand(
     /// the one that has to admit the row.
     struct Piece
     {
-        const TimeBoundsCondition::Bound * bound;
+        const ConditionBounds::Bound * bound;
         const Field * admitting;
         const Field * rejecting;
     };
@@ -230,7 +250,7 @@ std::optional<ActionsDAG> buildTimeBoundsBand(
         if (admitting == rejecting)
             continue;
 
-        if (getTimeBoundKind(bound.type, bound.expression->result_type) == TimeBoundKind::Ordered)
+        if (getBoundKind(bound.type, bound.expression->result_type) == BoundKind::Ordered)
         {
             bool is_upper_bound = bound.function_name == "less" || bound.function_name == "lessOrEquals";
             if (is_upper_bound ? !(rejecting < admitting) : !(admitting < rejecting))
@@ -247,10 +267,12 @@ std::optional<ActionsDAG> buildTimeBoundsBand(
     ActionsDAG band = ActionsDAG::cloneSubDAG(expressions, /*remove_aliases=*/ false);
     const auto cloned_expressions = band.getOutputs();
 
-    auto add_comparison = [&](const String & function_name, const ActionsDAG::Node * expression, const TimeBoundsCondition::Bound & bound, const Field & value)
+    auto add_comparison = [&](const String & function_name, const ActionsDAG::Node * expression, const ConditionBounds::Bound & bound, const Field & value)
     {
-        ColumnConstPtr column = bound.type->createColumnConst(1, value);
-        const auto & constant = band.addColumn(std::move(column), bound.type, applyVisitor(FieldVisitorToString(), value));
+        /// The earlier value may not fit into the type of the constant of this variant, see `isNativeIntegerOrFloat`.
+        DataTypePtr type = isNativeIntegerOrFloat(bound.type) ? applyVisitor(FieldToDataType(), value) : bound.type;
+        ColumnConstPtr column = type->createColumnConst(1, value);
+        const auto & constant = band.addColumn(std::move(column), type, applyVisitor(FieldVisitorToString(), value));
         return &band.addFunction(FunctionFactory::instance().get(function_name, context), {expression, &constant}, {});
     };
 

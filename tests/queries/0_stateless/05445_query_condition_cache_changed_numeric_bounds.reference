@@ -1,0 +1,15 @@
+key prime: result 2, same as without cache 1, granules as expected 1
+key shifted: result 2, same as without cache 1, granules as expected 1
+key before matches: result 0, same as without cache 1, granules as expected 1
+key including matches: result 2, same as without cache 1, granules as expected 1
+float prime: result 1, same as without cache 1, granules as expected 1
+float narrower: result 1, same as without cache 1, granules as expected 1
+float wider: result 1, same as without cache 1, granules as expected 1
+integer prime: result 1, same as without cache 1, granules as expected 1
+integer narrower: result 1, same as without cache 1, granules as expected 1
+decimal prime: result 1, same as without cache 1, granules as expected 1
+decimal narrower: result 1, same as without cache 1, granules as expected 1
+nan prime: result 899001, same as without cache 1, granules as expected 1
+nan: result 2, same as without cache 1, granules as expected 1
+nan reversed prime: result 2, same as without cache 1, granules as expected 1
+nan reversed: result 2, same as without cache 1, granules as expected 1

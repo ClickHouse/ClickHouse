@@ -22,7 +22,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
@@ -346,7 +346,7 @@ namespace Setting
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsBool use_query_condition_cache_for_changing_bounds;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -4051,11 +4051,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 {
                     hash = outputs.front()->getHash();
                 }
-                else if (settings[Setting::use_query_condition_cache_for_time_conditions] && !top_k_filter_info
-                    && isDeterministicExceptTimeBounds(outputs.front()))
+                else if (settings[Setting::use_query_condition_cache_for_changing_bounds] && !top_k_filter_info
+                    && isDeterministicExceptBounds(outputs.front()))
                 {
                     /// A condition involving the current time is cached under its own hash, which
-                    /// includes the value of the folded constant (see `TimeBoundsCondition`).
+                    /// includes the value of the folded constant (see `ConditionBounds`).
                     /// Not for TopK reads, like in `updateQueryConditionCache`.
                     hash = outputs.front()->getHash();
                 }

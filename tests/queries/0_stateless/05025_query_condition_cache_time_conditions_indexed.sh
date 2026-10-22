@@ -20,7 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # enable_analyzer = 1: the query condition cache only works with the analyzer (query_info has no
 # filter DAG without it), like in the other query_condition_cache tests.
-settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, enable_analyzer = 1"
+settings="use_query_condition_cache = true, use_query_condition_cache_for_changing_bounds = true, enable_analyzer = 1"
 
 # A single part ordered by `time`, mixing 'old' rows (which no current-time condition matches, and
 # which fill whole granules of their own at the front of the part) with recent rows. A separate

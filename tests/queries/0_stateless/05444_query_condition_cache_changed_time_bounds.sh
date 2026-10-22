@@ -104,7 +104,7 @@ ${CLICKHOUSE_CLIENT} --query "
 scenarios "prewhere" ", optimize_move_to_prewhere = 1"
 
 # Disabled: the shifted bounds do not use the entries of the earlier ones.
-run "disabled" "time >= $(bound 100006) AND time <= $(bound 900006) AND num = 1" ", use_query_condition_cache_for_time_conditions = 0" 98 98
+run "disabled" "time >= $(bound 100006) AND time <= $(bound 900006) AND num = 1" ", use_query_condition_cache_for_changing_bounds = 0" 98 98
 
 # A window relative to the current time moves on both sides with every query.
 ${CLICKHOUSE_CLIENT} --query "

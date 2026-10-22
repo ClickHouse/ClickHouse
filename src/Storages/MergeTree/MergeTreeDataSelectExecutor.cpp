@@ -35,7 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -118,7 +118,7 @@ namespace Setting
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsBool use_query_condition_cache_for_changing_bounds;
     extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -1846,10 +1846,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             = also_probe_topk_reuse_predicate_only_hash
             && topk_reuse_predicate_only_profiled_hash != topk_reuse_predicate_only_hash;
 
-        /// A condition with time bounds can use the entries of its earlier variants with other values of
-        /// the bounds (see `TimeBoundsCondition`). Not for a TopK-salted key, whose entries depend on the
+        /// A condition with bounds can use the entries of its earlier variants with other values of
+        /// the bounds (see `ConditionBounds`). Not for a TopK-salted key, whose entries depend on the
         /// TopK plan as well.
-        struct EarlierTimeBoundsVariant
+        struct EarlierBoundsVariant
         {
             UInt64 condition_hash;
             UInt64 profiled_condition_hash;
@@ -1859,21 +1859,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             std::optional<ActionsDAG> band_dag;
             std::optional<KeyCondition> band;
         };
-        std::optional<TimeBoundsCondition> time_bounds;
-        std::vector<EarlierTimeBoundsVariant> earlier_time_bounds_variants;
+        std::optional<ConditionBounds> condition_bounds;
+        std::vector<EarlierBoundsVariant> earlier_bounds_variants;
         const UUID table_uuid = parts_with_ranges.empty() ? UUIDHelpers::Nil : parts_with_ranges.front().data_part->storage.getStorageID().uuid;
-        if (settings[Setting::use_query_condition_cache_for_time_conditions] && !(apply_top_k_salt && top_k_filter_info))
-            time_bounds = abstractTimeBounds(dag);
-        if (time_bounds)
+        if (settings[Setting::use_query_condition_cache_for_changing_bounds] && !(apply_top_k_salt && top_k_filter_info))
+            condition_bounds = abstractConditionBounds(dag);
+        if (condition_bounds)
         {
-            time_bounds->structure_hash = queryConditionCacheHash(time_bounds->structure_hash, settings_salt);
-            for (auto & variant : query_condition_cache->getTimeBoundsVariants(table_uuid, time_bounds->structure_hash))
+            condition_bounds->structure_hash = queryConditionCacheHash(condition_bounds->structure_hash, settings_salt);
+            for (auto & variant : query_condition_cache->getBoundsVariants(table_uuid, condition_bounds->structure_hash))
             {
-                if (variant.condition_hash == condition_hash || variant.values.size() != time_bounds->bounds.size())
+                if (variant.condition_hash == condition_hash || variant.values.size() != condition_bounds->bounds.size())
                     continue;
                 UInt64 variant_profiled_condition_hash
                     = getSkipIndexProfiledConditionHash(variant.condition_hash, indexes, settings[Setting::distributed_index_analysis]);
-                earlier_time_bounds_variants.push_back({
+                earlier_bounds_variants.push_back({
                     .condition_hash = variant.condition_hash,
                     .profiled_condition_hash = variant_profiled_condition_hash,
                     .values = std::move(variant.values),
@@ -1887,7 +1887,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// rows matching the earlier variant has no rows matching this one, unless it may have rows in the
         /// band. Record the derived marks under this variant as well, so that the entries of this variant
         /// stay complete for the next queries, which will use them instead of the older ones.
-        auto read_earlier_time_bounds_variants = [&](
+        auto read_earlier_bounds_variants = [&](
             const RangesInDataPart & part_with_ranges,
             const String & part_name,
             std::optional<QueryConditionCache::MatchingMarks> & row_level_marks,
@@ -1899,7 +1899,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 return;
 
             const size_t marks_count = data_part->index_granularity->getMarksCount();
-            for (auto & variant : earlier_time_bounds_variants)
+            for (auto & variant : earlier_bounds_variants)
             {
                 auto earlier_row_level_marks = query_condition_cache->read(table_uuid, part_name, variant.condition_hash, /*increment_profile_events=*/false);
                 std::optional<QueryConditionCache::MatchingMarks> earlier_skip_index_marks;
@@ -1911,7 +1911,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 if (!variant.prepared)
                 {
                     variant.prepared = true;
-                    variant.band_dag = buildTimeBoundsBand(*time_bounds, variant.values, context);
+                    variant.band_dag = buildConditionBoundsBand(*condition_bounds, variant.values, context);
                     if (variant.band_dag)
                         variant.band.emplace(
                             ActionsDAGWithInversionPushDown(variant.band_dag->getOutputs().front(), context, /*boolean_context=*/ true),
@@ -2007,8 +2007,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             }
             if (!row_level_marks_opt && !skip_index_marks_opt
                 && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt
-                && !earlier_time_bounds_variants.empty())
-                read_earlier_time_bounds_variants(part_with_ranges, part_name, row_level_marks_opt, skip_index_marks_opt);
+                && !earlier_bounds_variants.empty())
+                read_earlier_bounds_variants(part_with_ranges, part_name, row_level_marks_opt, skip_index_marks_opt);
             if (!row_level_marks_opt && !skip_index_marks_opt
                 && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)
             {
@@ -2094,8 +2094,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         }
 
         /// The writers of this query store their entries under this variant.
-        if (time_bounds)
-            query_condition_cache->addTimeBoundsVariant(table_uuid, time_bounds->structure_hash, {condition_hash, time_bounds->values()});
+        if (condition_bounds)
+            query_condition_cache->addBoundsVariant(table_uuid, condition_bounds->structure_hash, {condition_hash, condition_bounds->values()});
 
         return stats;
     };

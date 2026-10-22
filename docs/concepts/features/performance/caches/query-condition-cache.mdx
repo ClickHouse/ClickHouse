@@ -59,9 +59,10 @@ For such files, the cache remembers row groups instead of granules.
 The entries of a file are tied to its version, so that a modified file is read anew: the ETag for object storage, and the modification time and the size for local files and for `URL`.
 As a web server reports the modification time (`Last-Modified`) with a precision of one second only, a file read through `URL` uses the cache only if it was modified more than a minute ago by the clock of the web server (the `Date` of its response), and the server reports its modification time, its size, and the date.
 
-### Conditions with changing time bounds {#time-conditions}
+### Conditions with changing bounds {#changing-bounds}
 
-Dashboards often repeat a query with time bounds which move a little with every refresh, given either relative to the current time or as literals:
+Queries are often repeated with bounds which change a little every time.
+For example, dashboards refresh queries with time bounds given either relative to the current time or as literals, and users try out other thresholds:
 
 ```sql
 SELECT count() FROM logs WHERE time >= now() - INTERVAL 1 HOUR AND message LIKE '%error%'
@@ -69,24 +70,26 @@ SELECT count() FROM logs WHERE time >= now() - INTERVAL 1 HOUR AND message LIKE 
 SELECT count() FROM logs
 WHERE time >= fromUnixTimestamp64Milli(1743410504651) AND time <= fromUnixTimestamp64Milli(1743493304654)
     AND message LIKE '%error%'
+
+SELECT count() FROM orders WHERE price > 100 AND category = 'books'
 ```
 
-Each variant of such a condition is cached under its own key, which includes the values of the time bounds (for `now()`, its value in this query), so the next refresh does not find it directly.
-Instead, a query looks up the cache entries of up to four recent variants of the same condition which differ only in the values of the time bounds.
+Each variant of such a condition is cached under its own key, which includes the values of the bounds (for `now()`, its value in this query), so the next query does not find it directly.
+Instead, a query looks up the cache entries of up to four recent variants of the same condition which differ only in the values of the bounds.
 A granule recorded there as having no matching rows can only have rows matching the new condition if they are admitted by the new bounds but not by the earlier ones, e.g. rows between the earlier and the new upper bound.
 If the primary key shows that the granule has no such rows, it is skipped.
-The skipped granules are recorded for the new variant as well, so the next refresh reuses the entries of this one.
-In the examples above, with `time` as the primary key, a refresh reads only the granules at the new end of the time range and the granules that may match `message LIKE '%error%'`.
+The skipped granules are recorded for the new variant as well, so the next query reuses the entries of this one.
+In the first two examples, with `time` as the primary key, a refresh reads only the granules at the new end of the time range and the granules that may match `message LIKE '%error%'`.
 
 If the new bounds are narrower than the earlier ones, all granules recorded as not matching the earlier condition are skipped, whatever the primary key.
-This is the case for a lower bound relative to the current time, as in `WHERE time >= now() - INTERVAL 10 DAY`, which only moves forward.
+This is the case for a lower bound relative to the current time, as in `WHERE time >= now() - INTERVAL 10 DAY`, which only moves forward, or for `WHERE price > 150` after `WHERE price > 100`.
 Bounds which stay the same for a while, like in `WHERE time >= today() - 10`, give the same key, so the cache is reused directly.
 
-The time bounds are comparisons (`<`, `<=`, `>`, `>=`) of an expression with a constant of type `Date`, `Date32`, `DateTime` or `DateTime64`, or with a string constant if the expression has one of these types.
-They may be combined with each other and with other conditions using `AND`, `OR` and `NOT`.
-A condition which is non-deterministic in another way, e.g. with `rand()`, is not cached.
+A bound is a comparison (`<`, `<=`, `>`, `>=`) of an expression with a constant of a numeric type (including `Decimal`, `Date`, `Date32`, `DateTime` and `DateTime64`), or with a string constant if the expression has a date/time type.
+Bounds may be combined with each other and with other conditions using `AND`, `OR` and `NOT`.
+A condition which is non-deterministic in another way than by its bounds, e.g. with `rand()`, is not cached.
 
-This can be disabled with the setting [`use_query_condition_cache_for_time_conditions`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
+This can be disabled with the setting [`use_query_condition_cache_for_changing_bounds`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
 It applies to `MergeTree` tables; reads from files and object storage (`file`, `s3`, and similar) still use the query condition cache only for deterministic conditions.
 Queries of the form `ORDER BY ... LIMIT N` which use dynamic filtering (`use_top_k_dynamic_filtering`) reuse the entries written by other queries with the same condition, but do not write entries for conditions involving the current time themselves, except for the granules skipped by a `PREWHERE` when the dynamic filter cannot be added to it (see [below](#top-k-queries)).
 
