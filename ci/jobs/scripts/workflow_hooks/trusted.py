@@ -5,6 +5,8 @@ from pathlib import Path
 from praktika.info import Info
 from praktika.utils import Shell
 
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import agent_pr_rules
+
 TRUSTED_CONTRIBUTORS_CONFIG = Path(__file__).parents[3] / "defs" / "trusted_contributors.json"
 TRUSTED_CONTRIBUTORS = {
     login.lower()
@@ -30,6 +32,13 @@ def can_be_tested():
         return ""
     if info.user_name.lower() in TRUSTED_CONTRIBUTORS:
         print("It's a trusted contributor")
+        return ""
+
+    # A registered automated agent (AGENT_PRS in pr_labels_and_category.py): trusted by
+    # account and branch prefix. This hook runs before the label hook, so the label
+    # `can be tested` that the label hook adds would come too late for the first run.
+    if agent_pr_rules(info):
+        print("It's a PR of a registered automated agent")
         return ""
     # we need runtime labels info, info.pr_labels might be non relevant in case of job rerun
     if CAN_BE_TESTED in Shell.get_output(

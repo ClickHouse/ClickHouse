@@ -1,6 +1,8 @@
 import argparse
 import csv
+import http.client
 import json
+import math
 import os
 import re
 import shutil
@@ -8,21 +10,24 @@ import subprocess
 import tempfile
 import time
 import traceback
+import urllib.error
 import urllib.parse
-from datetime import datetime
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
+from shlex import quote
 from threading import Thread
 
 import yaml
 
-from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
+from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT, BuildTypes, JobNames
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
-    ICEBERG_DATASETS,
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -59,7 +64,7 @@ GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    any(query_display_name) AS query_display_name
+    query_display_name
 FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
@@ -67,7 +72,17 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
-GROUP BY test, query_index
+    AND workflow_name = 'MasterCI'
+    -- The same runs, selected by the key prefix so that the PR runs are not read.
+    AND new_sha IN (
+        SELECT new_sha FROM perf_test_times_v1
+        -- The job writes both tables, so their dates differ by a day at most.
+        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+            AND pr_number = 0
+            AND workflow_name = 'MasterCI')
+-- The display name is part of the key: compare.sh joins this file on all three.
+GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
@@ -127,7 +142,12 @@ FROM input(
      unstable_threshold Float64'
 ) FORMAT TSV"""
 
+# Praktika expands exactly this sub-result into per-test-case CIDB rows: it is the
+# `result_name_for_cidb` of both performance jobs (ci/defs/job_configs.py).
+CIDB_TEST_CASES_RESULT_NAME = "Tests"
+
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
+HISTORICAL_DATA_TABLE = "query_metrics_v2"
 
 # --- Aggregate report tables on the play cluster --------------------------
 # These capture everything that used to only live in the static HTML report
@@ -140,8 +160,37 @@ TEST_PERF_CHANGES_TABLE = "perf_test_perf_changes_v1"
 PARTIAL_QUERIES_TABLE = "perf_partial_queries_v1"
 SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
 RUN_ERRORS_TABLE = "perf_run_errors_v1"
+# Run warnings share the run errors table, told apart by this `test` value.
+RUN_WARNING_TEST = "(warning)"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
+CIDB_CHUNK_ROWS = 250_000
+
+# --- Performance dashboard gate -------------------------------------------
+# The dashboard reads the tables this job uploads in the REPORT stage and
+# classifies every changed query of a run with a confidence tier that combines
+# the raw per-run samples of both sides, the quantile shift, and the recent
+# master history of the same query. In `master_head` mode that tier, not the
+# per-shard "N slower" count, decides the Praktika status: see
+# `perf_dashboard_gate`.
+PERF_DASHBOARD_URL = "https://performance.ci.clickhouse.com"
+PERF_DASHBOARD_API_URL = f"{PERF_DASHBOARD_URL}/api/v1"
+# The metric the gate looks at; compare.sh classifies queries by the same one.
+DASHBOARD_GATE_METRIC = "client_time"
+# Confidence tiers of a slowdown that fail the check. `likely_regression` and
+# `noise` rows are reported in the dashboard but do not block.
+DASHBOARD_BLOCKING_TIERS = frozenset({"confirmed_regression"})
+# The uploads the dashboard computes a shard's verdict from: the raw samples,
+# the per-query comparison and the test times `dashboard_has_shard` probes.
+DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_TIMES_TABLE)
+# How long the REPORT-stage uploads and the dashboard together have to serve
+# this shard's rows, counted from the start of the uploads.
+DASHBOARD_INGEST_TIMEOUT_SEC = 600
+DASHBOARD_POLL_INTERVAL_SEC = 15
+# Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
+CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
+# Pause between the log export flushes of a nightly run.
+NIGHTLY_FLUSH_INTERVAL_SEC = 900
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
 flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
@@ -307,6 +356,13 @@ REPORT_UPLOADS = [
         "table_columns": ["test", "error"],
         "input_schema": "test String, error String",
         "select_exprs": ["test", "error"],
+    },
+    {
+        "table": RUN_ERRORS_TABLE,
+        "source": f"{perf_wd}/run-warnings.tsv",
+        "table_columns": ["test", "error"],
+        "input_schema": "warning String",
+        "select_exprs": [f"'{RUN_WARNING_TEST}'", "warning"],
     },
     {
         "table": METRIC_CHANGES_TABLE,
@@ -772,8 +828,21 @@ def build_flamegraph_upload_tsv():
     return True
 
 
+# The CIDB `DateTime` and `Date` columns are UTC, while the job runs with the
+# local time zone of the test image (`TZ=Europe/Amsterdam` in `test-base`).
+# Local time would put rows of a run after 22:00 UTC on the next day, and the
+# performance dashboard lists runs only up to the current UTC date, so every
+# timestamp written to CIDB goes through these helpers.
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def format_utc_date_time(value):
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def get_check_start_time():
-    """Return the perf check start time (ISO, no microseconds).
+    """Return the perf check start time in UTC (`YYYY-MM-DD hh:mm:ss`).
 
     Uses the CHPC_CHECK_START_TIMESTAMP env var when available so that every
     batch of the same job lines up on the same timestamp (same "data point"
@@ -781,12 +850,10 @@ def get_check_start_time():
     """
     check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
     if check_start_timestamp:
-        return (
-            datetime.fromtimestamp(int(check_start_timestamp))
-            .isoformat(sep=" ")
-            .split(".")[0]
+        return format_utc_date_time(
+            datetime.fromtimestamp(int(check_start_timestamp), timezone.utc)
         )
-    return datetime.now().isoformat(sep=" ").split(".")[0]
+    return format_utc_date_time(utc_now())
 
 
 # --- Export of the system logs to the CI Logs cluster ----------------------
@@ -817,6 +884,16 @@ def get_server_commit_sha(server):
         or ""
     ).strip()
     return sha if GIT_HASH_RE.fullmatch(sha) else ""
+
+
+def get_binary_commit_sha(binary):
+    # A downloaded binary may lack the executable bit.
+    os.chmod(binary, 0o755)
+    sha = Shell.get_output_or_raise(
+        f"{binary} local -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+    )
+    assert GIT_HASH_RE.fullmatch(sha), f"no GIT_HASH in [{binary}]: [{sha}]"
+    return sha
 
 
 def write_ci_logs_sender_user(config_dir, binary):
@@ -895,9 +972,14 @@ def create_log_export_configs():
     return True
 
 
-def start_log_export(servers):
+# The servers whose export is up with the sends held back; `flush_log_export`
+# serves these only.
+HELD_LOG_EXPORT = []
+
+
+def start_log_export(servers, nightly=False):
     """Create the export views on both servers and hold the sends back until
-    the tests are over.
+    the tests are over (a nightly run releases them between the tests).
 
     The reference server is skipped when the commit of its build cannot be
     read: `commit_sha` is what attributes its rows to a build, and the rows
@@ -917,12 +999,13 @@ def start_log_export(servers):
     for node_name, server in servers:
         # The patched server runs the build of the commit this check reports
         # for, like every other check; the reference server runs an older
-        # build and names its own commit.
-        if server.is_left:
+        # build and names its own commit. A nightly run tests a binary that
+        # is not the trigger commit, so both name their own.
+        if server.is_left or nightly:
             commit_sha = get_server_commit_sha(server)
             if not commit_sha:
                 print(
-                    "WARNING: Cannot read the build commit of the reference server, "
+                    f"WARNING: Cannot read the build commit of the [{node_name}] server, "
                     "its system logs will not be exported"
                 )
                 continue
@@ -954,6 +1037,8 @@ def start_log_export(servers):
                     "this server will not export its system logs"
                 )
                 log_export.stop(server.port)
+            else:
+                HELD_LOG_EXPORT.append((node_name, server))
         except Exception:
             traceback.print_exc()
             # The same, for a failure raised rather than reported: whatever the
@@ -963,6 +1048,30 @@ def start_log_export(servers):
             except Exception:
                 traceback.print_exc()
     return True
+
+
+def flush_log_export(servers):
+    """Between two tests of a nightly run: send the rows held back so far and
+    hold the sends back again, so that no flush carries hours of logs.
+
+    Fails closed like `start_log_export`: a server that cannot hold the sends
+    back again loses its export, never a measurement.
+    """
+    for node_name, server in list(HELD_LOG_EXPORT):
+        try:
+            if log_export.flush_held_rows(server.port):
+                continue
+            print(
+                f"WARNING: Cannot hold back the log export of the [{node_name}] server "
+                "again - tearing the export down"
+            )
+        except Exception:
+            traceback.print_exc()
+        HELD_LOG_EXPORT.remove((node_name, server))
+        try:
+            log_export.stop(server.port)
+        except Exception:
+            traceback.print_exc()
 
 
 def export_system_logs(servers):
@@ -985,23 +1094,86 @@ def export_system_logs(servers):
     return True
 
 
-def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
+class CIDBUnavailableReason(str):
+    """An upload failure reason: CIDB did not answer until the deadline."""
+
+
+class NotAttemptedReason(str):
+    """An upload failure reason: the deadline had passed before the first attempt."""
+
+
+def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
+    """Run a REPORT-stage INSERT into `table`. Returns None on success and the
+    reason of the failure otherwise.
+
+    With a `deadline` no attempt starts after it, and an upload in
+    `DASHBOARD_INPUT_TABLES` that CIDB failed without rejecting it
+    (`last_rejected`) is retried while another attempt fits. Every attempt
+    carries the same `insert_deduplication_token`, so the server drops a
+    resent block that an attempt abandoned by the client did commit.
+    `token_key` tells apart several uploads into the same table."""
+    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{token_key or table}"
+    settings = {"insert_deduplication_token": token}
+    if deadline is None:
+        if cidb.do_insert_query(
+            query=query,
+            data=data,
+            timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+            retries=3,
+            settings=settings,
+        ):
+            return None
+        return cidb.last_error
+    error = None
+    hard_error = None
+    while (remaining := deadline - time.monotonic()) > 0:
+        if cidb.do_insert_query(
+            query=query,
+            data=data,
+            timeout=max(1, min(Settings.CI_DB_INSERT_TIMEOUT_SEC, remaining)),
+            settings=settings,
+        ):
+            return None
+        error = cidb.last_error
+        if cidb.last_rejected:
+            return f"rejected: {error}"
+        if table not in DASHBOARD_INPUT_TABLES:
+            return error
+        if not cidb.last_unavailable and hard_error is None:
+            hard_error = error
+        pause = min(
+            CIDB_UPLOAD_RETRY_INTERVAL_SEC,
+            deadline - time.monotonic() - Settings.CI_DB_INSERT_TIMEOUT_SEC,
+        )
+        if pause <= 0:
+            break
+        print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
+        time.sleep(pause)
+    if error is None:
+        return NotAttemptedReason(f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent")
+    reason = f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
+    if hard_error is None:
+        return CIDBUnavailableReason(reason)
+    return reason if hard_error == error else f"{reason}, earlier error: {hard_error}"
+
+
+def run_report_upload(cfg, cidb, info, reference_sha, tested_sha, compare_against_release, deadline):
     """Upload one entry from REPORT_UPLOADS to the play cluster.
 
     Silently skips if the source TSV is missing or empty (e.g. because the
     test stage produced no unstable queries or no skipped tests). Returns
-    True on success or skip, False on upload failure.
+    None when uploaded, otherwise why the rows were not uploaded.
     """
     source_path = Path(cfg["source"])
     if not source_path.is_file():
         print(f"Skipping upload to [{cfg['table']}]: [{source_path}] not found")
-        return True
+        return f"[{source_path}] not found"
 
     with open(source_path, "r", encoding="utf-8") as f:
         data = f.read()
     if not data.strip():
         print(f"Skipping upload to [{cfg['table']}]: [{source_path}] is empty")
-        return True
+        return f"[{source_path}] is empty"
 
     query_template = _make_insert_query(
         table=cfg["table"],
@@ -1012,30 +1184,37 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
     )
     insert_metadata = get_insert_metadata(info, compare_against_release)
     query = query_template.format(
-        EVENT_DATE=datetime.now().date().isoformat(),
+        EVENT_DATE=utc_now().date().isoformat(),
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
-        CUR_SHA=escape_sql_string(info.sha),
+        CUR_SHA=escape_sql_string(tested_sha),
         **insert_metadata,
     )
     line_count = data.count("\n")
     print(f"Do insert into [{cfg['table']}]: >>>\n{query}\n<<<")
-    insert_ok = cidb.do_insert_query(
-        query=query,
-        data=data,
-        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-        retries=3,
+    error = insert_into_cidb(
+        cidb, info, cfg["table"], query, data, deadline, token_key=f"{cfg['table']}/{source_path.name}"
     )
-    if insert_ok:
+    if error is None:
         print(f"Inserted [{line_count}] rows into [{cfg['table']}]")
     else:
-        print(f"Inserted [{line_count}] rows into [{cfg['table']}] - failed")
-    return insert_ok
+        print(f"Inserted [{line_count}] rows into [{cfg['table']}] - failed: {error}")
+    return error
 
 
-def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release):
-    """Build and upload the merged flamegraph stacks TSV."""
+def split_into_chunks(data, rows):
+    """Split TSV `data` into pieces of at most `rows` lines."""
+    lines = data.splitlines(keepends=True)
+    return ["".join(lines[i : i + rows]) for i in range(0, len(lines), rows)]
+
+
+def insert_flamegraph_stacks(
+    cidb, info, reference_sha, tested_sha, compare_against_release, deadline, nightly=False
+):
+    """Build and upload the merged flamegraph stacks TSV. A nightly run uploads
+    it in chunks of `CIDB_CHUNK_ROWS`, each with its own dedup token,
+    so that no INSERT outlasts the socket timeout."""
     if not build_flamegraph_upload_tsv():
         return True
 
@@ -1048,26 +1227,33 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
     insert_metadata = get_insert_metadata(info, compare_against_release)
     query = INSERT_FLAMEGRAPH_STACKS.format(
         FLAMEGRAPH_STACKS_TABLE=FLAMEGRAPH_STACKS_TABLE,
-        EVENT_DATE=datetime.now().date().isoformat(),
+        EVENT_DATE=utc_now().date().isoformat(),
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
-        CUR_SHA=escape_sql_string(info.sha),
+        CUR_SHA=escape_sql_string(tested_sha),
         **insert_metadata,
     )
-    line_count = data.count("\n")
+    chunks = split_into_chunks(data, CIDB_CHUNK_ROWS) if nightly else [data]
     print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
-    insert_ok = cidb.do_insert_query(
-        query=query,
-        data=data,
-        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-        retries=3,
-    )
-    if insert_ok:
-        print(f"Inserted [{line_count}] flamegraph stack rows")
-    else:
-        print(f"Inserted [{line_count}] flamegraph stack rows - failed")
-    return insert_ok
+    ok = True
+    for i, chunk in enumerate(chunks):
+        line_count = chunk.count("\n")
+        error = insert_into_cidb(
+            cidb,
+            info,
+            FLAMEGRAPH_STACKS_TABLE,
+            query,
+            chunk,
+            deadline,
+            token_key=f"{FLAMEGRAPH_STACKS_TABLE}/{i}" if nightly else None,
+        )
+        if error is None:
+            print(f"Inserted [{line_count}] flamegraph stack rows")
+        else:
+            print(f"Inserted [{line_count}] flamegraph stack rows - failed: {error}")
+            ok = False
+    return ok
 
 
 def match_reference_debug_info():
@@ -1101,7 +1287,14 @@ def match_reference_debug_info():
         print("Patched binary has comparable line info, leaving reference as-is")
 
 
+# Both servers start with ASLR disabled, so that they load the executable at the same address (checked in the
+# Start stage). Linux only, like the CPU pinning.
+NO_ASLR_PREFIX = f"setarch {os.uname().machine} -R " if os.uname().sysname == "Linux" else ""
+
+
 class CHServer:
+    # `tpcds_sf100`: 2.7–3 h.
+    NIGHTLY_TEST_TIMEOUT_SEC = 4 * 3600
     # upstream/master
     LEFT_SERVER_PORT = 9001
     LEFT_SERVER_KEEPER_PORT = 9181
@@ -1161,9 +1354,9 @@ class CHServer:
         # command line (a documented config override, see Server.cpp) with a
         # distinct port per server, so that shell-script tests can talk to the
         # server over HTTP.
-        self.start_cmd = f"{taskset_prefix}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
+        self.start_cmd = f"{taskset_prefix}{NO_ASLR_PREFIX}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
-            --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
+            --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
@@ -1230,33 +1423,49 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
         # --runs ("at least N runs per query") is passed only when explicitly
         # requested; by default the adaptive run policy decides the counts.
         runs_arg = f"--runs {runs}" if runs is not None else ""
+        timeout_prefix = f"timeout -k 60 {cls.NIGHTLY_TEST_TIMEOUT_SEC} " if long else ""
+        if long:
+            print(f"test-start {format_utc_date_time(utc_now())}")
         res, out, err = Shell.get_res_stdout_stderr(
-            f"./tests/performance/scripts/perf.py --host localhost localhost \
+            f"{timeout_prefix}./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
-                {test_file}",
+                --stop-merges \
+                {test_file}{' --long' if long else ''}",
             verbose=True,
             strip=False,
         )
         duration = sw.duration
-        if res != 0:
+        lines = out.splitlines()
+        # A skipped test exits before it connects, so it created nothing.
+        clean = "teardown-complete" in lines or any(line.startswith("skipped\t") for line in lines)
+        if long:
+            print(f"test-end {format_utc_date_time(utc_now())}")
+            if res != 0:
+                err += f"{test_name}: perf.py exited with status {res} (124 = wall-clock budget {cls.NIGHTLY_TEST_TIMEOUT_SEC}s expired, 137 = killed)\n"
+        if not clean:
+            err += f"{test_name}: teardown incomplete, stopping the batch\n"
+        if res != 0 or not clean:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
+        else:
+            Path(f"{results_path}/{test_name}-err.log").unlink(missing_ok=True)
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
             f.write(f"{test_name}\t{duration}\n")
+        return clean
 
     def terminate(self):
         print("Terminate ClickHouse process")
@@ -1289,6 +1498,7 @@ def parse_args():
     )
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument("--reference-path", help="Local reference clickhouse binary", default="")
     return parser.parse_args()
 
 
@@ -1312,11 +1522,12 @@ def master_build_links(sha, build_type):
 
 
 def find_master_build(commits, build_type):
-    for sha in commits:
+    """The build link of the first of `commits` that has a build and its index in `commits`, or `(None, None)`."""
+    for index, sha in enumerate(commits):
         for link in master_build_links(sha, build_type):
             if Shell.check(f"curl -sfI {link} > /dev/null"):
-                return link
-    return None
+                return link, index
+    return None, None
 
 
 def local_master_track_commits(local_master_commits_to_check_for_build):
@@ -1376,14 +1587,56 @@ LOCAL_REFERENCE_FALLBACK_WARNING = (
 )
 
 
+# MasterCI builds these exactly like a PR build. The official build keeps debug
+# info and sets the official-build flag, which change the code and move it.
+PERFORMANCE_REFERENCE_BUILD_JOBS = {
+    "build_amd_release": f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE})",
+    "build_arm_release": f"{JobNames.BUILD} ({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})",
+}
+
+
+def find_performance_reference_build(commits, build_type):
+    """The newest performance reference build of `commits` and the index in `commits`
+    of the commit whose sources it was built from, or `(None, None)`.
+
+    Commits before the first one with an official build are passed over, as in
+    `find_master_build`. From that commit on, the walk goes further back only over
+    commits where `MasterCI` skipped the reference build job: such a commit changed
+    none of the job's inputs, so an older build has the same sources."""
+    job_name = PERFORMANCE_REFERENCE_BUILD_JOBS[build_type]
+    official_index = None
+    for index, sha in enumerate(commits):
+        link, _ = find_master_build([sha], Utils.normalize_string(job_name))
+        if link:
+            return link, index if official_index is None else official_index
+        if official_index is None:
+            if find_master_build([sha], build_type)[0] is None:
+                continue
+            official_index = index
+        state, status = master_job_status(job_name, sha)
+        if state != FETCH_OK or status != Result.Status.SKIPPED:
+            return None, None
+        print(f"INFO: [{job_name}] was skipped at master {sha}, its sources are the ones of its parent")
+    return None, None
+
+
 def find_prev_build(info, build_type):
+    """The reference build link and the master commits from the tested one down to the reference."""
     commits = info.get_kv_data("master_track_commits_sha") or []
     if not commits and info.is_local_run:
         # for a local run let's check 50 commits
         commits = local_master_track_commits(50)
-    link = find_master_build(commits, build_type)
+    # A PR candidate is compared with the performance reference build, made like
+    # it. Master runs compare official builds. Private PR builds keep debug info.
+    if info.pr_number > 0 and info.repo_name == "ClickHouse/ClickHouse":
+        link, index = find_performance_reference_build(commits, build_type)
+        if link:
+            print(f"Reference: performance reference build {link}")
+            return link, commits[: index + 1]
+        print("WARNING: no performance reference build, the reference is the official build")
+    link, index = find_master_build(commits, build_type)
     if link or not info.is_local_run:
-        return link
+        return link, commits[: index + 1] if link else []
 
     # `build_master_head_hook` publishes these release binaries even when the
     # master tip has no build yet. No local history or GitHub credentials are needed.
@@ -1391,29 +1644,44 @@ def find_prev_build(info, build_type):
     link = f"{LATEST_MASTER_BUILD_PREFIX}{arch}/clickhouse"
     if Shell.check(f"curl --connect-timeout 5 --max-time 15 -sfI {link} > /dev/null"):
         print(f"WARNING: {LOCAL_REFERENCE_FALLBACK_WARNING} Reference: {link}")
-        return link
+        return link, []
     print(f"WARNING: latest master reference build is also unavailable: {link}")
-    return None
+    return None, []
+
+
+def stale_reference_warning(reference_chain):
+    """Why the reference build is older than the tested master revision, or "" when it is not.
+
+    `reference_chain` is the master commits from the tested one down to the reference, as `find_prev_build` returns."""
+    if len(reference_chain) < 2:
+        return ""
+    tested, reference = reference_chain[0], reference_chain[-1]
+    behind = len(reference_chain) - 1
+    return (
+        f"The reference is master {reference[:12]}, {behind} commit{'s' if behind > 1 else ''} behind master {tested[:12]} "
+        "tested with this change, which had no build yet. Changes merged into master in between show up as "
+        f"changes of this PR: https://github.com/ClickHouse/ClickHouse/compare/{reference}...{tested}"
+    )
 
 
 def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
-    return find_master_build(commits, build_type)
+    return find_master_build(commits, build_type)[0]
 
 
 # The number of distinct "slower" queries that fails the whole performance
-# check in the commit-to-commit (`master_head`) mode. This is the gate that
-# actually decides the Praktika `Check Results` status: `report.py` embeds a
-# status into `report.html`, but `main` below discards it ("always green mode")
-# and recomputes the final status by reparsing the "N slower" message, so the
-# effective gate lives here. The value must stay synchronized with the
-# slower-queries threshold in `ci/jobs/scripts/perf/report.py`. It is
-# intentionally high: a handful of "slower" queries is dominated by CI noise (a
-# single bad shard run, frequency scaling, or code-layout artifacts can push
-# several unrelated micro benchmarks over their per-query thresholds at once),
-# while a genuine regression shows up as a small cluster of related queries
-# with large magnitudes that the per-query thresholds catch on their own.
+# check when the cumulative `release_base` mode has no previous master run to
+# compute a delta against. `report.py` embeds a status into `report.html`, but
+# `main` below discards it ("always green mode") and recomputes the final
+# status: in `master_head` mode from the performance dashboard's verdict (see
+# `perf_dashboard_gate`; from the shard's slower count when the dashboard
+# cannot answer), in `release_base` mode from the slower counts below.
+# The value must stay synchronized with the slower-queries threshold in
+# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
+# "slower" queries is dominated by CI noise (a single bad shard run, frequency
+# scaling, or code-layout artifacts can push several unrelated micro benchmarks
+# over their per-query thresholds at once).
 SLOWER_QUERIES_FAIL_THRESHOLD = 10
 
 # The gate for the cumulative `release_base` mode. That comparison accumulates
@@ -1482,6 +1750,405 @@ def too_many_slow(message):
     return parse_slower_count(message) > SLOWER_QUERIES_FAIL_THRESHOLD
 
 
+class PerfDashboardError(Exception):
+    """The performance dashboard could not deliver a verdict for this shard."""
+
+
+class PerfDashboardUnavailable(PerfDashboardError):
+    """The dashboard, or the CIDB tables it reads, did not answer for this shard before the deadline."""
+
+
+# Measured backend-outage signatures in the dashboard's application errors.
+DASHBOARD_OUTAGE_SIGNATURES = ("connect: connection refused", "context canceled")
+
+
+def dashboard_did_not_answer(status, body):
+    """Whether an HTTP error means the dashboard could not answer yet, not that the request is wrong."""
+    try:
+        envelope = json.loads(body)
+    except ValueError:
+        envelope = None
+    is_app = isinstance(envelope, dict) and all(isinstance(envelope.get(k), str) for k in ("code", "message"))
+    message = envelope["message"] if is_app else None
+    if message is None:
+        return status in (502, 503, 504)  # not the application: a gateway in front of a down backend
+    if status == 404:
+        return "code = NotFound" in message  # the run or test is not ingested yet
+    return status >= 500 and any(s in message for s in DASHBOARD_OUTAGE_SIGNATURES)
+
+
+def dashboard_api_get(path, params=None, timeout_sec=60):
+    """GET `path` from the dashboard API and return the decoded JSON body.
+
+    Every failure, transport or HTTP, is raised as `PerfDashboardError` so the
+    caller can retry the whole step or fail the check with the reason. It is a
+    `PerfDashboardUnavailable` when the dashboard did not answer: a transport
+    failure, or an HTTP error that `dashboard_did_not_answer` recognizes."""
+    url = f"{PERF_DASHBOARD_API_URL}{path}"
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_sec) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace").strip()
+        except (OSError, http.client.IncompleteRead) as read_error:
+            raise PerfDashboardUnavailable(f"HTTP {e.code} for [{url}], body cut short: {read_error!r}") from e
+        error_type = PerfDashboardUnavailable if dashboard_did_not_answer(e.code, body) else PerfDashboardError
+        raise error_type(f"HTTP {e.code} for [{url}]: {body[:300]}") from e
+    except urllib.error.URLError as e:
+        transport = isinstance(e.reason, OSError)
+        raise (PerfDashboardUnavailable if transport else PerfDashboardError)(f"request to [{url}] failed: {e}") from e
+    except (TimeoutError, ConnectionError, http.client.IncompleteRead) as e:
+        raise PerfDashboardUnavailable(f"request to [{url}] failed: {e}") from e
+    except ValueError as e:
+        raise PerfDashboardError(f"request to [{url}] failed: {e}") from e
+
+
+def dashboard_list(data, key):
+    """`data[key]` of a dashboard answer, which must be a list; anything else is a malformed answer."""
+    value = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(value, list):
+        raise PerfDashboardError(f"malformed dashboard answer: no list [{key}]")
+    return value
+
+
+def dashboard_run_id(info):
+    """The dashboard's identifier of the comparison run this job belongs to.
+
+    PR runs are keyed by PR number and head sha. Master runs carry a
+    timestamp suffix that only the dashboard knows, so they are looked up by
+    sha; the newest run for the sha is the one this job uploads into."""
+    if info.pr_number:
+        return f"pr-{info.pr_number}-{info.sha}"
+    data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]})
+    identities = []
+    for item in dashboard_list(data, "items"):
+        identity = item.get("identity") if isinstance(item, dict) else None
+        if not isinstance(identity, dict) or not all(
+            isinstance(identity.get(k), str) and identity[k] for k in ("newSha", "runId", "runTime")
+        ):
+            raise PerfDashboardError(
+                "malformed dashboard answer: [items] row without [identity.newSha, identity.runId, identity.runTime]"
+            )
+        if identity["newSha"] == info.sha:
+            identities.append(identity)
+    if not identities:
+        raise PerfDashboardUnavailable(f"no master run for sha {info.sha} yet")
+    identities.sort(key=lambda identity: identity["runTime"], reverse=True)
+    return identities[0]["runId"]
+
+
+def read_shard_queries(metrics_tsv_path):
+    """Tests and (test, query_index) pairs measured by this shard, from
+    `report/all-query-metrics.tsv` (columns: metric, left, right, diff,
+    times_change, stat_threshold, test, query_index, ...)."""
+    tests = []
+    queries = set()
+    with open(metrics_tsv_path, "r", encoding="utf-8", newline="") as f:
+        for row in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+            if len(row) < 8 or row[0] != DASHBOARD_GATE_METRIC:
+                continue
+            test, query_index = row[6], int(row[7])
+            if test not in tests:
+                tests.append(test)
+            queries.add((test, query_index))
+    return tests, queries
+
+
+def dashboard_has_shard(run_id, arch, test):
+    """True once the dashboard serves this arch's data for `test`, i.e. the
+    tables uploaded by this job in the REPORT stage are visible."""
+    data = dashboard_api_get(
+        f"/runs/{urllib.parse.quote(run_id)}/tests/{urllib.parse.quote(test)}"
+    )
+    tables = dashboard_list(data, "testTimes")
+    if not all(isinstance(table, dict) and isinstance(table.get("title"), str) for table in tables):
+        raise PerfDashboardError("malformed dashboard answer: [testTimes] row without [title]")
+    return any(f" {arch} " in table["title"] for table in tables)
+
+
+def dashboard_query_link(run_id, test, query_index):
+    return (
+        f"{PERF_DASHBOARD_URL}/runs/{urllib.parse.quote(run_id)}"
+        f"/tests/{urllib.parse.quote(test)}/queries/{query_index}"
+    )
+
+
+def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
+    """Slowdown rows of this shard with the dashboard's confidence tier."""
+    data = dashboard_api_get(
+        f"/runs/{urllib.parse.quote(run_id)}/confidence",
+        {"metrics": DASHBOARD_GATE_METRIC},
+    )
+    rows = []
+    for row in dashboard_list(data, "slowdowns"):
+        confidence = row.get("confidence") if isinstance(row, dict) else None
+        tier = confidence.get("tier") if isinstance(confidence, dict) else None
+        if (
+            not (isinstance(tier, str) and tier)
+            or not all(isinstance(row.get(k), str) for k in ("arch", "metric", "test"))
+            or type(row.get("queryIndex")) is not int
+        ):
+            raise PerfDashboardError(
+                "malformed dashboard answer: [slowdowns] row without [arch, metric, test, queryIndex, confidence.tier]"
+            )
+        if row.get("arch") != arch:
+            continue
+        if row.get("metric") != DASHBOARD_GATE_METRIC:
+            continue
+        if (row.get("test"), row.get("queryIndex")) not in shard_queries:
+            continue
+        rows.append(
+            {
+                "test": row.get("test"),
+                "query_index": row.get("queryIndex"),
+                "old": row.get("oldValue"),
+                "new": row.get("newValue"),
+                "diff_percent": row.get("diffPercent"),
+                "tier": tier,
+                "reason": confidence.get("reason") or "",
+                "confirmation_threshold": confidence.get("confirmationThreshold"),
+                "link": dashboard_query_link(
+                    run_id, row.get("test"), row.get("queryIndex")
+                ),
+            }
+        )
+    return rows
+
+
+def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
+    """Ask the performance dashboard for its verdict on this shard.
+
+    Fails at once when a table in `missing_inputs` was not uploaded, otherwise
+    waits until `deadline` for the dashboard to serve this shard's data and
+    slowdowns, then returns the slowdown rows of this shard and arch whose
+    confidence tier is in `DASHBOARD_BLOCKING_TIERS`. Raises
+    `PerfDashboardUnavailable` when no verdict could be obtained because CIDB
+    or the dashboard did not answer, and a plain `PerfDashboardError` for every
+    other reason; the caller fails the check on the latter rather than passing
+    a run nobody has judged."""
+    if missing_inputs:
+        reasons = missing_inputs.values()
+        unavailable = any(isinstance(r, CIDBUnavailableReason) for r in reasons) and all(
+            isinstance(r, (CIDBUnavailableReason, NotAttemptedReason)) for r in reasons
+        )
+        raise (PerfDashboardUnavailable if unavailable else PerfDashboardError)(
+            "the shard's results were not uploaded to CIDB: "
+            + "; ".join(f"{table} ({reason})" for table, reason in missing_inputs.items())
+        )
+    tests, shard_queries = read_shard_queries(metrics_tsv_path)
+    if not shard_queries:
+        raise PerfDashboardError(
+            f"no {DASHBOARD_GATE_METRIC} rows in [{metrics_tsv_path}]"
+        )
+
+    run_id = None
+    hard_reason = None
+    while True:
+        try:
+            if run_id is None:
+                run_id = dashboard_run_id(info)
+            if dashboard_has_shard(run_id, arch, tests[0]):
+                rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
+                break
+            reason = f"run [{run_id}] has no {arch} data for test [{tests[0]}] yet"
+        except PerfDashboardUnavailable as e:
+            reason = str(e)
+        except PerfDashboardError as e:
+            reason = str(e)
+            hard_reason = hard_reason or reason
+        if time.monotonic() >= deadline:
+            if hard_reason not in (None, reason):
+                reason = f"{reason}; earlier: {hard_reason}"
+            raise (PerfDashboardError if hard_reason else PerfDashboardUnavailable)(
+                "dashboard did not serve this shard within "
+                f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {reason}"
+            )
+        print(f"Waiting for the performance dashboard: {reason}")
+        time.sleep(min(DASHBOARD_POLL_INTERVAL_SEC, max(0, deadline - time.monotonic())))
+
+    for row in rows:
+        print(
+            f"Dashboard slowdown: {row['test']} #{row['query_index']} "
+            f"{row['old']} -> {row['new']} ({row['diff_percent'] * 100:+.1f}%), "
+            f"tier [{row['tier']}]: {row['reason']}"
+        )
+    return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
+
+
+def judge_without_dashboard(summary, error):
+    """Status and message suffix for a `master_head` shard whose dashboard verdict is unavailable.
+
+    The dashboard replaced a gate that failed only above 10 slower queries and so passed a single
+    large regression; without the dashboard, any slower query of this shard's report fails."""
+    suffix = f"; performance dashboard verdict unavailable: {error}"
+    if not is_perf_summary_message(summary.lower()):
+        return Result.Status.FAIL, suffix
+    slower = parse_slower_count(summary.lower())
+    return (
+        Result.Status.FAIL if slower else Result.Status.OK,
+        f"{suffix}; judged by this shard's report instead: {slower} slower",
+    )
+
+
+def confirm_dashboard_regressions(regressions, pr_number, workdir):
+    """Rerun dashboard blockers once on fresh servers; missing evidence stays blocking.
+
+    Reuse the shard confirmation measurements/randomization test, but carry the
+    dashboard's practical threshold instead of the shard's 15%/per-test floor.
+    Original samples and the dashboard classification are left intact.
+    """
+    rows = [dict(row, confirmation_passed=False) for row in regressions]
+    if not rows:
+        return rows
+    if len(rows) > 100:
+        for row in rows:
+            row["confirmation"] = "Not rerun: exceeds the 100-query confirmation limit"
+        return rows
+
+    selected = {}
+    for row in rows:
+        threshold = row.get("confirmation_threshold")
+        if (
+            not isinstance(threshold, (int, float))
+            or isinstance(threshold, bool)
+            or not math.isfinite(threshold)
+            or threshold <= 0
+        ):
+            row["confirmation"] = (
+                "Not rerun: dashboard confirmationThreshold unavailable"
+            )
+            continue
+        test, index = row["test"], row["query_index"]
+        diff = row["diff_percent"]
+        if (
+            not isinstance(test, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", test)
+            or type(index) is not int
+            or index < 0
+            or not isinstance(diff, (int, float))
+            or not math.isfinite(diff)
+            or diff <= 0
+            or (test, index) in selected
+        ):
+            raise PerfDashboardError("Invalid dashboard confirmation query")
+        row["confirmation"] = (
+            "Confirmation unavailable: missing or failed rerun; remains blocking"
+        )
+        selected[test, index] = row
+    if not selected:
+        return rows
+
+    workdir = Path(workdir).resolve()
+    output_dir = workdir / "analyze-dashboard-confirm"
+    # Remove stale results before starting: an interrupted/resumed job must not
+    # accept the previous attempt's successful measurements.
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    query_file = workdir / "dashboard-confirm-queries.tsv"
+    with query_file.open("w", encoding="utf-8") as out:
+        for (test, index), row in selected.items():
+            out.write(
+                f"{test}\t{index}\t{row['diff_percent']}\t0\t{row['confirmation_threshold']}\n"
+            )
+
+    script = Path(__file__).resolve().parent / "scripts/perf/compare.sh"
+    env = dict(
+        os.environ,
+        stage="confirm_dashboard",
+        PR_TO_TEST=str(pr_number),
+        CHPC_CONFIRM_QUERIES=str(query_file),
+    )
+    exit_code = Shell.run(
+        quote(str(script)),
+        cwd=str(workdir),
+        env=env,
+        log_file=str(workdir / "dashboard-confirm.log"),
+        timeout=1500,
+    )
+    if exit_code:
+        for row in selected.values():
+            row["confirmation"] = (
+                f"Confirmation failed (exit {exit_code}); remains blocking"
+            )
+        return rows
+
+    stats_file = output_dir / "query-metric-stats.tsv"
+    if not stats_file.exists():
+        return rows
+    stats = {}
+    invalid = set()
+    with stats_file.open(encoding="utf-8") as source:
+        for fields in csv.reader(source, delimiter="\t"):
+            # Malformed/unattributable output cannot clear any failures.
+            if len(fields) != 6:
+                raise PerfDashboardError("Malformed dashboard confirmation statistics")
+            try:
+                key = (fields[4], int(fields[5]))
+                arrays = [json.loads(value) for value in fields[:4]]
+                if any(
+                    not isinstance(value, list) or len(value) != 1 for value in arrays
+                ):
+                    raise ValueError("Expected one client_time metric")
+                values = [value[0] for value in arrays]
+                if any(
+                    type(value) not in (int, float) or not math.isfinite(value)
+                    for value in values
+                ):
+                    raise ValueError("Non-finite confirmation statistics")
+                left, right, diff, noise = values
+                if left <= 0 or right <= 0 or diff <= -1 or noise < 0:
+                    raise ValueError("Invalid confirmation statistics")
+            except (ValueError, TypeError) as e:
+                raise PerfDashboardError(
+                    f"Invalid dashboard confirmation statistics: {e}"
+                ) from e
+            if key in stats:
+                invalid.add(key)
+            stats[key] = (diff, noise)
+    for key, row in selected.items():
+        if key not in stats or key in invalid:
+            continue
+        diff, noise = stats[key]
+        reproduced = diff > row["confirmation_threshold"] and diff >= noise
+        row["confirmation_passed"] = not reproduced
+        verdict = "Reproduced" if reproduced else "Did not reproduce; non-blocking"
+        row["confirmation"] = (
+            f"{verdict} after server restart: {diff * 100:+.1f}%, "
+            f"dashboard threshold {row['confirmation_threshold'] * 100:.1f}%, "
+            f"rerun statistical threshold {noise * 100:.1f}%"
+        )
+    return rows
+
+
+def build_dashboard_results_children(regressions):
+    """Keep every dashboard blocker visible, including those cleared by a rerun."""
+    children = []
+    for row in regressions:
+        sub = Result(
+            name=f"{row['test']} #{row['query_index']}",
+            status=(
+                Result.Status.OK
+                if row.get("confirmation_passed")
+                else Result.Status.FAIL
+            ),
+            info=(
+                f"{DASHBOARD_GATE_METRIC} {row['old']} -> {row['new']} "
+                f"({row['diff_percent'] * 100:+.1f}%), {row['tier']}: {row['reason']}"
+                + (f". {row['confirmation']}" if row.get("confirmation") else "")
+            ),
+        )
+        sub.set_label(
+            "dashboard",
+            link=row["link"],
+            hint="This query on the performance dashboard (samples, history)",
+        )
+        children.append(sub)
+    return children
+
+
 # Outcomes of fetching one previous result artifact from S3.
 FETCH_OK = "ok"
 FETCH_MISSING = "missing"
@@ -1542,6 +2209,30 @@ def master_report_link(sha, file_name):
     return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{prefix}/{file_name}"
 
 
+def master_job_status(job_name, sha):
+    """The status of `job_name` in the `MasterCI` run of master commit `sha`.
+
+    Returns `(FETCH_MISSING, None)` when `sha` has no `MasterCI` run,
+    `(FETCH_ERROR, None)` when its report cannot be fetched or parsed,
+    `(FETCH_OK, None)` when that run did not schedule the job, and
+    `(FETCH_OK, <status>)` otherwise."""
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
+    state, out = fetch_prev_master_result(link)
+    if state == FETCH_ERROR:
+        print(f"WARNING: failed to fetch the master workflow report [{link}]")
+    if state != FETCH_OK:
+        return state, None
+    try:
+        jobs = json.loads(out).get("results") or []
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return FETCH_ERROR, None
+    for job in jobs:
+        if isinstance(job, dict) and job.get("name") == job_name:
+            return FETCH_OK, job.get("status") or ""
+    return FETCH_OK, None
+
+
 def classify_missing_prev_master_run(job_name, sha):
     """Tell whether this job was ever scheduled at master commit `sha`, given
     that its `result_*.json` is missing there.
@@ -1567,34 +2258,23 @@ def classify_missing_prev_master_run(job_name, sha):
     or parsed. Those all stop the walk, and the caller falls back to the
     absolute gate for this one run - the next master run finds this run's own
     result and gets its delta back."""
-    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
-    state, out = fetch_prev_master_result(link)
+    state, status = master_job_status(job_name, sha)
     if state == FETCH_MISSING:
         print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
         return MASTER_RUN_NEVER_SCHEDULED
     if state == FETCH_ERROR:
-        print(f"WARNING: failed to fetch the master workflow report [{link}]")
         return MASTER_RUN_INCOMPLETE
-    try:
-        jobs = json.loads(out).get("results") or []
-    except Exception:
-        print(f"WARNING: failed to parse the master workflow report [{link}]")
-        return MASTER_RUN_INCOMPLETE
-    for job in jobs:
-        if not isinstance(job, dict) or job.get("name") != job_name:
-            continue
-        status = job.get("status")
-        if status == Result.Status.SKIPPED:
-            print(f"INFO: [{job_name}] was skipped at master commit {sha}")
-            return MASTER_RUN_NEVER_SCHEDULED
-        print(
-            f"WARNING: [{job_name}] at master commit {sha} is {status} but "
-            "published no result"
-        )
-        return MASTER_RUN_INCOMPLETE
-    # The job is absent from the report: this master run did not schedule it.
-    print(f"INFO: [{job_name}] is not part of the master run of {sha}")
-    return MASTER_RUN_NEVER_SCHEDULED
+    if status is None:
+        print(f"INFO: [{job_name}] is not part of the master run of {sha}")
+        return MASTER_RUN_NEVER_SCHEDULED
+    if status == Result.Status.SKIPPED:
+        print(f"INFO: [{job_name}] was skipped at master commit {sha}")
+        return MASTER_RUN_NEVER_SCHEDULED
+    print(
+        f"WARNING: [{job_name}] at master commit {sha} is {status} but "
+        "published no result"
+    )
+    return MASTER_RUN_INCOMPLETE
 
 
 def find_prev_master_slower_count(job_name, commits, release_base_sha):
@@ -1721,14 +2401,14 @@ def read_ci_checks_results(path):
     return results, malformed, True
 
 
-def import_ci_checks_results(path, results):
-    """Import `ci-checks.tsv` rows into the previous subtask's results.
+def import_ci_checks_results(path, results, target_name=CIDB_TEST_CASES_RESULT_NAME):
+    """Import `ci-checks.tsv` rows into the `target_name` sub-result.
 
     Returns True when the file was importable. A file with no data row at all -
     empty, or only the header lines - is reported and left unimported. That
-    distinction is a diagnostic one, not a data-preserving one: every subtask
-    `main()` appends before this call is built without a `results=` argument, so
-    the assignment target's row list is empty either way and there is nothing an
+    distinction is a diagnostic one, not a data-preserving one: the target
+    is built by `Result.from_commands_run`, which takes no `results=`
+    argument, so its row list is empty either way and there is nothing an
     empty assignment could destroy. A file that lost individual rows still
     imports the intact ones and reports how many it skipped, because degrading
     beats dying. An absent file is the atomic publish's own failure signal -
@@ -1746,8 +2426,11 @@ def import_ci_checks_results(path, results):
         return False
     if malformed:
         print(f"WARNING: ci-checks.tsv had {malformed} malformed row(s) - skipped")
-    # results[-2] is a previuos subtask
-    results[-2].results = test_results
+    target = next((r for r in results if r.name == target_name), None)
+    if target is None:
+        print(f"WARNING: no [{target_name}] sub-result to import ci-checks.tsv into")
+        return False
+    target.results = test_results
     return True
 
 
@@ -1785,8 +2468,18 @@ def rebuild_table(port, source, destination):
     # Drop any leftover target from an interrupted previous run before rebuilding.
     Shell.check(f'{client} --query "DROP TABLE IF EXISTS {target} SYNC"', strict=True, verbose=True)
     Shell.check(f'{client} --query "CREATE TABLE {target} AS {source}"', strict=True, verbose=True)
+    # OPTIMIZE FINAL's wait for in-flight merges is bounded by this table setting, not by the
+    # client timeouts above, and its 120s default is shorter than one full merge of these datasets.
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600"', strict=True, verbose=True)
+    # Variable granularity would make the merged part's granules follow how the parallel INSERT split the
+    # rows, which differs between the two servers; a constant one gives both the same layout.
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1"', strict=True, verbose=True)
     Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
-    Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL"', strict=True, verbose=True)
+    # A timed-out OPTIMIZE FINAL is a no-op that still exits 0, so without optimize_throw_if_noop
+    # the swap below can run on a table whose parts are still being merged.
+    Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1"', strict=True, verbose=True)
+    # The merged part keeps its granules; the reset keeps `CREATE TABLE ... AS` clones on the default.
+    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity"', strict=True, verbose=True)
     if target != destination:
         old = f"{destination}_old"
         Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
@@ -1797,9 +2490,6 @@ def rebuild_table(port, source, destination):
 
 
 POPULATE_DONE_MARKER = "test._populate_done"
-
-# Derived, not hand-maintained: adding a dataset to ICEBERG_DATASETS is enough to protect it from the between-tests user_files wipe.
-PERSISTENT_USER_FILES = {directory for directory, _ in ICEBERG_DATASETS.values()}
 
 
 def populate_data(port):
@@ -1860,6 +2550,7 @@ def main():
         elif "release_base" in test_option:
             compare_against_release = True
 
+    nightly = "nightly" in test_options
     batch_num -= 1
     assert 0 <= batch_num < total_batches and total_batches >= 1
 
@@ -1869,10 +2560,20 @@ def main():
 
     # release_version = CHVersion.get_release_version()
     info = Info()
+    reference_chain = []
 
-    if Utils.is_arm():
+    # Read before any stage, so that a resume attributes the same commits.
+    if nightly:
+        tested_sha = get_binary_commit_sha(f"{args.ch_path}/clickhouse")
+        reference_sha = get_binary_commit_sha(args.reference_path)
+    else:
+        tested_sha = info.sha
+
+    if args.reference_path:
+        link_for_ref_ch = ""
+    elif Utils.is_arm():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_arm_release")
+            link_for_ref_ch, reference_chain = find_prev_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
@@ -1881,7 +2582,7 @@ def main():
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_amd_release")
+            link_for_ref_ch, reference_chain = find_prev_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
@@ -1891,11 +2592,13 @@ def main():
     else:
         Utils.raise_with_error("Unknown processor architecture")
 
-    reference_warning = (
-        LOCAL_REFERENCE_FALLBACK_WARNING
-        if info.is_local_run and link_for_ref_ch.startswith(LATEST_MASTER_BUILD_PREFIX)
-        else ""
+    use_latest_master = info.is_local_run and link_for_ref_ch.startswith(
+        LATEST_MASTER_BUILD_PREFIX
     )
+    if use_latest_master:
+        reference_warning = LOCAL_REFERENCE_FALLBACK_WARNING
+    else:
+        reference_warning = stale_reference_warning(reference_chain)
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -1917,6 +2620,45 @@ def main():
         )
 
     test_keyword = args.test
+
+    # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
+    test_files = test_discovery.list_test_files("./tests/performance/")
+    if nightly:
+        test_files.remove("calibration.xml")
+    # TODO: in PRs filter test files against changed files list if only tests has been changed
+    # changed_files = info.get_custom_data("changed_files")
+    if test_keyword:
+        test_files = [file for file in test_files if test_keyword in file]
+    else:
+        test_files = test_files[batch_num::total_batches]
+    if nightly:
+        # Every measured host runs the yardstick first.
+        test_files.insert(0, "calibration.xml")
+    print(f"Job Batch: [{batch_num}/{total_batches}]")
+    print(f"Test Files ({len(test_files)}): [{test_files}]")
+    assert test_files
+
+    # Test metadata keeps S3 off for old release_base vintages and shards without S3 tests.
+    needs_s3 = any(
+        test_discovery.test_requires_s3(f"./tests/performance/{file}")
+        for file in test_files
+    )
+    needs_s3_read_dataset = any(
+        test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
+        for file in test_files
+    )
+
+    def prepare_s3():
+        # Configure and stage re-entry must produce the same S3 fixture.
+        if not s3_service.ensure(f"{perf_wd}/s3_server.log"):
+            return False
+        if needs_s3_read_dataset and not s3_service.seed_read_dataset(
+            f"{db_path}/user_files/{s3_service.READ_DATASET_DIRECTORY}"
+        ):
+            return False
+        if not s3_service.write_side_override(perf_left_config, "left"):
+            return False
+        return s3_service.write_side_override(perf_right_config, "right")
 
     ch_path = args.ch_path
     assert (
@@ -1972,6 +2714,7 @@ def main():
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
             f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
+            f"cp ./tests/config/config.d/top_level_domains_lists.xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
@@ -2002,21 +2745,27 @@ def main():
         )
         res = results[-1].is_ok()
 
-    reference_sha = ""
+    if not nightly:
+        reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         reference_source = Path(f"{perf_left}/reference-source.txt")
         # The latest-master URL is mutable: refresh it when entering the install
         # stage. Also invalidate a cached binary when the selected baseline changes.
         if (
-            reference_warning
+            args.reference_path
+            or use_latest_master
             or not Path(f"{perf_left}/.done").is_file()
             or not reference_source.is_file()
             or reference_source.read_text() != link_for_ref_ch
         ):
             commands = [
                 f"mkdir -p {perf_left_config}",
-                f"wget -nv -O {perf_left}/clickhouse.download {link_for_ref_ch}",
+                (
+                    f"cp {args.reference_path} {perf_left}/clickhouse.download"
+                    if args.reference_path
+                    else f"wget -nv -O {perf_left}/clickhouse.download {link_for_ref_ch}"
+                ),
                 f"mv {perf_left}/clickhouse.download {perf_left}/clickhouse",
                 f"chmod +x {perf_left}/clickhouse",
                 f"cp -r ./tests/performance {perf_left}/",
@@ -2034,10 +2783,15 @@ def main():
             if res:
                 reference_source.write_text(link_for_ref_ch)
                 Shell.check(f"touch {perf_left}/.done")
-        if res:
+        if res and not nightly:
             reference_sha = Shell.get_output(
                 f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
+
+    # Also on a resume: never attribute measurements to a different reference.
+    if res and nightly:
+        installed_sha = get_binary_commit_sha(f"{perf_left}/clickhouse")
+        assert installed_sha == reference_sha, f"installed reference {installed_sha} is not --reference-path {reference_sha}"
 
     if res and not info.is_local_run:
 
@@ -2049,16 +2803,28 @@ def main():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
                 )
+                info.add_workflow_warning(
+                    "Performance comparison: CIDB is not reachable, the queries are "
+                    "judged without their learned thresholds"
+                )
                 Shell.check(
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
                 )
                 return True
+            # The query takes 8 to 10 s, so a 10 s timeout lost the thresholds
+            # of about half of the runs.
             result = cidb.do_select_query(
-                query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
+                query=GET_HISTORICAL_TRESHOLDS_QUERY,
+                timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+                retries=3,
             )
-            if result is None:
+            if not result:
                 print(
                     "WARNING: Failed to fetch historical thresholds, will proceed without them"
+                )
+                info.add_workflow_warning(
+                    "Performance comparison: failed to fetch the learned per-query "
+                    "thresholds, the queries are judged without them"
                 )
                 Shell.check(
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
@@ -2154,7 +2920,28 @@ def main():
         # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
         commands += iceberg_database_ddl_commands(perf_left)
         commands += iceberg_database_ddl_commands(perf_right)
+        if needs_s3_read_dataset:
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_left)
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_right)
+
+        if needs_s3:
+            commands.append(prepare_s3)
+        else:
+            print(
+                "No selected test uses the job-local S3 endpoint - skip its provisioning"
+            )
         results.append(Result.from_commands_run(name="Configure", command=commands))
+        res = results[-1].is_ok()
+
+    if res and needs_s3 and JobStages.CONFIGURE not in stages and any(
+        stage in stages for stage in (JobStages.RESTART, JobStages.TEST, JobStages.REPORT)
+    ):
+        results.append(
+            Result.from_commands_run(
+                name="Restore S3 endpoint",
+                command=[prepare_s3],
+            )
+        )
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -2178,6 +2965,10 @@ def main():
             restart_ch1,
             restart_ch2,
         ]
+        if NO_ASLR_PREFIX:
+            commands.append(
+                f"python3 {Path(__file__).resolve().parent}/scripts/perf/check_executable_base.py {perf_left}/db {perf_right}/db"
+            )
         results.append(Result.from_commands_run(name="Start", command=commands))
         # TODO : check datasets are loaded:
         print(
@@ -2209,7 +3000,7 @@ def main():
             Result.from_commands_run(
                 name="Start system log export",
                 command=start_log_export,
-                command_args=[log_export_servers],
+                command_args=[log_export_servers, nightly],
                 with_info=True,
             )
         )
@@ -2227,18 +3018,14 @@ def main():
 
     if res and JobStages.TEST in stages:
         print("Tests")
-        test_files = [
-            file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
-        ]
-        # TODO: in PRs filter test files against changed files list if only tests has been changed
-        # changed_files = info.get_custom_data("changed_files")
-        if test_keyword:
-            test_files = [file for file in test_files if test_keyword in file]
-        else:
-            test_files = test_files[batch_num::total_batches]
-        print(f"Job Batch: [{batch_num}/{total_batches}]")
-        print(f"Test Files ({len(test_files)}): [{test_files}]")
-        assert test_files
+        # test_files was selected at the start of the job, where the S3 provisioning decision needs it.
+
+        # A local rerun reuses perf_wd for downloaded datasets. The report scans
+        # all *-raw.tsv and *-err.log files, including tests not selected this
+        # time, so keep only results produced by this invocation.
+        for pattern in ("*-raw.tsv", "*-err.log", "wall-clock-times.tsv"):
+            for old_result in Path(perf_wd).glob(pattern):
+                old_result.unlink()
 
         def cleanup_user_files():
             # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
@@ -2248,8 +3035,8 @@ def main():
                 if not user_files.is_dir():
                     continue
                 for entry in user_files.iterdir():
-                    # Dataset directories must outlive the tests; they are real directories, so the is_symlink() check below does not cover them.
-                    if entry.name in PERSISTENT_USER_FILES:
+                    # Dataset files are hardlinked from db_path and must outlive the tests.
+                    if (Path(db_path) / "user_files" / entry.name).exists():
                         continue
                     if entry.is_symlink():
                         continue
@@ -2259,20 +3046,29 @@ def main():
                         entry.unlink()
 
         def run_tests():
+            last_flush = time.monotonic()
             for test in test_files:
-                CHServer.run_test(
+                clean = CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=10,
+                    max_queries=0 if nightly else 10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
+                    long=nightly,
                 )
                 cleanup_user_files()
+                if nightly and time.monotonic() - last_flush >= NIGHTLY_FLUSH_INTERVAL_SEC:
+                    flush_log_export(log_export_servers)
+                    last_flush = time.monotonic()
+                if not clean:
+                    break
             return True
 
         commands = [
             run_tests,
         ]
-        results.append(Result.from_commands_run(name="Tests", command=commands))
+        results.append(
+            Result.from_commands_run(name=CIDB_TEST_CASES_RESULT_NAME, command=commands)
+        )
         res = results[-1].is_ok()
 
     if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
@@ -2308,7 +3104,10 @@ def main():
                 reference.write(
                     f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
                 )
-        Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
+        with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
+            warnings.write(reference_warning + "\n" if reference_warning else "")
+        right_commit = f"echo tested binary commit {tested_sha}" if nightly else "git log -1 HEAD"
+        Shell.check(f"{right_commit} > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
             Utils.normalize_string(info.job_name)
         )
@@ -2316,9 +3115,14 @@ def main():
         # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
         # job - do not reset it here, the export stage has already used it.
 
+        # Local runs use PR_NUMBER=-1 as a sentinel. compare.sh formats the
+        # generated ci-checks.tsv using UInt32, so use the master sentinel (0)
+        # for this local-only report instead of passing a negative PR number.
+        report_pr_number = 0 if info.is_local_run else info.pr_number
         commands = [
-            f"PR_TO_TEST={info.pr_number} "
-            f"SHA_TO_TEST={info.sha} "
+            f"PR_TO_TEST={report_pr_number} "
+            f"SHA_TO_TEST={tested_sha} "
+            f"{'CHPC_NIGHTLY=1 ' if nightly else ''}"
             "stage=get_profiles "
             f"{script_path}",
         ]
@@ -2336,36 +3140,30 @@ def main():
 
         res = results[-1].is_ok()
 
+    # In `master_head` mode the dashboard gate judges the shard on these
+    # uploads, so they share one deadline with the gate's wait.
+    upload_deadline = (
+        time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC if compare_against_master else None
+    )
+    # A dashboard input stays here, with the reason, until its upload succeeds.
+    missing_dashboard_inputs = {}
+
     if res and not info.is_local_run and JobStages.REPORT in stages:
 
         def insert_raw_query_metrics_data():
+            missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
-            # Metrics insertion is a reporting side-effect, not the perf
-            # verdict. A transient LogCluster (play.clickhouse.com) timeout
-            # must not fail the whole job - skip and warn, like
-            # insert_report_aggregates() and prepare_historical_data() do.
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping raw query metrics insert")
-                return True
-
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
-                return True
+                missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = "failed to prepare the TSV"
+                return not nightly
 
-            check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
-            if check_start_timestamp:
-                check_start_time = datetime.fromtimestamp(
-                    int(check_start_timestamp)
-                ).isoformat(sep=" ").split(".")[0]
-            else:
-                check_start_time = datetime.now().isoformat(sep=" ").split(".")[0]
+            check_start_time = get_check_start_time()
 
-            now = datetime.now()
-            date = now.date().isoformat()
+            date = utc_now().date().isoformat()
 
             with open(raw_query_metrics_path, "r", encoding="utf-8") as f:
                 data = f.read()
-            line_count = data.count("\n")
 
             insert_metadata = get_insert_metadata(info, compare_against_release)
             query = INSERT_RAW_QUERY_METRICS_DATA.format(
@@ -2374,22 +3172,34 @@ def main():
                 CHECK_START_TIME=check_start_time,
                 PR_NUMBER=info.pr_number,
                 REF_SHA=escape_sql_string(reference_sha),
-                CUR_SHA=escape_sql_string(info.sha),
+                CUR_SHA=escape_sql_string(tested_sha),
                 **insert_metadata,
             )
 
             print(f"Do insert raw query metrics query: >>>\n{query}\n<<<")
-            insert_ok = cidb.do_insert_query(
-                query=query,
-                data=data,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                retries=3,
-            )
-            if insert_ok:
-                print(f"Inserted [{line_count}] raw query metric lines")
+            chunks = split_into_chunks(data, CIDB_CHUNK_ROWS) if nightly else [data]
+            error = None
+            for i, chunk in enumerate(chunks):
+                line_count = chunk.count("\n")
+                chunk_error = insert_into_cidb(
+                    cidb,
+                    info,
+                    RAW_QUERY_METRICS_TABLE,
+                    query,
+                    chunk,
+                    upload_deadline,
+                    token_key=f"{RAW_QUERY_METRICS_TABLE}/{i}" if nightly else None,
+                )
+                if chunk_error is None:
+                    print(f"Inserted [{line_count}] raw query metric lines")
+                else:
+                    print(f"Inserted [{line_count}] raw query metric lines - failed: {chunk_error}")
+                    error = error or chunk_error
+            if error is None:
+                del missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE]
             else:
-                print(f"Inserted [{line_count}] raw query metric lines - failed")
-            return True
+                missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = error
+            return error is None or not nightly
 
         results.append(
             Result.from_commands_run(
@@ -2407,24 +3217,16 @@ def main():
     ):
 
         def insert_historical_data():
+            missing_dashboard_inputs[HISTORICAL_DATA_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
-            # Reporting side-effect, not the perf verdict - a transient
-            # LogCluster timeout must not fail the job (see
-            # insert_raw_query_metrics_data / insert_report_aggregates).
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping historical data insert")
-                return True
-
-            now = datetime.now()
+            now = utc_now()
             date = now.date().isoformat()
-            date_time = now.isoformat(sep=" ").split(".")[0]
+            date_time = format_utc_date_time(now)
 
             report_path = f"{perf_wd}/report/all-query-metrics.tsv"
             with open(report_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-                print(lines)
                 data = "".join(lines)
-            print(data)
 
             insert_metadata = get_insert_metadata(info, compare_against_release)
             query = INSERT_HISTORICAL_DATA.format(
@@ -2432,22 +3234,21 @@ def main():
                 EVENT_DATE_TIME=date_time,
                 PR_NUMBER=info.pr_number,
                 REF_SHA=escape_sql_string(reference_sha),
-                CUR_SHA=escape_sql_string(info.sha),
+                CUR_SHA=escape_sql_string(tested_sha),
                 **insert_metadata,
             )
 
             print(f"Do insert historical data query: >>>\n{query}\n<<<")
-            insert_ok = cidb.do_insert_query(
-                query=query,
-                data=data,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                retries=3,
+            error = insert_into_cidb(
+                cidb, info, HISTORICAL_DATA_TABLE, query, data, upload_deadline
             )
-            if insert_ok:
+            if error is None:
                 print(f"Inserted [{len(lines)}] lines")
+                del missing_dashboard_inputs[HISTORICAL_DATA_TABLE]
             else:
-                print(f"Inserted [{len(lines)}] lines - failed")
-            return True
+                print(f"Inserted [{len(lines)}] lines - failed: {error}")
+                missing_dashboard_inputs[HISTORICAL_DATA_TABLE] = error
+            return error is None or not nightly
 
         results.append(
             Result.from_commands_run(
@@ -2463,39 +3264,52 @@ def main():
             """Upload all aggregate report TSVs and the tested-commits summary.
 
             Each upload is attempted independently; a failure or missing
-            input for one table does not block the others. A single upload
-            error does not fail the job either - these tables are purely
-            informational for the UI, the source TSVs are still shipped in
-            logs.tar.zst.
+            input for one table does not block the others. A failed upload
+            does not fail this step; the dashboard gate fails the check when a
+            table it judges from is missing. A nightly run has no dashboard
+            gate, so it fails this step directly when the test times upload
+            fails.
             """
+            missing_dashboard_inputs[TEST_TIMES_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping report aggregate uploads")
-                return True
-
+            ok = True
             for cfg in REPORT_UPLOADS:
                 try:
-                    run_report_upload(
+                    error = run_report_upload(
                         cfg=cfg,
                         cidb=cidb,
                         info=info,
                         reference_sha=reference_sha,
+                        tested_sha=tested_sha,
                         compare_against_release=compare_against_release,
+                        deadline=upload_deadline,
                     )
-                except Exception:
+                except Exception as e:
                     traceback.print_exc()
+                    error = repr(e)
+                if cfg["table"] in DASHBOARD_INPUT_TABLES:
+                    if error is None:
+                        missing_dashboard_inputs.pop(cfg["table"], None)
+                    else:
+                        missing_dashboard_inputs[cfg["table"]] = error
+                # A nightly run requires the test times; the other tables stay best effort.
+                if nightly and cfg["table"] == TEST_TIMES_TABLE:
+                    ok = error is None
 
             try:
                 insert_flamegraph_stacks(
                     cidb=cidb,
                     info=info,
                     reference_sha=reference_sha,
+                    tested_sha=tested_sha,
                     compare_against_release=compare_against_release,
+                    deadline=upload_deadline,
+                    nightly=nightly,
                 )
             except Exception:
                 traceback.print_exc()
 
-            return True
+            return ok
 
         results.append(
             Result.from_commands_run(
@@ -2512,6 +3326,7 @@ def main():
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
+        dashboard_regressions = []
         try:
             with open(f"{perf_wd}/report.html", "r", encoding="utf-8") as report_fd:
                 report_text = report_fd.read()
@@ -2525,6 +3340,8 @@ def main():
             status = Result.Status.OK
             if "errors" in message.lower():
                 status = Result.Status.FAIL
+            elif nightly:
+                print("Nightly run: no performance dashboard or delta gate")
             elif compare_against_release and message:
                 # The release-base comparison is cumulative, so gate on the
                 # delta against the previous master run instead of the
@@ -2560,8 +3377,45 @@ def main():
                     )
                     if delta > SLOWER_QUERIES_DELTA_FAIL_THRESHOLD:
                         status = Result.Status.FAIL
-            elif too_many_slow(message.lower()):
-                status = Result.Status.FAIL
+            elif info.is_local_run:
+                print("Local run: skipping the performance dashboard gate")
+            else:
+                # `master_head` mode: the performance dashboard's verdict is the
+                # gate. It judges every changed query on its raw samples and
+                # master history, while a slower-count gate can only see how
+                # many queries crossed their per-shard threshold: a single
+                # 20x regression used to pass as "1 slower".
+                try:
+                    assert upload_deadline is not None
+                    dashboard_regressions = perf_dashboard_gate(
+                        info,
+                        get_perf_arch(),
+                        f"{perf_wd}/report/all-query-metrics.tsv",
+                        upload_deadline,
+                        missing_dashboard_inputs,
+                    )
+                    dashboard_regressions = confirm_dashboard_regressions(
+                        dashboard_regressions, info.pr_number, perf_wd
+                    )
+                except PerfDashboardUnavailable as e:
+                    print(f"ERROR: {e}")
+                    status, suffix = judge_without_dashboard(message, e)
+                    message += suffix
+                except PerfDashboardError as e:
+                    print(f"ERROR: {e}")
+                    status = Result.Status.FAIL
+                    message += f"; performance dashboard verdict unavailable: {e}"
+                else:
+                    blocking_count = sum(
+                        not row["confirmation_passed"] for row in dashboard_regressions
+                    )
+                    if blocking_count:
+                        status = Result.Status.FAIL
+                    if dashboard_regressions:
+                        message += (
+                            f"; {blocking_count}/{len(dashboard_regressions)} dashboard "
+                            "regression(s) remain blocking after confirmation"
+                        )
             # TODO: Remove until here
         except Exception:
             traceback.print_exc()
@@ -2576,11 +3430,11 @@ def main():
             message = "No message in report."
         # Copy slower/unstable queries into Check Results so that Praktika
         # attaches per-query CIDB history links in the report.
-        check_sub_results = []
+        check_sub_results = build_dashboard_results_children(dashboard_regressions)
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:
-            if r.name == "Tests" and r.results:
+            if r.name == CIDB_TEST_CASES_RESULT_NAME and r.results:
                 tests_result = r
                 break
         if tests_result:
@@ -2588,9 +3442,14 @@ def main():
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
             arch = get_perf_arch()
-            check_sub_results = build_check_results_children(
-                tests_result, f"%Performance%{arch}%master_head%"
-            )
+            dashboard_names = {sub.name for sub in check_sub_results}
+            check_sub_results += [
+                sub
+                for sub in build_check_results_children(
+                    tests_result, f"%Performance%{arch}%master_head%"
+                )
+                if sub.name not in dashboard_names
+            ]
 
         results.append(
             Result(
@@ -2601,6 +3460,10 @@ def main():
                 results=check_sub_results,
             )
         )
+
+    # Only after Report: its confirm_changes step reruns flagged queries, which may read the object store.
+    if needs_s3:
+        s3_service.stop()
 
     files_to_attach = []
     if res:
@@ -2625,18 +3488,18 @@ def main():
         info=message,
     )
     if info.pr_number:
-        dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?q={info.pr_number}"
-        )
+        dashboard_link = f"{PERF_DASHBOARD_URL}/runs?q={info.pr_number}"
     else:
         dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?scope=master&q={(info.sha or '')[:12]}"
+            f"{PERF_DASHBOARD_URL}/runs?scope=master&q={(info.sha or '')[:12]}"
         )
-    result.set_label(
-        "Performance dashboard",
-        link=dashboard_link,
-        hint="Combined performance dashboard for this run (all shards, amd + arm)",
-    )
+    # The dashboard does not list nightly runs.
+    if not nightly:
+        result.set_label(
+            "Performance dashboard",
+            link=dashboard_link,
+            hint="Combined performance dashboard for this run (all shards, amd + arm)",
+        )
     result.complete_job()
 
 

@@ -2,12 +2,18 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
 
 #include <fmt/ranges.h>
+
+namespace ProfileEvents
+{
+    extern const Event DeltaLakeDeltaLogExistenceChecks;
+}
 
 namespace DB
 {
@@ -47,6 +53,15 @@ std::vector<String> listFiles(
     }
     LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
     return res;
+}
+
+bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
+{
+    ProfileEvents::increment(ProfileEvents::DeltaLakeDeltaLogExistenceChecks);
+    const auto delta_log_dir = (std::filesystem::path(path) / "_delta_log").string() + "/";
+    RelativePathsWithMetadata files;
+    object_storage.listObjects(delta_log_dir, files, /* max_keys */ 1);
+    return !files.empty();
 }
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)

@@ -95,7 +95,7 @@ def parse_timestamp(timestamp: str) -> Optional[datetime]:
     """
     if not timestamp:
         return None
-    return Utils.gh_str_to_datetime(timestamp)
+    return Utils.to_datetime(timestamp, input_format="iso")
 
 
 def fetch_approvers(

@@ -33,10 +33,10 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sam
 
 **Parameters**
 
-- `start_timestamp` — Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
-- `end_timestamp` — Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
-- `grid_step` — Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'. [`UInt32`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
-- `staleness` — Specifies the maximum "staleness" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'. [`UInt32`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
+- `start_timestamp` — Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
+- `end_timestamp` — Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
+- `grid_step` — Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'. [`UInt32`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
+- `staleness` — Specifies the maximum "staleness" in seconds of the considered samples. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'. [`UInt32`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`String`](/reference/data-types/string)
 
 **Arguments**
 
@@ -46,7 +46,7 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sam
 
 **Returned value**
 
-`resets` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the resets value for a particular grid point.
+`resets` values on the specified grid as an `Array(Nullable(UInt64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the resets value for a particular grid point.
 
 **Examples**
 

@@ -1,0 +1,6 @@
+statistics materialized	1
+every estimate was extracted	1
+one unknown atom is below the total	1
+AND of two unknowns does not exceed one	1
+OR of two unknowns is at least one	1
+OR of range and unknown exceeds the range alone	1

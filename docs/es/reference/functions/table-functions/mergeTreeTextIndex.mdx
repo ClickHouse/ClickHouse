@@ -13,17 +13,13 @@ Representa el diccionario de un índice de texto en tablas MergeTree.
 Devuelve los tokens con los metadatos de su posting list.
 Puede usarse para introspección.
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 mergeTreeTextIndex(database, table, index_name)
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento    | Descripción                                                          |
 | ------------ | -------------------------------------------------------------------- |
@@ -31,15 +27,13 @@ mergeTreeTextIndex(database, table, index_name)
 | `table`      | El nombre de la tabla de la que se leerá el índice de texto.         |
 | `index_name` | El nombre del índice de texto que se leerá.                          |
 
-<div id="returned-value">
-  ## Valor devuelto
-</div>
+## Valor devuelto {#returned-value}
 
 Un objeto de tabla con tokens y los metadatos de la posting list.
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+Si el índice utiliza el tokenizador `keyValuePairs`, cada token es un par `(clave, valor)` de una columna de tipo `Map`, y el resultado incluye dos columnas adicionales, `token_key` y `token_value`, que contienen los componentes decodificados del token.
+
+## Ejemplo de uso {#usage-example}
 
 ```sql title="Query"
 CREATE TABLE tab

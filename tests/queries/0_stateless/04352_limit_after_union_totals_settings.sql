@@ -6,4 +6,3 @@
 -- { echo }
 
 (SELECT 0 AS g, count() AS c FROM numbers(6) GROUP BY g WITH TOTALS LIMIT AFTER g >= 0) UNION ALL (SELECT 0 AS g, count() AS c FROM numbers(6) GROUP BY g WITH TOTALS LIMIT AFTER g >= 0) SETTINGS limit = 1, max_threads = 1;
-(SELECT 0 AS g, count() AS c FROM numbers(6) GROUP BY g WITH TOTALS LIMIT AFTER g >= 0) UNION ALL (SELECT 0 AS g, count() AS c FROM numbers(6) GROUP BY g WITH TOTALS LIMIT AFTER g >= 0) SETTINGS limit = 1, max_threads = 1, enable_analyzer = 0;

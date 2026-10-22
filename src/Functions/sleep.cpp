@@ -78,24 +78,14 @@ public:
 
     String getName() const override { return function_name; }
     bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
+    /// What the function does is observable outside of its return value - it spends time, it can throw
+    /// `TOO_SLOW`, and it accounts `SleepFunctionCalls` / `SleepFunctionMicroseconds` - and how much of
+    /// that happens depends on how many times and on how many rows it is evaluated.
+    bool hasObservableSideEffects() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto is_float_or_native_uint = [](const IDataType & type)
-        {
-            WhichDataType which(type);
-            return which.isFloat() || which.isNativeUInt();
-        };
-
-        FunctionArgumentDescriptors mandatory_args{
-            {"seconds", is_float_or_native_uint, nullptr, "UInt* or Float*"}
-        };
-        validateFunctionArguments(getName(), arguments, mandatory_args);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignatureString() const override { return "(Float | NativeUInt) -> UInt8"; }
     ColumnPtr
     executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {

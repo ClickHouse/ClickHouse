@@ -52,8 +52,15 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr context) override;
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr context) const override;
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
@@ -69,6 +76,7 @@ public:
     String getPathSample(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
@@ -77,7 +85,8 @@ private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context) override;
+        const ContextPtr & context,
+        const String & target_cluster_name) override;
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;

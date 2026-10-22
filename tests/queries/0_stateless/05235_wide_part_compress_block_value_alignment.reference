@@ -1,0 +1,6 @@
+buffer-full flush
+50000	0	10000	0
+adaptive buffer
+50000	0	10000	0
+buffer below one value
+1000	0	200	0

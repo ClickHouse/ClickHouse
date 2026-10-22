@@ -1,0 +1,13 @@
+the re-added column of another type, while the part still has the old one
+5	0
+0	0	0
+the other columns of the same part
+5	10	10
+the same answer once the mutation has rewritten the part
+5	0
+re-added with the same type, with a DEFAULT expression, and as another kind of type
+[0,0,0,0,0]
+[1,2,3,4,5]
+['','','','','']
+and in a compact part
+[0,0,0,0,0]

@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- Unlike the `MergingAggregatedStep` it replaced, the merge-only `Aggregating` above the pushed
 -- variant-A join participates in the Cascades distribution strategies, so a Shuffle merge is now
 -- expressible: repartition the state rows by the `GROUP BY` keys, merge per node, gather the
@@ -46,7 +43,8 @@ EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS 
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
 
 SELECT '-- execution through the Shuffle merge';
-SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS t1 LEFT JOIN t_ms_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS t1 LEFT JOIN t_ms_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- the same execution without the distributed planner must match';
 SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ms_facts AS t1 LEFT JOIN t_ms_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k

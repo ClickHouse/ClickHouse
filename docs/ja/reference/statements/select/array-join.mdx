@@ -13,7 +13,7 @@ doc_type: 'reference'
 この名前は、配列またはネストされたデータ構造に対して `JOIN` を実行するものと見なせることに由来します。意図としては [arrayJoin](/ja/reference/functions/regular-functions/array-join) 関数に似ていますが、句の機能のほうがより広範です。
 
 <Note>
-  PostgreSQL の `FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL` はサポートされていません。代わりに `ARRAY JOIN` を使用してください。`unnest` という名前 (バージョン 26.5 以降) は `arrayJoin` (`SELECT unnest(arr)`) の関数呼び出し別名であり、テーブル関数ではありません。
+  PostgreSQL の `FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL unnest(...)` といったテーブルソース形式はサポートされていません。代わりに `ARRAY JOIN` を使用してください。`unnest` という名前 (バージョン 26.5 以降) は `arrayJoin` (`SELECT unnest(arr)`) の関数呼び出し別名であり、テーブル関数ではありません。相関サブクエリに対する `JOIN LATERAL <subquery>` は、実験的機能として別途サポートされています ([`JOIN`](/ja/reference/statements/select/join#lateral-join) を参照)。
 </Note>
 
 構文:
@@ -28,16 +28,12 @@ FROM <left_subquery>
 
 サポートされている `ARRAY JOIN` の種類は以下のとおりです。
 
-* `ARRAY JOIN` - 基本的なケースでは、空の配列は `JOIN` の結果に含まれません。
-* `LEFT ARRAY JOIN` - `JOIN` の結果には、空の配列を持つ行が含まれます。空の配列の値には、配列の要素型のデフォルト値 (通常は 0、空文字列、または NULL) が設定されます。
+* `ARRAY JOIN` - 基本的なケースでは、空のArrayは `JOIN` の結果に含まれません。
+* `LEFT ARRAY JOIN` - `JOIN` の結果には、空のArrayを持つ行が含まれます。空の配列の値には、配列の要素型のデフォルト値 (通常は 0、空文字列、または NULL) が設定されます。
 
-<div id="basic-array-join-examples">
-  ## ARRAY JOIN の基本的な例
-</div>
+## ARRAY JOIN の基本的な例 {#basic-array-join-examples}
 
-<div id="array-join-left-array-join-examples">
-  ### ARRAY JOIN と LEFT ARRAY JOIN
-</div>
+### ARRAY JOIN と LEFT ARRAY JOIN {#array-join-left-array-join-examples}
 
 以下の例では、`ARRAY JOIN` 句と `LEFT ARRAY JOIN` 句の使用方法を示します。[Array](/ja/reference/data-types/array) 型のカラムを持つテーブルを作成し、値を挿入してみましょう。
 
@@ -97,9 +93,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-<div id="array-join-arrayEnumerate">
-  ### ARRAY JOIN と arrayEnumerate 関数
-</div>
+### ARRAY JOIN と arrayEnumerate 関数 {#array-join-arrayEnumerate}
 
 この関数は通常、`ARRAY JOIN` と組み合わせて使用されます。`ARRAY JOIN` を適用した後、各配列に対して対象を1回だけカウントできるようになります。例:
 
@@ -137,9 +131,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 └─────────┴───────┘
 ```
 
-<div id="array_join_arrayEnumerateUniq">
-  ### ARRAY JOIN と arrayEnumerateUniq
-</div>
+### ARRAY JOIN と arrayEnumerateUniq {#array_join_arrayEnumerateUniq}
 
 この関数は、`ARRAY JOIN` を使用して配列要素を集計する場合に便利です。
 
@@ -175,9 +167,7 @@ LIMIT 10
 └─────────┴─────────┴────────┘
 ```
 
-<div id="using-aliases">
-  ## 別名の使用
-</div>
+## 別名の使用 {#using-aliases}
 
 `ARRAY JOIN`句では、配列に別名を指定できます。この場合、配列の要素にはその別名でアクセスできますが、配列自体には元の名前でアクセスします。例:
 
@@ -275,9 +265,7 @@ SETTINGS enable_unaligned_array_join = 1;
 └─────────┴─────────┴───┴───────────┘
 ```
 
-<div id="array-join-with-nested-data-structure">
-  ## ネストされたデータ構造での ARRAY JOIN
-</div>
+## ネストされたデータ構造での ARRAY JOIN {#array-join-with-nested-data-structure}
 
 `ARRAY JOIN` は、[ネストされたデータ構造](/ja/reference/data-types/nested-data-structures/index)でも使用できます。
 
@@ -390,23 +378,17 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-<div id="implementation-details">
-  ## 実装の詳細
-</div>
+## 実装の詳細 {#implementation-details}
 
 `ARRAY JOIN` の実行時には、クエリの実行順序が最適化されます。`ARRAY JOIN` はクエリ内で常に [WHERE](/ja/reference/statements/select/where)/[PREWHERE](/ja/reference/statements/select/prewhere) 句より前に指定する必要がありますが、`ARRAY JOIN` の結果をフィルタリングに使用しない限り、技術的にはこれらはどの順序でも実行できます。処理順序はクエリオプティマイザによって制御されます。
 
-<div id="incompatibility-with-short-circuit-function-evaluation">
-  ### 短絡関数評価との非互換性
-</div>
+### 短絡関数評価との非互換性 {#incompatibility-with-short-circuit-function-evaluation}
 
 [短絡関数評価](/ja/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) は、`if`、`multiIf`、`and`、`or` などの特定の関数における複雑な式の実行を最適化する機能です。これにより、これらの関数の実行中に、0 による除算のような例外が発生するのを防げます。
 
 `arrayJoin` は常に実行されるため、短絡関数評価には対応していません。これは、`arrayJoin` がクエリ分析および実行時に、ほかの関数とは別に処理される特殊な関数であり、短絡関数評価では機能しない追加ロジックを必要とするためです。結果の行数は `arrayJoin` の結果に依存するため、`arrayJoin` の遅延実行を実装するのは複雑すぎるうえ、コストも高くなります。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseで時系列データと関数を扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 
