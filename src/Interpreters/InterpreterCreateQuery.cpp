@@ -2809,9 +2809,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         {
             database->checkMetadataFilenameAvailability(create.getTable());
         }
-        catch (const Exception &)
+        catch (const Exception & e)
         {
-            if (create.if_not_exists)
+            /// Only a taken name makes `IF NOT EXISTS` a no-op; other errors (e.g. an invalid name) propagate.
+            if (create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
                 return false;
             throw;
         }
@@ -3213,9 +3214,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     database->checkMetadataFilenameAvailability(table_to_replace_name);
                 }
-                catch (const Exception &)
+                catch (const Exception & e)
                 {
-                    if (create.if_not_exists)
+                    /// Only a taken name makes `IF NOT EXISTS` a no-op; other errors (e.g. an invalid name) propagate.
+                    if (create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
                         return {};
                     throw;
                 }

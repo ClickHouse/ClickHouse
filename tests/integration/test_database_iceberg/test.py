@@ -2996,6 +2996,21 @@ def test_namespace_nested_sql_ddl(started_cluster):
         int(node.query(f"EXISTS TABLE {CATALOG_NAME}.name_without_namespace").strip()) == 0
     ), "EXISTS on a non-namespaced name must return 0"
 
+    # IF NOT EXISTS must not turn an invalid (non-namespaced) name into a silent no-op
+    _, err = node.query_and_get_answer_with_error(
+        f"CREATE TABLE IF NOT EXISTS {CATALOG_NAME}.{table_name}_without_namespace (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}_without_namespace/', 'minio', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_table_namespaces": 1,
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert "BAD_ARGUMENTS" in err, f"CREATE IF NOT EXISTS of a non-namespaced name must fail: {err}"
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.{table_name}_without_namespace").strip()) == 0
+    ), "no table may appear for a non-namespaced name"
+
 
 def test_namespace_path_reads_and_gating(started_cluster):
     """
