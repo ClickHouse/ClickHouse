@@ -519,6 +519,8 @@ public:
         {
             stream.estimated_distinct = stream.local_set.size();
             switchToRouting(stream);
+            /// The keys are in the buffers now, and a spill allocates its own scratch set.
+            stream.local_set = {};
         }
         else
         {
@@ -1222,10 +1224,16 @@ private:
             stream.num_buffered += buffer.size;
         }
 
-        /// The routing reuses the freed blocks before it allocates more, so with half of the arena free the memory stops
-        /// growing for a while without a spill.
-        if (!from_set && stream.num_buffered * sizeof(Key) * 2 <= stream.arena->allocatedBytes())
+        /// With half of the arena free, the keys are moved to a new arena instead of written, if that brings the state under
+        /// the threshold: the free blocks are of the classes that the buffers outgrew, and they would hold the memory.
+        const size_t arena_bytes = stream.arena->allocatedBytes();
+        if (!from_set && stream.num_buffered * sizeof(Key) * 2 <= arena_bytes
+            && getMemoryTracker()->get() - static_cast<Int64>(arena_bytes / 2) <= static_cast<Int64>(max_bytes_before_spill))
+        {
+            compact(stream);
+            stream.bytes_at_last_spill_check = keysBytes(stream);
             return;
+        }
 
         if (!stream.spill_file)
         {
@@ -1255,6 +1263,33 @@ private:
         stream.hot_buckets.clear();
         stream.bytes_at_last_spill_check = keysBytes(stream);
         has_spilled.store(true, std::memory_order_relaxed);
+    }
+
+    /// Moves the buffered keys to a new arena, keeping their order, so that the known distinct keys stay the oldest.
+    void compact(Stream & stream)
+    {
+        const auto old_arena = std::move(stream.arena);
+        const auto old_buffers = std::move(stream.local_buffers);
+        stream.arena = std::make_unique<Arena>(4096, 2, ARENA_LINEAR_GROWTH_THRESHOLD);
+        stream.free_blocks = {};
+        stream.local_buffers.assign(num_buckets, Buffer{});
+        stream.local_cursors.assign(num_buckets, Cursor{});
+
+        std::vector<const Block *> blocks;
+        for (size_t bucket = 0; bucket < num_buckets; ++bucket)
+        {
+            blocks.clear();
+            for (const Block * block = old_buffers[bucket].head; block; block = block->next)
+                blocks.push_back(block);
+            for (auto it = blocks.rbegin(); it != blocks.rend(); ++it)
+            {
+                for (size_t i = 0; i < (*it)->size; ++i)
+                    push(stream, bucket, (*it)->keys()[i]);
+            }
+            syncBuffer(stream, bucket);
+            stream.local_buffers[bucket].num_distinct = old_buffers[bucket].num_distinct;
+            stream.local_buffers[bucket].hot = old_buffers[bucket].hot;
+        }
     }
 
     /// A frame holds the keys of one bucket, so that its build reads only them. As in `DiskSetImpl::startBlock`, `next` ends
