@@ -126,7 +126,7 @@ private:
 
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
     bool upsertCluster(ClusterInfo & cluster_info);
-    void removeCluster(const String & name);
+    void removeCluster(const String & name, bool is_dynamic);
 
     bool runMainThread(std::function<void()> up_to_date_callback);
     void shutdown();

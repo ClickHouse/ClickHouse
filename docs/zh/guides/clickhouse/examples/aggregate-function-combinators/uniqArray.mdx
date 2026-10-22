@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: '使用 uniqArray 组合器的示例'
+keywords: ['uniq', 'array', '组合器', '示例', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 说明
+</div>
+
+[`Array`](/zh/reference/functions/aggregate-functions/combinators#-array) 组合器
+可应用于 [`uniq`](/zh/reference/functions/aggregate-functions/uniq)
+函数，使用 `uniqArray` 聚合组合器函数
+计算所有数组中唯一元素的近似个数。
+
+当你需要统计数据集中
+多个数组中的唯一元素时，`uniqArray` 函数非常有用。它等同于使用 `uniq(arrayJoin())`：其中
+`arrayJoin` 先将数组展平，再由 `uniq` 统计唯一元素。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在本示例中，我们将使用一个包含不同类别用户兴趣的示例数据集，来演示 `uniqArray` 的工作原理。我们还会将它与
+`uniq(arrayJoin())` 进行比较，以说明在统计唯一元素时的差别。
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+`uniqArray` 函数用于统计所有数组合并后的唯一元素个数，类似于 `uniq(arrayJoin())`。
+在此示例中：
+
+* `uniqArray` 返回 5，因为所有用户的兴趣中一共有 5 个唯一值：&#39;reading&#39;、&#39;gaming&#39;、&#39;music&#39;、&#39;sports&#39;、&#39;cooking&#39;
+* `uniq(arrayJoin())` 也返回 5，这表明这两个函数都会统计所有数组中的唯一元素个数
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`uniq`](/zh/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/zh/reference/functions/regular-functions/array-join)
+* [`Array 组合器`](/zh/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/zh/reference/functions/aggregate-functions/uniqCombined)

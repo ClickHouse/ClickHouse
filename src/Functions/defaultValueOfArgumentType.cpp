@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -10,7 +11,7 @@ namespace
 {
 
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
-class FunctionDefaultValueOfArgumentType : public IFunction
+class FunctionDefaultValueOfArgumentType final : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";
@@ -37,9 +38,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        return arguments[0];
+        return "(T) -> T";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

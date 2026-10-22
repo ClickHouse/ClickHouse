@@ -1,0 +1,71 @@
+-- Tags: no-random-settings
+
+-- Test that `system.parts.default_compression_codec` reports the codec
+-- selected by the table-level `default_compression_codec` `MergeTree`
+-- setting, both after `INSERT` and after `MERGE`, and for projection
+-- parts as well.
+-- https://github.com/ClickHouse/ClickHouse/issues/84440
+
+DROP TABLE IF EXISTS t_default_codec;
+
+CREATE TABLE t_default_codec
+(
+    x String,
+    PROJECTION p (SELECT x ORDER BY x)
+)
+ENGINE = MergeTree
+ORDER BY x
+-- `remove_empty_parts = 0` keeps the empty active part produced by the fully-deleting
+-- mutation at the end of the test. With the default `remove_empty_parts = 1` the
+-- `MergeTreeCleanupThread` could drop that part via `clearEmptyParts` before the final
+-- `system.parts` assertion runs, making the test flaky on slow runs.
+SETTINGS default_compression_codec = 'ZSTD(3)', remove_empty_parts = 0;
+
+-- Stop background merges so that the two inserted parts are not merged before the
+-- post-insert assertions run; otherwise the insert-path coverage would silently
+-- turn into merge-path coverage and leave a single active part.
+SYSTEM STOP MERGES t_default_codec;
+
+INSERT INTO t_default_codec VALUES ('hello');
+INSERT INTO t_default_codec VALUES ('world');
+
+-- After INSERT: the two parts must already use the configured codec.
+SELECT 'parts after insert';
+SELECT default_compression_codec
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_default_codec' AND active
+ORDER BY name;
+
+-- Projection parts after INSERT must also use the configured codec.
+SELECT 'projection_parts after insert';
+SELECT default_compression_codec
+FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_default_codec' AND active
+ORDER BY parent_name, name;
+
+SYSTEM START MERGES t_default_codec;
+OPTIMIZE TABLE t_default_codec FINAL;
+
+-- After MERGE: the merged part must still use the configured codec.
+SELECT 'parts after merge';
+SELECT default_compression_codec
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_default_codec' AND active;
+
+-- Projection parts after MERGE must also use the configured codec.
+SELECT 'projection_parts after merge';
+SELECT default_compression_codec
+FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_default_codec' AND active
+ORDER BY parent_name, name;
+
+-- A fully-deleting mutation produces an empty active part via `createEmptyPart`,
+-- which must record the configured codec in `system.parts` as well.
+ALTER TABLE t_default_codec DELETE WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT 'empty part after delete';
+SELECT default_compression_codec
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_default_codec' AND active;
+
+DROP TABLE t_default_codec;

@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'Working with Date/Time values in JDBC'
+keywords: ['java', 'jdbc', 'driver', 'integrate', 'guide', 'Date', 'Time']
+description: 'Guide to using Date/Time values in JDBC'
+slug: /integrations/language-clients/java/jdbc_date_time_guide
+title: 'Date/Time values guide'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+Date, Time and Timestamp require attention because there are several common problems related to them.
+The most common problem is how to handle time zones. Another problem is string representation and how to use it.
+Besides that, every database and driver has its own specifics and limitations.
+
+This document aims to be a decision-making guide by describing tasks, giving implementation details and explaining problems.
+
+## Timezones {#timezones}
+
+We all know that timezones are hard to handle (daylight saving time, constant offset changes). But this section is about another problem linked to timezones: how they relate to timestamp string representation.
+
+### How ClickHouse converts DateTime strings {#clickhouse-datetime-string-conversion}
+
+ClickHouse uses the following rules to convert `DateTime` string values:
+
+- If a column is defined with a timezone (`DateTime64(9, ‘Asia/Tokyo’)`), then the string value will be treated as a timestamp in that timezone. `2026-01-01 13:00:00` will be `2026-01-01 04:00:00` in `UTC` time.
+- If a column has no timezone definition, then only the server timezone is used. Important: the `session_timezone` setting has no effect. So if the server timezone is `UTC` and the session timezone is `America/Los_Angeles`, then `2026-01-01 13:00:00` will be written as `UTC` time.
+- When a value is read from a column without a timezone definition, the `session_timezone` is used, or if not set, the server timezone. That is why reading timestamps as strings can be affected by `session_timezone`. There is nothing wrong with this, but it should be kept in mind.
+
+### Writing timestamps across timezones {#writing-timestamps-across-timezones}
+
+Now let’s assume we have an application running in the `us-west` region with local timezone `UTC-8`, and we need to write a local timestamp `2026-01-01 02:00:00` which in `UTC` is `2026-01-01 10:00:00`:
+
+- Writing it as a string requires converting it to the server timezone or column timezone.
+- Writing it as a language-native time structure requires the driver to know the target timezone, but:
+  - It is not always possible
+  - The driver API is not well-designed for this
+  - The only way is to describe what transformations will be performed so the application can compensate (or write a Unix timestamp as a number)
+
+### Java and JDBC timestamp APIs {#java-and-jdbc-timestamp-apis}
+
+Java and JDBC have different ways to set a timestamp:
+
+1. Use the `Timestamp` class, which is really a Unix timestamp.
+    1. When used with a `Calendar` object, it makes it possible to reinterpret the `Timestamp` in the calendar’s timezone.
+    2. `Timestamp` has an internal calendar that is not very obvious.
+2. Use the `LocalDateTime` class, which is easy to convert to any timezone, but there is no method allowing you to pass a target timezone.
+3. Use the `ZonedDateTime` class, which helps with timezone conversion when writing to a `DateTime` without a timezone (because we know to use the server timezone).
+    1. But writing a `ZonedDateTime` to a column with a defined timezone requires the user to compensate for the driver conversion.
+4. Use `Long` to write Unix timestamp milliseconds.
+5. Use `String` to do all conversions on the application side (which is not very portable).
+
+<Warning>
+Prefer use of `java.time.ZoneId#of(java.lang.String)` when searching for a timezone by ID.
+This method will throw an exception if the timezone is not found (`java.util.TimeZone#getTimeZone(java.lang.String)` will silently fall back to `GMT`).
+
+The correct way to get the `Tokyo` timezone is:
+
+`TimeZone.getTimeZone(ZoneId.of("Asia/Tokyo"))`
+</Warning>
+
+## Date {#date}
+
+Dates are timezone-agnostic by nature. There are `Date` and `Date32` types to store dates. Both types use a number of days since Epoch (1970-01-01). `Date` uses only positive numbers of days, so its range ends on `2149-06-06`. `Date32` handles negative numbers of days to cover dates before `1970-01-01`, but its range is smaller (from `1900-01-01` to `2100-01-01`, where 0 is `1970-01-01`). ClickHouse sees `2026-01-01` as `2026-01-01` in any timezone, and there is no timezone parameter for column definitions.
+
+### Using `java.time.LocalDate` {#using-localdate}
+
+In Java, the most suitable class to represent date values is `java.time.LocalDate`. The client uses this class to store the value of `Date` and `Date32` columns (reading `LocalDate.ofEpochDay((long)readUnsignedShortLE())`).
+
+We recommend using `java.time.LocalDate` because it is not affected by timezone transformations and is part of the modern time API.
+
+### Using `java.sql.Date` {#using-java-sql-date}
+
+`LocalDate` was introduced in Java 8. Before that, `java.sql.Date` was used to write/read dates. Internally this class is a wrapper around an instant (a time value representing an absolute point in time). Because of this, `toString()` returns a different date depending on what timezone the JVM is in. It requires the driver to carefully construct values and requires the user to be aware of this.
+
+### Calendar-based reinterpretation {#calendar-based-reinterpretation}
+
+`java.sql.ResultSet` has a method for getting date values that accepts a `Calendar`, and there is a similar method in `java.sql.PreparedStatement`. This was designed to let the JDBC driver reinterpret a date value in the specified timezone. For example, the DB has value `2026-01-01` but the application wants to see this date as midnight in `Tokyo`. That means the returned `java.sql.Date` object will get a specific instant, and when converted to the local timezone it may be a different date because of the time difference. We can achieve the same with `LocalDate` by using `java.time.LocalDate#atStartOfDay(java.time.ZoneId)`.
+
+The ClickHouse JDBC driver always returns a `java.sql.Date` object that points to the **local** date at midnight. In other words, if the date is `2026-01-01`, we mean `2026-01-01 12:00 AM` in the JVM timezone (the same behavior as PostgreSQL and MariaDB JDBC drivers).
+
+## Time {#time}
+
+Time values, like Date values, are timezone-agnostic in most cases. ClickHouse does no transformations of time literal values to any timezone — `’6:30’` is the same wherever it is read.
+
+### ClickHouse Time types {#clickhouse-time-types}
+
+`Time` and `Time64` were introduced in `25.6`. Before that, the timestamp types `DateTime` and `DateTime64` were used instead (discussed later in this guide). `Time` is stored as a 32-bit integer number of seconds and is in the range `[-999:59:59, 999:59:59]`. `Time64` is encoded as an unsigned Decimal64 and stores different time units depending on precision. Common choices are 3 (milliseconds), 6 (microseconds), and 9 (nanoseconds). The precision value range is `[0, 9]`.
+
+### Java type mapping {#java-type-mapping}
+
+The client reads `Time` and `Time64` and stores them as `LocalDateTime`. This is done to support the negative time range (`LocalTime` doesn’t support it). In this case, the date part is the Epoch date `1970-01-01`, so negative values will be before this date.
+
+The main support for time types is implemented using `LocalTime` (when the value is within a day) and `Duration` to use the full range of values. `LocalDateTime` can be used for reading only.
+
+### Using `java.sql.Time` {#using-java-sql-time}
+
+Using `java.sql.Time` is limited to the `LocalTime` range. Internally, `java.sql.Time` is converted to a string literal. The value may be changed by using a Calendar parameter with `PreparedStatement#setTime()`.
+
+### The `toTime` function {#totime-function}
+
+<Note>
+- `toTime` always requires `Date`, `DateTime`, or another similar type. It does not accept strings. Related issue: https://github.com/ClickHouse/ClickHouse/issues/89896
+- It is aliased to [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+- There is a timezone-related issue: https://github.com/ClickHouse/ClickHouse/pull/90310
+</Note>
+
+## Timestamp {#timestamp}
+
+A timestamp is a specific point in time. For example, a Unix timestamp represents any point in time as a number of seconds relative to `1970-01-01 00:00:00` `UTC` (a negative number of seconds represents a timestamp before Unix time, and a positive number represents one after). This representation is easy to calculate and handle if the observer is in the `UTC` timezone or uses it over their local one.
+
+### ClickHouse Timestamp types {#clickhouse-timestamp-types}
+
+There are `DateTime` (32-bit integer, resolution is always seconds) and `DateTime64` (64-bit integer, resolution depends on definition) timestamp types in ClickHouse. Values are always stored as UTC timestamps. This means that when represented as numbers, no timezone conversion is applied.
+
+### String representation and timezone behavior {#string-representation-and-timezone-behavior}
+
+String representation has complexities:
+
+- If no timezone is specified in the column definition and a string is passed on write, it will be converted from the server timezone to a UTC timestamp number. When a value is read from such a column, it will be converted from a UTC timestamp to a literal timestamp using the server or session timezone (a similar approach is applied to timestamp literals in expressions where the timezone is not defined explicitly).
+- If a timezone is specified in the column definition, then only that timezone is used in all string conversions. This contradicts the logic when no timezone is specified, so it requires a good understanding of how data is written for each column in the query.
+- If a date is passed as a string in a format that includes a timezone, then a conversion function is needed. Usually [`parseDateTimeBestEffort`](/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffort) is used.
+
+### How the JDBC driver handles timestamps {#how-jdbc-driver-handles-timestamps}
+
+In the JDBC driver, we convert timestamps to a numeric representation:
+
+```java
+"fromUnixTimestamp64Nano(" + epochSeconds * 1_000_000_000L + nanos + ")"
+```
+
+This representation solves most conversion issues with timestamp values because it sends data to the server in a unified format. However, this approach requires a small adjustment in SQL statements, but it provides the simplest and most straightforward way to write timestamps to any column.
+
+`DateTime` and `DateTime64` are read and stored on the client as `java.time.ZonedDateTime`, which helps convert such values to any other timezone (timezone information is preserved).
+
+### Common pitfall with `toDateTime64` {#common-pitfall-todatetime64}
+
+The following code example looks correct but fails on the assertion:
+
+```java
+String sql = "SELECT toDateTime64(?, 3)";
+try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+    LocalDateTime localTs = LocalDateTime.parse("2021-01-01T01:34:56");
+    stmt.setObject(1, localTs);
+    try (ResultSet rs = stmt.executeQuery()) {
+        rs.next();
+        assertEquals(rs.getObject(1, LocalDateTime.class), localTs);
+    }
+}
+```
+
+This happens because `toDateTime64` uses the server timezone and doesn’t know about the source timezone.
+
+## Conversion tables {#conversion-tables}
+
+If a conversion pair is not mentioned in the tables below, then the conversion is not supported. For example, `Date` columns cannot be read as `java.sql.Timestamp` because there is no time part.
+Driver doesn't convert integer values to any of date/time values. Calling `pstmt.setLong("timestamp", 1772132359L)` will result `1772132359` written as number to a server what will be treated as
+UTC Unix timestamp in seconds.
+
+### Writing values with `PreparedStatement#setObject` {#writing-values-setobject}
+
+The following table shows how values are converted when set with `PreparedStatement#setObject(column, value)`:
+
+| Class of `value`  | Conversion |
+| --- | --- |
+| `java.time.LocalDate`  | Formatted as `YYYY-MM-DD`.  |
+| `java.sql.Date`  | Converted with the default calendar and formatted as `LocalDate` (`YYYY-MM-DD`).  |
+| `java.time.LocalTime`  | Formatted as `HH:mm:ss`.  |
+| `java.time.Duration` | Formatted as `HHH:mm:ss`. Value can be negative. |
+| `java.sql.Time` | Converted with the default calendar and formatted as `LocalTime` (`HH:mm`).   |
+| `java.time.LocalDateTime`  | Converted to Unix timestamp in nanoseconds and wrapped with `fromUnixTimestamp64Nano`. |
+| `java.time.ZonedDateTime`  | Converted to Unix timestamp in nanoseconds and wrapped with `fromUnixTimestamp64Nano`. |
+| `java.sql.Timestamp`  | Converted to Unix timestamp in nanoseconds and wrapped with `fromUnixTimestamp64Nano`. |
+
+<Note>
+The type of the column should be considered unknown. It is up to the application to decide what to pass to the prepared statement.
+</Note>
+
+### Reading values with `ResultSet#getObject` {#reading-values-getobject}
+
+The following table shows how values are converted when read with `ResultSet#getObject(column, class)`:
+
+| ClickHouse Data Type of `column`  | Value of `class`  | Conversion |
+| --- | --- | --- |
+| `Date` or `Date32`  | `java.time.LocalDate`  | DB value (number of days) converted to `LocalDate`.  |
+| `Date` or `Date32`  | `java.sql.Date`  | DB value (number of days) converted to `LocalDate` and then to `java.sql.Date` using local timezone midnight as the time part. If a calendar is used, its timezone will be used instead of the local one. Example: DB value `1970-01-10` → `LocalDate` is `1970-01-10`.  |
+| `Time` or `Time64`  | `java.time.LocalTime`  | DB value converted to `LocalDateTime` and then to `LocalTime`. This works only for time within a day.  |
+| `Time` or `Time64`  | `java.time.LocalDateTime`  | DB value converted to `LocalDateTime`.  |
+| `Time` or `Time64`  | `java.sql.Time`  | DB value converted to `LocalDateTime` and then to `java.sql.Time` using the default calendar. This works only for time within a day.  |
+| `Time` or `Time64`  | `java.time.Duration`  | DB value converted to `LocalDateTime` and then to `Duration`. |
+| `DateTime` or `DateTime64`  | `java.time.LocalDateTime` | DB value converted to `ZonedDateTime`, then to `LocalDateTime`. |
+| `DateTime` or `DateTime64`  | `java.time.ZonedDateTime` | DB value converted to `ZonedDateTime`.  |
+| `DateTime` or `DateTime64`  | `java.sql.Timestamp` | DB value converted to `ZonedDateTime`, then to `java.sql.Timestamp` using the default timezone.  |
+
+### Using Calendar-based methods {#using-calendar-based-methods}
+
+Use `ResultSet#getTime(column, calendar)` and `ResultSet#getDate(column, calendar)` if values were stored using `PreparedStatement#setTime(param, value, calendar)` and `PreparedStatement#setDate(param, value, calendar)` accordingly.

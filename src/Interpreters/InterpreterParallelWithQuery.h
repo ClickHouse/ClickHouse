@@ -26,11 +26,15 @@ private:
     LoggerPtr log;
     QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
 
+    /// Needed to hold query contexts and run onFinish/onException callback.
+    std::vector<BlockIO> io_holders TSA_GUARDED_BY(mutex);
+
+    /// Declared last so they are destroyed first: destroying `runner`/`thread_pool` joins the
+    /// worker threads before the members they touch (`mutex`, `combined_pipeline`, `io_holders`)
+    /// are torn down. This holds on every teardown path, including an exception thrown out of
+    /// executeSubqueries() that skips the explicit reset() calls in execute().
     std::unique_ptr<ThreadPool> thread_pool;
     std::unique_ptr<ThreadPoolCallbackRunnerLocal<void>> runner;
-
-    /// Needed to hold query contexts and run onFinish/onException callback.
-    std::vector<BlockIO> io_holders;
 };
 
 }

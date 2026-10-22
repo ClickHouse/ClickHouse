@@ -1,0 +1,11 @@
+-- default: Variant try-path reads an unquoted number as a Unix timestamp in seconds
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33
+2023-12-23 20:37:33
+-- compatibility: DateTime64 bare integer is read as the raw value (ticks)
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+-- compatibility: DateTime raw-value branch rejects a fractional token, so Variant falls back to String
+1703363853.7
+1703363853.7

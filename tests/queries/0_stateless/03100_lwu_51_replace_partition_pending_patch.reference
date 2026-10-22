@@ -1,0 +1,8 @@
+src	[11,15]
+after rejected REPLACE self	[11,15]
+after rejected REPLACE other	[100]
+after rejected MOVE src	[11,15]
+after rejected MOVE dst	[100]
+after rejected DETACH PARTITION	[11,15]
+after rejected DETACH PART	[11,15]
+after APPLY PATCHES + REPLACE	[11,15]

@@ -14,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -25,7 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <base/insertAtEnd.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -42,6 +43,7 @@
 #include <boost/algorithm/string.hpp>
 
 #if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
@@ -56,6 +58,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
     extern const SettingsBool restore_replace_external_engines_to_null;
+}
+
+namespace FailPoints
+{
+    extern const char restore_pause_before_data_restore_tasks[];
 }
 
 namespace ErrorCodes
@@ -76,6 +83,12 @@ namespace
         if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
             return false;
 
+#if CLICKHOUSE_CLOUD
+        /// `system.masking_policies` backs an access entity, so it belongs to this list.
+        if (table_name.table == "masking_policies")
+            return true;
+#endif
+
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
     }
@@ -85,6 +98,19 @@ namespace
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
     }
+
+    /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
+    bool isSystemWorkloadsTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "workloads");
+    }
+
+    /// Whether a specified name corresponds to the system table backing RESOURCE entities.
+    bool isSystemResourcesTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
+    }
+
  }
 
 
@@ -94,10 +120,9 @@ RestorerFromBackup::RestorerFromBackup(
     std::shared_ptr<IRestoreCoordination> restore_coordination_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
-    const ContextPtr & query_context_,
     ThreadPool & thread_pool_,
     const std::function<void()> & after_task_callback_)
-    : BackupMetadataFinder(restore_settings_, backup_, context_, query_context_, thread_pool_)
+    : BackupMetadataFinder(restore_settings_, backup_, context_, thread_pool_)
     , restore_query_elements(restore_query_elements_)
     , restore_coordination(restore_coordination_)
     , after_task_callback(after_task_callback_)
@@ -151,6 +176,8 @@ void RestorerFromBackup::run(Mode mode_)
 
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
+
+    context->onQueryExecutionStarted();
 
     /// Create databases using the create queries read from the backup.
     setStage(Stage::CREATING_DATABASES);
@@ -256,7 +283,7 @@ void RestorerFromBackup::logNumberOfDatabasesAndTablesToRestore() const
 
 void RestorerFromBackup::loadSystemAccessTables()
 {
-    if (restore_settings.structure_only)
+    if (!restore_settings.shouldRestoreAccessEntities())
         return;
 
     /// Special handling for ACL-related system tables.
@@ -278,6 +305,7 @@ void RestorerFromBackup::loadSystemAccessTables()
 void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 {
     AccessRightsElements required_access;
+    AccessRights required_access_rights;
 
     {
         std::lock_guard lock{mutex};
@@ -289,7 +317,25 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             AccessFlags flags;
 
             if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+            {
                 flags |= AccessType::CREATE_DATABASE;
+
+                /// The last point on this path that still runs as the real user. An existing local
+                /// database means nothing is created here, and `create_fn` authorizes it if it is
+                /// dropped in between. Under CHECK_ACCESS_ONLY the creating host is a different one,
+                /// so a local existence answer says nothing about it.
+                const bool database_exists_so_nothing_is_created
+                    = (mode != Mode::CHECK_ACCESS_ONLY) && DatabaseCatalog::instance().isDatabaseExist(database_name);
+
+                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                    && !database_exists_so_nothing_is_created && database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
+                        && create.storage->engine->arguments)
+                        DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                }
+            }
 
             if (!flags)
                 flags = AccessType::SHOW_DATABASES;
@@ -304,8 +350,36 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 if (isSystemFunctionsTableName(table_name))
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
-                    if (!restore_settings.structure_only && table_info.has_data)
+                    if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                }
+                else if (isSystemWorkloadsTableName(table_name))
+                {
+                    /// CREATE_WORKLOAD privilege is required to restore WORKLOAD entities from the "system.workloads" table.
+                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateWorkloadQuery's own access check.)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_WORKLOAD);
+                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
+                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_WORKLOAD
+                        /// -- mirroring the access required by CREATE OR REPLACE WORKLOAD.
+                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_WORKLOAD);
+                    }
+                }
+                else if (isSystemResourcesTableName(table_name))
+                {
+                    /// CREATE_RESOURCE privilege is required to restore RESOURCE entities from the "system.resources" table.
+                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateResourceQuery's own access check.)
+                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_RESOURCE);
+                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
+                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_RESOURCE
+                        /// -- mirroring the access required by CREATE OR REPLACE RESOURCE.
+                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_RESOURCE);
+                    }
                 }
                 /// Privileges required to restore ACL system tables are checked separately
                 /// (see access_restore_task->getRequiredAccess() below).
@@ -332,7 +406,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_TABLE;
             }
 
-            if (!restore_settings.structure_only && table_info.has_data)
+            if (restore_settings.shouldRestoreTableData() && table_info.has_data)
             {
                 flags |= AccessType::INSERT;
             }
@@ -348,20 +422,17 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             required_access.emplace_back(flags, table_name.database, table_name.table);
         }
 
+        required_access_rights = AccessRights{required_access};
+        /// Partial revokes in restored grants must not remove the rights required to restore other objects.
         if (access_restorer)
-            insertAtEnd(required_access, access_restorer->getRequiredAccess());
+            required_access_rights.makeUnion(access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights to check if we have the rights contained in our current access.
-    /// This handles the situation when restoring partial revoked grants:
-    /// GRANT SELECT ON *.*
-    /// REVOKE SELECT FROM systems.*
-    const auto & required_access_rights = AccessRights{required_access};
     const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
     if (current_user_access_rights->contains(required_access_rights))
         return;
 
-    query_context->checkAccess(required_access_rights.getElements());
+    context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
@@ -463,9 +534,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 {
     try
     {
-        if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
-            return;
-
         boost::intrusive_ptr<ASTCreateQuery> create_database_query;
         {
             std::lock_guard lock{mutex};
@@ -475,8 +543,44 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             if (database_info.is_predefined_database)
                 return;
 
+            /// In `must-exist` mode RESTORE does not create the database, and the backup may not even contain
+            /// its definition (e.g. when restoring individual tables into an already-existing database), so there
+            /// is nothing to check or create here.
+            if (!database_info.create_database_query)
+                return;
+
             create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
         }
+
+        /// Restoring a MaterializedPostgreSQL database is not supported. Such a database replicates from the live
+        /// PostgreSQL source (its startup schedules `tryStartSynchronization`), so restoring the backup snapshot
+        /// on top of it would mix the snapshot with the current remote state. This is true whether RESTORE recreates
+        /// the database or reuses an existing one (`create_database = 'must-exist'`), so this check must run before
+        /// the `kMustExist` early return below: it makes the whole RESTORE fail during the `CREATING_DATABASES`
+        /// stage, before any backed-up table data is inserted into a live `MaterializedPostgreSQL` database. Fail
+        /// closed and direct the user to restore the data of individual tables instead - the data is still captured
+        /// by the backup (see `StorageMaterializedPostgreSQL::backupData`). In a database backup each table's stored
+        /// definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine),
+        /// so a table can be restored straight into a new, not-yet-existing table.
+        {
+            const auto * storage = create_database_query->storage;
+            const String database_engine_name = storage && storage->engine ? storage->engine->name : "";
+            if (database_engine_name == "MaterializedPostgreSQL")
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_DATABASE,
+                    "Restoring a MaterializedPostgreSQL database ({}) is not supported, because the database "
+                    "replicates from the live PostgreSQL source, so restoring the backup snapshot would mix it with "
+                    "the current remote state. Restore the data of individual tables instead - each table's "
+                    "definition in the backup is already a ReplacingMergeTree, so it can be restored into a new "
+                    "table, e.g.: RESTORE TABLE <src_database>.<table> AS <database>.<new_table> FROM <backup> "
+                    "SETTINGS allow_different_table_def = 1.",
+                    backQuoteIfNeed(database_name));
+        }
+
+        /// In `must-exist` mode RESTORE does not create the database; it must already exist. We still had to run
+        /// the MaterializedPostgreSQL check above before returning, to fail closed for an existing live target.
+        if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
+            return;
 
         /// Generate a new UUID for a database.
         /// The generated UUID will be ignored if the database does not support UUIDs.
@@ -514,12 +618,15 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), create_database_query->formatForLogging());
 
-        auto create_query_context = Context::createCopy(query_context);
+        /// Use the restore-owned `context` (a copy of the original query context made when the restore started),
+        /// not the live query context: for a "RESTORE ASYNC" query the original query context may already be gone
+        /// or concurrently mutated by its thread while we run here in the background.
+        auto create_query_context = Context::createCopy(context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
 
-        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
-        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
-        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
+        /// We shouldn't use the progress callback copied from the restore context because it was originally set in a
+        /// protocol handler (e.g. HTTPHandler) for the "RESTORE ASYNC" query which could have already finished
+        /// (the restore process is working in the background).
         create_query_context->setProgressCallback(nullptr);
 
 #if CLICKHOUSE_CLOUD
@@ -539,6 +646,8 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
+        /// The `ON CLUSTER` path gets the same flag from `QueryFlags::distributed_backup_restore` in `DDLWorker`.
+        interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }
     catch (Exception & e)
@@ -556,7 +665,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
         ASTPtr database_def_from_backup;
-        bool is_predefined_database;
+        bool is_predefined_database = false;
 
         {
             std::lock_guard lock{mutex};
@@ -634,8 +743,8 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 table_id);
         }
 
-        size_t num_dependencies;
-        size_t num_dependents;
+        size_t num_dependencies = 0;
+        size_t num_dependents = 0;
         tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(
@@ -719,6 +828,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
         boost::intrusive_ptr<ASTCreateQuery> create_table_query;
         DatabasePtr database;
+#if CLICKHOUSE_CLOUD
+        String data_path_in_backup;
+        std::optional<ASTs> partitions;
+#endif
 
         {
             std::lock_guard lock{mutex};
@@ -730,16 +843,65 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
             create_table_query = boost::static_pointer_cast<ASTCreateQuery>(table_info.create_table_query->clone());
             database = table_info.database;
+#if CLICKHOUSE_CLOUD
+            data_path_in_backup = table_info.data_path_in_backup;
+            partitions = table_info.partitions;
+#endif
         }
 
-        /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
-        /// The generated UUID will be ignored if the database does not support UUIDs.
-        restore_coordination->generateUUIDForTable(*create_table_query);
+#if CLICKHOUSE_CLOUD
+        /// Capture the source table's UUID before it is overwritten below; a mounted table needs it to
+        /// scope its restore revalidation to the source table's per-part locks.
+        String source_table_uuid;
+        if (create_table_query->has_uuid)
+            source_table_uuid = toString(create_table_query->uuid);
+
+        /// For a lightweight restore, resolve the mount provenance to be persisted when the table is
+        /// created (handed to the storage via the create-query context below).
+        auto snapshot_mount_provenance = computeSnapshotMountProvenance(
+            restore_settings, backup, backup_info_for_restore, context, *create_table_query, data_path_in_backup, source_table_uuid);
+
+        /// Partition-filtered mount restore is unimplemented: provenance is persisted in the table-creation
+        /// multi-op, before the PARTITIONS filter runs in the data phase, so a no-match would strand an empty
+        /// mounted table that reopens an unpinned source. Reject up front, before any table is created.
+        if (snapshot_mount_provenance && partitions && !partitions->empty())
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "mount_readonly_parts_from_snapshot does not support a PARTITIONS filter. Restore the whole table "
+                "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
+#endif
+
+        /// Without the data the table has nothing to find on the storage, so it is restored as an ordinary empty table,
+        /// with a new UUID: keeping the UUID would show all the data of the storage in a `structure_only` restore.
+        if (create_table_query->uuid != UUIDHelpers::Nil && restore_settings.shouldRestoreTableData()
+            && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
+        {
+            /// The table finds its data on the storage under a path derived from its UUID, so it keeps its UUID from the backup.
+            /// The other table can be in any database, so its name is not shown: the user may not be allowed to see it.
+            auto existing_table = DatabaseCatalog::instance().tryGetByUUID(create_table_query->uuid).second;
+            if (existing_table)
+            {
+                auto existing_table_id = existing_table->getStorageID();
+                if (existing_table_id.database_name != table_name.database || existing_table_id.table_name != table_name.table)
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so it keeps its UUID {} from "
+                        "the backup to find its data on the storage, but another table already has this UUID",
+                        tableNameWithTypeToString(table_name.database, table_name.table, false),
+                        toString(create_table_query->uuid));
+            }
+        }
+        else
+        {
+            /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
+            /// The generated UUID will be ignored if the database does not support UUIDs.
+            restore_coordination->generateUUIDForTable(*create_table_query);
+        }
 
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
-        if (query_context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
+        if (context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
         {
             LOG_INFO(log, "`restore_replicated_merge_tree_to_shared_merge_tree` enabled, will try to replace Replicated engine with Shared");
             ASTStorage * storage = create_table_query->storage;
@@ -770,7 +932,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 table_info.database = database;
         }
 
-        auto create_query_context = Context::createCopy(query_context);
+        /// Use the restore-owned `context` (a copy of the original query context made when the restore started),
+        /// not the live query context: for a "RESTORE ASYNC" query the original query context may already be gone
+        /// or concurrently mutated by its thread while we run here in the background.
+        auto create_query_context = Context::createCopy(context);
         create_query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         create_query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
@@ -780,10 +945,13 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         create_query_context->setUnderRestore(true);
+#if CLICKHOUSE_CLOUD
+        create_query_context->setSnapshotMountProvenanceToPersist(snapshot_mount_provenance);
+#endif
 
-        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
-        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
-        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
+        /// We shouldn't use the progress callback copied from the restore context because it was originally set in a
+        /// protocol handler (e.g. HTTPHandler) for the "RESTORE ASYNC" query which could have already finished
+        /// (the restore process is working in the background).
         create_query_context->setProgressCallback(nullptr);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
@@ -827,7 +995,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         ASTPtr table_def_from_backup;
-        bool is_predefined_table;
+        bool is_predefined_table = false;
 
         {
             std::lock_guard lock{mutex};
@@ -841,7 +1009,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         }
 
         if (!restore_settings.allow_different_table_def && !is_predefined_table &&
-            !query_context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
+            !context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
         {
             ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
             if (!BackupUtils::compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
@@ -879,8 +1047,20 @@ void RestorerFromBackup::insertDataToTables()
 
 void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name)
 {
-    if (restore_settings.structure_only)
+    if (isSystemAccessTableName(table_name))
+    {
+        if (!restore_settings.shouldRestoreAccessEntities())
+            return;
+    }
+    else if (isSystemFunctionsTableName(table_name))
+    {
+        if (!restore_settings.shouldRestoreFunctions())
+            return;
+    }
+    else if (!restore_settings.shouldRestoreTableData())
+    {
         return;
+    }
 
     {
         std::lock_guard lock{mutex};
@@ -891,17 +1071,65 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     StoragePtr storage;
     String data_path_in_backup;
     std::optional<ASTs> partitions;
+    ASTPtr create_table_query_from_backup;
     {
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
         data_path_in_backup = table_info.data_path_in_backup;
         partitions = table_info.partitions;
+        create_table_query_from_backup = table_info.create_table_query;
+    }
+
+    if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
+    {
+        skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, create_table_query_from_backup);
+        return;
     }
 
     schedule(
         [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
         ThreadName::RESTORE_TABLE_DATA);
+}
+
+void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
+    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const ASTPtr & create_table_query_from_backup) const
+{
+    if (partitions)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore specific partitions of {}: it is on a storage policy marked backup_metadata_only, so it shows "
+            "all the data of its storage and the partition filter cannot be applied",
+            tableNameWithTypeToString(table_name.database, table_name.table, false));
+
+    /// The table must have its UUID from the backup, under which the storage keeps the data. This catches what `createTable`
+    /// doesn't, e.g. an existing table with `create_table = 'must-exist'`, or a database without UUIDs.
+    const auto * create_query = create_table_query_from_backup ? create_table_query_from_backup->as<ASTCreateQuery>() : nullptr;
+    if (!create_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup has no definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
+
+    const UUID uuid = storage->getStorageID().uuid;
+    const UUID uuid_in_backup = create_query->uuid;
+    if (uuid == UUIDHelpers::Nil || uuid_in_backup == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it "
+            "must have its UUID from the backup to find the data on the storage, but {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            uuid == UUIDHelpers::Nil ? "its database doesn't give tables UUIDs" : "the backup records no UUID for it");
+
+    if (uuid != uuid_in_backup)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it "
+            "must have its UUID from the backup to find the data on the storage, but the table with UUID {} in the backup "
+            "has UUID {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            toString(uuid_in_backup),
+            toString(uuid));
+
+    LOG_INFO(log, "Not restoring the data of {}: it is on a storage policy marked backup_metadata_only",
+        tableNameWithTypeToString(table_name.database, table_name.table, false));
 }
 
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -933,17 +1161,12 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
     data_restore_tasks.push_back(std::move(new_task));
 }
 
-void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
-{
-    if (current_stage != Stage::INSERTING_DATA_TO_TABLES)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
-
-    std::lock_guard lock{mutex};
-    insertAtEnd(data_restore_tasks, std::move(new_tasks));
-}
-
 void RestorerFromBackup::runDataRestoreTasks()
 {
+    /// Every earlier stage has joined its own tasks, so this is the first point where a test can
+    /// arm a fail point and be sure the next task to reach it is one of several concurrent ones.
+    FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_data_restore_tasks);
+
     /// Iterations are required here because data restore tasks are allowed to call addDataRestoreTask() and add other data restore tasks.
     for (;;)
     {
@@ -984,8 +1207,8 @@ void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)
 {
     throw Exception(
         ErrorCodes::CANNOT_RESTORE_TABLE,
-        "Cannot restore the table {} because it already contains some data. You can set structure_only=true or "
-        "allow_non_empty_tables=true to overcome that in the way you want",
+        "Cannot restore the table {} because it already contains some data. You can set structure_only=true, "
+        "restore_table_data=false or allow_non_empty_tables=true to overcome that in the way you want",
         storage_id.getFullTableName());
 }
 }

@@ -1,0 +1,38 @@
+---
+title: '向 ClickPipe 添加指定表'
+description: '介绍向 ClickPipe 添加指定表所需的步骤。'
+sidebarTitle: '添加表'
+slug: /integrations/clickpipes/mysql/add_table
+show_title: false
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MySQL', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在某些场景下，将特定表添加到某个管道中会很有帮助。随着事务型或分析型工作负载不断扩大，这会成为一种常见需求。
+
+<div id="add-tables-steps">
+  ## 将特定表添加到 ClickPipe 的步骤
+</div>
+
+可按以下步骤操作：
+
+1. [暂停](/zh/integrations/clickpipes/mysql/pause-and-resume)该管道。
+2. 点击“Edit Table settings”。
+3. 找到你的表——可以在搜索栏中搜索。
+4. 点击复选框选中该表。
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. 点击“update”。
+6. 更新成功后，该管道的状态会依次变为 `Setup`、`Snapshot` 和 `Running`。你可以在 **Tables** 选项卡中跟踪该表的初始加载进度。
+
+<Info>
+  现有表的 CDC (变更数据捕获) 会在新表的快照完成后自动恢复。
+</Info>

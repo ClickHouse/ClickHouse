@@ -1,12 +1,16 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Common/SipHash.h>
 #include <IO/WriteBufferFromString.h>
@@ -34,7 +38,7 @@ static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return ast->formatWithSecretsOneLine();
+    return ast->formatIgnoringRedundantParentheses();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -43,14 +47,14 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    return ast_normalized->formatWithSecretsOneLine();
+    return ast_normalized->formatIgnoringRedundantParentheses();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        auto minmax_idx_column_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        auto minmax_idx_column_names = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
         date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
     }
 
@@ -270,34 +274,42 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
         || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
         return result;
 
+    ParserIndexDeclarationList parser;
+    ASTPtr list = parseQuery(parser, result.skip_indices, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
     constexpr bool escape_index_filenames = true; /// Does not matter here, we re-serialize the parsed result
-    auto parsed = IndicesDescription::parse(result.skip_indices, columns, escape_index_filenames, context);
-
+    IndicesDescription explicit_indices;
     bool has_implicit = false;
-    for (auto & index : parsed)
+    for (const auto & index : list->children)
     {
-        if (!index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
-            continue;
-
-        String column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
-        if (!columns.has(column_name))
-            continue;
-
-        const auto & col_type = columns.get(column_name).type;
-
-        /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
-        /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
-        /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
-        if ((add_minmax_index_for_numeric_columns && isNumber(col_type))
-            || (add_minmax_index_for_string_columns && isString(col_type)))
+        const auto & index_name = index->as<ASTIndexDeclaration &>().name;
+        bool is_implicit = false;
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
         {
-            index.is_implicitly_created = true;
-            has_implicit = true;
+            String column_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+            if (columns.has(column_name))
+            {
+                const auto & col_type = columns.get(column_name).type;
+
+                /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
+                /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
+                /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
+                is_implicit = ((add_minmax_index_for_numeric_columns && isNumber(col_type))
+                        || (add_minmax_index_for_string_columns && isString(col_type)))
+                    && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(column_name)->formatWithSecretsOneLine();
+            }
         }
+
+        /// An implicit index is stripped without analyzing its expression, which may use an object that is gone.
+        if (is_implicit)
+            has_implicit = true;
+        else
+            explicit_indices.emplace_back(IndexDescription::getIndexFromAST(
+                index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
     }
 
     if (has_implicit)
-        result.skip_indices = parsed.explicitToString();
+        result.skip_indices = explicit_indices.explicitToString();
 
     return result;
 }
@@ -372,17 +384,17 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
             handleTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
     }
 
-    /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
-    ///    in formatAST code.
     String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, virtuals, context, true).getOriginalExpressionList());
-    if (primary_key != parsed_zk_primary_key)
+    String parsed_local_primary_key = formattedAST(KeyDescription::parse(primary_key, columns, virtuals, context, true).getOriginalExpressionList());
+    if (parsed_local_primary_key != parsed_zk_primary_key)
         handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
     String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
-    if (partition_key != parsed_zk_partition_key)
+    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
+    if (parsed_local_partition_key != parsed_zk_partition_key)
         handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
@@ -416,7 +428,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
     // Strict checking of suspicious TTL is not needed here
     String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
+        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, TTLValidationMode::Attach).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
@@ -512,6 +524,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
     new_metadata.columns = new_columns;
+    const bool columns_changed = new_metadata.columns != old_metadata.columns;
 
     if (!empty())
     {
@@ -575,7 +588,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 ParserTTLExpressionList parser;
                 auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
             }
             else /// TTL was removed
             {
@@ -588,7 +601,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -601,12 +614,25 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// Primary key is special, it exists even if not defined
     if (new_metadata.primary_key.definition_ast != nullptr)
     {
-        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+        /// An explicitly defined primary key cannot express per-column directions (`DESC`), so it
+        /// inherits them from the sorting key, which is already recalculated above.
+        new_metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+            new_metadata.primary_key.definition_ast, new_metadata.sorting_key, new_metadata.columns, virtuals, context);
     }
     else
     {
         new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
         new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    /// Derived inputs and types can change even when the partition key output structure does not.
+    if (new_metadata.minmax_count_projection && columns_changed)
+    {
+        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key_ast.get());
+        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
     }
 
     if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
@@ -634,10 +660,11 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// duplicates if an explicit index already exists.
     for (const auto & column : new_metadata.columns)
         new_metadata.addImplicitIndicesForColumn(column, context);
+    new_metadata.addImplicitIndicesForVirtualColumns(context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
 
     if (!projections_changed)
     {

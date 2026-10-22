@@ -1,0 +1,45 @@
+---
+title: 'Self-managed install'
+sidebarTitle: 'Overview'
+description: 'Install ClickHouse on your own infrastructure.'
+doc_type: 'landing-page'
+keywords: ['install', 'self-managed', 'linux', 'macos', 'windows', 'docker']
+---
+
+Install ClickHouse on the platform you operate.
+
+## Local development {#local-development}
+Run ClickHouse on your own machine to build, test, and experiment.
+
+<CardGroup cols={2}>
+  <Card title="Quick install" href="/get-started/setup/self-managed/quick-install" icon="bolt">
+    One-line `curl` script that downloads a single ClickHouse binary.
+  </Card>
+  <Card title="clickhousectl (CLI)" href="/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    Install and manage local ClickHouse versions and servers with the ClickHouse CLI.
+  </Card>
+  <Card title="Docker" href="/get-started/setup/self-managed/docker" icon="docker">
+    Pull the official Docker image and run a container.
+  </Card>
+  <Card title="Source build" href="/get-started/setup/self-managed/advanced" icon="code">
+    Build from source and other advanced installation paths.
+  </Card>
+</CardGroup>
+
+## Production server {#production-server}
+Install ClickHouse Server from packages or binaries for a long-running deployment.
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    Install via the official APT repository.
+  </Card>
+  <Card title="Red Hat / CentOS" href="/get-started/setup/self-managed/redhat" icon="redhat">
+    Install via the official YUM/DNF repository.
+  </Card>
+  <Card title="NixOS" href="/get-started/setup/self-managed/nixos" icon="snowflake">
+    Install on NixOS via the package manager.
+  </Card>
+  <Card title="Other Linux" href="/get-started/setup/self-managed/other-linux" icon="linux">
+    Generic Linux distribution install via tarball.
+  </Card>
+</CardGroup>

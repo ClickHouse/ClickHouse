@@ -1,0 +1,38 @@
+---
+title: 'ClickPipe に特定のテーブルを追加する'
+description: 'ClickPipe に特定のテーブルを追加する手順を説明します。'
+sidebarTitle: 'テーブルを追加'
+slug: /integrations/clickpipes/postgres/add_table
+show_title: false
+keywords: ['clickpipes postgres', 'テーブルを追加', 'テーブル設定', '初期ロード', 'スナップショット']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+特定のテーブルをパイプに追加すると便利なケースがあります。これは、トランザクション処理や分析のワークロードが拡大するにつれて、よく必要になる要件です。
+
+<div id="add-tables-steps">
+  ## 特定のテーブルを ClickPipe に追加する手順
+</div>
+
+これは、次の手順で実行できます。
+
+1. パイプを[一時停止](/ja/integrations/clickpipes/postgres/pause-and-resume)します。
+2. Edit Table settings をクリックします。
+3. 対象のテーブルを見つけます。検索バーで検索できます。
+4. チェックボックスをクリックして、テーブルを選択します。
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. update をクリックします。
+6. 更新が正常に完了すると、パイプのステータスは順に `Setup`、`Snapshot`、`Running` になります。テーブルの初期ロードは **Tables** タブで確認できます。
+
+<Info>
+  既存のテーブルの CDC は、新しいテーブルのスナップショットが完了すると自動的に再開されます。
+</Info>

@@ -5,11 +5,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ConcatReadBuffer.h>
+#include <Examples/clickhouse_examples.h>
 
 
 using namespace DB;
 
-int main(int, char **)
+int mainEntryExampleReadEscapedString(int, char **)
 try
 {
     std::string s1 = "abc\\x\n";

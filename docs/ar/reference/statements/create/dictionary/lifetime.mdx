@@ -1,0 +1,142 @@
+---
+description: 'إعداد LIFETIME في القاموس للتحديث التلقائي'
+sidebarTitle: 'LIFETIME'
+slug: /sql-reference/statements/create/dictionary/lifetime
+title: 'تحديث بيانات القاموس باستخدام LIFETIME'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
+
+يُحدِّث ClickHouse القواميس دوريًا استنادًا إلى الوسم `LIFETIME` (المُحدَّد بالثواني).
+يمثّل `LIFETIME` فترة التحديث للقواميس التي جرى تنزيلها بالكامل، وفترة الإبطال للقواميس المخزَّنة مؤقتًا.
+
+أثناء التحديث، يظل بالإمكان الاستعلام عن الإصدار القديم من القاموس.
+لا تحجب تحديثات القاموس الاستعلامات، إلا عند تحميله لأول مرة.
+إذا حدث خطأ أثناء التحديث، فسيُسجَّل الخطأ في سجل الخادم، ويمكن أن تواصل الاستعلامات استخدام الإصدار القديم من القاموس.
+إذا نجح تحديث القاموس، فسيُستبدل الإصدار القديم من القاموس [بصورة ذرّية](/ar/concepts/core-concepts/glossary#atomicity).
+
+مثال على الإعدادات:
+
+<CloudDetails />
+
+```xml
+<dictionary>
+    ...
+    <lifetime>300</lifetime>
+    ...
+</dictionary>
+```
+
+أو
+
+```sql
+CREATE DICTIONARY (...)
+...
+LIFETIME(300)
+...
+```
+
+يؤدي تعيين `<lifetime>0</lifetime>` (`LIFETIME(0)`) إلى منع القواميس من التحديث.
+
+يمكنك تعيين فاصل زمني للتحديثات، وسيختار ClickHouse وقتًا عشوائيًا بتوزيع منتظم ضمن هذا النطاق. وهذا ضروري لتوزيع الحمل على مصدر القاموس عند التحديث عبر عدد كبير من الخوادم.
+
+مثال على الإعدادات:
+
+```xml
+<dictionary>
+    ...
+    <lifetime>
+        <min>300</min>
+        <max>360</max>
+    </lifetime>
+    ...
+</dictionary>
+```
+
+أو
+
+```sql
+LIFETIME(MIN 300 MAX 360)
+```
+
+إذا كانت `<min>0</min>` و`<max>0</max>`، فلن يعيد ClickHouse تحميل القاموس بناءً على المهلة الزمنية.
+في هذه الحالة، يمكن لـ ClickHouse إعادة تحميل القاموس في وقت أبكر إذا تغيّر ملف إعدادات القاموس أو إذا نُفِّذ الأمر `SYSTEM RELOAD DICTIONARY`.
+
+عند تحديث القواميس، يطبّق خادم ClickHouse منطقًا مختلفًا بحسب نوع [المصدر](/ar/reference/statements/create/dictionary/sources/overview):
+
+* بالنسبة إلى ملف نصي، يتحقق من وقت التعديل. وإذا كان الوقت مختلفًا عن الوقت المسجّل سابقًا، يُحدَّث القاموس.
+* تُحدَّث القواميس من المصادر الأخرى افتراضيًا في كل مرة.
+
+بالنسبة إلى المصادر الأخرى (ODBC وPostgreSQL وClickHouse وما إلى ذلك)، يمكنك إعداد استعلام يحدّث القواميس فقط إذا كانت قد تغيّرت بالفعل، بدلًا من تحديثها في كل مرة. للقيام بذلك، اتبع الخطوات التالية:
+
+* يجب أن يحتوي جدول القاموس على حقل يتغيّر دائمًا عند تحديث بيانات المصدر.
+* يجب أن تتضمن إعدادات المصدر استعلامًا يسترجع الحقل المتغيّر. يفسّر خادم ClickHouse نتيجة الاستعلام على أنها صف، وإذا كان هذا الصف قد تغيّر مقارنةً بحالته السابقة، يُحدَّث القاموس. حدّد الاستعلام في الحقل `<invalidate_query>` ضمن إعدادات [المصدر](/ar/reference/statements/create/dictionary/sources/overview).
+
+مثال على الإعدادات:
+
+```xml
+<dictionary>
+    ...
+    <odbc>
+      ...
+      <invalidate_query>SELECT update_time FROM dictionary_source where id = 1</invalidate_query>
+    </odbc>
+    ...
+</dictionary>
+```
+
+أو
+
+```sql
+...
+SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
+...
+```
+
+بالنسبة إلى قواميس `Cache` و`ComplexKeyCache` و`SSDCache` و`SSDComplexKeyCache`، فإن التحديثات المتزامنة وغير المتزامنة كلتيهما مدعومتان.
+
+ومن الممكن أيضًا أن تقتصر قواميس `Flat` و`Hashed` و`HashedArray` و`ComplexKeyHashed` على طلب البيانات التي تغيّرت بعد التحديث السابق فقط. إذا جرى تحديد `update_field` كجزء من إعداد مصدر القاموس، فستُضاف إلى طلب البيانات قيمة وقت التحديث السابق بالثواني. واستنادًا إلى نوع المصدر (Executable أو HTTP أو MySQL أو PostgreSQL أو ClickHouse أو ODBC)، سيُطبَّق منطق مختلف على `update_field` قبل طلب البيانات من مصدر خارجي.
+
+* إذا كان المصدر هو HTTP، فستُضاف `update_field` كـ query parameter، وتكون قيمة المعلمة هي وقت آخر تحديث.
+* إذا كان المصدر هو Executable، فستُضاف `update_field` كوسيطة لبرنامج نصي تنفيذي، وتكون قيمة الوسيطة هي وقت آخر تحديث.
+* إذا كان المصدر هو ClickHouse أو MySQL أو PostgreSQL أو ODBC، فسيُضاف جزء إضافي إلى `WHERE`، بحيث تُقارَن `update_field` بوقت آخر تحديث على أنها أكبر منه أو مساوية له.
+  * افتراضيًا، يُفحَص شرط `WHERE` هذا عند أعلى مستوى في SQL-Query. وبدلًا من ذلك، يمكن فحص الشرط داخل أي `WHERE`-clause أخرى في الاستعلام باستخدام `{condition}`-keyword. مثال:
+    ```sql
+    ...
+    SOURCE(CLICKHOUSE(...
+        update_field 'added_time'
+        QUERY '
+            SELECT my_arr.1 AS x, my_arr.2 AS y, creation_time
+            FROM (
+                SELECT arrayZip(x_arr, y_arr) AS my_arr, creation_time
+                FROM dictionary_source
+                WHERE {condition}
+            )'
+    ))
+    ...
+    ```
+
+إذا جرى تعيين الخيار `update_field`، فيمكن أيضًا تعيين الخيار الإضافي `update_lag`. وتُطرَح قيمة الخيار `update_lag` من وقت التحديث السابق قبل طلب البيانات المُحدَّثة.
+
+مثال على الإعدادات:
+
+```xml
+<dictionary>
+    ...
+        <clickhouse>
+            ...
+            <update_field>added_time</update_field>
+            <update_lag>15</update_lag>
+        </clickhouse>
+    ...
+</dictionary>
+```
+
+أو
+
+```sql
+...
+SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
+...
+```

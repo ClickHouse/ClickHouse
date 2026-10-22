@@ -1,7 +1,10 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Common/SipHash.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
+
+#include <utility>
 
 
 namespace DB
@@ -9,19 +12,26 @@ namespace DB
 
 bool RowPolicyFilter::isAlwaysTrue() const
 {
-    bool value;
+    bool value = false;
     return !expression || (tryGetLiteralBool(expression.get(), value) && value);
 }
 
 bool RowPolicyFilter::isAlwaysFalse() const
 {
-    bool value;
+    bool value = false;
     return expression && (tryGetLiteralBool(expression.get(), value) && !value);
 }
 
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
 {
-    return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.filter_type);
+    /// The lengths separate the names, so that e.g. ("ab", "c") and ("a", "bc") are hashed differently.
+    SipHash hash;
+    hash.update(key.database.size());
+    hash.update(key.database);
+    hash.update(key.table_name.size());
+    hash.update(key.table_name);
+    hash.update(std::to_underlying(key.filter_type));
+    return hash.get64();
 }
 
 EnabledRowPolicies::EnabledRowPolicies() : params()
@@ -54,7 +64,11 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
 
 RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    return combineRowPolicyFilters(getFilter(database, table_name, filter_type), std::move(combine_with_filter));
+}
+
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter)
+{
     if (filter && combine_with_filter)
     {
         auto new_filter = std::make_shared<RowPolicyFilter>(*filter);

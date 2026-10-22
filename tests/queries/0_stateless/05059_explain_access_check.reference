@@ -1,0 +1,21 @@
+-- no grants
+denied
+denied
+denied
+denied
+denied
+-- no grants: whether a column exists must not be observable through the error kind
+denied
+denied
+-- no grants: unresolved dumps reveal no table metadata and stay allowed
+ok
+ok
+-- a grant on a single column makes the table structure visible
+ok
+ok
+-- SHOW COLUMNS also makes the structure visible, but reading is still denied
+ok
+ACCESS_DENIED
+-- a grant on the view is enough for the view, the table stays protected
+ok
+denied

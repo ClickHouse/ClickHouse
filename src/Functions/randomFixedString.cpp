@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
@@ -16,8 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
 }
 
@@ -25,11 +22,15 @@ namespace
 {
 
 /* Generate random fixed string with fully random bytes (including zero). */
-template <typename RandImpl>
-class FunctionRandomFixedStringImpl : public IFunction
+class FunctionRandomFixedString : public IFunction
 {
 public:
     static constexpr auto name = "randomFixedString";
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomFixedString>();
+    }
 
     String getName() const override { return name; }
 
@@ -39,16 +40,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isNativeUInt(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
-
-        if (!arguments[0].column || !isColumnConst(*arguments[0].column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant", getName());
-
-        const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
-        return std::make_shared<DataTypeFixedString>(n);
+        return "(const N NativeUInt) -> FixedString(N)";
     }
 
     bool isDeterministic() const override { return false; }
@@ -64,7 +58,7 @@ public:
         if (input_rows_count == 0)
             return col_to;
 
-        size_t total_size;
+        size_t total_size = 0;
         if (common::mulOverflow(input_rows_count, n, total_size))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
@@ -74,34 +68,6 @@ public:
 
         return col_to;
     }
-};
-
-class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
-{
-public:
-    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            FunctionRandomFixedStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionRandomFixedString>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 }
@@ -119,9 +85,9 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"FixedString"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT randomFixedString(13) AS rnd, toTypeName(rnd)", R"(
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};

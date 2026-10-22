@@ -1,9 +1,11 @@
 #include "config.h"
 
+#include <algorithm>
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <Core/AccurateComparison.h>
+#include <Common/checkStackSize.h>
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -58,6 +60,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <Common/memcpySmall.h>
+
+#include <base/memcmpSmall.h>
+
+#include <bit>
+#include <limits>
+
 namespace DB
 {
 
@@ -67,22 +76,22 @@ namespace ErrorCodes
 }
 
 template <typename JSONParser>
-void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings)
+bool jsonElementToStringImpl(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth, size_t depth)
 {
     if (element.isInt64())
     {
         writeIntText(element.getInt64(), buf);
-        return;
+        return true;
     }
     if (element.isUInt64())
     {
         writeIntText(element.getUInt64(), buf);
-        return;
+        return true;
     }
     if (element.isDouble())
     {
         writeFloatText(element.getDouble(), buf);
-        return;
+        return true;
     }
     if (element.isBool())
     {
@@ -90,28 +99,42 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
             writeCString("true", buf);
         else
             writeCString("false", buf);
-        return;
+        return true;
     }
     if (element.isString())
     {
         writeJSONString(element.getString(), buf, format_settings);
-        return;
+        return true;
+    }
+    if (element.isArray() || element.isObject())
+    {
+        if (max_depth && depth > max_depth)
+        {
+            writeCString("...", buf);
+            return false;
+        }
+
+        /// The parsers build the document iteratively, so its nesting depth is bounded only by the
+        /// input. Checked in the nested branches only, to keep the scalar path free.
+        checkStackSize();
     }
     if (element.isArray())
     {
+        bool complete = true;
         writeChar('[', buf);
         bool need_comma = false;
         for (auto value : element.getArray())
         {
             if (std::exchange(need_comma, true))
                 writeChar(',', buf);
-            jsonElementToString<JSONParser>(value, buf, format_settings);
+            complete &= jsonElementToStringImpl<JSONParser>(value, buf, format_settings, max_depth, depth + 1);
         }
         writeChar(']', buf);
-        return;
+        return complete;
     }
     if (element.isObject())
     {
+        bool complete = true;
         writeChar('{', buf);
         bool need_comma = false;
         for (auto [key, value] : element.getObject())
@@ -120,21 +143,32 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
                 writeChar(',', buf);
             writeJSONString(key, buf, format_settings);
             writeChar(':', buf);
-            jsonElementToString<JSONParser>(value, buf, format_settings);
+            complete &= jsonElementToStringImpl<JSONParser>(value, buf, format_settings, max_depth, depth + 1);
         }
         writeChar('}', buf);
-        return;
+        return complete;
     }
     if (element.isNull())
-    {
         writeCString("null", buf);
-        return;
-    }
+
+    return true;
+}
+
+template <typename JSONParser>
+bool jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth)
+{
+    return jsonElementToStringImpl<JSONParser>(element, buf, format_settings, max_depth, 1);
 }
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
-    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error)
+    NumberType & value,
+    const typename JSONParser::Element & element,
+    bool convert_bool_to_number,
+    bool allow_type_conversion,
+    bool no_int_truncation_from_double,
+    bool precise_float_parsing,
+    String & error)
 {
     switch (element.type())
     {
@@ -149,6 +183,14 @@ bool tryGetNumericValueFromJSONElement(
             else if (!allow_type_conversion || !accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
             {
                 error = fmt::format("cannot convert double value {} to {}", element.getDouble(), TypeName<NumberType>);
+                return false;
+            }
+            else if (no_int_truncation_from_double && static_cast<Float64>(value) != element.getDouble())
+            {
+                /// The JSON double has a fractional part (or is otherwise not exactly representable as `NumberType`).
+                /// Refuse the conversion so that the caller (e.g. `VariantNode`) can fall through to a
+                /// floating-point or `Decimal` member that represents the value losslessly.
+                error = fmt::format("cannot convert non-integral double value {} to {} without truncation", element.getDouble(), TypeName<NumberType>);
                 return false;
             }
             break;
@@ -182,7 +224,8 @@ bool tryGetNumericValueFromJSONElement(
             auto rb = ReadBufferFromMemory{element.getString()};
             if constexpr (is_floating_point<NumberType>)
             {
-                if (!tryReadFloatText(value, rb) || !rb.eof())
+                const bool parsed = precise_float_parsing ? tryReadFloatTextPrecise(value, rb) : tryReadFloatImpreciseForCompatibility(value, rb);
+                if (!parsed || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -194,9 +237,10 @@ bool tryGetNumericValueFromJSONElement(
                     break;
 
                 /// Try to parse float and convert it to integer.
-                Float64 tmp_float;
+                Float64 tmp_float = 0;
                 rb.position() = rb.buffer().begin();
-                if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
+                const bool parsed = precise_float_parsing ? tryReadFloatTextPrecise(tmp_float, rb) : tryReadFloatImpreciseForCompatibility(tmp_float, rb);
+                if (!parsed || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -205,6 +249,14 @@ bool tryGetNumericValueFromJSONElement(
                 if (!accurate::convertNumeric<Float64, NumberType, false>(tmp_float, value))
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
+                    return false;
+                }
+
+                if (no_int_truncation_from_double && static_cast<Float64>(value) != tmp_float)
+                {
+                    /// The JSON string parsed as a non-integral float. Refuse the truncating conversion so
+                    /// `VariantNode` can fall through to a floating-point or `Decimal` member.
+                    error = fmt::format("cannot parse {} value here: \"{}\" (non-integral)", TypeName<NumberType>, element.getString());
                     return false;
                 }
             }
@@ -220,12 +272,57 @@ bool tryGetNumericValueFromJSONElement(
 namespace
 {
 
+/// Reserve capacity for a chars buffer that is grown incrementally (one document per call). Keeps the
+/// default power-of-two doubling (amortized O(1) appends) until a single growth increment would exceed
+/// `max_growth_step`, after which it grows by exact step-sized chunks. This bounds the over-allocation
+/// for large buffers (e.g. shared-data path names) without reallocating on every row, which a plain
+/// per-row `reserve_exact` would cause. `max_growth_step == 0` keeps pure power-of-two growth.
+void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, size_t max_growth_step)
+{
+    if (required <= chars.capacity())
+        return;
+
+    if (max_growth_step == 0)
+    {
+        chars.reserve(required);
+        return;
+    }
+
+    size_t new_capacity = chars.capacity() * 2;
+    if (new_capacity - chars.capacity() > max_growth_step)
+        new_capacity = chars.capacity() + max_growth_step;
+    chars.reserve_exact(std::max(new_capacity, required));
+}
+
 template <typename JSONParser>
 String jsonElementToString(const typename JSONParser::Element & element, const FormatSettings & format_settings)
 {
     WriteBufferFromOwnString buf;
     jsonElementToString<JSONParser>(element, buf, format_settings);
     return buf.str();
+}
+
+/// A message quotes untrusted input, so producing one must not recurse deeply or grow huge.
+constexpr size_t MAX_DEPTH_IN_ERROR_MESSAGE = 64;
+
+template <typename JSONParser>
+String jsonElementToStringForError(const typename JSONParser::Element & element, const FormatSettings & format_settings)
+{
+    WriteBufferFromOwnString buf;
+    jsonElementToString<JSONParser>(element, buf, format_settings, MAX_DEPTH_IN_ERROR_MESSAGE);
+    return buf.str();
+}
+
+/// Writes the element as a column's text value. A value cannot be elided like a message, so one
+/// nested deeper than the limit is rejected instead.
+template <typename JSONParser>
+bool jsonElementToStringValue(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, String & error)
+{
+    if (jsonElementToString<JSONParser>(element, buf, format_settings, format_settings.json.max_depth))
+        return true;
+
+    error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+    return false;
 }
 
 template <typename JSONParser, typename NumberType>
@@ -261,11 +358,11 @@ public:
             return true;
         }
 
-        NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, error))
+        NumberType value{};
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, format_settings.precise_float_parsing, error))
         {
             if (error.empty())
-                error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
+                error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -319,10 +416,10 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, format_settings.precise_float_parsing, error))
         {
             if (error.empty())
-                error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
+                error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -367,9 +464,16 @@ public:
 
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
+            size_t prev_chars_size = chars.size();
+            bool written = false;
             {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-                jsonElementToString<JSONParser>(element, buf, format_settings);
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
+                written = jsonElementToStringValue<JSONParser>(element, buf, format_settings, error);
+            }
+            if (!written)
+            {
+                chars.resize_assume_reserved(prev_chars_size);
+                return false;
             }
             col_str.getOffsets().push_back(chars.size());
         }
@@ -413,7 +517,11 @@ public:
             if (!insert_settings.allow_type_conversion)
                 return false;
 
-            auto value = jsonElementToString<JSONParser>(element, format_settings);
+            WriteBufferFromOwnString buf;
+            if (!jsonElementToStringValue<JSONParser>(element, buf, format_settings, error))
+                return false;
+
+            auto value = buf.str();
             assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
         }
         else
@@ -457,7 +565,11 @@ public:
         {
             if (!insert_settings.allow_type_conversion)
                 return false;
-            return checkValueSizeAndInsert(column, jsonElementToString<JSONParser>(element, format_settings), error);
+            WriteBufferFromOwnString buf;
+            if (!jsonElementToStringValue<JSONParser>(element, buf, format_settings, error))
+                return false;
+
+            return checkValueSizeAndInsert(column, buf.str(), error);
         }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
@@ -508,12 +620,19 @@ public:
         {
             if (!insert_settings.allow_type_conversion)
                 return false;
-            return checkValueSizeAndInsert(column, jsonElementToString<JSONParser>(element, format_settings), error);
+            WriteBufferFromOwnString buf;
+            if (!jsonElementToStringValue<JSONParser>(element, buf, format_settings, error))
+                return false;
+
+            return checkValueSizeAndInsert(column, buf.str(), error);
         }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
 
 private:
+    /// Values up to this length are padded on the stack instead of through a `String`.
+    static constexpr size_t max_padding_on_stack = 64;
+
     template <typename T>
     bool checkValueSizeAndInsert(IColumn & column, const T & value, String & error) const
     {
@@ -526,15 +645,25 @@ private:
         // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
         // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
         // the data is padded here and written directly to the Low Cardinality Column
+        auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         if (value.size() == fixed_length)
         {
-            assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
+            lc_column.insertData(value.data(), value.size());
+        }
+        else if (fixed_length <= max_padding_on_stack)
+        {
+            /// Building a `String` here costs a copy plus an out of line `resize` on every value.
+            /// The buffer is zeroed with a constant size so that the compiler inlines it.
+            char padded_value[max_padding_on_stack];
+            memset(padded_value, 0, max_padding_on_stack);
+            memcpySmall(padded_value, value.data(), value.size());
+            lc_column.insertData(padded_value, fixed_length);
         }
         else
         {
             String padded_value(value);
             padded_value.resize(fixed_length, '\0');
-            assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
+            lc_column.insertData(padded_value.data(), padded_value.size());
         }
         return true;
     }
@@ -562,7 +691,7 @@ public:
 
         if (!element.isString())
         {
-            error = fmt::format("cannot read UUID value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read UUID value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -607,7 +736,7 @@ public:
 
         if (!element.isString())
         {
-            error = fmt::format("cannot read UUID value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read UUID value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -646,14 +775,14 @@ public:
 
         if (!element.isString())
         {
-            error = fmt::format("cannot read Date value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read Date value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
         auto data = element.getString();
         ReadBufferFromMemory buf(data);
         DateType date;
-        if (!tryReadDateText(date, buf) || !buf.eof())
+        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
         {
             error = fmt::format("cannot parse Date value here: {}", data);
             return false;
@@ -668,7 +797,10 @@ template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTimeNode(const DataTypeDateTime & datetime_type) : TimezoneMixin(datetime_type) { }
+    explicit DateTimeNode(const DataTypeDateTime & datetime_type)
+        : TimezoneMixin(datetime_type), utc_time_zone(DateLUT::instance("UTC"))
+    {
+    }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -683,50 +815,98 @@ public:
             return true;
         }
 
-        time_t value;
+        time_t value = 0;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, !format_settings.throwOnDateTimeOverflow()))
             {
                 error = fmt::format("cannot parse DateTime value here: {}", element.getString());
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            if (element.isInt64())
+            {
+                /// A negative integer is a pre-epoch Unix timestamp; the final clamp below brings it into the
+                /// `DateTime` range (the epoch), matching the row input serializer, rather than rejecting it.
+                /// With `read_datetime_number_as_raw_value` (pre-26.8) a negative integer is rejected as before.
+                if (format_settings.read_datetime_number_as_raw_value && element.getInt64() < 0)
+                {
+                    error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                    return false;
+                }
+                value = element.getInt64();
+                if (format_settings.throwOnDateTimeOverflow() && (value < 0 || value > 0xFFFFFFFF))
+                {
+                    error = fmt::format("value {} is out of bounds of type DateTime", value);
+                    return false;
+                }
+            }
+            else
+            {
+                /// Clamp in the unsigned domain before narrowing to time_t,
+                /// because values above INT64_MAX would wrap to negative on cast.
+                UInt64 raw = element.getUInt64();
+                if (format_settings.throwOnDateTimeOverflow() && raw > 0xFFFFFFFF)
+                {
+                    error = fmt::format("value {} is out of bounds of type DateTime", raw);
+                    return false;
+                }
+                value = static_cast<time_t>(std::min(raw, UInt64(0xFFFFFFFF)));
+            }
+        }
+        else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
+        {
+            /// A fractional number is a Unix timestamp truncated to whole seconds. Parse its shortest round-trip
+            /// text through the shared row-input reader so precision-overflow (e.g. `1e39`) is rejected and a
+            /// negative value is clamped to the epoch, matching the row input path. Parity holds only up to
+            /// `Float64` precision: the DOM parser has already rounded the literal, so a value it cannot represent
+            /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
+            String str_value = jsonElementToString<JSONParser>(element, format_settings);
+            ReadBufferFromMemory buf(str_value);
+            if (!tryReadDateTimeAsNumber(value, buf, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
+            {
+                error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
+                return false;
+            }
         }
         else
         {
-            error = fmt::format("cannot read DateTime value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read DateTime value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
-        assert_cast<ColumnDateTime &>(column).insert(value);
+        assert_cast<ColumnDateTime &>(column).insert(std::clamp<time_t>(value, 0, static_cast<time_t>(0xFFFFFFFF)));
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format, bool saturate_on_overflow) const
     {
+        const auto overflow = saturate_on_overflow ? DateTimeOverflow::Saturate : DateTimeOverflow::Report;
         ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTimeText(value, buf, time_zone) && buf.eof())
+                if (tryReadDateTimeText(value, buf, time_zone, nullptr, nullptr, saturate_on_overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTimeBestEffort(value, buf, time_zone, utc_time_zone) && buf.eof())
+                if (tryParseDateTimeBestEffort(value, buf, time_zone, utc_time_zone, overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTimeBestEffortUS(value, buf, time_zone, utc_time_zone) && buf.eof())
+                if (tryParseDateTimeBestEffortUS(value, buf, time_zone, utc_time_zone, overflow) && buf.eof())
                     return true;
                 break;
         }
 
         return false;
     }
+
+    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
+    /// `DateTime` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
 };
 
 template <typename JSONParser>
@@ -748,7 +928,7 @@ public:
             return true;
         }
 
-        time_t value;
+        time_t value = 0;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -757,13 +937,13 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {
-            error = fmt::format("cannot read Time value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read Time value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -844,7 +1024,7 @@ public:
             }
             default:
             {
-                error = fmt::format("cannot read Decimal value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+                error = fmt::format("cannot read Decimal value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
                 return false;
             }
         }
@@ -862,7 +1042,8 @@ template <typename JSONParser>
 class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type) : TimezoneMixin(datetime64_type), scale(datetime64_type.getScale())
+    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
+        : TimezoneMixin(datetime64_type), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
     {
     }
 
@@ -893,19 +1074,58 @@ public:
             if (!insert_settings.allow_type_conversion)
                 return false;
 
+            /// An unquoted number is a Unix timestamp in seconds (with optional sub-second precision), scaled to
+            /// the column precision. With `read_datetime_number_as_raw_value` (pre-26.8) an integer is instead the
+            /// raw scaled value (ticks); a fractional number was always seconds.
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
+                {
+                    /// Convert through decimal text rather than `Float64` arithmetic to preserve sub-second
+                    /// precision: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
+                    /// while parsing the text `0.58` at the column scale gives the exact 58 (as the row input path,
+                    /// `CAST` and `toDateTime64` do). Parity holds only up to the `Float64` the DOM parser rounded to.
+                    String str_value = jsonElementToString<JSONParser>(element, format_settings);
+                    ReadBufferFromMemory buf(str_value);
+                    if (!tryReadDateTime64AsNumber(value, scale, buf) || !buf.eof())
+                    {
+                        error = fmt::format("cannot read DateTime64 value from JSON element: {}", str_value);
+                        return false;
+                    }
                     break;
+                }
                 case ElementType::UINT64:
-                    value.value = element.getUInt64();
+                    if (format_settings.read_datetime_number_as_raw_value)
+                    {
+                        /// Raw ticks are stored in the `Int64` native type; a `UInt64` above `Int64` max would
+                        /// narrow to a negative timestamp, so range-check and fail on overflow rather than wrapping.
+                        const UInt64 raw = element.getUInt64();
+                        if (raw > static_cast<UInt64>(std::numeric_limits<DateTime64::NativeType>::max()))
+                        {
+                            error = fmt::format("raw DateTime64 tick value {} is out of range", raw);
+                            return false;
+                        }
+                        value.value = static_cast<DateTime64::NativeType>(raw);
+                    }
+                    /// Use the non-throwing conversion so that an out-of-range timestamp degrades to the default
+                    /// value, matching the `DOUBLE` case above and the best-effort contract of `JSONExtract`.
+                    else if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale, value))
+                    {
+                        error = fmt::format("cannot convert UInt64 value {} to DateTime64", element.getUInt64());
+                        return false;
+                    }
                     break;
                 case ElementType::INT64:
-                    value.value = element.getInt64();
+                    if (format_settings.read_datetime_number_as_raw_value)
+                        value.value = element.getInt64();
+                    else if (!tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale, value))
+                    {
+                        error = fmt::format("cannot convert Int64 value {} to DateTime64", element.getInt64());
+                        return false;
+                    }
                     break;
                 default:
-                    error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+                    error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
                     return false;
             }
         }
@@ -937,6 +1157,9 @@ public:
     }
 
 private:
+    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
+    /// `DateTime64` type does not build a UTC lookup table; see the note there.
+    const DateLUTImpl & utc_time_zone;
     UInt32 scale;
 };
 
@@ -987,7 +1210,7 @@ public:
                     value.value = element.getInt64();
                     break;
                 default:
-                    error = fmt::format("cannot read Time64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+                    error = fmt::format("cannot read Time64 value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
                     return false;
             }
         }
@@ -1081,7 +1304,7 @@ public:
             return true;
         }
 
-        error = fmt::format("cannot read Enum value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+        error = fmt::format("cannot read Enum value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
         return false;
     }
 
@@ -1111,7 +1334,7 @@ public:
 
         if (!element.isString())
         {
-            error = fmt::format("cannot read IPv4 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read IPv4 value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -1153,7 +1376,7 @@ public:
 
         if (!element.isString())
         {
-            error = fmt::format("cannot read IPv6 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read IPv6 value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -1264,7 +1487,7 @@ public:
 
         if (!element.isArray())
         {
-            error = fmt::format("cannot read Array value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read Array value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -1333,6 +1556,12 @@ public:
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
+        /// When every element got exactly one value, all the nested columns already have the right
+        /// size and the `set_size` walk below (a virtual `size` per element) can be skipped. A JSON
+        /// object can repeat a key, so the elements that took a value are tracked as a bit set and
+        /// not just counted: two values for one element is not the same as one value for two.
+        size_t inserted_elements = 0;
+        UInt64 filled_elements = 0;
 
         auto set_size = [&](size_t size)
         {
@@ -1350,8 +1579,40 @@ public:
             }
         };
 
+        /// Mark that `index` took a value. Elements past the width of the bit set keep the fixup.
+        auto note_inserted_element = [&](size_t index)
+        {
+            ++inserted_elements;
+            if (index < sizeof(filled_elements) * 8)
+                filled_elements |= 1ULL << index;
+        };
+
+        auto set_size_after_success = [&](size_t size)
+        {
+            /// One value per element, and each in a distinct element, so every nested column is
+            /// already at `size`.
+            const bool all_elements_distinct = static_cast<size_t>(std::popcount(filled_elements)) == inserted_elements;
+            if (were_valid_elements && inserted_elements == tuple.tupleSize() && all_elements_distinct)
+                return;
+            set_size(size);
+        };
+
         if (element.isArray())
         {
+            /// Positional fill from an array is only meaningful for unnamed tuples:
+            /// for named tuples, which array element lands in which field would
+            /// depend on the declaration order. Named tuples read from objects only
+            /// (like the scalar extraction path and the JSON input formats under
+            /// `input_format_json_named_tuples_as_objects`), unless the historical
+            /// positional behavior is requested via the setting. Only the JSON
+            /// functions set it, so the JSON data type keeps the positional fill.
+            if (!name_to_index_map.empty() && format_settings.json.extract_named_tuples_as_objects)
+            {
+                error = "cannot read named Tuple value from JSON array. You can disable setting "
+                        "json_extract_named_tuples_as_objects to fill named tuples from arrays positionally";
+                return false;
+            }
+
             auto array = element.getArray();
             auto it = array.begin();
 
@@ -1360,10 +1621,12 @@ public:
                 if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
+                    note_inserted_element(index);
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
                     tuple.getColumn(index).insertDefault();
+                    note_inserted_element(index);
                 }
                 else
                 {
@@ -1373,7 +1636,7 @@ public:
                 }
             }
 
-            set_size(old_size + static_cast<size_t>(were_valid_elements));
+            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1388,10 +1651,12 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
+                        note_inserted_element(index);
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
                         tuple.getColumn(index).insertDefault();
+                        note_inserted_element(index);
                     }
                     else
                     {
@@ -1403,30 +1668,52 @@ public:
             }
             else
             {
+                /// Objects usually list their keys in the order the tuple declares them, so try the
+                /// next expected name before hashing the key for `name_to_index_map`.
+                size_t expected_index = 0;
+                auto matches_expected_name = [&](std::string_view key)
+                {
+                    if (expected_index >= explicit_names.size())
+                        return false;
+                    const String & name = explicit_names[expected_index];
+                    return memequalSmall(key.data(), key.size(), name.data(), name.size());
+                };
+
                 for (const auto & [key, value] : object)
                 {
-                    auto index = name_to_index_map.find(key);
-                    if (index != name_to_index_map.end())
+                    size_t index = 0;
+                    if (matches_expected_name(key))
                     {
-                        if (nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
-                        {
-                            were_valid_elements = true;
-                        }
-                        else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
-                        {
-                            set_size(old_size);
-                            error += fmt::format(" (during reading tuple element \"{}\")", key);
-                            return false;
-                        }
+                        index = expected_index;
+                    }
+                    else
+                    {
+                        auto it = name_to_index_map.find(key);
+                        if (it == name_to_index_map.end())
+                            continue;
+                        index = it->second;
+                    }
+                    expected_index = index + 1;
+
+                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), value, insert_settings, format_settings, error))
+                    {
+                        were_valid_elements = true;
+                        note_inserted_element(index);
+                    }
+                    else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
+                    {
+                        set_size(old_size);
+                        error += fmt::format(" (during reading tuple element \"{}\")", key);
+                        return false;
                     }
                 }
             }
 
-            set_size(old_size + static_cast<size_t>(were_valid_elements));
+            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
-        error = fmt::format("cannot read Tuple value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+        error = fmt::format("cannot read Tuple value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
         return false;
     }
 
@@ -1457,7 +1744,7 @@ public:
 
         if (!element.isObject())
         {
-            error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -1527,6 +1814,31 @@ public:
             return true;
         }
 
+        /// First pass: try variants without truncating fractional JSON numbers to integer types.
+        /// This ensures that for `Variant(IntT, FloatT)` the float member claims a fractional
+        /// value like `3.14` instead of an integer member silently truncating it to `3`.
+        ///
+        /// We only do the strict pass when the parent didn't already set the flag — otherwise
+        /// the second pass below would do duplicate work with identical semantics.
+        if (!insert_settings.no_int_truncation_from_double)
+        {
+            auto strict_settings = insert_settings;
+            strict_settings.no_int_truncation_from_double = true;
+            for (size_t i : order)
+            {
+                auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
+                if (variant_nodes[i]->insertResultToColumn(variant, element, strict_settings, format_settings, error))
+                {
+                    column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
+                    column_variant.getOffsets().push_back(variant.size() - 1);
+                    return true;
+                }
+            }
+        }
+
+        /// Fallback: legacy lenient pass. Reached when the strict pass found no match,
+        /// e.g. a `Variant(IntT)` with a fractional JSON number — the integer member
+        /// then accepts the value with truncation, preserving backward compatibility.
         for (size_t i : order)
         {
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
@@ -1538,7 +1850,7 @@ public:
             }
         }
 
-        error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+        error = fmt::format("cannot read Variant value from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
         return false;
     }
 
@@ -1613,13 +1925,17 @@ public:
 
         /// We couldn't insert element into current variants (or skipped it intentionally),
         /// infer ClickHouse type for this element and add it as a new variant.
-        auto element_type = removeNullable(elementToDataType(element, format_settings));
+        auto inferred_type = elementToDataType(element, format_settings, error);
+        if (!inferred_type)
+            return false;
+
+        auto element_type = removeNullable(inferred_type);
         if (!checkIfTypeIsComplete(element_type))
         {
             error = fmt::format(
                 "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
                 "type, enable setting input_format_json_infer_incomplete_types_as_strings",
-                jsonElementToString<JSONParser>(element, format_settings));
+                jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -1648,10 +1964,14 @@ public:
         return true;
     }
 
-    DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings) const
+    /// Returns nullptr with the reason in `error` if the element is nested too deep.
+    DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings, String & error) const
     {
         JSONInferenceInfo json_inference_info;
-        auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
+        auto type = elementToDataTypeImpl(element, format_settings, json_inference_info, 1, error);
+        if (!type)
+            return nullptr;
+
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
         if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
             type = makeNullableRecursively(type, format_settings);
@@ -1659,8 +1979,18 @@ public:
     }
 
 private:
-    DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info) const
+    DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info, size_t depth, String & error) const
     {
+        /// Array nesting depth is bounded only by the input and becomes the depth of the inferred
+        /// type, so the limit also protects the later unguarded recursions over that type (building
+        /// its name, its extract tree, its column, destroying it). checkStackSize is the backstop.
+        checkStackSize();
+        if (depth > format_settings.json.max_depth)
+        {
+            error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+            return nullptr;
+        }
+
         switch (element.type())
         {
             case ElementType::NULL_VALUE:
@@ -1702,7 +2032,12 @@ private:
                 DataTypes types;
                 types.reserve(array.size());
                 for (auto value : array)
-                    types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
+                {
+                    auto value_type = elementToDataTypeImpl(value, format_settings, json_inference_info, depth + 1, error);
+                    if (!value_type)
+                        return nullptr;
+                    types.push_back(std::move(value_type));
+                }
 
                 if (types.empty())
                     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
@@ -1770,19 +2105,38 @@ public:
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : path_regexps_to_skip_)
             path_regexps_to_skip.emplace_back(regexp);
+
+        all_typed_paths_have_trivial_defaults = std::all_of(
+            typed_paths_types_.begin(), typed_paths_types_.end(),
+            [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
     {
+        SerializationObject::updateMaxDynamicPathsLimitIfNeeded(column, format_settings);
+
         if (element.isNull() && format_settings.null_as_default)
         {
-            column.insertDefault();
+            auto & column_object = assert_cast<ColumnObject &>(column);
+            if (all_typed_paths_have_trivial_defaults)
+            {
+                for (auto * col : column_object.getSortedTypedPathColumns())
+                    col->insertDefault();
+            }
+            else
+            {
+                for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            }
+            for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+                dynamic_column->insertDefault();
+            column_object.getSharedDataColumn().insertDefault();
             return true;
         }
 
         if (!element.isObject())
         {
-            error = fmt::format("Cannot read JSON object from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            error = fmt::format("Cannot read JSON object from JSON element: {}", jsonElementToStringForError<JSONParser>(element, format_settings));
             return false;
         }
 
@@ -1794,7 +2148,7 @@ public:
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, typename JSONParser::Element>> paths_and_values_for_shared_data;
         /// Temporary Dynamic column that will be used to create and serialize values in shared data.
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true, 1))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1809,7 +2163,7 @@ public:
             new_paths_total_size += path.size();
 
         auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-        shared_data_paths->getChars().reserve(shared_data_paths->getChars().size() + new_paths_total_size);
+        reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
         shared_data_paths->getOffsets().reserve(shared_data_paths->getOffsets().size() + paths_and_values_for_shared_data.size());
         auto & shared_data_values_chars = shared_data_values->getChars();
         auto & shared_data_values_offsets = shared_data_values->getOffsets();
@@ -1831,14 +2185,17 @@ public:
             else
             {
                 /// Serialize value directly into shared data chars.
-                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-                if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
+                bool inserted = insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column);
+                /// Finalize the buffer before `restoreColumnObject`: finalizing resizes the chars to the
+                /// buffer position, so doing it after the restore would bring back the popped values.
+                value_buf.finalize();
+                if (!inserted)
                 {
                     error += fmt::format(" (while reading path {})", path);
                     SerializationObject::restoreColumnObject(column_object, prev_size);
                     return false;
                 }
-                value_buf.finalize();
                 shared_data_values_offsets.push_back(shared_data_values_chars.size());
                 shared_data_paths->insertData(path.data(), path.size());
             }
@@ -1846,10 +2203,21 @@ public:
         column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
         /// Fill remaining typed and dynamic paths.
-        for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+        if (all_typed_paths_have_trivial_defaults)
         {
-            if (typed_column->size() == prev_size)
-                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            for (auto * col : column_object.getSortedTypedPathColumns())
+            {
+                if (col->size() == prev_size)
+                    col->insertDefault();
+            }
+        }
+        else
+        {
+            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+            {
+                if (typed_column->size() == prev_size)
+                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            }
         }
 
         for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
@@ -1871,55 +2239,118 @@ private:
         std::vector<std::pair<String, typename JSONParser::Element>> & paths_and_values_for_shared_data,
         size_t current_size,
         String & error,
-        bool is_root) const
+        bool is_root,
+        size_t depth,
+        bool skip_typed_path_check = false) const
     {
+        /// Object nesting depth is bounded only by the input; the limit also keeps the memory spent
+        /// on paths, which every level appends to, from growing quadratically with the depth.
+        /// checkStackSize is the backstop.
+        checkStackSize();
+        if (depth > format_settings.json.max_depth)
+        {
+            error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+            return false;
+        }
+
         if (shouldSkipPath(current_path, insert_settings))
             return true;
 
-        if (element.isObject() && (!typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
+        if (element.isObject() && (skip_typed_path_check || !typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
         {
+            /// First pass: collect the set of distinct element types (LITERAL/OBJECT) per key.
+            /// This lets us detect all duplicates upfront so we can:
+            ///  - throw errors immediately for invalid duplicates (before any data is inserted),
+            ///  - handle both orderings of literal+object duplicates in the main loop
+            ///    (e.g. {"a":42,"a":{"b":42}} and {"a":{"b":42},"a":42} are both valid).
+            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> key_element_types;
+            for (auto [key, value] : element.getObject())
+            {
+                auto value_element_type = getJSONElementType(value);
+                auto & types = key_element_types[key];
+
+                if (types.empty())
+                {
+                    /// First occurrence of this key — just record its type.
+                    types.insert(value_element_type);
+                    continue;
+                }
+
+                /// Duplicate key detected. Decide whether to allow or reject.
+                if (types.contains(value_element_type))
+                {
+                    /// Same-type duplicate (e.g. two literals or two objects for the same key).
+                    /// This is never allowed by type_json_allow_duplicated_key_with_literal_and_nested_object
+                    /// (which only allows literal+object pairs), so skip or throw.
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting "
+                        "type_json_skip_duplicated_paths to skip duplicated paths during insert",
+                        buildChildPath(current_path, key, insert_settings, is_root));
+                    return false;
+                }
+
+                /// Different-type duplicate (one literal, one object for the same key).
+                if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
+                {
+                    /// Setting enabled — record the second type so the main loop processes both.
+                    types.insert(value_element_type);
+                }
+                else
+                {
+                    /// Setting disabled — this is an error unless we can skip.
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+
+                    error = fmt::format(
+                        "Duplicate path found during parsing JSON object: {}. You can enable setting "
+                        "type_json_skip_duplicated_paths to skip duplicated paths during insert or setting "
+                        "type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated "
+                        "path with literal and nested object",
+                        buildChildPath(current_path, key, insert_settings, is_root));
+                    return false;
+                }
+            }
+
+            /// Second pass: process each key-value pair in original order.
+            /// All invalid duplicates have already been rejected in the first pass,
+            /// so here we only need to skip already-processed (key, type) combinations.
             std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
             {
-                String path = current_path;
-                if (!is_root)
-                    path.append(".");
-                if (insert_settings.escape_dots_in_json_keys)
-                    path += escapeDotInJSONKey(String(key));
-                else
-                    path += key;
-
-                auto it = visited_keys.find(key);
+                String path = buildChildPath(current_path, key, insert_settings, is_root);
                 auto value_element_type = getJSONElementType(value);
+                auto it = visited_keys.find(key);
                 if (it != visited_keys.end())
                 {
-                    if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
-                    {
-                        /// We can't have duplicated key with the same type (literal/object).
-                        if (it->second.contains(value_element_type))
-                        {
-                            if (format_settings.json.type_json_skip_duplicated_paths)
-                                continue;
-                            error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                            return false;
-                        }
-
-                        it->second.insert(value_element_type);
-                    }
-                    else
-                    {
-                        if (format_settings.json.type_json_skip_duplicated_paths)
-                            continue;
-                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", path);
-                        return false;
-                    }
+                    /// We have seen this key before. Skip if:
+                    ///  - we already processed a value with this element type for this key
+                    ///    (same-type duplicate allowed by type_json_skip_duplicated_paths), or
+                    ///  - the first pass rejected this type for this key (different-type duplicate
+                    ///    that was skipped because type_json_allow_duplicated_key_with_literal_and_nested_object
+                    ///    is disabled but type_json_skip_duplicated_paths is enabled).
+                    if (it->second.contains(value_element_type) || !key_element_types[key].contains(value_element_type))
+                        continue;
+                    it->second.insert(value_element_type);
                 }
                 else
                 {
                     visited_keys[key].insert(value_element_type);
                 }
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                /// When a key has both literal and object values (key_element_types has 2 types),
+                /// and the key corresponds to a typed path with a non-nested type (e.g. Int32, String —
+                /// not JSON/Map/Tuple that naturally parse objects), the object value should NOT be
+                /// inserted into the typed path. Instead, pass skip_typed_path_check=true so the
+                /// recursive call enters object traversal and sends the object's children to
+                /// dynamic/shared data. The literal value will fill the typed path via normal recursion.
+                bool skip_typed = key_element_types[key].size() > 1
+                    && value_element_type == JSONElementType::OBJECT
+                    && typed_path_nodes.contains(path)
+                    && !canParseObjectValue(typed_paths_types.at(path));
+
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed))
                     return false;
             }
 
@@ -1994,6 +2425,19 @@ private:
         }
 
         return true;
+    }
+
+    /// Build the full path for a child key within the current object.
+    String buildChildPath(const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
+    {
+        String path = current_path;
+        if (!is_root)
+            path.append(".");
+        if (insert_settings.escape_dots_in_json_keys)
+            path += escapeDotInJSONKey(String(key));
+        else
+            path += key;
+        return path;
     }
 
     bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
@@ -2111,7 +2555,7 @@ private:
 
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
-                    time_t value;
+                    time_t value = 0;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
@@ -2198,7 +2642,7 @@ private:
 
                 if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
                 {
-                    time_t value;
+                    time_t value = 0;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime"), buf);
@@ -2207,6 +2651,7 @@ private:
                     }
                 }
 
+                if (format_settings.try_infer_datetimes)
                 {
                     DateTime64 value;
                     if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
@@ -2281,6 +2726,7 @@ private:
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
+    bool all_typed_paths_have_trivial_defaults = true;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
@@ -2304,6 +2750,16 @@ private:
             default:
                 return JSONElementType::LITERAL;
         }
+    }
+
+    /// Check if the type of a typed path can naturally parse a JSON object value.
+    /// Types like JSON, Map, Tuple represent structured data and should receive
+    /// the object value when there is a literal+object duplicate key.
+    /// Scalar types (Int, String, etc.) should receive the literal value instead.
+    bool canParseObjectValue(const DataTypePtr & type) const
+    {
+        auto id = removeNullable(removeLowCardinality(type))->getTypeId();
+        return id == TypeIndex::Object || id == TypeIndex::Map || id == TypeIndex::Tuple;
     }
 };
 
@@ -2491,20 +2947,20 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
 }
 
 #if USE_SIMDJSON
-template void jsonElementToString<SimdJSONParser>(const SimdJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
+template bool jsonElementToString<SimdJSONParser>(const SimdJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth);
 template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTree<SimdJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
 #endif
 
 #if USE_RAPIDJSON
-template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
+template bool jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 #else
-template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
+template bool jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 #endif
 
 }

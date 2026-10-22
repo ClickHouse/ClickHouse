@@ -17,8 +17,8 @@ if (ARCH_AARCH64)
     if (NO_ARMV81_OR_HIGHER)
         # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
         # support it.
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc,-neon")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc")
     else ()
         # ARMv8.2 is quite ancient but the lowest common denominator supported by both Graviton 2 and 3 processors [1, 10]. In particular, it
         # includes LSE (made mandatory with ARMv8.1) which provides nice speedups without having to fall back to compat flag
@@ -85,27 +85,42 @@ elseif (ARCH_PPC64LE)
 
 elseif (ARCH_AMD64)
     # x86-64 microarchitecture levels (https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels):
-    #   1 — SSE2 baseline, maximum compatibility with older/embedded hardware
-    #   2 — SSE4.2, SSSE3, POPCNT (default, matches ClickHouse's historical baseline)
-    #   3 — AVX2, BMI1/2, FMA, F16C etc.
-    #   4 — AVX-512F/BW/CD/DQ/VL
-    set (X86_ARCH_LEVEL "2" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
+    #   1 - SSE2 baseline, maximum compatibility with older/embedded hardware
+    #   2 - SSE4.2, SSSE3, POPCNT (ClickHouse's historical baseline)
+    #   3 - AVX2, BMI1/2, FMA, F16C, LZCNT, MOVBE etc. (default)
+    #   4 - AVX-512F/BW/CD/DQ/VL
+    set (X86_ARCH_LEVEL "3" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
     set_property (CACHE X86_ARCH_LEVEL PROPERTY STRINGS "1" "2" "3" "4")
 
     if (NOT X86_ARCH_LEVEL MATCHES "^[1-4]$")
         message (FATAL_ERROR "X86_ARCH_LEVEL must be one of: 1, 2, 3, 4 (got '${X86_ARCH_LEVEL}')")
     endif ()
 
-    # Same best-effort check for x86 as above for ARM.
+    # Best-effort check: verify that the build host supports the requested microarchitecture level. Build-time tools
+    # (tablegen, code generators) are compiled with these flags and will crash with SIGILL otherwise.
     if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
-        # Test for flags in the default v2 profile.
+        # Test for a representative flag at each level. We intentionally keep this simple - no real CPU has avx2 without
+        # fma/bmi2, so checking the headline flag is enough while avoiding false positives from /proc/cpuinfo quirks
+        # (containers, nested virtualization, unusual flag naming).
+        set (X86_REPRESENTATIVE_FLAG "sse4_2")
+        if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+            set (X86_REPRESENTATIVE_FLAG "avx2")
+        endif ()
+        if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 4)
+            # `x86-64-v4` requires AVX-512 F/BW/CD/DQ/VL. Knights Landing has `avx512f` but lacks BW/DQ/VL, so check one
+            # of those instead - any CPU with `avx512vl` will also have F.
+            set (X86_REPRESENTATIVE_FLAG "avx512vl")
+        endif ()
         execute_process(
-            COMMAND grep -P "^(?=.*ssse3)(?=.*sse4_1)(?=.*sse4_2)" /proc/cpuinfo
+            COMMAND grep -P "(?=.*${X86_REPRESENTATIVE_FLAG})" /proc/cpuinfo
             OUTPUT_VARIABLE FLAGS)
         if (NOT FLAGS)
-            MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DX86_ARCH_LEVEL=1")
-        endif()
-    endif()
+            message (FATAL_ERROR
+                "The build machine does not support x86-64-v${X86_ARCH_LEVEL} "
+                "(${X86_REPRESENTATIVE_FLAG} not found in /proc/cpuinfo). "
+                "Run cmake with -DX86_ARCH_LEVEL=<level> to lower the requirement.")
+        endif ()
+    endif ()
 
     # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
     # AVX. We only assume that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
@@ -119,7 +134,6 @@ elseif (ARCH_AMD64)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpclmul")
         list (APPEND RUSTFLAGS_CPU "-C" "target-feature=+pclmulqdq")
     endif ()
-
 else ()
     # RISC-V + exotic platforms
 endif ()

@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+// This schema intentionally has the same top-level message name as
+// 04061_protobuf_cache_with_envelope.proto to verify that schema caches are
+// isolated per file.
+
+message NumberAndSquare {
+  uint32 number = 1;
+  uint64 square = 2;
+};

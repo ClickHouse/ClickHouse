@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionLogTrace : public IFunction
+    class FunctionLogTrace final : public IFunction
     {
     public:
         static constexpr auto name = "logTrace";
@@ -29,12 +29,9 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        String getSignatureString() const override
         {
-            if (!isString(arguments[0]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arguments[0]->getName(), getName());
-            return std::make_shared<DataTypeUInt8>();
+            return "(const String) -> UInt8";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -58,7 +55,12 @@ namespace
 REGISTER_FUNCTION(LogTrace)
 {
     FunctionDocumentation::Description description = R"(
-Emits a trace log message to the server log for each [Block](/development/architecture/#block).
+Emits a trace log message to the server log.
+
+The function accepts a constant argument only, so the call is evaluated during query analysis and replaced
+by its result. The message is therefore emitted once while the query is analyzed, and not once per processed
+[Block](/resources/develop-contribute/introduction/architecture#block): the number of rows and the setting `max_block_size` have no effect
+on how many messages appear in the log.
     )";
     FunctionDocumentation::Syntax syntax = "logTrace(message)";
     FunctionDocumentation::Arguments arguments = {

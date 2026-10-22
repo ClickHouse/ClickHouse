@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-distributed-cache
 # Tag: no-fasttest - requires S3
+# Tag no-distributed-cache: Not supported auth type
+
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,8 +27,6 @@ $CLICKHOUSE_CLIENT -m -q "
                 metadata_type = local,
                 object_storage_type = azure_blob_storage,
                 name = '${CONTAINER}',
-                path='/var/lib/clickhouse/disks/${CONTAINER}/tables',
-                container_name = '${CONTAINER}',
                 endpoint = 'http://localhost:10000/devstoreaccount1/${CONTAINER}/plain-tables',
                 account_name = 'devstoreaccount1',
                 account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
@@ -50,7 +50,8 @@ $CLICKHOUSE_CLIENT -m -q "
     -- Check logs for skipping empty blob
     SELECT 'Skipped empty blobs after 1 insert:',  count() FROM system.text_log
     WHERE message LIKE 'Skipping writing empty blob for path %$UUID/tmp_insert_all_1_1_0/arr.bin%' AND
-        event_date >= yesterday() AND event_time > now() - interval 10 minute;
+        event_date >= yesterday() AND event_time > now() - interval 10 minute
+    SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 
     -- Insert another row with empty Arrays to create another part with empty file
     INSERT INTO test_empty_blobs SELECT *, [] from numbers(1, 1);
@@ -85,8 +86,9 @@ $CLICKHOUSE_CLIENT -m -q "
 
     -- Check logs for skipping empty blob
     SYSTEM FLUSH LOGS text_log;
-    SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE 
+    SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE
         message LIKE 'Skipping writing empty blob for path %$UUID/%/arr.bin%' AND
-        event_date >= yesterday() AND event_time > now() - interval 10 minute;
+        event_date >= yesterday() AND event_time > now() - interval 10 minute
+    SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 ";
 

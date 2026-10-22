@@ -1,0 +1,6 @@
+\N	\N	[]
+LowCardinality(Nullable(UInt32))	Nullable(Tuple(class_id UInt32, probability Float64))	Array(Tuple(\n    class_id UInt32,\n    probability Float64))
+1	1
+0	0	[(0,0.9166666715061128),(1,0.08333332849388708)]
+1	\N	[]
+2	1	[(1,0.9166666715061128),(0,0.08333332849388708)]

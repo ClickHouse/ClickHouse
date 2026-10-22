@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: OSReadChars and OSCPUVirtualTimeMicroseconds are collected via Linux taskstats
+# netlink, which is unavailable on macOS.
 
 # Sandbox does not provide CAP_NET_ADMIN capability but does have ProcFS mounted at /proc
 # This ensures that OS metrics can be collected

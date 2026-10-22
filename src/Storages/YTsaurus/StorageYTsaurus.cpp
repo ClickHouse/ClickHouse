@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_STORAGE;
 }
@@ -39,6 +40,12 @@ namespace YTsaurusSetting
     extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
 }
 
+
+void YTsaurusStorageConfiguration::validate() const
+{
+    if (cypress_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty `cypress_path` is passed to the YTsaurus data source");
+}
 
 StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
@@ -125,6 +132,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
         if (!column_description.empty())
             configuration.ytsaurus_columns_description = std::move(column_description);
     }
+    configuration.validate();
     return configuration;
 }
 
@@ -148,9 +156,11 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Incorrect Ytsarurus table schema. Expected YTsaurus(http_proxy_url, cypress_path, oauth_token)");
+    configuration.validate();
     return configuration;
 }
 
+void registerStorageYTsaurus(StorageFactory & factory);
 void registerStorageYTsaurus(StorageFactory & factory)
 {
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
@@ -158,17 +168,148 @@ void registerStorageYTsaurus(StorageFactory & factory)
         if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
+        auto configuration = StorageYTsaurus::getConfiguration(
+            args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id);
+        /// Skipped for a stored definition so that a forbidden header does not block server startup;
+        /// the client still checks it.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            YTsaurusClient::checkHeaders(args.getLocalContext(), configuration.oauth_token);
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
+            std::move(configuration),
             args.columns,
             args.constraints,
             args.comment);
     },
+    /// YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+    SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}},
     {
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
+# YTsaurus table engine
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+The YTsaurus table engine allows you to import data from a YTsaurus cluster.
+
+## Creating a table {#creating-a-table}
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+```
+
+<Info>
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus table engine
+using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine).
+
+You can do so using:
+
+`SET allow_experimental_ytsaurus_table_engine = 1`.
+</Info>
+
+**Engine parameters**
+
+- `http_proxy_url` — URL to the YTsaurus http proxy.
+- `cypress_path` — Cypress path to the data source.
+- `oauth_token` — OAuth token.
+
+## Usage example {#usage-example}
+
+Shows a query creating the YTsaurus table:
+
+```sql title="Query"
+SHOW CREATE TABLE yt_saurus;
+```
+
+```sql title="Response"
+CREATE TABLE yt_saurus
+(
+    `a` UInt32,
+    `b` String
+)
+ENGINE = YTsaurus('http://localhost:8000', '//tmp/table', 'password')
+```
+
+To return the data from the table, run:
+
+```sql title="Query"
+SELECT * FROM yt_saurus;
+```
+
+```response title="Response"
+┌──a─┬─b──┐
+│ 10 │ 20 │
+└────┴────┘
+```
+
+## Data types {#data-types}
+
+### Primitive data types {#primitive-data-types}
+
+| YTsaurus data type | ClickHouse data type    |
+| ------------------ | ----------------------- |
+| `int8`             | `Int8`                  |
+| `int16`            | `Int16`                 |
+| `int32`            | `Int32`                 |
+| `int64`            | `Int64`                 |
+| `uint8`            | `UInt8`                 |
+| `uint16`           | `UInt16`                |
+| `uint32`           | `UInt32`                |
+| `uint64`           | `UInt64`                |
+| `float`            | `Float32`               |
+| `double`           | `Float64`               |
+| `boolean`          | `Bool`                  |
+| `string`           | `String`                |
+| `utf8`             | `String`                |
+| `json`             | `JSON`                  |
+| `yson(type_v3)`    | `JSON`                  |
+| `uuid`             | `UUID`                  |
+| `date32`           | `Date`(Not supported yet)|
+| `datetime64`       | `Int64`                 |
+| `timestamp64`      | `Int64`                 |
+| `interval64`       | `Int64`                 |
+| `date`             | `Date`(Not supported yet)|
+| `datetime`         | `DateTime`              |
+| `timestamp`        | `DateTime64(6)`         |
+| `interval`         | `UInt64`                |
+| `any`              | `String`                |
+| `null`             | `Nothing`               |
+| `void`             | `Nothing`               |
+| `T` with `required = False`| `Nullable(T)`   |
+
+### Composite types {#composite-data-types}
+
+| YTsaurus data type | ClickHouse data type |
+| ------------------ | -------------------- |
+| `decimal`          | `Decimal`            |
+| `optional`         | `Nullable`           |
+| `list`             | `Array`              |
+| `struct`           | `NamedTuple`         |
+| `tuple`            | `Tuple`              |
+| `variant`          | `Variant`            |
+| `dict`             | `Array(Tuple(...))   |
+| `tagged`           | `T`                  |
+
+**See Also**
+
+- [ytsaurus](/reference/functions/table-functions/ytsaurus) table function
+- [ytsaurus data schema](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
+- [ytsaurus data types](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)
+)DOCS_MD",
+        .syntax = "ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')",
     });
 }
 

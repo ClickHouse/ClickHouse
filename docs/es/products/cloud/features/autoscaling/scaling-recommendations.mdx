@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Recomendaciones de escalado'
+slug: /cloud/features/autoscaling/scaling-recommendations
+description: 'Entender las recomendaciones de escalado en ClickHouse Cloud'
+keywords: ['recomendaciones de escalado', 'recomendador', '2-window', 'escalado automático', 'optimización']
+title: 'Recomendaciones de escalado'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="introduction">
+  ## Introducción
+</div>
+
+El autoescalado de los recursos de la base de datos requiere un equilibrio cuidadoso: aumentar la capacidad demasiado lentamente puede poner en riesgo el rendimiento, mientras que reducirla de forma demasiado agresiva puede provocar oscilaciones constantes.
+
+ClickHouse Cloud permite reducciones de capacidad más rápidas, minimiza las oscilaciones del escalado y reduce sustancialmente los costos de infraestructura para cargas de trabajo variables, al tiempo que mantiene la estabilidad necesaria para las bases de datos de producción
+al combinar un marco de recomendaciones de dos ventanas con un sistema de recomendaciones de CPU basado en seguimiento de objetivos.
+
+<div id="cpu-based-scaling">
+  ## Escalado basado en CPU
+</div>
+
+El escalado de CPU se basa en target tracking, que calcula la asignación exacta de CPU necesaria para mantener la utilización en un nivel objetivo. Solo se activa una acción de escalado si la utilización actual de la CPU queda fuera de un rango definido:
+
+| Parámetro            | Valor | Significado                                                                 |
+| -------------------- | ----- | --------------------------------------------------------------------------- |
+| Utilización objetivo | 53%   | El nivel de utilización que ClickHouse intenta mantener                     |
+| Umbral superior      | 75%   | Activa el escalado vertical cuando la CPU supera este umbral                |
+| Umbral inferior      | 37.5% | Activa la reducción de recursos cuando la CPU cae por debajo de este umbral |
+
+El recomendador evalúa la utilización de la CPU en función del uso histórico y determina un tamaño de CPU recomendado mediante esta fórmula:
+
+```text
+recommended_cpu = max_cpu_usage / target_utilization
+```
+
+Si la utilización de CPU está entre el 37.5 % y el 75 % de la capacidad asignada, no se realiza ninguna acción de escalado. Fuera de ese rango, el recomendador calcula el tamaño exacto necesario para volver al 53 % de utilización, y el servicio se escala en consecuencia.
+
+<div id="cpu-scaling-example">
+  ### Ejemplo
+</div>
+
+Un servicio con 4 vCPU asignadas experimenta un pico de uso de 3.8 vCPU (~95% de utilización), superando el umbral superior del 75%.
+El recomendador calcula: `3.8 / 0.53 ≈ 7.2 vCPU`, y redondea al siguiente tamaño disponible (8 vCPU). Una vez que la carga disminuye y el uso cae por debajo del 37.5% (1.5 vCPU), el recomendador reduce de nuevo el tamaño de forma proporcional.
+
+<div id="memory-based-recommendations">
+  ## Recomendaciones basadas en memoria
+</div>
+
+ClickHouse Cloud recomienda automáticamente tamaños de memoria en función de los patrones de uso reales de su servicio.
+El recomendador analiza el uso durante una ventana de retrospección y añade holgura para absorber picos y evitar errores por falta de memoria (OOM).
+
+El recomendador tiene en cuenta tres señales:
+
+* **Memoria de consulta**: La memoria máxima utilizada durante la ejecución de la consulta
+* **Memoria residente**: La memoria máxima que mantiene el proceso en total
+* **Eventos OOM**: Si las consultas o las réplicas se han quedado sin memoria recientemente
+
+<div id="how-headroom-is-calculated">
+  ### Cómo se calcula la holgura
+</div>
+
+Para la memoria de consulta y la memoria residente, la holgura añadida depende de lo predecible que sea tu uso:
+
+* **Uso estable (baja variación)**: multiplicador de 1.25x — más holgura, ya que el uso es constante y es poco probable que haya picos inesperados
+* **Uso con picos (alta variación)**: multiplicador de 1.1x — menos holgura, para evitar el sobreaprovisionamiento en cargas de trabajo que ya presentan mucha variación
+
+Si se detectan eventos OOM, el recomendador aplica un **multiplicador más agresivo de 1.5x** para garantizar que el servicio tenga suficiente memoria para recuperarse.
+
+<div id="final-recommendation">
+  ### Recomendación final
+</div>
+
+El sistema toma el valor más alto de entre todas las señales:
+
+```text
+desired_memory = max(
+  query_memory × skew_multiplier,
+  resident_memory × skew_multiplier,
+  resident_memory × 1.5,   // si se detectan OOMs en consultas
+  rss_at_crash × 1.5       // si se detectan OOMs en pods
+)
+```
+
+<div id="two-window-recommender">
+  ## Recomendador de dos ventanas
+</div>
+
+En lugar de usar una sola ventana, ClickHouse Cloud utiliza dos ventanas de retrospección con distintos intervalos de tiempo:
+
+* **Ventana pequeña (3 horas)**: Captura patrones de uso recientes y permite reducir la escala más rápido
+* **Ventana grande (30 horas)**: Garantiza que aumentemos la escala en un solo paso hasta el uso máximo observado en la ventana de retrospección más larga, en lugar de hacerlo mediante varios aumentos graduales. Esto es fundamental porque el escalado lleva tiempo e invalida las cachés locales; por eso, es más seguro aumentar la escala en un solo paso.
+
+Cada ventana genera de forma independiente una recomendación a partir del análisis de memoria y CPU.
+Luego, el sistema combina estas recomendaciones según la dirección de escalado que sugiera cada ventana, como se muestra en la figura siguiente:
+
+<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Lógica de combinación del recomendador de dos ventanas" />
+
+Para profundizar en las decisiones de diseño del recomendador, consulta [&quot;Autoescalado más inteligente para ClickHouse: el enfoque de dos ventanas
+&quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

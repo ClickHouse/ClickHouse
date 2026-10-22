@@ -1,5 +1,6 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,6 +13,8 @@
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -23,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int BAD_ARGUMENTS;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
@@ -76,9 +80,10 @@ void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<Names> & hint_columns)
 {
-    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, hint_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
@@ -115,7 +120,7 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 }
 
 /// Build expression_list_ast, column_names, and reverse_flags from key children and additional columns.
-std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
+static std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
     const ASTPtr & key_expression_list,
     const NamesAndTypesList & additional_columns)
 {
@@ -157,7 +162,8 @@ KeyDescription KeyDescription::getKeyFromAST(
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
-    const NamesAndTypesList & additional_columns)
+    const NamesAndTypesList & additional_columns,
+    const std::optional<Names> & hint_columns)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
@@ -175,7 +181,13 @@ KeyDescription KeyDescription::getKeyFromAST(
     {
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
-        auto syntax_result = TreeRewriter(context).analyze(expr, all_columns);
+        /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into `columns`
+        /// and `virtuals`, so by default a typo may be resolved to any of them; a caller that accepts less
+        /// narrows the suggestions down.
+        TreeRewriter tree_rewriter(context);
+        if (hint_columns)
+            tree_rewriter.setHintColumns(*hint_columns);
+        auto syntax_result = tree_rewriter.analyze(expr, all_columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
@@ -199,8 +211,7 @@ KeyDescription KeyDescription::getKeyFromAST(
                     "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
         };
 
-        check(*result.data_types.back());
-        result.data_types.back()->forEachChild(check);
+        forEachInTypeTree(*result.data_types.back(), check);
     }
 
     return result;
@@ -224,12 +235,57 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     return expr_list;
 }
 
+KeyDescription KeyDescription::getPrimaryKeyFromAST(
+    const ASTPtr & definition_ast,
+    const KeyDescription & sorting_key,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context)
+{
+    KeyDescription result = getKeyFromAST(definition_ast, columns, virtuals, context);
+
+    /// The primary key is a prefix of the sorting key (validated in MergeTreeData::checkProperties),
+    /// so its per-column directions are the corresponding prefix of the sorting key's.
+    if (!sorting_key.reverse_flags.empty())
+        result.reverse_flags.assign(
+            sorting_key.reverse_flags.begin(),
+            sorting_key.reverse_flags.begin() + std::min(result.column_names.size(), sorting_key.reverse_flags.size()));
+
+    return result;
+}
+
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
     result.expression_list_ast = make_intrusive<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
+}
+
+void KeyDescription::checkNoAlias(const IAST * definition_ast, std::string_view clause)
+{
+    if (!definition_ast)
+        return;
+
+    if (const String alias = definition_ast->tryGetAlias(); !alias.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias '{}' is not allowed in {}", alias, clause);
+
+    /// Aliases inside a subquery are local to it.
+    if (definition_ast->as<ASTSubquery>())
+        return;
+
+    for (const auto & child : definition_ast->children)
+        checkNoAlias(child.get(), clause);
+
+    /// `GROUP BY` keys, `SET` assignments and the `RECOMPRESS` codec of a `TTL` rule are not among its children.
+    if (const auto * ttl_element = definition_ast->as<ASTTTLElement>())
+    {
+        for (const auto & key : ttl_element->group_by_key)
+            checkNoAlias(key.get(), clause);
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            checkNoAlias(assignment.get(), clause);
+        checkNoAlias(ttl_element->recompression_codec.get(), clause);
+    }
 }
 
 KeyDescription KeyDescription::parse(
@@ -246,6 +302,13 @@ KeyDescription KeyDescription::parse(
     ParserStorageOrderByClause parser(allow_order);
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
+
+    /// The artificial "(" + str + ")" wrapping above causes the parser to mark
+    /// the resulting expression as parenthesized when there is exactly one element.
+    /// Strip that flag so the formatter does not produce spurious parentheses
+    /// (e.g. `x` round-tripping as `(x)` in metadata comparisons).
+    if (ast)
+        ast->setParenthesized(false);
 
     return getKeyFromAST(ast, columns, virtuals, context);
 }

@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET parallel_replicas_local_plan = 1;
+
 DROP TABLE IF EXISTS t_primary_index_cache;
 
 SYSTEM CLEAR PRIMARY INDEX CACHE;

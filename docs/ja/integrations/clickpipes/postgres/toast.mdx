@@ -1,0 +1,78 @@
+---
+title: 'TOASTカラムの扱い'
+description: 'PostgreSQL から ClickHouse へデータをレプリケーションする際に、TOASTカラムをどのように扱うかを学びます。'
+slug: /integrations/clickpipes/postgres/toast
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'データインジェスト', 'リアルタイム同期']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+PostgreSQL から ClickHouse へデータをレプリケーションする際は、TOAST (The Oversized-Attribute Storage Technique) カラムに関する制限事項や特有の考慮点を理解しておくことが重要です。このガイドでは、レプリケーションプロセスにおいて TOASTカラムを特定し、適切に扱う方法を説明します。
+
+<div id="what-are-toast-columns-in-postgresql">
+  ## PostgreSQL の TOASTカラムとは？
+</div>
+
+TOAST (The Oversized-Attribute Storage Technique) は、大きなフィールド値を扱うための PostgreSQL の仕組みです。行が最大行サイズ (通常は 2KB ですが、PostgreSQL のバージョンや具体的な設定によって異なる場合があります) を超えると、PostgreSQL は大きなフィールド値を自動的に別の TOAST テーブルに移し、メインテーブルにはポインタだけを格納します。
+
+重要なのは、CDC (変更データキャプチャ) では、変更されていない TOASTカラムはレプリケーションストリームに含まれないことです。これを適切に処理しないと、データのレプリケーションが不完全になる可能性があります。
+
+初期ロード (スナップショット) では、TOASTカラムを含むすべてのカラムの値が、サイズに関係なく正しくレプリケートされます。このガイドで説明する制限は、主に初期ロード後の継続的な CDC プロセスに影響します。
+
+TOAST と PostgreSQL におけるその実装について詳しくは、こちらを参照してください: https://www.postgresql.org/docs/current/storage-toast.html
+
+<div id="identifying-toast-columns-in-a-table">
+  ## テーブル内のTOASTカラムを特定する
+</div>
+
+テーブルにTOASTカラムがあるかどうかを確認するには、次のSQLクエリを使用できます。
+
+```sql
+SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class c ON a.attrelid = c.oid
+WHERE c.relname = 'your_table_name'
+  AND a.attlen = -1
+  AND a.attstorage != 'p'
+  AND a.attnum > 0;
+```
+
+このクエリは、TOAST 化される可能性のあるカラムの名前とデータ型を返します。ただし、このクエリで特定できるのは、データ型とストレージ属性に基づいて TOAST ストレージの対象になり得るカラムだけである点に注意してください。これらのカラムに実際に TOAST 化されたデータが含まれているかどうかを判断するには、カラム内の値がサイズ制限を超えているかどうかを確認する必要があります。実際にデータが TOAST 化されるかどうかは、これらのカラムに格納される具体的な内容によって決まります。
+
+<div id="ensuring-proper-handling-of-toast-columns">
+  ## TOASTカラムが適切に処理されるようにする
+</div>
+
+レプリケーション中に TOASTカラムが正しく処理されるようにするには、テーブルの `REPLICA IDENTITY` を `FULL` に設定する必要があります。これにより、PostgreSQL は UPDATE および DELETE 操作時に古い行全体を WAL に含めるようになり、すべてのカラムの値 (TOASTカラムを含む) をレプリケーションで利用できるようになります。
+
+次の SQL コマンドを使用して、`REPLICA IDENTITY` を `FULL` に設定できます。
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+`REPLICA IDENTITY FULL` を設定する際のパフォーマンスに関する考慮事項については、[こちらのブログ記事](https://xata.io/blog/replica-identity-full-performance)を参照してください。
+
+<div id="replication-behavior-when-replica-identity-full-is-not-set">
+  ## `REPLICA IDENTITY FULL` が設定されていない場合のレプリケーション時の挙動
+</div>
+
+TOAST カラムを持つテーブルで `REPLICA IDENTITY FULL` が設定されていない場合、ClickHouse へのレプリケーション時に次のような問題が発生することがあります。
+
+1. INSERT 操作では、すべてのカラム (TOAST カラムを含む) が正しくレプリケートされます。
+
+2. UPDATE 操作では:
+   * TOAST カラムが変更されていない場合、その値は ClickHouse では NULL または空として表示されます。
+   * TOAST カラムが変更された場合は、正しくレプリケートされます。
+
+3. DELETE 操作では、TOAST カラムの値は ClickHouse では NULL または空として表示されます。
+
+こうした挙動により、PostgreSQL のソースと ClickHouse の宛先の間でデータの不整合が生じる可能性があります。そのため、正確で完全なデータレプリケーションを確実に行うには、TOAST カラムを持つテーブルに `REPLICA IDENTITY FULL` を設定することが重要です。
+
+<div id="conclusion">
+  ## 結論
+</div>
+
+PostgreSQL から ClickHouse へのレプリケーションでデータ整合性を維持するには、TOASTカラムを適切に扱うことが不可欠です。TOASTカラムを特定し、適切な `REPLICA IDENTITY` を設定することで、データを正確かつ完全にレプリケーションできます。

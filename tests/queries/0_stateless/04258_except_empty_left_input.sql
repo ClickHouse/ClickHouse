@@ -1,0 +1,18 @@
+-- max_rows_to_read is the guard: a regressed short-circuit reads the unbounded side and trips it.
+SELECT count()
+FROM
+(
+    SELECT number FROM numbers(0)
+    EXCEPT
+    SELECT number FROM system.numbers
+)
+SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
+
+SELECT count()
+FROM
+(
+    SELECT number FROM numbers(0)
+    EXCEPT DISTINCT
+    SELECT number FROM system.numbers
+)
+SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;

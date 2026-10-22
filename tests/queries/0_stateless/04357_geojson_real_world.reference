@@ -1,0 +1,18 @@
+How many cities?	243
+City geometry type?	Point
+London-Paris and London-New York distance (km)?	343	5570
+Northernmost city?	Reykjavík
+Southernmost city?	Wellington
+Most populous city and its population?	Tokyo	35676000
+How many rivers?	13
+River geometry type?	LineString
+Longest river, its length (km) and point count?	Nile	4673	116
+How many counties?	3221
+County geometry types and counts?	MultiPolygon	79
+County geometry types and counts?	Polygon	3142
+States with the most counties (state FIPS, count)?	48	254
+States with the most counties (state FIPS, count)?	13	159
+States with the most counties (state FIPS, count)?	51	134
+Largest county by area (FIPS, name)?	02290	Yukon-Koyukuk
+Does a county geometry serialise to a WKT POLYGON?	1
+Which county contains New York (FIPS, name, state FIPS)?	36061	New York	36

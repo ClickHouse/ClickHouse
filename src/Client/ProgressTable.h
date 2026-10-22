@@ -2,13 +2,10 @@
 
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/types.h>
-#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
-#include <list>
 #include <map>
 #include <mutex>
-#include <ostream>
 #include <string_view>
 #include <unordered_map>
 #include <unistd.h>

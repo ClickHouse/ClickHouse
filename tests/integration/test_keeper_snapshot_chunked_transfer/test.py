@@ -2,6 +2,8 @@
 import concurrent.futures
 import math
 import os
+import time
+
 import pytest
 
 import helpers.keeper_utils as keeper_utils
@@ -15,6 +17,8 @@ from helpers.keeper_snapshot_utils import (
     get_received_snapshot_info,
     assert_receiving_snapshot_logged,
     assert_obj_ids,
+    start_keeper_phase_only,
+    use_keeper_phase,
 )
 
 
@@ -59,26 +63,60 @@ node10 = cluster.add_instance("node10", main_configs=["configs/enable_keeper10_l
 node11 = cluster.add_instance("node11", main_configs=["configs/enable_keeper11_large_chunk_s3.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 node12 = cluster.add_instance("node12", main_configs=["configs/enable_keeper12_large_chunk_s3.xml", "configs/text_log.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 
-# compat: old-version leader (no chunking support), new-version follower
-compat1 = cluster.add_instance("compat1", main_configs=["configs/enable_keeper_compat1.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag=CLICKHOUSE_CI_MIN_TESTED_VERSION, with_installed_binary=True, with_remote_database_disk=False)
+# compat: old-version leader (no chunking support), new-version follower.
+# The old leaders get quorum_reads because their pinned images predate the read-vs-session-close
+# fix and can drop a local read without a response. Followers under test keep the default.
+compat1 = cluster.add_instance("compat1", main_configs=["configs/enable_keeper_compat1.xml", "configs/quorum_reads.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag=CLICKHOUSE_CI_MIN_TESTED_VERSION, with_installed_binary=True, with_remote_database_disk=False)
 compat2 = cluster.add_instance("compat2", main_configs=["configs/enable_keeper_compat2.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag=CLICKHOUSE_CI_MIN_TESTED_VERSION, with_installed_binary=True, with_remote_database_disk=False)
 compat3 = cluster.add_instance("compat3", main_configs=["configs/enable_keeper_compat3.xml", "configs/text_log.xml"], stay_alive=True, with_remote_database_disk=False)
 
-compat_s3_1 = cluster.add_instance("compat_s3_1", main_configs=["configs/enable_keeper_compat_s3_1.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag="25.12", with_installed_binary=True, with_remote_database_disk=False)
+compat_s3_1 = cluster.add_instance("compat_s3_1", main_configs=["configs/enable_keeper_compat_s3_1.xml", "configs/quorum_reads.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag="25.12", with_installed_binary=True, with_remote_database_disk=False)
 compat_s3_2 = cluster.add_instance("compat_s3_2", main_configs=["configs/enable_keeper_compat_s3_2.xml"], stay_alive=True, image="clickhouse/clickhouse-server", tag="25.12", with_installed_binary=True, with_remote_database_disk=False)
 compat_s3_3 = cluster.add_instance("compat_s3_3", main_configs=["configs/enable_keeper_compat_s3_3.xml", "configs/text_log.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
+
+
+# A test exercises exactly one of these groups of independent Keeper clusters, so only
+# one group is kept running at a time (use_keeper_phase); the first group listed stays
+# running after cluster.start().
+KEEPER_PHASES = {
+    "small": [[node1, node2, node3], [node7, node8, node9]],
+    "large": [[node4, node5, node6], [node10, node11, node12]],
+    "compat": [[compat1, compat2, compat3], [compat_s3_1, compat_s3_2, compat_s3_3]],
+}
+
+# The servers running a pinned release stay up for the whole module. A release Keeper aborts
+# at startup on a snapshot written by the newer server it is clustered with ("Unsupported
+# snapshot version", "Manual intervention is necessary for recovery"), so restarting one is
+# not recoverable. They are also the cheap servers here, being the only non-sanitizer builds.
+PINNED_RELEASE_INSTANCES = [compat1, compat2, compat_s3_1, compat_s3_2]
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        start_keeper_phase_only(
+            cluster, KEEPER_PHASES, next(iter(KEEPER_PHASES)), PINNED_RELEASE_INSTANCES
+        )
         yield cluster
     finally:
         cluster.shutdown()
 
 
 CHUNK_SIZE = 4096  # matches snapshot_transfer_chunk_size in small-chunk configs
+
+# Recovery here means replaying raft logs and installing a snapshot (over S3, with a
+# 1 KiB read buffer) before the node accepts connections. Under msan/tsan that legitimately
+# took ~95 s in CI, so the wait must be generous: start_clickhouse returns as soon as the
+# server is ready, so a large upper bound costs nothing on fast runs.
+RESTART_TIMEOUT_SECONDS = 180
+
+
+def use_phase(phase):
+    use_keeper_phase(
+        cluster, KEEPER_PHASES, phase, RESTART_TIMEOUT_SECONDS, PINNED_RELEASE_INSTANCES
+    )
+
 
 CHUNKED_TRANSFER_PARAMS = [
     pytest.param({"leader": node1, "middle": node2, "lagging": node3, "disk_type": "local"}, id="local_disk"),
@@ -96,8 +134,19 @@ COMPAT_PARAMS = [
 ]
 
 
+def get_coordination_setting(node, name):
+    """Read an effective coordination setting from a running server via the 'conf' 4LW command."""
+    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="conf")
+    settings = dict(
+        line.split("=", 1) for line in data.split("\n") if "=" in line
+    )
+    assert name in settings, f"'{name}' absent from 'conf' output of {node.name}: {data}"
+    return settings[name]
+
+
 @pytest.mark.parametrize("nodes", CHUNKED_TRANSFER_PARAMS)
 def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
+    use_phase("small")
     node_leader = nodes["leader"]
     node_middle = nodes["middle"]
     node_lagging = nodes["lagging"]
@@ -120,10 +169,19 @@ def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
     node_lagging.stop_clickhouse(kill=True)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
     assert received is not None
+
+    # The kazoo client created before `stop_clickhouse(kill=True)` may have its
+    # session expire while the server is down (the default session timeout is
+    # shorter than the kill+restart window in CI under load). Once a kazoo
+    # session is expired the client cannot resume it on reconnect — even with
+    # implicit retries — and subsequent requests raise `ConnectionClosedError`.
+    # Re-create the client after the restart, matching the pattern used by the
+    # other test methods in this file.
+    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
 
     assert lagging_zk.get(prefix)[0] == b"somedata"
     verify_test_tree(leader_zk, lagging_zk, prefix)
@@ -142,6 +200,7 @@ def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
 @pytest.mark.parametrize("nodes", CHUNKED_TRANSFER_PARAMS)
 def test_recover_after_interrupted_transfer(started_cluster, nodes):
     """A `tmp_snapshot_X.bin` left by an interrupted transfer must not block recovery."""
+    use_phase("small")
     node_leader = nodes["leader"]
     node_lagging = nodes["lagging"]
     is_remote = nodes["disk_type"] == "remote"
@@ -168,7 +227,7 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         user="root",
     )
     try:
-        node_lagging.start_clickhouse(20)
+        node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         node_lagging.query("SYSTEM ENABLE FAILPOINT keeper_save_snapshot_pause_mid_transfer")
     except Exception:
         _drop_rule()
@@ -201,6 +260,16 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
             "root", prefix=s3_prefix + "tmp_snapshot_"
         ))
         assert tmp_objects, "No tmp_snapshot object in S3 after killing mid-transfer"
+        # Record (name, last_modified) tuples to uniquely identify these specific
+        # files.  A new snapshot transfer after restart may create a tmp_ marker
+        # with the *same* object_name (the leader can resend the same log_idx if
+        # nothing committed in the meantime), so matching by name alone causes
+        # false positives where the new in-flight marker is mistaken for the
+        # interrupted-transfer marker that startup cleanup already removed.
+        # last_modified has microsecond precision in MinIO and is monotonically
+        # increasing across writes, so the (name, last_modified) tuple is a
+        # reliable identity for the original interrupted-transfer file.
+        interrupted_tmp_ids = {(o.object_name, o.last_modified) for o in tmp_objects}
     else:
         snapshot_dir = "/var/lib/clickhouse/coordination/snapshots"
         tmp_snapshot_path = node_lagging.exec_in_container(
@@ -208,16 +277,35 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
         ).strip()
         assert tmp_snapshot_path, "No tmp_snapshot file on disk after killing mid-transfer"
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
     lagging_zk.sync(prefix)  # wait until all committed entries (including snapshot) are applied
 
     if is_remote:
-        remaining = list(started_cluster.minio_client.list_objects(
-            "root", prefix=s3_prefix + "tmp_snapshot_"
-        ))
-        assert not remaining, f"tmp_snapshot objects not removed from S3 on startup: {[o.object_name for o in remaining]}"
+        # After restart the node may also create new local snapshots asynchronously
+        # (queued via snapshots_queue) or receive a fresh snapshot from the leader
+        # that re-uses the same log_idx, both of which temporarily produce a tmp_
+        # marker with the same object_name as the interrupted-transfer marker.
+        # Match on (name, last_modified) so we only count the *original* file —
+        # the one whose cleanup we are verifying — and ignore unrelated in-flight
+        # markers created after the restart.
+        deadline = time.time() + 15
+        remaining = None
+        while True:
+            remaining = [
+                o for o in started_cluster.minio_client.list_objects(
+                    "root", prefix=s3_prefix + "tmp_snapshot_"
+                )
+                if (o.object_name, o.last_modified) in interrupted_tmp_ids
+            ]
+            if not remaining or time.time() >= deadline:
+                break
+            time.sleep(1)
+        assert not remaining, (
+            f"tmp_snapshot objects from interrupted transfer not removed within 15 s: "
+            f"{[o.object_name for o in remaining]}"
+        )
     else:
         assert (
             node_lagging.exec_in_container(
@@ -232,40 +320,10 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
     cleanup_test_tree(cluster, node_leader, prefix)
 
 
-@pytest.mark.parametrize("nodes", LARGE_CHUNK_PARAMS)
-def test_recover_with_chunk_size_larger_than_snapshot(started_cluster, nodes):
-    """When chunk_size > snapshot size the whole snapshot is one NuRaft object (obj_id=0)."""
-    node_leader = nodes["leader"]
-    node_lagging = nodes["lagging"]
-    prefix = "/test_large_chunk_transfer"
-
-    cleanup_test_tree(cluster, node_leader, prefix)
-
-    kill_time = get_kill_timestamp(node_lagging)
-    node_lagging.stop_clickhouse(kill=True)
-
-    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
-    fill_test_tree(leader_zk, prefix)
-
-    node_lagging.start_clickhouse(20)
-    keeper_utils.wait_until_connected(cluster, node_lagging)
-    received = get_received_snapshot_info(node_lagging, kill_time)
-
-    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
-    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
-    verify_test_tree(leader_zk, lagging_zk, prefix)
-    cleanup_test_tree(cluster, node_leader, prefix)
-
-    assert received is not None
-    snapshot_log_idx, n_chunks, _ = received
-    assert n_chunks == 1, f"Expected 1 chunk (snapshot fits within chunk_size), got {n_chunks}"
-    assert_obj_ids(node_lagging, snapshot_log_idx, [0], kill_time)
-    assert_receiving_snapshot_logged(node_lagging, kill_time, nodes["disk_type"])
-
-
 def test_recover_after_s3_read_error_during_transfer(started_cluster):
     """After `readStrict` throws in `RemoteSnapshotLoader` (simulated via failpoint),
     the loader marks itself as broken and the follower recovers on the next NuRaft retry."""
+    use_phase("small")
     node_lagging = node9
     # Disarm any leftover failpoint from a previous failed run so it does not fire
     # unexpectedly during setup (before we are ready to observe the error).
@@ -284,7 +342,7 @@ def test_recover_after_s3_read_error_during_transfer(started_cluster):
 
     node_leader.query("SYSTEM ENABLE FAILPOINT s3_read_buffer_throw_expired_token")
     try:
-        node_lagging.start_clickhouse(20)
+        node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
         keeper_utils.wait_until_connected(cluster, node_lagging)
 
         received = get_received_snapshot_info(node_lagging, kill_time, timeout=30)
@@ -305,12 +363,55 @@ def test_recover_after_s3_read_error_during_transfer(started_cluster):
         node_leader.query("SYSTEM DISABLE FAILPOINT s3_read_buffer_throw_expired_token")
 
 
+@pytest.mark.parametrize("nodes", LARGE_CHUNK_PARAMS)
+def test_recover_with_chunk_size_larger_than_snapshot(started_cluster, nodes):
+    """When chunk_size > snapshot size the whole snapshot is one NuRaft object (obj_id=0)."""
+    use_phase("large")
+    node_leader = nodes["leader"]
+    node_lagging = nodes["lagging"]
+    prefix = "/test_large_chunk_transfer"
+
+    cleanup_test_tree(cluster, node_leader, prefix)
+
+    kill_time = get_kill_timestamp(node_lagging)
+    node_lagging.stop_clickhouse(kill=True)
+
+    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
+    fill_test_tree(leader_zk, prefix)
+
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
+    keeper_utils.wait_until_connected(cluster, node_lagging)
+    received = get_received_snapshot_info(node_lagging, kill_time)
+
+    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
+    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
+    verify_test_tree(leader_zk, lagging_zk, prefix)
+    cleanup_test_tree(cluster, node_leader, prefix)
+
+    assert received is not None
+    snapshot_log_idx, n_chunks, _ = received
+    assert n_chunks == 1, f"Expected 1 chunk (snapshot fits within chunk_size), got {n_chunks}"
+    assert_obj_ids(node_lagging, snapshot_log_idx, [0], kill_time)
+    assert_receiving_snapshot_logged(node_lagging, kill_time, nodes["disk_type"])
+
+
 @pytest.mark.parametrize("nodes", COMPAT_PARAMS)
 def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     """Old leader (no chunking support) always sends a single NuRaft object (obj_id=0)."""
+    use_phase("compat")
     node_old_leader = nodes["old_leader"]
     node_lagging = nodes["lagging"]
     prefix = "/test_compat_snapshot_transfer"
+
+    # cleanup_test_tree below is already a read on the old leader, so the setting that makes
+    # its reads terminate has to be asserted before it, not after. wait_complete_readiness is
+    # off because its readiness probe is itself such a read.
+    keeper_utils.wait_until_connected(cluster, node_old_leader, wait_complete_readiness=False)
+    keeper_utils.wait_until_connected(cluster, node_lagging, wait_complete_readiness=False)
+    assert get_coordination_setting(node_old_leader, "quorum_reads") == "true", \
+        f"{node_old_leader.name} runs a pinned image and must serve reads through Raft"
+    assert get_coordination_setting(node_lagging, "quorum_reads") == "false", \
+        f"{node_lagging.name} is the node under test and must keep local reads"
 
     cleanup_test_tree(cluster, node_old_leader, prefix)
 
@@ -320,7 +421,7 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     leader_zk = keeper_utils.get_fake_zk(cluster, node_old_leader.name)
     fill_test_tree(leader_zk, prefix)
 
-    node_lagging.start_clickhouse(20)
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
 

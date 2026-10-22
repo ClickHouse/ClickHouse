@@ -12,7 +12,11 @@
 #include <Analyzer/TableNode.h>
 #include <Common/BSONCXXHelper.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
@@ -20,8 +24,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -49,15 +55,61 @@ using bsoncxx::to_json;
 namespace DB
 {
 
+MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
+{
+    static MongoDBInstanceHolder instance;
+    return instance;
+}
+
+namespace
+{
+
+std::pair<LogsLevel, Poco::Message::Priority> toServerLogLevel(mongocxx::log_level level)
+{
+    switch (level)
+    {
+        case mongocxx::log_level::k_error:
+        case mongocxx::log_level::k_critical:
+            return {LogsLevel::error, Poco::Message::PRIO_ERROR};
+        case mongocxx::log_level::k_warning:
+            return {LogsLevel::warning, Poco::Message::PRIO_WARNING};
+        case mongocxx::log_level::k_message:
+        case mongocxx::log_level::k_info:
+            return {LogsLevel::information, Poco::Message::PRIO_INFORMATION};
+        case mongocxx::log_level::k_debug:
+            return {LogsLevel::debug, Poco::Message::PRIO_DEBUG};
+        case mongocxx::log_level::k_trace:
+            return {LogsLevel::trace, Poco::Message::PRIO_TRACE};
+    }
+}
+
+}
+
+void MongoDBLogger::operator()(
+    mongocxx::log_level level, bsoncxx::v1::stdx::string_view domain, bsoncxx::v1::stdx::string_view message) noexcept
+{
+    try
+    {
+        const auto [logs_level, priority] = toServerLogLevel(level);
+        LOG_IMPL(
+            log, logs_level, priority, "{}: {}",
+            std::string_view(domain.data(), domain.size()), std::string_view(message.data(), message.size()));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
@@ -68,6 +120,15 @@ void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
     // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
     for (const auto & host : uri->hosts())
         context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
+}
+
+void MongoDBConfiguration::checkCollection() const
+{
+    /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
+    /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
+    /// effectively empty collection name, which aborts the process inside the driver.
+    if (collection.empty() || collection.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -160,12 +221,13 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
         boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
     return configuration;
 }
 
 static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, /* throw_unknown_collection */ true, /* complex_args */ nullptr, table_id))
         return StorageMongoDB::getConfigurationFromCollection(named_collection, context);
 
     MongoDBConfiguration configuration;
@@ -240,6 +302,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
                             "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
 
     return configuration;
 }
@@ -308,7 +371,7 @@ static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const Joi
         return {};
     if (table_function && table_function->getStorage()->getStorageID() != storage_id)
         return {};
-    if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
+    if (join_node && column->getColumnSource().get() != join_node->getLeftTableExpressionNode().get())
         return {};
 
     return column;
@@ -355,23 +418,71 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
-        if (const_value.getType() == Field::Types::Array)
+        /// A list of one member arrives as a plain constant.
+        Array elements;
+        if (const_value.getType() == Field::Types::Tuple)
         {
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            const auto & value_tuple = const_value.safeGet<Tuple>();
+            elements.assign(value_tuple.begin(), value_tuple.end());
         }
-        else if (const_value.getType() == Field::Types::Tuple)
+        else if (const_value.getType() == Field::Types::Array)
+            elements = const_value.safeGet<Array>();
+        else
+            elements.push_back(const_value);
+
+        /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
+        /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
+        /// hold matches nothing. A member whose conversion loses part of the value is refused like a lossy
+        /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
+        Array converted_elements;
+        converted_elements.reserve(elements.size());
+        for (size_t i = 0; i < elements.size(); ++i)
         {
-            auto & value_tuple = const_value.safeGet<Tuple>();
-            const_value = Array(value_tuple.begin(), value_tuple.end());
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            DataTypePtr element_type;
+            if (tuple_type && i < tuple_type->getElements().size())
+                element_type = tuple_type->getElements()[i];
+            else if (array_type)
+                element_type = array_type->getNestedType();
+            else if (!tuple_type)
+                element_type = const_type;
+
+            /// Every element is converted: the list is written with the column's type, so a `Float64`
+            /// element under an integer column would be read back as an integer.
+            if (element_type && element_type->equals(*column_type))
+            {
+                converted_elements.push_back(elements[i]);
+                continue;
+            }
+
+            auto converted = tryConvertFieldToType(elements[i], *column_type, element_type.get(), {}, /*strict=*/ true);
+            if (converted.isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
+                continue;
+            }
+            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
+                return {};
+            }
+            converted_elements.push_back(std::move(converted));
         }
+
+        const_value = std::move(converted_elements);
+        column_type = std::make_shared<DataTypeArray>(column_type);
+        const_type = column_type;
     }
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
     if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
     {
-        auto converted_value = convertFieldToType(const_value, *column_type, const_type.get());
+        /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type.get());
 
         if (converted_value.isNull())
         {
@@ -487,13 +598,6 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
 
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting");
-        return make_document();
-    }
-
     const auto & query_tree = query.query_tree->as<QueryNode &>();
 
     if (throw_on_error)
@@ -525,7 +629,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     const ConstantNode * limit = nullptr;
     const ConstantNode * offset = nullptr;
 
-    if (query_tree.hasLimit())
+    if (query_tree.hasLimit() && !query_tree.hasLimitAfter() && !query_tree.hasLimitUntil())
     {
         limit = query_tree.getLimit()->as<ConstantNode>();
         if (!limit)
@@ -584,16 +688,16 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (query_tree.hasWhere())
     {
-        const auto & join_tree = query_tree.getJoinTree();
+        const auto & join_tree = query_tree.getJoinTreeNode();
         const auto * join_node = join_tree->as<JoinNode>();
         bool allow_where = true;
 
         if (join_node)
         {
             if (join_node->getKind() == JoinKind::Left)
-                allow_where = join_node->getLeftTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getLeftTableExpressionNode()->isEqual(*query.table_expression);
             else if (join_node->getKind() == JoinKind::Right)
-                allow_where = join_node->getRightTableExpression()->isEqual(*query.table_expression);
+                allow_where = join_node->getRightTableExpressionNode()->isEqual(*query.table_expression);
             else
                 allow_where = (join_node->getKind() == JoinKind::Inner);
         }
@@ -621,6 +725,160 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+/// The secret options of a MongoDB connection string or option list, after the password and the uri are hidden.
+static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    auto & result = finder.result;
+    const auto & function = finder.function;
+
+    auto is_masked = [&](size_t index)
+    {
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = HIDDEN_SECRET_LITERAL;
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = finder.isNamedCollectionName(0);
+    const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !is_named_collection)
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
+    }
+
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+                continue;
+            }
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
+        {
+            result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+            continue;
+        }
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+    }
+}
+
+SecretArgumentsSpec mongoDBSecretArguments()
+{
+    /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
+    /// MongoDB(named_collection, ..., password = 'password', ...)
+    return {.positional_secret_slots = {4}, .secret_keys = {"password"}, .custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
+        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
+        {
+            String uri;
+            if (!value.tryGetString(&uri, /* allow_identifier= */ false))
+                finder.markSecretArgument(index, argument_is_named);
+            else if (maskMongoDBConnectionString(uri))
+                finder.result.replaced_arguments[index] = String(prefix) + quoteString(uri);
+        };
+
+        /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
+        /// on the argument count, which a rejected named argument changes; a `host:port` has no password.
+        if (finder.function->arguments->size() != 0)
+        {
+            const auto first = finder.function->arguments->at(0);
+            const auto first_function = first->getFunction();
+            if (first->isIdentifier())
+            {
+                String name;
+                /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
+                if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
+                    finder.result.replaced_arguments[0] = backQuoteIfNeed(name);
+            }
+            else if (!first_function || first_function->name() != "equals")
+            {
+                mask_uri(0, *first, "", /* argument_is_named= */ false);
+            }
+        }
+
+        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+        /// Every occurrence: a duplicated or conflicting override is logged before validation rejects it.
+        for (ssize_t i = finder.findNamedArgument(nullptr, "uri"); i >= 0;
+             i = finder.findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
+        }
+
+        findMongoDBConnectionStringSecretArguments(finder);
+    }};
+}
+
+void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
@@ -636,9 +894,238 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.constraints,
             args.comment);
     },
+    mongoDBSecretArguments(),
     {
         .source_access_type = AccessTypeObjects::Source::MONGO,
-    });
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
+
+Only MongoDB >=7 is supported.
+[Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
+```
+
+**Engine Parameters**
+
+| Parameter     | Description                                                                                                                                                                                              |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `host:port`   | MongoDB server address.                                                                                                                                                                                  |
+| `database`    | Remote database name.                                                                                                                                                                                    |
+| `collection`  | Remote collection name.                                                                                                                                                                                  |
+| `user`        | MongoDB user.                                                                                                                                                                                            |
+| `password`    | User password.                                                                                                                                                                                           |
+| `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
+
+<Tip>
+If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
+Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
+</Tip>
+
+Alternatively, you can pass a URI:
+
+```sql
+ENGINE = MongoDB(uri, collection[, oid_columns]);
+```
+
+**Engine Parameters**
+
+| Parameter     | Description                                                                                            |
+|---------------|--------------------------------------------------------------------------------------------------------|
+| `uri`         | MongoDB server's connection URI.                                                                       |
+| `collection`  | Remote collection name.                                                                                |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
+
+## Types mappings {#types-mappings}
+
+| MongoDB                 | ClickHouse                                                            |
+|-------------------------|-----------------------------------------------------------------------|
+| bool, int32, int64      | *any numeric type except Decimals*, Boolean, String                   |
+| double                  | Float64, String                                                       |
+| date                    | Date, Date32, DateTime, DateTime64, String                            |
+| string                  | String, *any numeric type(except Decimals) if formatted correctly*    |
+| document                | String(as JSON)                                                       |
+| array                   | Array, String(as JSON)                                                |
+| oid                     | String                                                                |
+| binary                  | String if in column, base64 encoded string if in an array or document |
+| uuid (binary subtype 4) | UUID                                                                  |
+| *any other*             | String                                                                |
+
+If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
+
+### OID {#oid}
+
+If you want a `String` to be treated as `oid` in the WHERE clause, just put the column's name in the last argument of the table engine.
+This may be necessary when querying a record by the `_id` column, which by default has `oid` type in MongoDB.
+If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, otherwise the default value for this parameter `_id` is used.
+
+```javascript
+db.sample_oid.insertMany([
+    {"another_oid_column": ObjectId()},
+]);
+
+db.sample_oid.find();
+[
+    {
+        "_id": {"$oid": "67bf6cc44ebc466d33d42fb2"},
+        "another_oid_column": {"$oid": "67bf6cc40000000000ea41b1"}
+    }
+]
+```
+
+By default, only `_id` is treated as `oid` column.
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid');
+
+SELECT count() FROM sample_oid WHERE _id = '67bf6cc44ebc466d33d42fb2'; --will output 1.
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; --will output 0
+```
+
+In this case the output will be `0`, because ClickHouse doesn't know that `another_oid_column` has `oid` type, so let's fix it:
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
+
+-- or
+
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
+
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- will output 1 now
+```
+
+## Supported clauses {#supported-clauses}
+
+Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
+Such expressions are translated to MongoDB query language and executed on the server side.
+You can disable all these restriction, using [mongodb_throw_on_unsupported_query](/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
+In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
+
+<Note>
+It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
+For example you want to filter by `Date`:
+
+```sql
+SELECT * FROM mongo_table WHERE date = '2024-01-01'
+```
+
+This will not work because Mongo will not cast string to `Date`, so you need to cast it manually:
+
+```sql
+SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024-01-01')
+```
+
+This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
+</Note>
+
+## Usage example {#usage-example}
+
+Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
+
+Create a table in ClickHouse which allows to read data from MongoDB collection:
+
+```sql title="Query"
+CREATE TABLE sample_mflix_table
+(
+    _id String,
+    title String,
+    plot String,
+    genres Array(String),
+    directors Array(String),
+    writers Array(String),
+    released Date,
+    imdb String,
+    year String
+) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
+```
+
+```sql title="Query"
+SELECT count() FROM sample_mflix_table
+```
+
+```text title="Response"
+┌─count()─┐
+│   21349 │
+└─────────┘
+```
+
+```sql title="Query"
+-- JSONExtractString cannot be pushed down to MongoDB
+SET mongodb_throw_on_unsupported_query = 0;
+
+-- Find all 'Back to the Future' sequels with rating > 7.5
+SELECT title, plot, genres, directors, released FROM sample_mflix_table
+WHERE title IN ('Back to the Future', 'Back to the Future Part II', 'Back to the Future Part III')
+    AND toFloat32(JSONExtractString(imdb, 'rating')) > 7.5
+ORDER BY year
+FORMAT Vertical;
+```
+
+```text title="Response"
+Row 1:
+──────
+title:     Back to the Future
+plot:      A young man is accidentally sent 30 years into the past in a time-traveling DeLorean invented by his friend, Dr. Emmett Brown, and must make sure his high-school-age parents unite in order to save his own existence.
+genres:    ['Adventure','Comedy','Sci-Fi']
+directors: ['Robert Zemeckis']
+released:  1985-07-03
+
+Row 2:
+──────
+title:     Back to the Future Part II
+plot:      After visiting 2015, Marty McFly must repeat his visit to 1955 to prevent disastrous changes to 1985... without interfering with his first trip.
+genres:    ['Action','Adventure','Comedy']
+directors: ['Robert Zemeckis']
+released:  1989-11-22
+```
+
+```sql title="Query"
+-- Find top 3 movies based on Cormac McCarthy's books
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
+FROM sample_mflix_table
+WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)
+ORDER BY rating DESC
+LIMIT 3;
+```
+
+```text title="Response"
+┌─title──────────────────┬─rating─┐
+│ No Country for Old Men │    8.1 │
+│ The Sunset Limited     │    7.4 │
+│ The Road               │    7.3 │
+└────────────────────────┴────────┘
+```
+
+## Troubleshooting {#troubleshooting}
+You can see the generated MongoDB query in DEBUG level logs.
+
+Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.
+)DOCS_MD",
+        .syntax = "ENGINE = MongoDB('host:port', 'database', 'collection', 'user', 'password'[, 'options'])",
+        .related = {"MySQL", "PostgreSQL"}});
 }
 
 }

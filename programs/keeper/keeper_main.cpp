@@ -65,7 +65,7 @@ int printHelp(int, char **)
 }
 
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
@@ -95,10 +95,26 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We absolutely discourage the ancient technique of loading
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
-
-#if !defined(USE_MUSL)
+///
+/// Keep this guard identical to the one in `programs/main.cpp`. This file is linked into the
+/// `clickhouse` binary as part of `clickhouse-keeper-lib`, so a stub defined here but not there
+/// pulls this object file in and causes duplicate `main` and `inside_main` symbols.
+///
+/// We do allow `dlopen()` in case of OpenSSL FIPS build,
+/// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
+///
+/// `USE_GPU` lifts it for the same reason `programs/main.cpp` does - the CUDA runtime reaches a
+/// device only by `dlopen`.
+///
+/// Not on WebAssembly: see the comment in `programs/main.cpp`.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
 extern "C"
 {
+    void * dlopen(const char *, int);
+    void * dlmopen(long, const char *, int); // NOLINT
+    int dlclose(void *);
+    const char * dlerror();
+
     void * dlopen(const char *, int)
     {
         return nullptr;
@@ -121,30 +137,24 @@ extern "C"
 }
 #endif
 
-/// Prevent messages from JeMalloc in the release build.
-/// Some of these messages are non-actionable for the users, such as:
-/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
-#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*je_malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
-#elif USE_JEMALLOC
-#include <unordered_set>
-/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
+/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
+/// or messages that do not mean anything to the user.
+#if USE_JEMALLOC
 extern "C" void (*je_malloc_message)(void *, const char * s);
-__attribute__((constructor(0))) void init_je_malloc_message()
+static __attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
-        using namespace std::literals;
-        static const std::unordered_set<std::string_view> ignore_messages{
-            "<jemalloc>: background thread creation failed (11)\n"sv};
+        /// NOTE: You cannot have any allocations here
 
         std::string_view message_view{str};
-        if (ignore_messages.contains(message_view))
+        if (message_view == "<jemalloc>: background thread creation failed (11)\n")
+            return;
+        if (message_view == "<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.\n")
             return;
 
 #    if defined(SYS_write)
-        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
+        syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
 #    else
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
@@ -155,7 +165,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-__attribute__((constructor(202))) void init_ssl()
+static __attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -165,7 +175,7 @@ __attribute__((constructor(202))) void init_ssl()
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-static bool inside_main = false;
+bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {
@@ -196,7 +206,7 @@ int main(int argc_, char ** argv_)
     /// Print a basic help if nothing was matched
     MainFunc main_func = mainEntryClickHouseKeeper;
 
-    if (isClickhouseApp("help", argv))
+    if (isClickHouseApp("help", argv))
     {
         main_func = printHelp;
     }
@@ -204,7 +214,7 @@ int main(int argc_, char ** argv_)
     {
         for (auto & application : clickhouse_applications)
         {
-            if (isClickhouseApp(application.first, argv))
+            if (isClickHouseApp(application.first, argv))
             {
                 main_func = application.second;
                 break;

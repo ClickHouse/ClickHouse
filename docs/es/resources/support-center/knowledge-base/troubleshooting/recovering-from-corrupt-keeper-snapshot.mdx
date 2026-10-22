@@ -1,0 +1,330 @@
+---
+date: 2025-01-29
+title: Cómo recuperarse de una instantánea corrupta de Keeper
+tags: ['Solución de problemas']
+keywords: ['Keeper', 'instantánea corrupta']
+description: 'Artículo que describe cómo recuperarse de una instantánea corrupta de Keeper: cómo se manifiesta el problema, qué es una instantánea, dónde encontrarla y cuáles son las posibles estrategias de recuperación.'
+---
+
+Las instantáneas corruptas o defectuosas de ClickHouse Keeper pueden provocar una inestabilidad importante en el sistema, como inconsistencias de metadatos, tablas en estado de solo lectura, agotamiento de recursos o fallos en las copias de seguridad. En este artículo se explica:
+
+* [Qué son las instantáneas y dónde encontrarlas](#overview)
+* [Cómo se manifiesta el problema](#symptoms)
+* [Las posibles estrategias de recuperación](#recovery-strategies) y qué implica cada una
+
+## Descripción general de las instantáneas de Keeper {#overview}
+
+### ¿Qué es una instantánea? {#what-is-snapshot}
+
+Una instantánea es un estado serializado de los datos internos de Keeper (como metadatos sobre clústeres, rutas de coordinación de tablas y configuraciones) en un momento determinado. Las instantáneas son fundamentales para volver a sincronizar los nodos de Keeper dentro de un clúster, recuperar metadatos durante fallos y realizar procesos de arranque o reinicio que dependen de un estado válido y conocido de Keeper.
+
+### ¿Dónde puedo encontrar las instantáneas? {#where-to-find-snapshots}
+
+Las instantáneas se almacenan como archivos en el sistema de archivos local de los nodos de Keeper. De forma predeterminada, se guardan en `/var/lib/clickhouse/coordination/snapshots/` o en la ruta personalizada especificada por `snapshot_storage_path` en su archivo `keeper_server.xml`. Las instantáneas se nombran de forma incremental (por ejemplo, snapshot.23), y las más recientes tienen números más altos.
+
+En clústeres multinodo, cada nodo de Keeper tiene su propio directorio de instantáneas.
+
+<Note>
+  La consistencia de las instantáneas entre los nodos es fundamental para la recuperación.
+</Note>
+
+## Síntomas y manifestaciones clave de instantáneas corruptas de Keeper {#symptoms}
+
+La siguiente tabla detalla algunos síntomas y manifestaciones habituales de instantáneas corruptas de Keeper:
+
+| **Categoría**                           | **Tipo de problema**                        | **Qué buscar**                                                                                                    |
+| --------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Problemas operativos**                | Modo de solo lectura                        | Las tablas cambian inesperadamente a modo de solo lectura                                                         |
+|                                         | Fallos en las consultas                     | Fallos persistentes en las consultas con errores `Coordination::Exception`                                        |
+| **Corrupción de metadatos**             | Metadatos desactualizados                   | Las tablas eliminadas no se ven reflejadas; fallos operativos debidos a metadatos obsoletos                       |
+| **Sobrecarga de recursos**              | Agotamiento de recursos del sistema         | Los nodos de Keeper consumen CPU, memoria o espacio en disco en exceso; posible indisponibilidad                  |
+|                                         | Disco lleno                                 | Disco lleno durante la creación de la instantánea                                                                 |
+| **Copia de seguridad y restauración**   | Fallos en las copias de seguridad           | Las copias de seguridad fallan debido a metadatos de Keeper ausentes o incoherentes                               |
+| **Creación/transferencia de instantáneas** | Caída de Keeper                             | Caída de Keeper durante la creación de la instantánea (busque errores &quot;SEGFAULT&quot;)                       |
+|                                         | Corrupción en la transferencia de instantáneas | Corrupción durante la transferencia de instantáneas entre réplicas                                             |
+|                                         | Condición de carrera                        | Condición de carrera durante la compactación de logs: el hilo de commit en segundo plano accede a logs eliminados |
+|                                         | Sincronización de red                       | Problemas de red que impiden la sincronización de la instantánea desde el líder hasta los followers               |
+
+**Indicadores en los logs:**
+
+Antes de diagnosticar corrupción en instantáneas, revise los **logs de Keeper** para detectar patrones de error específicos:
+
+| **Tipo de log**                        | **Qué buscar**                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Errores de corrupción de instantáneas** | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• Fallos de serialización/carga de instantáneas durante el inicio |
+| **Otros problemas de Keeper**          | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• Problemas de sincronización o elección<br />• Condiciones de carrera en la compactación de logs                                                                                                                                                                                |
+
+## Recuperación ante instantáneas corruptas de Keeper {#recovery-strategies}
+
+Antes de tocar cualquier archivo, haz siempre lo siguiente:
+
+1. Detén todos los nodos de Keeper para evitar que la corrupción se agrave
+2. Haz una copia de seguridad de todo copiando el directorio completo de coordinación a una ubicación segura
+3. Verifica el cuórum del clúster para asegurarte de que al menos un nodo tenga datos en buen estado
+
+***
+
+### 1. Restaurar desde una copia de seguridad existente {#restore-from-existing-backup}
+
+Debe seguir este proceso si:
+
+* La corrupción de los metadatos o de una instantánea de Keeper hace que los datos actuales sean irrecuperables.
+* Existe una copia de seguridad con un estado de Keeper cuya validez se conoce.
+
+Siga los pasos que se indican a continuación para restaurar una copia de seguridad existente:
+
+1. Localice y valide la copia de seguridad más reciente para comprobar la consistencia de los metadatos.
+2. Detenga los servicios de ClickHouse y Keeper.
+3. Sustituya las instantáneas y los logs dañados por los del directorio de la copia de seguridad.
+4. Reinicie el clúster de Keeper y valide la sincronización de los metadatos.
+
+<Tip>
+  **Haga copias de seguridad con regularidad**
+
+  Si las copias de seguridad están desactualizadas, podría perder cambios recientes en los metadatos. Por este motivo, recomendamos hacer copias de seguridad con regularidad.
+</Tip>
+
+***
+
+### 2. Revertir a una instantánea anterior {#rollback-to-older-snapshot}
+
+Conviene seguir este proceso cuando:
+
+* Las instantáneas recientes estén dañadas, pero las anteriores sigan siendo utilizables.
+* Los logs incrementales estén intactos para garantizar una recuperación coherente.
+
+Siga estos pasos para revertir a una instantánea anterior:
+
+1. Identifique y seleccione una instantánea anterior válida (por ejemplo, snapshot.19) en el directorio de Keeper.
+2. Elimine las instantáneas y los logs más recientes.
+3. Reinicie Keeper para que reprocese los logs y reconstruya el estado de los metadatos.
+
+<Warning>
+  **Riesgo de desincronización de metadatos**
+
+  Existe riesgo de desincronización de metadatos si faltan instantáneas y logs, o si están incompletos.
+</Warning>
+
+***
+
+### 3. Restaurar metadatos con `SYSTEM RESTORE REPLICA` {#restore-metadata-with-system-restore-replica}
+
+Debes seguir este proceso cuando:
+
+* Los metadatos de Keeper se han perdido o están corruptos, pero los datos de la tabla siguen existiendo en disco
+* Las tablas han pasado a modo de solo lectura debido a la ausencia de metadatos de ZooKeeper/Keeper
+* Necesitas volver a crear los metadatos en Keeper a partir de las partes de datos disponibles localmente
+
+Sigue los pasos que se indican a continuación para restaurar los metadatos:
+
+1. Verifica que los datos de la tabla existan localmente en la ruta de datos de tu clickHouse-server, definida por `<path>` en tu configuración. (`/var/lib/clickhouse/data/` de forma predeterminada)
+
+2. Para cada tabla afectada, ejecuta:
+
+```sql
+SYSTEM RESTART REPLICA [db.]table_name;
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+3. Para la recuperación a nivel de la base de datos (si usa el motor de base de datos Replicated):
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA db_name;
+```
+
+4. Espere a que se complete la sincronización:
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+5. Verifica la recuperación comprobando en `system.replicas` que `is_readonly = 0` y supervisando `system.detached_parts`
+
+<Info>
+  **Cómo funciona**
+
+  `SYSTEM RESTORE REPLICA` desvincula todas las partes existentes, recrea los metadatos en Keeper (como si fuera una tabla nueva vacía) y luego vuelve a adjuntar todas las partes. Esto evita tener que volver a descargar los datos por la red.
+</Info>
+
+<Warning>
+  **Requisitos previos**
+
+  Esto solo funciona si las partes de datos locales están intactas. Si los datos también están corruptos, usa en su lugar la estrategia n.º 5 (reconstruir el clúster).
+</Warning>
+
+***
+
+### 4. Eliminar y volver a crear los metadatos de la réplica en Keeper {#drop-and-recreate-replica-metadata}
+
+Debes seguir este proceso cuando:
+
+* El error se produce en una sola réplica del clúster y esta tiene metadatos dañados o incoherentes en Keeper
+* Encuentras errores como &quot;Part XXXXX intersects previous part YYYYY&quot;
+* Necesitas restablecer por completo los metadatos de una réplica en Keeper mientras conservas los datos locales
+
+Sigue los pasos a continuación para eliminar y volver a crear los metadatos:
+
+1. En la réplica afectada, desvincula la tabla:
+
+```sql
+DETACH TABLE [db.]table_name;
+```
+
+2. Elimine los metadatos de la réplica en Keeper (ejecute en cualquier réplica):
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/clickhouse/tables/{shard}/table_name';
+```
+
+Para encontrar la ruta correcta de ZooKeeper:
+
+```sql
+SELECT zookeeper_path, replica_name FROM system.replicas WHERE table = 'table_name';
+```
+
+3. Vuelva a adjuntar la tabla (quedará en modo de solo lectura):
+
+```sql
+ATTACH TABLE [db.]table_name;
+```
+
+4. Restaura los metadatos de la réplica:
+
+```sql
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+5. Sincronícese con las demás réplicas:
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+6. Verifique `system.detached_parts` en todas las réplicas después de la recuperación
+
+<Warning>
+  **Ejecute esto en todas las réplicas afectadas**
+
+  Si la corrupción afecta a varias réplicas, repita estos pasos en cada una de ellas de forma secuencial.
+</Warning>
+
+<Tip>
+  **Para toda la base de datos**
+
+  Si usa una base de datos Replicated, puede usar `SYSTEM DROP REPLICA ... FROM DATABASE db_name` como alternativa.
+</Tip>
+
+**Alternativa: uso del indicador force&#95;restore&#95;data**
+
+Para la recuperación automática de todas las tablas replicadas al iniciar el servidor:
+
+1. Detenga el servidor ClickHouse
+2. Cree el indicador de recuperación:
+
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+
+3. Inicie el servidor de ClickHouse
+4. El servidor eliminará automáticamente el indicador y restaurará todas las tablas replicadas
+5. Supervise los logs para seguir el progreso de la recuperación
+
+Este enfoque resulta útil cuando varias tablas necesitan recuperarse simultáneamente.
+
+***
+
+### 5. Reconstruir el clúster de Keeper {#rebuild-keeper-cluster}
+
+Debe seguir este proceso cuando:
+
+* No hay instantáneas, logs ni copias de seguridad válidos disponibles para la recuperación.
+* Necesita volver a crear todo el clúster de Keeper y sus metadatos.
+
+Siga los pasos a continuación para reconstruir el clúster de Keeper:
+
+1. Detenga por completo los clusters de ClickHouse y Keeper.
+2. Restablezca cada nodo de Keeper limpiando los directorios de instantáneas y logs.
+3. Inicialice un nodo de Keeper como líder y agregue los demás nodos de forma incremental.
+4. Vuelva a importar los metadatos si están disponibles en registros externos.
+
+<Warning>
+  **Proceso que requiere mucho tiempo**
+
+  Este proceso requiere mucho tiempo y conlleva el riesgo de una interrupción prolongada. Es necesario reconstruir por completo los datos.
+</Warning>
+
+***
+
+### 6. Eliminar nodos huérfanos de la instantánea durante el inicio {#remove-orphaned-nodes-on-startup}
+
+Un nodo *huérfano* es un nodo cuyo padre no está presente en la instantánea. Keeper se niega a cargar una
+instantánea de este tipo y registra en el log el mensaje `Failure to load from latest snapshot with index`.
+
+Siga este procedimiento cuando:
+
+* La instantánea presente exactamente este tipo de daño estructural, y
+* No haya disponible ninguna copia de seguridad válida ni ninguna instantánea anterior (las estrategias 1 y 2 son preferibles siempre que sean aplicables).
+
+Configure los dos parámetros siguientes en `<keeper_server>` y reinicie el nodo:
+
+```xml
+<keeper_server>
+    <remove_orphaned_nodes_on_startup>true</remove_orphaned_nodes_on_startup>
+    <digest_enabled>false</digest_enabled>
+</keeper_server>
+```
+
+<Note>
+  **Requiere el almacenamiento de nodos en memoria**
+
+  La limpieza solo está implementada en el almacenamiento de nodos en memoria. Si `use_lsmt_storage` está habilitado en
+  `<coordination_settings>`, Keeper se niega a iniciarse con `remove_orphaned_nodes_on_startup` configurado: deshabilite
+  `use_lsmt_storage` para el reinicio de recuperación y vuelva a habilitarlo tras un inicio correcto.
+</Note>
+
+A continuación, Keeper descarta los subárboles huérfanos y se inicia. La eliminación se registra en el log con nivel `WARNING`
+en dos líneas: una con el número total de nodos eliminados y las raíces de los subárboles huérfanos
+eliminados, y otra con las rutas ausentes de la instantánea que delimitan la región dañada. Los descendientes
+situados por debajo de esas raíces también se eliminan, pero no se enumeran individualmente.
+
+Tras comprobar la cola del log local, Keeper escribe el árbol reparado en un nuevo archivo de instantánea con el mismo
+índice de log antes de iniciar Raft. Las reparaciones completadas tienen prioridad sobre las copias anteriores con ese índice,
+de modo que una recuperación interrumpida puede reanudarse sin seleccionar la instantánea dañada. Los nuevos followers reciben
+la instantánea reparada, y en los reinicios posteriores
+ya no es necesario tener habilitada la eliminación de huérfanos. La instantánea original y las copias con el mismo índice se conservan
+con el prefijo de nombre de archivo `orphaned_`; estos archivos quedan excluidos de la carga de instantáneas y de la retención
+automática. Consérvelos para el diagnóstico y elimínelos manualmente cuando ya no los necesite. El
+reinicio de recuperación requiere espacio en disco adicional para la instantánea reparada y la copia de seguridad de la original.
+Si falla la escritura de la instantánea reparada, la sincronización de los cambios en el directorio local o la conservación de los originales,
+Keeper se niega a iniciarse. En el siguiente inicio se completa cualquier archivado que haya quedado interrumpido.
+
+<Warning>
+  **Solo repara el estado local**
+
+  Esto elimina nodos de la copia de los datos de *este* nodo. Los pares que aún conserven esos nodos divergirán
+  de él y, con `digest_enabled` establecido en `false`, nada detectará esa divergencia posteriormente. Trate esto
+  como una recuperación de un solo nodo o aplíquelo a todos los nodos del cluster. Restablezca ambas configuraciones a sus
+  valores predeterminados una vez que el nodo esté en funcionamiento.
+</Warning>
+
+Keeper se niega deliberadamente a iniciarse si una entrada de log local posterior a la instantánea hace referencia a la región
+dañada: un nodo eliminado, cualquier elemento por debajo de él o el padre directo de un subárbol eliminado. El padre directo
+cuenta como conflicto porque su conjunto de hijos ya no coincide con el árbol a partir del cual se escribió el log,
+por lo que incluso una entrada que solo lo afecte a él —incluida la creación o eliminación de un nodo *hermano* bajo él, que
+actualiza sus contadores de hijos reparados— podría reproducirse de forma distinta. Las entradas que solo consultan la
+existencia, la versión o los identificadores de modificación del padre, como un `Check`, un `CheckNotExists`, un `CheckStat` que no compara ni `numChildren` ni `cversion`,
+un `Set` o `SetACL` que solo reescribe los datos o la ACL propios del padre, o
+los watches de datos, de hijos y de existencia que un client vuelve a registrar tras una reconexión, no se ven afectadas y no
+bloquean la recuperación; los watches persistentes que un client vuelve a registrar nunca consultan el árbol y, por tanto, nunca la bloquean.
+Los nodos situados más arriba en la cadena no
+se ven afectados: conservan exactamente los mismos datos, versión e hijos que en un par sano, por lo que una entrada que
+solo afecte a uno de esos nodos se reproduce de forma idéntica y no bloquea la recuperación. La excepción es una entrada que
+recorre todo el subárbol bajo su ruta, como una eliminación recursiva o una enumeración recursiva: estas sí
+ven los nodos eliminados y generan conflicto a cualquier altura, salvo que Keeper rechace la solicitud antes de consultar
+el árbol (por ejemplo, una eliminación recursiva de `/`). Lo mismo ocurre con el cierre de una sesión
+(`Close`) en la cola del log cuando esa sesión era propietaria de un nodo efímero eliminado, o es propietaria de un nodo efímero superviviente
+directamente bajo dicho padre: al cerrar la sesión se eliminan sus nodos efímeros y se actualizan los contadores
+de sus padres. Reproducir cualquiera de estas entradas sobre el
+árbol reparado produciría silenciosamente un estado diferente. En ese caso, recupere el nodo a partir de un par
+sano: deténgalo, vacíe su directorio de coordinación y deje que se vuelva a sincronizar desde el líder, o utilice
+la estrategia 1 o 2.

@@ -1,0 +1,23 @@
+=== Test 1: Multi-level nested Tuple aggregation ===
+Nested Tuple test - with FINAL:
+1	350	100	5	3	third	3	7	15.333333333333334
+2	1000	500	100	1	alpha_last	1	8	5.5
+Nested Tuple test - after OPTIMIZE:
+1	350	100	5	3	third	3	7	15.333333333333334
+2	1000	500	100	1	alpha_last	1	8	5.5
+=== Test 2: ColumnConst with Tuple aggregation ===
+ColumnConst Tuple test - WITH FINAL:
+0	300	75	2	another_const	8
+1	300	75	2	another_const	6
+2	300	75	2	another_const	6
+ColumnConst Tuple test - after OPTIMIZE:
+0	300	75	2	another_const	8
+1	300	75	2	another_const	6
+2	300	75	2	another_const	6
+=== Test 3: Nested Tuple before sorting key ===
+Nested Tuple before sort key - with FINAL:
+1	250	60	2
+2	450	90	2
+Nested Tuple before sort key - after OPTIMIZE:
+1	250	60	2
+2	450	90	2

@@ -1,0 +1,12 @@
+no row matches by default (expect 0):
+0
+every row matches with the setting flipped, the verdict above must not be reused (expect 499999500000):
+499999500000
+the same without the cache (expect 499999500000):
+499999500000
+repeated default query (expect 0):
+0
+first default query was a cache miss (expect 1):
+1
+repeated default query was a cache hit (expect 1):
+1

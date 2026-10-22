@@ -1,0 +1,4 @@
+scalar over nested subquery, coordinators: 0
+scalar over nested union, coordinators: 0
+top-level query uses parallel replicas: 1
+scalar results correct: 1

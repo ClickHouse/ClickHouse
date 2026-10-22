@@ -1,0 +1,24 @@
+{
+  "directory": "none",
+  "group": "포맷 설정",
+  "pages": [
+    "ko/reference/settings/formats/bool",
+    "ko/reference/settings/formats/date-time",
+    "ko/reference/settings/formats/format",
+    "ko/reference/settings/formats/format-avro",
+    "ko/reference/settings/formats/format-binary",
+    "ko/reference/settings/formats/format-capn",
+    "ko/reference/settings/formats/format-csv",
+    "ko/reference/settings/formats/format-custom",
+    "ko/reference/settings/formats/format-regexp",
+    "ko/reference/settings/formats/format-schema",
+    "ko/reference/settings/formats/format-template",
+    "ko/reference/settings/formats/input-format",
+    "ko/reference/settings/formats/output-format",
+    "ko/reference/settings/formats/schema-inference",
+    "ko/reference/settings/formats/show-create",
+    "ko/reference/settings/formats/type-json",
+    "ko/reference/settings/formats/other"
+  ],
+  "root": "ko/reference/settings/formats"
+}

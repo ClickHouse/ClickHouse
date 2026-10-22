@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 -- test that EXPLAIN shows deferred filter information for apply_prewhere_after_final / apply_row_policy_after_final
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 DROP ROW POLICY IF EXISTS pol1 ON tab;
@@ -13,6 +14,7 @@ INSERT INTO tab SELECT 1, 'ccc', 2;
 CREATE ROW POLICY pol1 ON tab USING y != 'ccc' TO ALL;
 
 SET enable_analyzer = 1;
+SET read_in_order_use_virtual_row = 1;
 
 SELECT '= full plan: both deferred =';
 EXPLAIN actions=1 SELECT * FROM tab FINAL PREWHERE y != 'ccc' ORDER BY x

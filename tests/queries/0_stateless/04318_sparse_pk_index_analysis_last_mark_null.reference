@@ -1,0 +1,50 @@
+-- { echoOn }
+
+EXPLAIN projections = 1
+SELECT count() FROM t_sparse_pk_last_mark_null
+WHERE a IS NULL AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, optimize_use_implicit_projections = 1;
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_last_mark_null)
+        Projections:
+          Name: _exact_count_projection
+            Description: Exact count optimization is applied: 1 ranges with exact row count 4. Filtered parts: 0
+            Condition: and((b isNull), (a isNull))
+            Search Algorithm: generic exclusion search
+            Parts: 1
+            Marks: 2
+            Ranges: 1
+            Rows: 4
+            Filtered Parts: 0
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count() FROM t_sparse_pk_last_mark_null
+WHERE a IS NULL AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, optimize_use_implicit_projections = 1;
+4
+EXPLAIN projections = 1
+SELECT count() FROM t_sparse_pk_last_mark_null
+WHERE a IS NULL AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, optimize_use_implicit_projections = 1;
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_last_mark_null)
+        Projections:
+          Name: _exact_count_projection
+            Description: Exact count optimization is applied: 1 ranges with exact row count 4. Filtered parts: 0
+            Condition: and((b isNull), (a isNull))
+            Search Algorithm: generic exclusion search
+            Parts: 1
+            Marks: 2
+            Ranges: 1
+            Rows: 4
+            Filtered Parts: 0
+    ReadFromPreparedSource (_exact_count_projection)
+SELECT count() FROM t_sparse_pk_last_mark_null
+WHERE a IS NULL AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, optimize_use_implicit_projections = 1;
+4

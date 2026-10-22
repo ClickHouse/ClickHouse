@@ -1,9 +1,7 @@
-import time
 import uuid
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 
@@ -84,11 +82,17 @@ def test_disable_insertion_and_mutation(started_cluster):
     writing_node.query("ALTER TABLE my_table delete where 1")
     writing_node.query("ALTER table my_table update value = 'no hello' where 1")
 
-    reading_node.query("ALTER TABLE my_table ADD COLUMN new_column UInt64")
+    # Wait for all replicas to apply the metadata change (alter_sync = 2) so that
+    # the following reads on writing_node do not race the metadata replication.
+    reading_node.query(
+        "ALTER TABLE my_table ADD COLUMN new_column UInt64 SETTINGS alter_sync = 2"
+    )
     writing_node.query("SELECT new_column from my_table")
     reading_node.query("SELECT new_column from my_table")
 
-    reading_node.query("ALter Table my_table MODIFY COLUMN new_column String")
+    reading_node.query(
+        "ALter Table my_table MODIFY COLUMN new_column String SETTINGS alter_sync = 2"
+    )
 
     assert "new_column\tString" in reading_node.query("DESC my_table")
 

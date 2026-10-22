@@ -1,0 +1,13 @@
+--- url('cos://...') is not dispatched to S3 (rejected as a plain-URL scheme) ---
+rejected
+--- url('cosn://...') is not dispatched to S3 (rejected as a plain-URL scheme) ---
+rejected
+--- url('obs://...') is not dispatched to S3 (rejected as a plain-URL scheme) ---
+rejected
+--- url('eos://...') is not dispatched to S3 (rejected as a plain-URL scheme) ---
+rejected
+--- url('s3express://...') is not dispatched to S3 (rejected as a plain-URL scheme) ---
+rejected
+--- ENGINE = URL('obs://...') is created as a plain URL engine, not S3 ---
+URL
+rejected

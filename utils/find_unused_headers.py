@@ -24,7 +24,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import shutil
 from pathlib import Path
 from typing import List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed

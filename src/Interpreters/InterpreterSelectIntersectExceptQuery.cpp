@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -24,11 +25,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsOverflowMode distinct_overflow_mode;
-    extern const SettingsUInt64 max_rows_in_distinct;
-    extern const SettingsUInt64 max_bytes_in_distinct;
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool exact_rows_before_limit;
 }
 
 namespace ErrorCodes
@@ -107,14 +105,19 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
 {
+    /// Each branch must plan in its own settings scope: a branch may disable parallel replicas
+    /// for itself (e.g. on FINAL), and that must not retroactively change a sibling's already
+    /// decided processing stage through a shared mutable context.
+    auto child_context = Context::createCopy(context);
+
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, child_context, options);
 
     if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, child_context, options);
 
     if (ast_ptr_->as<ASTSelectIntersectExceptQuery>())
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, child_context, options);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }
@@ -151,7 +154,10 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
+    auto step = std::make_unique<IntersectOrExceptStep>(
+        std::move(headers),
+        final_operator,
+        getEffectiveMaxThreads(settings));
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -159,11 +165,9 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         || query.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
     {
         /// Add distinct transform
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            DistinctStep::Settings(settings),
             0,
             result_header->getNames(),
             false);
@@ -197,6 +201,7 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
+void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory);
 void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

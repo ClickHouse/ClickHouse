@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'C#'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
+slug: /integrations/csharp
+description: 'Les clients C# officiels pour se connecter à ClickHouse via HTTP ou le protocole TCP natif.'
+title: 'Clients C# officiels de ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+Les clients C# officiels se connectent à ClickHouse via HTTP ou le protocole TCP natif.
+Les deux clients sont disponibles dans le paquet NuGet `ClickHouse.Driver`.
+
+## HTTP {#http}
+
+Le client HTTP fournit l&#39;API `ClickHouseClient` de haut niveau et thread-safe, ainsi que l&#39;API ADO.NET
+utilisée par les ORM. Il cible .NET 6.0 et versions ultérieures, et est recommandé pour la plupart des applications.
+
+Utilisez le client HTTP si vous avez besoin :
+
+* d&#39;ADO.NET ou d&#39;un ORM ;
+* d&#39;entrées et de sorties aux formats CSV, JSONEachRow, Parquet ou en flux brut ;
+* d&#39;une authentification bearer ou d&#39;en-têtes HTTP personnalisés ;
+* d&#39;une résolution personnalisée des types de paramètres, d&#39;un formatage personnalisé des paramètres ou d&#39;une conversion personnalisée à la lecture ;
+* d&#39;une base de données ou d&#39;un rôle spécifique à chaque requête ;
+* de meilleures performances avec `JSON`. Le client TCP ne peut transférer les valeurs `JSON` que sous forme de texte.
+
+[Consultez la documentation du client HTTP](./http).
+
+## TCP natif {#native-tcp}
+
+Le client TCP natif est expérimental et son API publique est susceptible d&#39;évoluer dans une prochaine version. Il fournit
+l&#39;API `ClickHouseTcpClient` pour la lecture de blocs en colonnes, la compression native, les connexions mutualisées et
+les sessions épinglées. Il cible .NET 8.0 et les versions ultérieures.
+
+Utilisez le client TCP natif lorsque vous avez besoin :
+
+* de meilleures performances, en particulier lors du traitement de données en colonnes ;
+* de blocs de données en colonnes ;
+* de connexions persistantes ;
+* de sessions épinglées via `OpenSessionAsync` ;
+* de fonctions de rappel pour la progression, le profil, le journal, les totaux et les valeurs extrêmes ;
+* de la propagation du contexte de trace W3C vers ClickHouse.
+
+[Consultez la documentation du client TCP natif](./tcp).

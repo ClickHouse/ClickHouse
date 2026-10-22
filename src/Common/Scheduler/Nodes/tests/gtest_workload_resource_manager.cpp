@@ -2,27 +2,50 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <utility>
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
 #include <Common/EventRateMeter.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
+#include <Common/WakeupFd.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
+#include <Common/Scheduler/ISpaceSharedNode.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
-#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/Scheduler/WorkloadResourceManager.h>
+#include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
+#include <base/getMemoryAmount.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ErrorCodes.h>
 
 #include <base/scope_guard.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/IProcessor.h>
+#include <Processors/SpillableAdapter.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
@@ -34,7 +57,7 @@
 #include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserDropResourceQuery.h>
 
-#if 0
+#ifdef SCHEDULER_DEBUG
 #include <iostream>
 #include <base/getThreadId.h>
 #define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
@@ -43,8 +66,15 @@
 #define DBG_PRINT(...) UNUSED(__VA_ARGS__)
 #endif
 
-using namespace DB;
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int SERVER_OVERLOADED;
+    extern const int RESOURCE_LIMIT_EXCEEDED;
+    extern const int INVALID_SCHEDULER_NODE;
+}
 
+using namespace DB;
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
@@ -60,6 +90,7 @@ namespace CurrentMetrics
     extern const Metric ConcurrencyControlPreempted;
 }
 
+
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
@@ -72,6 +103,13 @@ public:
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override
     {
         WorkloadEntityStorageBase::loadEntities(config);
+    }
+
+    // Drive the config/Keeper load path (setLocalEntities) directly from SQL text, the way
+    // WorkloadEntityConfigStorage / WorkloadEntityKeeperStorage do (parse -> setLocalEntities).
+    void loadFromString(const String & data)
+    {
+        setLocalEntities(parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")));
     }
 
     void executeQuery(const String & query)
@@ -187,7 +225,9 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     explicit ResourceTest(size_t thread_count = 1)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
-        manager = std::make_shared<WorkloadResourceManager>(storage);
+        /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
+        manager = std::make_shared<WorkloadResourceManager>(
+            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
     }
 
     void query(const String & query_str)
@@ -286,6 +326,20 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
             func2(link1, link2);
         });
     }
+
+    template <class Func>
+    void executeFromScheduler(const String & resource, Func func)
+    {
+        bool done = false;
+        manager->forEachNode([&, func2 = std::move(func)] (const String & r, const String &, ISchedulerNode *) mutable
+        {
+            if (!done && r == resource)
+            {
+                func2();
+                done = true;
+            }
+        });
+    }
 };
 
 using TestGuard = ResourceTest::Guard;
@@ -315,6 +369,104 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
         ResourceGuard g_c(ResourceGuard::Metrics::getIORead(), c_b->get("res1"));
         g_b.consume(2);
     }
+}
+
+// Multiple root workloads (workloads created without a parent): each becomes a child of the
+// resource's implicit anonymous root workload, so several SQL roots coexist and are scheduled
+// among each other.
+TEST(SchedulerWorkloadResourceManager, MultipleRoots)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD a_child IN root_a SETTINGS weight = 3");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD b_child IN root_b");
+
+    ClassifierPtr c_a = t.manager->acquire("a_child");
+    ClassifierPtr c_b = t.manager->acquire("b_child");
+
+    // Both independent trees consume the shared resource.
+    for (int i = 0; i < 10; i++)
+    {
+        ResourceGuard g_a(ResourceGuard::Metrics::getIOWrite(), c_a->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_a.lock();
+        g_a.consume(1);
+        g_a.unlock();
+
+        ResourceGuard g_b(ResourceGuard::Metrics::getIOWrite(), c_b->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_b.lock();
+        g_b.consume(1);
+        g_b.unlock();
+    }
+
+    // Dropping one whole tree leaves the other working.
+    t.query("DROP WORKLOAD a_child");
+    t.query("DROP WORKLOAD root_a");
+
+    ClassifierPtr c_b2 = t.manager->acquire("b_child");
+    ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), c_b2->get("res1"), 1, ResourceGuard::Lock::Defer);
+    g.lock();
+    g.consume(1);
+    g.unlock();
+}
+
+// Changing the priority of a parentless workload via CREATE OR REPLACE re-positions it among the
+// implicit root's children: two equal-priority parentless workloads share one fair branch, and
+// giving one a distinct priority introduces a "prio" policy node under the implicit root.
+TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    auto has_priority_node = [&]
+    {
+        bool seen = false;
+        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
+        {
+            if (path.contains("/prio/"))
+                seen = true;
+        });
+        return seen;
+    };
+
+    // Equal priority: both parentless workloads sit under one fair branch, no priority node.
+    EXPECT_FALSE(has_priority_node());
+
+    // Distinct priority must re-position b under a newly created priority node.
+    t.query("CREATE OR REPLACE WORKLOAD b SETTINGS priority = 1");
+    EXPECT_TRUE(has_priority_node())
+        << "priority change on a parentless workload was not re-positioned under the implicit root";
+}
+
+// The implicit anonymous root workload is exposed by forEachNode so system.scheduler is complete:
+// it has an empty basename and renders at the root path "/".
+TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    bool seen_root = false;
+    String root_type;
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (path == "/")
+        {
+            seen_root = true;
+            root_type = String(node->getTypeName());
+        }
+    });
+    EXPECT_TRUE(seen_root)
+        << "implicit root workload was not exposed in system.scheduler introspection";
+    EXPECT_EQ(root_type, "workload")
+        << "the node exposed at \"/\" should be the implicit root workload";
 }
 
 TEST(SchedulerWorkloadResourceManager, Fairness)
@@ -375,6 +527,34 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
     t.wait(); // Wait for threads to finish before destructing locals
 }
 
+// Regression: `ConstraintsBranch::updateSchedulingSettings` must keep the
+// constraint chain (`throttler -> semaphore -> branch_root`) intact when topology
+// changes. Adding a semaphore to a workload that already has a throttler must
+// leave the semaphore reattached under the throttler. Without the fix the
+// throttler's child becomes null and the new `semaphore -> queue` subtree is
+// orphaned (parent == nullptr), so requests submitted to that workload can never
+// be admitted.
+TEST(SchedulerWorkloadResourceManager, UpdateAddSemaphoreToWorkloadWithThrottler)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE io (WRITE DISK d, READ DISK d)");
+    // Throttler only — semaphore not present yet.
+    t.query("CREATE WORKLOAD all SETTINGS max_bytes_per_second = 1000000");
+    // Add semaphore while the throttler is still there.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_bytes_per_second = 1000000, max_io_requests = 5");
+
+    ISchedulerNode * semaphore = nullptr;
+    t.manager->forEachNode([&](const String &, const String &, ISchedulerNode * node)
+    {
+        if (node->basename == "semaphore")
+            semaphore = node;
+    });
+    ASSERT_NE(semaphore, nullptr);
+    EXPECT_NE(semaphore->parent, nullptr)
+        << "semaphore subtree is orphaned (semaphore->parent == nullptr) after adding a semaphore while a throttler is present";
+}
+
 TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 {
     ResourceTest t;
@@ -403,11 +583,94 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
         g.waitFailed("is about to be destructed");
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
     t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression: when `ResourceGuard`'s Default-lock constructor's `wait()` throws (the scheduler
+// failed the request), the thread-local `Request` must be reset back to `Finished`. Otherwise
+// the next `ResourceGuard` on the same thread chasserts in `enqueue` because the request is
+// still in `Dequeued` state with `exception` set.
+TEST(SchedulerWorkloadResourceManager, DropWorkloadFailsPendingRequests)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
+        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        {
+            TestGuard g(t, link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // 2nd resource request is enqueued
+            g.waitFailed("is about to be destructed");
+        }
+        // The dropped workload's queue is kept alive by this classifier, but it must not accept new requests.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+    });
+
+    sync_before_drop.arrive_and_wait();
+    t.query("DROP WORKLOAD intermediate");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Holder keeps the only slot busy so the second request blocks in `wait()`.
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    sync_before_enqueue.arrive_and_wait();
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        sync_before_drop.arrive_and_wait();
+        // Default-lock guard: blocks in the ctor's `wait()`. The queue purge below fails the
+        // request, so the ctor throws.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+        // Reusing the thread-local `Request` must NOT trip the `state == Finished` chassert.
+        // With the fix the call cleanly throws (queue is now `is_not_usable`); without the fix
+        // it would SIGABRT first.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+    });
+
+    sync_before_drop.arrive_and_wait();
+    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's RequestQueue
+    sync_after_drop.arrive_and_wait();
+    t.wait();
 }
 
 TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
@@ -442,9 +705,128 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
         });
     }
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression test: a thread reuses the `ResourceGuard::Request::local()` thread-local instance across requests.
+// After a request fails (queue destroyed), a subsequent request granted on the same thread must not observe the
+// previous request's stale `exception` and spuriously throw `RESOURCE_ACCESS_DENIED`.
+// The failing request uses the `Lock::Defer` path here, so `~ResourceGuard()` runs and brings the request back to
+// the `Finished` state; only the stale `exception` would leak without the fix in `Request::enqueue()`.
+TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGranted)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Leader holds the only `production` slot so the worker's request stays queued and is failed by the drop.
+    t.async("production", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("production", "res1", [&] (ResourceLink prod_link)
+    {
+        // A healthy resource link in a sibling workload that is not affected by dropping `production`'s queue.
+        ClassifierPtr c_analytics = t.manager->acquire("analytics");
+        ResourceLink analytics_link = c_analytics->get("res1");
+
+        {
+            TestGuard g(t, prod_link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // resource request is enqueued
+            g.waitFailed("is about to be destructed"); // request fails; `~g` finishes it but leaves a stale `exception`
+        }
+
+        // Reuse the thread-local `Request` for a request that is granted: it must not throw.
+        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
+        EXPECT_NO_THROW({
+            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
+            g2.consume(1);
+            g2.unlock(1);
+        });
+    });
+
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
+    t.query("CREATE WORKLOAD child IN production");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression test for the `Lock::Default` failure path: when `ResourceGuard`'s constructor throws (the request
+// failed in `enqueue()` or `wait()`), `~ResourceGuard()` does not run, so the reused thread-local `Request` must be
+// restored to the `Finished` state by the constructor itself. Otherwise the next request enqueued on the same thread
+// would hit `chassert(state == Finished)`.
+TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGranted)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
+
+    std::barrier<std::__empty_completion> sync_leader_ready(2);
+    std::barrier<std::__empty_completion> sync_worker_ready(2);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Leader holds the only `production` slot so the worker's request can never be granted before the drop.
+    t.async("production", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_leader_ready.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    t.async("production", "res1", [&] (ResourceLink prod_link)
+    {
+        ClassifierPtr c_analytics = t.manager->acquire("analytics");
+        ResourceLink analytics_link = c_analytics->get("res1");
+
+        sync_worker_ready.arrive_and_wait(); // about to enqueue the failing request
+
+        // `Lock::Default` enqueues and waits inside the constructor. The request is failed by the drop (either it is
+        // queued and `wait()` throws `RESOURCE_ACCESS_DENIED`, or the queue is already gone and `enqueue()` throws
+        // `INVALID_SCHEDULER_NODE`); in both cases the constructor throws and `~ResourceGuard()` does not run.
+        try
+        {
+            ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), prod_link, 1, ResourceGuard::Lock::Default);
+            FAIL() << "expected the request on a dropped queue to fail";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_TRUE(e.code() == ErrorCodes::RESOURCE_ACCESS_DENIED || e.code() == ErrorCodes::INVALID_SCHEDULER_NODE);
+        }
+
+        // Reuse the thread-local `Request` for a request that is granted: it must not abort or throw.
+        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
+        EXPECT_NO_THROW({
+            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
+            g2.consume(1);
+            g2.unlock(1);
+        });
+    });
+
+    sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
+    sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
+    t.query("CREATE WORKLOAD child IN production"); // triggers RequestQueue destruction, failing the worker's request
+    sync_after_drop.arrive_and_wait(); // release the leader
 
     t.wait(); // Wait for threads to finish before destructing locals
 }
@@ -488,7 +870,7 @@ public:
 private:
     UInt64 last_update_ns = 0;
     std::atomic<UInt64> consumed{0};
-    char padding[64]; // to avoid false sharing
+    char padding[64] = {}; // to avoid false sharing
 };
 
 class ThreadMetricsGroup : public boost::noncopyable
@@ -740,6 +1122,10 @@ struct TestQuery {
     UInt64 work_left = UInt64(-1);
     String name;
 
+    // Park control (to emulate worker threads entering a non-CPU wait, e.g. blocking I/O).
+    bool park_requested = false;
+    size_t parked_threads = 0;
+
     // Only used if preemption is enabled
     struct ThreadStatus
     {
@@ -834,6 +1220,53 @@ struct TestQuery {
             }
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
+    }
+
+    // Ask all worker threads to park their CPU lease (emulate entering a blocking-I/O wait).
+    void requestPark()
+    {
+        std::unique_lock lock{mutex};
+        park_requested = true;
+        cv.notify_all();
+    }
+
+    // Let parked worker threads unpark and resume.
+    void releasePark()
+    {
+        std::unique_lock lock{mutex};
+        park_requested = false;
+        cv.notify_all();
+    }
+
+    // Wait until at least `count` worker threads have parked their lease.
+    void waitParkedThreads(size_t count)
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [=, this] { return parked_threads >= count || query_is_finished; });
+    }
+
+    // If a park was requested, park this worker's lease (freeing its CPU slot), block until the
+    // park is released, then unpark. Master thread (0) is noncompeting and never parks here.
+    void maybePark(ISlotLease * cpu_lease, size_t thread_num)
+    {
+        if (!cpu_lease || thread_num == 0)
+            return;
+        {
+            std::unique_lock lock{mutex};
+            if (!park_requested || query_is_finished)
+                return;
+        }
+        if (!cpu_lease->park()) // free the CPU slot (the give-back happens here)
+            return;             // no-op (e.g. shutting down) -> do not unpark
+        {
+            std::unique_lock lock{mutex};
+            ++parked_threads;
+            cv.notify_all();
+            cv.wait(lock, [this] { return !park_requested || query_is_finished; });
+            --parked_threads;
+            cv.notify_all();
+        }
+        cpu_lease->unpark(); // re-acquire the slot (borrow)
     }
 
     // Returns unique thread number
@@ -933,6 +1366,7 @@ struct TestQuery {
         {
             if (!controlConcurrency(cpu_lease))
                 break;
+            maybePark(cpu_lease, thread_num);
             if (!doWork(thread_num))
                 break;
         }
@@ -1064,6 +1498,33 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
         // Q0 - is done, Q1 still have pending resource requests, but we cancel it
         queries.clear();
     }
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
+{
+    // Regression: a single query occupies all its slots and parks its workers all at once (a long
+    // sequential phase). Parking must not push `granted` positive while every slot_id is leased —
+    // that would make the executor acquire an out-of-range slot (OOB in its per-slot arrays). The
+    // query must finish cleanly.
+    ResourceTest t;
+
+    // Target mode (master and worker share one resource), the only mode where parking is enabled.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
+
+    auto q = std::make_shared<TestQuery>(t);
+    q->start(TestQuery::AllocateLease, "all", 4); // master + 3 workers (all competing)
+    q->waitStartedThreads(4);
+
+    // All three worker threads park simultaneously. With the old accounting this made `granted > 0`
+    // while every slot_id was leased -> over-acquire -> out-of-range slot_id.
+    q->requestPark();
+    q->waitParkedThreads(3);
+
+    q->releasePark();
+    q.reset();
 
     t.wait();
 }
@@ -1291,22 +1752,22 @@ TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
     EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
-auto getAcquired()
+static auto getAcquired()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlAcquired);
 }
 
-auto getPreempted()
+static auto getPreempted()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }
 
-struct EventCounter
+struct ProfileEventCounter
 {
     ProfileEvents::Event event;
     size_t initial_value;
 
-    explicit EventCounter(ProfileEvents::Event event_)
+    explicit ProfileEventCounter(ProfileEvents::Event event_)
         : event(event_)
     {
         initial_value = getValue();
@@ -1320,7 +1781,7 @@ struct EventCounter
 private:
     size_t getValue() const
     {
-        return ProfileEvents::global_counters[event].load(std::memory_order_relaxed);
+        return ProfileEvents::global_counters[event];
     }
 };
 
@@ -1555,7 +2016,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingDownscaling)
         queries[0]->waitStartedThreads(8);
         while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
         DBG_PRINT("--- Q1 ---");
-        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
         queries[1]->start(TestQuery::AllocateLease, "B", 8);
         DBG_PRINT("--- Wait downscaling ---");
         // Wait 3 threads of Q0 to became preempted and downscaled.
@@ -1589,7 +2050,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
     {
         while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
         DBG_PRINT("--- Q1 ---");
-        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
         queries[1]->start(TestQuery::AllocateLease, "B", 8);
         DBG_PRINT("--- Wait downscaling ---");
         // Wait 3 threads of Q0 to became preempted and downscaled.
@@ -1597,7 +2058,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
         // to run one more thread than slots allocated as long as this thread does not consume too much resources.
         while (downscales.count() < 3) std::this_thread::yield();
         DBG_PRINT("--- Wait upscaling ---");
-        EventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
+        ProfileEventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
         queries[1].reset(); // Release all slots of Q1 to allow Q0 to upscale
         while (upscales.count() < 3) std::this_thread::yield();
         queries[1] = std::make_shared<TestQuery>(t); // Recreate Q1 for the next iteration
@@ -1710,4 +2171,2773 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairn
     }
 
     t.wait();
+}
+
+struct TestAllocation : public ResourceAllocation
+{
+public:
+    TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size, std::function<void()> approved_callback_ = {})
+        : ResourceAllocation(*link.allocation_queue, name_)
+    {
+        chassert(link.allocation_queue);
+        DBG_PRINT("{}: New allocation, initial size = {}", id, initial_size);
+        // Set fields before making the allocation visible to the scheduler thread.
+        // No lock needed because the object is not yet visible to other threads.
+        real_size = initial_size;
+        approved_callback = approved_callback_;
+        if (initial_size > 0)
+            increase_enqueued = true;
+        // After this call, the scheduler thread may call increaseApproved() at any time.
+        // Do not hold `mutex` here to respect lock ordering (queue.mutex before allocation.mutex).
+        queue.insertAllocation(*this, initial_size);
+    }
+
+    ~TestAllocation() override
+    {
+        {
+            std::unique_lock lock(mutex);
+            if (removed)
+            {
+                chassert(allocated_size == 0);
+                DBG_PRINT("{}: Destroying removed allocation", id);
+                return;
+            }
+            if (fail_reason)
+            {
+                DBG_PRINT("{}: Destroying failed allocation", id);
+                return;
+            }
+            real_size = 0;
+            DBG_PRINT("{}: Removing allocation... killed = {}", id, kill_reason ? "1" : "0");
+        }
+
+        // removeAllocation handles everything on the scheduler thread:
+        // cancels any pending increase, prepares decrease to zero.
+        queue.removeAllocation(*this);
+
+        {
+            std::unique_lock lock(mutex);
+            cv.wait(lock, [this]() { return removed || fail_reason; });
+            DBG_PRINT("{}: Allocation removed", id);
+        }
+    }
+
+    void setSize(ResourceCost new_real_size, std::function<void()> approved_callback_ = {})
+    {
+        ResourceCost pending_increase = 0;
+        ResourceCost pending_decrease = 0;
+        {
+            std::unique_lock lock(mutex);
+            DBG_PRINT("{}: Set size from {} to {}", id, real_size, new_real_size);
+            real_size = new_real_size;
+            approved_callback = approved_callback_;
+            if (!fail_reason && real_size > allocated_size && !increase_enqueued)
+            {
+                DBG_PRINT("{}: Increase allocation by {}", id, real_size - allocated_size);
+                chassert(!removed);
+                pending_increase = real_size - allocated_size;
+                increase_enqueued = true;
+            }
+            else if (!fail_reason && real_size < allocated_size && !decrease_enqueued)
+            {
+                DBG_PRINT("{}: Decrease allocation by {}", id, allocated_size - real_size);
+                chassert(!removed);
+                pending_decrease = allocated_size - real_size;
+                decrease_enqueued = true;
+            }
+            else if (real_size == allocated_size)
+            {
+                DBG_PRINT("{}: Synced at size {}", id, real_size);
+                cv.notify_all();
+            }
+        }
+
+        // Called outside mutex to avoid lock-order-inversion with AllocationQueue::mutex.
+        if (pending_increase > 0)
+            queue.increaseAllocation(*this, pending_increase);
+        else if (pending_decrease > 0)
+            queue.decreaseAllocation(*this, pending_decrease);
+    }
+
+    void waitSync()
+    {
+        while (true)
+        {
+            ResourceCost pending_increase = 0;
+            ResourceCost pending_decrease = 0;
+            {
+                std::unique_lock lock(mutex);
+                cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued); });
+                if (fail_reason)
+                    std::rethrow_exception(fail_reason);
+                if (real_size == allocated_size)
+                {
+                    DBG_PRINT("{}: Waiting done. size = {}", id, allocated_size);
+                    return;
+                }
+                // Re-enqueue to converge real_size and allocated_size
+                if (real_size > allocated_size)
+                {
+                    pending_increase = real_size - allocated_size;
+                    increase_enqueued = true;
+                }
+                else
+                {
+                    pending_decrease = allocated_size - real_size;
+                    decrease_enqueued = true;
+                }
+            }
+
+            if (pending_increase > 0)
+                queue.increaseAllocation(*this, pending_increase);
+            else if (pending_decrease > 0)
+                queue.decreaseAllocation(*this, pending_decrease);
+        }
+    }
+
+    void waitKilled()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return kill_reason; });
+        DBG_PRINT("{}: Waiting killed done. size = {}. failed = {}. killed = {}", id, allocated_size, fail_reason ? "1" : "0", kill_reason ? "1" : "0");
+        ASSERT_EQ(kill_reason != nullptr, true);
+    }
+
+    void throwReason()
+    {
+        std::unique_lock lock(mutex);
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+        if (kill_reason)
+            std::rethrow_exception(kill_reason);
+    }
+
+    void assertIncreaseEnqueued()
+    {
+        std::unique_lock lock(mutex);
+        ASSERT_EQ(increase_enqueued, true);
+    }
+
+    /// Reports the absolute reclaimable total to the scheduler (advisory). Called outside `mutex` to
+    /// respect lock ordering with AllocationQueue::mutex.
+    void reportReclaimable(ResourceCost total)
+    {
+        queue.setReclaimable(*this, total);
+    }
+
+    void finishSpill(ResourceCost settled_bytes, ResourceCost total)
+    {
+        queue.finishSpill(*this, settled_bytes, total);
+    }
+
+    void waitSpilled(size_t n = 1)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return spills >= n; });
+    }
+
+    size_t spillCount()
+    {
+        std::unique_lock lock(mutex);
+        return spills;
+    }
+
+    ResourceCost lastSpillAtLeast()
+    {
+        std::unique_lock lock(mutex);
+        return last_spill_at_least;
+    }
+
+private: // interaction with the scheduler thread
+    void killAllocation(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        DBG_PRINT("{}: Kill allocation at size = {}", id, allocated_size);
+        kill_reason = reason;
+        cv.notify_all();
+    }
+
+    void spillAllocation(ResourceCost additional_bytes) override
+    {
+        std::unique_lock lock(mutex);
+        EXPECT_GT(additional_bytes, 0);
+        ++spills;
+        last_spill_at_least = additional_bytes;
+        cv.notify_all();
+    }
+
+    void increaseApproved(const IncreaseRequest & increase) override
+    {
+        std::unique_lock lock(mutex);
+        allocated_size += increase.size;
+        increase_enqueued = false;
+        DBG_PRINT("{}: Approved increase by {}. size = {}", id, increase.size, allocated_size);
+        cv.notify_all();
+        if (auto callback = std::exchange(approved_callback, {}))
+            callback();
+    }
+
+    void decreaseApproved(const DecreaseRequest & decrease) override
+    {
+        std::unique_lock lock(mutex);
+        chassert(allocated_size >= decrease.size);
+        allocated_size -= decrease.size;
+        decrease_enqueued = false;
+        if (decrease.removing_allocation)
+            removed = true;
+        DBG_PRINT("{}: Approved decrease by {}. size = {}", id, decrease.size, allocated_size);
+        cv.notify_all();
+        if (auto callback = std::exchange(approved_callback, {}))
+            callback();
+    }
+
+    void allocationFailed(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        DBG_PRINT("{}: Allocation failed", id);
+        fail_reason = reason;
+        removed = true;
+        allocated_size = 0;
+        cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge)
+    }
+
+    /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
+    /// Lock ordering: AllocationQueue::mutex -> TestAllocation::mutex.
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    std::function<void()> approved_callback;
+
+    std::exception_ptr kill_reason;
+    std::exception_ptr fail_reason;
+    bool increase_enqueued = false;
+    bool decrease_enqueued = false;
+    bool removed = false;
+    size_t spills = 0; // number of spillAllocation() signals received
+    ResourceCost last_spill_at_least = 0; // argument of the last spillAllocation() signal
+    ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
+    ResourceCost real_size = 0; // real size of the resource used by the allocation
+};
+
+static constexpr ResourceCost SKIP = -1;
+
+template <size_t count>
+struct TestAllocationArray
+{
+    ResourceTest & t;
+    String resource = "memory";
+
+    std::array<std::optional<TestAllocation>, count> allocations;
+    std::array<ResourceLink, count> links;
+    std::array<String, count> ids;
+    std::vector<ClassifierPtr> classifiers;
+
+    std::mutex mutex;
+    String approve_order;
+    bool save_ids = false;
+    bool save_mem = true;
+
+    explicit TestAllocationArray(ResourceTest & t_)
+        : t(t_)
+    {}
+
+    TestAllocationArray & saveIds(bool value = true)
+    {
+        std::unique_lock lock(mutex);
+        save_ids = value;
+        return *this;
+    }
+
+    TestAllocationArray & saveMem(bool value = true)
+    {
+        std::unique_lock lock(mutex);
+        save_mem = value;
+        return *this;
+    }
+
+    void onApprove(size_t i, ResourceCost mem)
+    {
+        std::unique_lock lock(mutex);
+        if (!approve_order.empty())
+            approve_order += " ";
+        if (save_ids)
+            approve_order += ids[i];
+        if (save_mem)
+            approve_order += std::to_string(mem);
+    }
+
+    TestAllocationArray & setWorkload(const String & workload, std::vector<size_t> indexes)
+    {
+        ClassifierPtr c = t.manager->acquire(workload);
+        ResourceLink link = c->get(resource);
+        for (size_t idx : indexes)
+        {
+            chassert(!links[idx]);
+            links[idx] = link;
+            ids[idx] = fmt::format("{}{}", static_cast<char>(std::toupper(workload[0])), idx);
+        }
+        classifiers.push_back(c);
+        return *this;
+    }
+
+    TestAllocationArray & setWorkloads(const std::array<String, count> & workloads)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            const String & workload = workloads[i];
+            ClassifierPtr c = t.manager->acquire(workload);
+            ResourceLink link = c->get(resource);
+            classifiers.push_back(c);
+            chassert(!links[i]);
+            links[i] = link;
+            ids[i] = fmt::format("{}{}", static_cast<char>(std::toupper(workload[0])), i);
+        }
+        return *this;
+    }
+
+    void insert(ResourceLink & link, const std::array<ResourceCost, count> & sizes)
+    {
+        // We run in the scheduler thread to emulate requests coming in specific order while delaying their processing
+        t.executeFromScheduler(resource, [&]
+        {
+            for (size_t i = 0; i < count; i++)
+            {
+                ResourceCost mem = sizes[i];
+                if (mem == SKIP)
+                    continue;
+                chassert(!links[i]);
+                links[i] = link;
+                ids[i] = fmt::format("A{}", i);
+                allocations[i].emplace(links[i], ids[i], mem, [this, i, mem] { onApprove(i, mem); });
+            }
+        });
+    }
+
+    void insert(const std::array<ResourceCost, count> & sizes)
+    {
+        // We run in the scheduler thread to emulate requests coming in specific order while delaying their processing
+        t.executeFromScheduler(resource, [&]
+        {
+            for (size_t i = 0; i < count; i++)
+            {
+                ResourceCost mem = sizes[i];
+                if (mem == SKIP)
+                    continue;
+                chassert(links[i]);
+                allocations[i].emplace(links[i], ids[i], mem, [this, i, mem] { onApprove(i, mem); });
+            }
+        });
+    }
+
+    void insertSequential(ResourceLink & link, const std::array<ResourceCost, count> & sizes)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            ResourceCost mem = sizes[i];
+            if (mem == SKIP)
+                continue;
+            chassert(!links[i]);
+            links[i] = link;
+            ids[i] = fmt::format("A{}", i);
+            allocations[i].emplace(links[i], ids[i], mem);
+            allocations[i]->waitSync();
+        }
+    }
+
+    void insertSequential(const std::array<ResourceCost, count> & sizes)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            ResourceCost mem = sizes[i];
+            if (mem == SKIP)
+                continue;
+            chassert(links[i]);
+            allocations[i].emplace(links[i], ids[i], mem);
+            allocations[i]->waitSync();
+        }
+    }
+
+    void setSize(const std::array<ResourceCost, count> & sizes)
+    {
+        // We run in the scheduler thread to emulate requests coming in specific order while delaying their processing
+        t.executeFromScheduler("memory", [&]
+        {
+            for (size_t i = 0; i < count; i++)
+            {
+                ResourceCost mem = sizes[i];
+                if (mem == SKIP)
+                    continue;
+                if (allocations[i])
+                    allocations[i]->setSize(mem, [this, i, mem] { onApprove(i, mem); });
+                else
+                {
+                    chassert(links[i]);
+                    allocations[i].emplace(links[i], ids[i], mem, [this, i, mem] { onApprove(i, mem); });
+                }
+            }
+        });
+    }
+
+    void assertApproveOrder(const String & expected_order)
+    {
+        for (auto & alloc : allocations)
+            alloc->waitSync();
+
+        std::unique_lock lock(mutex);
+        ASSERT_EQ(approve_order, expected_order);
+        approve_order.clear();
+    }
+};
+
+// ---------- AllocationQueue ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "A1", 10);
+        TestAllocation a2(link, "A2", 20);
+        TestAllocation a3(link, "A3", 30);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        a1.setSize(20);
+        a2.setSize(30);
+        a3.setSize(10);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+// Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
+// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
+// and enforces its own limit independently.
+TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_memory = 100");
+
+    ClassifierPtr c_a = t.manager->acquire("root_a");
+    ClassifierPtr c_b = t.manager->acquire("root_b");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link_a = c_a->get("memory");
+        ResourceLink link_b = c_b->get("memory");
+
+        // Both trees allocate and resize concurrently within their own per-root limits.
+        TestAllocation a(link_a, "A", 80);
+        TestAllocation b(link_b, "B", 80);
+        a.waitSync();
+        b.waitSync();
+
+        a.setSize(20);
+        b.setSize(60);
+        a.waitSync();
+        b.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSize)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "A1", 0);
+        TestAllocation a2(link, "A2", 10);
+        TestAllocation a3(link, "A3", 0);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        a1.setSize(20);
+        a2.setSize(30);
+        a3.setSize(10);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingFifoOrder)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<9> a(t);
+        ResourceLink link = c->get("memory");
+        a.insert(link, { 9, 1, 8, 2, 7, 3, 6, 4, 5 });
+        a.assertApproveOrder("9 1 8 2 7 3 6 4 5");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseMaxMinFairOrder)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        ResourceLink link = c->get("memory");
+        a.insertSequential(link, { 1, 1, 1, 1, 1, 1, 1, 1 });
+        a.setSize({ 2, 3, 4, 5, 6, 7, 8, 9 });
+        a.assertApproveOrder("2 3 4 5 6 7 8 9");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "SelfKiller", 50);
+        a1.setSize(100);
+        a1.waitSync();
+        a1.setSize(150); // Exceeds limit
+        a1.waitKilled();
+        try
+        {
+            a1.throwReason();
+            GTEST_FAIL() << "Expected RESOURCE_LIMIT_EXCEEDED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+            ASSERT_NE(e.displayText().find("memory"), std::string::npos);
+            ASSERT_NE(e.displayText().find("to satisfy its own increase"), std::string::npos);
+        }
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimit)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Hard limit 200, soft (spill) limit 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(150); // above the soft limit (100), below the hard limit (200)
+    a.waitSync();
+    EXPECT_EQ(a.spillCount(), 0); // nothing reclaimable reported yet -> fail-close, no spill
+
+    a.reportReclaimable(120); // now the scheduler can ask it to spill
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationRetiresUnclaimedSpill)
+{
+    struct SpillableState
+    {
+        SpillableAdapter<SpillableState> spillable{*this};
+
+        ProcessorMemoryStats getMemoryStats() const
+        {
+            return {.spillable_memory_bytes = 100};
+        }
+        size_t spill(size_t)
+        {
+            ADD_FAILURE() << "The request arrives during the final work step and must remain unclaimed";
+            return 0;
+        }
+    };
+
+    struct FinishWithPendingSpill final : IProcessor
+    {
+        std::shared_ptr<SpillableState> state;
+        std::function<void()> before_finish;
+        bool finished = false;
+        ISpillable * const spillable = &state->spillable;
+
+        explicit FinishWithPendingSpill(std::shared_ptr<SpillableState> state_) : state(std::move(state_))
+        {
+        }
+
+        String getName() const override
+        {
+            return "FinishWithPendingSpill";
+        }
+        std::span<ISpillable * const> getSpillables() override
+        {
+            return {&spillable, 1};
+        }
+        Status prepare() override
+        {
+            if (!finished)
+                return Status::Ready;
+            return Status::Finished;
+        }
+        void work() override
+        {
+            before_finish();
+            finished = true;
+        }
+    };
+
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+    auto classifier = t.manager->acquire("all");
+    auto link = classifier->get("memory");
+    auto status = std::make_shared<QueryStatus>(
+        Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
+        std::make_unique<MemoryReservation>(link, "finishing_query", 150, 1), nullptr, IAST::QueryKind::Select, Settings{}, 0, false);
+    auto * reservation = status->getMemoryReservation();
+
+    auto state = std::make_shared<SpillableState>();
+    auto processor = std::make_shared<FinishWithPendingSpill>(state);
+    auto unprepared_processor = std::make_shared<FinishWithPendingSpill>(state);
+    unprepared_processor->finished = true;
+    processor->before_finish = [&]
+    {
+        // The executor already reported 100 spillable bytes and checked for requests before entering `work`.
+        ASSERT_EQ(reservation->getTotalReclaimable(), 100);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 50), 50);
+            EXPECT_EQ(reservation->queue.reclaiming, 50);
+        });
+    };
+    auto processors = std::make_shared<Processors>(Processors{processor});
+    auto progress = std::make_unique<ReadProgressCallback>();
+    progress->setProcessListElement(status);
+    Runtime::V1::PipelineExecutor executor(processors, status);
+    Runtime::V1::PipelineExecutor other_executor(std::make_shared<Processors>(Processors{unprepared_processor}), status);
+    executor.setReadProgressCallback(std::move(progress));
+    executor.execute(1, false);
+
+    // Another registered owner has not been prepared yet, so its shared accounting must remain.
+    ASSERT_EQ(processor->getNumExecutedJobs(), 1);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(reservation->queue.reclaimable, 50);
+        EXPECT_EQ(reservation->queue.reclaiming, 50);
+    });
+
+    other_executor.execute(1, false);
+
+    // The last `Finished` retires the request while the reservation survives. Repeated calls are harmless.
+    EXPECT_EQ(processor->prepare(), IProcessor::Status::Finished);
+    EXPECT_EQ(unprepared_processor->prepare(), IProcessor::Status::Finished);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(reservation->queue.allocated, 150);
+        EXPECT_EQ(reservation->queue.reclaimable, 0);
+        EXPECT_EQ(reservation->queue.reclaiming, 0);
+    });
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillsIdleProcessors)
+{
+    /// Keeps an async task pending while the spillers are idle, so the executor waits instead of finishing.
+    /// Its file descriptor becomes readable only after both spills, allowing the pipeline to complete.
+    struct AwaitSpills final : IProcessor
+    {
+        WakeupFd completed;
+        std::mutex mutex;
+        std::condition_variable cv;
+        size_t idle = 0;
+        std::atomic<size_t> spills = 0;
+        bool finished = false;
+        bool pause_before_poll = false;
+
+        String getName() const override { return "AwaitSpills"; }
+        Status prepare() override { return finished ? Status::Finished : Status::Async; }
+        int schedule() override { return completed.fd(); }
+        void work() override
+        {
+            completed.drain();
+            EXPECT_EQ(spills.load(), 2);
+            finished = true;
+        }
+    };
+
+    /// Runs normal `work` once, then simulates waiting for input (`NeedData`) or output space (`PortFull`).
+    /// Reports 100 synthetic reclaimable bytes; only `spill` makes it ready to finish.
+    struct IdleSpiller final : IProcessor
+    {
+        AwaitSpills & gate;
+        const Status idle_status;
+        SpillableAdapter<IdleSpiller> spillable{*this};
+        ISpillable * const component = &spillable;
+        bool worked = false;
+        bool announced_idle = false;
+        bool spilled = false;
+
+        IdleSpiller(AwaitSpills & gate_, Status idle_status_) : gate(gate_), idle_status(idle_status_) {}
+        String getName() const override { return "IdleSpiller"; }
+        std::span<ISpillable * const> getSpillables() override { return {&component, 1}; }
+        ProcessorMemoryStats getMemoryStats() const { return {.spillable_memory_bytes = spilled ? 0 : 100}; }
+        Status prepare() override
+        {
+            if (!worked)
+                return Status::Ready;
+            if (spilled)
+                return Status::Finished;
+            if (!std::exchange(announced_idle, true))
+            {
+                std::lock_guard lock(gate.mutex);
+                ++gate.idle;
+                if (gate.idle == 2 && gate.pause_before_poll)
+                    FailPointInjection::enableFailPoint("polling_queue_before_try_poll");
+                gate.cv.notify_all();
+            }
+            return idle_status;
+        }
+        void work() override
+        {
+            EXPECT_FALSE(worked) << "A spill-only wakeup must not execute normal work";
+            worked = true;
+        }
+        size_t spill(size_t bytes)
+        {
+            EXPECT_TRUE(announced_idle);
+            EXPECT_FALSE(spilled);
+            EXPECT_EQ(bytes, 100);
+            spilled = true;
+            if (++gate.spills == 2)
+                gate.completed.notify();
+            return 100;
+        }
+    };
+
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+    auto classifier = t.manager->acquire("all");
+    /// Cover both single-thread async polling and multi-thread worker wakeups.
+    for (size_t threads : {1, 2})
+    {
+        std::optional<DB::ThreadStatus> thread_status;
+        if (!CurrentThread::isInitialized())
+            thread_status.emplace();
+        auto status = std::make_shared<QueryStatus>(
+            Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
+            std::make_unique<MemoryReservation>(classifier->get("memory"), "idle_spillers", 300, 100),
+            std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0),
+            IAST::QueryKind::Select, Settings{}, 0, false);
+        auto * reservation = status->getMemoryReservation();
+        auto gate = std::make_shared<AwaitSpills>();
+        gate->pause_before_poll = threads == 1 && USE_LIBFIU;
+        auto input_waiter = std::make_shared<IdleSpiller>(*gate, IProcessor::Status::NeedData);
+        auto output_waiter = std::make_shared<IdleSpiller>(*gate, IProcessor::Status::PortFull);
+        /// No connected ports: the idle owners must progress through spill-only tasks, without another normal `work` call.
+        Runtime::V1::PipelineExecutor executor(std::make_shared<Processors>(Processors{input_waiter, output_waiter, gate}), status);
+        auto run = std::async(std::launch::async, [&] { executor.execute(threads, false); });
+        std::future<void> paused;
+        SCOPE_EXIT({
+            if (run.valid())
+            {
+                executor.cancel(IProcessor::CancelReason::Exception);
+                if (gate->pause_before_poll)
+                    FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
+                run.wait();
+            }
+            if (gate->pause_before_poll)
+                FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
+        });
+
+        {
+            std::unique_lock lock(gate->mutex);
+            ASSERT_TRUE(gate->cv.wait_for(lock, std::chrono::seconds(10), [&] { return gate->idle == 2; }));
+        }
+        /// Deliver the request after the task mutex is released, so the nonblocking poll consumes its wakeup.
+        /// The executor must recheck the spill notification before entering a blocking poll, or it can block with a request pending.
+        if (gate->pause_before_poll)
+        {
+            paused = std::async(std::launch::async, [] { FailPointInjection::waitForPause("polling_queue_before_try_poll"); });
+            ASSERT_EQ(paused.wait_for(std::chrono::seconds(10)), std::future_status::ready);
+            paused.get();
+        }
+        t.executeFromScheduler("memory", [&]
+        {
+            /// The second spill must target 100 bytes but settle only the remaining 50-byte claim.
+            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 150), 150);
+        });
+        if (gate->pause_before_poll)
+            FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
+        ASSERT_EQ(run.wait_for(std::chrono::seconds(10)), std::future_status::ready);
+        ASSERT_NO_THROW(run.get());
+        EXPECT_EQ(input_waiter->getNumExecutedJobs(), 1);
+        EXPECT_EQ(output_waiter->getNumExecutedJobs(), 1);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(reservation->queue.reclaimable, 0);
+            EXPECT_EQ(reservation->queue.reclaiming, 0);
+        });
+        /// A finalized pipeline can release its reservation while the executor object still exists.
+        status->releaseMemoryReservation();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Soft limit derived as a fraction of the hard limit: 0.5 * 200 = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(160); // above soft (100), below hard (200)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 60); // need = allocated(160) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillSmallerSettingWins)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Both soft-limit settings set: the smaller resulting threshold wins.
+    // Effective soft limit = min(max_memory_before_spill = 150, 0.5 * max_memory = 100) = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 150, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(120); // above the smaller threshold (100), below the larger one (150)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 20); // need = allocated(120) - min(150, 100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimitEnableTransition)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all"); // no limits: the workload has no `AllocationLimit` node at all
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 150);
+    a.waitSync();
+    a.reportReclaimable(120); // reported before any soft limit exists — nothing can spill yet
+    EXPECT_EQ(a.spillCount(), 0);
+
+    // Enable transition: this inserts a fresh soft-only `AllocationLimit` above the existing branch
+    // (the Add path of `updateSchedulingSettings`, not the Update path taken when a limit already
+    // exists). The subtree is already over the new threshold with reclaimable memory, so the spill
+    // must fire right away — no later resize or `setReclaimable` happens in this test to trigger it.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory_before_spill = 100");
+
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillAvailableWorkloadOrder)
+{
+    for (bool precedence : {false, true})
+    {
+        SCOPED_TRACE(precedence);
+        ResourceTest t;
+        t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+        t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+        t.query(fmt::format("CREATE WORKLOAD A IN all SETTINGS weight = {}, precedence = 1", precedence ? 1 : 4));
+        t.query(fmt::format("CREATE WORKLOAD B IN all SETTINGS precedence = {}", precedence ? 2 : 1));
+
+        auto ca = t.manager->acquire("A");
+        auto cb = t.manager->acquire("B");
+        TestAllocation a(ca->get("memory"), "a", 300);
+        TestAllocation b(cb->get("memory"), "b", 200);
+        a.waitSync();
+        b.waitSync();
+        a.reportReclaimable(200);
+        b.reportReclaimable(50);
+        t.executeFromScheduler("memory", [] {});
+
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_spill = 475");
+        EXPECT_EQ(a.spillCount(), 0);
+        EXPECT_EQ(b.spillCount(), 1);
+        EXPECT_EQ(b.lastSpillAtLeast(), 25);
+
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_spill = 400");
+        EXPECT_EQ(a.spillCount(), 1);
+        EXPECT_EQ(a.lastSpillAtLeast(), 50);
+        EXPECT_EQ(b.spillCount(), 2);
+        EXPECT_EQ(b.lastSpillAtLeast(), 25);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(a.queue.reclaimable, 150);
+            EXPECT_EQ(a.queue.reclaiming, 50);
+            EXPECT_EQ(b.queue.reclaimable, 0);
+            EXPECT_EQ(b.queue.reclaiming, 50);
+        });
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillCreditsSurviveRestructuring)
+{
+    for (bool precedence : {false, true})
+    {
+        SCOPED_TRACE(precedence);
+        ResourceTest t;
+        t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+        t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+        t.query("CREATE WORKLOAD parent_a IN all");
+        t.query("CREATE WORKLOAD parent_b IN all");
+        t.query("CREATE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+        t.query(fmt::format("CREATE WORKLOAD leaf2 IN parent_a SETTINGS precedence = {}", precedence ? 2 : 1));
+        t.query(fmt::format("CREATE WORKLOAD leaf3 IN parent_b SETTINGS precedence = {}", precedence ? 2 : 1));
+
+        auto expect_state = [&](ResourceCost reclaimable, ResourceCost reclaiming)
+        {
+            t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+            {
+                if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                {
+                    SCOPED_TRACE(path);
+                    EXPECT_EQ(ss->reclaimable, ss->allocated ? reclaimable : 0);
+                    EXPECT_EQ(ss->reclaiming, ss->allocated ? reclaiming : 0);
+                }
+            });
+        };
+
+        auto c = t.manager->acquire("leaf1");
+        {
+            TestAllocation a(c->get("memory"), "a", 150);
+            a.waitSync();
+            a.reportReclaimable(120);
+            t.executeFromScheduler("memory", [] {});
+            t.query("CREATE OR REPLACE WORKLOAD parent_a IN all SETTINGS max_memory_before_spill = 100");
+            EXPECT_EQ(a.spillCount(), 1);
+            EXPECT_EQ(a.lastSpillAtLeast(), 50);
+            expect_state(70, 50);
+
+            t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 1");
+            expect_state(70, 50);
+            t.query("CREATE OR REPLACE WORKLOAD parent_b IN all SETTINGS max_memory_before_spill = 100");
+            expect_state(70, 50);
+            t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 3, weight = 2");
+            expect_state(70, 50);
+            EXPECT_EQ(a.spillCount(), 1);
+
+            a.setSize(100);
+            a.waitSync();
+            a.finishSpill(50, 100);
+            expect_state(100, 0);
+            EXPECT_EQ(a.spillCount(), 1);
+        }
+        expect_state(0, 0);
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        std::optional<TestAllocation> a1;
+        a1.emplace(link, "ToBeKilled", 80);
+        TestAllocation a2(link, "Killer", 10);
+        a1->waitSync();
+        a2.waitSync();
+        a2.setSize(50); // Exceeds limit
+        a1->waitKilled();
+        try {
+            a1->throwReason();
+            GTEST_FAIL() << "Expected RESOURCE_LIMIT_EXCEEDED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+            ASSERT_NE(e.displayText().find("memory"), std::string::npos);
+            ASSERT_NE(e.displayText().find("to satisfy increase of a smaller allocation"), std::string::npos);
+        }
+        a1.reset(); // Destroy killed allocation to free resources
+        a2.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationHugeIncreaseDoesNotKillOthers)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "NotToBeKilled", 80);
+        TestAllocation a2(link, "SelfKiller", 10);
+        a1.waitSync();
+        a2.waitSync();
+        a2.setSize(100500); // Exceeds limit, and new size is the largest among all allocations, while old size was not
+        a2.waitKilled();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingAllocationWaits)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running1", 80);
+        std::optional<TestAllocation> a2;
+        a2.emplace(link, "Running2", 10);
+        a1.waitSync();
+        a2->waitSync();
+
+        // Make pending allocation that hit the limit
+        TestAllocation a3(link, "Pending3", 30);
+        TestAllocation a4(link, "Pending4", 30);
+
+        // Make sure running allocations could use memory as expected, while pending allocations are waiting
+        for (int mem : {20, 30, 40, 50, 60, 70, 80, 70, 60, 50, 40, 30, 20, 10 })
+        {
+            a1.setSize(90 - mem);
+            a1.waitSync();
+            a2->setSize(mem);
+            a2->waitSync();
+        }
+
+        // Release memory to allow pending allocation to proceed
+        a3.assertIncreaseEnqueued();
+        a1.setSize(60);
+        a1.waitSync();
+        a3.waitSync();
+        // --- a1:60, a2:10, a3:30 ---
+        a3.setSize(20); // to avoid kills first decrease
+        a3.waitSync();
+        a2->setSize(20); // only then increase
+        a2->waitSync();
+
+        // Make sure running allocations could use memory as expected, while pending allocation is waiting
+        for (int mem : { 60, 80 })
+        {
+            a1.setSize(100 - mem);
+            a1.waitSync();
+            a2->setSize(mem / 2);
+            a3.setSize(mem / 2);
+            a2->waitSync();
+            a3.waitSync();
+        }
+
+        // --- a1:20, a2:40, a3:40 ---
+        // Release memory by killing allocation to free space for pending allocation
+        a4.assertIncreaseEnqueued();
+        a2->setSize(50); // hits the limit (110) with running and pending allocations: self-kill expected
+        a2->waitKilled();
+        a2.reset(); // Destroy killed allocation to free resources
+        a4.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseOfRunningHasPriorityOverPending)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        std::optional<TestAllocation> a1;
+        a1.emplace(link, "Running1", 80);
+        TestAllocation a2(link, "Running2", 10);
+        a1->waitSync();
+        a2.waitSync();
+
+        // Make pending allocation that hit the limit
+        TestAllocation a3(link, "Pending3", 40);
+
+        // Increase running allocation to hit the limit
+        a2.setSize(70); // this is lower than 80, so a1 should be killed
+        a1->waitKilled();
+        a1.reset(); // Destroy killed allocation to free resources
+        a2.waitSync();
+
+        // Resource released by killing a1 should NOT allow a3 to proceed, but should be used to satisfy a2 increase
+        a3.assertIncreaseEnqueued();
+
+        // Clean up
+        a2.setSize(10);
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running1", 80);
+        a1.waitSync();
+
+        // Make pending allocations that hit the limit
+        TestAllocation a2(link, "Pending2", 80);
+
+        // These are smaller but blocked by the first pending allocation
+        TestAllocation a3(link, "Pending2", 10);
+        TestAllocation a4(link, "Pending2", 10);
+
+        // Assert that allocations are pending
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        a4.assertIncreaseEnqueued();
+
+        // Cancel pending allocation by dtor
+    }
+}
+
+// Regression: `AllocationQueue::purgeQueue` must unlink each allocation from intrusive
+// containers before calling `allocationFailed`. Otherwise a `MemoryReservation` blocked
+// inside its constructor on `cv.wait` is synchronously destroyed when allocationFailed
+// wakes it, and the queue's iteration over now-freed hook bytes is a use-after-free; in
+// debug builds `~ResourceAllocation` also chasserts on still-linked hooks.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD blocker_wl IN all");
+    t.query("CREATE WORKLOAD victim IN all");
+
+    ClassifierPtr c_blocker = t.manager->acquire("blocker_wl");
+    TestAllocation blocker(c_blocker->get("memory"), "blocker", 100);
+    blocker.waitSync();
+
+    ClassifierPtr c_victim = t.manager->acquire("victim");
+    ResourceLink link_victim = c_victim->get("memory");
+
+    // `all`'s budget is fully held by `blocker_wl`, so any reservation made through
+    // `victim` stays pending forever — `MemoryReservation` constructor blocks in `cv.wait`.
+    constexpr int waiter_count = 4;
+    std::atomic<int> threw{0};
+    std::vector<std::thread> waiters;
+    waiters.reserve(waiter_count);
+    for (int i = 0; i < waiter_count; ++i)
+    {
+        waiters.emplace_back([link_victim, &threw]
+        {
+            try
+            {
+                MemoryReservation r(link_victim, "pending", 50, 1);
+                ADD_FAILURE() << "MemoryReservation should have failed";
+            }
+            catch (const Exception &)
+            {
+                threw.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    // Wait until every waiter's reservation is enqueued as pending in victim's queue.
+    while (true)
+    {
+        UInt64 pending = 0;
+        t.manager->forEachNode([&](const String &, const String &, ISchedulerNode * node)
+        {
+            if (auto * q = dynamic_cast<AllocationQueue *>(node))
+                pending += q->getPending();
+        });
+        if (pending >= waiter_count)
+            break;
+        std::this_thread::yield();
+    }
+
+    // Adding a child to `victim` turns it from leaf into non-leaf, which detaches
+    // victim's `AllocationQueue` and calls `purgeQueue` on it explicitly (via
+    // `WorkloadNode::QueueOrChildrenBranch::removeQueue`). At this moment the queue
+    // still has `waiter_count` allocations linked in pending_allocations.
+    t.query("CREATE WORKLOAD leaf IN victim");
+
+    for (auto & th : waiters)
+        th.join();
+    EXPECT_EQ(threw.load(), waiter_count);
+}
+
+TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD B SETTINGS max_memory = 100");
+
+    // Only `B`'s classifier retains the old hierarchy version after the temporary classifier for `A` is released.
+    ClassifierPtr classifier_b = t.manager->acquire("B");
+    auto * retired_queue = t.manager->acquire("A")->get("memory").allocation_queue;
+    ASSERT_NE(retired_queue, nullptr);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(retired_queue->getWorkloadName(), "A");
+    });
+
+    t.query("CREATE WORKLOAD child IN A");
+    t.executeFromScheduler("memory", [&]
+    {
+        // Check retirement while `A` is still alive: this fails deterministically without relying on
+        // ASan or on the contents of freed memory when the retired queue is eventually destroyed.
+        EXPECT_TRUE(retired_queue->getWorkloadName().empty());
+    });
+
+    t.query("DROP WORKLOAD child");
+    EXPECT_NE(retired_queue, t.manager->acquire("A")->get("memory").allocation_queue);
+    t.query("DROP WORKLOAD A");
+
+    // Destroy the original queue after its workload, through the classifier for a different workload.
+    classifier_b.reset();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadFailsRunningAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    TestAllocation a(c_a->get("memory"), "a", 60);
+    a.waitSync();
+
+    // The classifier keeps `A`'s queue alive, but the allocation must not keep running outside the limits of `all`.
+    t.query("DROP WORKLOAD A");
+    EXPECT_THROW(a.waitSync(), Exception);
+    a.setSize(80);
+    EXPECT_THROW(a.waitSync(), Exception);
+
+    // The memory of the failed allocation is available to the rest of the hierarchy.
+    ClassifierPtr c_b = t.manager->acquire("B");
+    TestAllocation b(c_b->get("memory"), "b", 100);
+    b.waitSync();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocating)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100, max_waiting_queries = 0");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ResourceLink link = c_a->get("memory");
+
+    // Keep inserting allocations into `A`'s queue while `A` is dropped. Every one is rejected and the rejection reads
+    // the workload's name: by `max_waiting_queries` before the purge, as an unusable queue after it. This lets TSan
+    // check those reads against the drop and the destruction of the workload node.
+    std::atomic<bool> dropped{false};
+    std::atomic<size_t> rejected{0};
+    std::thread allocator([&]
+    {
+        while (!dropped.load() || rejected.load() < 100)
+        {
+            try
+            {
+                TestAllocation allocation(link, "racer", 10);
+            }
+            catch (const Exception &)
+            {
+                rejected.fetch_add(1);
+            }
+        }
+    });
+
+    t.query("DROP WORKLOAD A");
+    dropped.store(true);
+    allocator.join();
+    EXPECT_GE(rejected.load(), 100);
+}
+
+// Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`
+// AFTER `updateMinMaxAllocated`/`updateQueueLimit` has already rejected the allocation. The
+// guard in `removeAllocation` must keep an already-failed allocation out of
+// `removing_allocations`, otherwise `~ResourceAllocation` would chassert on a linked
+// `removing_hook` (and `processActivation` would later dereference freed memory).
+TEST(SchedulerWorkloadResourceManager, MemoryReservationRemoveAllocationOnFailedIsNoOp)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation blocker(link, "blocker", 80);
+    blocker.waitSync();
+
+    auto pending = std::make_unique<TestAllocation>(link, "pending", 50);
+    pending->assertIncreaseEnqueued();
+
+    // Lower max_memory so `updateMinMaxAllocated` rejects the pending allocation.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 30");
+
+    // Simulate the lost-race destructor path: the owner's `fail_reason` check happened before
+    // ALTER fired `allocationFailed`, so the destructor proceeds to call `removeAllocation`
+    // even though the allocation is now failed and unlinked. Without the guard,
+    // `removing_hook` would end up linked and trip the chassert below in `~TestAllocation`.
+    link.allocation_queue->removeAllocation(*pending);
+
+    pending.reset();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationMaxWaitingQueries)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 2");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running", 100);
+        a1.waitSync();
+        TestAllocation a2(link, "Waiting1", 10);
+        TestAllocation a3(link, "Waiting2", 10);
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        EXPECT_THROW(TestAllocation rejected1(link, "Rejected1", 10), DB::Exception);
+        EXPECT_THROW(TestAllocation rejected2(link, "Rejected2", 10), DB::Exception);
+        try {
+            TestAllocation rejected3(link, "Rejected3", 10);
+            GTEST_FAIL() << "Expected SERVER_OVERLOADED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::SERVER_OVERLOADED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+        }
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxWaitingQueries)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+
+    for (int i = 0; i < 3; i++)
+    {
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 4");
+        ClassifierPtr c = t.manager->acquire("all");
+        ResourceLink link = c->get("memory");
+
+        TestAllocation a1(link, "Running", 100);
+        a1.waitSync();
+        TestAllocation a2(link, "Waiting1", 10);
+        TestAllocation a3(link, "Waiting2", 10);
+        TestAllocation a4(link, "Waiting3", 10);
+        TestAllocation a5(link, "Waiting4", 10);
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        a4.assertIncreaseEnqueued();
+        a5.assertIncreaseEnqueued();
+        EXPECT_THROW(TestAllocation rejected5(link, "Rejected5", 10), DB::Exception);
+
+        // This should reject the two last waiting allocations
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 2");
+        EXPECT_THROW(a4.waitSync(), DB::Exception);
+        try {
+            a5.waitSync();
+            GTEST_FAIL() << "Expected SERVER_OVERLOADED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::SERVER_OVERLOADED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+        }
+
+        // Make sure other waiting allocations are not affected
+        a1.setSize(0);
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+// ---------- AllocationLimit ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxMemory)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+
+    for (int i = 0; i < 3; i++)
+    {
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100");
+        ClassifierPtr c = t.manager->acquire("all");
+        ResourceLink link = c->get("memory");
+
+        std::optional<TestAllocation> a1;
+        a1.emplace(link, "A1", 80);
+        a1->waitSync();
+        std::optional<TestAllocation> a2;
+        a2.emplace(link, "A2", 30);
+        TestAllocation a3(link, "A3", 20);
+        TestAllocation a4(link, "A4", 10);
+        a2->assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        a4.assertIncreaseEnqueued();
+
+        // Increase limit: this should allow the two last waiting allocations to proceed
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 135");
+        a2->waitSync();
+        a3.waitSync();
+        a4.assertIncreaseEnqueued();
+
+        // Decrease limit: this should kill some queries to respect the new limit
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 40");
+
+        // For now to trigger eviction we need a memory pressure event, so we try increase size of running allocation.
+        // The limit kills one allocation at a time (the largest). Each killed allocation must be
+        // destroyed to free resources before the limit can kill the next one.
+        a3.setSize(21); // it should kill both a1 and a2
+        a1->waitKilled();
+        a1.reset(); // Free a1's resources so the limit can re-evaluate and kill a2
+        a2->waitKilled();
+        a2.reset();
+        a3.waitSync();
+
+        // There should be enough memory for the last waiting allocation after eviction
+        a4.waitSync();
+    }
+}
+
+// ---------- FairAllocation ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+
+        // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
+        // Note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd.
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload)
+        // dev: 10 20 50 50            ~ fair_key
+        //      10 30 80 130 <-- (sum) ~ usage_key
+        // prd: 15 20 30 40            ~ fair_key
+        //      15 35 65 105 <-- (sum) ~ usage_key
+        // We also check that parent key is based on target size = `allocated + increase.size`, not current size = `allocated`:
+        // * After: 10 15 20 20, we would have dev demanding 30 -> 80, and prd demanding 35 -> 65
+        // * so prd wins (65 < 80) while based on current size dev would win (30 < 35)
+        // This way of ordering approximates max-min fairness between workloads better.
+        a.assertApproveOrder("10 15 20 20 30 50 40 50");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloadsForPendingAllocations)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+        // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload).
+        // dev: 50 20 50  10         FIFO order
+        //       0 50 70 120 130 <-- (sum) ~ usage_key
+        // prd: 40 20 30  15         FIFO order
+        //       0 40 60  90 105 <-- (sum) ~ usage_key
+        a.assertApproveOrder("40 50 20 20 30 50 15 10");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloadsForMixedAllocations)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({ SKIP, SKIP, 1, 1, SKIP, SKIP, 1, 1 });
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 }); // Half of allocations are running, half are pending
+
+        // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO) and running allocations by fair_key (resulting allocation size).
+        // Pending allocations are considered after all running allocations.
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload)
+        // Pending allocations are considered after all running allocations as well.
+        //
+        // dev: 10r 20r 50p 50p
+        //      10  30  30  80   <-- (sum) ~ usage_key (pending size is not included)
+        // prd: 15r 20r 40p 30p
+        //      15  35  35  75   <-- (sum) ~ usage_key (pending size is not included)
+        a.assertApproveOrder("10 15 20 20 50 40 30 50");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloadsWithWeights)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS weight = 3");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+        // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
+        // Note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd.
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload)
+        // dev: 4 10 20 50 50             ~ fair_key
+        //        14 34 84 134 <-- (sum)  ~ usage_key
+        // prd: 4 15 20 30 40             ~ fair_key
+        //        19 39 69 109 <-- (sum) ~ usage_key
+        //        6  13 23 36 <-- (sum/3) ~ usage_key
+        a.assertApproveOrder("15 20 10 30 20 40 50 50");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderFairnessBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 213");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS precedence = -1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 1, 2, 3});
+        a.setWorkload("prd", {4, 5, 6, 7});
+        std::array<ResourceCost, 8> sizes = { 10, 30, 31, 32, 15, 20, 30, 40 };
+        a.insertSequential(sizes);
+
+        ClassifierPtr c_vip = t.manager->acquire("vip");
+        TestAllocation vip(c_vip->get("memory"), "VIP", 5);
+        vip.waitSync();
+
+        // Workload `all` kills its children by usage_key DESC, while `prd` and `dev` kill their allocations by fair_key DESC
+        // dev:  32 31 30 10            ~ fair_key
+        //      103 71 40 10 <-- (sum) ~ usage_key
+        //        3  2  1  0 <-- (idx)
+        // prd:  40 30 20 15            ~ fair_key
+        //      105 65 35 15 <-- (sum) ~ usage_key
+        //        7  6  5  4 <-- (idx)
+        ResourceCost vip_size = 5;
+        for (size_t idx_to_be_killed : {7, 3, 2, 6, 1, 5, 4, 0})
+        {
+            vip_size += sizes[idx_to_be_killed];
+            vip.setSize(vip_size);
+            a.allocations[idx_to_be_killed]->waitKilled();
+            a.allocations[idx_to_be_killed].reset(); // Destroy to free resources for vip
+            vip.waitSync();
+        }
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunningDueToWorkloadFairness)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+
+    ClassifierPtr c_dev = t.manager->acquire("dev");
+    ClassifierPtr c_prd = t.manager->acquire("prd");
+    ResourceLink l_dev = c_dev->get("memory");
+    ResourceLink l_prd = c_prd->get("memory");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocation a1(l_dev, "D1-running", 60);
+        TestAllocation a2(l_dev, "D2-running", 10);
+        TestAllocation a3(l_prd, "P3-running", 20);
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        // Workload `dev` has 70, which is more than fair 50, so D4 is pending and should not kill others
+        TestAllocation a4(l_dev, "D4-pending", 40);
+
+        // Workload `prd` has 20, which is less than fair 50, so P5 should kill `dev` allocations, but it is pending an it CANNOT kill.
+        // NOTE: Otherwise, if D1 were to be killed first, then `dev` will have 10 and `prd` has 60, so D4 hits the limit and will kill P5
+        // NOTE: This is thrashing: P5 started only to be killed right away. Kill chain: D4 -> P5 -> D1.
+        TestAllocation a5(l_prd, "P5-pending", 40);
+
+        a4.assertIncreaseEnqueued();
+        a5.assertIncreaseEnqueued();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillHigherPrecedence)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1"); // higher precedence (lower value)
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2"); // lower precedence
+
+    ClassifierPtr c_prd = t.manager->acquire("prd");
+    ClassifierPtr c_dev = t.manager->acquire("dev");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink l_prd = c_prd->get("memory");
+        ResourceLink l_dev = c_dev->get("memory");
+
+        // Higher-precedence `prd` is running and holds 80.
+        TestAllocation prd(l_prd, "PRD-running", 80);
+        prd.waitSync();
+
+        // Lower-precedence `dev` wants to start with 30. Admitting it would push the workload over
+        // `max_memory` (80 + 30 > 100), but a pending allocation must never evict a higher-precedence
+        // running allocation — `dev` must stay pending instead of killing `prd`.
+        TestAllocation dev(l_dev, "DEV-pending", 30);
+
+        // Drive an unrelated round-trip through the single-threaded scheduler. Because events are
+        // processed in order, by the time this `prd` increase is approved the scheduler has already
+        // made its kill-or-not decision for `dev`'s pending increase enqueued above.
+        prd.setSize(81);
+        prd.waitSync();
+
+        dev.assertIncreaseEnqueued();         // `dev` is still waiting for memory
+        EXPECT_NO_THROW(prd.throwReason());   // `prd` was not evicted by the lower-precedence `dev`
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationChangeWorkloadWeight)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 104");
+    t.query("CREATE WORKLOAD w0 IN all");
+    t.query("CREATE WORKLOAD w1 IN all");
+    t.query("CREATE WORKLOAD w2 IN all");
+    t.query("CREATE WORKLOAD w3 IN all");
+    t.query("CREATE WORKLOAD blocker IN all SETTINGS precedence = -1");
+
+    ClassifierPtr c_blocker = t.manager->acquire("blocker");
+    ResourceLink l_blocker = c_blocker->get("memory");
+
+    for (int i = 0; i < 3; i++)
+    {
+        // For pending allocation (w/o change)
+        {
+            TestAllocationArray<4> a(t);
+            a.setWorkloads({"w0", "w1", "w2", "w3"});
+            a.insertSequential({ 10, 40, 20, 30 });
+            TestAllocation blocker(l_blocker, "blocker", 4);
+            blocker.waitSync();
+
+            TestAllocationArray<4> b(t);
+            b.setWorkloads({"w0", "w1", "w2", "w3"}).saveIds().saveMem(false);
+            b.insert({ 1, 1, 1, 1 });
+
+            blocker.setSize(0); // Release all memory to allow other allocations to proceed
+            b.assertApproveOrder("W0 W2 W3 W1"); // order of initial sizes
+        }
+
+        // For pending allocation (w/change)
+        {
+            TestAllocationArray<4> a(t);
+            a.setWorkloads({"w0", "w1", "w2", "w3"});
+            a.insertSequential({ 10, 40, 20, 30 });
+            TestAllocation blocker(l_blocker, "blocker", 4);
+            blocker.waitSync();
+
+            TestAllocationArray<4> b(t);
+            b.setWorkloads({"w0", "w1", "w2", "w3"}).saveIds().saveMem(false);
+            b.insert({ 1, 1, 1, 1 });
+
+            // Change weight and reorder allocations
+            t.query("CREATE OR REPLACE WORKLOAD w0 IN all SETTINGS weight = 2");
+            t.query("CREATE OR REPLACE WORKLOAD w1 IN all SETTINGS weight = 10");
+            t.query("CREATE OR REPLACE WORKLOAD w2 IN all SETTINGS weight = 0.1");
+            t.query("CREATE OR REPLACE WORKLOAD w3 IN all SETTINGS weight = 2");
+
+            blocker.setSize(0); // Release all memory to allow other allocations to proceed
+            b.assertApproveOrder("W1 W0 W3 W2"); // order of initial sizes divided by weights: 5, 4, 200, 15
+        }
+
+        // Update the weights back for next iteration
+        t.query("CREATE OR REPLACE WORKLOAD w0 IN all");
+        t.query("CREATE OR REPLACE WORKLOAD w1 IN all");
+        t.query("CREATE OR REPLACE WORKLOAD w2 IN all");
+        t.query("CREATE OR REPLACE WORKLOAD w3 IN all");
+    }
+}
+
+// Reparent a workload that still has an active reservation through a FairAllocation level.
+// FairAllocation is created internally only when 2+ siblings exist at the same priority, so
+// `parent_a` must have multiple children for its internal scheduler to instantiate one.
+// The detach path inside `FairAllocation::removeChild` must unlink the moving child from
+// all intrusive sets regardless of `allocations > 0`; otherwise `setUsageKey(-1, 0)` would
+// chassert on a still-linked node.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationReparentFairWithActiveAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200");
+    t.query("CREATE WORKLOAD parent_a IN all");
+    t.query("CREATE WORKLOAD parent_b IN all");
+    t.query("CREATE WORKLOAD leaf1 IN parent_a");
+    t.query("CREATE WORKLOAD leaf2 IN parent_a"); // forces FairAllocation inside parent_a
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr c1 = t.manager->acquire("leaf1");
+        ClassifierPtr c2 = t.manager->acquire("leaf2");
+        ResourceLink link1 = c1->get("memory");
+        ResourceLink link2 = c2->get("memory");
+
+        TestAllocation a1(link1, "leaf1-active", 50);
+        TestAllocation a2(link2, "leaf2-active", 30);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Move leaf1 to a different parent while it still holds 50 bytes — this calls
+        // FairAllocation::removeChild on parent_a's internal FairAllocation node.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b");
+
+        // The reservation should still be functional under the new parent.
+        a1.setSize(20);
+        a1.waitSync();
+
+        // Move it back.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_a");
+        a1.setSize(0);
+        a1.waitSync();
+        a2.setSize(0);
+        a2.waitSync();
+    }
+}
+
+// ---------- PrecedenceAllocation ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePrecedenceBetweenWorkloadsForPendingAllocations)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+        // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
+        // Workload `all` orders its children by their precedence
+        // dev: 50 20 50 10         FIFO order
+        // prd: 40 20 30 15         FIFO order
+        a.assertApproveOrder("40 20 30 15 50 20 50 10");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePrecedenceBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+
+        // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
+        // Workload `all` orders its children by their precedence
+        // dev: 10 20 50 50            ~ fair_key
+        // prd: 15 20 30 40            ~ fair_key
+        a.assertApproveOrder("15 20 30 40 10 20 50 50");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderPrecedenceBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 213");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS precedence = -1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 1, 2, 3});
+        a.setWorkload("prd", {4, 5, 6, 7});
+        std::array<ResourceCost, 8> sizes = { 10, 30, 31, 32, 40, 30, 20, 15 };
+        a.insertSequential(sizes);
+
+        ClassifierPtr c_vip = t.manager->acquire("vip");
+        TestAllocation vip(c_vip->get("memory"), "VIP", 5);
+        vip.waitSync();
+
+        // Workload `all` kills its children based on their priorities, while `prd` and `dev` kill their allocations by fair_key DESC
+        // dev:  32 31 30 10            ~ fair_key
+        //        3  2  1  0 <-- (idx)
+        // prd:  40 30 20 15            ~ fair_key
+        //        4  5  6  7 <-- (idx)
+        ResourceCost vip_size = 5;
+        for (size_t idx_to_be_killed : {3, 2, 1, 0, 4, 5, 6, 7})
+        {
+            vip_size += sizes[idx_to_be_killed];
+            vip.setSize(vip_size);
+            a.allocations[idx_to_be_killed]->waitKilled();
+            a.allocations[idx_to_be_killed].reset(); // Destroy to free resources for vip
+            vip.waitSync();
+        }
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToWorkloadPrecedence)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
+
+    ClassifierPtr c_dev = t.manager->acquire("dev");
+    ClassifierPtr c_prd = t.manager->acquire("prd");
+    ResourceLink l_dev = c_dev->get("memory");
+    ResourceLink l_prd = c_prd->get("memory");
+
+    for (int i = 0; i < 3; i++)
+    {
+        std::optional<TestAllocation> a1;
+        a1.emplace(l_dev, "D1-running", 60);
+        TestAllocation a2(l_dev, "D2-running", 10);
+        TestAllocation a3(l_prd, "P3-running", 20);
+        a1->waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        // Workload `dev` has lower precedence and should not kill `prd` allocations
+        TestAllocation a4(l_dev, "D4-pending", 40);
+
+        // Workload `prd` has higher precedence, so P5 kills allocation in dev.
+        TestAllocation a5(l_prd, "P5-pending", 40);
+
+        a1->waitKilled();
+        a1.reset(); // Destroy killed allocation to free resources
+        a5.waitSync();
+        a4.assertIncreaseEnqueued();
+
+        // Release memory and allow pending allocation to proceed
+        a2.setSize(0);
+        a4.waitSync();
+    }
+}
+
+// Reparent a workload through a PrecedenceAllocation level (siblings have different
+// precedences in parent_a, forcing a PrecedenceAllocation node) while it still holds an
+// active reservation. Without the fix, detach with `allocations > 0` would leave the moving
+// child linked in the old parent's `running_children`, blocking the new parent's insertion.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationReparentPrecedenceWithActiveAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200");
+    t.query("CREATE WORKLOAD parent_a IN all");
+    t.query("CREATE WORKLOAD parent_b IN all");
+    t.query("CREATE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD leaf2 IN parent_a SETTINGS precedence = 2"); // forces PrecedenceAllocation inside parent_a
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr c1 = t.manager->acquire("leaf1");
+        ClassifierPtr c2 = t.manager->acquire("leaf2");
+        ResourceLink link1 = c1->get("memory");
+        ResourceLink link2 = c2->get("memory");
+
+        TestAllocation a1(link1, "leaf1-active", 50);
+        TestAllocation a2(link2, "leaf2-active", 30);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Move leaf1 to a different parent while it still holds 50 bytes of memory.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 1");
+
+        a1.setSize(20);
+        a1.waitSync();
+
+        // Move back.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+        a1.setSize(0);
+        a1.waitSync();
+        a2.setSize(0);
+        a2.waitSync();
+    }
+}
+
+// Change precedence (without changing parent) of a workload with an active reservation.
+// For space-shared resources `updateRequiresDetach` returns true on precedence change, so
+// this exercises the detach/reattach path through PrecedenceAllocation within the same
+// parent node.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationChangePrecedenceWithActiveAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD B IN all SETTINGS precedence = 2");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr cA = t.manager->acquire("A");
+        ClassifierPtr cB = t.manager->acquire("B");
+        ResourceLink linkA = cA->get("memory");
+        ResourceLink linkB = cB->get("memory");
+
+        TestAllocation a(linkA, "A-active", 50);
+        TestAllocation b(linkB, "B-active", 30);
+        a.waitSync();
+        b.waitSync();
+
+        // Change A's precedence — detach + reattach inside `all`'s PrecedenceAllocation.
+        t.query("CREATE OR REPLACE WORKLOAD A IN all SETTINGS precedence = 3");
+
+        a.setSize(20);
+        a.waitSync();
+
+        // Restore precedence for the next iteration.
+        t.query("CREATE OR REPLACE WORKLOAD A IN all SETTINGS precedence = 1");
+        a.setSize(0);
+        a.waitSync();
+        b.setSize(0);
+        b.waitSync();
+    }
+}
+
+// Regression: a `TestAllocation` (or `MemoryReservation`) created with `initial_size == 0`
+// goes directly into `running_allocations` and is never counted in the hierarchy's
+// `allocations` counter (no `apply(IncreaseRequest)` ever runs for it). Removing it must not
+// propagate a `removing_allocation` decrease — that would underflow `allocations` in this
+// queue and every ancestor via `apply(DecreaseRequest)`. With the `chassert(allocations > 0)`
+// guard, the bug aborts the process without the fix.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeNoCounterUnderflow)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    // Repeating exercises the path: each cycle inserts a never-admitted zero-cost allocation
+    // and then removes it. Without the fix the underflow accumulates and the chassert in
+    // `apply(DecreaseRequest)` fires on the first iteration.
+    for (int i = 0; i < 4; ++i)
+    {
+        TestAllocation a(link, "zero", 0);
+        a.waitSync();
+    }
+}
+
+// Regression: a zero-reserve allocation that grew, shrank back to 0, then grew again must not
+// re-fire `Kind::Initial`. The previous predicate `allocation.allocated == 0` would do so and
+// double-increment `allocations` in the queue and parents, silently leaking the counter.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationShrinkThenGrowDoesNotReadmit)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    {
+        TestAllocation a(link, "z", 0);
+        a.setSize(10);
+        a.waitSync();
+        a.setSize(0);
+        a.waitSync();
+        a.setSize(5);
+        a.waitSync();
+        a.setSize(0);
+        a.waitSync();
+        // Destructor below removes the allocation. With the bug, the queue's `allocations`
+        // counter would be left at `1` (incremented twice, decremented once).
+    }
+
+    // Verify no leak: every space-shared node in the tree must report `allocations == 0`.
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+            EXPECT_EQ(ss->allocations, 0u) << "leaked counter in node '" << path << "'";
+    });
+}
+
+// Regression: `CREATE OR REPLACE RESOURCE` must clear role-name fields that the previous
+// definition owned, and must reject changes to the resource's cost unit.
+TEST(SchedulerWorkloadResourceManager, CreateOrReplaceResourceChangesRoleAndRejectsUnitChange)
+{
+    ResourceTest t;
+
+    // Initial: r1 owns MASTER THREAD (CostUnit::CPUNanosecond).
+    t.query("CREATE RESOURCE r1 (MASTER THREAD)");
+
+    // Replace within the same unit. The fix must drop r1's MASTER THREAD ownership; without it
+    // `master_thread_resource` would still point to "r1" and r2 below could not claim the role.
+    t.query("CREATE OR REPLACE RESOURCE r1 (WORKER THREAD)");
+
+    t.query("CREATE RESOURCE r2 (MASTER THREAD)");
+
+    t.query("DROP RESOURCE r1");
+    t.query("DROP RESOURCE r2");
+
+    // Cost-unit change must be rejected — the scheduler hierarchy is built per unit and would
+    // silently end up with mismatched scheduler/link types in release builds.
+    t.query("CREATE RESOURCE r3 (QUERY)");
+    EXPECT_THROW(t.query("CREATE OR REPLACE RESOURCE r3 (MEMORY RESERVATION)"), DB::Exception);
+    t.query("DROP RESOURCE r3");
+}
+
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
+{
+    // `max_memory_ratio` alone — sets `max_memory` to `ratio * host_RAM`.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory_ratio", Field(Float64(0.001)), "");
+        ws.initFromChanges(changes);
+
+        Int64 host_ram = static_cast<Int64>(getMemoryAmountOrZero());
+        ASSERT_GT(host_ram, 0) << "Test host must report a non-zero memory amount";
+        Int64 expected = static_cast<Int64>(0.001 * static_cast<Float64>(host_ram));
+        EXPECT_GT(expected, 0);
+        EXPECT_EQ(ws.max_memory, expected);
+    }
+
+    // `max_memory` exact + small `max_memory_ratio` — the smaller one wins (the exact, here).
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory", Field(Int64(1024)), "");
+        changes.emplace_back("max_memory_ratio", Field(Float64(0.5)), "");
+        ws.initFromChanges(changes);
+        // `0.5 * host_RAM` is overwhelmingly larger than 1024, so the exact value wins.
+        EXPECT_EQ(ws.max_memory, 1024);
+    }
+
+    // No memory settings — stays unlimited.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
+    }
+
+    // `max_memory_ratio = 0` — does not constrain.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory_ratio", Field(Float64(0)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
+    }
+
+    // Huge ratio — float result is outside `Int64` range. Must clamp to `unlimited` instead of
+    // triggering UB on conversion (which previously could produce a negative/garbage limit).
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory_ratio", Field(Float64(1e100)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
+{
+    // `scheduler` can be chosen per resource via the `FOR <resource>` clause (e.g. a different
+    // algorithm for CPU and IO). A resource-specific value wins for that resource; a resource with
+    // no specific value falls back to the workload-wide (regular) value, otherwise the `fifo`
+    // default. This resolution is what lets `WorkloadResourceManager` build each resource's leaf
+    // with its own algorithm.
+    ASTCreateWorkloadQuery::SettingsChanges changes;
+    changes.emplace_back("scheduler", Field(String("fair")), "cpu");
+    changes.emplace_back("scheduler", Field(String("las")), "io");
+    changes.emplace_back("scheduler", Field(String("priority")), ""); // workload-wide value
+
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "cpu");
+        EXPECT_EQ(ws.scheduler, "fair");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "io");
+        EXPECT_EQ(ws.scheduler, "las");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "other"); // no FOR-specific value → workload-wide value
+        EXPECT_EQ(ws.scheduler, "priority");
+    }
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges none;
+        ws.initFromChanges(none);
+        EXPECT_EQ(ws.scheduler, "fifo"); // default when unset
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, CpuLeafUsesConfiguredSchedulerLikeIO)
+{
+    // The `scheduler` setting applies to a CPU leaf exactly as to an IO leaf: it is NOT gated on
+    // `cpu_slot_preemption`, which is a runtime-only server property affecting slot cost, no longer
+    // captured in the node. Other time-shared leaves (e.g. QuerySlot admission) always run fifo.
+    using Traits = WorkloadNodeTraits<ITimeSharedNode>;
+
+    WorkloadSettings ws;
+    ws.scheduler = "fair";
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::IOByte), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::QuerySlot), SchedulerAlgorithm::Fifo);
+}
+
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
+{
+    const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());
+    ASSERT_GT(cores, 0) << "Test host must report a non-zero core count";
+
+    // In-range ratio — resolves to `ratio * cores`, unaffected by the clamp.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(2.5)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, static_cast<Int64>(2.5 * static_cast<Float64>(cores)));
+    }
+
+    // Ratios whose product with the core count exceeds `Int64` range must clamp to `unlimited`
+    // instead of narrowing a float outside the destination range, which is undefined behaviour and
+    // could yield a negative or garbage limit.
+    for (Float64 ratio : {9223372036854775807.0, 1e19, 1e100, std::numeric_limits<Float64>::max()})
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(ratio), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited) << "ratio = " << ratio;
+    }
+
+    // The reported input arrived as an integer literal, which takes the `UInt64` branch of
+    // `getFloat64` and so bypasses its finiteness check entirely.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(UInt64(9223372036854775807ULL)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+
+    // A smaller exact limit still wins over the saturated ratio limit.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads", Field(Int64(4)), "");
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(1e100)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, 4);
+    }
+
+    // Zero ratio does not constrain.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+}
+
+// The config/Keeper load path (setLocalEntities) must enforce the same setting-value contract as the
+// SQL path (storeEntity). Regression: it previously ran only the `FOR <resource>` unit check, so an
+// invalid value loaded from config/Keeper was accepted and only surfaced later, when the scheduler
+// node was built.
+TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
+{
+    {
+        ResourceTest t;
+        // Bad value in a `... FOR <resource>` clause (the reported case).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'bogus' FOR cpu"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // Bad value in the base settings.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'nope'"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A valid config loads without error.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"));
+    }
+    {
+        ResourceTest t;
+        // Forward-compat: an unknown setting NAME loaded from config/Keeper/disk is tolerated (the
+        // load path passes throw_on_unknown_setting=false, matching the runtime NodeInfo parser), so
+        // a newer node's entity does not make an older node reject the whole workload.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS some_future_setting = 5"));
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
+        // storeEntity's forEachReference check).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE WORKLOAD all;\n"
+                "CREATE WORKLOAD bad IN all SETTINGS scheduler = 'fair' FOR all"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause targeting a missing entity is rejected.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
+            DB::Exception);
+    }
+}
+
+// Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
+// (current_max_slots gated schedule + setMax growth). Higher-level fairness /
+// preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
+// these are focused on the new `initial_max_slots` constructor argument and the
+// `setMax` override added by PR #102928.
+namespace
+{
+    // Poll until predicate returns true or the timeout elapses. Returns the
+    // final predicate value so the caller can assert on it. Used to let the
+    // scheduler's event-queue thread make progress (grants arrive asynchronously).
+    template <typename Pred>
+    bool waitFor(Pred pred, std::chrono::milliseconds timeout = std::chrono::seconds(5))
+    {
+        auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (pred())
+                return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return pred();
+    }
+
+    CPULeaseSettings makeLeaseSettings(const String & workload)
+    {
+        CPULeaseSettings settings;
+        settings.workload = workload;
+        // No preemption timeout — these tests never let a lease run out of credit, so
+        // we don't want a wall-clock timer kicking in and failing the test on slow CI.
+        settings.preemption_timeout = std::chrono::milliseconds::max();
+        return settings;
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazyStartsAtInitialMax)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // max_threads=5 caps the request chain; initial_max_slots=1 says
+        // "only request one slot up front — caller will grow via setMax".
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        // The initial schedule() enqueued one request — wait for the grant.
+        auto first = lease->acquire();
+        ASSERT_TRUE(first);
+
+        // No more slots should be granted, since current_max_slots == 1 and we
+        // never consume / call setMax. Holding `first` keeps `granted` at 0 and
+        // `allocated` at 1 (== current_max_slots), so schedule() bails on every
+        // chance. Verify by busy-trying for a short window — none should succeed.
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted) << "Lazy lease handed out a slot beyond initial_max_slots=1";
+
+        // No pending request either — the chain stopped after the first grant.
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxGrows)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        // Acquire the master slot first (consuming the initial grant).
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Grow the ceiling to 4. setMax should kick off scheduling for the
+        // additional capacity; the grant chain in grantImpl then fills up to
+        // current_max_slots=4 one request at a time.
+        lease->setMax(4);
+
+        // Wait for three more slots to land (one per additional grant). We
+        // accumulate them so they don't trigger consume() during teardown.
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return workers.size() >= 3;
+        });
+        ASSERT_TRUE(got_all) << "Got only " << workers.size() << " of 3 expected worker slots after setMax(4)";
+        EXPECT_EQ(workers.size(), 3u);
+
+        // current_max_slots reached — no more grants should appear.
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxClampedByMaxThreads)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // max_threads=2 is the hard cap (sizes the internal `requests` ring buffer
+        // and `threads` bitsets). setMax must never let the working set exceed it.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/2, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Ask for more than max_threads. Implementation clamps to max_threads.
+        lease->setMax(100);
+
+        // We should be able to acquire one more slot (total 2 = max_threads), no more.
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_one_more = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return !workers.empty();
+        });
+        ASSERT_TRUE(got_one_more);
+
+        // Verify the chain has stopped — we shouldn't see additional requests
+        // even with a wide setMax target.
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                workers.push_back(std::move(extra));
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted) << "Clamp ignored — got more than max_threads=2 slots";
+        EXPECT_EQ(workers.size(), 1u);
+        EXPECT_FALSE(lease->isRequesting());
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxShrinkDoesNotReclaim)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/5, master_link, worker_link, makeLeaseSettings("all"), /*initial_max_slots=*/1);
+
+        auto master = lease->acquire();
+        ASSERT_TRUE(master);
+
+        // Grow to 3 and collect both extra slots.
+        lease->setMax(3);
+        std::vector<AcquiredSlotPtr> workers;
+        bool got_two_more = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                workers.push_back(std::move(slot));
+            return workers.size() >= 2;
+        });
+        ASSERT_TRUE(got_two_more);
+
+        // Shrink to 1. Already-acquired slots remain valid (we hold three).
+        // The shrink only caps future grants — no in-flight request was enqueued
+        // here (chain ended when allocated reached current_max_slots), so nothing
+        // to cancel.
+        lease->setMax(1);
+        EXPECT_TRUE(master);
+        EXPECT_EQ(workers.size(), 2u);
+        EXPECT_FALSE(lease->isRequesting());
+
+        // Trying for more should still fail — nothing got granted because
+        // allocated >= current_max_slots(=1) immediately on entry to schedule().
+        bool extra_granted = false;
+        waitFor([&] {
+            if (auto extra = lease->tryAcquire())
+            {
+                extra_granted = true;
+                workers.push_back(std::move(extra));
+                return true;
+            }
+            return false;
+        }, std::chrono::milliseconds(50));
+        EXPECT_FALSE(extra_granted);
+    });
+
+    t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnchanged)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all");
+
+    t.async("all", "cpu", "cpu", [&](ResourceLink master_link, ResourceLink worker_link)
+    {
+        // No `initial_max_slots` argument: existing callers (and the pre-this-PR
+        // codepath via use_concurrency_control eager rollback) must continue to
+        // request all `max_threads` slots up front.
+        auto lease = std::make_shared<CPULeaseAllocation>(
+            /*max_threads=*/3, master_link, worker_link, makeLeaseSettings("all"));
+
+        // We should be able to drain all max_threads slots without ever calling setMax.
+        std::vector<AcquiredSlotPtr> slots;
+        if (auto first = lease->acquire())
+            slots.push_back(std::move(first));
+        bool got_all = waitFor([&] {
+            while (auto slot = lease->tryAcquire())
+                slots.push_back(std::move(slot));
+            return slots.size() >= 3;
+        });
+        ASSERT_TRUE(got_all) << "Eager default lease granted only " << slots.size() << "/3 slots";
+        EXPECT_EQ(slots.size(), 3u);
+    });
+
+    t.wait();
+}
+
+// Shared with in-flight handlers, so it must outlive every subscriber that owns a subscription.
+struct UnsubscribeProbe
+{
+    std::mutex mutex;
+    std::condition_variable blocker_entered_cv;
+    bool blocker_entered = false;
+    std::condition_variable release_cv;
+    bool release_blocker = false;
+    std::chrono::seconds blocker_hold{2};
+    std::atomic<bool> armed{false};
+    std::atomic<int> blocker_in_flight{0};
+    std::atomic<int> unsubscribed_handler_calls{0};
+    std::atomic<int> live_handler_calls{0};
+};
+
+// Captures `this` in its handler, like every real subscriber of getAllEntitiesAndSubscribe.
+// `subscription` is declared last, so it is destroyed before any state the handler reads.
+struct UnsubscribeTestSubscriber
+{
+    enum class Role
+    {
+        Blocker, // holds the notification inside the handler for a while
+        CountUnsubscribed, // increments unsubscribed_handler_calls
+        CountLive, // increments live_handler_calls
+    };
+
+    UnsubscribeTestSubscriber(WorkloadEntityTestStorage & storage, std::shared_ptr<UnsubscribeProbe> probe_, Role role_)
+        : probe(std::move(probe_)), role(role_)
+    {
+        subscription = storage.getAllEntitiesAndSubscribe(
+            [this, shared_probe = probe] (const std::vector<IWorkloadEntityStorage::Event> &)
+            {
+                // Reading a member is what makes the `this` capture load-bearing.
+                if (state.empty())
+                    return;
+
+                if (!shared_probe->armed.load())
+                    return;
+
+                switch (role)
+                {
+                    case Role::Blocker:
+                    {
+                        shared_probe->blocker_in_flight.fetch_add(1);
+                        {
+                            std::lock_guard lock{shared_probe->mutex};
+                            shared_probe->blocker_entered = true;
+                        }
+                        shared_probe->blocker_entered_cv.notify_all();
+                        // Held until the test releases it, or for blocker_hold if the test has nothing to signal.
+                        {
+                            std::unique_lock lock{shared_probe->mutex};
+                            shared_probe->release_cv.wait_for(
+                                lock, shared_probe->blocker_hold, [&] { return shared_probe->release_blocker; });
+                        }
+                        shared_probe->blocker_in_flight.fetch_sub(1);
+                        break;
+                    }
+                    case Role::CountUnsubscribed:
+                        shared_probe->unsubscribed_handler_calls.fetch_add(1);
+                        break;
+                    case Role::CountLive:
+                        shared_probe->live_handler_calls.fetch_add(1);
+                        break;
+                }
+            });
+    }
+
+    std::shared_ptr<UnsubscribeProbe> probe;
+    Role role;
+    String state = "subscribed";
+    scope_guard subscription;
+};
+
+// Blocks until the blocker handler is provably inside its window.
+static bool waitForBlocker(UnsubscribeProbe & probe)
+{
+    std::unique_lock lock{probe.mutex};
+    return probe.blocker_entered_cv.wait_for(lock, std::chrono::seconds(60), [&] { return probe.blocker_entered; });
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeWaitsForInFlightNotification)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+
+    // The initial handler(current_state) call already happened above, with `armed == false`.
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Handler never started, so the barrier was never exercised";
+    EXPECT_EQ(probe->blocker_in_flight.load(), 1) << "Handler is not in flight, so the barrier was never exercised";
+
+    // Destroys the scope_guard returned by getAllEntitiesAndSubscribe.
+    // The handler must still be running when unsubscribe is entered, so only the blocked thread could signal a release.
+    blocker.reset();
+
+    EXPECT_EQ(probe->blocker_in_flight.load(), 0) << "Unsubscribe returned while the handler was still running";
+
+    notifier.join();
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+
+    // Subscription order is notification order, so the blocker holds the notification before it
+    // reaches the two handlers below.
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+    auto unsubscribed = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountUnsubscribed);
+    auto live = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
+
+    // A deadlock escape that must never fire; the release after the unsubscribe below ends the hold.
+    probe->blocker_hold = std::chrono::seconds(60);
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Blocker handler never started, so nothing was exercised";
+
+    // The notifier already copied all three handlers out of the list and is parked in the first
+    // one, so this unsubscribe cannot wait for anything and must return immediately.
+    // Only the guard is dropped: the subscriber stays alive so that a handler invoked in breach of
+    // the contract reads live state and fails the assertion below instead of reading freed memory.
+    unsubscribed->subscription.reset();
+
+    {
+        std::lock_guard lock{probe->mutex};
+        probe->release_blocker = true;
+    }
+    probe->release_cv.notify_all();
+
+    notifier.join();
+
+    EXPECT_EQ(probe->live_handler_calls.load(), 1)
+        << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
+    EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
+        << "A handler was called after its subscription guard had already been destroyed";
 }

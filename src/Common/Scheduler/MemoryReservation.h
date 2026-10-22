@@ -1,0 +1,180 @@
+#pragma once
+
+#include <Common/Scheduler/ResourceAllocation.h>
+#include <Common/Scheduler/ResourceLink.h>
+#include <Common/CurrentMetrics.h>
+
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <boost/intrusive/slist.hpp>
+#include <base/defines.h>
+
+class MemoryTracker;
+
+namespace DB
+{
+
+class ISpillable;
+class IProcessor;
+
+/// Notification only: implementations wake execution without calling operator code.
+class ISpillRequestListener
+{
+public:
+    virtual ~ISpillRequestListener() = default;
+    virtual void notifySpillRequested() = 0;
+
+private:
+    friend struct MemoryReservation;
+    boost::intrusive::slist_member_hook<> spill_listener_hook;
+};
+
+/// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
+/// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
+///   CREATE RESOURCE memory (MEMORY RESERVATION)
+///   CREATE WORKLOAD all SETTINGS max_memory = '1Gi'
+///   SELECT ... SETTINGS workload = 'all', reserve_memory = '100Mi'
+/// The scheduler sees usage as `allocated = max(actual_size, reserve_memory)` and guarantees the
+/// total `allocated` under each workload does not exceed its `max_memory` limit.
+/// A single scheduler thread (top) serves many query/pipeline threads (bottom):
+///
+///    SpaceSharedScheduler    <-- dedicated thread + EventQueue (root)
+///             |
+///      AllocationLimit       <-- caps max_memory
+///             |
+///    Fair / Precedence       <-- share / order sibling workloads
+///             |
+///      AllocationQueue       <-- leaf; reservations attach here (IAllocationQueue)
+///             |  ^ requests  : insert / increase / decrease / remove
+///  - - - - - -+- - - - - - - - - - - - - - -  scheduler thread / query threads
+///             |  v approvals : increase / decrease / kill / fail
+///     MemoryReservation      <-- owned by QueryStatus (a ResourceAllocation)
+///             |                  syncWithMemoryTracker()
+///      PipelineExecutor      <-- drives query execution
+///             |                  read on each sync point
+///       MemoryTracker        <-- actual bytes used (source of truth)
+///
+/// The `workload` setting resolves (via `WorkloadResourceManager`) to a `ResourceLink` naming that
+/// workload's `AllocationQueue`. A reservation's life: construct (`insertAllocation`; blocks until
+/// admitted when `reserve_memory > 0`), sync (`syncWithMemoryTracker` issues at most one increase or
+/// decrease per call; may be killed under pressure), destruct (`removeAllocation`, wait for removal).
+/// Requests bubble up to the root and are approved on the scheduler thread; the scheduler-side nodes
+/// (`AllocationLimit`, `Fair`/`PrecedenceAllocation`, `AllocationQueue`) form one `ISpaceSharedNode`
+/// subtree per `WorkloadNode`. See also `IAllocationQueue`, `ISpaceSharedNode`,
+/// `IncreaseRequest`/`DecreaseRequest`.
+struct MemoryReservation : public ResourceAllocation
+{
+public:
+    // Blocks until the reservation is admitted iff reserved_size > 0. `admission_deadline_` is an absolute
+    // steady_clock deadline shared with the query slot so the whole admission phase uses one budget; on
+    // expiry the still-pending allocation is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`
+    // exception is thrown. `time_point::max()` means no timeout.
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size, ResourceCost min_bytes_to_spill_,
+                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
+    ~MemoryReservation() override;
+
+    // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
+    void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
+
+    ResourceCost getTotalReclaimable();
+    void registerSpillable(const ISpillable * spillable);
+    void unregisterSpillable(const ISpillable * spillable, const IProcessor * owner);
+    /// Published capacity available for an independently scheduled spill.
+    ResourceCost getSpillCandidateBytes(const ISpillable * spillable);
+    bool scheduleSpill(const ISpillable * spillable, const IProcessor * owner);
+
+    void addSpillListener(ISpillRequestListener & listener);
+    void removeSpillListener(ISpillRequestListener & listener);
+    /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
+    /// state so that processors sharing it are counted once. Sampling and publication are serialized.
+    /// A spill completion publishes its estimate and settlement together after tracker synchronization.
+    ResourceCost updateReclaimable(const ISpillable * spillable, bool report = true);
+
+    [[nodiscard]] ResourceCost takeSpillRequest(
+        const ISpillable * spillable, ResourceCost spillable_bytes, const IProcessor * scheduled_owner = nullptr);
+    ResourceCost getMinBytesToSpill() const { return min_bytes_to_spill; }
+    ResourceCost finishSpill(const ISpillable * spillable, ResourceCost settled_bytes);
+    /// Return a failed claim to pending demand; query cancellation will retire it after workers stop.
+    void cancelSpill(const ISpillable * spillable, ResourceCost bytes);
+
+private:
+    void throwIfNeeded();
+    void reportReclaimable(bool force = false);
+    void notifySpillRequested();
+
+    // Unlinks this allocation from the scheduler and waits until removal completes.
+    // Used both by the destructor and by the constructor when admission fails, so a throwing
+    // constructor never leaves a dangling pointer in the scheduler.
+    void detachFromQueue();
+
+    // Interaction with the scheduler thread
+    void killAllocation(const std::exception_ptr & reason) override;
+    void spillAllocation(ResourceCost additional_bytes) override;
+    void increaseApproved(const IncreaseRequest & increase) override;
+    void decreaseApproved(const DecreaseRequest & decrease) override;
+    void allocationFailed(const std::exception_ptr & reason) override;
+
+    const ResourceCost reserved_size;
+    const ResourceCost min_bytes_to_spill;
+
+    /// Keeps reclaimable totals and settlements from reaching the queue out of order.
+    /// Reporters take this lock first, snapshot both under `MemoryReservation::mutex`,
+    /// then release `MemoryReservation::mutex` before calling the queue while still holding this lock.
+    /// The `spillAllocation` callback also reports, and must run outside the queue mutex.
+    /// Do not hold this lock across `syncWithMemoryTracker`.
+    std::mutex reclaimable_report_mutex;
+
+    /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
+    /// Scheduler callbacks may acquire this mutex under `AllocationQueue::mutex`.
+    /// Query threads release it before acquiring `reclaimable_report_mutex` or calling queue operations.
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    /// Detachment waits for notifications to finish. Never acquired while holding `mutex`.
+    std::mutex spill_listeners_mutex;
+    /// Usually only one listener
+    boost::intrusive::slist<ISpillRequestListener,
+        boost::intrusive::member_hook<ISpillRequestListener,
+            boost::intrusive::slist_member_hook<>, &ISpillRequestListener::spill_listener_hook>,
+        boost::intrusive::constant_time_size<false>> spill_listeners;
+
+    std::exception_ptr kill_reason;
+    std::exception_ptr fail_reason;
+    bool removed = false;
+    ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
+    ResourceCost actual_size = 0; // real size of the resource used by the allocation
+    ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued
+    ResourceCost enqueued_decrease = 0; // size of the in-flight decrease request
+
+    /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
+    struct Metrics
+    {
+        UInt64 increases = 0;
+        UInt64 decreases = 0;
+        UInt64 failed = 0;
+        UInt64 killed = 0;
+        void apply();
+    } metrics;
+
+    /// Scheduler requested spilling
+    ResourceCost enqueued_spill = 0;
+    /// Number of processors that do spilling in parallel
+    size_t spills_in_flight = 0;
+
+    /// Sum of the last reported per-object reclaimable estimates.
+    ResourceCost reclaimable_total = 0;
+    /// Settlements accumulated with estimate changes under `mutex`, consumed by the next report.
+    ResourceCost pending_settled_bytes = 0;
+    /// Last total sent to the scheduler (small updates are not sent)
+    ResourceCost reported_reclaimable = 0;
+
+    /// Introspection
+    CurrentMetrics::Increment approved_increment;
+    CurrentMetrics::Increment demand_increment;
+    CurrentMetrics::Increment reclaimable_increment;
+};
+
+using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
+
+}

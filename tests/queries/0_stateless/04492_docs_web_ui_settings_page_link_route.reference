@@ -1,0 +1,9 @@
+ClickHouse <span class="accent">Reference</span>
+so drop a trailing slash before stripping the extension.
+'dictionaries': '/sql-reference/dictionaries',
+'merge-tree-settings': '/operations/settings/merge-tree-settings',
+'merge-tree-settings.md/#materialize_skip_indexes_on_merge': 'https://clickhouse.com/docs/operations/settings/merge-tree-settings#materialize_skip_indexes_on_merge',
+'../dictionaries#embedded-dictionaries': 'https://clickhouse.com/docs/sql-reference/dictionaries#embedded-dictionaries',
+verifyDocsURLCompatibility();
+1
+1

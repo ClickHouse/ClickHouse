@@ -1,0 +1,90 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingIf'
+title: 'quantilesTimingIf'
+description: 'Exemplo de uso do combinador quantilesTimingIf'
+keywords: ['quantilesTiming', 'if', 'combinador', 'exemplos', 'quantilesTimingIf']
+sidebarTitle: 'quantilesTimingIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if) pode ser aplicado à função [`quantilesTiming`](/pt-BR/reference/functions/aggregate-functions/quantileTiming)
+para calcular quantis de valores de tempo nas linhas em que a condição é verdadeira,
+usando a função de combinador agregado `quantilesTimingIf`.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Neste exemplo, vamos criar uma tabela que armazena os tempos de resposta da API para diferentes endpoints
+e usar `quantilesTimingIf` para calcular os quantis do tempo de resposta de solicitações bem-sucedidas.
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_time_ms UInt32,
+    is_successful UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', 82, 1),
+    ('orders', 94, 1),
+    ('orders', 98, 1),
+    ('orders', 87, 1),
+    ('orders', 103, 1),
+    ('orders', 92, 1),
+    ('orders', 89, 1),
+    ('orders', 105, 1),
+    ('products', 45, 1),
+    ('products', 52, 1),
+    ('products', 48, 1),
+    ('products', 51, 1),
+    ('products', 49, 1),
+    ('products', 53, 1),
+    ('products', 47, 1),
+    ('products', 50, 1),
+    ('users', 120, 0),
+    ('users', 125, 0),
+    ('users', 118, 0),
+    ('users', 122, 0),
+    ('users', 121, 0),
+    ('users', 119, 0),
+    ('users', 123, 0),
+    ('users', 124, 0);
+
+SELECT
+    endpoint,
+    quantilesTimingIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_time_ms, is_successful = 1) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+A função `quantilesTimingIf` calculará quantis apenas para requisições bem-sucedidas (is&#95;successful = 1).
+O array retornado contém os seguintes quantis nesta ordem:
+
+* 0 (mínimo)
+* 0.25 (primeiro quartil)
+* 0.5 (mediana)
+* 0.75 (terceiro quartil)
+* 0.95 (95º percentil)
+* 0.99 (99º percentil)
+* 1.0 (máximo)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`quantilesTiming`](/pt-BR/reference/functions/aggregate-functions/quantileTiming)
+* [`If combinador`](/pt-BR/reference/functions/aggregate-functions/combinators#-if)

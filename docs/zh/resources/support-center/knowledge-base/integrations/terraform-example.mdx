@@ -1,0 +1,265 @@
+---
+title: 如何使用 Cloud API 的 Terraform 示例
+description: "本文介绍如何使用 Terraform 通过 API 创建/删除集群的示例"
+Date: 2023-09-02
+tags: ['原生客户端和接口']
+keywords: ['Terraform']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何使用 API 管理 ClickHouse Cloud 上的集群？
+
+<div id="answer">
+  ## 回答
+</div>
+
+我们将使用 Terraform 和 [ClickHouse Provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 来配置基础设施。
+
+步骤：
+
+1). 在 Cloud 中创建 API key。
+请参考此处文档操作 - [https://clickhouse.com/docs/cloud/manage/openapi](https://clickhouse.com/docs/cloud/manage/openapi)
+
+将凭据保存在本地。
+
+2). 通过以下链接安装 Terraform - [https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+
+如果你使用 Mac，也可以使用 Homebrew 包管理器。
+
+3). 在任意位置创建一个 directory：
+
+```
+mkdir test
+➜  test pwd
+/Users/jaijhala/Desktop/terraform/test
+```
+
+4). 创建 2 个文件：`main.tf` 和 `secret.tfvars`
+
+复制以下内容：
+
+`main.tf` 文件内容如下：
+
+```
+terraform {
+ required_providers {
+   clickhouse = {
+     source = "ClickHouse/clickhouse"
+     version = "0.0.2"
+   }
+ }
+}
+
+variable "organization_id" {
+  type = string
+}
+
+variable "token_key" {
+  type = string
+}
+
+variable "token_secret" {
+  type = string
+}
+
+provider clickhouse {
+  environment 	= "production"
+  organization_id = var.organization_id
+  token_key   	= var.token_key
+  token_secret	= var.token_secret
+}
+
+variable "service_password" {
+  type = string
+  sensitive   = true
+}
+
+resource "clickhouse_service" "service123" {
+  name       	= "jai-terraform"
+  cloud_provider = "aws"
+  region     	= "us-east-2"
+  tier       	= "development"
+  idle_scaling   = true
+  password  = var.service_password
+  ip_access = [
+	{
+    	source  	= "0.0.0.0/0"
+    	description = "Anywhere"
+	}
+  ]
+}
+
+output "CLICKHOUSE_HOST" {
+  value = clickhouse_service.service123.endpoints.0.host
+}
+```
+
+你可以在上方的 resources 部分中替换为你自己的参数，例如服务名称、区域等。
+
+`secret.tfvars` 用于填写你之前下载的所有 API Key 相关信息。这个文件的作用是将所有敏感凭据与主配置文件分开，避免直接暴露在主配置文件中。
+
+内容大致如下 (请替换这些参数) ：
+
+```
+organization_id = "e957a5f7-4qe3-4b05-ad5a-d02b2dcd0593"
+token_key = "QWhhkMeytqQruTeKg"
+token_secret = "4b1dNmjWdLUno9lXxmKvSUcPP62jvn7irkuZPbY"
+service_password = "password123!"
+```
+
+5).  在此目录下运行 `terraform init`
+
+预期输出：
+
+```
+Initializing the backend...
+
+Initializing provider plugins...
+- Finding clickhouse/clickhouse versions matching "0.0.2"...
+- Installing clickhouse/clickhouse v0.0.2...
+- Installed clickhouse/clickhouse v0.0.2 (self-signed, key ID D7089EE5C6A92ED1)
+
+Partner and community providers are signed by their developers.
+If you'd like to know more about provider signing, you can read about it here:
+https://www.terraform.io/docs/cli/plugins/signing.html
+
+Terraform has created a lock file .terraform.lock.hcl to record the provider
+selections it made above. Include this file in your version control repository
+so that Terraform can guarantee to make the same selections by default when
+you run "terraform init" in the future.
+
+Terraform has been successfully initialized!
+
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+```
+
+6). 运行 `terraform apply -var-file=secret.tfvars`。
+
+类似于： 
+
+```
+➜  test terraform apply -var-file=secret.tfvars
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be created
+  + resource "clickhouse_service" "service123" {
+      + cloud_provider = "aws"
+      + endpoints      = (known after apply)
+      + id             = (known after apply)
+      + idle_scaling   = true
+      + ip_access      = [
+          + {
+              + description = "Anywhere"
+              + source      = "0.0.0.0/0"
+            },
+        ]
+      + last_updated   = (known after apply)
+      + name           = "jai-terraform"
+      + password       = (sensitive value)
+      + region         = "us-east-2"
+      + tier           = "development"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + CLICKHOUSE_HOST = (known after apply)
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+```
+
+输入 `yes` 并按回车
+
+补充说明：注意上方显示的是 `password       = (sensitive value)`。
+这是因为我们在 main.tf 文件中将密码设置为了 `sensitive   = true`。
+
+7). 创建服务需要几分钟，不过最终应会显示如下：
+
+```
+  Enter a value: yes
+
+clickhouse_service.service123: Creating...
+clickhouse_service.service123: Still creating... [10s elapsed]
+clickhouse_service.service123: Still creating... [20s elapsed]
+clickhouse_service.service123: Still creating... [30s elapsed]
+clickhouse_service.service123: Still creating... [40s elapsed]
+clickhouse_service.service123: Still creating... [50s elapsed]
+clickhouse_service.service123: Still creating... [1m0s elapsed]
+clickhouse_service.service123: Still creating... [1m10s elapsed]
+clickhouse_service.service123: Still creating... [1m20s elapsed]
+clickhouse_service.service123: Still creating... [1m30s elapsed]
+clickhouse_service.service123: Still creating... [1m40s elapsed]
+clickhouse_service.service123: Creation complete after 1m41s [id=aa8d8d63-1878-4600-8470-630715af38ed]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud"
+➜  test
+```
+
+8). 检查 Cloud Console，你应该可以看到已创建的服务。
+
+9). 若要再次清理/销毁该服务，请运行 `terraform destroy -var-file=secret.tfvars`
+
+类似如下：
+
+```
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be destroyed
+  - resource "clickhouse_service" "service123" {
+      - cloud_provider = "aws" -> null
+      - ............
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  - CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud" -> null
+
+Do you really want to destroy all resources?
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value:
+```
+
+输入 yes 后按回车
+
+10).
+
+```
+clickhouse_service.service123: Destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 10s elapsed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 20s elapsed]
+clickhouse_service.service123: Destruction complete after 27s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+这样它就会从 Cloud Console 中消失。
+
+有关 Cloud API 的更多信息，请参见此处 - [https://clickhouse.com/docs/cloud/manage/api/api-overview](https://clickhouse.com/docs/cloud/manage/api/api-overview)

@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -20,6 +19,7 @@ namespace ErrorCodes
 /** Wrapper for compressed column data.
   * The only supported operations are:
   * - decompress (reconstruct the source column)
+  * - get the separately compressed parts of the source column, see `getParts`
   * - get size in rows or bytes.
   *
   * It is needed to implement in-memory compression
@@ -32,13 +32,13 @@ namespace ErrorCodes
   *
   * Also in-memory compression allows to keep more data in RAM.
   */
-class ColumnCompressed : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
+class ColumnCompressed final : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
 {
 public:
     using Lazy = std::function<ColumnPtr()>;
 
-    ColumnCompressed(size_t rows_, size_t bytes_, Lazy lazy_)
-        : rows(rows_), bytes(bytes_), lazy(lazy_)
+    ColumnCompressed(size_t rows_, size_t bytes_, Lazy lazy_, Columns parts_ = {})
+        : rows(rows_), bytes(bytes_), lazy(lazy_), parts(std::move(parts_))
     {
     }
 
@@ -52,6 +52,11 @@ public:
     {
         return lazy();
     }
+
+    /// The parts of the source column, which share the compressed data (not counted in `byteSize`), or empty if it can be
+    /// decompressed only as a whole: `ColumnString` {offsets as `ColumnUInt64`}, `ColumnArray` {data, offsets},
+    /// `ColumnNullable` {nested, null map}, `ColumnTuple` {elements}, `ColumnMap` {nested array}.
+    const Columns & getParts() const { return parts; }
 
     /** Wrap uncompressed column without compression.
       * Method can be used when compression is not worth doing.
@@ -87,7 +92,9 @@ public:
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
     std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
+    bool supportsGetDataAt() const override { return false; }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
+    bool hasOnlyTypeDefaults() const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -101,9 +108,8 @@ public:
     std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeDecompressed(); }
-    void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
-    WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
+    void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
     void filter(const Filter &) override { throwMustBeDecompressed(); }
@@ -146,6 +152,7 @@ protected:
     size_t bytes;
 
     Lazy lazy;
+    Columns parts;
 
 private:
     [[noreturn]] static void throwMustBeDecompressed()

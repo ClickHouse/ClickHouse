@@ -1,0 +1,46 @@
+---
+description: 'Limites de conexões TCP.'
+sidebarTitle: 'Limites de conexões TCP'
+slug: /operations/settings/tcp-connection-limits
+title: 'Limites de conexões TCP'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+Você pode fazer com que uma conexão TCP do ClickHouse (ou seja, uma conexão por meio do [cliente de linha de comando](/pt-BR/concepts/features/interfaces/client))
+seja desconectada automaticamente após um certo número de consultas ou após uma certa duração.
+Após a desconexão, não ocorre nenhuma reconexão automática (a menos que isso seja acionado por outro evento,
+como o envio de outra consulta no cliente de linha de comando).
+
+Os limites de conexão são habilitados definindo as configurações do servidor
+`tcp_close_connection_after_queries_num` (para o limite de consultas)
+ou `tcp_close_connection_after_queries_seconds` (para o limite de duração) com um valor maior que 0.
+Se ambos os limites estiverem habilitados, a conexão será fechada quando qualquer um deles for atingido primeiro.
+
+Ao atingir um limite e ser desconectado, o cliente recebe uma
+exceção `TCP_CONNECTION_LIMIT_REACHED`, e **a consulta que causa a desconexão nunca é processada**.
+
+<div id="query-limits">
+  ## Limites de consulta
+</div>
+
+Supondo que `tcp_close_connection_after_queries_num` esteja definido como N, a conexão permite
+N consultas bem-sucedidas. Na consulta N + 1, o cliente se desconecta.
+
+Toda consulta processada conta para o limite de consultas. Portanto, ao conectar um cliente de linha de comando,
+pode haver uma consulta automática inicial de avisos do sistema, que conta para o limite.
+
+Quando uma conexão TCP fica ociosa (ou seja, não processa consultas por algum período,
+especificado pela configuração de sessão `poll_interval`), o número de consultas contabilizadas até então é redefinido para 0.
+Isso significa que o número total de consultas em uma única conexão pode exceder
+`tcp_close_connection_after_queries_num` se houver ociosidade.
+
+<div id="duration-limits">
+  ## Limites de duração
+</div>
+
+A duração da conexão é medida a partir do momento em que o cliente se conecta.
+O cliente é desconectado na primeira consulta depois que `tcp_close_connection_after_queries_seconds` segundos tiverem se passado.

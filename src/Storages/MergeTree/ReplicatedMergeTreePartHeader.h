@@ -43,7 +43,7 @@ private:
     {
     }
 
-    std::array<char, 16> columns_hash;
+    std::array<char, 16> columns_hash{};
     MinimalisticDataPartChecksums checksums;
 };
 

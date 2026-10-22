@@ -1,9 +1,10 @@
--- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tags: no-object-storage, no-random-merge-tree-settings, no-random-settings, no-parallel
 -- no-s3 because read FileOpen metric
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;
 SET use_uncompressed_cache = 0;
+SET use_columns_cache = 0;
 SET local_filesystem_read_method='pread';
 
 CREATE TABLE nested
@@ -67,6 +68,9 @@ INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * 
 SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) FROM nested GROUP BY id % 10;
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;
-SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10;
+-- Pin `optimize_read_in_order` so the test's expected row order, which relies on
+-- `arrayJoin` consuming pre-sorted source rows in primary-key order, is stable.
+-- See https://github.com/ClickHouse/ClickHouse/issues/82279.
+SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10 SETTINGS optimize_read_in_order = 1;
 
 DROP TABLE nested;

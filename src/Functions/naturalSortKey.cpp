@@ -8,11 +8,10 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
-class FunctionNaturalSortKey : public IFunction
+class FunctionNaturalSortKey final : public IFunction
 {
 public:
     static constexpr auto name = "naturalSortKey";
@@ -28,13 +27,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        return arguments[0];
+        return "(T : String) -> T";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -227,16 +222,21 @@ REGISTER_FUNCTION(NaturalSortKey)
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT s FROM t ORDER BY naturalSortKey(s)",
+        R"(
+CREATE TABLE t (s String) ENGINE = Memory;
+INSERT INTO t VALUES ('a1'), ('a02');
+
+SELECT s FROM t ORDER BY naturalSortKey(s);
+        )",
         R"(
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

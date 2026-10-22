@@ -22,7 +22,7 @@ template <typename T>
 requires std::is_same_v<T, UInt128> || std::is_same_v<T, Int128> || std::is_same_v<T, UInt256> || std::is_same_v<T, Int256>
 T byteSwap(T x)
 {
-    T dest;
+    T dest{};
     reverseMemcpy(&dest, &x, sizeof(T));
     return dest;
 }
@@ -38,6 +38,10 @@ struct ByteSwapImpl
 {
     using ResultType = T;
     static constexpr const bool allow_string_or_fixed_string = false;
+    /// Documentation-only: the legacy `getReturnTypeImpl(DataTypes)` stays authoritative so that
+    /// floating-point arguments reach execution and throw `NOT_IMPLEMENTED` as before, instead of
+    /// being rejected at analysis time.
+    static constexpr auto signature_documentation = "(A : Integer) -> A";
     static T apply(T x) { return byteSwap<T>(x); }
 
 #if USE_EMBEDDED_COMPILER

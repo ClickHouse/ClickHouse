@@ -26,16 +26,22 @@ struct AggregateFunctionAnyHeavyData
     using Self = AggregateFunctionAnyHeavyData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     UInt64 counter = 0;
 
 public:
-    [[noreturn]] explicit AggregateFunctionAnyHeavyData()
+    [[noreturn]] explicit AggregateFunctionAnyHeavyData() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyHeavyData initialized empty");
     }
 
-    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
+    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    {
+        generateSingleValueFromType(value_type, v_data);
+    }
 
     ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
 
@@ -118,12 +124,12 @@ public:
         data(place).add(*columns[0], row_num, arena);
     }
 
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        data(place).addManyDefaults(*columns[0], 0, arena);
+        data(place).addManyDefaults(*columns[0], length, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).add(data(rhs), arena);
     }
@@ -159,6 +165,7 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_anyHeavy = R"(
@@ -177,6 +184,12 @@ anyHeavy(column)
     {
         "Usage example",
         R"(
+CREATE TABLE ontime (AirlineID UInt32) ENGINE = Memory;
+
+-- Three quarters of the flights belong to one airline, so it occurs in more than half of the
+-- rows seen by every thread and the result is the same on every run.
+INSERT INTO ontime SELECT if(number % 4 = 0, 19393, 19690) FROM numbers(1000);
+
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime;
         )",

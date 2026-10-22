@@ -1,0 +1,49 @@
+---
+description: 'Model Context ProtocolとClickHouse MCPサーバーの概要'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'AI', 'インターフェイス']
+sidebarTitle: 'Model Context Protocol (MCP)'
+slug: /interfaces/mcp
+title: 'Model Context Protocol (MCP)'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+[Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) (MCP) は、AIアシスタントが外部システムに接続できるようにするオープンスタンダードです。
+モデルとサービスの組み合わせごとにカスタムインテグレーションを作成することなく、モデルがデータソース、API、データベース、ツールにアクセスするための一貫したインターフェイスを提供します。
+
+AIアプリケーションは、MCPを一度実装するだけで、互換性のある任意のサーバーに接続できます。
+同様に、MCPサーバーは、その機能を互換性のある任意のクライアントに公開できます。
+
+<div id="architecture">
+  ## アーキテクチャ
+</div>
+
+MCPはクライアント・サーバーアーキテクチャに基づいています。
+
+* Claude Desktop、Cursor、VS CodeなどのMCPクライアントは、MCPサーバーに接続します。
+* MCPサーバーは、標準化されたインターフェイスを通じてツールと機能を提供します。
+* AIモデルは、必要に応じて公開されたツールを使用し、外部データや機能にアクセスします。
+
+<Image img="/images/use-cases/AI_ML/MCP/mcp_overview.webp" alt="MCPクライアント・サーバーアーキテクチャ" size="lg" />
+
+GitHubでは、コミュニティが管理する[MCPクライアント](https://github.com/punkpeye/awesome-mcp-clients)と[MCPサーバー](https://github.com/punkpeye/awesome-mcp-servers)のコレクションを確認できます。
+
+<div id="clickhouse-mcp-server">
+  ## ClickHouse MCP server
+</div>
+
+[ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse)を使用すると、AIアシスタントがデータベースやテーブルを検出し、スキーマを確認して、ClickHouseクラスターに対してSQLクエリを実行できます。
+サーバーが公開するツールはバージョンによって異なる場合があるため、各例で使用するツール名については、該当するインテグレーションガイドを参照してください。
+
+サーバーでは、デフォルトで読み取り専用クエリのみが許可されます。
+アシスタントに必要な権限のみを付与した専用のClickHouseユーザーを使用してください。
+
+ローカルのMCPクライアントを接続するには、[ClickHouse MCP server をセットアップする](/ja/guides/use-cases/ai-ml/MCP/claude-desktop)を参照してください。
+管理型リモートサーバーについては、[ClickHouse Cloud のリモートMCPサーバー](/ja/products/cloud/features/ai-ml/remote-mcp)を参照してください。
+
+<Tip>
+  **Agent Skills**
+
+  [ClickHouse Agent Skills repository](https://github.com/ClickHouse/agent-skills)では、スキーマ設計、クエリ最適化、データインジェストパターンなどのClickHouse固有の専門知識をAIコーディングエージェントに追加する、パッケージ化された手順を提供しています。
+</Tip>

@@ -8,22 +8,35 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/IExecutor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <chrono>
 #include <memory>
+#include <mutex>
 
 
 namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+    extern const Metric WaitingQuery;
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserThrottlerBytes;
+    extern const Event UserThrottlerSleepMicroseconds;
+    extern const Event AllUsersThrottlerBytes;
+    extern const Event AllUsersThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -39,14 +52,8 @@ namespace Setting
     extern const SettingsUInt64 max_network_bandwidth_for_user;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_user;
     extern const SettingsUInt64 memory_usage_overcommit_max_wait_microseconds;
-    extern const SettingsUInt64 memory_overcommit_ratio_denominator;
     extern const SettingsUInt64 memory_overcommit_ratio_denominator_for_user;
-    extern const SettingsUInt64 memory_profiler_step;
-    extern const SettingsUInt64 memory_profiler_sample_min_allocation_size;
-    extern const SettingsUInt64 memory_profiler_sample_max_allocation_size;
-    extern const SettingsFloat memory_profiler_sample_probability;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_query;
-    extern const SettingsFloat memory_tracker_fault_probability;
     extern const SettingsUInt64 priority;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool replace_running_query;
@@ -57,6 +64,9 @@ namespace Setting
     extern const SettingsBool trace_profile_events;
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
+    extern const SettingsUInt64 reserve_memory;
+    extern const SettingsUInt64 min_bytes_to_spill;
+    extern const SettingsMilliseconds workload_admission_timeout_ms;
 }
 
 namespace ErrorCodes
@@ -66,7 +76,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -116,23 +126,59 @@ ProcessList::EntryPtr ProcessList::insert(
     const ClientInfo & client_info = query_context->getClientInfo();
     const Settings & settings = query_context->getSettingsRef();
 
+    /// Read before `mutex` is taken: `Context::getUserID` locks the context, and `QueryStatus` is
+    /// constructed with `mutex` held (see the constructor's own note about holding both locks).
+    const std::optional<UUID> user_id = query_context->getUserID();
+
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
-    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
+    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
     std::shared_ptr<QueryStatus> query;
 
-    // Acquire a query slot from resource scheduler if necessary.
+    // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
     // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
     // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
+    // NOTE: `MemoryReservation` admission may block here and evict other queries. The query may still be
+    // rejected below by reject-fast `ProcessList` checks (`max_concurrent_queries*`, duplicate query id,
+    // etc.), in which case the reservation was performed in vain. We accept this trade-off: the query slot
+    // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
+    // and memory reservations together as a single allocation. Splitting their admission across the
+    // `ProcessList` mutex would prevent that unification and is a worse design overall.
     QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
-        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
+        // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
+        // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
+        // budget. `saturatedMilliseconds` caps the wait at ~1 year (the standard idiom — a longer timeout
+        // is effectively no timeout); 0 is the explicit "no timeout" and maps to an infinite deadline.
+        const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
+        const auto admission_deadline = admission_timeout_ms
+            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+            : std::chrono::steady_clock::time_point::max();
+
+        /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
+        auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
+        String query_resource_name = workload_entity_storage->getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link);
+                query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
+        }
+        String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
+        if (!memory_reservation_resource_name.empty())
+        {
+            if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
+            {
+                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
+                if (!link.allocation_queue)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
+                        memory_reservation_resource_name);
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link, client_info.current_query_id, settings[Setting::reserve_memory], settings[Setting::min_bytes_to_spill], admission_deadline);
+            }
         }
     }
 
@@ -146,7 +192,7 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             if (queue_max_wait_ms)
                 LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
                     [&]{ return non_internal_processes < max_size; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous queries. Maximum: {}",
@@ -232,7 +278,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
 
                     const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
-                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
+                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(replace_running_query_max_wait_ms),
                         [&]
                         {
                             running_query = user_process_list->second.queries.find(client_info.current_query_id);
@@ -267,13 +313,35 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
+        /// A new period starts with the user's next query rather than when its last one left, because a query
+        /// settles what it holds after it leaves the list. Set the limits before the group is attached below, so
+        /// that what the query already allocated is checked against them.
+        const bool starts_a_new_period = user_process_list.queries.empty();
+        if (starts_a_new_period)
+            user_process_list.startNewPeriod();
+
+        /// Track memory usage for all simultaneously running queries from single user.
+        if (starts_a_new_period)
+            user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
+        else
+            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
+        user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
+        user_process_list.user_memory_tracker.setDescription("User");
+
         /// Actualize thread group info
         CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
-            thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+
+            /// A nested group (a view, a flush run by `SYSTEM FLUSH ASYNC INSERT QUEUE`, a dictionary load) is
+            /// charged through the group above it, and would be charged to the user twice.
+            if (!thread_group->isNested())
+            {
+                thread_group->memory_tracker.reparent(&user_process_list.user_memory_tracker);
+                thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
+            }
             if (user_process_list.user_temp_data_on_disk)
             {
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
@@ -284,9 +352,6 @@ ProcessList::EntryPtr ProcessList::insert(
                     .metrics = {}, /// Metrics are set by child scopes
                 };
 
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
-
                 if (user_process_list.user_temp_data_on_disk)
                     query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                         user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
@@ -294,38 +359,28 @@ ProcessList::EntryPtr ProcessList::insert(
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
-            thread_group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
+            configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
 
-            if (query_context->hasTraceCollector())
+            /// Reapply sampling
+            if (current_thread)
+                current_thread->resolveMemorySampleConfig();
+
+            if (query_context->hasTraceCollector() && settings[Setting::trace_profile_events])
             {
-                /// Set up memory profiling
-                thread_group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
-
-                thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
-                thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
-                thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-
-                /// Set up tracing of profile events
-                if (settings[Setting::trace_profile_events])
+                const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
+                if (!list_of_events_to_trace.empty())
                 {
-                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
-                    if (!list_of_events_to_trace.empty())
-                    {
-                        /// Trace specific profile events
-                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
-                    }
-                    else
-                    {
-                        /// Trace all profile events
-                        thread_group->performance_counters.setTraceAllProfileEvents();
-                    }
+                    /// Trace specific profile events
+                    thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
+                }
+                else
+                {
+                    /// Trace all profile events
+                    thread_group->performance_counters.setTraceAllProfileEvents();
                 }
             }
 
             thread_group->memory_tracker.setDescription("Query");
-            if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-                thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
-
             thread_group->memory_tracker.setOvercommitWaitingTime(settings[Setting::memory_usage_overcommit_max_wait_microseconds]);
 
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
@@ -337,10 +392,12 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
+            user_id,
             priorities.insert(
                 settings[Setting::priority],
-                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
+                saturatedMilliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
+            std::move(memory_reservation),
             std::move(thread_group),
             query_kind,
             settings,
@@ -358,7 +415,7 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
-        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
 
@@ -372,21 +429,22 @@ ProcessList::EntryPtr ProcessList::insert(
             ++user_process_list.non_internal_queries;
         }
 
-        /// Track memory usage for all simultaneously running queries from single user.
-        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
-        user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("User");
-
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
+            total_network_throttler = std::make_shared<Throttler>(
+                settings[Setting::max_network_bandwidth_for_all_users],
+                ProfileEvents::AllUsersThrottlerBytes,
+                ProfileEvents::AllUsersThrottlerSleepMicroseconds);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-                user_process_list.user_throttler
-                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
+                user_process_list.user_throttler = std::make_shared<Throttler>(
+                    settings[Setting::max_network_bandwidth_for_user],
+                    total_network_throttler,
+                    ProfileEvents::UserThrottlerBytes,
+                    ProfileEvents::UserThrottlerSleepMicroseconds);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
@@ -462,9 +520,9 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker.
-    if (user_process_list.queries.empty())
-        user_process_list.resetTrackers();
+    /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
+    /// reads entries lock-free via raw pointers and relies on them never being erased. Its trackers are reset
+    /// when the user's next query arrives, see `ProcessList::insert`.
 }
 
 
@@ -473,8 +531,10 @@ QueryStatus::QueryStatus(
     const String & query_,
     UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
+    const std::optional<UUID> & user_id_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
+    MemoryReservationPtr && memory_reservation_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -484,7 +544,9 @@ QueryStatus::QueryStatus(
     , query(query_)
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
+    , user_id(user_id_)
     , query_slot(std::move(query_slot_))
+    , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -492,6 +554,7 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
+    , is_ddl_or_on_cluster_internal(context_->isDDLOrOnClusterInternal())
 {
     if (!is_internal)
         num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
@@ -503,12 +566,32 @@ QueryStatus::QueryStatus(
     overflow_mode = query_settings_[Setting::timeout_overflow_mode];
 }
 
+void QueryStatus::releaseWorkloadResources()
+{
+    releaseMemoryReservation();
+    releaseQuerySlot();
+}
+
+void QueryStatus::releaseQuerySlot()
+{
+    query_slot.reset();
+}
+
+void QueryStatus::releaseMemoryReservation()
+{
+    MemoryReservationPtr delete_memory_reservation;
+    {
+        std::lock_guard lock(memory_reservation_mutex);
+        delete_memory_reservation = std::move(memory_reservation);
+    }
+}
+
 QueryStatus::~QueryStatus()
 {
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & [_, e] : executors)
-        assert(!e->executor);
+        chassert(!e->executor);
 #endif
 
     if (auto * memory_tracker = getMemoryTracker())
@@ -524,7 +607,7 @@ void QueryStatus::ExecutorHolder::cancel()
 {
     std::lock_guard lock(mutex);
     if (executor)
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 void QueryStatus::ExecutorHolder::remove()
@@ -545,7 +628,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
 
         is_killed = true;
         cancel_reason = reason;
-        cancellation_exception = exception;
+        /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
+        cancellation_exception = exception ? copyMutableException(exception) : nullptr;
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -574,7 +658,7 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns)
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
@@ -582,35 +666,39 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         {
             String additional_error_part;
             if (elapsed_ns)
-                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
+                additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Timeout exceeded: {}maximum: {:.3f} ms",
+                    additional_error_part,
+                    static_cast<double>(max_execution_time_us) / 1000);
             throwQueryWasCancelled();
         }
     }
 }
 
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+void QueryStatus::addPipelineExecutor(IExecutor * e)
 {
     /// In case of asynchronous distributed queries it is possible to call
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
-    UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
-    assert(!executors.contains(e));
+    chassert(!executors.contains(e));
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
-void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
+void QueryStatus::removePipelineExecutor(IExecutor * e)
 {
     ExecutorHolderPtr executor_holder;
 
     {
         std::lock_guard lock(executors_mutex);
-        assert(executors.contains(e));
+        chassert(executors.contains(e));
         executor_holder = executors[e];
         executors.erase(e);
     }
@@ -623,15 +711,16 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     auto elapsed_ns = watch.elapsed();
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
     return limits.checkTimeLimit(elapsed_ns, overflow_mode);
 }
 
 void QueryStatus::throwQueryWasCancelled() const
 {
+    /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
-        std::rethrow_exception(cancellation_exception);
+        std::rethrow_exception(copyMutableException(cancellation_exception));
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
@@ -640,7 +729,13 @@ void QueryStatus::throwIfKilled()
 {
     if (!is_killed.load())
         return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), 0);
+}
+
+CancelReason QueryStatus::getCancelReason() const
+{
+    std::lock_guard<std::mutex> lock(cancel_mutex);
+    return cancel_reason;
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -680,6 +775,12 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
+MemoryTracker * QueryStatus::getMemoryTracker() const
+{
+    if (!thread_group)
+        return nullptr;
+    return &thread_group->memory_tracker;
+}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
@@ -697,7 +798,29 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+std::optional<ProcessList::OwnQuery> ProcessList::tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id)
+{
+    LockAndBlocker lock(mutex);
+
+    /// Not through `queries_to_user`: an entry there is erased by key alone, so it can be gone while a
+    /// query that took the id over still runs. In `processes` an entry leaves only through its own
+    /// iterator, and a query taking an id over is appended after the one it replaces, hence newest first.
+    for (auto it = processes.rbegin(); it != processes.rend(); ++it)
+    {
+        const auto & elem = *it;
+        if (elem->user_id != user_id || elem->getClientInfo().current_query_id != current_query_id)
+            continue;
+
+        /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
+        return OwnQuery{elem->getClientInfo().current_user, elem->query};
+    }
+
+    return {};
+}
+
+
+CancellationCode ProcessList::sendCancelToQueryImpl(
+    const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id)
 {
     QueryStatusPtr elem;
 
@@ -716,7 +839,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     {
         LockAndBlocker lock(mutex);
         elem = tryGetProcessListElement(current_query_id, current_user);
-        if (!elem)
+        if (!elem || (expected_user_id && elem->user_id != *expected_user_id))
             return CancellationCode::NotFound;
         elem->is_cancelling = true;
     }
@@ -730,6 +853,19 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     });
 
     return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+{
+    return sendCancelToQueryImpl(current_query_id, current_user, {});
+}
+
+
+CancellationCode ProcessList::sendCancelToQuery(
+    const String & current_query_id, const String & current_user, const UUID & expected_user_id)
+{
+    return sendCancelToQueryImpl(current_query_id, current_user, expected_user_id);
 }
 
 
@@ -755,7 +891,60 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 }
 
 
-void ProcessList::killAllQueries()
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
+{
+    QueryStatusPtr elem;
+
+    {
+        LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
 {
     std::vector<QueryStatusPtr> cancelled_processes;
 
@@ -771,6 +960,11 @@ void ProcessList::killAllQueries()
         cancelled_processes.reserve(processes.size());
         for (auto & process : processes)
         {
+            if (except_ddl_backups_and_restores
+                && (process->query_kind == IAST::QueryKind::Backup || process->query_kind == IAST::QueryKind::Restore)
+                && process->is_ddl_or_on_cluster_internal)
+                continue;
+
             cancelled_processes.push_back(process);
             process->is_cancelling = true;
         }
@@ -832,6 +1026,11 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         }
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+    }
+    {
+        std::lock_guard lock(memory_reservation_mutex);
+        if (auto * reservation = memory_reservation.get())
+            res.spillable_memory_bytes = reservation->getTotalReclaimable();
     }
 
     if (get_settings)
@@ -930,14 +1129,22 @@ ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) cons
 
 ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
+    /// Snapshot each user outside the lock (with sharded `User` counters `getInfo(true)` is
+    /// O(num_events * cpus)). Safe: `user_to_queries` entries are never erased (see the comment in
+    /// `ProcessListEntry`'s destructor) and `unordered_map` keeps element pointers valid across
+    /// inserts, so they outlive the lock; `getInfo` reads only atomics.
+    std::vector<std::pair<String, const ProcessListForUser *>> users;
+    {
+        LockAndBlocker lock(mutex);
+        users.reserve(user_to_queries.size());
+        for (const auto & [user, user_queries] : user_to_queries)
+            users.emplace_back(user, &user_queries);
+    }
+
     UserInfo per_user_infos;
-
-    LockAndBlocker lock(mutex);
-
-    per_user_infos.reserve(user_to_queries.size());
-
-    for (const auto & [user, user_queries] : user_to_queries)
-        per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
+    per_user_infos.reserve(users.size());
+    for (const auto & [user, user_queries] : users)
+        per_user_infos.emplace(user, user_queries->getInfo(get_profile_events));
 
     return per_user_infos;
 }
@@ -968,6 +1175,85 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+void ProcessList::increaseWaitingQueryAmount()
+{
+    const UInt64 limit = max_waiting_queries_amount.load();
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (limit && value >= limit)
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                            "Too many simultaneous waiting queries. Maximum: {}, waiting: {}",
+                            limit, value);
+        if (waiting_queries_amount.compare_exchange_weak(value, value + 1))
+            break;
+    }
+
+    /// WARNING: do not throw below this point, or the matching `decreaseWaitingQueryAmount` is never called.
+
+    CurrentMetrics::add(CurrentMetrics::WaitingQuery);
+}
+
+void ProcessList::decreaseWaitingQueryAmount()
+{
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (value == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
+        if (waiting_queries_amount.compare_exchange_weak(value, value - 1))
+            break;
+    }
+
+    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
+}
+
+void ProcessList::incrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        increaseWaitingQueryAmount();
+    ++status->waiting_threads;
+}
+
+void ProcessList::decrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
+
+    if (--status->waiting_threads == 0)
+        decreaseWaitingQueryAmount();
+}
+
+/// Process list and the query to account for, or nullptr when the waiter is not a counted query:
+/// server or `clickhouse-local` startup, an AsyncLoader worker, or an internal query. A query's
+/// process list element does not change, so one wait's increment and decrement always agree.
+static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return nullptr;
+    status = query_context->getProcessListElementSafe();
+    if (!status || status->isInternal())
+        return nullptr;
+    return &query_context->getGlobalContext()->getProcessList();
+}
+
+void onLoadJobWaitersIncrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->incrementWaiters(status);
+}
+
+void onLoadJobWaitersDecrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->decrementWaiters(status);
 }
 
 }

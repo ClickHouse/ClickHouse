@@ -1,0 +1,60 @@
+---
+slug: /cloud/features/backups/faq
+sidebarTitle: '备份常见问题'
+title: '备份计费差异常见问题'
+description: '有关 ClickHouse Cloud 备份计费和保留期的常见问题'
+keywords: ['备份', 'cloud backups', '计费', '保留期', '常见问题']
+doc_type: 'reference'
+---
+
+<div id="why-bill-going-up">
+  ### 为什么备份存储账单会增加？
+</div>
+
+ClickHouse Cloud 最多会保留您数据的 8 个备份版本 (包括全量备份和增量备份) ，以确保能够可靠恢复。此前，发票中仅计入了其中一部分数据。我们正在纠正这一情况，因此自 2026 年 7 月 1 日起，收费将与实际保留的存储量相符。
+
+<Note>
+  每 GB 备份存储的单价并未变化。此次调整只会更正发票上显示的备份版本数量，使其与您的服务实际保留的数量一致。
+</Note>
+
+<div id="is-this-a-price-increase">
+  ### 这是价格上涨吗？
+</div>
+
+不是。每 GB 的价格没有变化。我们只是更正了发票上计入的备份版本数量。
+
+<div id="past-undercharges">
+  ### 过去少收的费用会补收吗？
+</div>
+
+不会。我们不会追溯或补收以往计费周期的任何费用。此次更正仅适用于自 2026 年 7 月 1 日起的计费。
+
+<div id="see-backup-versions">
+  ### 我在哪里可以查看所有保留中的备份版本？
+</div>
+
+从 4 月 23 日起，所有保留的备份版本都可在 ClickHouse Cloud 控制台中查看。您还可以看到某个特定版本当前是否正在计费，或虽已保留但尚未计费。更新后的[定价计算器](https://clickhouse.com/pricing)也反映了这些成本。
+
+<div id="contact">
+  ### 如有疑问，我可以联系谁？
+</div>
+
+请联系 [ClickHouse 支持团队](https://clickhouse.com/support/program)。您的客户团队也可与您沟通具体情况。
+
+<div id="reliability">
+  ### 这会影响我的备份可靠性或可用性吗？
+</div>
+
+不会。您的备份覆盖范围、保留期限和恢复能力均不会改变。我们只是更正了备份的计费方式，不会影响其存储或管理方式。
+
+<div id="more-details">
+  ### 在哪里可以找到更多详细信息？
+</div>
+
+我们将于 4 月 23 日发送包含完整信息的通知邮件。你可以使用[定价计算器](https://clickhouse.com/pricing)更准确地估算实际备份成本。
+
+<div id="when-changes-go-live">
+  ### 计费变更何时生效？
+</div>
+
+计费变更将于 2026 年 7 月 1 日生效，即首次通知发出 60 天后。

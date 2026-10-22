@@ -1,0 +1,6 @@
+default-defer count	1
+opt-out count	1
+default-defer partition pruning	1	3	0
+opt-out partition pruning	1	0	1
+pathological default-defer	0
+pathological opt-out	1

@@ -1,4 +1,3 @@
-import time
 
 import pytest
 
@@ -8,6 +7,9 @@ from helpers.client import QueryRuntimeException
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/jemalloc_global_profiler.xml"], stay_alive=True
+)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/jemalloc_sample_every_allocation.xml"]
 )
 
 
@@ -123,3 +125,34 @@ def test_jemalloc_global_profiler(started_cluster):
     )
 
     assert_only_traces_from_query(profiled_query_id)
+
+
+def test_samples_of_profiled_query_carry_its_query_id(started_cluster):
+    if node2.is_built_with_sanitizer() or node2.is_built_with_llvm_coverage():
+        pytest.skip("Disabled for sanitizers and llvm coverage builds")
+
+    # node2 samples every allocation, but only on threads running a query with jemalloc_enable_profiler,
+    # so even the few allocations a thread makes while attaching to or detaching from the query are always sampled.
+    query_id = "test_samples_of_profiled_query_carry_its_query_id"
+    node2.query(
+        "SELECT * FROM numbers(1000000) ORDER BY number FORMAT Null",
+        settings={
+            "max_bytes_ratio_before_external_sort": 0,
+            "jemalloc_enable_profiler": 1,
+            "jemalloc_collect_profile_samples_in_trace_log": 1,
+            "memory_profiler_sample_probability": 1,
+        },
+        query_id=query_id,
+    )
+    node2.query("SYSTEM FLUSH LOGS")
+
+    for trace_type in ["JemallocSample", "MemorySample"]:
+        rows = f"FROM system.trace_log WHERE trace_type = '{trace_type}'"
+        own = node2.query(f"SELECT count() {rows} AND query_id = '{query_id}'")
+        assert int(own) > 0, trace_type
+        # deallocations may happen outside the query, allocations may not
+        foreign = node2.query(
+            f"SELECT trace_type, thread_name, size, query_id {rows} "
+            f"AND query_id != '{query_id}' AND size > 0"
+        )
+        assert foreign == "", foreign

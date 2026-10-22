@@ -29,6 +29,11 @@ struct JSONExtractInsertSettings
     /// Use partial match instead of full to skip paths using regular expressions specified
     /// in JSON data type using SKIP REGEXP.
     bool use_partial_match_to_skip_paths_by_regexp = true;
+    /// If true, fractional JSON DOUBLE values (e.g. `3.14`) and STRING values that parse
+    /// as non-integral floats (e.g. `"3.14"`) are not silently truncated to integer types.
+    /// Used inside `VariantNode` so that `Variant(IntT, FloatT)` picks the float member
+    /// for fractional values instead of silently dropping the fractional part.
+    bool no_int_truncation_from_double = false;
 };
 
 template <typename JSONParser>
@@ -44,10 +49,13 @@ public:
 template <typename JSONParser>
 std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message);
 
+/// Writes the element as JSON text, descending at most `max_depth` levels and writing `...` in place
+/// of deeper values. `max_depth` == 0 does not bound the descent, leaving checkStackSize as the only
+/// guard. Returns false if anything was elided.
 template <typename JSONParser>
-void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
+bool jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings, size_t max_depth = 0);
 
 template <typename JSONParser, typename NumberType>
-bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 
 }

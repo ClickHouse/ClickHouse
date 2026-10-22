@@ -1,4 +1,5 @@
 #include <Coordination/KeeperReadThreadPool.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>

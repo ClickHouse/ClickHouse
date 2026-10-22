@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
 #include <Functions/IFunction.h>
+#include <Functions/icebergCommon.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
     }
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergHash : public IFunction
+class FunctionIcebergHash final : public IFunction
 {
 
 public:
@@ -54,10 +55,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeInt32>();
-    }
+    String getSignatureString() const override { return "(Any) -> Int32"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
@@ -75,7 +73,16 @@ public:
 
         WhichDataType which(type);
 
-        if (isBool(type) || which.isInteger() || which.isDate32() || which.isDate())
+        if ((which.isInteger() && !which.isNativeInteger()) || which.isDecimal256())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type `{}` is not supported by icebergHash: the Iceberg specification only defines hashing "
+                "for `int` (32-bit), `long` (64-bit), and `decimal(P,S)` with P <= 38 "
+                "(see https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements). "
+                "Cast the value to a supported type (e.g. Int64 or Decimal128) if it fits.",
+                type->getName());
+
+        if (isBool(type) || which.isNativeInteger() || which.isDate32() || which.isDate())
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -134,7 +141,7 @@ public:
             }
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
-            assert(decimal_column != nullptr);
+            chassert(decimal_column != nullptr);
             UInt32 scale = decimal_column->getScale();
             if ((scale != 6) && (scale != 9))
             {
@@ -147,9 +154,7 @@ public:
                     DateTime64 value = decimal_column->getElement(i & idx_mask);
                     Int64 value_int = value.convertTo<Int64>();
                     if (scale == 9)
-                    {
-                        value_int = value_int / 1000;
-                }
+                        value_int = floorDivide(value_int, 1000);
                 result_data[i] = hashLong(value_int);
             }
         }
@@ -180,11 +185,6 @@ public:
                     const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(wrapper_column);
                     value = decimal_column->getElement(i & idx_mask).value;
                 }
-                else if (which.isDecimal256())
-                {
-                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(wrapper_column);
-                    value = decimal_column->getElement(i & idx_mask).value;
-                }
                 else
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type `{}` for icebergHash", type->getName());
@@ -208,7 +208,7 @@ public:
 private:
     static Int32 hashLong(Int64 value)
     {
-        std::array<char, 8> little_endian_representation;
+        std::array<char, 8> little_endian_representation{};
         for (char & i : little_endian_representation)
         {
             i = static_cast<unsigned char>(value & 0xFF);
@@ -219,7 +219,7 @@ private:
 
     static Int32 hashUnderlyingIntBigEndian(UInt128 value, bool reduce_two_complement)
     {
-        std::array<char, 16> big_endian_representation;
+        std::array<char, 16> big_endian_representation{};
         size_t taken = 1;
         signed char prev = 0;
         for (size_t i = 0; i < 16; ++i)
@@ -256,7 +256,7 @@ private:
         {
             Float64 d;
             UInt64 bits;
-        } converter;
+        } converter{};
 
         converter.d = value;
         if (converter.bits == 0x8000000000000000ULL)
@@ -285,7 +285,7 @@ REGISTER_FUNCTION(IcebergHash)
     factory.registerFunction<FunctionIcebergHash>(documentation);
 }
 
-class FunctionIcebergBucket : public IFunction
+class FunctionIcebergBucket final : public IFunction
 {
 
 public:
@@ -312,10 +312,13 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUInt32>();
-    }
+    /// The bucket-count argument is constant, but that is already enforced by
+    /// `getArgumentsThatAreAlwaysConstant` (and validated in `executeImpl`). Do not spell it as
+    /// `const` here: when used as an Iceberg partition / sort-order transform, a non-constant
+    /// argument should surface the dedicated `BAD_ARGUMENTS` "Invalid iceberg sort order" message
+    /// from `parseTransformAndArgument`, not a generic `ILLEGAL_COLUMN` from the signature matcher;
+    /// and return-type inference in `ChunkPartitioner` passes a placeholder (non-const) column here.
+    String getSignatureString() const override { return "(Any, Any) -> UInt32"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {

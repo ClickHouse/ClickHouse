@@ -64,6 +64,24 @@ public:
         return nested_func->getNormalizedStateType();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        chassert(rhs.getNestedFunction() != nullptr);
+
+        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        chassert(rhs.getNestedFunction() != nullptr);
+
+        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
+    }
+
     bool isVersioned() const override
     {
         return nested_func->isVersioned();
@@ -77,6 +95,11 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -139,16 +162,37 @@ public:
         nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
     }
 
-    void addBatchSinglePlace(
+    void addBatchWithNonNullPlaces(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr * __restrict places,
+        size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
         ssize_t) const override
     {
         if (only_null_condition)
             return;
+        nested_func->addBatchWithNonNullPlaces(
+            row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (only_null_condition)
+            return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlace(row_begin, row_end, place, columns, arena, num_arguments - 1);
     }
 
@@ -159,19 +203,27 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
         if (only_null_condition)
             return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlaceNotNull(
+                row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, num_arguments - 1);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -179,7 +231,7 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
@@ -207,6 +259,16 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
@@ -220,6 +282,11 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertMergeResultInto(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override
@@ -237,6 +304,16 @@ public:
         const Array & params, const AggregateFunctionProperties & properties) const override;
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    /// Only the `Subadditive` bound survives the filtering: a group whose rows all fail the
+    /// condition has an untouched nested state, whose value is 0 for the subadditive functions
+    /// (`count`, `uniqExact`) - consistent with the bound - but is a bogus default for an extremum.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if (nested_func->getMergedValueBound() == MergedValueBound::Subadditive)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
 
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {

@@ -1,291 +1,166 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <iterator>
-#include <Common/Logger.h>
-#include <Core/Names.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
+#include <Core/Block.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
+#include <stack>
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace QueryPlanOptimizations
 {
 
 namespace
 {
-NameMultiSet getNameMultiSetFromNames(Names && names)
+
+/// A step on the way down, with what the step above does not need of it and what its children produce once
+/// they are pruned themselves.
+struct PruningFrame
 {
-    NameMultiSet name_multi_set;
-    name_multi_set.insert(std::move_iterator(names.begin()), std::move_iterator(names.end()));
-    return name_multi_set;
-}
+    QueryPlan::Node * node = nullptr;
+    std::vector<size_t> unneeded_outputs;
+    size_t depth = 0;
 
-bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::Node & parent, const size_t child_id)
-{
-    const auto input_header = parent.step->getInputHeaders()[child_id];
-    const auto output_header = parent.children[child_id]->step->getOutputHeader();
+    /// A step that cannot drop columns needs all its children produce, and outputs all it did. So does a
+    /// sink, which has no output at all, such as the root of a distributed plan fragment.
+    bool can_prune = false;
+    IQueryPlanStep::UnneededInputPositions unneeded_inputs;
 
-    std::vector<const ColumnWithTypeAndName *> columns_to_discard;
-    auto input_it = input_header->begin();
-    auto output_it = output_header->begin();
-    while (input_it != input_header->end() && output_it != output_header->end())
-    {
-        if (input_it->name == output_it->name)
-        {
-            ++input_it;
-            ++output_it;
-        }
-        else
-        {
-            columns_to_discard.push_back(&(*output_it));
-            ++output_it;
-        }
-    }
-    if (input_it != input_header->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input header is not a subset of output header");
-
-    for (; output_it != output_header->end(); ++output_it)
-        columns_to_discard.push_back(&(*output_it));
-
-    if (columns_to_discard.empty())
-    {
-        /// Even when all column names match, the column representations might differ
-        /// (e.g., Const vs materialized after JoinStepLogical materializes its dummy column).
-        /// Sync the parent's input header with the child's output header.
-        if (!blocksHaveEqualStructure(*input_header, *output_header))
-            parent.step->updateInputHeader(parent.children[child_id]->step->getOutputHeader(), child_id);
-        return false;
-    }
-
-    ActionsDAG discarding_dag;
-    for (const auto * column : columns_to_discard)
-        discarding_dag.addInput(*column);
-
-    auto discarding_step = std::make_unique<ExpressionStep>(output_header, std::move(discarding_dag));
-    discarding_step->setStepDescription("Discarding unused columns");
-
-    auto & discarding_node = nodes.emplace_back();
-    discarding_node.step = std::move(discarding_step);
-    discarding_node.children.push_back(parent.children[child_id]);
-    parent.children[child_id] = &discarding_node;
-
-    return true;
-}
-
-enum class RemoveChildrenOutputResult
-{
-    NotUpdated,
-    Updated,
-    AddedDiscardingStep,
+    std::vector<IQueryPlanStep::PrunedInput> children;
 };
+
+PruningFrame makeFrame(QueryPlan::Node & node, std::vector<size_t> unneeded_outputs, size_t depth)
+{
+    PruningFrame frame;
+    frame.node = &node;
+    frame.unneeded_outputs = std::move(unneeded_outputs);
+    frame.depth = depth;
+    const auto & step = *node.step;
+    frame.can_prune = step.hasOutputHeader() && step.canRemoveUnusedColumns();
+
+    /// Going down, a step is only asked what it does not need of its children; it changes on the way back up,
+    /// once its children have changed and it knows what they really produce.
+    if (frame.can_prune && !node.children.empty())
+        frame.unneeded_inputs = step.getUnneededColumns(frame.unneeded_outputs);
+
+    return frame;
 }
 
-bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
+/// Whether `new_header` has the columns of `old_header` that are not at `dropped_positions` first, in their order.
+/// Columns appended after them are allowed, such as the dummy column a join adds.
+bool keepsRemainingColumnsFirst(const Block & old_header, const std::vector<size_t> & dropped_positions, const Block & new_header)
 {
-    return std::all_of(
-        node.children.begin(),
-        node.children.end(),
-        [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
-}
-
-bool updatedAnything(const IQueryPlanStep::RemovedUnusedColumns & result)
-{
-    return result != IQueryPlanStep::RemovedUnusedColumns::None;
-}
-
-bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
-{
-    return result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput;
-}
-
-/// When the parent step removed some inputs but the child step couldn't fully reduce its output
-/// to match (e.g., ReadFromMergeTree with FINAL must keep columns required for merging),
-/// adjust the parent step to accept the extra columns from the child by adding them as
-/// consumed DAG inputs and setting the input header to match the child's output exactly.
-/// Also sets the `prevent_input_removal` flag to ensure these absorbed columns are not
-/// removed on subsequent optimization passes.
-/// Works with both ExpressionStep and FilterStep parents.
-bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
-{
-    ActionsDAG * dag = nullptr;
-
-    auto * expr_step = typeid_cast<ExpressionStep *>(node.step.get());
-    auto * filter_step = typeid_cast<FilterStep *>(node.step.get());
-
-    if (expr_step)
-        dag = &expr_step->getExpression();
-    else if (filter_step)
-        dag = &filter_step->getExpression();
-    else
-        return false;
-
-    const auto & parent_input = node.step->getInputHeaders()[child_id];
-    const auto & child_output = node.children[child_id]->step->getOutputHeader();
-
-    NameSet parent_input_names;
-    for (const auto & col : *parent_input)
-        parent_input_names.insert(col.name);
-
-    bool added_any = false;
-    for (const auto & col : *child_output)
+    size_t new_position = 0;
+    size_t next_dropped = 0;
+    for (size_t position = 0; position < old_header.columns(); ++position)
     {
-        if (!parent_input_names.contains(col.name))
+        if (next_dropped < dropped_positions.size() && dropped_positions[next_dropped] == position)
         {
-            dag->addInput(col.name, col.type);
-            added_any = true;
-        }
-    }
-
-    if (!added_any)
-        return false;
-
-    /// Use the child's output header directly as the new input header
-    /// to ensure column order matches exactly.
-    node.step->updateInputHeader(child_output, child_id);
-
-    /// Prevent future optimization passes from removing these absorbed inputs,
-    /// which would re-create the mismatch and cause infinite optimization loops.
-    if (expr_step)
-        expr_step->setPreventInputRemoval();
-    else
-        filter_step->setPreventInputRemoval();
-
-    return true;
-}
-
-RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, QueryPlan::Node & node)
-{
-    bool updated = false;
-    bool added_any_discarding_step = false;
-
-    for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
-    {
-        const auto & parent_inputs = node.step->getInputHeaders();
-        auto & child_step = node.children[child_id]->step;
-        chassert(child_step->canRemoveUnusedColumns());
-
-        // Here we never want to remove inputs because the grandchildren might cannot remove outputs
-        const auto updated_anything
-            = updatedAnything(child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false));
-
-        // As removeUnusedColumns might leave additional columns in the output, we have get rid of those outputs by adding a new ExpressionStep
-        // Right now this is mostly relevant for JoinStepLogical, as it must keep at least one column in its output, even if its parent requires no input.
-        // However in the future we might have other steps with similar behavior.
-        if (updated_anything)
-        {
-            const auto added_discarding_step = addDiscardingExpressionStepIfNeeded(nodes, node, child_id);
-            if (added_discarding_step)
-            {
-                chassert(node.children[child_id]->children.size() == 1 && (child_step) == node.children[child_id]->children[0]->step);
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                const auto & discarding_step = *node.children[child_id]->step;
-                assertBlocksHaveEqualStructure(
-                    *discarding_step.getInputHeaders()[0], *child_step->getOutputHeader(), "after adding discarding step");
-#endif
-                added_any_discarding_step = true;
-            }
-        }
-
-        /// The child step may have extra columns in its output that the parent doesn't need
-        /// (e.g. ReadFromMergeTree with FINAL must keep sort key / version columns).
-        /// If the parent is an ExpressionStep, absorb these extra columns as consumed DAG inputs
-        /// so the step's output is unchanged but input headers match.
-        /// Otherwise, add a discarding ExpressionStep between the parent and child to remove the extra columns.
-        {
-            const auto & current_parent_input = node.step->getInputHeaders()[child_id];
-            const auto & child_output = node.children[child_id]->step->getOutputHeader();
-            if (child_output->columns() != current_parent_input->columns())
-            {
-                if (!absorbExtraChildColumns(node, child_id))
-                {
-                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id))
-                        added_any_discarding_step = true;
-                }
-            }
-        }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        {
-            const auto & final_parent_inputs = node.step->getInputHeaders();
-            assertBlocksHaveEqualStructure(
-                *node.children[child_id]->step->getOutputHeader(), *final_parent_inputs[child_id], "after removing unused columns");
-        }
-#endif
-
-        if (updated_anything)
-            updated = true;
-    }
-
-    if (added_any_discarding_step)
-        return RemoveChildrenOutputResult::AddedDiscardingStep;
-
-    if (updated)
-        return RemoveChildrenOutputResult::Updated;
-
-    return RemoveChildrenOutputResult::NotUpdated;
-}
-
-size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
-{
-    auto logger = getLogger("removeUnusedColumns");
-    auto & parent = node->step;
-
-    auto max_updated_depth = 0U;
-
-    const auto & parent_inputs = parent->getInputHeaders();
-
-    for (auto child_id = 0U; child_id < node->children.size(); ++child_id)
-    {
-        auto current_update_depth = 0U;
-        auto * child_node = node->children[child_id];
-        auto & child_step = child_node->step;
-
-        if (!child_step->canRemoveUnusedColumns())
+            ++next_dropped;
             continue;
-
-        const auto can_remove_inputs = canAllChildrenCanRemoveOutputs(*child_node);
-
-        const auto remove_result
-            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), can_remove_inputs);
-
-        if (updatedAnything(remove_result))
-        {
-            ++current_update_depth;
-
-            if (removedAnyInput(remove_result))
-            {
-                auto result = removeChildrenOutputs(nodes, *child_node);
-                switch (result)
-                {
-                    case RemoveChildrenOutputResult::NotUpdated:
-                        break;
-                    case RemoveChildrenOutputResult::Updated:
-                        ++current_update_depth;
-                        break;
-                    case RemoveChildrenOutputResult::AddedDiscardingStep:
-                        current_update_depth += 2;
-                        break;
-                }
-            }
-
-            if (addDiscardingExpressionStepIfNeeded(nodes, *node, child_id))
-                ++current_update_depth;
         }
 
-        max_updated_depth = std::max(max_updated_depth, current_update_depth);
+        if (new_position == new_header.columns() || new_header.getByPosition(new_position).name != old_header.getByPosition(position).name)
+            return false;
+        ++new_position;
     }
 
-    return max_updated_depth;
+    return next_dropped == dropped_positions.size();
+}
+
+/// Prunes the frame's step once its children are done, and says what it dropped.
+IQueryPlanStep::PrunedInput pruneStep(PruningFrame & frame, bool & changed)
+{
+    auto & step = *frame.node->step;
+
+    if (!frame.can_prune)
+    {
+        /// Asked for everything, a child keeps everything, but the representation of a column may change, such as a
+        /// constant that is materialized now.
+        for (size_t child = 0; child < frame.children.size(); ++child)
+            if (!blocksHaveEqualStructure(*step.getInputHeaders()[child], *frame.children[child].header))
+                step.updateInputHeader(frame.children[child].header, child);
+
+        if (!step.hasOutputHeader())
+            return {};
+
+        return IQueryPlanStep::PrunedInput::unchanged(step.getOutputHeader());
+    }
+
+    const auto old_output_header = step.getOutputHeader();
+    auto result = step.removeUnusedColumns(frame.unneeded_outputs, frame.children);
+    changed = result.step_changed;
+
+    /// The step above relies on this to match the columns of the new header with the old ones.
+    chassert(keepsRemainingColumnsFirst(*old_output_header, result.dropped_output_positions, *step.getOutputHeader()));
+    return {std::move(result.dropped_output_positions), step.getOutputHeader()};
+}
+
+}
+
+size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
+{
+    const bool is_local = mode == RemoveUnusedColumnsMode::Local;
+
+    /// The root keeps all its outputs: nothing above it is looked at.
+    std::stack<PruningFrame> stack;
+    stack.push(makeFrame(root, {}, 0));
+    if (is_local && !stack.top().can_prune)
+        return 0;
+
+    size_t changed_depth = 0;
+    while (!stack.empty())
+    {
+        /// A reference stays valid while frames are pushed above it: the stack is a `std::deque`.
+        auto & frame = stack.top();
+        const size_t child = frame.children.size();
+        if (child < frame.node->children.size())
+        {
+            auto & child_node = *frame.node->children[child];
+
+            /// A step that cannot drop columns keeps its children as they are. So does a local walk where nothing of
+            /// a child is unneeded any more: what is left there is the business of the child itself.
+            if (frame.can_prune)
+            {
+                auto & unneeded = frame.unneeded_inputs.at(child);
+                if (!is_local || !unneeded.empty())
+                {
+                    stack.push(makeFrame(child_node, std::move(unneeded), frame.depth + 1));
+                    if (!is_local || stack.top().can_prune)
+                        continue;
+
+                    /// A child that cannot drop columns keeps everything it was asked not to.
+                    stack.pop();
+                }
+            }
+            else if (!is_local)
+            {
+                stack.push(makeFrame(child_node, {}, frame.depth + 1));
+                continue;
+            }
+
+            frame.children.push_back(IQueryPlanStep::PrunedInput::unchanged(child_node.step->getOutputHeader()));
+            continue;
+        }
+
+        bool changed = false;
+        auto pruned = pruneStep(frame, changed);
+        if (changed)
+            changed_depth = std::max(changed_depth, frame.depth + 1);
+
+        stack.pop();
+        if (!stack.empty())
+            stack.top().children.push_back(std::move(pruned));
+    }
+
+    return changed_depth;
+}
+
+size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    return removeUnusedColumns(*node, RemoveUnusedColumnsMode::Local);
 }
 
 }

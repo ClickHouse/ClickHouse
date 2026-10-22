@@ -1,0 +1,117 @@
+---
+slug: /clickhouse-operator/install/kubectl
+title: '使用 kubectl 安装 ClickHouse Operator'
+keywords: ['kubernetes']
+description: '本指南介绍如何使用 kubectl 和 清单 文件安装 ClickHouse Operator。'
+doc_type: 'guide'
+sidebarTitle: 'kubectl'
+---
+
+本指南介绍如何使用 kubectl 和 清单 文件安装 ClickHouse Operator。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* Kubernetes 集群 v1.28.0 或更高版本
+* kubectl v1.28.0 或更高版本
+* 集群管理员权限
+
+<div id="install-from-release-manifests">
+  ## 通过发布清单安装
+</div>
+
+<Note>
+  需要使用 cert-manager 签发 webhook 证书。
+</Note>
+
+从最新发布版本中安装 operator 和 CRD：
+
+```bash
+kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
+```
+
+需要使用服务器端 apply，因为合并后的 CRD 超出了客户端 apply 的大小限制。对于仅支持客户端 apply 的环境，请使用移除了 description 的 CRD Variant：
+
+```bash
+kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator-stripped-crds.yaml
+```
+
+这将会：
+
+1. 创建 `clickhouse-operator-system` 命名空间
+2. 为 ClickHouseCluster 和 KeeperCluster 安装 CustomResourceDefinitions (CRD)
+3. 创建必要的 ServiceAccount、Role 和 RoleBinding
+4. 部署 operator 控制器管理器
+5. 注册用于资源验证和默认值填充的 webhooks
+6. 使用 cert-manager 配置 SSL 证书
+7. 启用指标端点
+
+<div id="verify-installation">
+  ## 验证安装
+</div>
+
+确认 operator 正在运行：
+
+```bash
+kubectl get pods -n clickhouse-operator-system
+```
+
+预期输出：
+
+```
+NAME                                                 READY   STATUS    RESTARTS   AGE
+clickhouse-operator-controller-manager-xxxxxxxxxx    1/1     Running   0          1m
+```
+
+确认已安装 CRD：
+
+```bash
+kubectl get crd | grep clickhouse.com
+```
+
+预期输出：
+
+```
+clickhouseclusters.clickhouse.com    2025-01-06T00:00:00Z
+keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
+```
+
+<div id="configure-custom-deployment-options">
+  ## 配置自定义部署选项
+</div>
+
+如果要配置 operator 的部署选项，请按以下步骤操作。
+
+<Steps>
+  <Step>
+    ### 克隆代码仓库
+
+    ```bash
+    git clone https://github.com/ClickHouse/clickhouse-operator.git
+    cd clickhouse-operator
+    ```
+  </Step>
+
+  <Step>
+    ### 配置安装选项
+
+    编辑 config/default/kustomization.yaml，按需启用或禁用相关功能。
+
+    * 如需禁用 webhook，请注释掉 `[WEBHOOK]` 和 `[CERTMANAGER]` 部分。
+    * 如需启用安全指标端点，请注释掉 `[METRICS]` 部分，并取消注释 `[METRICS SECURE]` 和 `[CERTMANAGER]` 部分。
+    * 如需为 Prometheus Operator 启用 ServiceMonitor，请取消注释 `[PROMETHEUS]` 部分。
+    * 如需启用 operator 网络策略，请取消注释 `[NETWORK POLICY]` 部分。
+  </Step>
+
+  <Step>
+    ### 构建并部署
+
+    构建 operator 清单并应用：
+
+    ```bash
+    make build-installer VERSION=<required operator version> [IMG=<custom registry path>]
+    kubectl apply --server-side --force-conflicts -f dist/install.yaml
+    ```
+  </Step>
+</Steps>

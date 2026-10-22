@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -10,7 +11,7 @@ namespace
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
   */
-class FunctionIgnore : public IFunction
+class FunctionIgnore final : public IFunction
 {
 public:
     static constexpr auto name = "ignore";
@@ -29,6 +30,11 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    /// The result is unconditionally UInt8, so a Nothing-typed argument must not force the
+    /// declared return type to Nothing (which would mismatch the UInt8 column executeImpl produces).
+    bool useDefaultImplementationForNothing() const override { return false; }
+
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -43,9 +49,9 @@ public:
         return name;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(...) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

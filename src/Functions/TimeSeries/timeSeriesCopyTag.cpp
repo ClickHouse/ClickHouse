@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesCopyTags(dest_group, src_group, 'tag_name')
 /// copies the specified tag from the `src` group to the `dest` group, and returns the new tags group.
-class FunctionTimeSeriesCopyTag : public IFunction
+class FunctionTimeSeriesCopyTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesCopyTag";
@@ -33,7 +33,18 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    String getSignatureString() const override
+    {
+        return "(UInt64, UInt64, const String) -> UInt64";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -60,13 +71,16 @@ public:
     {
         auto dest_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0, /* return_single_element_if_const_column = */ true);
         auto src_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 1, /* return_single_element_if_const_column = */ true);
-        chassert((dest_groups.size() == input_rows_count) || (src_groups.size() == input_rows_count));
+        chassert((dest_groups.size() == input_rows_count) || (dest_groups.size() == 1));
+        chassert((src_groups.size() == input_rows_count) || (src_groups.size() == 1));
 
         auto tag_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 2);
 
-        std::vector<Group> new_groups;
+        VectorWithMemoryTracking<Group> new_groups;
 
-        if (dest_groups.size() == 1)
+        if ((dest_groups.size() == 1) && (src_groups.size() == 1))
+            new_groups.assign(input_rows_count, tags_collector->copyTag(dest_groups[0], src_groups[0], tag_to_copy));
+        else if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTag(dest_groups[0], src_groups, tag_to_copy);
         else if (src_groups.size() == 1)
             new_groups = tags_collector->copyTag(dest_groups, src_groups[0], tag_to_copy);
@@ -110,9 +124,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
        timeSeriesGroupToTags(result_group)
         )",
         R"(
-┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)────────────────────────┐
-│          1 │         2 │            3 │ [('__name__','http_codes'),('code','404'),('region','eu')] │
-└────────────┴───────────┴──────────────┴────────────────────────────────────────────────────────────┘
+┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)───────────────────────┐
+│          1 │         2 │            3 │ [('__name__','http_codes'),('env','dev'),('region','eu')] │
+└────────────┴───────────┴──────────────┴───────────────────────────────────────────────────────────┘
         )"
     }
     };

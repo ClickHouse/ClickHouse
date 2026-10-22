@@ -1,0 +1,142 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-05
+title: 'Demo days - 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: 'ClickStack demo days del 2026-06-05'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="split-trace-view-and-extended-trace-view">
+  ## Vista de traza dividida y vista de traza extendida
+</div>
+
+*Demo de [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+El panel de traza ahora tiene un modo de vista dividida: al hacer clic en los spans de la línea de tiempo, el panel de detalles se actualiza en su lugar, a la derecha, en vez de abrirse debajo del span seleccionado, como ocurría antes. Así, toda la línea de tiempo permanece visible mientras examinas spans individuales.
+
+También puedes ampliar a una vista de traza extendida para ver una línea de tiempo de ancho completo con compatibilidad con desplazamiento y zoom. Ambos paneles pueden abrirse y cerrarse de forma independiente, lo que facilita alternar entre una visión general de alto nivel y la inspección detallada de spans sin perder el contexto.
+
+**PR relacionadas:** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: trace panel inline split detail
+
+<div id="source-level-required-filters">
+  ## Filtros obligatorios a nivel de la fuente
+</div>
+
+*Demo a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Las fuentes ahora pueden declarar filtros obligatorios que se muestran automáticamente en cualquier dashboard que las use. En lugar de añadir manualmente el mismo filtro a cada dashboard que haga referencia a una fuente, ClickStack detecta este requisito y eleva el filtro al nivel del dashboard, aplicándolo solo a los tiles que realmente usan esa fuente.
+
+Los tiles individuales pueden sobrescribir el valor definido a nivel del dashboard si necesitan valores de filtro distintos, y los filtros obligatorios también se trasladan a la vista previa del editor de gráficos para que puedas validar consultas sin tener que quitarlos. Los filtros obligatorios de la fuente también se integran con la macro SQL filters para los gráficos basados en SQL y, al configurar enlaces entre dashboards, ClickStack los incluye automáticamente como candidatos para los parámetros del enlace.
+
+<div id="fit-y-axis-to-data">
+  ## Ajustar el eje Y a los datos
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los gráficos de líneas tienen una nueva opción de visualización: &quot;Ajustar el eje Y a los datos&quot;. De forma predeterminada, el eje Y está anclado en cero, lo que comprime el rango visible cuando los valores son altos pero solo varían ligeramente, haciendo que las tendencias no se aprecien a simple vista.
+
+Con esta opción activada, el rango del eje Y se calcula dinámicamente a partir del rango real de los datos, de modo que las fluctuaciones en series con valores altos sean visibles sin tener que configurar manualmente los límites del eje.
+
+**PR relacionadas:** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): añade la opción de visualización &#39;Ajustar el eje Y a los datos&#39; para gráficos de líneas
+
+<div id="anomaly-alerts">
+  ## Alertas de anomalías
+</div>
+
+*Demo de [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Himanshu mostró cómo estamos trabajando en alertas basadas en anomalías mediante detección por Z-score. En lugar de un umbral fijo, defines cuántas desviaciones estándar respecto a la media esperada deben activar una alerta. La ventana de estacionalidad (horaria o diaria) controla cómo se calcula la línea base, y el editor de alertas resalta las ventanas que se habrían activado para que puedas ajustar la sensibilidad antes de guardar.
+
+Esto resuelve un problema común con las alertas por umbral: los usuarios a menudo no saben qué valor numérico establecer. Ver cómo las posibles ventanas de alerta se actualizan en tiempo real a medida que ajustas el Z-score hace que sea práctico encontrar un umbral que detecte picos reales sin generar ruido excesivo. Las alertas pueden configurarse para activarse solo cuando los valores superan el rango esperado (no cuando caen por debajo), y una opción de ocurrencia te permite exigir que la condición se mantenga durante varios puntos de datos consecutivos antes de activarse. Esto aún está en desarrollo; actualmente la línea base se calcula como una media móvil, y está previsto añadir compatibilidad con la media móvil exponencial.
+
+<div id="clearer-configuration-for-api-and-ai-agents">
+  ## Configuración más clara para la API y los agentes de IA
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+La configuración de ClickStack ahora incluye una pestaña específica de API y agentes que agrupa las claves API y la configuración de la conexión MCP. Los botones de un clic para Claude, Cursor y OpenCode evitan tener que crear manualmente los comandos de conexión; el botón de Cursor, por ejemplo, abre una terminal con el comando de instalación correcto ya rellenado. Los usuarios de OpenCode disponen de un fragmento de system prompt que pueden copiar y pegar directamente. Una opción genérica de configuración JSON cubre otros clientes MCP.
+
+**PR relacionadas:** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): conecta tu asistente de IA
+
+<div id="color-selection-for-number-charts">
+  ## Selección de color para gráficos de número
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los tiles de número ahora admiten tanto un color estático seleccionado con un selector de color como reglas de color condicionales. La paleta del gráfico se ha actualizado con nombres de color legibles para humanos —&quot;azul&quot; y &quot;gris&quot; en lugar de &quot;color-1&quot; y &quot;color-10&quot;—, lo que facilita mucho entender qué se está seleccionando.
+
+El coloreado condicional permite definir reglas de umbral ordenadas, como verde por debajo de un valor objetivo, ámbar dentro de un rango de advertencia y rojo por encima de un umbral crítico. Esto hace que los tiles de número sean realmente útiles como indicadores de estado en los dashboards, especialmente para métricas como tasas de error o latencia P99, donde se quiere una respuesta visual inmediata sin tener que leer el número.
+
+**PR relacionados:** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) Reglas de color condicional para tiles de número (umbrales ordenados), [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): selector de color estático para tiles de número
+
+<div id="schema-migrations">
+  ## Migraciones de esquemas
+</div>
+
+*Demo de [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack ahora incluye una pestaña de Migraciones de esquemas en la configuración (Enterprise) para realizar cambios DDL controlados y versionados en tus esquemas de datos. Escribes una migración, le asignas un número de versión y una tarea en segundo plano la detecta y la ejecuta con lógica de reintento y un orden estricto: si una migración falla, las migraciones posteriores que dependen de ella no se ejecutarán hasta que se resuelva o se elimine.
+
+El modelo versionado también permite a ClickHouse aplicar optimizaciones de esquema gestionadas a los equipos de ClickStack Cloud sin requerir trabajo manual con ALTER TABLE. Los equipos pueden revisar las migraciones pendientes y desbloquearlas a su propio ritmo. La fase uno cubre cambios aditivos; las modificaciones de la clave primaria están previstas para la fase dos.
+
+<div id="out-of-the-box-browser-rum-dashboards">
+  ## Dashboards de Browser RUM listos para usar
+</div>
+
+*Demo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack ahora incluye un dashboard preconfigurado de Browser RUM que cubre todo el conjunto de métricas de rendimiento web. El dashboard incluye una vista general del rendimiento con vistas de página y tiempo de carga P90, además de las métricas web esenciales —LCP, INP y CLS— con umbrales por niveles para que puedas ver de inmediato si cada métrica es saludable, necesita mejoras o es deficiente.
+
+Las secciones adicionales cubren las vistas de página a lo largo del tiempo, tareas largas, desglose por dispositivo, las páginas más lentas, las sesiones con más errores, las tasas de errores de JavaScript y los fallos de API. Las acciones personalizadas por fila te permiten hacer clic en cualquier fila de la tabla para profundizar en los datos de la sesión o la traza correspondientes. Los filtros de la parte superior de la página te permiten segmentar por servicio, entorno, versión del servicio y página. El filtrado por país está en progreso, a la espera de mejoras en el SDK para navegador para emitir datos geográficos.
+
+**PR relacionadas:** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: add Browser RUM dashboard template
+
+<div id="dependent-dashboard-filters">
+  ## Filtros dependientes del dashboard
+</div>
+
+*Demo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Ahora los filtros del dashboard pueden depender entre sí, de modo que al seleccionar un valor en un filtro se limitan automáticamente las opciones disponibles en los filtros siguientes. El dashboard de Kubernetes es el primero en usarlo: al seleccionar un pod de Kubernetes, las listas desplegables de Implementación y nodo ahora se reducen para mostrar solo los valores relevantes para ese pod, en lugar de mostrar todas las opciones de todo el cluster.
+
+Esto significa que nunca se te ofrecerá una combinación de filtros que devuelva datos vacíos. Esta funcionalidad ya está disponible en la plantilla del dashboard de Kubernetes.

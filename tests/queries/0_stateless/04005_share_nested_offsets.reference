@@ -1,0 +1,68 @@
+--- shared offsets (default) ---
+[1,2]	['x','y']
+--- independent wide parts ---
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+--- independent compact parts ---
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+--- alter add column ---
+1	[1,2,3]	[]
+1	[1,2,3]	[]
+2	[10]	['x','y','z']
+--- alter add column (compact, no default) ---
+1	[1,2,3]	[]
+1	[1,2,3]	[]
+2	[10]	['x','y','z']
+--- multiple groups ---
+1	[1]	['hello','world']	[100,200,300]	[0]
+--- immutability ---
+--- update with different sizes ---
+1	[100]	['x','y','z']
+2	[10,20,30]	['a']
+--- rename dotted columns ---
+1	[1,2,3]	['x','y']
+1	[1,2,3]	['x','y']
+--- missing defaults ---
+1	[1,2,3]	[]
+1	[1,2,3]	[]
+2	[]	['x','y']
+--- vertical merge ---
+1	[1,2,3]	['x']
+2	[10]	['a','b','c','d']
+3	[]	['only_b']
+--- flatten_nested interaction ---
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+1	[1,2,3]	['x','y']
+2	[10]	['a','b','c','d']
+--- scalar + dotted arrays ---
+Hello	['World','Test']
+Hello
+['World','Test']
+2
+1	['x','y']	[10,20,30]
+2	['z']	[30]
+1
+2
+['x','y']
+['z']
+[10,20,30]
+[30]
+--- merge engine ---
+1	[1,2,3]	['x','y']
+2	[10,20]	[]
+--- alter add/drop independent ---
+1		[10,20]
+2	hello	[30]
+1	[10,20]
+2	[30]
+--- done ---

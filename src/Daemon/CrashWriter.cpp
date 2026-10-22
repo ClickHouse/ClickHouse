@@ -11,6 +11,7 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 
@@ -117,7 +118,7 @@ void CrashWriter::sendError(Type type, int sig_or_error, std::string_view error_
             writeJSONString(build_id_hex, json, settings);
         #endif
 
-        UUID server_uuid = ServerUUID::get();
+        UUID server_uuid = ServerUUID::tryGet();
         if (server_uuid != UUIDHelpers::Nil)
         {
             std::string server_uuid_str = toString(server_uuid);

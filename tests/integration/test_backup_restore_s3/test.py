@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from typing import Dict
@@ -6,7 +7,7 @@ import pytest
 
 from ast import literal_eval
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_s3_mock
 from helpers.s3_tools import (
@@ -138,7 +139,7 @@ def setup_minio_users(cluster):
 )
 def setup_cluster(request):
     cluster = ClickHouseCluster(__file__)
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node",
         main_configs=[
             "configs/disk_s3.xml",
@@ -151,6 +152,7 @@ def setup_cluster(request):
         + request.param,
         user_configs=[
             "configs/zookeeper_retries.xml",
+            "configs/users.xml",
         ],
         with_minio=True,
         # The test compares some S3 events. We disable the remote DB disk, so it doesn't affect the comparing events.
@@ -288,6 +290,7 @@ def check_system_tables(cluster, backup_query_id=None):
         ("default", "Local", "None", "None"),
         ("disk_s3", "ObjectStorage", "S3", "Local"),
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_encrypted", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
         ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
@@ -343,6 +346,95 @@ def test_backup_to_disk(cluster, storage_policy, to_disk):
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
+def test_backup_to_s3_disk_fsyncs_local_metadata(cluster):
+    # disk_s3 keeps its metadata in local files (metadata_type = local, the default for an s3 disk),
+    # and a backup on it is reached only through them: after a power loss the uploaded objects can
+    # survive while the metadata pointing at them is gone. fsync_backup_files must therefore fsync
+    # the metadata file of every written backup file plus the .backup manifest, and their directories.
+    node = cluster.instances["node"]
+
+    # The oracle is exact rather than a lower bound: a plain backup writes one data file per entry it
+    # actually stored plus the .backup manifest, so FileSync must equal num_entries + 1, which fails if
+    # any single metadata file is left unsynced. num_entries, not num_files: num_files also counts the
+    # entries that were skipped (e.g. as empty), and a file that is never written is never synced.
+    def assert_every_file_synced(backup_events):
+        num_entries = int(
+            node.query(
+                f"SELECT num_entries FROM system.backups"
+                f" WHERE query_id = '{backup_events['query_id']}'"
+            ).strip()
+        )
+        assert backup_events["FileSync"] == num_entries + 1, (num_entries, backup_events)
+        # The directory count follows the part layout, so it is only bounded here; the archive arm
+        # below pins an exact count.
+        assert backup_events["DirectorySync"] >= 1, backup_events
+
+    # An archive (`.tar`: zip is rejected on object storage) is packed into one file written directly
+    # into the disk root, so exactly one metadata file and one metadata directory are synced.
+    def assert_archive_synced(backup_events):
+        assert backup_events["FileSync"] == 1, backup_events
+        assert backup_events["DirectorySync"] == 1, backup_events
+
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert_every_file_synced(backup_events)
+
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3', '{new_backup_name()}.tar')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert_archive_synced(backup_events)
+
+    # The opt-out issues no sync of either kind, so the counts above are attributable to the setting.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 0},
+    )
+    assert backup_events.get("FileSync", 0) == 0, backup_events
+    assert backup_events.get("DirectorySync", 0) == 0, backup_events
+
+    # A plain-rewritable disk keeps its metadata in the object storage too, so there is no local file
+    # to sync and the setting is a no-op there.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3_plain_rewritable', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert backup_events.get("FileSync", 0) == 0, backup_events
+    assert backup_events.get("DirectorySync", 0) == 0, backup_events
+
+    # An encrypting wrapper is the only disk whose metadata root is not the path it reports itself: it
+    # is the delegate's root with the wrapper's prefix re-applied. Addressing it like an unwrapped disk
+    # names metadata files that do not exist, so the backup fails instead of skipping the syncs.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3_encrypted', '{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert_every_file_synced(backup_events)
+
+    # That wrapper keeps its files under `encrypted/` inside disk_s3 but leaves a path that already
+    # starts with that prefix alone, so a backup named `encrypted/...` must not have the prefix
+    # applied a second time, neither for the metadata files nor for the directories holding them.
+    backup_events, _ = check_backup_and_restore(
+        cluster,
+        "default",
+        f"Disk('disk_s3_encrypted', 'encrypted/{new_backup_name()}')",
+        backup_settings={"fsync_backup_files": 1},
+    )
+    assert_every_file_synced(backup_events)
+
+
 @pytest.mark.parametrize(
     "storage_policy, to_disk",
     [
@@ -380,6 +472,19 @@ def test_backup_to_s3(cluster):
         cluster, storage_policy, backup_destination
     )
     check_system_tables(cluster, backup_events["query_id"])
+
+
+def test_backup_to_s3_ignores_prefixed_backup_metadata(cluster):
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_key = f"data/backups/{backup_name}"
+    data = b"not a backup"
+    cluster.minio_client.put_object(
+        "root", f"{backup_key}/.backup.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{backup_key}', 'minio', '{minio_secret_key}')"
+    check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
 def test_backup_to_s3_named_collection(cluster):
@@ -470,16 +575,6 @@ def test_backup_to_s3_multipart(cluster):
         "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
     )
 
-    s3_backup_events = (
-        "WriteBufferFromS3Microseconds",
-        "WriteBufferFromS3Bytes",
-        "WriteBufferFromS3RequestsErrors",
-    )
-    s3_restore_events = (
-        "ReadBufferFromS3Microseconds",
-        "ReadBufferFromS3Bytes",
-        "ReadBufferFromS3RequestsErrors",
-    )
 
     objects = node.cluster.minio_client.list_objects(
         "root", f"data/backups/multipart/{backup_name}/"
@@ -660,6 +755,160 @@ def test_backup_to_s3_copy_multipart_check_error_message(cluster, broken_s3):
         )
 
 
+def test_async_backup_to_s3_cancel_reports_cancellation(cluster, broken_s3):
+    # Regression test for issue #45444: a BACKUP to S3 cancelled by KILL QUERY while an S3 upload
+    # is in flight must report QUERY_WAS_CANCELLED, not a misleading S3/network error.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_id = uuid.uuid4().hex
+
+    try:
+        # Make every S3 upload hang so the backup is reliably stuck inside an in-flight S3 request
+        # (not between backup entries) when we cancel it. KILL then interrupts the upload, and the
+        # retry loop must surface the cancellation instead of the resulting network error.
+        broken_s3.setup_slow_answers(timeout=30)
+
+        node.query(
+            f"BACKUP TABLE data TO {backup_destination} SETTINGS id='{backup_id}' ASYNC",
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{backup_id}'",
+            "CREATING_BACKUP",
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() > 0 FROM system.processes WHERE query_kind='Backup' AND query LIKE '%{backup_id}%'",
+            "1",
+        )
+
+        node.query(
+            f"KILL QUERY WHERE query_kind='Backup' AND query LIKE '%{backup_id}%'"
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{backup_id}'",
+            "BACKUP_CANCELLED",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        error = node.query(f"SELECT error FROM system.backups WHERE id='{backup_id}'")
+        assert "QUERY_WAS_CANCELLED" in error, error
+        assert "S3_ERROR" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
+def test_async_restore_from_s3_cancel_reports_cancellation(cluster, broken_s3):
+    # Regression test for issue #45444 (restore/read path): a RESTORE from S3 cancelled by KILL QUERY
+    # while an S3 read (GetObject/HeadObject) is in flight must report QUERY_WAS_CANCELLED, not S3_ERROR.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    try:
+        # Make a backup through the mock (no slowdown), then restore it with slow reads so the restore
+        # is reliably stuck inside an in-flight S3 read request when we cancel it.
+        node.query(f"BACKUP TABLE data TO {backup_destination}")
+        node.query("DROP TABLE data SYNC;")
+
+        broken_s3.setup_slow_get_answers(timeout=30)
+
+        restore_id = uuid.uuid4().hex
+        node.query(
+            f"RESTORE TABLE data FROM {backup_destination} SETTINGS id='{restore_id}' ASYNC",
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{restore_id}'",
+            "RESTORING",
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() > 0 FROM system.processes WHERE query_kind='Restore' AND query LIKE '%{restore_id}%'",
+            "1",
+        )
+
+        node.query(
+            f"KILL QUERY WHERE query_kind='Restore' AND query LIKE '%{restore_id}%'"
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT status FROM system.backups WHERE id='{restore_id}'",
+            "RESTORE_CANCELLED",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        error = node.query(f"SELECT error FROM system.backups WHERE id='{restore_id}'")
+        assert "QUERY_WAS_CANCELLED" in error, error
+        assert "S3_ERROR" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
+def test_backup_to_s3_timeout_reports_timeout(cluster, broken_s3):
+    # The S3 cancellation translation must preserve the real cancellation cause. Here every S3 upload
+    # keeps failing with a retryable error, so the BACKUP stays in the S3 retry loop until
+    # max_execution_time (CancelReason::TIMEOUT) cancels it. The S3 layer then sees a failed outcome
+    # while the query is killed and must report TIMEOUT_EXCEEDED, not a generic QUERY_WAS_CANCELLED.
+    # A synchronous BACKUP is used so the query stays tracked by the max_execution_time watchdog.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    try:
+        broken_s3.setup_at_object_upload(action="connection_reset_by_peer", count=10000)
+        broken_s3.setup_at_part_upload(action="connection_reset_by_peer", count=10000)
+
+        error = node.query_and_get_error(
+            f"BACKUP TABLE data TO {backup_destination}",
+            settings={
+                "max_execution_time": 3,
+                "timeout_overflow_mode": "throw",
+                "s3_max_single_part_upload_size": 0,
+            },
+        )
+
+        assert "TIMEOUT_EXCEEDED" in error, error
+        assert "QUERY_WAS_CANCELLED" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
 def test_incremental_backup_append_table_def(cluster):
     backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
 
@@ -764,11 +1013,24 @@ def test_backup_with_fs_cache(
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
 
 
-def test_backup_to_zip(cluster):
-    storage_policy = "default"
+def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
+    node = cluster.instances["node"]
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(cluster, storage_policy, backup_destination)
+    # Use a tar archive here: zip backups on S3 are now rejected up front (see
+    # test_backup_to_s3_zip_not_supported), and this test only needs some archive whose
+    # exact object key must not be confused with a similarly-prefixed sibling object.
+    archive_key = f"data/backups/{backup_name}.tar"
+    data = b"not a backup archive"
+    cluster.minio_client.put_object(
+        "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{archive_key}', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_destination}"
+    )
+
+    assert "BACKUP_NOT_FOUND" in error, error
 
 
 def test_backup_to_tar(cluster):
@@ -820,6 +1082,9 @@ def test_user_specific_auth(cluster):
         node.query(f"CREATE USER {user}")
         node.query(f"GRANT CURRENT GRANTS ON *.* TO {user}")
 
+    def assert_access_denied(error):
+        assert "Access Denied" in error or "ACCESS_DENIED" in error, error
+
     create_user("superuser1")
     create_user("superuser2")
     create_user("regularuser")
@@ -838,7 +1103,7 @@ def test_user_specific_auth(cluster):
         restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
 
         if should_fail:
-            assert "Access" in node.query_and_get_error(backup_query, user=user)
+            assert_access_denied(node.query_and_get_error(backup_query, user=user))
         else:
             node.query(backup_query, user=user)
             node.query("DROP TABLE specific_auth SYNC")
@@ -861,9 +1126,11 @@ def test_user_specific_auth(cluster):
 
     backup_restore(f"S3('{backup2_path}')", user="superuser2", should_fail=False)
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
+            user="regularuser",
+        )
     )
 
     node.query("INSERT INTO specific_auth VALUES (2)")
@@ -882,9 +1149,11 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup1_path}')",
     )
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
+            user="regularuser",
+        )
     )
 
     assert "Access Denied" in node.query_and_get_error(
@@ -911,9 +1180,11 @@ def test_user_specific_auth(cluster):
         on_cluster=True,
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
+            user="regularuser",
+        )
     )
 
     node.query("INSERT INTO specific_auth VALUES (3)")
@@ -934,9 +1205,11 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup3_path}')",
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
+            user="regularuser",
+        )
     )
 
     assert "Access Denied" in node.query_and_get_error(
@@ -1036,15 +1309,13 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk(cluster):
 
 
 def test_backup_restore_s3_plain(cluster):
-    storage_policy = "policy_s3"
-    to_disk = "disk_s3_plain"
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
 
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
     instance.query(
-        f"""
+        """
     DROP TABLE IF EXISTS sample SYNC;
     CREATE TABLE sample (key Int, value String)
     ENGINE = MergeTree() ORDER BY tuple()
@@ -1056,7 +1327,7 @@ def test_backup_restore_s3_plain(cluster):
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
+    table_data_path = instance.query("SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
     local_path = os.path.join(instance.path, "database")
     source_table_path = f"{local_path}/{table_data_path}"
@@ -1067,7 +1338,7 @@ def test_backup_restore_s3_plain(cluster):
         minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;
@@ -1095,6 +1366,201 @@ def test_backup_restore_s3_plain(cluster):
     assert "READONLY" in err
     instance.query("DROP TABLE IF EXISTS sample SYNC")
     instance.query("DROP TABLE sample_restored SYNC")
+
+
+def test_backup_restore_s3_plain_backup_metadata_only(cluster):
+    # A table on a storage policy marked `backup_metadata_only` keeps its data on the storage: `BACKUP` stores only its
+    # metadata, and `RESTORE` recreates it with its UUID from the backup, so it finds its data on the storage again.
+    # An `Alias` of such a table keeps no data, so it is backed up and restored like any other `Alias`. Materialized views
+    # and `TimeSeries` tables with inner tables on such a policy are not supported.
+    instance = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    policy = "policy_s3_plain_backup_metadata_only"
+
+    def new_backup_destination():
+        return f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+
+    instance.query(
+        """
+        DROP TABLE IF EXISTS sample_alias SYNC;
+        DROP TABLE IF EXISTS sample_alias_copy SYNC;
+        DROP TABLE IF EXISTS sample_structure_only SYNC;
+        DROP TABLE IF EXISTS ts SYNC;
+        DROP TABLE IF EXISTS sample SYNC;
+        DROP TABLE IF EXISTS mv SYNC;
+        DROP TABLE IF EXISTS src SYNC;
+        CREATE TABLE sample (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        AS SELECT number, concat('name_', toString(number)) FROM numbers(100);
+        """
+    )
+
+    def get_uuid(table):
+        return instance.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table}'"
+        ).strip()
+
+    sample_uuid = get_uuid("sample")
+
+    # Copy the parts to the read-only plain disk, where a table with the same UUID finds them.
+    minio = cluster.minio_client
+    table_data_path = (
+        instance.query(f"SELECT data_paths[1] FROM system.tables WHERE uuid = '{sample_uuid}'")
+        .strip()
+        .replace("/var/lib/clickhouse/", "")
+        .strip("/")
+    )
+    remote_blob_path = f"data/disks/disk_s3_plain/{table_data_path}"
+    remove_directory(minio, cluster.minio_bucket, remote_blob_path)
+    upload_directory(
+        minio,
+        cluster.minio_bucket,
+        os.path.join(instance.path, "database", table_data_path),
+        remote_blob_path,
+        use_relpath=True,
+    )
+
+    instance.query(
+        f"""
+        DROP TABLE sample SYNC;
+        ATTACH TABLE sample UUID '{sample_uuid}' (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        SETTINGS storage_policy = '{policy}';
+        """
+    )
+    instance.query("CREATE TABLE sample_alias ENGINE = Alias(sample)")
+    assert instance.query("SELECT count() FROM sample") == "100\n"
+    assert instance.query("SELECT count() FROM sample_alias") == "100\n"
+
+    instance.query(f"BACKUP TABLE sample, TABLE sample_alias TO {backup_destination}")
+
+    # The backup has the definitions of the tables, but none of their data.
+    backup_manifest = (
+        minio.get_object(cluster.minio_bucket, f"data/backups/{backup_name}/.backup").read().decode()
+    )
+    assert "<name>metadata/default/sample.sql</name>" in backup_manifest, backup_manifest
+    assert "<name>data/" not in backup_manifest, backup_manifest
+
+    # Only the definition is backed up, so a backup of some partitions would restore as the whole table.
+    err = instance.query_and_get_error(f"BACKUP TABLE sample PARTITIONS 0 TO {new_backup_destination()}")
+    assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
+
+    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported: the flag is
+    # ignored for them with a warning, and they are backed up as usual.
+    instance.query(
+        f"""
+        CREATE TABLE src (key Int) ENGINE = Null;
+        CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY key SETTINGS storage_policy = '{policy}' AS SELECT key FROM src;
+        """
+    )
+    instance.query(
+        f"""
+        CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
+        DATA INNER ENGINE = MergeTree SETTINGS storage_policy = '{policy}'
+        TAGS INNER ENGINE = Memory
+        METRICS INNER ENGINE = ReplacingMergeTree SETTINGS storage_policy = '{policy}'
+        """,
+        settings={"allow_experimental_time_series_table": 1},
+    )
+    for table, kind in [("mv", "materialized view"), ("ts", "TimeSeries table")]:
+        instance.query(f"BACKUP TABLE {table} TO {new_backup_destination()}")
+        assert instance.contains_in_log(
+            f"default.{table} (" + get_uuid(table)
+        ), f"no warning for {table}"
+        assert instance.contains_in_log(f"but it is a {kind} with the inner table"), f"no warning for {table}"
+
+    instance.query("DROP TABLE ts SYNC")
+    instance.query("DROP TABLE mv SYNC")
+    instance.query("DROP TABLE src SYNC")
+
+    # The restored table keeps its UUID, so it can't be restored next to the source table.
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample AS sample_copy FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "another table already has this UUID" in err, err
+
+    # A restore that leaves out the data has nothing to find on the storage, so it keeps no UUID either: it is an
+    # ordinary empty table and fits next to the source table.
+    instance.query(
+        f"RESTORE TABLE sample AS sample_structure_only FROM {backup_destination} SETTINGS structure_only = 1"
+    )
+    assert get_uuid("sample_structure_only") != sample_uuid
+    assert instance.query("SELECT count() FROM sample_structure_only") == "0\n"
+    instance.query("DROP TABLE sample_structure_only SYNC")
+
+    # The other table can be in a database the restoring user may not see, so the error doesn't name it.
+    instance.query(
+        """
+        CREATE DATABASE private_db;
+        RENAME TABLE sample TO private_db.secret_table;
+        CREATE DATABASE restore_db;
+        CREATE USER restore_user;
+        GRANT CREATE TABLE, INSERT ON restore_db.* TO restore_user;
+        GRANT READ ON S3 TO restore_user;
+        """
+    )
+    try:
+        err = instance.query_and_get_error(
+            f"RESTORE TABLE sample AS restore_db.sample FROM {backup_destination}", user="restore_user"
+        )
+        assert "CANNOT_RESTORE_TABLE" in err and "another table already has this UUID" in err, err
+        assert "private_db" not in err and "secret_table" not in err, err
+    finally:
+        instance.query(
+            """
+            RENAME TABLE private_db.secret_table TO sample;
+            DROP DATABASE private_db;
+            DROP DATABASE restore_db;
+            DROP USER restore_user;
+            """
+        )
+
+    instance.query("DROP TABLE sample_alias SYNC")
+    instance.query("DROP TABLE sample SYNC")
+
+    # The table shows all the data of its storage, so a partition filter can't be applied.
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample PARTITIONS 0 FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "partition filter cannot be applied" in err, err
+    instance.query("DROP TABLE IF EXISTS sample SYNC")
+
+    # A table in an `Ordinary` database has no UUID: its data would be under a path derived from its name.
+    instance.query(
+        "CREATE DATABASE ordinary_db ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample AS ordinary_db.sample FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "its database doesn't give tables UUIDs" in err, err
+    instance.query("DROP DATABASE ordinary_db SYNC")
+
+    # An existing table with another UUID doesn't see the data of the table from the backup.
+    instance.query(
+        f"""
+        ATTACH TABLE sample UUID '{uuid.uuid4()}' (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        SETTINGS storage_policy = '{policy}'
+        """
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample FROM {backup_destination} SETTINGS create_table = 'must-exist'"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and f"the table with UUID {sample_uuid} in the backup has UUID" in err, err
+    instance.query("DROP TABLE sample SYNC")
+
+    instance.query(f"RESTORE TABLE sample FROM {backup_destination}")
+    assert get_uuid("sample") == sample_uuid
+    assert instance.query("SELECT count(), sum(key) FROM sample") == "100\t4950\n"
+
+    # The `Alias` gets a new UUID like any table without data on such a policy, also when it is restored under another name.
+    instance.query(f"RESTORE TABLE sample_alias FROM {backup_destination}")
+    instance.query(f"RESTORE TABLE sample_alias AS sample_alias_copy FROM {backup_destination}")
+    assert instance.query("SELECT count(), sum(key) FROM sample_alias") == "100\t4950\n"
+    assert instance.query("SELECT count(), sum(key) FROM sample_alias_copy") == "100\t4950\n"
+
+    instance.query("DROP TABLE sample_alias SYNC")
+    instance.query("DROP TABLE sample_alias_copy SYNC")
+    instance.query("DROP TABLE sample SYNC")
 
 
 @pytest.mark.parametrize(
@@ -1170,3 +1636,53 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
             DROP DATABASE IF EXISTS restored SYNC;
             """
         )
+
+
+def test_backup_to_s3_zip_not_supported(cluster):
+    # Zip backups require seeking, which makes each read a separate HTTP request
+    # on object storage. They must be rejected early with a clear error (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for S3 backups" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")
+
+
+def test_restore_from_s3_zip_not_supported(cluster):
+    # RESTORE from a zip archive on S3 is the slow path reported in issue #53483: reading the
+    # central directory requires seeking, and every seek is a separate HTTP request. The rejection
+    # must fire up front, by file extension, before the archive is opened - so a non-existent
+    # `.zip` object is enough to prove the seek-heavy read path is never reached.
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_source = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_source}"
+    )
+    assert "Zip archive format is not supported for S3 backups" in error, error
+
+
+def test_backup_to_object_storage_disk_zip_not_supported(cluster):
+    # A `Disk` destination backed by object storage (here the `s3`-typed `disk_s3`) has the same
+    # seek-heavy zip read path as a direct `S3(...)` destination, so it must be rejected too (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"Disk('disk_s3', '{backup_name}.zip')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for backups on disk" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")

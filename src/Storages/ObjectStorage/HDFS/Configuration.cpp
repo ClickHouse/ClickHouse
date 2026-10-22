@@ -38,7 +38,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 void StorageHDFSConfiguration::check(ContextPtr context)
@@ -146,9 +145,9 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
 }
 
 static void addStructureAndFormatToArgsIfNeededHDFS(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, bool is_replayed_definition)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -170,7 +169,7 @@ static void addStructureAndFormatToArgsIfNeededHDFS(
         size_t count = args.size();
         if (count == 0 || count > HDFSStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Expected 1 to {} arguments in table function hdfs, got {}",
                 HDFSStorageParsedArguments::getMaxNumberOfArguments(),
                 count);
@@ -234,7 +233,7 @@ void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & colle
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure);
+    addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure, is_replayed_definition);
 }
 }
 

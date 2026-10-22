@@ -1,11 +1,14 @@
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -22,7 +25,7 @@ namespace
 {
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergTruncate : public IFunction
+class FunctionIcebergTruncate final : public IFunction
 {
 
 public:
@@ -54,6 +57,23 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — implements the Iceberg `truncate(W, v)` transform.
+    /// For string-like inputs the result is `String`; for integers and
+    /// `Decimal*` the result widens via internal `plus`/`minus` calls (e.g.
+    /// `UInt32 → Int64`), which isn't expressible in the DSL.
+    String getSignatureString() const override
+    {
+        return "(const UInt, StringOrFixedString | NativeInteger | Decimal) -> Any";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// You may ask, why use global context and not the context provided
@@ -81,6 +101,11 @@ public:
         {
             return std::make_shared<DataTypeString>();
         }
+        else if (which_truncate.isUInt64())
+        {
+            /// `value - value mod N` is in `[0, value]`, which the `Int64` result of `minus` cannot hold.
+            return std::make_shared<DataTypeUInt64>();
+        }
         else
         {
             auto get_column_const = [] (const DataTypePtr data_type)
@@ -95,7 +120,7 @@ public:
             }
             else
             {
-                auto decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
+                ColumnPtr decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
                 ColumnWithTypeAndName decimal_scaled_with_type(decimal_scaled, arguments[1], "");
                 modulo_arguments = {get_column_const(arguments[1]), decimal_scaled_with_type};
             }
@@ -112,9 +137,16 @@ public:
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
+    {
+        /// For `Int64`, `value - value mod N` of the lowest values is below the `Int64` minimum and wraps around.
+        if (WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isInt64())
+            return {};
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
@@ -165,7 +197,10 @@ public:
             auto minus_arguments = {arguments[1], modulo_result_with_type};
             auto minus_func = FunctionFactory::instance().get("minus", context)->build(minus_arguments);
             auto minus_result_type = minus_func->getResultType();
-            return minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
+            auto minus_result = minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
+            if (which_truncate.isUInt64())
+                return castColumn({minus_result, minus_result_type, ""}, result_type);
+            return minus_result;
         }
 
         std::unreachable();

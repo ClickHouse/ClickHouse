@@ -58,20 +58,25 @@ def create_tables(table_name, populate_count, skip_last_replica):
         node3.query(f"SYSTEM SYNC REPLICA {table_name}")
 
 
+# `parallel_replicas_plan_based` must not change how the insert is distributed: the INSERT is shipped as
+# a query, and a replica executing it always reads the query-tree-based way. The expected query counts are
+# therefore the same for both values of the setting.
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries",
+    "cluster_name,max_parallel_replicas,local_plan,executed_queries,plan_based",
     [
-        pytest.param("test_1_shard_3_replicas", 2, False, 3),
-        pytest.param("test_1_shard_3_replicas", 2, True, 2),
-        pytest.param("test_1_shard_3_replicas", 3, False, 4),
-        pytest.param("test_1_shard_3_replicas", 3, True, 3),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2),
+        pytest.param("test_1_shard_3_replicas", 2, False, 3, False),
+        pytest.param("test_1_shard_3_replicas", 2, True, 2, False),
+        pytest.param("test_1_shard_3_replicas", 3, False, 4, False),
+        pytest.param("test_1_shard_3_replicas", 3, True, 3, False),
+        pytest.param("test_1_shard_3_replicas", 3, False, 4, True),
+        pytest.param("test_1_shard_3_replicas", 3, True, 3, True),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3, False),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2, False),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3, False),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2, False),
     ],
 )
-def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries):
+def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_plan, executed_queries, plan_based):
     populate_count = 1000000
 
     source_table = "t_source"
@@ -87,7 +92,8 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
-            "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+            "parallel_replicas_local_plan": local_plan,
+            "parallel_replicas_plan_based": plan_based,
             "enable_analyzer": 1,
         },
         query_id=query_id
@@ -106,7 +112,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
         == ""
     )
 
-    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
         settings={"skip_unavailable_shards": 1},
@@ -126,13 +132,13 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
 #       Currently, we'll just fail
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline",
+    "cluster_name,max_parallel_replicas,local_plan",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
     ],
 )
-def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
+def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_plan):
     populate_count = 100
 
     source_table = "t_source"
@@ -148,7 +154,7 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+                "parallel_replicas_local_plan": local_plan,
                 "enable_analyzer": 1,
             },
         )
@@ -156,13 +162,13 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
 
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline",
+    "cluster_name,max_parallel_replicas,local_plan",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
     ],
 )
-def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
+def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_plan):
     populate_count = 100
 
     source_table = "t_source"
@@ -178,7 +184,7 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+                "parallel_replicas_local_plan": local_plan,
                 "enable_analyzer": 1,
             },
         )
@@ -322,9 +328,129 @@ def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_repl
     )
 
     # check that query executed in distributed way
-    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
         settings={"skip_unavailable_shards": 1},
     )
     assert (int(number_of_queries) > 1)
+
+
+def create_replicated_database(db):
+    for i, node in enumerate([node1, node2, node3], start=1):
+        node.query(
+            f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'node{i}')"
+        )
+
+
+def sync_database(db):
+    for node in [node1, node2, node3]:
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+
+def drop_database(db):
+    for node in [node1, node2, node3]:
+        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def create_replicated_source(db):
+    node1.query(f"CREATE TABLE {db}.src (id UInt64) ENGINE = ReplicatedMergeTree ORDER BY id")
+    sync_database(db)
+    node1.query(f"INSERT INTO {db}.src SELECT number FROM numbers(1000)")
+    for node in [node2, node3]:
+        node.query(f"SYSTEM SYNC REPLICA {db}.src")
+
+
+def populate_settings(cluster_name, max_parallel_replicas, parallel_distributed_insert_select=2):
+    return {
+        "enable_parallel_replicas": 1,
+        "max_parallel_replicas": max_parallel_replicas,
+        "parallel_distributed_insert_select": parallel_distributed_insert_select,
+        "parallel_replicas_local_plan": 0,
+        "cluster_for_parallel_replicas": cluster_name,
+    }
+
+
+def query_per_node(query):
+    return [node.query(query) for node in [node1, node2, node3]]
+
+
+# Every replica of a Replicated database populates its own view, not the view of another replica.
+def test_replicated_database_populate(start_cluster):
+    db = f"db_{uuid.uuid4().hex}"
+    try:
+        create_replicated_database(db)
+        create_replicated_source(db)
+        node1.query(
+            f"CREATE MATERIALIZED VIEW {db}.mv ENGINE = MergeTree ORDER BY id POPULATE AS SELECT id FROM {db}.src",
+            settings=populate_settings("test_1_shard_2_replicas_1_unavailable", 2),
+        )
+        sync_database(db)
+        assert query_per_node(f"SELECT count(), uniqExact(id), sum(id) FROM {db}.mv") == ["1000\t1000\t499500\n"] * 3
+    finally:
+        drop_database(db)
+
+
+# The initiator populates its view while the other replicas have not created theirs yet.
+def test_replicated_database_populate_before_other_replicas(start_cluster):
+    db = f"db_{uuid.uuid4().hex}"
+    try:
+        create_replicated_database(db)
+        create_replicated_source(db)
+        for node in [node2, node3]:
+            node.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
+        node1.query(
+            f"CREATE MATERIALIZED VIEW {db}.mv ENGINE = MergeTree ORDER BY id POPULATE AS SELECT id FROM {db}.src",
+            settings={**populate_settings("test_1_shard_3_replicas", 3), "distributed_ddl_task_timeout": 0},
+        )
+        for node in [node2, node3]:
+            node.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
+        sync_database(db)
+        assert query_per_node(f"SELECT count(), uniqExact(id), sum(id) FROM {db}.mv") == ["1000\t1000\t499500\n"] * 3
+    finally:
+        for node in [node2, node3]:
+            node.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
+        drop_database(db)
+
+
+# `CREATE TABLE ... AS SELECT` fills the table of every replica the same way.
+def test_replicated_database_create_as_select(start_cluster):
+    db = f"db_{uuid.uuid4().hex}"
+    try:
+        create_replicated_database(db)
+        create_replicated_source(db)
+        node1.query(
+            f"CREATE TABLE {db}.t ENGINE = Memory AS SELECT id FROM {db}.src",
+            settings=populate_settings("test_1_shard_2_replicas_1_unavailable", 2),
+        )
+        sync_database(db)
+        assert query_per_node(f"SELECT count(), uniqExact(id), sum(id) FROM {db}.t") == ["1000\t1000\t499500\n"] * 3
+    finally:
+        drop_database(db)
+
+
+# The population reads the source of the replica executing it, also when the view's own `SELECT` enables parallel replicas.
+def test_replicated_database_populate_reads_local_source(start_cluster):
+    db = f"db_{uuid.uuid4().hex}"
+    try:
+        create_replicated_database(db)
+        node1.query(f"CREATE TABLE {db}.src_local (id UInt64) ENGINE = MergeTree ORDER BY id")
+        sync_database(db)
+        for i, node in enumerate([node1, node2, node3]):
+            node.query(f"INSERT INTO {db}.src_local SELECT {i * 1000} + number FROM numbers(1000)")
+        node1.query(
+            f"CREATE MATERIALIZED VIEW {db}.mv ENGINE = MergeTree ORDER BY id POPULATE AS SELECT id FROM {db}.src_local "
+            "SETTINGS allow_experimental_parallel_reading_from_replicas = 1",
+            settings={
+                **populate_settings("test_1_shard_2_replicas_1_unavailable", 2, parallel_distributed_insert_select=0),
+                "parallel_replicas_for_non_replicated_merge_tree": 1,
+            },
+        )
+        sync_database(db)
+        assert query_per_node(f"SELECT count(), min(id), max(id) FROM {db}.mv") == [
+            "1000\t0\t999\n",
+            "1000\t1000\t1999\n",
+            "1000\t2000\t2999\n",
+        ]
+    finally:
+        drop_database(db)

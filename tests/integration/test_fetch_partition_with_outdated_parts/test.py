@@ -2,8 +2,6 @@ from __future__ import print_function
 
 import pytest
 
-import helpers
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

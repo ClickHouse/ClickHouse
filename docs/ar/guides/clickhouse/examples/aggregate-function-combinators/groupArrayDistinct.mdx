@@ -1,0 +1,46 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayDistinct'
+title: 'groupArrayDistinct'
+description: 'مثال على استخدام المُركِّب groupArrayDistinct'
+keywords: ['groupArray', 'Distinct', 'مُركِّب', 'أمثلة', 'groupArrayDistinct']
+sidebarTitle: 'groupArrayDistinct'
+doc_type: 'مرجع'
+---
+
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المركب [`groupArrayDistinct`](/ar/reference/functions/aggregate-functions/combinators#-foreach)
+على دالة التجميع [`groupArray`](/ar/reference/functions/aggregate-functions/sum) لإنشاء مصفوفة
+من قيم الوسائط الفريدة.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سنستخدم مجموعة بيانات `hits` المتاحة في [SQL playground](https://sql.clickhouse.com/).
+
+تخيّل أنك تريد معرفة جميع رموز أنظمة تشغيل User Agent الفريدة (`OS`) المسجّلة للزوّار الذين يصلون إلى كل نطاق مميّز لصفحة الهبوط (`URLDomain`) على موقعك الإلكتروني. يمكن أن يساعدك ذلك على فهم تنوّع أنظمة التشغيل التي تتفاعل مع الأجزاء المختلفة من موقعك.
+
+<RunnableCode>
+  ```sql
+  SELECT
+      URLDomain,
+      groupArrayDistinct(OS) AS distinct_os_codes
+  FROM metrica.hits_v1
+  WHERE URLDomain != '' -- ضع في الاعتبار فقط السجلات التي تحتوي على نطاق مسجّل
+  GROUP BY URLDomain
+  ORDER BY URLDomain ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`groupArray`](/ar/reference/functions/aggregate-functions/groupArray)
+* [`Distinct مركب`](/ar/reference/functions/aggregate-functions/combinators#-distinct)

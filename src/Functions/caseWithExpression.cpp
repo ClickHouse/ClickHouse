@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnConst.h>
 
 
 namespace DB
@@ -10,8 +11,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -20,13 +21,25 @@ namespace
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression : public IFunction
+class FunctionCaseWithExpression final : public IFunction
 {
 public:
     static constexpr auto name = "caseWithExpression";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        return std::make_shared<FunctionCaseWithExpression>(context_);
+    }
 
-    explicit FunctionCaseWithExpression(ContextPtr context_) : context(context_) {}
+    explicit FunctionCaseWithExpression(ContextPtr context_)
+        : fun_is_null(FunctionFactory::instance().get("isNull", context_))
+        , fun_if(FunctionFactory::instance().get("if", context_))
+        , fun_equals(FunctionFactory::instance().get("equals", context_))
+        , fun_if_null(FunctionFactory::instance().get("ifNull", context_))
+        , fun_array(FunctionFactory::instance().get("array", context_))
+        , fun_transform(FunctionFactory::instance().get("transform", context_))
+        , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
+    {
+    }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -34,29 +47,21 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    String getSignatureString() const override
     {
-        if (args.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
+        /// Arguments: expr, when1, then1, when2, then2, ..., else.
+        /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
+        /// and the trailing E is the else branch. The when-positions are matched as Any
+        /// since CASE WHEN equality semantics handles arbitrary types.
+        return "(Any, Any, V1, ..., E) -> leastSupertype(V1, ..., E)";
+    }
 
-        /// We expect an even number of arguments, with the first argument being the expression,
-        /// and the last argument being the ELSE branch, with the rest being pairs of WHEN and THEN branches.
-        if (args.size() < 4 || args.size() % 2 != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects an even number of arguments: (expr, when1, then1, ..., else)", getName());
-
-        /// See the comments in executeImpl() to understand why we actually have to
-        /// get the return type of a transform function.
-
-        /// Get the types of the arrays that we pass to the transform function.
-        DataTypes dst_array_types;
-
-        for (size_t i = 2; i < args.size() - 1; i += 2)
-            dst_array_types.push_back(args[i]);
-
-        // Type of the ELSE branch
-        dst_array_types.push_back(args.back());
-
-        return getLeastSupertype(dst_array_types);
+    /// Before the declarative signature, an empty call was `TOO_FEW_ARGUMENTS_FOR_FUNCTION` and any
+    /// other unusable arity - fewer than four arguments, or an odd number of them - was
+    /// `BAD_ARGUMENTS`. Both codes are pinned by the tests of the `CASE` construction.
+    int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+    {
+        return number_of_arguments == 0 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::BAD_ARGUMENTS;
     }
 
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
@@ -65,9 +70,9 @@ public:
         // for CASE WHEN semantics, NULL should match NULL
         // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
 
-        auto is_null_func = FunctionFactory::instance().get("isNull", context);
-        auto if_func = FunctionFactory::instance().get("if", context);
-        auto equals_func = FunctionFactory::instance().get("equals", context);
+        const auto & is_null_func = fun_is_null;
+        const auto & if_func = fun_if;
+        const auto & equals_func = fun_equals;
 
         // isNull(expr)
         ColumnsWithTypeAndName is_null_expr_args{expr};
@@ -89,8 +94,8 @@ public:
         // convert nullable equals result to non-nullable
         if (equals_return_type->isNullable())
         {
-            auto if_null_func = FunctionFactory::instance().get("ifNull", context);
-            auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+            const auto & if_null_func = fun_if_null;
+            ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             ColumnsWithTypeAndName if_null_args
             {
                 {equals_result, equals_return_type, ""},
@@ -101,7 +106,7 @@ public:
         }
 
         // if (isNull(when)) then 0 else (expr = when)
-        auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
         ColumnsWithTypeAndName inner_if_args
         {
             {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
@@ -173,14 +178,29 @@ public:
                 }
             }
 
-            /// Check whether `transform` can handle these types.
-            /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
-            /// but the expression is non-Nullable, the cast will fail on NULLs.
+            /// Include the ELSE branch in the THEN-side supertype. The dst array we hand to
+            /// `transform` must have an element type wide enough that
+            /// `getLeastSupertype(dst_supertype, default_type)` (which `transform` uses for
+            /// its own return type) equals our `result_type`. Otherwise `transform` and
+            /// `caseWithExpression` disagree on the result column type and `executeNumToNum`
+            /// will hit a `Bad cast` `LOGICAL_ERROR`. Concrete failure: THEN values
+            /// `(UInt16, Int8)` give a THEN-only supertype of `Int32`. With an ELSE branch of
+            /// `Decimal(9, 2)`, `getLeastSupertype(Int32, Decimal(9, 2))` is `Decimal(12, 2)`
+            /// (`Decimal64`), but `getLeastSupertype(UInt16, Int8, Decimal(9, 2))` is
+            /// `Decimal(9, 2)` (`Decimal32`).
+            dst_array_types.push_back(args.back().type);
+
+            /// `transform` uses standard equality (`NULL != NULL`), so skip it when WHEN values
+            /// are Nullable; `multiIf` via `caseWhenEquals` handles CASE's `NULL = NULL` semantics.
+            /// See https://github.com/ClickHouse/ClickHouse/issues/101262.
+            /// Also skip Dynamic/Variant: their hash-based lookup keys on type discriminator.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
-
+            auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
-                && !(src_supertype->isNullable() && !args.front().type->isNullable());
+                && !isNullableOrLowCardinalityNullable(src_supertype)
+                && !isDynamic(expr_type)
+                && !isVariant(expr_type);
 
             if (can_use_transform)
             {
@@ -190,8 +210,6 @@ public:
                 ColumnWithTypeAndName src_array_col{nullptr, src_array_type, ""};
                 ColumnWithTypeAndName dst_array_col{nullptr, dst_array_type, ""};
 
-                auto fun_array = FunctionFactory::instance().get("array", context);
-
                 src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count, /* dry_run = */ false);
                 dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
 
@@ -200,7 +218,7 @@ public:
                 FunctionBasePtr function_base;
                 try
                 {
-                    function_base = FunctionFactory::instance().get("transform", context)->build(transform_args);
+                    function_base = fun_transform->build(transform_args);
                 }
                 catch (Exception & e)
                 {
@@ -232,13 +250,18 @@ public:
         multi_if_args.push_back(args.back());
 
         // Execute multiIf
-        return FunctionFactory::instance().get("multiIf", context)
-            ->build(multi_if_args)
+        return fun_multi_if->build(multi_if_args)
             ->execute(multi_if_args, result_type, input_rows_count, false);
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr fun_is_null;
+    FunctionOverloadResolverPtr fun_if;
+    FunctionOverloadResolverPtr fun_equals;
+    FunctionOverloadResolverPtr fun_if_null;
+    FunctionOverloadResolverPtr fun_array;
+    FunctionOverloadResolverPtr fun_transform;
+    FunctionOverloadResolverPtr fun_multi_if;
 };
 
 }

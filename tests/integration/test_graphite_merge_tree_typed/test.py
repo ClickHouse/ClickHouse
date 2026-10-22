@@ -1,11 +1,9 @@
 import datetime
 import os.path as p
-import sys
 import time
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, csv_compare
 

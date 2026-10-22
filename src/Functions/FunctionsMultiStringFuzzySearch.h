@@ -27,7 +27,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -39,7 +38,7 @@ namespace ErrorCodes
   */
 
 template <typename Impl>
-class FunctionsMultiStringFuzzySearch : public IFunction
+class FunctionsMultiStringFuzzySearch final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -63,19 +62,13 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        if (!isUInt(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
-
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[2].get());
-        if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[2]->getName(), getName());
-
-        return Impl::getReturnType();
+        const String elem_type = DataTypeNumber<typename Impl::ResultType>{}.getName();
+        if constexpr (Impl::is_column_array)
+            return "(String, const NativeUInt, Array(String)) -> Array(" + elem_type + ")";
+        else
+            return "(String, const NativeUInt, Array(String)) -> " + elem_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -86,7 +79,7 @@ public:
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
         const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
-        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
+        chassert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         UInt32 edit_distance = 0;
         if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(edit_distance_ptr.get()))
@@ -102,7 +95,7 @@ public:
 
         const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
-        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+        chassert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles_vector)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);

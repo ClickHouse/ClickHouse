@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database, no-asan
 -- no-asan: runs too long
-
 -- Basic tests for vector similarity index stored in compact vs. wide format, respectively full vs. packed parts
+SET explain_query_plan_default = 'legacy';
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 

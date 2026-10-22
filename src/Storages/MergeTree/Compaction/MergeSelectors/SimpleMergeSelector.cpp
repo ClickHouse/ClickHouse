@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cassert>
 #include <random>
 
 namespace DB
@@ -27,9 +26,32 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(
+        RangesIterator range_it,
+        PartsIterator begin,
+        PartsIterator end,
+        size_t sum_size,
+        size_t sum_rows,
+        size_t min_age,
+        size_t size_prev_at_left,
+        double min_partition_age,
+        const SimpleMergeSelector::Settings & settings)
     {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right)
+        /// Mirror the precedence from `allow`: a range that qualifies for force merge, by the age
+        /// of its own parts or by the age of the whole partition, is exempt from both minimums below.
+        const auto qualifies_for_force_merge = [&](time_t trimmed_min_age)
+        {
+            if (settings.min_age_to_force_merge && static_cast<size_t>(trimmed_min_age) >= settings.min_age_to_force_merge)
+                return true;
+
+            return settings.min_partition_age_to_force_merge && min_partition_age > 0
+                && min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge);
+        };
+
+        const bool should_remove_small_parts_at_right = settings.enable_heuristic_to_remove_small_parts_at_right
+            && (!settings.merge_selector_min_age_to_disable_right_tail_heuristic
+                || min_age < settings.merge_selector_min_age_to_disable_right_tail_heuristic);
+        if (should_remove_small_parts_at_right)
         {
             size_t size_delta = 0;
             size_t rows_delta = 0;
@@ -42,6 +64,45 @@ public:
 
             sum_size -= size_delta;
             sum_rows -= rows_delta;
+        }
+
+        const size_t range_size = end - begin;
+
+        /// Re-check `min_parts_to_merge_at_once` after trimming as well: `allow` checks it
+        /// before trimming, so a range that passes with exactly the minimum number of parts
+        /// could otherwise be shortened below it.
+        if (settings.min_parts_to_merge_at_once && range_size < settings.min_parts_to_merge_at_once)
+        {
+            time_t trimmed_min_age = begin->age;
+            for (auto it = begin + 1; it != end; ++it)
+                trimmed_min_age = std::min(trimmed_min_age, it->age);
+
+            if (!qualifies_for_force_merge(trimmed_min_age))
+                return;
+        }
+
+        /// Re-check the small-parts batching gate after trimming, using the trimmed range's
+        /// `max_size`, `max_age` and `min_age` (not the pre-trim values). If the right tail
+        /// contained the only large or only old part, the pre-trim max would falsely bypass
+        /// this gate even though the surviving range is exactly the all-small-fresh batch the
+        /// user wants to defer. Recomputing over `[begin, end)` is the only correct check.
+        if (settings.small_parts_min_count
+            && range_size < settings.small_parts_min_count)
+        {
+            size_t trimmed_max_size = 0;
+            time_t trimmed_max_age = 0;
+            time_t trimmed_min_age = begin->age;
+            for (auto it = begin; it != end; ++it)
+            {
+                trimmed_max_size = std::max(trimmed_max_size, it->size);
+                trimmed_max_age = std::max(trimmed_max_age, it->age);
+                trimmed_min_age = std::min(trimmed_min_age, it->age);
+            }
+
+            if (!qualifies_for_force_merge(trimmed_min_age)
+                && trimmed_max_size < settings.small_parts_threshold
+                && static_cast<size_t>(trimmed_max_age) < settings.small_parts_max_age)
+                return;
         }
 
         double current_score = score(static_cast<double>(end - begin), static_cast<double>(sum_size), static_cast<double>(settings.size_fixed_cost_to_add));
@@ -144,6 +205,8 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
+    double max_age,
+    double min_partition_age,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
@@ -158,9 +221,21 @@ bool allow(
     if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
 
+    if (settings.min_partition_age_to_force_merge && min_partition_age > 0)
+        if (min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge))
+            return true;
+
     const size_t size = end - begin;
 
     if (settings.min_parts_to_merge_at_once && size < settings.min_parts_to_merge_at_once)
+        return false;
+
+    /// Reject merges of few small fresh parts to force larger batches.
+    /// See the detailed comment in SimpleMergeSelector.h.
+    if (settings.small_parts_min_count
+        && max_size < static_cast<double>(settings.small_parts_threshold)
+        && max_age < static_cast<double>(settings.small_parts_max_age)
+        && size < settings.small_parts_min_count)
         return false;
 
     /// Map size to 0..1 using logarithmic scale
@@ -225,6 +300,10 @@ void selectWithinPartsRange(
     if (parts_count <= 1)
         return;
 
+    double min_partition_age = 0;
+    if (settings.partitions_stats)
+        min_partition_age = static_cast<double>(settings.partitions_stats->at(parts.front().info.getPartitionId()).min_age);
+
     /// If the parts in the parts vector are sorted by block number,
     /// it may not be ideal to only select parts for merging from the first N ones.
     /// This is because if there are more than N parts in the partition,
@@ -246,10 +325,10 @@ void selectWithinPartsRange(
     /// Enable heuristic for lowering selected merge ranges. This can increase number of
     /// concurrently running merges and thus increase the merge speed.
     size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
-    if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
+    if (settings.max_parts_to_merge_at_once && settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
     {
-        assert(settings.partitions_stats);
-        assert(range_it->size() > 1);
+        chassert(settings.partitions_stats);
+        chassert(range_it->size() > 1);
         const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
 
         if (static_cast<double>(partition_stats.part_count) < settings.base)
@@ -270,6 +349,9 @@ void selectWithinPartsRange(
                 (static_cast<double>(max_parts_to_merge_at_once) - settings.base) * (1.0 - std::pow((static_cast<double>(partition_stats.part_count) - settings.base) / (static_cast<double>(settings.parts_to_throw_insert) - settings.base), exponent))
             );
         }
+
+        max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
+
     }
 
     for (; begin < parts_count; ++begin)
@@ -278,12 +360,14 @@ void selectWithinPartsRange(
         size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
+        size_t max_age = parts[begin].age;
+        bool all_small_and_fresh = settings.small_parts_min_count
+            && parts[begin].size < settings.small_parts_threshold
+            && static_cast<size_t>(parts[begin].age) < settings.small_parts_max_age;
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
-            assert(end > begin);
-            if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
-                break;
+            chassert(end > begin);
 
             size_t cur_size = parts[end - 1].size;
             size_t cur_age = parts[end - 1].age;
@@ -293,6 +377,48 @@ void selectWithinPartsRange(
             sum_rows += cur_rows;
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
+            max_age = std::max(max_age, cur_age);
+            all_small_and_fresh = all_small_and_fresh
+                && cur_size < settings.small_parts_threshold
+                && cur_age < settings.small_parts_max_age;
+
+            if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
+            {
+                /// The fullness heuristic may lower the cap below a hard minimum width that
+                /// `allow` requires: min_parts_to_merge_at_once, or small_parts_min_count for
+                /// an all-small, all-fresh range. With the cap below the minimum no candidate
+                /// could ever be formed, so extend enumeration only through the first range of
+                /// exactly that minimum width. Ranges that are not subject to a minimum (stale
+                /// or large ranges when only the small-parts gate is active) retain the
+                /// heuristic's original cap.
+                ///
+                /// A range that already qualifies for force merge (by min_age_to_force_merge or
+                /// min_partition_age_to_force_merge) is exempt: `allow` returns true for it
+                /// before ever reaching either minimum, so the minimum is not what blocks the
+                /// narrower candidate and there is nothing to compensate for. min_age only
+                /// decreases as `end` grows, so the narrower range at the lowered cap was
+                /// force-merge eligible as well and has already been considered.
+                ///
+                /// An explicitly configured max_parts_to_merge_at_once below the minimum is a
+                /// contradictory configuration that is not compensated for.
+                const size_t range_size = end - begin;
+
+                const bool qualifies_for_force_merge
+                    = (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
+                    || (settings.min_partition_age_to_force_merge && min_partition_age > 0
+                        && min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge));
+
+                const bool extend_for_min_parts = settings.min_parts_to_merge_at_once
+                    && range_size <= settings.min_parts_to_merge_at_once
+                    && settings.max_parts_to_merge_at_once >= settings.min_parts_to_merge_at_once;
+
+                const bool extend_for_small_parts = all_small_and_fresh
+                    && range_size <= settings.small_parts_min_count
+                    && settings.max_parts_to_merge_at_once >= settings.small_parts_min_count;
+
+                if (qualifies_for_force_merge || !(extend_for_min_parts || extend_for_small_parts))
+                    break;
+            }
 
             if (sum_size > constraint.max_size_bytes)
                 break;
@@ -307,6 +433,8 @@ void selectWithinPartsRange(
                     static_cast<double>(sum_size),
                     static_cast<double>(max_size),
                     static_cast<double>(min_age),
+                    static_cast<double>(max_age),
+                    min_partition_age,
                     static_cast<double>(parts_count),
                     min_size_to_lower_base_log,
                     max_size_to_lower_base_log,
@@ -320,7 +448,9 @@ void selectWithinPartsRange(
                     range_end,
                     sum_size,
                     sum_rows,
+                    min_age,
                     begin == 0 ? 0 : parts[begin - 1].size,
+                    min_partition_age,
                     settings);
         }
     }

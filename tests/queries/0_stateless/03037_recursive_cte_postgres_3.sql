@@ -85,6 +85,7 @@ UNION ALL
     FROM tree JOIN t ON (tree.parent_id = t.id)
 )
 SELECT t1.id, t2.path, tuple(t2.*) FROM t AS t1 JOIN t AS t2 ON
-(t1.id=t2.id);
+(t1.id=t2.id)
+ORDER BY ALL;
 
 -- { echoOff }

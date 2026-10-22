@@ -1,0 +1,27 @@
+---
+title: 'Does ClickHouse support federated queries?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/federated
+description: 'ClickHouse supports a wide range for federated and hybrid queries'
+doc_type: 'reference'
+keywords: ['federated', 'hybrid', 'postgres', 'mysql', 'sqlite', 'odbc', 'jdbc']
+---
+
+ClickHouse has the most comprehensive support for federated queries and hybrid query execution among analytical databases.
+
+It supports querying external databases:
+- PostgreSQL
+- MySQL
+- MongoDB
+- Redis
+- any ODBC data source
+- any JDBC data source
+- any Arrow Flight data source
+- streaming data sources, such as Kafka and RabbitMQ
+- Data Lakes, such as Iceberg, Delta Lake, Apache Hudi, Apache Paimon
+- external files located on a shared storage, such as AWS S3, GCS, Minio, Cloudflare R2, Azure Blob Storage, Alicloud OSS, Tencent COS, as well as local storage, with the wide range of data formats
+
+ClickHouse can join multiple different data sources in a single query. It also provides a hybrid query execution option, combining local resources and offloading part of the query to remote machines.
+
+Interestingly that ClickHouse can accelerate queries on external data sources without moving the data. For example, an aggregation query from MySQL will be processed faster if run on ClickHouse, because the overhead of data movement is offset by the faster query engine.

@@ -1,0 +1,94 @@
+---
+title: 설정 확장
+---
+
+<div id="extending-collector-config">
+  ### collector 구성 확장하기
+</div>
+
+ClickStack에서 제공하는 OTel collector 배포판은 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정하여 기본 구성을 확장할 수 있습니다.
+
+사용자 지정 수신기, processor 또는 파이프라인을 추가하려면 다음을 수행하세요:
+
+1. 추가 구성이 포함된 사용자 지정 설정 파일을 생성합니다
+2. 파일을 `/etc/otelcol-contrib/custom.config.yaml`에 마운트합니다
+3. 환경 변수 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`를 설정합니다
+
+**예시 사용자 지정 구성:**
+
+```yaml
+receivers:
+  # 로컬 파일에서 로그 수집
+  filelog:
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+      - /var/log/messages
+    start_at: beginning
+
+  # 호스트 시스템 메트릭 수집
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      network:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+
+service:
+  pipelines:
+    # 로그 파이프라인
+    logs/host:
+      receivers: [filelog]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+    
+    # 메트릭 파이프라인
+    metrics/hostmetrics:
+      receivers: [hostmetrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+**독립 실행형 collector로 배포:**
+
+```bash
+docker run -d \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=default \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -v "$(pwd)/custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+<Note>
+  사용자 지정 구성에서는 새 수신기, 프로세서, 파이프라인만 정의해야 합니다. 기본 프로세서(`memory_limiter`, `batch`)와 익스포터(`clickhouse`)는 이미 정의되어 있으므로 이름으로 참조하십시오. 사용자 지정 구성은 기본 구성과 병합되며, 기존 구성 요소를 재정의할 수 없습니다.
+</Note>
+
+더 복잡한 구성이 필요하면 [기본 ClickStack collector 구성](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)과 [ClickHouse exporter 문서](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)를 참조하십시오.
+
+<div id="configuration-structure">
+  #### 구성 구조
+</div>
+
+[`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/), [`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md), [`processors`](https://opentelemetry.io/docs/collector/configuration/#processors)를 포함해 OTel collector 구성에 대한 자세한 내용은 [OpenTelemetry collector 공식 문서](https://opentelemetry.io/docs/collector/configuration)를 참조하십시오.

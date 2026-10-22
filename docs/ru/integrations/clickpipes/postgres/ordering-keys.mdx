@@ -1,0 +1,67 @@
+---
+sidebarTitle: 'Ключи сортировки'
+description: 'Как определить пользовательские ключи сортировки.'
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: 'Ключи сортировки'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Ключи сортировки (также называемые ordering keys) определяют, как данные сортируются на диске и индексируются в таблице ClickHouse. При репликации из Postgres ClickPipes по умолчанию использует первичный ключ таблицы Postgres в качестве ключа сортировки для соответствующей таблицы в ClickHouse. В большинстве случаев первичный ключ Postgres вполне подходит в роли ключа сортировки, поскольку ClickHouse уже оптимизирован для быстрого сканирования данных, и необходимость в пользовательских ключах сортировки возникает нечасто.
+
+Как описано в [руководстве по миграции](/ru/get-started/migrate/postgres/migration-guide/migration-guide-part3), для более крупных сценариев использования в ключ сортировки ClickHouse следует включать дополнительные столбцы помимо первичного ключа Postgres, чтобы оптимизировать запросы.
+
+По умолчанию при использовании CDC выбор ключа сортировки, отличающегося от первичного ключа Postgres, может привести к проблемам с дедупликацией данных в ClickHouse. Это связано с тем, что ключ сортировки в ClickHouse выполняет две функции: управляет индексацией и сортировкой данных, а также служит ключом дедупликации. Самый простой способ решить эту проблему — определить refreshable materialized views.
+
+<div id="use-refreshable-materialized-views">
+  ## Используйте refreshable materialized views
+</div>
+
+Простой способ задать пользовательские ключи сортировки (ORDER BY) — использовать [refreshable materialized views](/ru/concepts/features/materialized-views/refreshable-materialized-view) (MVs). Они позволяют периодически (например, каждые 5 или 10 минут) копировать всю таблицу с нужным ключом сортировки.
+
+Ниже приведён пример Refreshable MV с пользовательским ORDER BY и требуемой дедупликацией:
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- другой ключ сортировки, но с суффиксом первичного ключа postgres
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- выполняет дедупликацию
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## Пользовательские ключи сортировки без refreshable materialized views
+</div>
+
+Если refreshable materialized views не подходят из-за объёма данных, воспользуйтесь следующими рекомендациями, чтобы определить пользовательские ключи сортировки для больших таблиц и устранить проблемы, связанные с дедупликацией.
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### Выбирайте столбцы ключа сортировки, которые не меняются для одной и той же строки
+</div>
+
+При добавлении дополнительных столбцов в ключ сортировки ClickHouse (помимо первичного ключа из Postgres) мы рекомендуем выбирать столбцы, значения которых не меняются для каждой строки. Это помогает избежать проблем с согласованностью данных и дедупликацией в ReplacingMergeTree.
+
+Например, в мультитенантном SaaS-приложении хорошим выбором будет использование (`tenant_id`, `id`) в качестве ключа сортировки. Эти столбцы однозначно идентифицируют каждую строку, а значение `tenant_id` остаётся неизменным для данного `id`, даже если другие столбцы меняются. Поскольку дедупликация по `id` совпадает с дедупликацией по (`tenant_id`, `id`), это помогает избежать [проблем с дедупликацией данных](https://docs.peerdb.io/mirror/ordering-key-different), которые могли бы возникнуть, если бы `tenant_id` менялся.
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### Настройте `REPLICA IDENTITY` в таблицах Postgres для пользовательского ключа сортировки
+</div>
+
+Чтобы Postgres CDC работал корректно, важно изменить `REPLICA IDENTITY` в таблицах так, чтобы он включал столбцы ключа сортировки. Это необходимо для точной обработки операций DELETE.
+
+Если `REPLICA IDENTITY` не включает столбцы ключа сортировки, Postgres CDC не будет фиксировать значения столбцов, кроме столбцов первичного ключа, — это ограничение механизма logical decoding в Postgres. Во всех столбцах ключа сортировки, не входящих в первичный ключ Postgres, будут значения NULL. Это влияет на дедупликацию: предыдущая версия строки может не быть дедуплицирована с последней версией, помеченной как удалённая (где `_peerdb_is_deleted` равно 1).
+
+В приведённом выше примере с `owneruserid` и `id`, если первичный ключ ещё не включает `owneruserid`, необходимо создать `UNIQUE INDEX` по (`owneruserid`, `id`) и назначить его как `REPLICA IDENTITY` для таблицы. Это гарантирует, что Postgres CDC будет фиксировать нужные значения столбцов для точной репликации и дедупликации.
+
+Ниже приведён пример того, как это сделать для таблицы events. Обязательно примените это ко всем таблицам с изменёнными ключами сортировки.
+
+```sql
+-- Создать UNIQUE INDEX для (owneruserid, id)
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- Задать REPLICA IDENTITY для использования этого индекса
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```

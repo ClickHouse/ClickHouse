@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNested : public IFunction
+class FunctionNested final : public IFunction
 {
 public:
     static constexpr auto name = "nested";
@@ -56,12 +56,40 @@ public:
         return true;
     }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return false;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {0};
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Documentation-only — given a const-array of N names and N parallel
+    /// Array values, returns `Array(Tuple(<name_i> T_i))`. The output's
+    /// named-tuple shape comes from the const names, so the DSL can't
+    /// produce the exact type.
+    String getSignatureString() const override
+    {
+        return "(const Array(String), Array, ...) -> Array";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -126,10 +154,10 @@ private:
 
             if (!type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must be {}-dimentional array. Actual {}",
+                    "Argument {} for function {} must be {}-dimensional array. Actual {}",
                     i + 1,
-                    array_depth,
                     getName(),
+                    array_depth,
                     argument.type->getName());
 
             names.push_back(std::string{column.getDataAt(i)});
@@ -156,7 +184,7 @@ private:
 
         if (array_col->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument for function {} must be constant column with N-dimentional array of strings, "
+                "First argument for function {} must be constant column with N-dimensional array of strings, "
                 "where the all arrays except the most inner one must have size = 1. "
                 "The size of array at depth {} is {}",
                 getName(), array_depth, array_col->size());

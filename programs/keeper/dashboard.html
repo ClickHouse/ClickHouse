@@ -374,6 +374,104 @@
             text-shadow: 0 0 0;
         }
 
+        .tab:checked:nth-of-type(3)~.tab__content:nth-of-type(3) {
+            opacity: 1;
+            position: relative;
+            top: 0;
+            z-index: 100;
+            transform: translateY(0px);
+            text-shadow: 0 0 0;
+        }
+
+        /* Cluster topology (static SVG — no animations) */
+        .cluster-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .cluster-hint {
+            color: var(--misc-text-color);
+            font-size: 0.85em;
+        }
+
+        #cluster-topology {
+            width: 100%;
+            height: 360px;
+            background-color: var(--input-background-color);
+            border: 1px solid var(--shadow-color);
+        }
+
+        .cluster-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin: 0.75rem 0 1rem;
+            font-size: 0.9em;
+            color: var(--misc-text-color);
+        }
+
+        .cluster-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .cluster-swatch {
+            display: inline-block;
+            width: 0.85rem;
+            height: 0.85rem;
+            border: 2px solid;
+        }
+
+        .cluster-swatch.ok { border-color: #26a269; background: rgba(38, 162, 105, 0.25); }
+        .cluster-swatch.lag { border-color: #c4a000; background: rgba(196, 160, 0, 0.25); }
+        .cluster-swatch.down { border-color: #c41a16; background: rgba(196, 26, 22, 0.25); }
+        .cluster-swatch.leader { border-color: #faff68; background: rgba(250, 255, 104, 0.2); }
+        .cluster-swatch.unknown { border-color: #888; background: rgba(136, 136, 136, 0.2); }
+
+        #cluster-leader-link {
+            margin-left: 0.75rem;
+            color: var(--header-text-color);
+            border-bottom: 1px solid var(--storage-ui-button-border-color);
+            text-decoration: none;
+            font-size: 0.9em;
+        }
+
+        #cluster-leader-link:hover {
+            color: var(--storage-ui-button-border-color);
+        }
+
+        #cluster-leader-link[hidden] {
+            display: none !important;
+        }
+
+        #cluster-members-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95em;
+        }
+
+        #cluster-members-table th {
+            text-align: left;
+            padding: 0.4rem 0.5rem;
+            color: var(--misc-text-color);
+            border-bottom: 1px solid var(--shadow-color);
+            font-weight: normal;
+        }
+
+        #cluster-members-table td {
+            padding: 0.4rem 0.5rem;
+            border-bottom: 1px solid var(--shadow-color);
+        }
+
+        #cluster-members-table tr.self td {
+            color: var(--header-text-color);
+        }
+
         #sidebar-version-display {
             position: absolute;
             bottom: -1rem;
@@ -639,6 +737,9 @@
             <input type="radio" id="tab_keeper_client" name="tabGroup1" class="tab">
             <label for="tab_keeper_client">Keeper Client</label>
 
+            <input type="radio" id="tab_cluster" name="tabGroup1" class="tab">
+            <label for="tab_cluster">Cluster</label>
+
             <div class="tab__content">
                 <div style="display: flex; width: 100%; gap: 1rem;">
                     <!-- File Manager side -->
@@ -742,6 +843,40 @@
                     </div>
                 </div>
 
+            </div>
+
+            <div class="tab__content">
+                <div class="cluster-toolbar">
+                    <div>
+                        <h3 style="margin: 0;">Raft Topology
+                            <a class="monospace" id="cluster-leader-link" href="#" hidden>Open leader dashboard</a>
+                        </h3>
+                        <span class="cluster-hint" id="cluster-status-hint">Waiting for cluster data…</span>
+                    </div>
+                    <span class="cluster-hint">Green: ok · Yellow: lagging · Red: unreachable · Gray: unknown</span>
+                </div>
+                <svg id="cluster-topology" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg"></svg>
+                <div class="cluster-legend">
+                    <div class="cluster-legend-item"><span class="cluster-swatch ok"></span> alive &amp; synced</div>
+                    <div class="cluster-legend-item"><span class="cluster-swatch lag"></span> alive, lagging</div>
+                    <div class="cluster-legend-item"><span class="cluster-swatch down"></span> unreachable</div>
+                    <div class="cluster-legend-item"><span class="cluster-swatch unknown"></span> unknown</div>
+                </div>
+                <table id="cluster-members-table" class="monospace">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Endpoint (Raft)</th>
+                            <th>Role</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th>Log idx</th>
+                            <th>Lag</th>
+                            <th>Last resp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cluster-members-body"></tbody>
+                </table>
             </div>
 
             <div id="error" style="display: none; width: 100%;"></div>
@@ -1294,6 +1429,394 @@
         xhr.send();
     }
 
+    function memberHealthStatus(member, peer_health_available) {
+        if (!peer_health_available || member.is_alive === null || member.is_alive === undefined) {
+            if (member.is_self)
+                return "ok";
+            /// Known Raft leader, but this node cannot see peer heartbeats.
+            if (member.is_leader)
+                return "leader";
+            return "unknown";
+        }
+        if (!member.is_alive)
+            return "down";
+        if (member.is_synced === false)
+            return "lag";
+        return "ok";
+    }
+
+    function memberRoleLabel(member, cluster_role) {
+        if (member.is_leader)
+            return "leader";
+        if (member.is_observer)
+            return "observer";
+        if (member.is_self && cluster_role === "standalone")
+            return "standalone";
+        return "follower";
+    }
+
+    function statusLabel(status) {
+        if (status === "ok")
+            return "ok";
+        if (status === "lag")
+            return "lagging";
+        if (status === "down")
+            return "unreachable";
+        if (status === "leader")
+            return "leader";
+        return "unknown";
+    }
+
+    function statusColors(status) {
+        if (status === "ok")
+            return { stroke: "#26a269", fill: "rgba(38, 162, 105, 0.2)", edge: "#26a269" };
+        if (status === "lag")
+            return { stroke: "#c4a000", fill: "rgba(196, 160, 0, 0.2)", edge: "#c4a000" };
+        if (status === "down")
+            return { stroke: "#c41a16", fill: "rgba(196, 26, 22, 0.2)", edge: "#c41a16" };
+        if (status === "leader")
+            return { stroke: "#faff68", fill: "rgba(250, 255, 104, 0.18)", edge: "#faff68" };
+        return { stroke: "#888888", fill: "rgba(136, 136, 136, 0.15)", edge: "#888888" };
+    }
+
+    function endpointHost(endpoint) {
+        if (!endpoint)
+            return null;
+        if (endpoint.charAt(0) === "[") {
+            const end = endpoint.indexOf("]");
+            return end >= 0 ? endpoint.slice(1, end) : endpoint;
+        }
+        const pos = endpoint.lastIndexOf(":");
+        return pos >= 0 ? endpoint.slice(0, pos) : endpoint;
+    }
+
+    /// Format a host for embedding into a URL: IPv6 literals must be bracketed,
+    /// and a zone id ("fe80::1%eth0") must have its "%" percent-encoded.
+    function hostForUrl(host) {
+        if (host && host.indexOf(":") >= 0 && host.charAt(0) !== "[")
+            return `[${host.replace(/%/g, "%25")}]`;
+        return host;
+    }
+
+    function hostsLikelySame(a, b) {
+        if (!a || !b)
+            return false;
+        const norm = (h) => {
+            /// window.location.hostname keeps IPv6 literals bracketed; endpointHost strips them.
+            let lower = h.toLowerCase();
+            if (lower.charAt(0) === "[" && lower.charAt(lower.length - 1) === "]")
+                lower = lower.slice(1, -1);
+            if (lower === "localhost" || lower === "127.0.0.1" || lower === "::1")
+                return "loopback";
+            return lower;
+        };
+        return norm(a) === norm(b);
+    }
+
+    function leaderHttpPortOverride() {
+        const from_query = new URLSearchParams(window.location.search).get("leader_http_port");
+        if (from_query)
+            return from_query;
+        const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+        return new URLSearchParams(hash).get("leader_http_port");
+    }
+
+    /// Resolve HTTP control port for a member.
+    /// Multi-host: same port as this node. Same-host multi-port: infer from self http_port/server_id offset
+    /// (e.g. ports 9182/9183/9184 with ids 1/2/3), or ?leader_http_port= override.
+    function resolveMemberHttpPort(member, cluster) {
+        const override = leaderHttpPortOverride();
+        if (override)
+            return String(override);
+
+        const host = endpointHost(member.endpoint);
+        const self_port = cluster?.http_port || window.location.port;
+        if (!hostsLikelySame(host, window.location.hostname))
+            return self_port ? String(self_port) : "";
+
+        const self_id = Number(cluster?.self_id);
+        const member_id = Number(member.server_id);
+        const self_http = Number(self_port);
+        if (self_id > 0 && member_id > 0 && self_http > 0)
+            return String(self_http - self_id + member_id);
+
+        return self_port ? String(self_port) : "";
+    }
+
+    function leaderDashboardUrl(leader, cluster) {
+        const host = endpointHost(leader.endpoint);
+        if (!host)
+            return null;
+        const port = resolveMemberHttpPort(leader, cluster || last_cluster_json);
+        const port_part = port ? `:${port}` : "";
+        const url = new URL(`${window.location.protocol}//${hostForUrl(host)}${port_part}/dashboard`);
+        url.searchParams.set("tab", "cluster");
+        return url.toString();
+    }
+
+    function selectTabFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+        const hash_params = new URLSearchParams(hash);
+        const tab = params.get("tab") || hash_params.get("tab");
+        if (tab === "cluster") {
+            const el = document.getElementById("tab_cluster");
+            if (el)
+                el.checked = true;
+        } else if (tab === "client") {
+            const el = document.getElementById("tab_keeper_client");
+            if (el)
+                el.checked = true;
+        } else if (tab === "storage") {
+            const el = document.getElementById("tab_storage");
+            if (el)
+                el.checked = true;
+        }
+    }
+
+    function openLeaderClusterDashboard(leader) {
+        if (!leader)
+            return;
+        if (leader.is_self) {
+            const el = document.getElementById("tab_cluster");
+            if (el)
+                el.checked = true;
+            return;
+        }
+        const url = leaderDashboardUrl(leader, last_cluster_json);
+        if (!url)
+            return;
+        const target = new URL(url);
+        /// Same host+port means port resolution failed for a local multi-port setup.
+        if (target.host === window.location.host) {
+            renderError(`Cannot resolve leader HTTP port for ${leader.endpoint}. Open with ?leader_http_port=<port>.`);
+            return;
+        }
+        window.location.href = url;
+    }
+
+    function updateLeaderDashboardLink(cluster, peer_health) {
+        const link = document.getElementById("cluster-leader-link");
+        if (!link)
+            return;
+
+        const leader = (cluster.members || []).find(m => m.is_leader);
+        if (!leader || leader.is_self || peer_health) {
+            link.hidden = true;
+            link.removeAttribute("href");
+            return;
+        }
+
+        const url = leaderDashboardUrl(leader, cluster);
+        if (!url) {
+            link.hidden = true;
+            return;
+        }
+
+        link.hidden = false;
+        link.href = url;
+        link.textContent = "Open leader dashboard";
+        link.title = "Open the leader node dashboard on the Cluster tab.";
+    }
+
+    function layoutClusterNodes(count, width, height) {
+        const cx = width / 2;
+        const cy = height / 2;
+        if (count <= 0)
+            return [];
+        if (count === 1)
+            return [{ x: cx, y: cy }];
+        if (count === 2)
+            return [{ x: cx - 140, y: cy }, { x: cx + 140, y: cy }];
+        if (count === 3) {
+            return [
+                { x: cx, y: cy - 110 },
+                { x: cx - 150, y: cy + 90 },
+                { x: cx + 150, y: cy + 90 },
+            ];
+        }
+        const radius = Math.min(width, height) * 0.32;
+        const positions = [];
+        for (let i = 0; i < count; i++) {
+            const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
+            positions.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+        }
+        return positions;
+    }
+
+    function renderClusterTopology(cluster, local_role) {
+        const svg = document.getElementById("cluster-topology");
+        const tbody = document.getElementById("cluster-members-body");
+        const hint = document.getElementById("cluster-status-hint");
+        while (svg.firstChild)
+            svg.removeChild(svg.firstChild);
+        tbody.innerHTML = "";
+
+        if (!cluster || !Array.isArray(cluster.members) || cluster.members.length === 0) {
+            hint.textContent = "No cluster membership data (server inactive or empty raft_configuration).";
+            updateLeaderDashboardLink({ members: [] }, false);
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("x", "320");
+            text.setAttribute("y", "180");
+            text.setAttribute("text-anchor", "middle");
+            text.setAttribute("fill", "#888");
+            text.setAttribute("font-family", "Liberation Mono, monospace");
+            text.setAttribute("font-size", "14");
+            text.textContent = "No members";
+            svg.appendChild(text);
+            return;
+        }
+
+        const members = cluster.members.slice().sort((a, b) => a.server_id - b.server_id);
+        const peer_health = !!cluster.peer_health_available;
+        const width = 640;
+        const height = 360;
+        const positions = layoutClusterNodes(members.length, width, height);
+        const header_fill = getComputedStyle(document.documentElement).getPropertyValue("--header-text-color").trim() || "#f9f9f9";
+        const text_fill = getComputedStyle(document.documentElement).getPropertyValue("--text-color").trim() || "#b4b4b4";
+        const misc_fill = getComputedStyle(document.documentElement).getPropertyValue("--misc-text-color").trim() || "#888";
+
+        let hint_parts = [];
+        if (cluster.has_leader)
+            hint_parts.push(`leader id=${cluster.leader_id}`);
+        else
+            hint_parts.push("no leader");
+        hint_parts.push(`self id=${cluster.self_id}`);
+        hint_parts.push(peer_health ? "peer health: from this leader" : "peer health: open leader for peer reachability");
+        hint.textContent = hint_parts.join(" · ");
+        updateLeaderDashboardLink(cluster, peer_health);
+
+        const leader = members.find(m => m.is_leader);
+
+        /// Edges: star from leader when known; otherwise gray links in a ring.
+        if (leader) {
+            const leader_pos = positions[members.indexOf(leader)];
+            members.forEach((m, i) => {
+                if (m.server_id === leader.server_id)
+                    return;
+                const status = memberHealthStatus(m, peer_health);
+                const colors = statusColors(status);
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", leader_pos.x);
+                line.setAttribute("y1", leader_pos.y);
+                line.setAttribute("x2", positions[i].x);
+                line.setAttribute("y2", positions[i].y);
+                line.setAttribute("stroke", colors.edge);
+                line.setAttribute("stroke-width", status === "down" ? "2" : "2.5");
+                if (status === "down" || status === "unknown" || status === "leader")
+                    line.setAttribute("stroke-dasharray", "6 4");
+                svg.appendChild(line);
+            });
+        } else {
+            for (let i = 0; i < members.length; i++) {
+                const j = (i + 1) % members.length;
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", positions[i].x);
+                line.setAttribute("y1", positions[i].y);
+                line.setAttribute("x2", positions[j].x);
+                line.setAttribute("y2", positions[j].y);
+                line.setAttribute("stroke", "#888888");
+                line.setAttribute("stroke-width", "1.5");
+                line.setAttribute("stroke-dasharray", "4 4");
+                svg.appendChild(line);
+            }
+        }
+
+        members.forEach((m, i) => {
+            const pos = positions[i];
+            const status = memberHealthStatus(m, peer_health);
+            const colors = statusColors(status);
+            const radius = m.is_leader ? 36 : 30;
+
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", pos.x);
+            circle.setAttribute("cy", pos.y);
+            circle.setAttribute("r", radius);
+            circle.setAttribute("fill", colors.fill);
+            circle.setAttribute("stroke", colors.stroke);
+            circle.setAttribute("stroke-width", m.is_self ? "4" : "2.5");
+            if (m.is_leader) {
+                circle.style.cursor = "pointer";
+                circle.setAttribute("title", m.is_self ? "Current leader" : "Open leader dashboard (Cluster)");
+                circle.addEventListener("click", () => openLeaderClusterDashboard(m));
+            }
+            svg.appendChild(circle);
+
+            if (m.is_self) {
+                const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                ring.setAttribute("cx", pos.x);
+                ring.setAttribute("cy", pos.y);
+                ring.setAttribute("r", radius + 6);
+                ring.setAttribute("fill", "none");
+                ring.setAttribute("stroke", colors.stroke);
+                ring.setAttribute("stroke-width", "1");
+                ring.setAttribute("stroke-dasharray", "3 3");
+                ring.style.pointerEvents = "none";
+                svg.appendChild(ring);
+            }
+
+            const id_text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            id_text.setAttribute("x", pos.x);
+            id_text.setAttribute("y", pos.y - 4);
+            id_text.setAttribute("text-anchor", "middle");
+            id_text.setAttribute("fill", header_fill);
+            id_text.setAttribute("font-family", "Liberation Mono, monospace");
+            id_text.setAttribute("font-size", "16");
+            id_text.setAttribute("font-weight", "bold");
+            id_text.style.pointerEvents = "none";
+            id_text.textContent = String(m.server_id);
+            svg.appendChild(id_text);
+
+            const role_text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            role_text.setAttribute("x", pos.x);
+            role_text.setAttribute("y", pos.y + 14);
+            role_text.setAttribute("text-anchor", "middle");
+            role_text.setAttribute("fill", text_fill);
+            role_text.setAttribute("font-family", "Liberation Mono, monospace");
+            role_text.setAttribute("font-size", "11");
+            role_text.style.pointerEvents = "none";
+            role_text.textContent = memberRoleLabel(m, local_role);
+            svg.appendChild(role_text);
+
+            const ep_text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            ep_text.setAttribute("x", pos.x);
+            ep_text.setAttribute("y", pos.y + radius + 18);
+            ep_text.setAttribute("text-anchor", "middle");
+            ep_text.setAttribute("fill", misc_fill);
+            ep_text.setAttribute("font-family", "Liberation Mono, monospace");
+            ep_text.setAttribute("font-size", "11");
+            ep_text.style.pointerEvents = "none";
+            ep_text.textContent = m.endpoint || "";
+            svg.appendChild(ep_text);
+
+            const tr = document.createElement("tr");
+            if (m.is_self)
+                tr.className = "self";
+            const last_resp = (m.last_succ_resp_ms === null || m.last_succ_resp_ms === undefined)
+                ? "—"
+                : `${m.last_succ_resp_ms} ms`;
+            const log_idx = (m.last_log_index === null || m.last_log_index === undefined) ? "—" : m.last_log_index;
+            const priority = (m.priority === null || m.priority === undefined) ? "—" : m.priority;
+            let lag = "—";
+            if (leader && m.last_log_index !== null && m.last_log_index !== undefined
+                && leader.last_log_index !== null && leader.last_log_index !== undefined)
+            {
+                /// Log indices travel as strings because UInt64 does not fit into a JSON number.
+                lag = String(BigInt(leader.last_log_index) - BigInt(m.last_log_index));
+            }
+            tr.innerHTML =
+                `<td>${m.server_id}${m.is_self ? " *" : ""}</td>` +
+                `<td>${m.endpoint || "—"}</td>` +
+                `<td>${memberRoleLabel(m, local_role)}</td>` +
+                `<td>${priority}</td>` +
+                `<td style="color:${colors.stroke}">${statusLabel(status)}</td>` +
+                `<td>${log_idx}</td>` +
+                `<td>${lag}</td>` +
+                `<td>${last_resp}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
     function renderContentResponse(status, response) {
         if (status === 200) {
             const json = JSON.parse(response);
@@ -1306,6 +1829,9 @@
                 document.getElementById("displayLatencyAvg").innerText = json?.keeper_details?.latency_avg ?? "--";
                 document.getElementById("displayConnections").innerText = json?.keeper_details?.alive_connections ?? "--";
                 document.getElementById("displayNodeCount").innerText = json?.keeper_details?.node_count ?? "--";
+                last_cluster_json = json.cluster ?? null;
+                last_local_role = json?.keeper_details?.role ?? null;
+                renderClusterTopology(last_cluster_json, last_local_role);
             }
         } else {
             renderError(`HTTP Error: ${status}`)
@@ -1321,12 +1847,17 @@
         theme = "dark";
     }
 
+    let last_cluster_json = null;
+    let last_local_role = null;
+
     function setColorTheme(new_theme, update_preference) {
         theme = new_theme;
         if (update_preference) {
             window.localStorage.setItem("theme", theme);
         }
         document.documentElement.setAttribute("data-theme", theme);
+        if (last_cluster_json)
+            renderClusterTopology(last_cluster_json, last_local_role);
     }
 
     if (theme) {
@@ -1582,6 +2113,7 @@
 
     async function start() {
         try {
+            selectTabFromUrl();
             setupCommandLine();
             loadContent();
             setInterval(loadContent, STATS_UPDATE_INTERVAL_MS);

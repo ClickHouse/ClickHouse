@@ -1,0 +1,200 @@
+---
+title: 'DataStore: SQL 최적화 기능을 갖춘 pandas 호환 API'
+sidebarTitle: '개요'
+slug: /chdb/datastore
+description: 'DataStore는 고성능 데이터 분석을 위해 SQL 최적화 기능이 적용된 pandas 호환 API를 제공합니다'
+keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+DataStore는 chDB의 pandas-compatible API로, 익숙한 pandas DataFrame 인터페이스에 SQL 쿼리 최적화 기능을 결합해 pandas 스타일의 코드를 작성하면서도 ClickHouse의 성능을 활용할 수 있게 합니다.
+
+<div id="key-features">
+  ## 주요 기능
+</div>
+
+* **Pandas 호환성**: 209개의 Pandas 데이터프레임 메서드, 56개의 `.str` 메서드, 42개 이상의 `.dt` 메서드
+* **SQL 최적화**: 작업이 자동으로 최적화된 SQL 쿼리로 컴파일됩니다
+* **지연 실행**: 결과가 필요해질 때까지 작업 실행이 지연됩니다
+* **630개 이상의 API 메서드**: 데이터 조작을 위한 포괄적인 API 제공 범위
+* **ClickHouse 확장 기능**: pandas에는 없는 추가 Accessor(`.arr`, `.json`, `.url`, `.ip`, `.geo`)
+
+<div id="architecture">
+  ## 아키텍처
+</div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore 아키텍처" />
+
+DataStore는 **지연 실행**과 **이중 엔진 실행**을 사용합니다:
+
+1. **지연 연산 체인**: 연산은 즉시 실행되지 않고 기록만 됩니다
+2. **스마트 엔진 선택**: QueryPlanner가 각 세그먼트를 최적의 엔진으로 전달합니다(SQL은 chDB, 복잡한 연산은 Pandas)
+3. **중간 결과 캐싱**: 빠른 반복 탐색을 위해 각 단계의 결과를 캐시합니다
+
+자세한 내용은 [실행 모델](/ko/chdb/datastore/execution-model)을 참조하십시오.
+
+<div id="migration">
+  ## Pandas에서 한 줄로 마이그레이션
+</div>
+
+```python
+# Before (pandas)
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+
+# After (DataStore) - just change the import!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+기존 pandas 코드는 수정 없이 그대로 작동하지만, 이제 ClickHouse 엔진에서 실행됩니다.
+
+<div id="performance">
+  ## 성능 비교
+</div>
+
+DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계와 복잡한 파이프라인 작업에서 그 차이가 두드러집니다:
+
+| Operation        | Pandas  | DataStore | Speedup    |
+| ---------------- | ------- | --------- | ---------- |
+| GroupBy count    | 347ms   | 17ms      | **19.93x** |
+| Complex pipeline | 2,047ms | 380ms     | **5.39x**  |
+| Filter+Sort+Head | 1,537ms | 350ms     | **4.40x**  |
+| GroupBy agg      | 406ms   | 141ms     | **2.88x**  |
+
+*1,000만 행 기준 벤치마크입니다. 자세한 내용은 [벤치마크 스크립트](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py)와 [성능 가이드](/ko/chdb/guides/pandas-performance)를 참조하십시오.*
+
+<div id="when-to-use">
+  ## DataStore를 사용해야 하는 경우
+</div>
+
+**다음과 같은 경우 DataStore를 사용하세요:**
+
+* 대규모 데이터셋(수백만 개의 행)으로 작업하는 경우
+* 집계 및 groupby 작업을 수행하는 경우
+* 파일, 데이터베이스 또는 클라우드 스토리지의 데이터를 쿼리하는 경우
+* 복잡한 데이터 파이프라인을 구축하는 경우
+* 더 나은 성능으로 pandas API를 사용하려는 경우
+
+**다음과 같은 경우 Raw SQL API를 사용하세요:**
+
+* SQL을 직접 작성하는 방식을 선호하는 경우
+* 쿼리 실행을 세밀하게 제어해야 하는 경우
+* pandas API에서 제공하지 않는 ClickHouse 전용 기능으로 작업하는 경우
+
+<div id="comparison">
+  ## 기능 비교
+</div>
+
+| 기능                       | Pandas | Polars | DuckDB | DataStore      |
+| ------------------------ | ------ | ------ | ------ | -------------- |
+| Pandas API 호환성           | -      | 부분 지원  | 미지원    | **완전 호환**      |
+| 지연 실행                    | 미지원    | 지원     | 지원     | **지원**         |
+| SQL 쿼리 지원                | 미지원    | 지원     | 지원     | **지원**         |
+| ClickHouse 함수            | 미지원    | 미지원    | 미지원    | **지원**         |
+| String/DateTime Accessor | 지원     | 지원     | 미지원    | **지원 + 추가 기능** |
+| 배열/JSON/URL/IP/Geo       | 미지원    | 부분 지원  | 미지원    | **지원**         |
+| 파일 직접 쿼리                 | 미지원    | 지원     | 지원     | **지원**         |
+| 클라우드 스토리지 지원             | 미지원    | 제한적    | 지원     | **지원**         |
+
+<div id="api-stats">
+  ## API 통계
+</div>
+
+| 범주                   | 개수       | 지원 범위                       |
+| -------------------- | -------- | --------------------------- |
+| DataFrame 메서드        | 209      | pandas의 100%                |
+| Series.str accessor  | 56       | pandas의 100%                |
+| Series.dt accessor   | 42+      | 100%+ (ClickHouse 추가 기능 포함) |
+| Series.arr accessor  | 37       | ClickHouse 전용               |
+| Series.json accessor | 13       | ClickHouse 전용               |
+| Series.url accessor  | 15       | ClickHouse 전용               |
+| Series.ip accessor   | 9        | ClickHouse 전용               |
+| Series.geo accessor  | 14       | ClickHouse 전용               |
+| **총 API 메서드 수**      | **630+** | -                           |
+
+<div id="navigation">
+  ## 문서 탐색
+</div>
+
+<div id="getting-started">
+  ### 시작하기
+</div>
+
+* [Quickstart](/ko/chdb/datastore/quickstart) - 설치 및 기본 사용법
+* [Pandas에서 마이그레이션](/ko/chdb/guides/migration-from-pandas) - 단계별 마이그레이션 가이드
+
+<div id="api-reference">
+  ### API 참조
+</div>
+
+* [팩터리 메서드](/ko/chdb/datastore/factory-methods) - 다양한 소스에서 DataStore 생성
+* [쿼리 빌드](/ko/chdb/datastore/query-building) - SQL 스타일 쿼리 연산
+* [Pandas 호환성](/ko/chdb/datastore/pandas-compat) - 총 209개의 pandas 호환 메서드
+* [Accessor](/ko/chdb/datastore/accessors) - String, DateTime, 배열, JSON, URL, IP, Geo Accessor
+* [집계](/ko/chdb/datastore/aggregation) - 집계 및 윈도우 함수
+* [I/O 작업](/ko/chdb/datastore/io) - 데이터 읽기 및 쓰기
+
+<div id="advanced-topics">
+  ### 고급 주제
+</div>
+
+* [실행 모델](/ko/chdb/datastore/execution-model) - 지연 실행과 캐싱
+* [클래스 참조](/ko/chdb/datastore/class-reference) - 전체 API 참조
+
+<div id="configuration-debugging">
+  ### 구성 및 디버깅
+</div>
+
+* [구성](/ko/chdb/configuration/index) - 모든 구성 옵션
+* [성능 모드](/ko/chdb/configuration/performance-mode) - 최대 처리량을 위한 SQL 우선 모드
+* [디버깅](/ko/chdb/debugging/index) - Explain, 프로파일링 및 로깅
+
+<div id="pandas-user-guides">
+  ### Pandas 사용자 가이드
+</div>
+
+* [Pandas Cookbook](/ko/chdb/guides/pandas-cookbook) - 자주 사용하는 패턴
+* [Key Differences](/ko/chdb/guides/pandas-differences) - pandas와의 주요 차이점
+* [Performance Guide](/ko/chdb/guides/pandas-performance) - 최적화 팁
+* [SQL for Pandas Users](/ko/chdb/guides/pandas-to-sql) - pandas 작업의 기반이 되는 SQL 이해하기
+
+<div id="quick-example">
+  ## 간단한 예시
+</div>
+
+```python
+from chdb import datastore as pd
+
+# Read data from various sources
+ds = pd.read_csv("sales.csv")
+# or: ds = pd.DataStore.uri("s3://bucket/sales.parquet")
+# or: ds = pd.DataStore.from_mysql("mysql://user:pass@host/db/table")
+
+# Familiar pandas operations - automatically optimized to SQL
+result = (ds
+    .filter(ds['amount'] > 1000)           # WHERE amount > 1000
+    .groupby('region')                      # GROUP BY region
+    .agg({'amount': ['sum', 'mean']})       # SUM(amount), AVG(amount)
+    .sort_values('sum', ascending=False)    # ORDER BY sum DESC
+    .head(10)                               # LIMIT 10
+)
+
+# View the generated SQL
+print(result.to_sql())
+
+# Execute and get results
+df = result.to_df()  # Returns pandas DataFrame
+```
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* **DataStore가 처음이신가요?** [빠른 시작 가이드](/ko/chdb/datastore/quickstart)부터 확인하세요
+* **pandas에서 전환하시나요?** [마이그레이션 가이드](/ko/chdb/guides/migration-from-pandas)를 읽어보세요
+* **더 알아보고 싶으신가요?** [API 참조](/ko/chdb/datastore/class-reference)를 살펴보세요

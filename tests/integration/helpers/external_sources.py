@@ -253,7 +253,7 @@ class SourceMongo(ExternalSource):
                 row_dict[cell_name] = self.converters[cell_name](cell_value)
             to_insert.append(row_dict)
 
-        result = tbl.insert_many(to_insert)
+        tbl.insert_many(to_insert)
 
 
 class SourceMongoURI(SourceMongo):
@@ -706,9 +706,11 @@ class SourceRedis(ExternalSource):
                 self.client.hset(*values)
 
     def compatible_with_layout(self, layout):
-        return (
-            layout.is_simple
-            and self.storage_type == "simple"
-            or layout.is_complex
-            and self.storage_type == "hash_map"
-        )
+        if self.storage_type == "simple":
+            # 'simple' storage is a flat key-value map: it supports simple-key layouts
+            # and complex-key layouts with a single key column.
+            return layout.is_simple or layout.is_complex
+        if self.storage_type == "hash_map":
+            # 'hash_map' storage is a two-level map, used for complex (composite) keys.
+            return layout.is_complex
+        return False

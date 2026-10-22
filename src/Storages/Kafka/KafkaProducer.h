@@ -24,7 +24,8 @@ public:
         const std::string & topic_,
         std::chrono::milliseconds poll_timeout,
         std::atomic<bool> & shutdown_called_,
-        const Block & header);
+        const Block & header,
+        bool map_virtual_columns_on_write = false);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
@@ -43,6 +44,8 @@ private:
 
     std::optional<size_t> key_column_index;
     std::optional<size_t> timestamp_column_index;
+    std::optional<size_t> headers_name_column_index;
+    std::optional<size_t> headers_value_column_index;
 };
 
 }

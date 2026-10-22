@@ -1,13 +1,8 @@
 import io
-import json
 import logging
 import random
 import string
-import time
-import uuid
-from multiprocessing.dummy import Pool
-import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from minio.deleteobjects import DeleteObject
 from helpers.config_cluster import minio_secret_key
 
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
@@ -115,6 +110,12 @@ def recreate_minio_bucket(started_cluster, bucket_name):
     minio_client = started_cluster.minio_client
     if minio_client.bucket_exists(bucket_name):
         logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
+        objects = minio_client.list_objects(bucket_name, recursive=True)
+        errors = list(minio_client.remove_objects(
+            bucket_name,
+            [DeleteObject(obj.object_name) for obj in objects],
+        ))
+        assert not errors, f"failed to clear bucket '{bucket_name}': {errors}"
         minio_client.remove_bucket(bucket_name)
     minio_client.make_bucket(bucket_name)
 
@@ -154,6 +155,8 @@ def create_table(
     after_processing="keep",
     move_to_prefix=None,
     move_to_bucket=None,
+    preserve_move_path=False,
+    extra_credentials="",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -170,6 +173,9 @@ def create_table(
 
     if after_processing == "move":
         assert move_to_prefix or move_to_bucket
+
+        if preserve_move_path:
+            settings["after_processing_move_preserve_path"] = True
 
         if move_to_prefix:
             settings["after_processing_move_prefix"] = move_to_prefix
@@ -201,25 +207,35 @@ def create_table(
     if partition_component:
         settings["partition_component"] = partition_component
 
+    if len(extra_credentials) > 0:
+        extra_credentials = ", " + extra_credentials
+    if len(auth_params) > 0:
+        auth_params = ", " + auth_params
+
     engine_def = None
     if engine_name == "S3Queue":
         url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning_path}"
-        engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
+        engine_def = (
+            f"{engine_name}('{url}' {auth_params}, {file_format} {extra_credentials})"
+        )
     else:
         azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
         engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning_path}', 'CSV')"
+
+    if format:
+        format = f'({format}{hive_partitioning_columns})'
 
     create = "REPLACE" if replace else "CREATE"
     if not replace:
         node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
+            {create} TABLE {database_name}.{table_name} {format}
             ENGINE = {engine_def}
             """
     else:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
+            {create} TABLE {database_name}.{table_name} {format}
             ENGINE = {engine_def}
             SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
             """

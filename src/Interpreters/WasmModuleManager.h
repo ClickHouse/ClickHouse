@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <map>
 #include <filesystem>
@@ -13,6 +15,7 @@ namespace DB
 
 namespace WebAssembly
 {
+    enum class FuelMode : uint8_t;
     class WasmModule;
     class IWasmEngine;
 }
@@ -25,13 +28,19 @@ class WasmModuleManager
 public:
     WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem::path user_scripts_path_, std::string_view engine_name);
 
+    /// Throws `UNKNOWN_ELEMENT_IN_CONFIG` when `engine_name` is not a supported engine.
+    /// Exposed separately from the constructor so that a build without a WebAssembly engine
+    /// still rejects a stale `webassembly_udf_engine` value instead of ignoring it.
+    static void validateEngineName(std::string_view engine_name);
+
     void saveModule(std::string_view module_name, std::string_view wasm_code, UInt256 expected_hash = {});
 
     using ModulePtr = std::shared_ptr<WebAssembly::WasmModule>;
-    std::pair<ModulePtr, UInt256> getModule(std::string_view module_name);
+    std::pair<ModulePtr, UInt256> getModule(std::string_view module_name, WebAssembly::FuelMode fuel_mode);
     std::vector<std::pair<std::string, UInt256>> getModulesList() const;
 
     void deleteModuleIfExists(std::string_view module_name);
+    void deleteModuleIfExists(std::function<bool(std::string_view)> name_match);
 
     WasmModuleManager(const WasmModuleManager &) = delete;
     WasmModuleManager & operator=(const WasmModuleManager &) = delete;
@@ -54,8 +63,8 @@ protected:
     {
         /// Module is stored in UserDefinedWebAssemblyFunctions, so we keep only weak_ptr here
         /// Once no functions refer to the module, it can be released from memory
-        std::weak_ptr<WebAssembly::WasmModule> ptr;
-        UInt256 hash;
+        std::array<std::weak_ptr<WebAssembly::WasmModule>, 2> ptrs;
+        UInt256 hash{};
     };
 
     std::map<std::string, ModuleRef, std::less<>> modules TSA_GUARDED_BY(modules_mutex);

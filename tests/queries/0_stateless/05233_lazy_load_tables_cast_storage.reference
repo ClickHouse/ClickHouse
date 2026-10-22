@@ -1,0 +1,15 @@
+listing skips unloaded tables and loads none of them
+0
+0
+t_local	1
+t_replicated	1
+t_sync	1
+listing shows a table once it is loaded
+10
+10
+1
+2
+a replica command loads the table it names
+t_local	0
+t_replicated	0
+t_sync	0

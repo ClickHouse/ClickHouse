@@ -1,7 +1,10 @@
 -- Tags: no-random-merge-tree-settings
+SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET execute_exists_as_scalar_subquery = 0; -- scalar rewrite changes EXISTS column flow, producing different plan actions/positions
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; exists(__table2) column is then not pruned/replaced by __join_result_dummy, changing actions/positions throughout the plan
 
@@ -14,6 +17,7 @@ INSERT INTO customer SELECT number, 5 - (number % 2) FROM numbers(500);
 SET enable_parallel_replicas=0;
 SET query_plan_join_swap_table=0;
 SET join_algorithm='hash'; -- to make plan stable
+SET join_runtime_filter_min_probe_rows=0;
 
 -- RIGHT ANTI JOIN
 SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
@@ -60,4 +64,3 @@ WHERE NOT EXISTS (
     WHERE c_nationkey = n_nationkey
 )
 SETTINGS correlated_subqueries_default_join_kind = 'left';
-

@@ -20,13 +20,13 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
-class ExecutableFunctionToTimeZone : public IExecutableFunction
+class ExecutableFunctionToTimeZone final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionToTimeZone() = default;
@@ -39,7 +39,7 @@ public:
     }
 };
 
-class FunctionBaseToTimeZone : public IFunctionBase
+class FunctionBaseToTimeZone final : public IFunctionBase
 {
 public:
     FunctionBaseToTimeZone(
@@ -84,7 +84,7 @@ private:
 };
 
 /// Just changes time zone information for data type. The calculation is free.
-class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
+class ToTimeZoneOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toTimezone";
@@ -97,6 +97,10 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
+    /// Not declarative: the timezone argument's constness requirement is
+    /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
+    /// cannot express. With the setting enabled, a non-constant timezone is
+    /// accepted and the result becomes tz-less `DateTime`/`DateTime64`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)

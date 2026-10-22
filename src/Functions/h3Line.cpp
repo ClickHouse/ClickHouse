@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -16,7 +17,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
 }
@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line : public IFunction
+class FunctionH3Line final : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";
@@ -39,25 +39,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        arg = arguments[1].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 2, getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(UInt64, UInt64) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -89,10 +79,17 @@ public:
         const auto & data_end_index = col_end_index->getData();
 
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
+
+        /// The whole block is expanded inside this one call and the length of each row's line is driven by the
+        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
+        /// bound it. Both loops carry a checkpoint: `gridPathCellsSize` walks the grid, so the sizing pass below
+        /// is expensive on its own rather than being mere arithmetic.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         /// First calculate array sizes for all rows and save them in Offsets
         UInt64 current_offset = 0;
@@ -116,6 +113,8 @@ public:
                     "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
                     start, end, err);
 
+            budget.charge(static_cast<size_t>(size) * sizeof(H3Index));
+
             current_offset += size;
             dst_offsets[row] = current_offset;
         }
@@ -135,11 +134,20 @@ public:
             {
                 continue;
             }
-            gridPathCells(start, end, ptr + current_offset);
+            budget.charge(size * sizeof(H3Index));
+            /// The sizing pass above validates only the two endpoints, so this call can still fail on
+            /// an intermediate cell in pentagon distortion, leaving the rest of the row's slots unwritten.
+            H3Error err = gridPathCells(start, end, ptr + current_offset);
+            if (err)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
+
             current_offset += size;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 };
 

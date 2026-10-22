@@ -1,0 +1,7 @@
+--- custom default_database (mydb): first run creates and selects the table ---
+42
+--- custom default_database (mydb): second run must see the persisted table ---
+42
+--- canonical 'default' default database: no regression ---
+7
+7

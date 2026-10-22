@@ -1,0 +1,21 @@
+ANY LEFT JOIN, select only the second non-key column (b)
+1	bee1
+2	bee2
+3	bee3
+4	
+ANY LEFT JOIN, select only the third non-key column (c)
+1	-11
+2	-22
+3	-33
+4	0
+ANY LEFT JOIN, select a reordered subset (c, b)
+1	-11	bee1
+2	-22	bee2
+3	-33	bee3
+joinGet of the non-first columns
+bee2
+-33
+ALL INNER JOIN with duplicate keys, select only the second non-key column (b)
+1	x1
+1	x2
+2	y1

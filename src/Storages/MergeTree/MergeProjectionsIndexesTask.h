@@ -24,6 +24,7 @@ class MergeProjectionsIndexesTask : public IExecutableTask
 public:
     virtual MutableDataPartsVector extractTemporaryParts() = 0;
     virtual void addToChecksums(MergeTreeDataPartChecksums & checksums) = 0;
+    virtual String getProjectionName() const { return {}; }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }

@@ -1,0 +1,227 @@
+#include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
+#include <Common/Scheduler/Debug.h>
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int INVALID_SCHEDULER_NODE;
+}
+
+PrecedenceAllocation::PrecedenceAllocation(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+    : ISpaceSharedNode(event_queue_, info_)
+{}
+
+PrecedenceAllocation::~PrecedenceAllocation()
+{
+    // We need to clear `parent` in children to avoid dangling references
+    while (!children.empty())
+        removeChild(children.begin()->second.get());
+}
+
+std::string_view PrecedenceAllocation::getTypeName() const { return "precedence_allocation"; }
+
+void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_base)
+{
+    SpaceSharedNodePtr child = std::static_pointer_cast<ISpaceSharedNode>(child_base);
+    if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
+        throw Exception(
+            ErrorCodes::INVALID_SCHEDULER_NODE,
+            "Can't add another child with the same path: {}",
+            it->second->getPath());
+    child->setParentNode(this);
+    child->updateMinMaxAllocated(min_max_allocated);
+    propagateUpdate(*child, Update()
+        .setAttached(child.get())
+        .setIncrease(child->increase)
+        .setDecrease(child->decrease));
+}
+
+void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
+{
+    if (auto iter = children.find(child_base->basename); iter != children.end())
+    {
+        SpaceSharedNodePtr child = iter->second;
+        propagateUpdate(*child, Update()
+            .setDetached(child.get())
+            .setIncrease(nullptr)
+            .setDecrease(nullptr));
+        child->setParentNode(nullptr);
+        child->updateMinMaxAllocated(std::numeric_limits<ResourceCost>::max());
+        children.erase(iter);
+    }
+}
+
+ISchedulerNode * PrecedenceAllocation::getChild(const String & child_name)
+{
+    if (auto iter = children.find(child_name); iter != children.end())
+        return iter->second.get();
+    return nullptr;
+}
+
+ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
+{
+    // The victim is always the least-precedence running child (the tail of `running_children`).
+    // Cases to consider:
+    // 1. Killer is not part of this node (`&killer != increase`):
+    //    - the decision to kill inside this subtree was already taken by a parent.
+    //    - just propagate down to the least precedence child (victim).
+    // 2. Killer is part of this node but from a different child than the victim child:
+    //    - this node is the least common ancestor of killer and victim, so precedence must be
+    //      enforced here. A running allocation may reclaim from equal-or-lower precedence
+    //      children, while a pending allocation may reclaim only from strictly lower precedence
+    //      ones (it is not running yet, so it must not displace an already-admitted peer).
+    //      In either case it must never evict a strictly higher-precedence child.
+    // 3. Killer is part of the victim child:
+    //    - we are above the least common ancestor; propagate down, the decision is taken lower.
+    if (running_children.empty())
+        return nullptr;
+    ISpaceSharedNode & victim_child = *running_children.rbegin();
+
+    // Case 2: `&killer == increase` means the killer increase propagated through this node, so
+    // `increase_child` is the killer's branch (the scheduler processes only the top of the
+    // increasing set, hence the killer always equals our current `increase`). When the victim
+    // branch differs, this node is the least common ancestor and precedence must be respected.
+    // NOTE: a lower `info.precedence` value means higher precedence.
+    if (&killer == increase && increase_child && increase_child != &victim_child)
+    {
+        const bool victim_higher = victim_child.info.precedence < increase_child->info.precedence;
+        const bool victim_equal = victim_child.info.precedence == increase_child->info.precedence;
+        const bool killer_pending = killer.kind == IncreaseRequest::Kind::Pending;
+        if (victim_higher || (victim_equal && killer_pending))
+            return nullptr;
+    }
+
+    return victim_child.selectAllocationToKill(killer, limit, details);
+}
+
+void PrecedenceAllocation::approveIncrease()
+{
+    chassert(increase);
+    // Child approval can synchronously propagate a new selection back to this node.
+    auto & approved_child = *increase_child;
+    SCHED_DBG("{} -- approveIncrease(child={}, id={}, size={})",
+        getPath(), approved_child.basename, increase->allocation.id, increase->size);
+    apply(*increase);
+    if (!approved_child.isRunning()) // We are adding the first allocation
+        running_children.insert(approved_child);
+    increase = nullptr;
+    approved_child.approveIncrease();
+
+    setIncrease(approved_child, approved_child.increase, false);
+}
+
+void PrecedenceAllocation::approveDecrease()
+{
+    chassert(decrease);
+    auto & approved_child = *decrease_child;
+    SCHED_DBG("{} -- approveDecrease(child={}, id={}, size={})",
+        getPath(), approved_child.basename, decrease->allocation.id, decrease->size);
+    apply(*decrease);
+    chassert(approved_child.isRunning());
+    // Check if we are removing the last running allocation of the child
+    if (decrease->removing_allocation && approved_child.allocations == 1)
+        running_children.erase(running_children.iterator_to(approved_child));
+    decrease = nullptr;
+    approved_child.approveDecrease();
+    setDecrease(approved_child, approved_child.decrease, false);
+}
+
+void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
+{
+    SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
+    apply(update);
+    if (update.attached)
+    {
+        if (!from_child.isRunning() && from_child.allocations > 0)
+            running_children.insert(from_child);
+    }
+    if (update.detached)
+    {
+        if (from_child.isRunning() && (update.detached == &from_child || from_child.allocations == 0))
+            running_children.erase(running_children.iterator_to(from_child));
+    }
+    if (update.increase)
+    {
+        if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase, update.detached == &from_child))
+            update.setIncrease(increase);
+        else
+            update.resetIncrease();
+    }
+    if (update.decrease)
+    {
+        if (setDecrease(from_child, *update.decrease, update.detached == &from_child))
+            update.setDecrease(decrease);
+        else
+            update.resetDecrease();
+    }
+    // Precedence keys are constant; availability updates only change membership.
+    syncReclaimableMembership(from_child, update.detached == &from_child);
+    if (parent && update)
+        propagate(std::move(update));
+}
+
+bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child)
+{
+    // Update intrusive sets of increasing children
+    if (from_child.isIncreasing())
+    {
+        if (!new_increase || detach_child)
+            increasing_children.erase(increasing_children.iterator_to(from_child));
+    }
+    else if (new_increase && !detach_child)
+        increasing_children.insert(from_child);
+
+    // Update current increase request
+    IncreaseRequest * old_increase = increase;
+    increase_child = increasing_children.empty() ? nullptr : &*increasing_children.begin();
+    increase = increase_child ? increase_child->increase : nullptr;
+    return old_increase != increase;
+}
+
+bool PrecedenceAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child)
+{
+    // Update intrusive list of decreasing children
+    if (from_child.isDecreasing())
+    {
+        if (!new_decrease || detach_child)
+            decreasing_children.erase(decreasing_children.iterator_to(from_child));
+    }
+    else if (new_decrease && !detach_child)
+        decreasing_children.push_back(from_child);
+
+    // Update current decrease request
+    DecreaseRequest * old_decrease = decrease;
+    decrease_child = decreasing_children.empty() ? nullptr : &*decreasing_children.begin();
+    decrease = decrease_child ? decrease_child->decrease : nullptr;
+    return old_decrease != decrease;
+}
+
+void PrecedenceAllocation::syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child)
+{
+    bool should_be_member = !detach_child && from_child.reclaimable > 0;
+    bool is_member = from_child.isReclaimable();
+    if (should_be_member && !is_member)
+        reclaimable_children.insert(from_child); // Precedence key is constant, so position is stable
+    else if (!should_be_member && is_member)
+        reclaimable_children.erase(reclaimable_children.iterator_to(from_child));
+}
+
+ResourceAllocation * PrecedenceAllocation::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    if (reclaimable_children.empty())
+        return nullptr; // No reclaimable child in this subtree — fail-close.
+    // Descend into the least-precedence reclaimable child (the tail), matching the kill order.
+    return reclaimable_children.rbegin()->selectAllocationToSpill(at_least, details);
+}
+
+void PrecedenceAllocation::updateMinMaxAllocated(ResourceCost new_value)
+{
+    min_max_allocated = new_value;
+    for (auto & [name, child] : children)
+        child->updateMinMaxAllocated(min_max_allocated);
+}
+
+}

@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'Materialized views'
+doc_type: 'guide'
+keywords: [
+  'clickhouse materialized views',
+  'materialized view optimization',
+  'materialized view storage issues',
+  'materialized view best practices',
+  'database aggregation patterns',
+  'materialized view anti-patterns',
+  'storage explosion problems',
+  'materialized view performance',
+  'database view optimization',
+  'aggregation strategy',
+  'materialized view troubleshooting',
+  'view storage overhead'
+]
+title: 'Уроки — materialized views'
+description: 'Реальные примеры materialized views, проблемы и решения'
+---
+
+*Это руководство входит в подборку выводов и наблюдений, собранных на встречах сообщества. Больше практических решений и полезных наблюдений можно найти, [перейдя к материалам по конкретным проблемам](/ru/resources/support-center/tips-and-tricks/community-wisdom).*
+*Слишком много частей тормозят вашу базу данных? Ознакомьтесь с руководством сообщества [Too Many Parts](/ru/resources/support-center/tips-and-tricks/too-many-parts).*
+*Узнайте больше о [Materialized Views](/ru/concepts/features/materialized-views/index).*
+
+<div id="storage-antipattern">
+  ## Антипаттерн 10x в хранении
+</div>
+
+**Реальная проблема в продакшене:** *&quot;У нас была materialized view. Таблица сырых логов занимала около 20 ГБ, но materialized view, построенная на этой таблице логов, разрослась до 190 ГБ — почти в 10 раз больше исходной таблицы. Это произошло потому, что мы создавали одну строку на каждый атрибут, а у каждого лога может быть по 10 атрибутов.&quot;*
+
+**Правило:** Если ваш `GROUP BY` создает больше строк, чем убирает, значит, вы строите дорогой индекс, а не materialized view.
+
+<div id="mv-health-validation">
+  ## Проверка состояния materialized view в продакшене
+</div>
+
+Этот запрос помогает заранее оценить, будет ли materialized view сжимать данные или, наоборот, раздувать их, прежде чем вы её создадите. Выполните его для своей реальной таблицы и столбцов, чтобы избежать сценария «раздувания до 190 ГБ».
+
+**Что он показывает:**
+
+* **Низкая степень агрегации** (&lt;10%) = Хорошая MV, значительное сжатие
+* **Высокая степень агрегации** (&gt;70%) = Плохая MV, риск резкого роста объёма хранилища
+* **Множитель хранилища** = Насколько больше или меньше будет ваша MV
+
+```sql
+-- Замените на вашу реальную таблицу и столбцы
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- Если aggregation_ratio > 70%, пересмотрите дизайн вашего MV
+-- Если aggregation_ratio < 10%, вы получите хорошее сжатие
+```
+
+<div id="mv-problems">
+  ## Когда materialized views становятся проблемой
+</div>
+
+**Тревожные признаки, за которыми стоит следить:**
+
+* Увеличивается задержка при вставке (запросы, которые раньше занимали 10 мс, теперь занимают 100+ мс)
+* Ошибки &quot;Too many parts&quot; появляются чаще
+* Пики загрузки CPU во время операций вставки
+* Появляются тайм-ауты при вставке, которых раньше не было
+
+Вы можете сравнить производительность вставки до и после добавления MV, используя `system.query_log` для отслеживания изменений в длительности запросов.
+
+<div id="video-sources">
+  ## Источники видео
+</div>
+
+* [ClickHouse at CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - Видео с разбором кейса о «чрезмерном увлечении materialized view» и «взрыве 20GB→190GB»

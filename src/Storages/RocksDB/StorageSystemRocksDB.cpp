@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Databases/IDatabase.h>
 #include <rocksdb/statistics.h>
 
@@ -22,10 +24,6 @@ namespace Setting
     extern const SettingsBool system_events_show_zero_values;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
 {
@@ -64,7 +62,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            RocksDBStoragePtr rocksdb_table = table ? std::dynamic_pointer_cast<StorageEmbeddedRocksDB>(table) : nullptr;
+            RocksDBStoragePtr rocksdb_table = table ? castStorage<StorageEmbeddedRocksDB>(table, DeferredTable::Skip) : nullptr;
             if (!rocksdb_table)
                 continue;
 
@@ -114,8 +112,9 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         String table = (*col_table_to_filter)[i].safeGet<String>();
 
         auto statistics = tables[database][table]->getRocksDBStatistics();
+        /// The table can be concurrently dropped, and the RocksDB instance may no longer be available.
         if (!statistics)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB statistics are not available");
+            continue;
 
         for (auto [tick, name] : rocksdb::TickersNameMap)
         {
@@ -138,3 +137,6 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRocksDB) }

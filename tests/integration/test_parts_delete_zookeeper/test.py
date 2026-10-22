@@ -85,7 +85,7 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster, request):
     )
 
     # Force creation of all *Log tables
-    node1.query(f"SYSTEM FLUSH LOGS")
+    node1.query("SYSTEM FLUSH LOGS")
 
     # Parts may be moved to Deleting state and then back in Outdated state.
     # But system.parts returns only Active and Outdated parts if _state column is not queried.

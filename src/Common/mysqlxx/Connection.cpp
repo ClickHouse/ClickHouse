@@ -52,10 +52,11 @@ Connection::Connection(
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile,
-    bool opt_reconnect)
+    bool opt_reconnect,
+    bool enable_compression)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect, enable_compression);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -82,7 +83,8 @@ void Connection::connect(const char* db,
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile,
-    bool opt_reconnect)
+    bool opt_reconnect,
+    bool enable_compression)
 {
     if (is_connected)
         disconnect();
@@ -108,6 +110,10 @@ void Connection::connect(const char* db,
 
     /// See C API Developer Guide: Automatic Reconnection Control
     if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&opt_reconnect)))
+        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
+    /// Enable classic MySQL protocol compression if requested.
+    if (enable_compression && mysql_options(driver.get(), MYSQL_OPT_COMPRESS, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Specifies particular ssl key and certificate if it needs

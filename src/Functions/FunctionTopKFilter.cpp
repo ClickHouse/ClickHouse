@@ -1,6 +1,11 @@
+#include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -13,13 +18,54 @@
 namespace DB
 {
 
+namespace
+{
+
+/// `Tuple` comparison functions reject an empty `Tuple` nested inside another `Tuple`,
+/// while the column comparison path supports it. Other composite types have their
+/// own comparison implementations, so only descend through `Tuple` and `Nullable`.
+bool hasEmptyTuple(const DataTypePtr & type)
+{
+    const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get());
+    const auto & nested_type = nullable_type ? nullable_type->getNestedType() : type;
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get());
+    if (!tuple_type)
+        return false;
+
+    if (tuple_type->getElements().empty())
+        return true;
+
+    for (const auto & element_type : tuple_type->getElements())
+        if (hasEmptyTuple(element_type))
+            return true;
+
+    return false;
+}
+
+/// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
+/// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
+/// The column comparison path places NaN the way the sort does. Container types (`Tuple`, `Array`,
+/// `Map`) compare their elements lexicographically, so a float anywhere inside them matters too.
+bool hasFloatingPoint(const DataTypePtr & type)
+{
+    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
+}
+
+/// A `NULL` nested inside a container type (e.g. `Tuple(Nullable(UInt32))`) makes the comparison functions
+/// return `Nullable(UInt8)` and ignores `nulls_direction`; the column comparison path handles both.
+bool hasNestedNullable(const DataTypePtr & type)
+{
+    return anyInTypeTree(*type, [](const IDataType & node) { return node.isNullable(); });
+}
+
+}
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionTopKFilter : public IFunction
+class FunctionTopKFilter final : public IFunction
 {
 public:
     static constexpr auto name = "__topKFilter";
@@ -30,6 +76,7 @@ public:
         if (!threshold_tracker_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopKFilter got NULL threshold_tracker");
 
+        threshold_type = recursiveRemoveLowCardinality(threshold_tracker_->getDataType());
         direction = threshold_tracker_->getDirection();
         nulls_direction = threshold_tracker_->getNullsDirection();
         collator = threshold_tracker_->getCollator();
@@ -55,16 +102,9 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 1)
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Number of arguments for function {} can't be {}, should be 1",
-                getName(),
-                arguments.size());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
@@ -81,7 +121,8 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type))
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
+                || hasFloatingPoint(data_type) || hasNestedNullable(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
@@ -93,20 +134,26 @@ public:
     }
 
 private:
-    /// Fast path: vectorized less/greater for non-nullable, non-collation types.
+    /// Fast path: vectorized less/greater for non-nullable, non-collation types without NaN.
     ColumnPtr executeVectorized(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
         const DataTypePtr & data_type,
         size_t input_rows_count) const
     {
-        ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
+        /// The threshold is a value of the tracker's type, which a `Field` does not carry (an `Interval` is a plain `Int64`).
+        ColumnPtr threshold_column = data_type->createColumnConst(
+            input_rows_count, convertFieldToType(current_threshold, *data_type, threshold_type.get()));
         ColumnsWithTypeAndName args{argument, {threshold_column, data_type, {}}};
         auto elem_compare = compare_function->build(args);
+        /// getReturnTypeImpl always declares UInt8, so a comparison resolving to anything else
+        /// (a Nullable nested in a Tuple makes it Nullable(UInt8)) must not be returned here.
+        if (!isUInt8(elem_compare->getResultType()))
+            return executeGeneral(argument, current_threshold, data_type, input_rows_count);
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for Nullable and/or collation-aware types.
+    /// General path for `Nullable` (also nested), collation-aware, floating-point, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
@@ -115,7 +162,7 @@ private:
     {
         const auto & col = *argument.column;
 
-        auto threshold_field = convertFieldToType(current_threshold, *data_type);
+        auto threshold_field = convertFieldToType(current_threshold, *data_type, threshold_type.get());
         auto threshold_col = data_type->createColumn();
         threshold_col->insert(threshold_field);
 
@@ -144,6 +191,8 @@ private:
     }
 
     TopKThresholdTrackerPtr threshold_tracker;
+    /// The type of the threshold value as this function receives it (the default implementation removes LowCardinality).
+    DataTypePtr threshold_type;
     FunctionOverloadResolverPtr compare_function;
 
     int direction;

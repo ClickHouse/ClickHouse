@@ -1,0 +1,34 @@
+-- no WHERE, ORDER BY matches projection sorting key
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression
+      ReadFromMergeTree (commit_order)
+
+-- WHERE present, ORDER BY matches projection sorting key
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression
+      ReadFromMergeTree (commit_order)
+
+-- no WHERE, no ORDER BY: projection is not helpful, fall back to main table
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromMergeTree (default.t_proj_sort)
+
+-- read_in_order disabled: projection cannot help with sorting alone
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+      ReadFromMergeTree (default.t_proj_sort)
+
+-- results respect commit order
+1	10
+2	20
+3	30
+4	40
+5	50
+6	60
+2	20
+3	30
+4	40
+5	50
+6	60

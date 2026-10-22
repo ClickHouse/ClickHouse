@@ -1,0 +1,89 @@
+-- { echo }
+
+-- Permuted keys, single in-order stream: LIMIT BY lists the sorting-key columns in reverse clause order
+-- (c, a) while the table is ORDER BY (a, c). The keys still fully cover the prefix, so every group is
+-- contiguous and the streaming LimitBySortedStreamTransform is used (not the hash LimitByTransform).
+DROP TABLE IF EXISTS test_permuted_single;
+CREATE TABLE test_permuted_single (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, c);
+SYSTEM STOP MERGES test_permuted_single;
+INSERT INTO test_permuted_single SELECT number % 50, number % 7, number FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_single LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitBySortedStreamTransform
+SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_single) FROM (SELECT c, a FROM test_permuted_single LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1);
+1
+DROP TABLE test_permuted_single;
+-- Permuted keys across several overlapping in-order streams (each part holds the same key set): the
+-- per-stream pre-filter runs, then MergingSortedTransform merges by the sort order before the final
+-- LimitBySortedStreamTransform.
+DROP TABLE IF EXISTS test_permuted_multi;
+CREATE TABLE test_permuted_multi (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, c);
+SYSTEM STOP MERGES test_permuted_multi;
+INSERT INTO test_permuted_multi SELECT number % 50, number % 7, number      FROM numbers(1000);
+INSERT INTO test_permuted_multi SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
+INSERT INTO test_permuted_multi SELECT number % 50, number % 7, number+2000 FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_multi LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitByTransform
+LimitBySortedStreamTransform × 3
+SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_multi) FROM (SELECT c, a FROM test_permuted_multi LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1);
+1
+SELECT (SELECT groupArray((a, c)) FROM (SELECT a, c FROM (SELECT c, a FROM test_permuted_multi LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 0) ORDER BY a, c)) = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM (SELECT c, a FROM test_permuted_multi LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) ORDER BY a, c));
+1
+DROP TABLE test_permuted_multi;
+-- Permuted keys with OFFSET: the kept-row count per group is independent of read order, so enabling the
+-- optimization keeps the same number of rows as the hash path.
+DROP TABLE IF EXISTS test_permuted_offset;
+CREATE TABLE test_permuted_offset (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, c);
+SYSTEM STOP MERGES test_permuted_offset;
+INSERT INTO test_permuted_offset SELECT number % 50, number % 7, number      FROM numbers(1000);
+INSERT INTO test_permuted_offset SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_offset LIMIT 2 OFFSET 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitByTransform
+LimitBySortedStreamTransform × 2
+SELECT (SELECT count() FROM (SELECT c, a FROM test_permuted_offset LIMIT 2 OFFSET 1 BY c, a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT c, a FROM test_permuted_offset LIMIT 2 OFFSET 1 BY c, a SETTINGS optimize_limit_by_in_order = 1));
+1
+DROP TABLE test_permuted_offset;
+-- Permuted keys reached through an explicit ORDER BY: the global order (a, c) covers the LIMIT BY keys (c, a) in a different order.
+DROP TABLE IF EXISTS test_permuted_order_by;
+CREATE TABLE test_permuted_order_by (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, c);
+SYSTEM STOP MERGES test_permuted_order_by;
+INSERT INTO test_permuted_order_by SELECT number % 50, number % 7, number FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_order_by ORDER BY a, c LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitBySortedStreamTransform
+SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_order_by) FROM (SELECT c, a FROM test_permuted_order_by ORDER BY a, c LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1);
+1
+DROP TABLE test_permuted_order_by;
+-- Permuted keys on a reverse (descending) sorting key: streams arrive descending and are merged that way
+-- before the permuted LIMIT BY.
+DROP TABLE IF EXISTS test_permuted_reverse;
+CREATE TABLE test_permuted_reverse (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, c DESC) SETTINGS allow_experimental_reverse_key = 1;
+SYSTEM STOP MERGES test_permuted_reverse;
+INSERT INTO test_permuted_reverse SELECT number % 50, number % 7, number      FROM numbers(1000);
+INSERT INTO test_permuted_reverse SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_reverse LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitByTransform
+LimitBySortedStreamTransform × 2
+SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_reverse) FROM (SELECT c, a FROM test_permuted_reverse LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1);
+1
+DROP TABLE test_permuted_reverse;
+-- Permuted keys each wrapped in a strict-monotonic function (both negated): the keys still resolve to a
+-- prefix of the order, just reordered and descending, so streaming still applies.
+DROP TABLE IF EXISTS test_permuted_monotonic;
+CREATE TABLE test_permuted_monotonic (a Int32, c Int32, v UInt32) ENGINE = MergeTree ORDER BY (a, c);
+SYSTEM STOP MERGES test_permuted_monotonic;
+INSERT INTO test_permuted_monotonic SELECT number % 50, number % 7, number FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT negate(c), negate(a) FROM test_permuted_monotonic LIMIT 1 BY negate(c), negate(a) SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitBySortedStreamTransform
+SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_monotonic) FROM (SELECT negate(c), negate(a) FROM test_permuted_monotonic LIMIT 1 BY negate(c), negate(a) SETTINGS optimize_limit_by_in_order = 1);
+1
+DROP TABLE test_permuted_monotonic;
+-- Partial cover is NOT a permutation. A non-key column (b) sits between the LIMIT BY keys in
+-- the sorting key (a, b, c), so the keys (a, c) are not contiguous: the hash LimitByTransform is kept.
+DROP TABLE IF EXISTS test_partial_cover;
+CREATE TABLE test_partial_cover (a UInt32, b UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
+SYSTEM STOP MERGES test_partial_cover;
+INSERT INTO test_partial_cover SELECT number % 50, number % 11, number % 7, number FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, c FROM test_partial_cover LIMIT 1 BY a, c SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
+LimitByTransform
+SELECT count() = (SELECT uniqExact((a, c)) FROM test_partial_cover) FROM (SELECT a, c FROM test_partial_cover LIMIT 1 BY a, c SETTINGS optimize_limit_by_in_order = 1);
+1
+DROP TABLE test_partial_cover;

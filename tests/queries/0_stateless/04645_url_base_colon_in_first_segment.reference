@@ -1,0 +1,7 @@
+--- url_base with a file:// base in clickhouse-local
+1
+2
+--- the default database of clickhouse-local
+2
+--- s3_base
+3

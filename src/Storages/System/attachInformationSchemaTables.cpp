@@ -51,13 +51,29 @@ constexpr unsigned char collations[] = {
 #embed "information_schema/collations.sql"
 };
 
+constexpr unsigned char user_privileges[] = {
+#embed "information_schema/user_privileges.sql" /// MySQL-specific
+};
+
+constexpr unsigned char schema_privileges[] = {
+#embed "information_schema/schema_privileges.sql" /// MySQL-specific
+};
+
+constexpr unsigned char table_privileges[] = {
+#embed "information_schema/table_privileges.sql" /// MySQL-specific
+};
+
+constexpr unsigned char column_privileges[] = {
+#embed "information_schema/column_privileges.sql" /// MySQL-specific
+};
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
 static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::span<const unsigned char> query_)
 {
     try
     {
-        assert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
+        chassert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
                database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         if (database.getEngineName() != "Memory")
             return;
@@ -74,7 +90,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
                                 DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
-        assert(view_name == ast_create.getTable());
+        chassert(view_name == ast_create.getTable());
         ast_create.attach = false;
         ast_create.setDatabase(database.getDatabaseName());
 
@@ -108,6 +124,10 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "engines", engines);
     createInformationSchemaView(context, information_schema_database, "character_sets", character_sets);
     createInformationSchemaView(context, information_schema_database, "collations", collations);
+    createInformationSchemaView(context, information_schema_database, "user_privileges", user_privileges);
+    createInformationSchemaView(context, information_schema_database, "schema_privileges", schema_privileges);
+    createInformationSchemaView(context, information_schema_database, "table_privileges", table_privileges);
+    createInformationSchemaView(context, information_schema_database, "column_privileges", column_privileges);
 }
 
 }

@@ -1,0 +1,34 @@
+---
+title: 'Tipos de dados compatíveis'
+slug: /integrations/clickpipes/mongodb/datatypes
+description: 'Página que descreve o mapeamento de tipos de dados de um ClickPipe do MongoDB para o ClickHouse'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+O MongoDB armazena registros de dados como documentos BSON. No ClickPipes, você pode configurar a ingestão de documentos BSON no ClickHouse como JSON ou JSON String. A tabela a seguir mostra o mapeamento compatível de tipos de campo de BSON para JSON:
+
+| Tipo BSON do MongoDB | Tipo JSON do ClickHouse                      | Notas                                                                                                                                                                                           |
+| -------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ObjectId             | String                                       |                                                                                                                                                                                                 |
+| String               | String                                       |                                                                                                                                                                                                 |
+| 32-bit integer       | Int64                                        |                                                                                                                                                                                                 |
+| 64-bit integer       | Int64                                        |                                                                                                                                                                                                 |
+| Double               | Float64                                      |                                                                                                                                                                                                 |
+| Boolean              | Bool                                         |                                                                                                                                                                                                 |
+| Date                 | String                                       | formato ISO 8601                                                                                                                                                                                |
+| Regular Expression   | &#123;Options: String, Pattern: String&#125; | regex do MongoDB com campos fixos: Options (flags de regex) e Pattern (padrão regex)                                                                                                            |
+| Timestamp            | &#123;T: Int64, I: Int64&#125;               | formato interno de timestamp do MongoDB com campos fixos: T (timestamp) e I (incremento)                                                                                                        |
+| Decimal128           | String                                       |                                                                                                                                                                                                 |
+| Binary data          | &#123;Data: String, Subtype: Int64&#125;     | dados binários do MongoDB com campos fixos: Data (codificado em base64) e Subtype ([tipo de dado binário](https://www.mongodb.com/docs/manual/reference/bson-types/#binary-data))               |
+| JavaScript           | String                                       |                                                                                                                                                                                                 |
+| Null                 | Null                                         |                                                                                                                                                                                                 |
+| Array                | Dynamic                                      | Arrays com tipos homogêneos tornam-se Array(Nullable(T)); arrays com tipos primitivos mistos são promovidos ao tipo comum mais geral; arrays com tipos complexos incompatíveis tornam-se Tuples |
+| Object               | Dynamic                                      | Cada campo aninhado é mapeado recursivamente                                                                                                                                                    |
+
+<Info>
+  Para saber mais sobre os tipos de dados JSON do ClickHouse, consulte [nossa documentação](/pt-BR/reference/data-types/newjson).
+</Info>

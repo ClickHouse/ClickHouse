@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionConsistentHashImpl : public IFunction
+class FunctionConsistentHashImpl final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -40,21 +40,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isInteger(arguments[0]) && !isIPv4(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}",
-                arguments[0]->getName(), getName());
-
-        if (arguments[0]->getSizeOfValueInMemory() > sizeof(HashType))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} accepts {}-bit integers at most, got {}",
-                    getName(), sizeof(HashType) * 8, arguments[0]->getName());
-
-        if (!isInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}",
-                arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        /// executeImpl only supports NativeInteger/IPv4 for the hash value; the second arg
+        /// (number of buckets) must be a constant native integer — wide (128/256-bit)
+        /// integers are read via getUInt/getInt and would be silently truncated to 64 bits.
+        const String ret = DataTypeNumber<typename Impl::ResultType>{}.getName();
+        return "(NativeInteger | IPv4, const NativeInteger) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -103,17 +95,11 @@ private:
 
     ColumnPtr executeConstBuckets(const ColumnsWithTypeAndName & arguments) const
     {
-        Field buckets_field = (*arguments[1].column)[0];
-        BucketsType num_buckets;
-
-        if (buckets_field.getType() == Field::Types::Int64)
-            num_buckets = checkBucketsRange(buckets_field.safeGet<Int64>());
-        else if (buckets_field.getType() == Field::Types::UInt64)
-            num_buckets = checkBucketsRange(buckets_field.safeGet<UInt64>());
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the second argument of function {}",
-                buckets_field.getTypeName(), getName());
+        /// `getReturnTypeImpl` already verified `arguments[1]` is an integer; read it directly to avoid an intermediate `Field`.
+        const IColumn & buckets_col = *arguments[1].column;
+        BucketsType num_buckets = WhichDataType(arguments[1].type).isUInt()
+            ? checkBucketsRange(buckets_col.getUInt(0))
+            : checkBucketsRange(buckets_col.getInt(0));
 
         const auto & hash_col = arguments[0].column;
         const IDataType * hash_type = arguments[0].type.get();

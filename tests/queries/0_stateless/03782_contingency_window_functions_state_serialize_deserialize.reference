@@ -1,0 +1,61 @@
+cramersV: state roundtrip
+0.4472	0.4472	1
+cramersV: merge roundtrip
+0.4472	0.4472	1
+cramersV: OVER(full frame) matches aggregate
+0.4472	0.4472	1
+cramersV: window state -> normal deserialize (serialization compat)
+0.4472	0.4472	1
+cramersV: normal states merged in OVER() (window consumes normal states)
+0.4472	0.4472	1
+cramersV: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+cramersVIf: window states merged in aggregate() (non-window consumes window states)
+0.5	0.5	1
+cramersVArray: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+cramersVStateArray: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+cramersVBiasCorrected: state roundtrip
+0.4463	0.4463	1
+cramersVBiasCorrected: merge roundtrip
+0.4463	0.4463	1
+cramersVBiasCorrected: OVER(full frame) matches aggregate
+0.4463	0.4463	1
+cramersVBiasCorrected: window state -> normal deserialize (serialization compat)
+0.4463	0.4463	1
+cramersVBiasCorrected: normal states merged in OVER() (window consumes normal states)
+0.4463	0.4463	1
+cramersVBiasCorrected: window states merged in aggregate() (non-window consumes window states)
+0.4463	0.4463	1
+cramersVBiasCorrectedIf: window states merged in aggregate() (non-window consumes window states)
+0.4992	0.4992	1
+theilsU: state roundtrip
+0.301	0.301	1
+theilsU: merge roundtrip
+0.301	0.301	1
+theilsU: OVER(full frame) matches aggregate
+0.301	0.301	1
+theilsU: window state -> normal deserialize (serialization compat)
+0.301	0.301	1
+theilsU: normal states merged in OVER() (window consumes normal states)
+0.301	0.301	1
+theilsU: window states merged in aggregate() (non-window consumes window states)
+0.301	0.301	1
+theilsUIf: window states merged in aggregate() (non-window consumes window states)
+0.4182	0.4182	1
+contingency: state roundtrip
+0.7071	0.7071	1
+contingency: merge roundtrip
+0.7071	0.7071	1
+contingency: OVER(full frame) matches aggregate
+0.7071	0.7071	1
+contingency: window state -> normal deserialize (serialization compat)
+0.7071	0.7071	1
+contingency: normal states merged in OVER() (window consumes normal states)
+0.7071	0.7071	1
+contingency: window states merged in aggregate() (non-window consumes window states)
+0.7071	0.7071	1
+contingencyIf: window states merged in aggregate() (non-window consumes window states)
+0.7071	0.7071	1
+Reject different state types in window functions

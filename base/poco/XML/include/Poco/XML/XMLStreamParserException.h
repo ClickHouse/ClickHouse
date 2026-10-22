@@ -35,13 +35,13 @@ namespace XML
     public:
         XMLStreamParserException(const std::string & name, Poco::UInt64 line, Poco::UInt64 column, const std::string & description);
         XMLStreamParserException(const XMLStreamParser &, const std::string & description);
-        virtual ~XMLStreamParserException() throw();
+        virtual ~XMLStreamParserException() noexcept;
 
         const char * name() const noexcept;
         Poco::UInt64 line() const;
         Poco::UInt64 column() const;
         const std::string & description() const;
-        virtual const char * what() const throw();
+        virtual const char * what() const noexcept;
 
     private:
         void init();

@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -25,11 +26,11 @@ namespace
 
 using Interval = std::pair<UInt64, UInt64>; /// inclusive [l..r]
 
-std::vector<Range> intersectWithPrimesDomain(const Ranges & ranges)
+Ranges intersectWithPrimesDomain(const Ranges & ranges)
 {
     const Range primes_domain(FieldRef(UInt64(2)), true, FieldRef(std::numeric_limits<UInt64>::max()), true);
 
-    std::vector<Range> intersections;
+    Ranges intersections;
     intersections.reserve(ranges.size());
 
     for (const auto & range : ranges)
@@ -41,9 +42,9 @@ std::vector<Range> intersectWithPrimesDomain(const Ranges & ranges)
 
 /// We can keep using `Range` however it is very slow, and inside `SourceFromPrimes`, we will doing
 /// lots of ranges access. So, we convert to lightweight `Intervals`.
-std::vector<Interval> rangesToIntervals(const std::vector<Range> & ranges)
+VectorWithMemoryTracking<Interval> rangesToIntervals(const Ranges & ranges)
 {
-    std::vector<Interval> intervals;
+    VectorWithMemoryTracking<Interval> intervals;
     intervals.reserve(ranges.size());
 
     for (const auto & range : ranges)
@@ -76,7 +77,7 @@ std::vector<Interval> rangesToIntervals(const std::vector<Range> & ranges)
 
 /// Maybe this part not needed if KeyCondition already simplifies the intervals.
 /// But let's keep it regardless to be safe from future changes to other components.
-void mergeIntervals(std::vector<Interval> & intervals)
+void mergeIntervals(VectorWithMemoryTracking<Interval> & intervals)
 {
     if (intervals.empty())
         return;
@@ -230,17 +231,17 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     /// so it is only safe when this source already generates only rows that satisfy the filter.)
     auto apply_query_limit = [&] { NumbersLikeUtils::applyQueryLimit(effective_limit, limit); };
 
-    auto intersect_ranges = [&](const Ranges & ranges) -> std::optional<std::vector<Interval>>
+    auto intersect_ranges = [&](const Ranges & ranges) -> std::optional<VectorWithMemoryTracking<Interval>>
     {
         /// Intersect extracted conditions with the primes value domain [2, UInt64::max],
         /// and convert to sorted, non-overlapping inclusive intervals for `SourceFromPrimes` implementations.
-        std::vector<Range> intersected = intersectWithPrimesDomain(ranges);
+        Ranges intersected = intersectWithPrimesDomain(ranges);
         if (intersected.empty())
             return std::nullopt;
 
         /// It is cheaper to work with Intervals in SourceFromPrimes than Ranges.
         /// Intervals are just pairs of UInt64.
-        std::vector<Interval> intervals = rangesToIntervals(intersected);
+        VectorWithMemoryTracking<Interval> intervals = rangesToIntervals(intersected);
         if (intervals.empty())
             return std::nullopt;
 
@@ -279,7 +280,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
 
     /// Filtered path:
     /// Extract ranges/bounds implied by the WHERE clause.
-    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context, /* boolean_context */ true);
     KeyCondition condition(inverted_dag, context, column_names, key_expression);
     const auto extracted_ranges = NumbersLikeUtils::extractRanges(condition);
 

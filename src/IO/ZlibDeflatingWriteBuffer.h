@@ -63,7 +63,7 @@ private:
     void finalFlushBefore() override;
     void finalFlushAfter() override;
 
-    z_stream zstr;
+    z_stream zstr{};
     bool compress_empty = true;
 };
 

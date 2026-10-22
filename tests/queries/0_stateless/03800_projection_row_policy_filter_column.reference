@@ -1,0 +1,22 @@
+item_1	3
+item_2	1
+item_3	1
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Aggregating
+        Expression
+          ReadFromMergeTree (proj_by_data)
+          Indexes:
+            PrimaryKey
+              Keys:
+                tenant_id
+              Condition: (tenant_id in [\'tenant_A\', \'tenant_A\'])
+              Parts: 1/1
+              Granules: 1/1
+              Search Algorithm: binary search
+            Ranges: 1
+1
+equals(tenant_id, \'tenant_A\'_String)
+item_1	2
+item_2	1

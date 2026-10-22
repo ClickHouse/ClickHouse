@@ -7,13 +7,12 @@ import os.path
 import sys
 import tempfile
 
-import pytest
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 backupview_dir = os.path.abspath(os.path.join(script_dir, ".."))
 if backupview_dir not in sys.path:
     sys.path.append(backupview_dir)
-from clickhouse_backupview import S3, FileInfo, open_backup
+from clickhouse_backupview import FileInfo, open_backup
 
 
 def calculate_num_files(dir):

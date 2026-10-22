@@ -6,6 +6,7 @@
 #include <Common/TargetSpecific.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/DecimalScaleBounds.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <base/arithmeticOverflow.h>
@@ -50,6 +51,258 @@ struct DecCompareInt
     using TypeB = Type;
 };
 
+/// Helpers for comparison of a mixed-type pair (e.g. `Decimal32` vs `Int64`).
+/// Instead of instantiating a fused convert-scale-compare kernel for every (A, B) combination
+/// (which is quadratic in the number of types and dominates the code size of comparison
+/// functions), each side is first brought to the common `CompareInt` representation by a small
+/// conversion kernel, and then a single per-`CompareInt` kernel does the comparison.
+/// These are free templates, so instantiations are shared between all type pairs.
+namespace DecimalComparisonHelper
+{
+
+[[noreturn]] inline void throwWrongColumn()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+}
+
+[[noreturn]] inline void throwOverflow()
+{
+    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Can't compare decimal number due to overflow");
+}
+
+inline ColumnPtr NO_INLINE createConstResult(size_t size, UInt8 value)
+{
+    return DataTypeUInt8().createColumnConst(size, Field(value));
+}
+
+/// Performs exactly the same conversion, overflow checks and scale multiplication
+/// as the former fused kernel did for each element.
+template <typename To, bool check_overflow, bool apply_scale, typename From>
+ALWAYS_INLINE To convertOneForCompare(const From & from, To scale [[maybe_unused]])
+{
+    To x{};
+    if constexpr (is_decimal<From>)
+        x = static_cast<To>(from.value);
+    else
+        x = static_cast<To>(from);
+
+    if constexpr (check_overflow)
+    {
+        bool overflow = false;
+
+        if constexpr (sizeof(From) > sizeof(To))
+            overflow |= (static_cast<From>(x) != from);
+        if constexpr (is_unsigned_v<From>)
+            overflow |= (x < 0);
+
+        if constexpr (apply_scale)
+            overflow |= common::mulOverflow(x, scale, x);
+
+        if (overflow)
+            throwOverflow();
+    }
+    else
+    {
+        if constexpr (apply_scale)
+            x = common::mulIgnoreOverflow(x, scale);
+    }
+
+    return x;
+}
+
+template <typename To, bool check_overflow, typename From>
+To NO_INLINE convertForCompare(const From & from, To scale, bool apply_scale)
+{
+    if (apply_scale)
+        return convertOneForCompare<To, check_overflow, true>(from, scale);
+    return convertOneForCompare<To, check_overflow, false>(from, scale);
+}
+
+/// Returns a pointer to `size` values of type `To` representing the input data:
+/// either a view over the original data (when the representation is bit-identical
+/// and no scaling or checking is needed) or the `tmp` array filled by conversion.
+template <typename To, bool check_overflow, typename From>
+const To * NO_INLINE prepareForCompare(const PaddedPODArray<From> & data, PaddedPODArray<To> & tmp, To scale, bool apply_scale)
+{
+    /// A view is possible for a decimal over the same native type (`Decimal<To>` is a standard
+    /// layout class with the value as its only field) and for builtin integers of the same size
+    /// (a signed/unsigned pun is allowed by the aliasing rules; `wide::integer` is not).
+    constexpr bool same_layout = std::is_same_v<From, To>
+        || (is_decimal<From> && std::is_same_v<NativeType<From>, To>)
+        || (is_integer<From> && !is_big_int_v<From> && sizeof(From) == sizeof(To));
+
+    constexpr bool needs_check = check_overflow && (sizeof(From) > sizeof(To) || is_unsigned_v<From>);
+
+    if constexpr (same_layout && !needs_check)
+    {
+        if (!apply_scale)
+            return reinterpret_cast<const To *>(data.data());
+    }
+
+    size_t size = data.size();
+    const From * from = data.data();
+    tmp.resize(size);
+    To * to = tmp.data();
+
+    if (apply_scale)
+    {
+        for (size_t i = 0; i < size; ++i)
+            to[i] = convertOneForCompare<To, check_overflow, true>(from[i], scale);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            to[i] = convertOneForCompare<To, check_overflow, false>(from[i], scale);
+    }
+
+    return to;
+}
+
+template <typename T, typename Op>
+void NO_INLINE compareVectorVector(const T * a, const T * b, UInt8 * c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+        c[i] = Op::apply(a[i], b[i]);
+}
+
+template <typename T, typename Op>
+void NO_INLINE compareVectorConstant(const T * a, T b, UInt8 * c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+        c[i] = Op::apply(a[i], b);
+}
+
+template <typename T, typename Op>
+void NO_INLINE compareConstantVector(T a, const T * b, UInt8 * c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+        c[i] = Op::apply(a, b[i]);
+}
+
+/// Compares `x` and `y` with one of them multiplied by `bounds.multiplier`. A product that does not fit into `T`
+/// is beyond every value of the other side, so its sign decides the result.
+template <typename T, typename Op, bool scale_left>
+ALWAYS_INLINE UInt8 compareScaled(T x, T y, const DecimalScaleBounds<T> & bounds)
+{
+    T & scaled = scale_left ? x : y;
+    if (!bounds.fits(scaled))
+    {
+        const T sign = scaled > 0 ? T(1) : T(-1);
+        return scale_left ? Op::apply(sign, T(0)) : Op::apply(T(0), sign);
+    }
+    scaled = common::mulIgnoreOverflow(scaled, bounds.multiplier);
+    return Op::apply(x, y);
+}
+
+template <typename T, typename Op>
+UInt8 NO_INLINE compareScaledValues(T x, T y, T multiplier, bool scale_left)
+{
+    const DecimalScaleBounds<T> bounds(multiplier);
+    if (scale_left)
+        return compareScaled<T, Op, true>(x, y, bounds);
+    return compareScaled<T, Op, false>(x, y, bounds);
+}
+
+/// Compares the column `v` with the constant `k`, one of them (`scale_vector`) multiplied by `multiplier`.
+template <typename T, typename Op>
+void NO_INLINE compareScaledVectorConstant(const T * v, T k, T multiplier, bool scale_vector, bool v_is_left, UInt8 * c, size_t size)
+{
+    const UInt8 if_v_below = v_is_left ? Op::apply(T(0), T(1)) : Op::apply(T(1), T(0));
+    const UInt8 if_v_above = v_is_left ? Op::apply(T(1), T(0)) : Op::apply(T(0), T(1));
+
+    if (scale_vector)
+    {
+        /// `v * multiplier` compares with `k` as `v` with `q = floor(k / multiplier)` if the remainder is zero. Otherwise no `v`
+        /// is equal, `v <= q` is below `k`, and `q` or `q + 1` is the threshold: with `multiplier = 10`, `d < 1.5` (`q = 1`,
+        /// remainder 5) is `d < 2`, `d <= 1.5` is `d <= 1`, `d = 1.5` is all zeros.
+        T q = k / multiplier;
+        const T remainder = k % multiplier;
+        if (remainder < 0)
+            q -= 1;
+        k = q;
+        if (remainder != 0)
+        {
+            if (if_v_below == if_v_above)
+            {
+                memset(c, if_v_below, size);
+                return;
+            }
+            /// `v = q` must give the result below `k`.
+            if (Op::apply(T(0), T(0)) != if_v_below)
+                k += 1;
+        }
+    }
+    else
+    {
+        const DecimalScaleBounds<T> bounds(multiplier);
+        if (!bounds.fits(k))
+        {
+            /// `k * multiplier` is beyond every value of `v`.
+            memset(c, k > 0 ? if_v_below : if_v_above, size);
+            return;
+        }
+        k = common::mulIgnoreOverflow(k, multiplier);
+    }
+
+    if (v_is_left)
+        compareVectorConstant<T, Op>(v, k, c, size);
+    else
+        compareConstantVector<T, Op>(k, v, c, size);
+}
+
+template <typename T, typename Op>
+void NO_INLINE compareScaledVectorVector(const T * a, const T * b, T multiplier, bool scale_left, UInt8 * c, size_t size)
+{
+    const DecimalScaleBounds<T> bounds(multiplier);
+    if (scale_left)
+    {
+        for (size_t i = 0; i < size; ++i)
+            c[i] = compareScaled<T, Op, true>(a[i], b[i], bounds);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            c[i] = compareScaled<T, Op, false>(a[i], b[i], bounds);
+    }
+}
+
+/// Converts one side of a rescaled comparison to `To` without the scale. Returns its values, or nullptr for a
+/// constant, which is stored to `value`.
+template <typename To, typename From>
+const To * NO_INLINE prepareRescaledSide(const IColumn & column, PaddedPODArray<To> & tmp, To & value)
+{
+    if (const ColumnConst * column_const = checkAndGetColumnConst<ColumnVectorOrDecimal<From>>(&column))
+    {
+        value = convertForCompare<To, true>(column_const->template getValue<From>(), To(1), false);
+        return nullptr;
+    }
+
+    const auto * column_vector = checkAndGetColumn<ColumnVectorOrDecimal<From>>(&column);
+    if (!column_vector)
+        throwWrongColumn();
+    return prepareForCompare<To, true>(column_vector->getData(), tmp, To(1), false);
+}
+
+/// Compares `a` and `b`, one of them multiplied by `multiplier`; a null `a` or `b` is the constant `x` or `y`.
+template <typename T, typename Op>
+ColumnPtr NO_INLINE compareRescaled(const T * a, T x, const T * b, T y, T multiplier, bool scale_left, size_t size)
+{
+    if (!a && !b)
+        return createConstResult(size, compareScaledValues<T, Op>(x, y, multiplier, scale_left));
+
+    auto c_res = ColumnUInt8::create(size);
+    UInt8 * res_data = c_res->getData().data();
+    if (!a)
+        compareScaledVectorConstant<T, Op>(b, x, multiplier, !scale_left, false, res_data, size);
+    else if (!b)
+        compareScaledVectorConstant<T, Op>(a, y, multiplier, scale_left, true, res_data, size);
+    else
+        compareScaledVectorVector<T, Op>(a, b, multiplier, scale_left, res_data, size);
+    return c_res;
+}
+
+}
+
 template <typename A, typename B, template <typename, typename> typename Operation>
 requires is_decimal<A> || is_decimal<B>
 class DecimalComparison
@@ -65,12 +318,30 @@ public:
 
     static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, bool check_overflow)
     {
-        ColumnPtr c_res;
         Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-        if (check_overflow)
-            return applyWithScale<true>(col_left.column, col_right.column, shift);
-        return applyWithScale<false>(col_left.column, col_right.column, shift);
+        /// With the check on, a value that overflows when brought to the common scale is compared exactly instead.
+        if (check_overflow && !shift.none())
+            return applyRescaled(col_left.column, col_right.column, shift);
+
+        if constexpr (std::is_same_v<A, B>)
+        {
+            /// Same-type pairs are the hot case (e.g. `DateTime64` vs `DateTime64`):
+            /// keep the fused convert-and-compare kernels.
+            if (check_overflow)
+                return applyWithScale<true>(col_left.column, col_right.column, shift);
+            return applyWithScale<false>(col_left.column, col_right.column, shift);
+        }
+        else
+        {
+            /// Mixed-type pairs: bring both sides to the `CompareInt` representation first
+            /// (with exactly the conversions, overflow checks and scale multiplication the fused
+            /// kernel would do), then compare same-type. This avoids instantiating a heavy fused
+            /// kernel for every (A, B) combination - the helpers are shared between type pairs.
+            if (check_overflow)
+                return applyMixed<true>(col_left.column, col_right.column, shift);
+            return applyMixed<false>(col_left.column, col_right.column, shift);
+        }
     }
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b, bool check_overflow)
@@ -84,6 +355,14 @@ public:
             shift.a = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<B>(scale_b - scale_a));
         if (scale_a > scale_b)
             shift.b = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<A>(scale_a - scale_b));
+
+        if (check_overflow && !shift.none())
+        {
+            namespace Helper = DecimalComparisonHelper;
+            CompareInt x = Helper::convertForCompare<CompareInt, true>(a, CompareInt(1), false);
+            CompareInt y = Helper::convertForCompare<CompareInt, true>(b, CompareInt(1), false);
+            return Helper::compareScaledValues<CompareInt, Op>(x, y, shift.left() ? shift.a : shift.b, shift.left());
+        }
 
         if (check_overflow)
             return applyWithScale<true>(a, b, shift);
@@ -211,6 +490,109 @@ private:
         return c_res;
     }
 
+    /// Column-level comparison of a mixed-type pair. Converts each side to `CompareInt`
+    /// with shared helpers and compares same-type; see `DecimalComparisonHelper`.
+    template <bool check_overflow>
+    static ColumnPtr applyMixed(const ColumnPtr & c0, const ColumnPtr & c1, const Shift & shift)
+    {
+        namespace Helper = DecimalComparisonHelper;
+
+        /// As in `applyWithScale`: the left scale takes priority, at most one side is scaled.
+        bool scale_a = shift.left();
+        bool scale_b = !scale_a && shift.right();
+
+        bool c0_is_const = isColumnConst(*c0);
+        bool c1_is_const = isColumnConst(*c1);
+
+        if (c0_is_const && c1_is_const)
+        {
+            const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+            const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
+
+            CompareInt x = Helper::convertForCompare<CompareInt, check_overflow>(c0_const.template getValue<A>(), shift.a, scale_a);
+            CompareInt y = Helper::convertForCompare<CompareInt, check_overflow>(c1_const.template getValue<B>(), shift.b, scale_b);
+
+            return Helper::createConstResult(c0->size(), Op::apply(x, y));
+        }
+
+        auto c_res = ColumnUInt8::create();
+        ColumnUInt8::Container & vec_res = c_res->getData();
+        size_t size = c0->size();
+        vec_res.resize(size);
+
+        /// Do not convert constants before checking the size: the former fused kernels
+        /// did not perform any overflow checks for empty columns.
+        if (size == 0)
+            return c_res;
+
+        UInt8 * res_data = vec_res.data();
+
+        if (c0_is_const)
+        {
+            const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+            CompareInt x = Helper::convertForCompare<CompareInt, check_overflow>(c0_const.template getValue<A>(), shift.a, scale_a);
+
+            const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get());
+            if (!c1_vec)
+                Helper::throwWrongColumn();
+
+            PaddedPODArray<CompareInt> tmp;
+            const CompareInt * b_data = Helper::prepareForCompare<CompareInt, check_overflow>(c1_vec->getData(), tmp, shift.b, scale_b);
+            Helper::compareConstantVector<CompareInt, Op>(x, b_data, res_data, size);
+        }
+        else if (c1_is_const)
+        {
+            const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
+            CompareInt y = Helper::convertForCompare<CompareInt, check_overflow>(c1_const.template getValue<B>(), shift.b, scale_b);
+
+            const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get());
+            if (!c0_vec)
+                Helper::throwWrongColumn();
+
+            PaddedPODArray<CompareInt> tmp;
+            const CompareInt * a_data = Helper::prepareForCompare<CompareInt, check_overflow>(c0_vec->getData(), tmp, shift.a, scale_a);
+            Helper::compareVectorConstant<CompareInt, Op>(a_data, y, res_data, size);
+        }
+        else
+        {
+            const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get());
+            const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get());
+            if (!c0_vec || !c1_vec)
+                Helper::throwWrongColumn();
+
+            PaddedPODArray<CompareInt> tmp_a;
+            PaddedPODArray<CompareInt> tmp_b;
+            const CompareInt * a_data = Helper::prepareForCompare<CompareInt, check_overflow>(c0_vec->getData(), tmp_a, shift.a, scale_a);
+            const CompareInt * b_data = Helper::prepareForCompare<CompareInt, check_overflow>(c1_vec->getData(), tmp_b, shift.b, scale_b);
+            Helper::compareVectorVector<CompareInt, Op>(a_data, b_data, res_data, size);
+        }
+
+        return c_res;
+    }
+
+    /// Column-level comparison of a pair with different scales and the overflow check on. Converts each side to
+    /// `CompareInt` without the scale, and the comparison applies it; see `DecimalComparisonHelper::compareScaled`.
+    static ColumnPtr applyRescaled(const ColumnPtr & c0, const ColumnPtr & c1, const Shift & shift)
+    {
+        namespace Helper = DecimalComparisonHelper;
+
+        /// As in `applyMixed`: no overflow checks for empty columns.
+        const size_t size = c0->size();
+        if (size == 0 && !(isColumnConst(*c0) && isColumnConst(*c1)))
+            return ColumnUInt8::create();
+
+        CompareInt x{};
+        CompareInt y{};
+        PaddedPODArray<CompareInt> tmp_a;
+        PaddedPODArray<CompareInt> tmp_b;
+        const CompareInt * a_data = Helper::prepareRescaledSide<CompareInt, A>(*c0, tmp_a, x);
+        const CompareInt * b_data = Helper::prepareRescaledSide<CompareInt, B>(*c1, tmp_b, y);
+
+        /// As in `applyWithScale`: the left scale takes priority, at most one side is scaled.
+        const bool scale_left = shift.left();
+        return Helper::compareRescaled<CompareInt, Op>(a_data, x, b_data, y, scale_left ? shift.a : shift.b, scale_left, size);
+    }
+
     template <bool check_overflow, bool scale_left, bool scale_right>
     static ALWAYS_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
@@ -276,7 +658,7 @@ private:
         }
     }
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <bool check_overflow, bool scale_left, bool scale_right> static void NO_INLINE
     ), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
@@ -302,12 +684,6 @@ private:
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4<check_overflow, scale_left, scale_right>(a, b, c, scale);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorConstantImpl_x86_64_v3<check_overflow, scale_left, scale_right>(a, b, c, scale);
             return;
         }
 #endif

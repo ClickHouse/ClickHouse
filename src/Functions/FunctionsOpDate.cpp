@@ -15,12 +15,15 @@ namespace ErrorCodes
 namespace
 {
 template <typename Op>
-class FunctionOpDate : public IFunction
+class FunctionOpDate final : public IFunction
 {
 public:
     static constexpr auto name = Op::name;
 
-    explicit FunctionOpDate(ContextPtr context_) : context(context_) {}
+    explicit FunctionOpDate(ContextPtr context_)
+        : op(FunctionFactory::instance().get(Op::internal_name, context_))
+    {
+    }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOpDate<Op>>(context); }
 
@@ -28,6 +31,29 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Documentation-only — the override below is authoritative (it delegates
+    /// to plus/minus, whose own resolution determines the exact result type).
+    /// String inputs are accepted and parsed as a Date/DateTime by the
+    /// underlying operator.
+    String getSignatureString() const override
+    {
+        return "(DateOrDateTime | String, Interval) -> DateOrDateTime";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -45,7 +71,6 @@ public:
                 arguments[1].type->getName(),
                 getName());
 
-        auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
 
         return op_build->getResultType();
@@ -69,7 +94,6 @@ public:
                 arguments[1].type->getName(),
                 getName());
 
-        auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
 
         auto res_type = op_build->getResultType();
@@ -77,7 +101,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr op;
 };
 
 }
@@ -116,9 +140,9 @@ addDate(datetime, interval)
 SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
         )",
         R"(
-┌─addDate(toDa⋯valYear(3))─┐
-│               2021-01-01 │
-└──────────────────────────┘
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_addDate = {23, 9};

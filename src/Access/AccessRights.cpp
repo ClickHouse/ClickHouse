@@ -427,7 +427,7 @@ public:
     {
         auto next_level = static_cast<Level>(level + 1);
 
-        Node * child;
+        Node * child = nullptr;
         if constexpr (sizeof...(Args) == 0)
             /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
             child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
@@ -464,7 +464,7 @@ public:
     {
         auto next_level = static_cast<Level>(level + 1);
 
-        Node * child;
+        Node * child = nullptr;
         if constexpr (sizeof...(Args) == 0)
             /// In order to grant/revoke a wildcard grant we need to update flags on the leaf's parent and not the actual leaf.
             child = &getLeaf(name, next_level, /* return_parent_node= */ wildcard);
@@ -692,10 +692,12 @@ public:
         }
     }
 
-    std::vector<Filter> getFilters(std::string_view parameter)
+    std::vector<Filter> getFilters(std::string_view parameter) const
     {
         std::vector<Filter> res;
-        auto & node = getLeaf(parameter, GLOBAL_WITH_PARAMETER);
+        /// `tryGetLeaf` returns by value and its light copy shares `children` with this tree,
+        /// so the node must outlive the loop: bind it to a named local, never to `auto &`.
+        const auto node = tryGetLeaf(parameter, GLOBAL_WITH_PARAMETER);
         for (auto it = node.begin(); it != node.end(); ++it)
             res.emplace_back(it->flags, it.getPath());
 
@@ -974,7 +976,9 @@ private:
         auto grants = flags - parent_fl - grants_go;
 
         /// Inserts into result only meaningful nodes (e.g. wildcards or leafs).
-        if (target_node && (target_node->isLeaf() || target_node->wildcard_grant))
+        const bool node_meaningful = node && (node->isLeaf() || node->wildcard_grant);
+        const bool node_go_meaningful = node_go && (node_go->isLeaf() || node_go->wildcard_grant);
+        if (node_meaningful || node_go_meaningful)
         {
             boost::container::small_vector<String, 3> new_full_name = full_name;
 
@@ -990,17 +994,25 @@ private:
                 }
             }
 
-            if (node && revokes)
+            if (node_meaningful && revokes)
                 res.push_back(ProtoElement{revokes, new_full_name, false, true, node->wildcard_grant});
 
-            if (node_go && revokes_go)
+            if (node_go_meaningful && revokes_go)
                 res.push_back(ProtoElement{revokes_go, new_full_name, true, true, node_go->wildcard_grant});
 
-            if (node && grants)
+            if (node_meaningful && grants)
                 res.push_back(ProtoElement{grants, new_full_name, false, false, node->wildcard_grant});
 
-            if (node_go && grants_go)
+            if (node_go_meaningful && grants_go)
                 res.push_back(ProtoElement{grants_go, new_full_name, true, false, node_go->wildcard_grant});
+        }
+
+        /// The two tries compress child names independently: a child of one can be a strict name
+        /// prefix of a child of the other, and only exactly-named pairs can be walked together.
+        if (node && node_go && node_go->children)
+        {
+            for (auto & child_go : *node_go->children)
+                node->getLeaf(child_go.node_name, child_go.level, !child_go.isLeaf());
         }
 
         if (node && node->children)
@@ -1022,19 +1034,8 @@ private:
         {
             for (auto & child : *node_go->children)
             {
-                if (node && node->children)
-                {
-                    auto starts_with = [&child](const Node & n)
-                    {
-                        if (child.isLeaf())
-                            return n.isLeaf();
-
-                        return !n.isLeaf() && child.node_name[0] == n.node_name[0];
-                    };
-
-                    if (auto it = std::find_if(node->children->begin(), node->children->end(), starts_with); it != node->children->end())
-                        continue; /// already processed
-                }
+                if (node && node->tryGetChildNode(child.node_name))
+                    continue; /// already processed
 
                 String new_path = path;
                 new_path.append(child.node_name);
@@ -1358,8 +1359,8 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 template <bool with_grant_option, bool wildcard>
 void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
-    assert(!element.is_partial_revoke);
-    assert(!element.grant_option || with_grant_option);
+    chassert(!element.is_partial_revoke);
+    chassert(!element.grant_option || with_grant_option);
 
     if (element.isGlobalWithParameter())
     {
@@ -1461,7 +1462,7 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 template <bool grant_option, bool wildcard>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1606,7 +1607,7 @@ bool AccessRights::containsImpl(const AccessRights & other) const
 template <bool grant_option, bool wildcard>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1771,8 +1772,8 @@ void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
     if (!root)
         return;
 
-    bool flags_added;
-    bool flags_removed;
+    bool flags_added = false;
+    bool flags_removed = false;
     root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);

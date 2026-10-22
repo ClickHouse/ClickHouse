@@ -7,7 +7,7 @@ namespace DB
 {
 
 std::unordered_map<String, String>
-baseParseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+static baseParseHTTPResponseHeaders(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::unordered_map<String, String> http_response_headers_override;
     String http_response_headers_key = config_prefix + ".handler.http_response_headers";

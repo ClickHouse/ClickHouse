@@ -1,6 +1,6 @@
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/IAST_erase.h>
 
 
 namespace DB
@@ -22,46 +22,33 @@ String ASTQueryWithTableAndOutput::getTable() const
 
 void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 {
-    if (database)
-    {
-        std::erase(children, database);
-        database.reset();
-    }
-
+    reset(database);
     if (!name.empty())
-    {
-        database = make_intrusive<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)
 {
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
+    reset(table);
     if (!name.empty())
-    {
-        table = make_intrusive<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        set(table, make_intrusive<ASTIdentifier>(name));
+}
+
+void ASTQueryWithTableAndOutput::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// Neither `TEMPORARY` nor `uuid` is a child, so without hashing them `DROP TABLE t` and
+    /// `DROP TEMPORARY TABLE t` hash equally, as do two `CREATE`s with different explicit UUIDs.
+    hash_state.update(isTemporary());
+    hash_state.update(uuid);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const
 {
     if (database)
-    {
-        cloned.database = database->clone();
-        cloned.children.push_back(cloned.database);
-    }
+        cloned.set(cloned.database, database->clone());
     if (table)
-    {
-        cloned.table = table->clone();
-        cloned.children.push_back(cloned.table);
-    }
+        cloned.set(cloned.table, table->clone());
 }
 
 }

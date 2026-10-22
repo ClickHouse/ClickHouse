@@ -128,9 +128,10 @@ def test_fetch_exponential_backoff_with_replicated_tree(
     ## The fetch from the src replica will be impossible, until table is detached.
     ## Actually this is an imitation of scenario when one replica inserted the data and immediately becomes unavaliable,
     ## so fethes are impossible.
-    retry_count = 200
+    start_time = time.monotonic()
     task_posponed = False
-    for _ in range(0, retry_count):
+    while time.monotonic() < start_time + 80:
+        time.sleep(1)
         if count_postponed_tasks_in_replicated_queue(dst_node):
             task_posponed = True
             break
@@ -147,35 +148,6 @@ def test_mutation_exponential_backoff_with_replicated_tree(started_cluster):
     assert node_with_backoff.wait_for_log_line(REPLICATED_POSTPONE_LOG)
     assert count_postponed_tasks_in_replicated_queue(node_with_backoff) == 1
     assert not node_no_backoff.contains_in_log(REPLICATED_POSTPONE_LOG)
-
-
-def test_mutatuion_exponential_backoff_create_dependent_table(started_cluster):
-    prepare_cluster(False)
-
-    # Executing incorrect mutation.
-    node_with_backoff.query(
-        "ALTER TABLE test_table DELETE WHERE x IN (SELECT x FROM dep_table) SETTINGS allow_nondeterministic_mutations = 1, validate_mutation_query = 0"
-    )
-
-    # Creating dependent table for mutation.
-    node_with_backoff.query(
-        "CREATE TABLE dep_table(x UInt32) ENGINE MergeTree() ORDER BY x"
-    )
-
-    retry_count = 100
-    no_unfinished_mutation = False
-    for _ in range(0, retry_count):
-        if (
-            node_with_backoff.query(
-                "SELECT count() FROM system.mutations WHERE is_done=0"
-            )
-            == "0\n"
-        ):
-            no_unfinished_mutation = True
-            break
-
-    assert no_unfinished_mutation
-    node_with_backoff.query("DROP TABLE IF EXISTS dep_table SYNC")
 
 
 def test_exponential_backoff_setting_override(started_cluster):

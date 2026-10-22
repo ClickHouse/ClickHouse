@@ -10,7 +10,7 @@ CREATE TABLE tab
 (
     id UInt64,
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 8)
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 8, dictionary_block_frontcoding_compression = 1, posting_list_block_size = 10000000, posting_list_codec = 'none')
 )
 ENGINE = MergeTree ORDER BY id;
 
@@ -77,7 +77,7 @@ CREATE TABLE tab
 (
     id UInt64,
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 4)
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 4, dictionary_block_frontcoding_compression = 1, posting_list_block_size = 10000000, posting_list_codec = 'none')
 )
 ENGINE = MergeTree ORDER BY id;
 
@@ -115,7 +115,7 @@ CREATE TABLE tab
 (
     id UInt64,
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 8, posting_list_block_size = 1024)
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 8, posting_list_block_size = 1024, dictionary_block_frontcoding_compression = 1, posting_list_codec = 'none')
 )
 ENGINE = MergeTree ORDER BY id;
 
@@ -175,7 +175,7 @@ CREATE TABLE tab
 (
     id UInt64,
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 1)
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 1, dictionary_block_frontcoding_compression = 1, posting_list_block_size = 10000000, posting_list_codec = 'none')
 )
 ENGINE = MergeTree ORDER BY id;
 

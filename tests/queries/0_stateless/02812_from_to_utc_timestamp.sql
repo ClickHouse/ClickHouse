@@ -1,3 +1,5 @@
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+
 DROP TABLE IF EXISTS test_tbl;
 CREATE TABLE test_tbl (x UInt32, y DateTime, z DateTime64) engine=MergeTree ORDER BY x;
 INSERT INTO test_tbl values(1, '2023-03-16', '2023-03-16 11:22:33');

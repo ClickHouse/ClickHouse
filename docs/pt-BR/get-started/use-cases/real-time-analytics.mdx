@@ -1,0 +1,71 @@
+---
+slug: /cloud/get-started/cloud/use-cases/real-time-analytics
+title: 'Analytics em tempo real'
+description: 'Aprenda a criar aplicativos de analytics em tempo real com ClickHouse Cloud para obter insights instantâneos e tomar decisões com base em dados'
+keywords: ['casos de uso', 'analytics em tempo real']
+sidebarTitle: 'Analytics em tempo real'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+Em analytics, &quot;tempo real&quot; geralmente significa que a experiência do usuário parece acontecer ao vivo.
+Um cliente recarrega um dashboard, abre um ranking ou investiga um problema e espera que os dados reflitam o que acabou de acontecer.
+Tecnicamente, isso significa não apenas fornecer consultas analíticas de baixa latência, mas fazer isso enquanto os dados são continuamente inseridos em alto volume.
+
+<div id="system-properties">
+  ## Propriedades de um sistema de analytics em tempo real
+</div>
+
+Quando os clientes avaliam uma plataforma de analytics em tempo real, eles costumam focar apenas na latência da consulta. &quot;Ela consegue retornar uma resposta em 50 ms?&quot; é uma pergunta razoável — e que a maioria dos motores analíticos consegue responder de forma convincente, se você aplicar recursos computacionais suficientes a um conjunto de dados estático.
+
+A pergunta que determina o que os usuários realmente percebem é mais difícil. É se o sistema consegue retornar uma resposta em 50 ms **com dados que chegaram há um segundo**, enquanto a ingestão ainda está em andamento e enquanto outros usuários também estão fazendo consultas.
+
+A disponibilidade dos dados exige pensar no tempo total até o insight, que tem três componentes.
+
+* **Tempo de ingestão**: Quanto tempo leva para que os dados recém-gerados cheguem à plataforma e sejam armazenados de forma durável?
+* **Tempo de transformação e preparação**: Quanto tempo leva para limpar, enriquecer, fazer join, pré-agregar ou atualizar as estruturas que efetivamente atendem às consultas (visões materializadas, rollups, índices)?
+* **Tempo de consulta**: Quanto tempo leva para planejar e executar a leitura depois que os dados estão disponíveis?
+
+<Image img="/images/use-cases/rta-considerations.webp" alt="Analytics em tempo real: tempo de ingestão, transformação e consulta" />
+
+<div id="clickhouse-rta">
+  ## Como o ClickHouse viabiliza analytics em tempo real
+</div>
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="Como o ClickHouse viabiliza analytics em tempo real" />
+  </div>
+
+  <ExclusiveGroup name="rta-arch">
+    <AccordionGroup>
+      <Accordion title="Ingestão de dados" defaultOpen>
+        Com o [ClickPipes](/pt-BR/integrations/clickpipes/home), disponível exclusivamente no ClickHouse Cloud, você conta com um mecanismo de integração pronto para uso que torna a ingestão de grandes volumes de dados simples. Selecione uma fonte de dados de entrada e um formato, ajuste seu esquema e deixe o pipeline rodando.
+
+        A extensa biblioteca de [motores de tabela](/pt-BR/reference/engines/table-engines) do ClickHouse oferece suporte à ingestão de dados de tópicos do Kafka, buckets do S3, bancos de dados OLTP e muito mais. Ao contrário de outros bancos de dados OLAP que exigem inserções em lote para alcançar alto throughput, o ClickHouse lida igualmente bem com payloads menores — [asynchronous inserts](/pt-BR/concepts/features/operations/insert/asyncinserts) os agrupam automaticamente para otimizar o desempenho de gravação.
+      </Accordion>
+
+      <Accordion title="Transformações de dados e consultas">
+        [Visões materializadas](/pt-BR/concepts/features/materialized-views) tornam as transformações simples — acionadas automaticamente quando novos dados são inseridos, elas extraem, agregam e modificam os dados à medida que chegam, sem exigir pipelines personalizados. Encadeá-las adiciona flexibilidade modular.
+
+        As consultas em visões materializadas são excepcionalmente rápidas, já que os resultados ficam armazenados em tabelas dedicadas. O ClickHouse Cloud inclui [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache), [índices esparsos](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) e [projeções](/pt-BR/concepts/features/projections/projections) sem custo adicional.
+      </Accordion>
+
+      <Accordion title="Aplicações e dashboards">
+        O ClickHouse viabiliza analytics voltados ao usuário em serviços financeiros, jogos, e-commerce e muito mais. Ele oferece uma interface REST para que desenvolvedores web possam criar aplicações leves sem protocolos binários complexos.
+
+        Há conectores nativos para ferramentas de BI como [Grafana](/pt-BR/integrations/connectors/data-visualization/grafana), [Tableau](/pt-BR/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) e [Looker](/pt-BR/integrations/connectors/data-visualization/looker-and-clickhouse), além de clientes para linguagens, clientes SQL e o [MySQL wire protocol](/pt-BR/concepts/features/interfaces/mysql) para ferramentas sem conector nativo.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>

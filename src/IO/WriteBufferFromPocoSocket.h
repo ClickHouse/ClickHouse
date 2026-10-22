@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/ProfileEvents.h>
 
 namespace DB
 {
@@ -17,9 +18,11 @@ class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    /// If non-nullptr 'existing_memory' is passed, the buffer uses it without ownership and does not allocate.
+    WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size, char * existing_memory);
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & write_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
+    void setAsyncCallback(AsyncCallback async_callback_);
 
     using WriteBuffer::write;
     void write(const std::string & str) { WriteBuffer::write(str.c_str(), str.size()); }

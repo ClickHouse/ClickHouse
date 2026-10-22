@@ -22,7 +22,7 @@ namespace
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
   */
-class FunctionTimestamp : public IFunction
+class FunctionTimestamp final : public IFunction
 {
 public:
     static constexpr UInt32 DATETIME_SCALE = 6;
@@ -38,17 +38,9 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"timestamp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE);
+        return "(StringOrFixedString, [String]) -> DateTime64(6)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -172,7 +164,7 @@ public:
 REGISTER_FUNCTION(Timestamp)
 {
     FunctionDocumentation::Description description = R"(
-Converts the first argument `expr` to type [`DateTime64(6)`](/sql-reference/data-types/datetime64).
+Converts the first argument `expr` to type [`DateTime64(6)`](/reference/data-types/datetime64).
 If a second argument `expr_time` is provided, it adds the specified time to the converted value.
     )";
     FunctionDocumentation::Syntax syntax = R"(

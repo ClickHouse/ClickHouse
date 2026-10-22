@@ -2,6 +2,7 @@
 
 #include <Backups/BackupsInMemoryHolder.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -48,11 +49,11 @@ UInt64 BackupInMemory::getFileSize(const String & file_name) const
 
 void BackupInMemory::removeFile(const String & file_name)
 {
+    /// Best-effort removal (like the S3, Disk and File writers): a partially written backup may lack
+    /// some files, e.g. `.backup` is written only at finalization.
     std::lock_guard lock{mutex};
-    auto it = files.find(file_name);
-    if (it == files.end())
-        throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found in backup {}", file_name, backup_name);
-    files.erase(it);
+    if (!files.erase(file_name))
+        LOG_DEBUG(getLogger("BackupInMemory"), "Backup entry {} not found in backup {}, skipping removal", file_name, backup_name);
 }
 
 

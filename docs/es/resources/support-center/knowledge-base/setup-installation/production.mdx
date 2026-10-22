@@ -1,0 +1,71 @@
+---
+slug: /faq/operations/production
+title: '¿Qué versión de ClickHouse usar en producción?'
+toc_hidden: true
+toc_priority: 10
+description: 'Esta página ofrece orientación sobre qué versión de ClickHouse usar en producción'
+doc_type: 'guide'
+keywords: ['producción', 'despliegue', 'versiones', 'buenas prácticas', 'estrategia de actualización']
+---
+
+En primer lugar, veamos por qué la gente se hace esta pregunta. Hay dos razones principales:
+
+1. ClickHouse se desarrolla a un ritmo muy alto y, por lo general, hay más de 10 versiones estables al año. Eso deja un abanico amplio de versiones entre las que elegir, así que no es una decisión tan trivial.
+2. Algunos usuarios quieren evitar dedicar tiempo a averiguar qué versión funciona mejor para su caso de uso y simplemente seguir la recomendación de otra persona.
+
+La segunda razón es más fundamental, así que empezaremos por ella y luego volveremos a cómo orientarse entre las distintas versiones de ClickHouse.
+
+<div id="which-clickhouse-version-do-you-recommend">
+  ## ¿Qué versión de ClickHouse recomiendan?
+</div>
+
+Es tentador contratar consultores o confiar en expertos conocidos para quitarse de encima la responsabilidad sobre su entorno de producción. Instala una versión concreta de ClickHouse que otra persona recomendó; si surge algún problema, no es culpa suya, sino de esa otra persona. Esta forma de pensar es una gran trampa. Nadie de fuera conoce mejor que usted lo que ocurre en el entorno de producción de su empresa.
+
+Entonces, ¿cómo elegir correctamente a qué versión de ClickHouse actualizar? ¿O cómo elegir su primera versión de ClickHouse? Ante todo, necesita invertir en configurar un **entorno de preproducción realista**. En un mundo ideal, podría ser una copia paralela completamente idéntica, pero eso suele ser costoso.
+
+Estos son algunos puntos clave para lograr una fidelidad razonable en un entorno de preproducción sin disparar demasiado los costos:
+
+* El entorno de preproducción debe ejecutar un conjunto de consultas lo más parecido posible al que pretende ejecutar en producción:
+  * No lo convierta en un entorno de solo lectura con datos congelados.
+  * No lo convierta en un entorno de solo escritura limitándose a copiar datos sin generar informes típicos.
+  * No lo vacíe por completo en lugar de aplicar migraciones de esquema.
+* Use una muestra de datos y consultas reales de producción. Intente elegir una muestra que siga siendo representativa y haga que las consultas `SELECT` devuelvan resultados razonables. Use ofuscación si sus datos son sensibles y las políticas internas no permiten que salgan del entorno de producción.
+* Asegúrese de que la preproducción esté cubierta por su software de monitorización y alertas del mismo modo que su entorno de producción.
+* Si su producción abarca varios centros de datos o regiones, haga que su preproducción haga lo mismo.
+* Si su producción utiliza funcionalidades complejas como replicación, tablas distribuidas y vistas materializadas en cascada, asegúrese de que estén configuradas de manera similar en preproducción.
+* Hay una compensación entre usar en preproducción aproximadamente el mismo número de servidores o máquinas virtuales que en producción, pero de menor tamaño, o usar muchos menos, pero del mismo tamaño. La primera opción puede detectar problemas adicionales relacionados con la red, mientras que la segunda es más fácil de gestionar.
+
+La segunda área en la que invertir es la **infraestructura de pruebas automatizadas**. No asuma que, si algún tipo de consulta se ejecutó correctamente una vez, seguirá haciéndolo para siempre. Está bien tener algunas pruebas unitarias en las que ClickHouse esté simulado, pero asegúrese de que su producto tenga un conjunto razonable de pruebas automatizadas que se ejecuten contra un ClickHouse real y comprueben que todos los casos de uso importantes siguen funcionando como se espera.
+
+Un paso más allá podría ser aportar esas pruebas automatizadas a la [infraestructura de pruebas de código abierto de ClickHouse](https://github.com/ClickHouse/ClickHouse/tree/master/tests), que se usa continuamente en su desarrollo diario. Sin duda, llevará algo de tiempo y esfuerzo adicional aprender [cómo ejecutarla](/es/resources/develop-contribute/contribute/tests) y luego cómo adaptar sus pruebas a este marco, pero valdrá la pena porque garantizará que las versiones de ClickHouse ya se prueben contra ellas cuando se anuncien como estables, en lugar de perder tiempo repetidamente informando del problema después de que ocurra y luego esperar a que se implemente, se retroporte y se publique una corrección. Algunas empresas incluso tienen como política interna contribuir con este tipo de pruebas a la infraestructura que usan (llamada [la regla de Beyonce](https://www.oreilly.com/library/view/software-engineering-at/9781492082781/ch01.html#policies_that_scale_well) en Google).
+
+Cuando tenga en marcha su entorno de preproducción y su infraestructura de pruebas, elegir la mejor versión será sencillo:
+
+1. Ejecute de forma rutinaria sus pruebas automatizadas con nuevas versiones de ClickHouse. Puede hacerlo incluso con versiones de ClickHouse marcadas como `testing`, pero no se recomienda avanzar con ellas a los siguientes pasos.
+2. Despliegue en preproducción la versión de ClickHouse que haya superado las pruebas y compruebe que todos los procesos se ejecutan como se espera.
+3. Informe de cualquier problema que descubra en [ClickHouse GitHub Issues](https://github.com/ClickHouse/ClickHouse/issues).
+4. Si no hubo problemas importantes, debería ser seguro empezar a desplegar la versión de ClickHouse en su entorno de producción. Invertir en automatización de despliegues graduales que implemente un enfoque similar a las [canary releases](https://martinfowler.com/bliki/CanaryRelease.html) o a los [despliegues blue-green](https://martinfowler.com/bliki/BlueGreenDeployment.html) puede reducir aún más el riesgo de problemas en producción.
+
+Como quizá haya notado, no hay nada específico de ClickHouse en el enfoque descrito anteriormente: esto se hace con cualquier pieza de infraestructura de la que se depende, si se toma en serio el entorno de producción.
+
+<div id="how-to-choose-between-clickhouse-releases">
+  ## ¿Cómo elegir entre las versiones de ClickHouse?
+</div>
+
+Si revisa el contenido del repositorio de paquetes de ClickHouse, verá dos tipos de paquetes:
+
+1. `stable`
+2. `lts` (soporte a largo plazo)
+
+Aquí tiene algunas pautas para elegir entre ellos:
+
+* `stable` es el tipo de paquete que recomendamos de forma predeterminada. Se publica aproximadamente una vez al mes (y, por tanto, incorpora nuevas características con una demora razonable), y las tres versiones estables más recientes reciben soporte en términos de diagnóstico y retroportación de correcciones de errores.
+* `lts` se publica dos veces al año y recibe soporte durante un año desde su publicación inicial. Puede que lo prefiera frente a `stable` en los siguientes casos:
+  * Su empresa tiene políticas internas que no permiten actualizaciones frecuentes ni el uso de software que no sea LTS.
+  * Usa ClickHouse en algunos productos secundarios que no requieren características complejas de ClickHouse o que no disponen de recursos suficientes para mantenerlo actualizado.
+
+Muchos equipos que al principio creen que `lts` es la mejor opción suelen acabar cambiándose a `stable` de todos modos por alguna característica reciente importante para su producto.
+
+<Tip>
+  Una cosa más que debe tener en cuenta al actualizar ClickHouse: siempre vigilamos la compatibilidad entre versiones, pero a veces no resulta razonable mantenerla y algunos detalles menores pueden cambiar. Por eso, asegúrese de revisar el [registro de cambios](/es/resources/changelogs/oss/2026) antes de actualizar para ver si hay alguna nota sobre cambios incompatibles con versiones anteriores.
+</Tip>
