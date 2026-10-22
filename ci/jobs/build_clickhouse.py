@@ -657,6 +657,8 @@ def main():
             wine_prefix = f"{Utils.cwd()}/ci/tmp/wineprefix"
             wine_env = "WINEDEBUG=-all WINEPREFIX=" + wine_prefix
             backup_dir = f"{Utils.cwd()}/ci/tmp/windows-backup-non-ascii"
+            template_dir = f"{Utils.cwd()}/ci/tmp/windows-template"
+            disks_dir = f"{Utils.cwd()}/ci/tmp/windows-disks"
             wine_commands = [
                 ("Initialize the Wine prefix", f"{wine_env} wine wineboot --init"),
                 ("clickhouse.exe --version", f"{wine_env} wine {build_dir}/programs/clickhouse.exe --version"),
@@ -689,6 +691,46 @@ def main():
                     "Non-ASCII command-line argument",
                     f"test \"$(LC_ALL=C.UTF-8 {wine_env} wine {build_dir}/programs/clickhouse.exe"
                     f" local --query \"SELECT hex('тест')\")\" = D182D0B5D181D182",
+                ),
+                # The numeric stack traces of `system.errors` must not publish runtime
+                # addresses, which defeat ASLR: a frame in the executable is stored as its
+                # offset in the image, any other frame as zero. The image is loaded at or
+                # above `0x140000000`, so every runtime address is above `0x100000000`, and
+                # an offset is below it.
+                (
+                    "No runtime addresses in system.errors",
+                    f"test \"$({wine_env} wine {build_dir}/programs/clickhouse.exe local --ignore-error"
+                    f" --query \"SELECT throwIf(1); SELECT length(last_error_trace) > 0"
+                    f" AND arrayAll(x -> x < 0x100000000, last_error_trace) FROM system.errors"
+                    f" WHERE name = 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO'\" 2>/dev/null)\" = 1",
+                ),
+                # A drive-qualified template path: the colon of `Z:` must not be taken for
+                # the separator of a message name. Wine maps `Z:` to the host's `/`.
+                (
+                    "Template file named by a drive-qualified path",
+                    f"mkdir -p {template_dir} && printf 'Row: ${{x:Quoted}}' > {template_dir}/row.tpl"
+                    f" && test \"$({wine_env} wine {build_dir}/programs/clickhouse.exe local"
+                    f" --format_template_row=Z:{template_dir}/row.tpl --query \"SELECT 1 AS x FORMAT Template\")\""
+                    f" = 'Row: 1'",
+                ),
+                # The built-in `local` disk is rooted at the root of the current drive (`Z:`
+                # here), so a path on another drive must be refused rather than stripped to
+                # the same relative path on `Z:`. Wine maps `C:` to `drive_c` of the prefix.
+                # The first `remove` checks that a path on the current drive still works.
+                # `disks --query` exits with zero even when the command fails, so only the
+                # files tell what happened.
+                (
+                    "clickhouse.exe disks keeps the drive of a path",
+                    f"rm -rf {disks_dir} {wine_prefix}/drive_c{disks_dir}"
+                    f" && mkdir -p {disks_dir} {wine_prefix}/drive_c{disks_dir}"
+                    f" && printf '<clickhouse><path>{disks_dir}/data/</path></clickhouse>' > {disks_dir}/config.xml"
+                    f" && touch {disks_dir}/control.txt {disks_dir}/victim.txt {wine_prefix}/drive_c{disks_dir}/victim.txt"
+                    f" && {wine_env} wine {build_dir}/programs/clickhouse.exe disks --config-file {disks_dir}/config.xml"
+                    f" --disk local --query \"remove Z:{disks_dir}/control.txt\""
+                    f" && test ! -e {disks_dir}/control.txt"
+                    f" && {{ {wine_env} wine {build_dir}/programs/clickhouse.exe disks --config-file {disks_dir}/config.xml"
+                    f" --disk local --query \"remove C:{disks_dir}/victim.txt\"; true; }}"
+                    f" && test -f {disks_dir}/victim.txt && test -f {wine_prefix}/drive_c{disks_dir}/victim.txt",
                 ),
             ]
             # Run all of them even after one fails: while the port is being brought up every
