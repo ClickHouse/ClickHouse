@@ -26,9 +26,7 @@ A expressão na cláusula `WHERE` é avaliada considerando a possibilidade de us
   Ela é habilitada por padrão mesmo que a cláusula `PREWHERE` não seja especificada explicitamente.
 </Info>
 
-<div id="testing-for-null">
-  ## Verificar `NULL`
-</div>
+## Verificar `NULL` {#testing-for-null}
 
 Se você precisar testar se um valor é [`NULL`](/pt-BR/reference/syntax#null), use:
 
@@ -37,9 +35,7 @@ Se você precisar testar se um valor é [`NULL`](/pt-BR/reference/syntax#null), 
 
 Caso contrário, uma expressão com `NULL` nunca será avaliada como verdadeira.
 
-<div id="filtering-data-with-logical-operators">
-  ## Filtrando dados com operadores lógicos
-</div>
+## Filtrando dados com operadores lógicos {#filtering-data-with-logical-operators}
 
 Você pode usar as seguintes [funções lógicas](/pt-BR/reference/functions/regular-functions/logical-functions#and) em conjunto com a cláusula `WHERE` para combinar várias condições:
 
@@ -48,54 +44,49 @@ Você pode usar as seguintes [funções lógicas](/pt-BR/reference/functions/reg
 * [`or()`](/pt-BR/reference/functions/regular-functions/logical-functions#or) ou `NOT`
 * [`xor()`](/pt-BR/reference/functions/regular-functions/logical-functions#xor)
 
-<div id="using-uint8-columns-as-a-condition">
-  ## Usando colunas `UInt8` como condição
-</div>
+## Usando colunas `UInt8` como condição {#using-uint8-columns-as-a-condition}
 
 No ClickHouse, colunas `UInt8` podem ser usadas diretamente como condições booleanas, em que `0` é `false` e qualquer valor diferente de zero (geralmente `1`) é `true`.
 Um exemplo disso é mostrado na seção [abaixo](#example-uint8-column-as-condition).
 
-<div id="using-comparison-operators">
-  ## Usando operadores de comparação
-</div>
+## Usando operadores de comparação {#using-comparison-operators}
 
 Os seguintes [operadores de comparação](/pt-BR/reference/operators/index#comparison-operators) podem ser usados:
 
-| Operador                | Função                  | Descrição                                                             | Exemplo                         |
-| ----------------------- | ----------------------- | --------------------------------------------------------------------- | ------------------------------- |
-| `a = b`                 | `equals(a, b)`          | Igual a                                                               | `price = 100`                   |
-| `a == b`                | `equals(a, b)`          | Igual a (sintaxe alternativa)                                         | `price == 100`                  |
-| `a != b`                | `notEquals(a, b)`       | Diferente de                                                          | `category != 'Electronics'`     |
-| `a <> b`                | `notEquals(a, b)`       | Diferente de (sintaxe alternativa)                                    | `category <> 'Electronics'`     |
-| `a < b`                 | `less(a, b)`            | Menor que                                                             | `price < 200`                   |
-| `a <= b`                | `lessOrEquals(a, b)`    | Menor que ou igual a                                                  | `price <= 200`                  |
-| `a > b`                 | `greater(a, b)`         | Maior que                                                             | `price > 500`                   |
-| `a >= b`                | `greaterOrEquals(a, b)` | Maior que ou igual a                                                  | `price >= 500`                  |
-| `a LIKE s`              | `like(a, b)`            | Correspondência de padrões (diferencia maiúsculas de minúsculas)      | `name LIKE '%top%'`             |
-| `a NOT LIKE s`          | `notLike(a, b)`         | Não corresponde ao padrão (diferencia maiúsculas de minúsculas)       | `name NOT LIKE '%top%'`         |
-| `a ILIKE s`             | `ilike(a, b)`           | Correspondência de padrões (sem diferenciar maiúsculas de minúsculas) | `name ILIKE '%LAPTOP%'`         |
-| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | Verificação de intervalo (inclusive)                                  | `price BETWEEN 100 AND 500`     |
-| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | Verificação fora do intervalo                                         | `price NOT BETWEEN 100 AND 500` |
+| Operador                | Função                  | Descrição                                                                              | Exemplo                           |
+| ----------------------- | ----------------------- | -------------------------------------------------------------------------------------- | --------------------------------- |
+| `a = b`                 | `equals(a, b)`          | Igual a                                                                                | `price = 100`                     |
+| `a == b`                | `equals(a, b)`          | Igual a (sintaxe alternativa)                                                          | `price == 100`                    |
+| `a != b`                | `notEquals(a, b)`       | Diferente de                                                                           | `category != 'Electronics'`       |
+| `a <> b`                | `notEquals(a, b)`       | Diferente de (sintaxe alternativa)                                                     | `category <> 'Electronics'`       |
+| `a < b`                 | `less(a, b)`            | Menor que                                                                              | `price < 200`                     |
+| `a <= b`                | `lessOrEquals(a, b)`    | Menor que ou igual a                                                                   | `price <= 200`                    |
+| `a > b`                 | `greater(a, b)`         | Maior que                                                                              | `price > 500`                     |
+| `a >= b`                | `greaterOrEquals(a, b)` | Maior que ou igual a                                                                   | `price >= 500`                    |
+| `a LIKE s`              | `like(a, b)`            | Correspondência de patterns (diferencia maiúsculas de minúsculas)                       | `name LIKE '%top%'`               |
+| `a NOT LIKE s`          | `notLike(a, b)`         | Não corresponde ao pattern (diferencia maiúsculas de minúsculas)                        | `name NOT LIKE '%top%'`           |
+| `a ILIKE s`             | `ilike(a, b)`           | Correspondência de patterns (sem diferenciar maiúsculas de minúsculas)                  | `name ILIKE '%LAPTOP%'`           |
+| `a SIMILAR TO s`        | `similarTo(a, b)`       | Correspondência de patterns conforme o padrão SQL (diferencia maiúsculas de minúsculas) | `name SIMILAR TO 'Lap(top)?'`     |
+| `a NOT SIMILAR TO s`    | `notSimilarTo(a, b)`    | Não corresponde ao pattern (sintaxe do padrão SQL, diferencia maiúsculas de minúsculas) | `name NOT SIMILAR TO 'Lap(top)?'` |
+| `a BETWEEN b AND c`     | `a >= b AND a <= c`     | Verificação de intervalo (inclusive)                                                   | `price BETWEEN 100 AND 500`       |
+| `a NOT BETWEEN b AND c` | `a < b OR a > c`        | Verificação fora do intervalo                                                          | `price NOT BETWEEN 100 AND 500`   |
 
-<div id="pattern-matching-and-conditional-expressions">
-  ## Correspondência de padrões e expressões condicionais
-</div>
+## Correspondência de patterns e expressões condicionais {#pattern-matching-and-conditional-expressions}
 
-Além dos operadores de comparação, você pode usar correspondência de padrões e expressões condicionais na cláusula `WHERE`.
+Além dos operadores de comparação, você pode usar correspondência de patterns e expressões condicionais na cláusula `WHERE`.
 
-| Recurso     | Sintaxe                        | Sensível a maiúsculas e minúsculas | Desempenho | Melhor para                                    |
-| ----------- | ------------------------------ | ---------------------------------- | ---------- | ---------------------------------------------- |
-| `LIKE`      | `col LIKE '%pattern%'`         | Sim                                | Rápido     | Correspondência exata de padrão                |
-| `ILIKE`     | `col ILIKE '%pattern%'`        | Não                                | Mais lento | Busca sem diferenciar maiúsculas de minúsculas |
-| `if()`      | `if(cond, a, b)`               | N/A                                | Rápido     | Condições binárias simples                     |
-| `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | N/A                                | Rápido     | Múltiplas condições                            |
-| `CASE`      | `CASE WHEN ... THEN ... END`   | N/A                                | Rápido     | Lógica condicional padrão SQL                  |
+| Recurso      | Sintaxe                        | Diferenciar maiúsculas de minúsculas | Desempenho | Melhor para                                                      |
+| ------------ | ------------------------------ | ---------------------------------- | ---------- | ---------------------------------------------------------------- |
+| `LIKE`       | `col LIKE '%pattern%'`         | Sim                                | Rápido     | Correspondência exata de pattern                                  |
+| `ILIKE`      | `col ILIKE '%pattern%'`        | Não                                | Mais lento | Busca sem diferenciar maiúsculas de minúsculas                   |
+| `SIMILAR TO` | `col SIMILAR TO 'p[ab]+%'`     | Sim                                | Mais lento | Patterns no padrão SQL com metacaracteres de expressões regulares |
+| `if()`       | `if(cond, a, b)`               | N/A                                | Rápido     | Condições binárias simples                                       |
+| `multiIf()`  | `multiIf(c1, r1, c2, r2, def)` | N/A                                | Rápido     | Múltiplas condições                                              |
+| `CASE`       | `CASE WHEN ... THEN ... END`   | N/A                                | Rápido     | Lógica condicional padrão SQL                                    |
 
-Consulte [&quot;Correspondência de padrões e expressões condicionais&quot;](#examples-pattern-matching-and-conditional-expressions) para ver exemplos de uso.
+Consulte [&quot;Correspondência de patterns e expressões condicionais&quot;](#examples-pattern-matching-and-conditional-expressions) para ver exemplos de uso.
 
-<div id="expressions-with-literals-columns-subqueries">
-  ## Expressão com literais, colunas ou subconsultas
-</div>
+## Expressão com literais, colunas ou subconsultas {#expressions-with-literals-columns-subqueries}
 
 A expressão após a cláusula `WHERE` também pode incluir [literais](/pt-BR/reference/syntax#literals), colunas ou subconsultas, que são instruções `SELECT` aninhadas que retornam valores usados em condições.
 
@@ -125,13 +116,9 @@ WHERE (price > 100 OR category IN (SELECT category FROM featured))
   AND name LIKE '%Special%'
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-<div id="examples-testing-for-null">
-  ### Verificando `NULL`
-</div>
+### Verificando `NULL` {#examples-testing-for-null}
 
 Consultas com valores `NULL`:
 
@@ -152,9 +139,7 @@ SELECT * FROM t_null WHERE y != 0;
 └───┴───┘
 ```
 
-<div id="example-filtering-with-logical-operators">
-  ### Filtrando dados com operadores lógicos
-</div>
+### Filtrando dados com operadores lógicos {#example-filtering-with-logical-operators}
 
 Considere a tabela e os dados a seguir:
 
@@ -271,9 +256,7 @@ WHERE and(or(category = 'Electronics', price > 100), in_stock);
 
 A sintaxe com palavras-chave SQL (`AND`, `OR`, `NOT`, `XOR`) geralmente é mais legível, mas a sintaxe de função pode ser útil em expressões complexas ou ao criar consultas dinâmicas.
 
-<div id="example-uint8-column-as-condition">
-  ### Usando colunas UInt8 como condição
-</div>
+### Usando colunas UInt8 como condição {#example-uint8-column-as-condition}
 
 Usando a tabela de um [exemplo anterior](#example-filtering-with-logical-operators), você pode usar o nome de uma coluna diretamente como condição:
 
@@ -291,9 +274,7 @@ WHERE in_stock
    └────┴─────────┴────────┴─────────────┴──────────┘
 ```
 
-<div id="example-using-comparison-operators">
-  ### Usando operadores de comparação
-</div>
+### Usando operadores de comparação {#example-using-comparison-operators}
 
 Os exemplos abaixo usam a tabela e os dados do [exemplo](#example-filtering-with-logical-operators) acima. Os resultados foram omitidos por brevidade.
 
@@ -368,15 +349,11 @@ SELECT * FROM products
 WHERE category = 'Electronics' AND in_stock = true;
 ```
 
-<div id="examples-pattern-matching-and-conditional-expressions">
-  ### Correspondência de padrões e expressões condicionais
-</div>
+### Correspondência de padrões e expressões condicionais {#examples-pattern-matching-and-conditional-expressions}
 
 Os exemplos abaixo usam a tabela e os dados do [exemplo](#example-filtering-with-logical-operators) acima. Os resultados foram omitidos por brevidade.
 
-<div id="like-examples">
-  #### Exemplos de LIKE
-</div>
+#### Exemplos de LIKE {#like-examples}
 
 ```sql
 -- Encontrar produtos com 'o' no nome
@@ -392,9 +369,7 @@ SELECT * FROM products WHERE name LIKE '____';
 -- Resultado: Desk, Lamp
 ```
 
-<div id="ilike-examples">
-  #### Exemplos de ILIKE
-</div>
+#### Exemplos de ILIKE {#ilike-examples}
 
 ```sql
 -- Busca sem distinção entre maiúsculas e minúsculas por 'LAPTOP'
@@ -406,9 +381,39 @@ SELECT * FROM products WHERE name ILIKE 'l%';
 -- Result: Laptop, Lamp
 ```
 
-<div id="if-examples">
-  #### Exemplos de IF
-</div>
+#### Exemplos de SIMILAR TO {#similar-to-examples}
+
+Diferentemente de `LIKE`, um pattern de `SIMILAR TO` também aceita os metacaracteres de expressão regular `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` e `]` e, assim como no `LIKE`, deve corresponder ao valor inteiro:
+
+```sql
+-- Alternation: either of two names
+SELECT * FROM products WHERE name SIMILAR TO 'Desk|Lamp';
+-- Result: Desk, Lamp
+
+-- A bracket expression combined with the LIKE wildcard `%`
+SELECT * FROM products WHERE name SIMILAR TO '[LM]%';
+-- Result: Laptop, Mouse, Monitor, Lamp
+
+-- Repetition: a name of five or more characters
+SELECT * FROM products WHERE name SIMILAR TO '_{5,}';
+-- Result: Laptop, Mouse, Chair, Monitor
+
+-- Negation
+SELECT * FROM products WHERE name NOT SIMILAR TO '(Desk|Lamp)';
+-- Result: Laptop, Mouse, Chair, Monitor
+```
+
+É possível definir um caractere de escape personalizado com a cláusula `ESCAPE`, que também funciona com `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` e `NOT SIMILAR TO`:
+
+```sql
+-- `#%` denotes a literal `%`, so this matches names containing a percent sign
+SELECT * FROM products WHERE name SIMILAR TO '%#%%' ESCAPE '#';
+-- Result: (none)
+```
+
+Consulte a [documentação do operador `SIMILAR TO`](/pt-BR/reference/operators/index#similarto-function) para ver a gramática completa do pattern.
+
+#### Exemplos de IF {#if-examples}
 
 ```sql
 -- Diferentes limites de preço por categoria
@@ -424,9 +429,7 @@ WHERE if(in_stock, price > 100, true);
 -- (Itens em estoque acima de $100 OU todos os itens fora de estoque)
 ```
 
-<div id="multiif-examples">
-  #### Exemplos de multiIf
-</div>
+#### Exemplos de multiIf {#multiif-examples}
 
 ```sql
 -- Múltiplas condições baseadas em categoria
@@ -449,9 +452,7 @@ WHERE multiIf(
 -- Resultado: Laptop, Chair, Monitor, Lamp
 ```
 
-<div id="case-examples">
-  #### Exemplos de CASE
-</div>
+#### Exemplos de CASE {#case-examples}
 
 **CASE simples:**
 

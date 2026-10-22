@@ -23,6 +23,9 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
 
+class JoinNode;
+struct Settings;
+
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
@@ -131,6 +134,9 @@ TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr &
   */
 TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
+/// Returns true if the join is GLOBAL, explicitly or through `distributed_product_mode` / `prefer_global_in_and_join`
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings);
+
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
   */
@@ -180,6 +186,10 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// resolved `_CAST`, non-constant arguments, or a value >= 1 MiB, matching `resolveFunction`) the original
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
+
+/// If `node` is `__getScalar('<hash>')` and the query context holds that scalar, returns it as a constant column
+/// of one row, the value `resolveFunction` folds with. Otherwise returns nullptr.
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context);
 
 /// Maps an `in`-family function name to its null-aware counterpart the way `transform_null_in` does
 /// (`in` -> `nullIn` and so on). Any other name is returned unchanged.

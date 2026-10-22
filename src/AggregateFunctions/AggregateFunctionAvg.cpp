@@ -110,7 +110,7 @@ avg(x)
     FunctionDocumentation::Arguments arguments_avg = {
         {"x", "Input values.", {"(U)Int*", "Float*", "Decimal", "Date", "Date32", "DateTime", "DateTime64(P)", "Time", "Time64(P)", "Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the arithmetic mean. For a numeric `x` the result is a `Float64`, and `NaN` if `x` is empty. For a date, time or interval `x` the result keeps the type of `x`: the mean is rounded to the nearest representable value, and an empty `x` gives the zero value of that type.", {"Float64", "Date", "Date32", "DateTime", "DateTime64(P)", "Time", "Time64(P)", "Interval"}};
+    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the arithmetic mean. For a numeric `x` the result is a `Float64`, and `NaN` if `x` is empty. For a date, time or interval `x` the result keeps the type of `x`: the mean is rounded to the nearest representable value, and an empty `x` gives the zero value of that type. If `x` is [`Nullable`](/reference/data-types/nullable), the result type is `Nullable(T)`, where `T` is the result type for the corresponding non-`Nullable` `x` (`Float64` for numeric inputs); an empty input returns `NULL`.", {"Float64", "Date", "Date32", "DateTime", "DateTime64(P)", "Time", "Time64(P)", "Interval"}};
     FunctionDocumentation::Examples examples_avg = {
     {
         "Basic usage",
