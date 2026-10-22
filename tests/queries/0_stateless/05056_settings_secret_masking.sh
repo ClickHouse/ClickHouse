@@ -136,4 +136,4 @@ $CLICKHOUSE_CLIENT -q "DROP USER $GS_USER"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $GS_PROFILE"
 
 # `sig` is the signature of an Azure SAS, also when its name is percent-encoded; the other SAS fields stay visible.
-$CLICKHOUSE_CLIENT -q "SELECT getSetting('url_base') SETTINGS url_base = 'abfss://c@a.dfs.core.windows.net/d/?sp=r&sig=c05056sas&%73ig=c05056sas&design=x'"
+$CLICKHOUSE_CLIENT -q "SELECT getSetting('url_base') SETTINGS url_base = 'https://a.blob.core.windows.net/c/d?sp=r&sig=c05056sas&%73ig=c05056sas&design=x'"
