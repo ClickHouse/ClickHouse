@@ -15,6 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -601,6 +602,45 @@ TEST(StreamingExchangeTransport, SinkSurvivesALostPeerOnlyWhenAdvisory)
             EXPECT_EQ(code, std::nullopt);
         else
             EXPECT_NE(code, std::nullopt);
+    }
+}
+
+/// A receiver closes its stream before anything arrives, as a probe task does when its scan ends
+/// before the runtime filter is sent. For an advisory stream this is not an error.
+TEST(StreamingExchangeTransport, AdvisorySinkCountsNoErrorWhenThePeerClosesFirst)
+{
+    MainThreadStatus::getInstance();
+    (void)std::signal(SIGPIPE, SIG_IGN);
+
+    for (bool advisory : {true, false})
+    {
+        SCOPED_TRACE(fmt::format("advisory={}", advisory));
+
+        Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+        Poco::Net::StreamSocket peer_socket;
+        peer_socket.connect(listener.address());
+        auto connection = std::make_shared<FutureConnection>();
+        connection->setSocket(listener.acceptConnection());
+        peer_socket.shutdown();
+        peer_socket.close();
+
+        const auto errors_before = ErrorCodes::values[ErrorCodes::EXCHANGE_PEER_DISCONNECTED].get().local.count;
+        std::vector<Chunks> chunks_per_stream_list(1);
+        UInt64 state = 1;
+        chunks_per_stream_list[0].push_back(makeIncompressibleChunk(1024, state));
+        auto sending = makeSendingPipeline(makeHeader(), std::move(chunks_per_stream_list), connection, advisory);
+        const auto code = run(sending, 1);
+        const auto errors_after = ErrorCodes::values[ErrorCodes::EXCHANGE_PEER_DISCONNECTED].get().local.count;
+
+        if (advisory)
+        {
+            EXPECT_EQ(code, std::nullopt);
+            EXPECT_EQ(errors_after, errors_before);
+        }
+        else
+        {
+            EXPECT_EQ(code, ErrorCodes::EXCHANGE_PEER_DISCONNECTED);
+        }
     }
 }
 

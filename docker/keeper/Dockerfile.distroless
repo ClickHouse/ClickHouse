@@ -37,7 +37,7 @@ RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.9.19.9"
+ARG VERSION="26.9.24.8"
 ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 
 ARG deb_location_url=""

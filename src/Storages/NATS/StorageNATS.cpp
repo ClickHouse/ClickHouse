@@ -186,6 +186,13 @@ StorageNATS::StorageNATS(
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
     , fresh_definition(fresh_definition_)
 {
+    if (fresh_definition
+        && (subjects.empty() || std::any_of(subjects.begin(), subjects.end(), [](const String & s) { return s.empty(); })))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `nats_subjects` must contain at least one subject, and subjects must not be empty");
+    }
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
@@ -711,7 +718,12 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
                 "This NATS engine reads from multiple subjects. "
                 "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
-
+        if (subjects.empty() || subjects[0].empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "This NATS engine has no valid subject to write to, check the `nats_subjects` setting");
+        }
         subject = subjects[0];
     }
 
