@@ -417,7 +417,7 @@ void updateHashWithQueryIgnoringOperationalSettings(
 /// When `additional_table_filters_matchable_names` is given (see
 /// `collectNamesMatchableByAdditionalTableFilters`), only the `additional_table_filters` entries whose
 /// key is in it are folded, as they are the only ones that can apply to the query; otherwise the
-/// whole map is.
+/// whole map is. The folded entries keep their order: the first entry matching a table wins.
 void updateHashWithRowAffectingSettings(
     SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names = nullptr);
 

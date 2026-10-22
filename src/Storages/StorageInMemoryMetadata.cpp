@@ -1180,7 +1180,8 @@ bool settingCanAffectQueryRows(std::string_view setting_name)
     /// settings profile of a view's definer routinely carries them, and an edit to one of them must
     /// not invalidate a watermark either.
     /// `extremes` only adds a separate block of minimums and maximums next to the result and never
-    /// changes its rows. The result limits `max_result_rows` / `max_result_bytes` are deliberately not
+    /// changes its rows. `max_table_size_to_drop` / `max_partition_size_to_drop` only guard `DROP` and
+    /// `TRUNCATE`; a replacing refresh zeroes them between its two source hashes. The result limits `max_result_rows` / `max_result_bytes` are deliberately not
     /// here: `StorageView`'s `getViewContext` pins them to zero, so they fold in as a constant for a
     /// plain view, but `StorageMaterializedView::readImpl` and a refresh run under the effective
     /// reader's limits as they are, and a limit there can truncate the result or fail the query.
@@ -1221,6 +1222,8 @@ bool settingCanAffectQueryRows(std::string_view setting_name)
         "http_zlib_compression_level",
         "send_progress_in_http_headers",
         "extremes",
+        "max_table_size_to_drop",
+        "max_partition_size_to_drop",
     };
 
     if (settings_not_affecting_rows.contains(setting_name))
@@ -1279,7 +1282,12 @@ void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & setting
             /// No entry applies: the same as not having the setting at all.
             if (matching.empty())
                 return;
-            std::sort(matching.begin(), matching.end());
+            /// The matching entries are not sorted: the planner applies only the first entry whose key
+            /// matches a table (`parseAdditionalFilterAstIfNeeded`), and two different keys can match the
+            /// same one - its bare and its qualified name, or an alias and a name - so reversing them can
+            /// change the rows. Which keys refer to the same table is not known here, so the order of all
+            /// the matching entries is kept: reordering them can move the hash without changing a row,
+            /// but never the other way around.
             WriteBufferFromString out(matching_additional_table_filters);
             for (const auto & [table, filter] : matching)
             {
