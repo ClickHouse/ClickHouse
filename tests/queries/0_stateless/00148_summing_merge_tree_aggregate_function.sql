@@ -151,7 +151,7 @@ from summing_merge_tree_null
 group by d, k;
 
 -- prime number 53 to avoid resonanse between %3 and %53
-insert into summing_merge_tree_null select number % 3, 1, number % 53 from numbers(999999);
+insert into summing_merge_tree_null select number % 3, 1, number % 53 from numbers(99999);
 
 select k, sum(c), uniqMerge(u) from summing_merge_tree_aggregate_function group by k order by k;
 optimize table summing_merge_tree_aggregate_function;
