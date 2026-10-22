@@ -259,6 +259,7 @@ private:
     MapIdId source_tables;
     MapIdStorage storages;
     MapIdViewType view_types;
+    MapIdLock insert_locks;
     MapIdLock storage_locks;
     MapIdMetadata metadata_snapshots;
     MapIdAST select_queries;

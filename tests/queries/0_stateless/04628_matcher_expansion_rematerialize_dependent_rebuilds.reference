@@ -1,0 +1,9 @@
+-- skip index on a rematerialized column is rebuilt
+1
+-- dependent reading through a subcolumn path joins the closure
+1
+0	1000	1001
+1	1001	1002
+2	1002	1003
+-- expression depending on an EPHEMERAL column: ALTER is rejected up front
+1	8

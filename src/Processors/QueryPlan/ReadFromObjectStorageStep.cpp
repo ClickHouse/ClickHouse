@@ -421,7 +421,7 @@ NameSet ReadFromObjectStorageStep::getLazilyReadColumns(const NameSet & required
 {
     /// The split works on the info in place, so ask it on a copy.
     auto main_info = info;
-    const auto lazy_info = splitLazilyReadColumnsFromFormatInfo(main_info, getNamesToKeepInMainRead(required_names));
+    const auto lazy_info = splitLazilyReadColumnsFromFormatInfo(main_info, getNamesToKeepInMainRead(required_names), getContext());
 
     NameSet lazy_names;
     if (lazy_info)
@@ -432,7 +432,7 @@ NameSet ReadFromObjectStorageStep::getLazilyReadColumns(const NameSet & required
 
 std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, getNamesToKeepInMainRead(required_names));
+    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, getNamesToKeepInMainRead(required_names), getContext());
     if (!lazy_info)
         return {};
 

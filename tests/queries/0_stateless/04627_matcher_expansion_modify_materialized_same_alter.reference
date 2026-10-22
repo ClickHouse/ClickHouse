@@ -1,0 +1,11 @@
+-- explicit MODIFY of a dependent stays metadata-only
+1
+0
+0	1000	1
+1	1001	2
+2	1002	3
+10	1010	1020
+-- explicitly modified dependent in the sort key: ALTER is allowed
+0	1000	1
+1	1001	2
+2	1002	3

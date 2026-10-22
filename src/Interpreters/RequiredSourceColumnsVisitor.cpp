@@ -15,32 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const ASTFunction & node)
-{
-    /// `ASTFunction::arguments` is optional: a function written without parentheses has none.
-    if (!node.arguments || node.arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
-
-    const auto * lambda_args_tuple = node.arguments->children[0]->as<ASTFunction>();
-
-    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple" || !lambda_args_tuple->arguments)
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
-
-    std::vector<String> names;
-    for (auto & child : lambda_args_tuple->arguments->children)
-    {
-        const auto * identifier = child->as<ASTIdentifier>();
-        if (!identifier)
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "lambda argument declarations must be identifiers");
-
-        names.push_back(identifier->name());
-    }
-
-    return names;
 }
 
 bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -170,7 +145,9 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not empty name");
 
-    if (!data.private_aliases.contains(node.name()))
+    /// A field access of a lambda argument, like `x.id` in `x -> x.id`, is masked by the argument as well.
+    if (!data.private_aliases.contains(node.name())
+        && !(node.compound() && data.private_aliases.contains(node.name_parts.front())))
         data.addColumnIdentifier(node);
 }
 
@@ -180,7 +157,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
     if (node.name == "lambda")
     {
         Names local_aliases;
-        for (const auto & name : extractNamesFromLambda(node))
+        for (const auto & name : getASTLambdaArgumentNames(node))
             if (data.private_aliases.insert(name).second)
                 local_aliases.push_back(name);
 
