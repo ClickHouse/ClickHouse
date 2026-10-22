@@ -2638,11 +2638,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             return std::move(*result);
     }
 
+    /// If table has dependencies - add them to the graph.
+    /// Done under the DDL guard, so a concurrent `DROP` or `RENAME` of the just-published table cannot
+    /// clean up its dependencies before they are registered under its name.
+    addTableDependencies(create, query_ptr, getContext());
+
     ddl_guard.reset();
     source_ddl_guard.reset();
 
-    /// If table has dependencies - add them to the graph
-    addTableDependencies(create, query_ptr, getContext());
     return fillTableIfNeeded(create);
 }
 

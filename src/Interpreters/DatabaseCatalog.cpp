@@ -967,8 +967,21 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
 
     auto ast = database.getCreateTableQuery(table_name, query_context);
     auto global_context = query_context->getGlobalContext();
+
+    /// The visitor erases the name it is given from the dependencies. For an ordinary view it is given the
+    /// current name, so that a reference to the destination stays visible and is rejected below.
+    QualifiedTableName name_to_erase = is_ordinary_view ? QualifiedTableName{database.getDatabaseName(), table_name} : new_name;
     auto dependencies = getDependenciesFromCreateQuery(
-        global_context, new_name, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
+        global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
+
+    if (is_ordinary_view && dependencies.dependencies.contains(new_name))
+        throw Exception(
+            ErrorCodes::INFINITE_LOOP,
+            "Cannot move {}.{} to {}, because the view would refer to itself",
+            backQuoteIfNeed(database.getDatabaseName()),
+            backQuoteIfNeed(table_name),
+            new_name.getFullName());
+
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, new_name, ast, new_name.database);
 
     return RecomputedDependencies{
