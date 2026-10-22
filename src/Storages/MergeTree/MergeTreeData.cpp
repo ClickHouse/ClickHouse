@@ -1292,7 +1292,6 @@ void MergeTreeData::checkProperties(
     /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
-        /// Whether the part writer compresses the stream with a lossy codec.
         auto is_lossy_stream = [](const ISerialization::SubstreamPath & substream_path, const ColumnDescription & column)
         {
             if (!ISerialization::isSpecialCompressionAllowed(substream_path))
