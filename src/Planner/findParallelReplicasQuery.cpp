@@ -702,6 +702,14 @@ public:
             table_function_nodes.push_back(table_function_node);
     }
 
+    /// The arguments of `remote` and `cluster` are evaluated on the servers they name, so a table they
+    /// mention must keep resolving against those servers' databases, not the initiator's.
+    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+    {
+        const auto * table_function_node = parent->as<TableFunctionNode>();
+        return !table_function_node || !table_function_node->evaluatesArgumentsRemotely();
+    }
+
     std::vector<TableFunctionNode *> table_function_nodes;
 };
 

@@ -99,6 +99,10 @@ public:
       */
     virtual std::optional<TableArgument> getTableArgument() const { return {}; }
 
+    /// True if the arguments of this call are evaluated on other servers (`remote`, `cluster`), so a table they
+    /// name resolves against those servers' databases. Such arguments are sent as written, never qualified.
+    virtual bool evaluatesArgumentsRemotely() const { return false; }
+
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 

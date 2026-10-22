@@ -1,0 +1,10 @@
+-- remote, local plan
+100
+-- remote, no local plan
+100
+-- remote, custom key
+100
+-- remote, insert select
+100
+-- loop
+1

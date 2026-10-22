@@ -60,6 +60,7 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     /// A parameterized view is resolved as a table function node but has no `ITableFunction` object
     /// (see `QueryAnalyzer::resolveTableFunction`), and it references no table of its own.
     referenced_table_id = table_function ? table_function->getReferencedTableID() : StorageID::createEmpty();
+    evaluates_arguments_remotely = table_function && table_function->evaluatesArgumentsRemotely();
     if (auto table_argument = table_function ? table_function->getTableArgument() : std::nullopt)
     {
         table_argument_id = std::move(table_argument->table_id);
@@ -192,6 +193,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     result->referenced_table_id = referenced_table_id;
     result->table_argument_id = table_argument_id;
     result->num_table_arguments = num_table_arguments;
+    result->evaluates_arguments_remotely = evaluates_arguments_remotely;
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
     result->settings_changes = settings_changes;
