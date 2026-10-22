@@ -1,5 +1,5 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..eaae42c18700fe464c51a9ef0cf55b9dc75a31a9 100644
+index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..7f201ff9409974e95b053daa4b94170a91e8ef07 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,7 @@
@@ -577,7 +577,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..eaae42c18700fe464c51a9ef0cf55b9d
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,17 +1018,20 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,17 +1018,29 @@ def dwyu_cc_aspect_impl(target, ctx):
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -595,13 +595,23 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..eaae42c18700fe464c51a9ef0cf55b9d
      if _is_verbose(ctx):
          args.add("--verbose")
  
++    # DwyuProcessSourceFile has read compiler inputs and emits include JSON.
++    # DwyuAnalyzeTarget reads that JSON, header/symbol manifests, nm outputs
++    # and actual archives. Keep the original inputs for fast and full modes.
++    compile_inputs = []
++    if config.preprocessing_mode != "compiler":
++        compile_inputs = [depset(
++            direct = public_files + private_files,
++            transitive = [target[CcInfo].compilation_context.headers],
++        )]
      analysis_inputs = depset(
 -        direct = [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files,
-+        direct = symbols + [processed_target] + public_files + private_files + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files + assembly_outputs + ([header_manifest] if header_manifest != None else []),
-         transitive = [target[CcInfo].compilation_context.headers],
+-        transitive = [target[CcInfo].compilation_context.headers],
++        direct = symbols + [processed_target] + processed_deps + processed_impl_deps + ctx.files._ignored_includes + preprocessed_public_files + preprocessed_private_files + assembly_outputs + ([header_manifest] if header_manifest != None else []),
++        transitive = compile_inputs,
      )
      ctx.actions.run(
-@@ -584,3 +1045,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -584,3 +1054,186 @@ def dwyu_cc_aspect_impl(target, ctx):
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -1575,7 +1585,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +439,75 @@ int main_impl(const ProgramOptions& options) {
+@@ -91,21 +439,84 @@ int main_impl(const ProgramOptions& options) {
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
@@ -1586,6 +1596,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +                                 !options.owned_symbols.empty());
 +    std::vector<std::string> unchecked_link_inputs;
 +    std::vector<std::string> raw_link_candidates;
++    auto unentered_owned_files = nlohmann::json::object();
 +    std::unordered_set<std::string> observed;
 +    auto public_includes = getIncludeStatements(options.preprocessed_public_files, ignored_includes, &observed);
 +    auto private_includes = getIncludeStatements(options.preprocessed_private_files, ignored_includes, &observed);
@@ -1597,13 +1608,12 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
 +        raw_link_candidates = headers.at("raw_link_candidates").get<std::vector<std::string>>();
 +        for (const auto& file : headers.at("raw_assembly").get<std::vector<std::string>>())
 +            observed.insert(file);
-+        std::vector<std::string> missing;
-+        for (const auto& file : headers.at("required").get<std::vector<std::string>>())
-+            if (observed.find(file) == observed.end()) missing.push_back(file);
-+        if (!missing.empty())
-+            abortWithError("DWYU cannot validate ", options.target_under_inspection,
-+                           ": declared private or textual headers not entered by any owner source/public header: ",
-+                           listToStr(missing));
++        for (const auto& file : headers.at("required").get<std::vector<std::string>>()) {
++            if (observed.find(file) != observed.end()) continue;
++            if (!headers.at("public").contains(file) && !headers.at("private").contains(file))
++                abortWithError("DWYU required file is absent from configured owned headers: ", file);
++            unentered_owned_files[file] = headers.at("public").contains(file) ? "public" : "private";
++        }
 +        const auto private_files = headers.at("private").get<std::unordered_map<std::string, std::string>>();
 +        for (const auto& [alias, original] : private_files)
 +            system_under_inspection.target_under_inspection.header_files.insert(alias);
@@ -1619,6 +1629,15 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..3314569efc0e476082a0eb38e850d6f2
  
 +    result.markUnverifiedLinkDeps(raw_link_candidates);
 +    result.markUnverifiedLinkDeps(link_evidence.unverified);
++    if (!unentered_owned_files.empty()) {
++        std::set<std::string> public_deps, private_deps;
++        for (const auto& dep : system_under_inspection.public_deps) public_deps.insert(dep->name);
++        for (const auto& dep : system_under_inspection.private_deps) private_deps.insert(dep->name);
++        // Record link holds before removing incomplete-coverage suggestions.
++        // A reserved dependency is never promoted to TargetUsage::Public.
++        result.reserveForUnenteredOwnedFiles(std::move(unentered_owned_files),
++                                              std::move(public_deps), std::move(private_deps));
++    }
      if (!result.isOk() || options.verbose) {
          std::cout << result.toString(options.output) << "\n";
      }
@@ -1660,13 +1679,13 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect
 index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c5718100dd22 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-@@ -39,7 +39,22 @@ Result::Result(std::string target) : target_{std::move(target)} {}
+@@ -39,7 +39,32 @@ Result::Result(std::string target) : target_{std::move(target)} {}
  
  bool Result::isOk() const {
      return public_includes_without_direct_dep_.empty() && private_includes_without_direct_dep_.empty() &&
 -           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty();
 +           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty() &&
-+           unverified_link_deps_.empty() && unverified_compilation_deps_.empty();
++           unverified_link_deps_.empty() && unverified_compilation_deps_.empty() && unentered_owned_files_.empty();
 +}
 +
 +void Result::markUnverifiedLinkDeps(const std::vector<std::string>& candidates) {
@@ -1677,6 +1696,16 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c571
 +    }
 +}
 +
++void Result::reserveForUnenteredOwnedFiles(nlohmann::json files, std::set<std::string> public_deps,
++                                             std::set<std::string> private_deps) {
++    unentered_owned_files_ = std::move(files);
++    reserved_public_deps_ = std::move(public_deps);
++    reserved_private_deps_ = std::move(private_deps);
++    unused_deps_.clear();
++    unused_impl_deps_.clear();
++    public_dep_which_should_be_private_.clear();
++}
++
 +void Result::markUnverifiedCompilationDep(const std::string& dep, const std::string& reason) {
 +    const auto pub = unused_deps_.erase(dep);
 +    const auto priv = unused_impl_deps_.erase(dep);
@@ -1684,13 +1713,20 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c571
  }
  
  void Result::setPublicIncludesWithoutDirectDep(std::vector<IncludeStatement> includes) {
-@@ -105,6 +120,16 @@ std::string Result::toString(const std::string& report_path) const {
+@@ -105,6 +130,23 @@ std::string Result::toString(const std::string& report_path) const {
          }
      }
  
 +    if (!unverified_link_deps_.empty()) {
 +        content += "\nObject symbols cannot prove whether these unused-header dependencies are needed for linking:\n";
 +        for (const auto& dep : unverified_link_deps_) content += "  " + dep + "\n";
++    }
++
++    if (!unentered_owned_files_.empty()) {
++        content += "\nCompiler did not enter these required owned files in the inspected contexts:\n";
++        for (const auto& [file, visibility] : unentered_owned_files_.items())
++            content += "  " + file + " (" + visibility.get<std::string>() + ")\n";
++        content += "Unused and private dependency suggestions are unavailable for this target.\n";
 +    }
 +
 +    if (!unverified_compilation_deps_.empty()) {
@@ -1701,12 +1737,15 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..bcba6a92839501e26dbe62e41709c571
      content += "\n";
      content += "DWYU Report: " + report_path + "\n";
  
-@@ -118,6 +143,8 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
+@@ -118,6 +160,11 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
      data["private_includes_without_dep"] = makeMissingIncludesMap(private_includes_without_direct_dep_);
      data["unused_deps"] = unused_deps_;
      data["unused_implementation_deps"] = unused_impl_deps_;
 +    if (!unverified_link_deps_.empty()) data["unverified_link_deps"] = unverified_link_deps_;
 +    data["unverified_compilation_deps"] = unverified_compilation_deps_;
++    data["unentered_owned_files"] = unentered_owned_files_;
++    data["reserved_compilation_deps"] = {{"deps", reserved_public_deps_},
++                                         {"implementation_deps", reserved_private_deps_}};
      data["deps_which_should_be_private"] = public_dep_which_should_be_private_;
      // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
      // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private
@@ -1714,21 +1753,26 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/p
 index 4129d2d6190284c2174857a095afbada91b1a1dc..f66f625d3a3735ba6e8efe72f8b0c033950a1b7c 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.h
-@@ -16,6 +16,8 @@ class Result {
+@@ -16,6 +16,10 @@ class Result {
      explicit Result(std::string target);
  
      bool isOk() const;
 +    void markUnverifiedLinkDeps(const std::vector<std::string>& candidates);
 +    void markUnverifiedCompilationDep(const std::string& dep, const std::string& reason);
++    void reserveForUnenteredOwnedFiles(nlohmann::json files, std::set<std::string> public_deps,
++                                      std::set<std::string> private_deps);
  
      std::string toString(const std::string& report_path) const;
      nlohmann::json toJson(bool use_implementation_deps) const;
-@@ -33,6 +35,8 @@ class Result {
+@@ -33,6 +37,11 @@ class Result {
      std::vector<IncludeStatement> private_includes_without_direct_dep_;
      std::set<std::string> unused_deps_;
      std::set<std::string> unused_impl_deps_;
 +    std::set<std::string> unverified_link_deps_;
 +    std::set<std::string> unverified_compilation_deps_;
++    nlohmann::json unentered_owned_files_ = nlohmann::json::object();
++    std::set<std::string> reserved_public_deps_;
++    std::set<std::string> reserved_private_deps_;
      std::set<std::string> public_dep_which_should_be_private_;
  };
  

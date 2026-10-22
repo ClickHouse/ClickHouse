@@ -437,7 +437,10 @@ CMAKE_LINK = {
     "//bazel:google_type_expr_cc_proto",
     "//base/poco/NetSSL_OpenSSL:secure_socket",
     "//base/poco/Foundation:thread_pool",
-    "//src/Common"
+    "//src/Common",
+    "//src:clickhouse_common_io_embedded",
+    "//src:dbms_embedded",
+    "//src/Storages/System:clickhouse_storages_system_information_schema"
   ],
   "expected_objects": [
     170,
@@ -446,7 +449,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    429,
+    428,
     1,
     1,
     1,
@@ -482,7 +485,7 @@ CMAKE_LINK = {
     1,
     48,
     1,
-    148,
+    147,
     1,
     4,
     50,
@@ -504,7 +507,7 @@ CMAKE_LINK = {
     16,
     7,
     3,
-    2351,
+    2346,
     15,
     18,
     1,
@@ -874,7 +877,10 @@ CMAKE_LINK = {
     1,
     1,
     1,
-    3
+    3,
+    1,
+    5,
+    1
   ],
   "archives": [
     {
@@ -960,7 +966,17 @@ CMAKE_LINK = {
         [
           6,
           46,
-          75
+          62
+        ],
+        [
+          435,
+          0,
+          1
+        ],
+        [
+          6,
+          62,
+          74
         ],
         [
           8,
@@ -969,8 +985,8 @@ CMAKE_LINK = {
         ],
         [
           6,
-          75,
-          120
+          74,
+          119
         ],
         [
           434,
@@ -979,8 +995,8 @@ CMAKE_LINK = {
         ],
         [
           6,
-          120,
-          153
+          119,
+          152
         ],
         [
           434,
@@ -989,8 +1005,8 @@ CMAKE_LINK = {
         ],
         [
           6,
-          153,
-          167
+          152,
+          166
         ],
         [
           9,
@@ -999,8 +1015,8 @@ CMAKE_LINK = {
         ],
         [
           6,
-          167,
-          429
+          166,
+          428
         ]
       ],
       "name": "src/libclickhouse_common_io.a"
@@ -1151,7 +1167,17 @@ CMAKE_LINK = {
         [
           42,
           0,
-          148
+          144
+        ],
+        [
+          437,
+          0,
+          1
+        ],
+        [
+          42,
+          144,
+          147
         ]
       ],
       "name": "src/Storages/System/libclickhouse_storages_system.a"
@@ -1387,7 +1413,47 @@ CMAKE_LINK = {
         [
           64,
           1626,
-          2003
+          1666
+        ],
+        [
+          436,
+          0,
+          1
+        ],
+        [
+          64,
+          1666,
+          1667
+        ],
+        [
+          436,
+          1,
+          2
+        ],
+        [
+          64,
+          1667,
+          1669
+        ],
+        [
+          436,
+          2,
+          3
+        ],
+        [
+          64,
+          1669,
+          1689
+        ],
+        [
+          436,
+          3,
+          5
+        ],
+        [
+          64,
+          1689,
+          1998
         ],
         [
           66,
@@ -1396,8 +1462,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          2003,
-          2005
+          1998,
+          2000
         ],
         [
           66,
@@ -1406,8 +1472,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          2005,
-          2351
+          2000,
+          2346
         ]
       ],
       "name": "src/libdbms.a"

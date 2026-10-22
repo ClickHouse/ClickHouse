@@ -135,7 +135,6 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_zstd//:_zstd__compile_0",
-        "@clickhouse_zstd//:_zstd__compile_1",
     ],
     includes = ["libarchive"],
     language = "C",

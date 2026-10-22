@@ -436,3 +436,19 @@ cc_library(
         ":assembly_api",
     ],
 )
+
+
+# These all compile; an unentered owned textual file still reserves all deps.
+cc_library(
+    name = "partial_public_otherwise_private",
+    srcs = ["direct.cc"],
+    textual_hdrs = ["textual/empty.inc"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "partial_public_missing_direct",
+    srcs = ["direct.cc"],
+    textual_hdrs = ["textual/empty.inc"],
+    implementation_deps = [":bridge"],
+)

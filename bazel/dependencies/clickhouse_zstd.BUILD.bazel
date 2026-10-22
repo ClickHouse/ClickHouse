@@ -30,7 +30,10 @@ ch_cc_library(
         "lib/compress/zstd_opt.c",
         "lib/compress/zstd_preSplit.c",
     ] + glob(["lib/decompress/*.c"])) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]),
-    hdrs = glob(["lib/**/*.h"]),
+    hdrs = glob(
+        ["lib/**/*.h"],
+        exclude = ["lib/common/portability_macros.h"],
+    ),
     copts = [
         "-w",
         "-std=gnu11",
@@ -48,17 +51,18 @@ ch_cc_library(
         "lib/legacy",
         "lib/common",
     ],
+    deps = [":_zstd__compile_1"],
 )
 
 ch_cc_library(
     name = "_zstd__compile_1",
     srcs = ["lib/decompress/huf_decompress_amd64.S"],
+    hdrs = ["lib/common/portability_macros.h"],
     copts = [
         "-D",
         "ZSTD_LEGACY_SUPPORT=1",
         "-fno-sanitize=undefined",
     ],
-    implementation_deps = [":_zstd__compile_0"],
     language = "ASM",
     libcxx_headers = False,
     local_defines = _ZSTD_LOCAL_DEFINES,
@@ -74,6 +78,5 @@ cc_library(
     deps = [
         "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_zstd__compile_0",
-        ":_zstd__compile_1",
     ],
 )

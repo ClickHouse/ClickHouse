@@ -136,7 +136,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
     local_includes = [
-        "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
     ],
     deps = [
@@ -173,7 +172,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
     local_includes = [
-        "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../../" + "bazel/gen",
     ],
     deps = [

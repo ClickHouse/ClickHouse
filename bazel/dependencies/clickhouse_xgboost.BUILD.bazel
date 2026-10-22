@@ -6,11 +6,6 @@ exports_files([
     "LICENSE",
 ])
 
-alias(
-    name = "_dmlc_core",
-    actual = "@clickhouse_dmlc_core//:_dmlc_core",
-)
-
 ch_cc_library(
     name = "_xgboost",
     srcs = glob(
@@ -28,16 +23,6 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["include/**/*.h"]),
-    private_hdrs = [
-        "src/metric/elementwise_metric.cu",
-        "src/metric/multiclass_metric.cu",
-        "src/metric/survival_metric.cu",
-        "src/objective/aft_obj.cu",
-        "src/objective/hinge.cu",
-        "src/objective/multiclass_obj.cu",
-        "src/objective/quantile_obj.cu",
-        "src/objective/regression_obj.cu",
-    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -60,5 +45,15 @@ ch_cc_library(
     local_includes = [
         "config/contrib/xgboost/dmlc-core",
     ],
-    deps = [":_dmlc_core"],
+    private_hdrs = [
+        "src/metric/elementwise_metric.cu",
+        "src/metric/multiclass_metric.cu",
+        "src/metric/survival_metric.cu",
+        "src/objective/aft_obj.cu",
+        "src/objective/hinge.cu",
+        "src/objective/multiclass_obj.cu",
+        "src/objective/quantile_obj.cu",
+        "src/objective/regression_obj.cu",
+    ],
+    deps = ["@clickhouse_dmlc_core//:_dmlc_core"],
 )

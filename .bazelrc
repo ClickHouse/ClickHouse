@@ -62,7 +62,7 @@ common:remote --remote_cache=grpcs://remote.buildbuddy.io
 common:remote --bes_backend=grpcs://remote.buildbuddy.io
 common:remote --bes_results_url=https://app.buildbuddy.io/invocation/
 common:remote --remote_cache_compression
-common:remote --remote_download_outputs=toplevel
+common:remote --remote_download_outputs=minimal
 common:remote --jobs=500
 common:remote --remote_timeout=3600
 common:remote --noremote_local_fallback

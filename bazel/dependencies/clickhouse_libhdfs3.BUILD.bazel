@@ -200,7 +200,10 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
     ])) + glob(
         ["src/**/*.h"],
-        exclude = _HDFS3_API_HDRS + ["src/client/TokenInternal.h", "src/common/sse2neon.h"],
+        exclude = _HDFS3_API_HDRS + [
+            "src/client/TokenInternal.h",
+            "src/common/sse2neon.h",
+        ],
     ) + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["src/common/sse2neon.h"],
@@ -209,10 +212,6 @@ ch_cc_library(
         ":config/contrib/libhdfs3-cmake/platform.h",
     ],
     hdrs = _HDFS3_API_HDRS + glob(["include/**/*.h"]),
-    includes = [
-        "include",
-        "include/hdfs",
-    ],
     copts = [
         "-w",
         "-std=c++23",
@@ -223,7 +222,10 @@ ch_cc_library(
     ],
     implementation_deps = [
         ":_hdfs3__compile_1",
-        ":_hdfs3__compile_2",
+    ] + select({
+        "@platforms//cpu:x86_64": [":_hdfs3__compile_2"],
+        "@platforms//cpu:aarch64": [],
+    }) + [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_libgsasl//:_gsasl",
         "@clickhouse_libxml2//:_libxml2",
@@ -233,6 +235,10 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["@clickhouse_isa_l//:_isal"],
         "@platforms//cpu:aarch64": [],
     }),
+    includes = [
+        "include",
+        "include/hdfs",
+    ],
     local_defines = _HDFS3_LOCAL_DEFINES,
     local_includes = [
         "src",
@@ -279,7 +285,7 @@ ch_cc_library(
         "src/rpc/RpcProtocolInfo.h",
         "src/rpc/RpcRemoteCall.h",
         "src/rpc/RpcServerInfo.h",
-        "src/rpc/SaslClient.h"
+        "src/rpc/SaslClient.h",
     ] + [
         "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
         ":config/contrib/libhdfs3-cmake/platform.h",

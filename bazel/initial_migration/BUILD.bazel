@@ -1,6 +1,7 @@
 """CMake migration, parity checks and CMake comparison snapshots."""
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load(":normalized_clickhouse.bzl", "normalized_clickhouse")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -28,4 +29,28 @@ py_binary(
     interpreter_args = ["-B"],
     main = "native_stripped_hash.py",
     python_version = "3.11",
+)
+
+normalized_clickhouse(
+    name = "clickhouse.normalized",
+    compiler_sha256 = select({
+        "//bazel:use_cmake_metadata_aarch64": "3c685a0e2448e17c0c11e265a7027c2cfaca6158018220a67ca2af9d3df0e71f",
+        "//bazel:use_cmake_metadata_x86_64": "52a7d0fdc59f6a0cd416844e55a70f67e689eeb1df0d98cc8c018444eb6262ce",
+        "//conditions:default": "",
+    }),
+    elf_machine = select({
+        "//bazel:use_cmake_metadata_aarch64": 183,
+        "//bazel:use_cmake_metadata_x86_64": 62,
+        "//conditions:default": 0,
+    }),
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"] + select({
+        "//bazel:use_cmake_metadata_aarch64": [],
+        "//bazel:use_cmake_metadata_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )

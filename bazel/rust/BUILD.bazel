@@ -47,9 +47,9 @@ genrule(
             for arch, config in RUST_CXX.items()
         }),
         features = ["-fortify_source"],
-        deps = deps,
+        implementation_deps = implementation_deps,
     )
-    for name, srcs, hdrs, standard, deps in [
+    for name, srcs, hdrs, standard, implementation_deps in [
         # cxx/build.rs selects C++11; skim/build.rs uses Clang's C++17 default.
         (
             "cxx_runtime",

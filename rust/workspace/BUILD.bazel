@@ -9,7 +9,8 @@ exports_files([
     "Cargo.toml",
     "Cargo.lock",
 ] + glob([
-    "*/include/*.h",
+    "pco/include/*.h",
+    "skim/include/*.h",
     "*/Cargo.toml",
 ]))
 

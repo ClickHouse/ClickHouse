@@ -45,8 +45,7 @@ and its fetched repositories, run Bazel itself on a BuildBuddy remote runner:
 bb remote --runner_exec_properties=EstimatedMemory=32GB \
   --runner_exec_properties=EstimatedCPU=8 \
   --runner_exec_properties=EstimatedFreeDiskBytes=50GB \
-  --host_jvm_args=-Xmx24g build --config=remote --config=x86_64 \
-  --remote_download_outputs=minimal //:clickhouse
+  --host_jvm_args=-Xmx24g build --config=remote --config=x86_64 //:clickhouse
 ```
 
 `remote` selects `//bazel:buildbuddy_linux_x86_64`, which inherits
@@ -57,14 +56,48 @@ Bazel's `common:remote` configuration sets `--jobs=500` for remote builds
 and enables the same remote configuration for `aquery`.
 Bazel still evaluates repository rules and fetches source dependencies on
 the client, so the client needs free disk space for the fetched repositories.
-Only top-level outputs are downloaded. On macOS, the result is a Linux ELF
-executable and cannot be run directly on the client.
+Remote builds use `--remote_download_outputs=minimal`. BuildBuddy's invocation
+artifacts record the output's SHA-256 and size; checking them does not require
+downloading ClickHouse. Bazel still downloads inputs needed for actions that
+execute locally. To materialize the executable when you need it, run:
+
+```sh
+bazel build --config=remote --config=x86_64 --remote_download_outputs=toplevel //:clickhouse
+```
+
+On macOS, the result is a Linux ELF executable and cannot be run directly.
 
 Keep API keys out of version control. Existing BuildBuddy credentials in
 `~/.bazelrc` also work; no additional local file is required in that case.
 
 Dependency ownership, generation, and action-audit details are in
 [`bazel/README.md`](bazel/README.md).
+
+## Compare hashes without downloading executables
+
+`remote` uses `--remote_download_outputs=minimal`. These builds use the
+recorded CMake metadata and the recorded native compiler. The normalization
+target produces an ELF with `--strip-all --remove-section=.note.gnu.build-id`;
+the original `//:clickhouse` remains an explicit output in the same build.
+
+```sh
+bazel build --config=cmake_match --build_event_json_file=/tmp/clickhouse-x86.bep \
+  //:clickhouse //bazel/initial_migration:clickhouse.normalized
+python3 bazel/initial_migration/read_binary_metadata.py --arch x86_64 /tmp/clickhouse-x86.bep
+
+bazel build --config=cmake_match_aarch64 --build_event_json_file=/tmp/clickhouse-arm.bep \
+  //:clickhouse //bazel/initial_migration:clickhouse.normalized
+python3 bazel/initial_migration/read_binary_metadata.py --arch aarch64 /tmp/clickhouse-arm.bep
+```
+
+The reader requires successful build and target completions, then compares the
+normalized ELF's remote SHA-256 and size from Bazel's named file sets. It
+also records the original ELF's digest; that digest is not the stripped
+CMake comparison. Exit status 0 means the normalized hash matches, 1 means
+it differs, and 2 means the metadata is missing or invalid. The reader never
+downloads either ELF. This checks the recorded CMake hashes without rebuilding
+CMake; it does not claim a new byte-for-byte comparison with a newly built
+CMake executable.
 
 ## Check C++ dependencies
 
@@ -167,6 +200,54 @@ credit. The configured Arrow helper removed above is absent from both reports.
 This development-only change does not alter the production BUILD files or
 the binary hashes recorded for `e7d519725`. DWYU is not fully clean.
 
+### Partial compiler coverage
+
+DWYU records each required owned original that Clang did not enter in
+`unentered_owned_files`, including whether it is public or private.
+It records all direct `deps` and `implementation_deps` in
+`reserved_compilation_deps`, without counting a reserved dependency as
+used. Unused and privatization suggestions are unavailable for that
+target; actually observed missing includes and independent linker holds
+remain in the report. Incomplete coverage fails the strict audit even
+when the target has no dependencies. A failed `DwyuCompilerPreprocess`
+action still fails without a report. Missing includes apply only to the
+tested preprocessing contexts; DWYU does not infer additional macro
+environments.
+
+Scoped verification used frozen sources `c2ca52ad9` → `1807332d2`:
+[x86-64 before](https://app.buildbuddy.io/invocation/2a45dc68-84bb-4569-8a83-964e76807998),
+[x86-64 after](https://app.buildbuddy.io/invocation/0ce9c29c-9b09-4d70-bdff-d24e5979fd8f),
+[ARM64 before](https://app.buildbuddy.io/invocation/1bbd0434-3916-47b4-ae44-bc7f3c4fbfa8)
+and [ARM64 after](https://app.buildbuddy.io/invocation/d14bbab3-4ed1-4fba-9110-ed4a427e6f28).
+Each run has 58/58 native and CPP records, including 29 successful
+native builds and seven passing positive controls per CPU. Sixteen
+existing complete fixtures retain every prior scoring field; 36 schema
+checks per CPU reject malformed reports. Nine incomplete fixtures now
+produce partial reports, all still failing strict DWYU. Parser and
+System compile_1 retain their linker holds, Boost Graph retains its
+passing report, and Msgpack preprocessing still fails without a report.
+The whole repository has not passed DWYU. These runs changed only the
+development checker, audit and regression fixtures; they did not measure
+a new ClickHouse or CMake binary hash. The existing binary-comparison
+record below is preserved.
+
+Compiler-mode `DwyuAnalyzeTarget` now consumes preprocessing JSON,
+owned-header manifests, assembly outputs and symbol/archive inputs. Raw
+sources and headers remain inputs to `DwyuCompilerPreprocess`. Other DWYU
+modes retain their inputs.
+
+Frozen sources `22dde2bdd` → `7ba337afe` verify the combined checker in
+[x86-64](https://app.buildbuddy.io/invocation/86051695-ecd5-4acd-9c7d-4e9acde02eee)
+and [ARM64](https://app.buildbuddy.io/invocation/5c158e52-9766-4563-ac59-f15a7fa8e9e5).
+Both original runs validate failed-preprocess, partial, linker and assembly
+controls and before/after reports for selected production libraries. The
+SDK tests pass 11/11, GatherUtils passes 8/8, and libarchive's Zstd test
+round-trips 1 MiB on both architectures. DBMS test registrations remain
+29,940 on x86-64 and 29,917 on ARM64; external symbol names, types and bindings
+match. The unit binaries themselves changed. This is scoped DWYU validation;
+20 selected production reports still have findings or holds on x86-64,
+19 on ARM64, and Msgpack preprocessing remains unscored.
+
 ### Audit the configured C++ owners
 
 On a Linux host configured for BuildBuddy, run from the workspace root:
@@ -200,10 +281,12 @@ existing behavior for explicitly requested targets.
 
 ## Binary comparison
 
-The current Bazel cleanup checks rebuild the selected compiler and `//:clickhouse`.
-The x86-64 check verifies and strips the saved CMake ELF, then runs `cmp`.
-The ARM64 check strips the rebuilt Bazel ELF and checks it against the native
-CMake hash recorded below.
+Bazel cleanup checks build `//:clickhouse` and compare the normalized
+ELF with the recorded native CMake hashes. The `7ba337afe` check uses
+`--remote_download_outputs=minimal` and compares actual build-event
+SHA-256/size metadata for the original and remotely stripped ELF. No
+ClickHouse binary is downloaded by the verifier. Earlier checks below
+include the original x86-64 stripped-byte comparisons against saved CMake.
 
 | Verified commit | Change | x86-64 | ARM64 |
 | --- | --- | --- | --- |
@@ -433,6 +516,7 @@ before and after on both CPUs.
 | `9144b1fc2` (verification snapshot) | Remove unneeded C++ runtime dependencies of libstemmer, SHA3IUF and ULID C. Scoped 51fc04fec to 4f4e79408: 24 native builds, 11 measured CPP libraries, real positive/negative controls and ordinary ClickHouse/unit binary equality on both CPUs. Two prior linker holds and one unused dependency resolve; native-only targets remain unscored by CPP. Both integrated normalized native CMake hashes match | [cb57e8ed](https://app.buildbuddy.io/invocation/cb57e8ed-ffa9-4be2-a788-9ff5333b8f08) | [b2cb9ceb](https://app.buildbuddy.io/invocation/b2cb9ceb-7a12-4bc1-a1ff-c3d4057e8f35) |
 | `e3eae6a12` (verification snapshot) | Remove both unused libc++ header dependencies of zlib-ng C. Scoped 92fc54add to 264bff05f: both actual CPP findings resolve, SZ3 and caller reports remain byte-identical, every ordinary ClickHouse/unit link action matches, and five real controls pass on both CPUs. zlib-ng's compiler-runtime linker hold remains. Both integrated normalized native CMake hashes match | [72b38aa6](https://app.buildbuddy.io/invocation/72b38aa6-d181-433f-8b2a-8b0e7995fb8c) | [620c974f](https://app.buildbuddy.io/invocation/620c974f-a086-4259-b08a-c4a288e9ea25) |
 | `3ed901ef6` (verification snapshot) | Remove two unused libc++ header dependencies from c-ares C. Scoped e3eae6a12 to 3ed901ef6: 13 native targets, five real CPP controls and genuine owner/caller reports pass on both CPUs; only two c-ares findings change. Mongo and DBMS linker holds remain. Ordinary ClickHouse/unit binaries, symbols and all ordered links match. Both normalized native CMake hashes match | [52ad556b](https://app.buildbuddy.io/invocation/52ad556b-37b7-4905-ae3e-9d94877b7565) | [731ffb3b](https://app.buildbuddy.io/invocation/731ffb3b-4410-4de2-8485-94d7d0b07454) |
+| `7ba337afe` (verification snapshot) | Default to minimal remote downloads and verify ELF metadata; narrow DWYU analyzer inputs and retain all compiler/linker holds; remove redundant headers and dependencies in programs, GatherUtils, AI SDK, Abseil, XGBoost, libarchive and libhdfs3. Both scoped CPP and native checks pass; recorded normalized CMake hashes match | [86051695](https://app.buildbuddy.io/invocation/86051695-ecd5-4acd-9c7d-4e9acde02eee) | [5c158e52](https://app.buildbuddy.io/invocation/5c158e52-9766-4563-ac59-f15a7fa8e9e5) |
 
 A separate source-only audit on `08511a780`, unchanged by `1580f5474`, found 13 production `additional_compiler_inputs` declarations for 661 embedded assets (counting the ClickStack packed tree once) and 12 C/C++ files that are both included and compiled. XGBoost declares no `additional_compiler_inputs`; this source audit does not establish CPP or native cleanliness.
 

@@ -12,6 +12,12 @@ _AI_SDK_CPP_LOCAL_INCLUDES = [
     "third_party/concurrentqueue-header-only",
 ]
 
+_AI_SDK_CPP_HTTP_DEPS = [
+    "@clickhouse_brotli//:_brotli",
+    "@clickhouse_openssl//:ssl",
+    "@clickhouse_openssl//:crypto",
+]
+
 ch_cc_library(
     name = "_ai-sdk-cpp-anthropic",
     srcs = glob(["src/providers/anthropic/*.cpp"]) + glob([
@@ -19,15 +25,16 @@ ch_cc_library(
         "src/providers/*.h",
         "src/providers/anthropic/*.h",
         "src/utils/*.h",
+        "third_party/concurrentqueue-header-only/**/*.h",
+        "third_party/httplib-header-only/**/*.h",
     ]),
+    hdrs = ["include/ai/anthropic.h"],
     copts = [
         "-std=c++20",
         "-w",
     ],
-    implementation_deps = [
-        ":_ai-sdk-cpp-core",
-        "@clickhouse_nlohmann_json//:nlohmann_json",
-    ],
+    implementation_deps = ["@clickhouse_nlohmann_json//:nlohmann_json"] + _AI_SDK_CPP_HTTP_DEPS,
+    includes = ["include"],
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -39,6 +46,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
+    deps = [":_ai-sdk-cpp-core"],
 )
 
 ch_cc_library(
@@ -52,16 +60,27 @@ ch_cc_library(
         "src/providers/base_provider_client.cpp",
         "src/tools/tool_executor.cpp",
         "src/tools/multi_step_coordinator.cpp",
-    ] + glob(["src/**/*.h"]),
-    hdrs = glob([
-        "include/**/*.h",
-        "third_party/concurrentqueue-header-only/**/*.h",
-        "third_party/httplib-header-only/**/*.h",
-    ]),
+    ] + glob(
+        ["src/**/*.h"],
+        exclude = [
+            "src/providers/anthropic/*.h",
+            "src/providers/openai/*.h",
+            "src/utils/message_utils.h",
+        ],
+    ) + glob(["third_party/httplib-header-only/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = [
+            "include/ai/ai.h",
+            "include/ai/anthropic.h",
+            "include/ai/openai.h",
+        ],
+    ),
     copts = [
         "-std=c++20",
         "-w",
     ],
+    implementation_deps = _AI_SDK_CPP_HTTP_DEPS,
     includes = [
         "include",
     ],
@@ -75,11 +94,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
-    deps = [
-        "@clickhouse_brotli//:_brotli",
-        "@clickhouse_openssl//:ssl",
-        "@clickhouse_nlohmann_json//:nlohmann_json",
-    ],
+    deps = ["@clickhouse_nlohmann_json//:nlohmann_json"],
 )
 
 ch_cc_library(
@@ -89,15 +104,16 @@ ch_cc_library(
         "src/providers/*.h",
         "src/providers/openai/*.h",
         "src/utils/*.h",
+        "third_party/concurrentqueue-header-only/**/*.h",
+        "third_party/httplib-header-only/**/*.h",
     ]),
+    hdrs = ["include/ai/openai.h"],
     copts = [
         "-std=c++20",
         "-w",
     ],
-    implementation_deps = [
-        ":_ai-sdk-cpp-core",
-        "@clickhouse_nlohmann_json//:nlohmann_json",
-    ],
+    implementation_deps = ["@clickhouse_nlohmann_json//:nlohmann_json"] + _AI_SDK_CPP_HTTP_DEPS,
+    includes = ["include"],
     local_defines = [
         "AI_SDK_HAS_OPENAI=1",
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
@@ -109,4 +125,21 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
+    deps = [":_ai-sdk-cpp-core"],
+)
+
+ch_cc_library(
+    name = "sdk",
+    hdrs = ["include/ai/ai.h"],
+    copts = ["-std=c++20"],
+    includes = ["include"],
+    local_defines = [
+        "AI_SDK_HAS_ANTHROPIC=1",
+        "AI_SDK_HAS_OPENAI=1",
+    ],
+    deps = [
+        ":_ai-sdk-cpp-core",
+        ":_ai-sdk-cpp-anthropic",
+        ":_ai-sdk-cpp-openai",
+    ],
 )

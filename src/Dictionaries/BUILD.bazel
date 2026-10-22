@@ -453,7 +453,7 @@ cc_library(
         "@platforms//cpu:aarch64": [],
     }) + [
         "@clickhouse_crc32c//:_crc32c",
-        "@clickhouse_xgboost//:_dmlc_core",
+        "@clickhouse_dmlc_core//:_dmlc_core",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_fmtlib//:_fmt",

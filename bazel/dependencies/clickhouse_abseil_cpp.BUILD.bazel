@@ -789,6 +789,7 @@ ch_cc_library(
     ],
     hdrs = [
         "absl/container/internal/hashtablez_sampler.h",
+        "absl/profiling/internal/sample_recorder.h",
     ],
     copts = _ABSL_COPTS,
     implementation_deps = [
@@ -797,14 +798,14 @@ ch_cc_library(
         ":absl_stacktrace",
         ":absl_raw_logging_internal",
     ],
+    includes = ["."],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
-        ":absl_sample_recorder",
+        ":absl_synchronization",
+        ":absl_base_config",
+        ":absl_time",
         ":absl_utility",
         ":absl_base",
-        ":absl_base_config",
-        ":absl_synchronization",
-        ":absl_time",
     ],
 )
 
@@ -2302,20 +2303,6 @@ cc_library(
         ":absl_base",
         ":absl_base_config",
         ":absl_type_traits",
-    ],
-)
-
-cc_library(
-    name = "absl_sample_recorder",
-    hdrs = [
-        "absl/profiling/internal/sample_recorder.h",
-    ],
-    includes = ["."],
-    deps = [
-        ":absl_synchronization",
-    ] + [
-        ":absl_base_config",
-        ":absl_time",
     ],
 )
 

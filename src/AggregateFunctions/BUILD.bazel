@@ -277,7 +277,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = [
-        "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
     deps = [
@@ -391,7 +390,6 @@ ch_cc_library(
     }),
     local_includes = select({
         "@platforms//cpu:x86_64": [
-            "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
             "../../" + "bazel/gen",
             "../../" + "bazel/gen/x86_64/.",
         ],

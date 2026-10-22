@@ -180,6 +180,28 @@ def validate_link_evidence(report):
             raise ValueError("unexplained DWYU link hold")
 
 
+def validate_compiler_coverage(report):
+    """A required file which Clang never entered prevents a whole-target pass."""
+    missing = report.get("unentered_owned_files")
+    reserved = report.get("reserved_compilation_deps")
+    if not isinstance(missing, dict) or any(
+        not isinstance(file, str) or not file or visibility not in ("public", "private")
+        for file, visibility in missing.items()
+    ):
+        raise ValueError("invalid unentered DWYU owned files")
+    if not isinstance(reserved, dict) or set(reserved) != {"deps", "implementation_deps"}:
+        raise ValueError("invalid DWYU reserved compilation dependencies")
+    for deps in reserved.values():
+        if (not isinstance(deps, list) or any(not isinstance(dep, str) or not dep for dep in deps)
+                or len(set(deps)) != len(deps)):
+            raise ValueError("invalid DWYU reserved compilation dependency labels")
+    if not missing and any(reserved.values()):
+        raise ValueError("DWYU reserves dependencies with complete compiler coverage")
+    if missing and any(report[field] for field in
+                       ("unused_deps", "unused_implementation_deps", "deps_which_should_be_private")):
+        raise ValueError("DWYU suggests changing dependencies with incomplete compiler coverage")
+
+
 def configuration_map(data, field):
     return {str(config["id"]): config for config in data.get(field, [])}
 
@@ -495,6 +517,7 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             continue
         try:
             validate_link_evidence(source)
+            validate_compiler_coverage(source)
         except ValueError as exc:
             report["status"] = "invalid"
             report["reason"] = str(exc)
@@ -507,6 +530,9 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         proved = any(bep_file_matches(f, report["report"]) for f in candidates)
         if source.get("unchecked_link_inputs") or configured_headers[0]["contents"]["unchecked_link_inputs"]:
             report["status"] = "unchecked_link_inputs"
+        elif source["unentered_owned_files"]:
+            report["status"] = "unentered_owned_files"
+            report["reason"] = source["unentered_owned_files"]
         elif source["unverified_compilation_deps"]:
             report["status"] = "unverified_compilation_deps"
             report["reason"] = source["unverified_compilation_deps"]
@@ -565,6 +591,7 @@ def read_strict(row, events, path, original_deleted, filesets):
         ):
             raise ValueError("invalid compiler directory dependency reasons")
         validate_link_evidence(report)
+        validate_compiler_coverage(report)
         result["findings"] = {field: len(report[field]) for field in FIELDS}
         result["findings"]["unverified_link_deps"] = len(report.get("unverified_link_deps", []))
         if all(e.get("completed", {}).get("success") for e in selected):
@@ -590,6 +617,9 @@ def read_strict(row, events, path, original_deleted, filesets):
                 raise ValueError("fresh report lacks matching successful BEP digest/length")
         if report.get("unchecked_link_inputs"):
             result["status"] = "unchecked_link_inputs"
+        elif report["unentered_owned_files"]:
+            result["status"] = "unentered_owned_files"
+            result["reason"] = report["unentered_owned_files"]
         elif report["unverified_compilation_deps"]:
             result["status"] = "unverified_compilation_deps"
             result["reason"] = report["unverified_compilation_deps"]

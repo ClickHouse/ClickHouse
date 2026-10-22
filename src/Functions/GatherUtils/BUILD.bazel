@@ -27,7 +27,10 @@ ch_cc_library(
     hdrs = glob(["**/*.h"]),
     clickhouse_code = True,
     copts = ["-g1"],
-    implementation_deps = [],
+    implementation_deps = [
+        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
+        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
+    ],
     link_runtime = True,
     local_defines = [
         "AI_SDK_HAS_ANTHROPIC=1",
@@ -110,13 +113,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "../../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
-        "../../../" + "bazel/gen",
-    ],
+    local_includes = ["../../../" + "bazel/gen"],
     deps = [
-        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
-        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
         "@clickhouse_arrow//:_arrow",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
@@ -157,7 +155,7 @@ ch_cc_library(
     ] + [
         "//base:common",
         "//src/Common",
-        "//src/Functions:clickhouse_functions_obj__compile_0",
+        "//src:dbms__compile_1",
     ],
 )
 

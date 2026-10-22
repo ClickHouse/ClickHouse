@@ -146,7 +146,6 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-        "../../" + "bazel/gen/contrib/google-cloud-cpp-cmake",
         "../../" + "bazel/gen",
     ],
     deps = [

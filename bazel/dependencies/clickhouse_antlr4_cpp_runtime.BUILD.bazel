@@ -32,7 +32,5 @@ ch_cc_library(
         "runtime/Cpp/runtime/src/tree/pattern",
         "runtime/Cpp/runtime/src/tree/xpath",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"] + [
-        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
-    ],
+    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
 )

@@ -55,7 +55,7 @@ filegroup(
             "@clickhouse_libcpuid//:_cpuid",
             "@clickhouse_crc32c//:_crc32c",
             "@clickhouse_cassandra//:_curl_hostcheck",
-            "@clickhouse_xgboost//:_dmlc_core",
+            "@clickhouse_dmlc_core//:_dmlc_core",
             "@clickhouse_double_conversion//:_double-conversion",
             "@clickhouse_fastops//:_fastops",
             "@clickhouse_flatbuffers//:_flatbuffers",
@@ -147,7 +147,7 @@ filegroup(
         "@platforms//cpu:aarch64": [
             "@clickhouse_crc32c//:_crc32c",
             "@clickhouse_cassandra//:_curl_hostcheck",
-            "@clickhouse_xgboost//:_dmlc_core",
+            "@clickhouse_dmlc_core//:_dmlc_core",
             "@clickhouse_double_conversion//:_double-conversion",
             "@clickhouse_fastops//:_fastops",
             "@clickhouse_flatbuffers//:_flatbuffers",
