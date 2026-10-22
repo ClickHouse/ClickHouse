@@ -284,7 +284,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
     {
         return std::make_shared<DeserializeStateLowCardinality>(*this);
     }
@@ -419,6 +419,9 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         }
     }
 
+    /// All readers of this stream must share the state: only one of them decodes each range, the others take it
+    /// from the substreams cache.
+    addToSubstreamsDeserializeStatesCache(cache, dictionary_keys_path, new_state);
     state = std::move(new_state);
 }
 

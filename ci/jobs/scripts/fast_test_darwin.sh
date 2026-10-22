@@ -30,6 +30,7 @@ print_host_state() {
     echo "$deleted" | awk -v rc="$lsof_rc" 'NF {d++} NF && !seen[$6 " " $9]++ {n++; s += $7} END {printf "open but deleted files: %d (%d descriptors), %.1f GiB (lsof exit status %d)\n", n, d, s / 2^30, rc}'
     echo "$deleted" | sort -k7,7 -rn | awk '!seen[$6 " " $9]++' | head -n 5 | cut -c1-200
     ps -axm -o pid,ppid,user,etime,rss,command | head -n 11 | cut -c1-200
+    ps -o pid,etime,time,%cpu,command -p "$(pgrep -x WirelessRadioManagerd)"
     if [ "$1" = start ] && [ "$(df -P /System/Volumes/Data | awk 'NR == 2 {print $5 + 0}')" -ge 60 ]; then
         timeout 120 sudo -n du -xk -d 4 /System/Volumes/Data 2>/dev/null | awk '$1 >= 2^20' | sort -rn | head -n 30
         echo "du exit status ${PIPESTATUS[0]}"
@@ -37,6 +38,13 @@ print_host_state() {
 }
 
 print_host_state start
+
+# The runners' Bluetooth chip never boots (`bluetoothd` logs `reason=1214, context="chip boot failure"`), so launchd
+# restarts `bluetoothd` every 10 seconds and `WirelessRadioManagerd` redoes more work on every restart: it burns 1-1.5
+# cores after two days of uptime. Killing it drops that backlog and launchd starts it again; it ignores SIGTERM. SIP does
+# not allow disabling `bluetoothd`. The runner `user_data` installs a LaunchDaemon doing the same every hour; this covers
+# runners provisioned without it.
+sudo killall -9 WirelessRadioManagerd
 
 for i in $(seq 2 21); do
     ifconfig lo0 | grep -qF "127.0.0.$i " || sudo ifconfig lo0 alias 127.0.0.$i up || exit 1

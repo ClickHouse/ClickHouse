@@ -128,10 +128,7 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
     /// The client is too old to be told about custom serializations, so every special in-memory
     /// representation - including a non-native LowCardinality one (automatic LowCardinality
     /// serialization) - has to be materialized before writing it with the default serialization.
-    return {
-        column.type->getDefaultSerialization(),
-        nullptr,
-        recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated()))};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
 }
 
 void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)

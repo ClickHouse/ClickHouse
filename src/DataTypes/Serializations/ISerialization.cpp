@@ -624,6 +624,17 @@ ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsD
     return it == cache->end() ? nullptr : it->second;
 }
 
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::DeserializeBinaryBulkState::clone(DeserializeBinaryBulkStateCloneContext & context) const
+{
+    auto it = context.cloned.find(this);
+    if (it != context.cloned.end())
+        return it->second;
+
+    auto cloned = cloneImpl(context);
+    context.cloned.emplace(this, cloned);
+    return cloned;
+}
+
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)

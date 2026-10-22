@@ -191,6 +191,16 @@ public:
         virtual ~SerializeBinaryBulkState() = default;
     };
 
+    struct DeserializeBinaryBulkState;
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
+    /// Maps original states to their clones, so that a state shared by several readers stays shared among the clones.
+    struct DeserializeBinaryBulkStateCloneContext
+    {
+        std::unordered_map<const DeserializeBinaryBulkState *, DeserializeBinaryBulkStatePtr> cloned;
+    };
+
     struct DeserializeBinaryBulkState
     {
         DeserializeBinaryBulkState() = default;
@@ -198,11 +208,13 @@ public:
 
         virtual ~DeserializeBinaryBulkState() = default;
 
-        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
-    };
+        /// Returns the clone made earlier in the same context if there is one.
+        DeserializeBinaryBulkStatePtr clone(DeserializeBinaryBulkStateCloneContext & context) const;
 
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+    protected:
+        /// Nested states must be cloned through clone with the same context.
+        virtual DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext &) const { return std::make_shared<DeserializeBinaryBulkState>(); }
+    };
 
     struct SubstreamData
     {
