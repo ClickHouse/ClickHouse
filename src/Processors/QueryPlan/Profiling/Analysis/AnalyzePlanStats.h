@@ -44,13 +44,13 @@ class AnalyzeStepsStats
     using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
 
 public:
-    /// `plan_snapshot` is everything the analysis needs from the plan, so the plan itself does not
-    /// have to be alive here. `plan_for_interval_timings` is the one exception: the per-step time
-    /// intervals are still computed over the live plan, and they exist only for `EXPLAIN ANALYZE`
-    /// with `time = 1`. The logged plan collects no intervals and passes nothing.
+    /// `step_profiler` carries everything this needs from the plan -- the analyzers and the clocks
+    /// -- so the plan itself does not have to be alive here. `plan_for_interval_timings` is the one
+    /// exception: the per-step time intervals are still computed over the live plan, and they exist
+    /// only for `EXPLAIN ANALYZE` with `time = 1`. The logged plan collects no intervals and passes
+    /// nothing. The profiler must outlive this object.
     AnalyzeStepsStats(
         const QueryPipeline & pipeline,
-        PlanAnalysisSnapshot plan_snapshot_,
         StepProfiler & step_profiler,
         UInt64 execution_start_ns,
         UInt64 execution_query_time_ns_,
@@ -86,7 +86,7 @@ private:
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
 
-    PlanAnalysisSnapshot plan_snapshot;
+    const PlanAnalysisSnapshot & plan_snapshot;
 
     ReportsByStep join_raw_reports;
 

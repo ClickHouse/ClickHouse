@@ -121,9 +121,7 @@ void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const Prett
         /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
         captured = capturePlan(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 
-        plan_snapshot = PlanAnalysisSnapshot::capture(plan, /*only_built_child_plans=*/ true);
-
-        /// Takes a clock per step of the plan, so it has to be built while the plan is here.
+        /// Walks the plan for the analyzers and a clock per stage, so it has to be built here.
         step_profiler = std::make_shared<StepProfiler>(plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);
     }
     catch (...)
@@ -151,7 +149,6 @@ void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)
         /// duration does not include whatever the query-finish path does afterwards.
         const AnalyzeStepsStats stats(
             pipeline,
-            plan_snapshot,
             *step_profiler,
             step_profiler->getExecutionStartNs(),
             step_profiler->getExecutionTimeNs());
@@ -183,8 +180,12 @@ void QueryPlanProfiler::releaseRunningState()
     /// A query that threw keeps the plan captured when its pipeline was built, without statistics.
     /// One that threw before the pipeline was built captured nothing, and has no plan to show:
     /// there is no executed plan for a query that never got one.
+    /// Explicitly, rather than by dropping the pointer: the pipeline holds one too, and the hash
+    /// tables the analyzers keep alive are too large to leave to whichever reference dies last.
+    if (step_profiler)
+        step_profiler->releaseAnalyzers();
+
     step_profiler.reset();
-    plan_snapshot = {};
     finished = true;
 }
 

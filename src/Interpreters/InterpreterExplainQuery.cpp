@@ -1483,9 +1483,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(
-                pipeline, PlanAnalysisSnapshot::capture(plan, /*only_built_child_plans=*/ false), *step_profiler,
-                watch.getStart(), execute_ns, &plan);
+            AnalyzeStepsStats steps_to_stats(pipeline, *step_profiler, watch.getStart(), execute_ns, &plan);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);

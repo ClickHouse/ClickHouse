@@ -8,30 +8,14 @@ namespace DB
 namespace
 {
 
-StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan, bool only_built_child_plans)
+/// One clock per stage of every step the snapshot found, so the walk of the plan happens once.
+StepWallClocks collectWallClocksForPlanSteps(const PlanAnalysisSnapshot & plan_snapshot)
 {
     StepWallClocks clocks;
 
-    std::vector<const QueryPlan::Node *> stack;
-    stack.push_back(plan.getRootNode());
-
-    while (!stack.empty())
-    {
-        const auto * cur = stack.back();
-        stack.pop_back();
-
-        if (!cur)
-            continue;
-
-        for (size_t group : cur->step->getStepGroups())
-            clocks.try_emplace(std::make_pair(cur->step->getUniqID(), group), std::make_unique<StepWallClock>());
-
-        for (const auto * child : cur->children)
-            stack.push_back(child);
-        for (const auto * child_plan :
-            only_built_child_plans ? cur->step->getBuiltChildPlans() : cur->step->getChildPlans(/*for_explain=*/ false))
-            stack.push_back(child_plan->getRootNode());
-    }
+    for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
+        for (size_t group : analyzer.groups)
+            clocks.try_emplace(std::make_pair(step_id, group), std::make_unique<StepWallClock>());
 
     return clocks;
 }
@@ -40,8 +24,14 @@ StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan, bool only_b
 
 StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, bool only_built_child_plans)
     : collect_work_intervals(collect_work_intervals_)
-    , clocks(collectWallClocksForPlanSteps(plan, only_built_child_plans))
+    , plan_snapshot(PlanAnalysisSnapshot::capture(plan, only_built_child_plans))
+    , clocks(collectWallClocksForPlanSteps(plan_snapshot))
 {
+}
+
+void StepProfiler::releaseAnalyzers()
+{
+    plan_snapshot.analyzers.clear();
 }
 
 StepWallClock * StepProfiler::findClockForStep(const String & step_id, size_t group) const

@@ -5,7 +5,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/CapturedPlan.h>
-#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 namespace DB
 {
 
@@ -42,7 +41,7 @@ public:
     void instrumentPipeline(QueryPipeline & pipeline);
 
     /// Frees what was only needed while the query was being profiled: the clocks, and the
-    /// reporters and analysis inputs, which hold the `IJoin`s and with them their hash tables.
+    /// analyzers, which hold the `IJoin`s and with them their hash tables.
     /// What was captured stays. Idempotent: a query that failed before its pipeline finished
     /// reaches this at logging time instead.
     void releaseRunningState();
@@ -57,10 +56,10 @@ private:
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
-    PlanAnalysisSnapshot plan_snapshot;
 
-    /// Built while the plan is still around, because it takes a clock per step of it, then attached
-    /// to the pipeline so the processors can time their steps and read back once the query has run.
+    /// Built while the plan is still around, because it walks it for the clocks and the analyzers,
+    /// then attached to the pipeline so the processors can time their steps and read back once the
+    /// query has run.
     StepProfilerPtr step_profiler;
 
     /// The order the methods above must come in is asserted against this in debug builds.

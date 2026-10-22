@@ -219,12 +219,11 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 AnalyzeStepsStats::AnalyzeStepsStats(
     const QueryPipeline & pipeline,
-    PlanAnalysisSnapshot plan_snapshot_,
     StepProfiler & step_profiler,
     UInt64 execution_start_ns,
     UInt64 execution_query_time_ns_,
     const QueryPlan * plan_for_interval_timings)
-: plan_snapshot(std::move(plan_snapshot_))
+: plan_snapshot(step_profiler.getPlanSnapshot())
 , max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
