@@ -1,5 +1,5 @@
--- Tags: no-parallel
--- no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
+-- Tags: no-fasttest, no-parallel
+-- no-fasttest, no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
 
 -- An exception while the local tasks of a distributed plan stage are being started, after some of them
 -- started, must fail the query instead of aborting the server: the started task threads must be joined.
