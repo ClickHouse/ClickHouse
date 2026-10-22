@@ -1,0 +1,131 @@
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel/toolchains:proto_lang_toolchain.bzl", "proto_lang_toolchain")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "leaf_proto",
+    srcs = ["schemas/leaf.proto"],
+    import_prefix = "dwyu_proto",
+    strip_import_prefix = "schemas",
+)
+
+cc_proto_library(
+    name = "leaf_cc_proto",
+    deps = [":leaf_proto"],
+)
+
+proto_library(
+    name = "uses_leaf_proto",
+    srcs = ["schemas/uses_leaf.proto"],
+    import_prefix = "dwyu_proto",
+    strip_import_prefix = "schemas",
+    deps = [
+        ":leaf_proto",
+        "@clickhouse_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "uses_leaf_cc_proto",
+    deps = [":uses_leaf_proto"],
+)
+
+proto_library(
+    name = "sourceless_proto",
+    deps = [":uses_leaf_proto"],
+)
+
+cc_proto_library(
+    name = "sourceless_cc_proto",
+    deps = [":sourceless_proto"],
+)
+
+proto_library(
+    name = "bridge_proto",
+    srcs = ["schemas/bridge.proto"],
+    import_prefix = "dwyu_proto",
+    strip_import_prefix = "schemas",
+    deps = [":leaf_proto"],
+)
+
+proto_library(
+    name = "negative_missing_direct_proto",
+    srcs = ["schemas/negative_missing_direct.proto"],
+    import_prefix = "dwyu_proto",
+    strip_import_prefix = "schemas",
+    tags = ["manual"],
+    deps = [":bridge_proto"],
+)
+
+cc_proto_library(
+    name = "negative_missing_direct_cc_proto",
+    tags = ["manual"],
+    deps = [":negative_missing_direct_proto"],
+)
+
+# This is selected only by the regression command's --extra_toolchains flag.
+# Protoc still executes, but the generated C++ has no protobuf runtime.
+proto_lang_toolchain(
+    name = "tool_only_cc_proto",
+    command_line = "--cpp_out=$(OUT)",
+    denylisted_protos = ["@clickhouse_google_protobuf//:libprotobuf_well_known_protos"],
+    output_files = "multiple",
+    target_compatible_with = ["@platforms//os:linux"],
+    toolchain_type = "@protobuf//bazel/private:cc_toolchain_type",
+)
+
+proto_library(
+    name = "left_value_proto",
+    srcs = ["schemas/left/value.proto"],
+    import_prefix = "dwyu_proto",
+    strip_import_prefix = "schemas",
+)
+
+cc_proto_library(
+    name = "left_value_cc_proto",
+    deps = [":left_value_proto"],
+)
+
+proto_library(
+    name = "right_value_proto",
+    srcs = ["schemas/right/value.proto"],
+    import_prefix = "dwyu_proto",
+    strip_import_prefix = "schemas",
+)
+
+cc_proto_library(
+    name = "right_value_cc_proto",
+    deps = [":right_value_proto"],
+)
+
+cc_library(
+    name = "both_values",
+    srcs = ["both_values.cc"],
+    implementation_deps = [
+        ":left_value_cc_proto",
+        ":right_value_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "left_bridge",
+    deps = [":left_value_cc_proto"],
+)
+
+# The real C++ compiler sees both headers; DWYU must report left_value_cc_proto
+# as missing directly instead of accepting right_value_cc_proto's value.pb.h.
+cc_library(
+    name = "negative_wrong_virtual_alias",
+    srcs = ["both_values.cc"],
+    implementation_deps = [
+        ":left_bridge",
+        ":right_value_cc_proto",
+    ],
+    tags = ["manual"],
+)

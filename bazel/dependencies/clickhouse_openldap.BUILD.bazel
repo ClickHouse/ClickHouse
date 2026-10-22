@@ -79,6 +79,7 @@ ch_cc_library(
         "libraries/liblber/sockbuf.c",
         "libraries/liblber/stdio.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
+        "include/ac/syslog.h",
     ],
     hdrs = [
         ":ldap_config",
@@ -90,7 +91,6 @@ ch_cc_library(
         "include/ac/stdarg.h",
         "include/ac/stdlib.h",
         "include/ac/string.h",
-        "include/ac/syslog.h",
         "include/ac/time.h",
         "include/ac/unistd.h",
         "include/getopt-compat.h",

@@ -680,6 +680,95 @@ ch_cc_library(
     ],
 )
 
+_PARSER_SUPPORT_HEADERS = [
+    "Allocator.h",
+    "AtomicLogger.h",
+    "BitHelpers.h",
+    "CacheLine.h",
+    "CalendarTimeInterval.h",
+    "CurrentThreadHelpers.h",
+    "Documentation.h",
+    "FiberLocal.h",
+    "Hex.h",
+    "IntervalKind.h",
+    "Logger.h",
+    "LoggingHelpers.h",
+    "MemoryTrackerBlockerInThread.h",
+    "PODArray.h",
+    "ProfileEventsLogger.h",
+    "Scheduler/CostUnit.h",
+    "Scheduler/ResourceAccessMode.h",
+    "Scheduler/SharingMode.h",
+    "SettingConstraintWritability.h",
+    "SettingsChanges.h",
+    "SharedLockGuard.h",
+    "SipHash.h",
+    "VariableContext.h",
+    "VersionNumber.h",
+    "checkStackSize.h",
+    "logger_useful.h",
+    "memcpySmall.h",
+    "quoteString.h",
+    "transformEndianness.h",
+]
+
+ch_cc_library(
+    name = "parser_support_api",
+    hdrs = _PARSER_SUPPORT_HEADERS,
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    deps = [
+        "//base:common",
+        "//src/Common:exception_api",
+        "//src/Common:memory_tracking_api",
+        "//src/Common:shared_mutex",
+        "//src/Common:stopwatch",
+        "//src:core_defines",
+        "//src:core_types",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_boost//:boost_headers",
+        "//contrib/cityhash102:_cityhash",
+        "@clickhouse_fmtlib//:_fmt",
+    ],
+)
+
+_CACHE_POLICY_PUBLIC_HEADERS = [
+    "CacheBase.h",
+    "TTLCachePolicy.h",
+]
+
+_CACHE_POLICY_PRIVATE_HEADERS = [
+    "ICachePolicy.h",
+    "ICachePolicyUserQuota.h",
+    "LRUCachePolicy.h",
+    "SLRUCachePolicy.h",
+    "SIEVECachePolicy.h",
+]
+
+ch_cc_library(
+    name = "cache_policy",
+    srcs = _CACHE_POLICY_PRIVATE_HEADERS,
+    hdrs = _CACHE_POLICY_PUBLIC_HEADERS,
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    deps = [
+        "//base:common",
+        ":exception_api",
+        ":current_metrics",
+    ],
+)
+
+ch_cc_library(
+    name = "assert_cast",
+    srcs = ["assert_cast.cpp"],
+    hdrs = ["assert_cast.h"],
+    clickhouse_code = True,
+    implementation_deps = [":exception_api"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
 ch_cc_library(
     name = "Common",
     srcs = [
@@ -709,7 +798,8 @@ ch_cc_library(
             "LoggingFormatStringHelpers.h",
             "TypePromotion.h",
             "typeid_cast.h",
-        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS,
+            "assert_cast.h",
+        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS + _PARSER_SUPPORT_HEADERS + _CACHE_POLICY_PUBLIC_HEADERS + _CACHE_POLICY_PRIVATE_HEADERS,
     ),
     clickhouse_code = True,
     implementation_deps = [
@@ -744,5 +834,8 @@ ch_cc_library(
         "@clickhouse_simdjson//:_simdjson",
         "@clickhouse_stringzilla//:_stringzilla",
         ":exception_api",
+        ":parser_support_api",
+        ":cache_policy",
+        ":assert_cast",
     ],
 )

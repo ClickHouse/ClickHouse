@@ -10,6 +10,8 @@ _NET_PRIVATE_HEADERS = [
     "include/Poco/Net/TCPServerDispatcher.h",
     "include/Poco/Net/WebSocketImpl.h",
     "include/Poco/Net/HTTPServerResponseImpl.h",
+    "include/Poco/Net/HTTPServerConnection.h",
+    "include/Poco/Net/HTTPServerConnectionFactory.h",
 ]
 
 poco_cc_library(

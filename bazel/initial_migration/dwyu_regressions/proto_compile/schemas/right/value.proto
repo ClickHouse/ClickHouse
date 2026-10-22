@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package dwyu.proto_compile.right;
+
+message Value {
+  int64 right = 1;
+}

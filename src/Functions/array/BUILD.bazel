@@ -471,5 +471,6 @@ cc_library(
     deps = [
         "//src:headers",
         "//base:common",
+        "//src/Functions:headers",
     ],
 )

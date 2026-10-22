@@ -1344,3 +1344,17 @@ The original collector rejected `source_stages_incomplete: CPP/native source ove
 | --- | --- | --- | --- | --- | --- |
 | x86-64 | 2026-10-22 18:13:45 UTC | [8388606c](https://app.buildbuddy.io/invocation/8388606c-bc18-4105-bf85-cffd5a6fa0bc) | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` (929619680 B) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` (710693736 B) | 2551 failed CPP preprocess actions on 14 reported owners; 222 rows with findings |
 | ARM64 | 2026-10-22 18:13:42 UTC | [6921aee2](https://app.buildbuddy.io/invocation/6921aee2-d0d4-4f38-b009-1fcd24086a16) | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` (907067440 B) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` (637316696 B) | 2557 failed CPP preprocess actions on 15 reported owners; 211 rows with findings |
+
+
+### Native ClickHouse verification for Bazel snapshot `f8a1ee593`
+
+The native Bazel build on each CPU completed all 43 selected targets in both baseline and candidate. The cleanup, Boost, post-census, benchmark, registered SQL and CRC32C status files were checked against the original successful native child invocations. Raw and normalized SHA256 values and sizes match the native CMake references below. Binary and library downloads were 0 B.
+
+The parent Run status is reported separately. The f8 producer collector failed after the native build because an original configured-query JSON exceeded its 64 MiB file limit. In the submitted script, the producer collector ran inside the candidate-native marker, so a producer failure suppressed the later marker. A separate reader authenticated the complete original logs and submitted scripts and verified the native children independently. It did not mark the failed parent Runs successful.
+
+DWYU, LLVM and protobuf producer controls, ordinary producer linking, full-census llvm-nm, and scoped or full-production CPP remain unqualified. No failed action is cached as success.
+
+| CPU | Run submitted | BuildBuddy | Parent status | Raw SHA256 (bytes) | Normalized SHA256 (bytes) |
+| --- | --- | --- | --- | --- | --- |
+| x86-64 | 2026-10-22 19:48:58 UTC | [4bb0356c](https://app.buildbuddy.io/invocation/4bb0356c-9977-43aa-9282-9bce8cefdfc2) | Failed (Failed) | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` (929619680 B) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` (710693736 B) |
+| ARM64 | 2026-10-22 19:49:01 UTC | [c446f1ab](https://app.buildbuddy.io/invocation/c446f1ab-007b-4dda-ac35-9ffe6db0bbd1) | Failed (Failed) | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` (907067440 B) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` (637316696 B) |

@@ -1448,5 +1448,12 @@ cc_library(
         "//src:core_types",
         "//base:common",
         "//src/Common:exception_api",
+        "//src/Common",
+        "@clickhouse_llvm_project//:llvm_headers",
+        "//src/AggregateFunctions:headers",
+        "//src/Access/Common:clickhouse_common_access",
+        "@clickhouse_vectorscan//:_vectorscan__compile_0",
+        "//src/Common/ZooKeeper:headers",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
     ],
 )

@@ -404,6 +404,28 @@ def validate_compiler_coverage(report):
         raise ValueError("DWYU suggests changing dependencies with incomplete compiler coverage")
 
 
+def validate_runtime_compiler_inputs(report, configured_headers):
+    """The producer's legacy inputs are not public headers or implicit owners."""
+    unknown = report.get("unverified_compiler_inputs")
+    declared = configured_headers.get("unverified_compiler_inputs")
+    if (not isinstance(unknown, list) or not isinstance(declared, list)
+            or any(not isinstance(file, str) or not file for file in unknown + declared)
+            or len(set(unknown)) != len(unknown) or len(set(declared)) != len(declared)
+            or set(unknown) != set(declared)):
+        raise ValueError("invalid or inconsistent runtime unverified compiler inputs")
+    return unknown
+
+
+def runtime_cpp_candidate(row):
+    """Select only configured C/C++ actions; an ASM/empty producer has no CPP report."""
+    return (row["rule_class"] == "llvm_runtime_objects"
+            and row.get("language") in ("C", "CXX")
+            and row["sources"]["srcs"] is not None and row["sources"]["srcs"] > 0
+            and row["actions"].get("CppCompile", 0) > 0
+            and not any(row["actions"].get(name, 0) for name in (
+                "Assemble", "CppCompileHeader", "CppModuleCompile")))
+
+
 def configuration_map(data, field):
     return {str(config["id"]): config for config in data.get(field, [])}
 
@@ -438,12 +460,14 @@ def read_cquery(path):
             "checksum": config["checksum"], "mnemonic": config.get("mnemonic"),
             "is_tool": config.get("isTool", False), "rule_class": rule["ruleClass"],
             "sources": source_counts,
+            "language": (attrs.get("language", {}).get("stringValue")
+                         if "selectorList" not in attrs.get("language", {}) else None),
             "tags": attrs.get("tags", {}).get("stringListValue", []),
             "features": attrs.get("features", {}).get("stringListValue", []),
             "actions": {},
             "configured_inputs": rule.get("configuredRuleInput", []),
             "dependency_attributes": {
-                name: attrs[name] for name in ("deps", "implementation_deps", "refs", "actual")
+                name: attrs[name] for name in ("deps", "implementation_deps", "refs", "actual", "exports", "option_deps")
                 if name in attrs
             },
         }
@@ -559,7 +583,7 @@ class Audit:
             opts += ["--proto:include_configurations",
                      "--transitions=lite", "--noproto:locations",
                      "--noproto:rule_inputs_and_outputs",
-                     "--proto:output_rule_attrs=srcs,hdrs,textual_hdrs,tags,features,deps,implementation_deps,refs,actual"]
+                      "--proto:output_rule_attrs=srcs,hdrs,textual_hdrs,tags,features,deps,implementation_deps,refs,actual,language,exports,option_deps"]
         else:
             opts += ["--noinclude_artifacts", "--noinclude_commandline",
                      "--noinclude_param_files", "--noinclude_file_write_contents"]
@@ -641,6 +665,214 @@ def configured_analyzers(path):
     return dict(owners), dict(headers)
 
 
+class RuntimeActionGraph:
+    """Decode only the llvm_runtime_objects actions from an original aquery."""
+
+    def __init__(self, path, mnemonic, rows, rule_classes=("llvm_runtime_objects",)):
+        data = json.loads(path.read_bytes())
+        self.configs = configuration_map(data, "configuration")
+        self.aspect_descriptors = {str(a["id"]): a for a in data.get("aspectDescriptors", [])}
+        self.targets = {str(t["id"]): t for t in data.get("targets", [])}
+        classes = {str(c["id"]): c["name"] for c in data.get("ruleClasses", [])}
+        fragments = {str(f["id"]): f for f in data.get("pathFragments", [])}
+        self.artifacts = {}
+        self.tree_artifacts = set()
+        for artifact in data.get("artifacts", []):
+            parts, seen = [], set()
+            current = str(artifact["pathFragmentId"])
+            while current != "0":
+                if current in seen or current not in fragments:
+                    raise ValueError("invalid runtime aquery artifact parent")
+                seen.add(current)
+                fragment = fragments[current]
+                parts.append(fragment["label"])
+                current = str(fragment.get("parentId", 0))
+            path = str(Path(*reversed(parts)))
+            if path == "." or Path(path).is_absolute() or ".." in Path(path).parts:
+                raise ValueError("invalid runtime aquery artifact: " + path)
+            ident = str(artifact["id"])
+            if ident in self.artifacts:
+                raise ValueError("duplicate runtime aquery artifact ID: " + ident)
+            self.artifacts[ident] = path
+            if artifact.get("isTreeArtifact", False):
+                self.tree_artifacts.add(path)
+        self.input_sets = {str(s["id"]): s for s in data.get("depSetOfFiles", [])}
+        self.owners = defaultdict(list)
+        mnemonics = {mnemonic} if isinstance(mnemonic, str) else set(mnemonic)
+        for action in data.get("actions", []):
+            if action.get("mnemonic") not in mnemonics:
+                raise ValueError("unexpected runtime aquery mnemonic")
+            config = self.configs.get(str(action.get("configurationId", 0)))
+            if config is None:
+                raise ValueError("runtime action without configuration")
+            target = self.targets[str(action["targetId"])]
+            key = identity(target["label"], config["checksum"])
+            row = rows.get(key)
+            if (row is None or (rule_classes is not None and row["rule_class"] not in rule_classes)
+                    or classes[str(target["ruleClassId"])] != row["rule_class"]
+                    or row["is_tool"] != config.get("isTool", False)):
+                raise ValueError("runtime action outside original configured closure: " + key)
+            self.owners[key].append(action)
+
+    def files(self, action, field):
+        return [self.artifacts[str(ident)] for ident in action.get(field, [])]
+
+    def inputs(self, action):
+        """Resolve one unit at a time; never cache the broad input set per TU."""
+        files, visited = set(), set()
+        pending = [(str(ident), False) for ident in action.get("inputDepSetIds", [])]
+        entered = set()
+        while pending:
+            ident, returning = pending.pop()
+            if returning:
+                entered.remove(ident)
+                visited.add(ident)
+                continue
+            if ident in entered:
+                raise ValueError("cycle in runtime action input depsets")
+            if ident in visited:
+                continue
+            item = self.input_sets[ident]
+            entered.add(ident)
+            pending.append((ident, True))
+            files.update(self.files(item, "directArtifactIds"))
+            pending.extend((str(dep), False) for dep in item.get("transitiveDepSetIds", []))
+        return files
+
+
+_RUNTIME_PP_SHELL = """compiler="$1"; pp="$2"; headers="$3"; shift 3
+"$compiler" "$@" || {
+    status=$?
+    rm -f -- "$pp" "$headers" || :
+    exit "$status"
+}
+"""
+
+
+def runtime_compile_source(ordinary, cpp, language):
+    """A compile mnemonic and a rule's language alone do not prove it has a TU."""
+    cmd = cpp.get("arguments", [])
+    out = ordinary.files(cpp, "outputIds")
+    if (len(out) != 1 or not out[0].endswith(".pic.o") or out[0] in ordinary.tree_artifacts
+            or len(cmd) < 5 or cmd[-4:-1] != ["-o", out[0], "-c"]
+            or cpp.get("paramFiles")):
+        raise ValueError("runtime CppCompile does not have one recorded object and fixed compile tail")
+    source = cmd[-1]
+    ext = Path(source).suffix
+    extensions = {"C": {".c"}, "CXX": {".cc", ".cpp", ".cxx", ".c++", ".C"}}
+    if language not in extensions or ext not in extensions[language] or source in ordinary.tree_artifacts:
+        raise ValueError("runtime CppCompile input does not match configured language: " + source)
+    if source not in ordinary.inputs(cpp):
+        raise ValueError("runtime CppCompile source missing from action inputs: " + source)
+    return source
+
+
+def runtime_unit_binding(ordinary, preprocess, cpp, pp, language):
+    """Require the PP to replay the exact compiler, source, options and inputs."""
+    source = runtime_compile_source(ordinary, cpp, language)
+    cmd = cpp["arguments"]
+    argv = pp.get("arguments", [])
+    results = preprocess.files(pp, "outputIds")
+    pp_files = [f for f in results if f.endswith(".i")]
+    header_files = [f for f in results if f.endswith(".headers")]
+    if (len(results) != 2 or len(pp_files) != 1 or len(header_files) != 1
+            or any(file in preprocess.tree_artifacts for file in results) or pp.get("paramFiles")):
+        raise ValueError("runtime preprocessing requires one .i and one .headers output")
+    output, headers = pp_files[0], header_files[0]
+    expected_args = [cmd[0], output, headers] + cmd[1:-4] + [
+        "-o", output, "-E", source,
+        "-dI", "-fshow-skipped-includes", "-Xclang", "-header-include-file",
+        "-Xclang", headers, "-Xclang", "-sys-header-deps",
+    ]
+    if (len(argv) < 4 or argv[0] not in ("/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh")
+            or argv[1:4] != ["-c", _RUNTIME_PP_SHELL, ""]
+            or argv[4:] != expected_args):
+        raise ValueError("runtime preprocessing command differs from CppCompile: " + source)
+    if pp.get("environmentVariables", []) != cpp.get("environmentVariables", []):
+        raise ValueError("runtime preprocessing environment differs from CppCompile: " + source)
+    if preprocess.inputs(pp) != ordinary.inputs(cpp):
+        raise ValueError("runtime preprocessing inputs differ from CppCompile: " + source)
+    return source
+
+
+def audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manifest):
+    """Extra artifact/argv queries are confined to actual runtime compilations."""
+    selected = {key: row for key, row in eligible.items() if runtime_cpp_candidate(row)}
+    if not selected:
+        return {}
+    scope = "kind('^llvm_runtime_objects( rule)?$', deps(" + query_labels(roots) + "))"
+    include = ("--include_artifacts", "--include_commandline", "--include_param_files")
+    ordinary_path = audit.query("runtime-ordinary-actions", "aquery",
+                                "mnemonic('^CppCompile$', " + scope + ")", include)
+    preprocess_path = audit.query("runtime-preprocess-actions", "aquery",
+                                  "mnemonic('^DwyuCompilerPreprocess$', " + scope + ")", (
+                                      aspect, "--include_aspects", "--output_groups=dwyu",
+                                  ) + include)
+    ordinary = RuntimeActionGraph(ordinary_path, "CppCompile", rows)
+    preprocess = RuntimeActionGraph(preprocess_path, "DwyuCompilerPreprocess", rows)
+    manifest["runtime_action_queries"] = {
+        "ordinary": sha_file(ordinary_path),
+        "preprocessing": sha_file(preprocess_path),
+    }
+    # llvm_runtime_objects accepts legacy C/CXX sources without advertising
+    # LlvmRuntimeCompileInfo when any source is not a C/CXX TU. Such a target
+    # is still an unsupported real compile action, never an eligible CPP pass.
+    for key, row in list(selected.items()):
+        try:
+            actions = ordinary.owners.get(key, [])
+            if len(actions) != row["actions"]["CppCompile"]:
+                raise ValueError("runtime original CppCompile count changed")
+            sources = [runtime_compile_source(ordinary, action, row["language"]) for action in actions]
+            if len(set(sources)) != len(sources):
+                raise ValueError("runtime compiles one source more than once")
+            row["category"] = "compiled_llvm_runtime"
+        except (KeyError, TypeError, ValueError) as exc:
+            row["category"] = "unsupported_compiled_or_cc_provider"
+            row["runtime_source_binding"] = {"status": "not_proved", "reason": str(exc)}
+            del selected[key]
+            del eligible[key]
+    manifest["runtime_preprocessors_not_eligible"] = sorted(set(preprocess.owners) - set(selected))
+    result = {}
+    for key, row in selected.items():
+        result[key] = {"status": "not_proved"}
+        try:
+            expected_count = row["actions"]["CppCompile"]
+            compile_actions = ordinary.owners.get(key, [])
+            preprocessed_actions = preprocess.owners.get(key, [])
+            if len(compile_actions) != expected_count or len(preprocessed_actions) != expected_count:
+                raise ValueError("runtime original CppCompile and PP counts differ")
+            compiled = {}
+            for action in compile_actions:
+                args = action.get("arguments", [])
+                if len(args) < 5 or args[-1] in compiled:
+                    raise ValueError("missing or duplicated runtime compile source")
+                compiled[args[-1]] = action
+            traced = {}
+            for action in preprocessed_actions:
+                args = action.get("arguments", [])
+                # Eight fixed Clang trace options follow the actual source.
+                if len(args) < 13 or args[-9] in traced:
+                    raise ValueError("missing or duplicated runtime PP source")
+                traced[args[-9]] = action
+            if set(compiled) != set(traced):
+                raise ValueError("runtime preprocessing omits or adds source files")
+            observed = sorted(runtime_unit_binding(ordinary, preprocess, cpp, traced[src], row["language"])
+                              for src, cpp in compiled.items())
+            configured = headers.get(key, [])
+            if len(configured) != 1:
+                raise ValueError("runtime needs exactly one owned headers manifest")
+            claims = configured[0]["contents"]
+            if (claims["public"] or claims["private"] != {src: src for src in observed}
+                    or sorted(claims["required"]) != observed or claims["raw_assembly"]
+                    or claims["unchecked_link_inputs"]):
+                raise ValueError("runtime owned manifest must name exactly the original C/C++ TUs")
+            result[key] = {"status": "matched_original_actions", "tu_count": len(observed),
+                           "language": row["language"]}
+        except (KeyError, TypeError, ValueError) as exc:
+            result[key]["reason"] = str(exc)
+    return result
+
+
 def audit_closure(audit, roots, rows, eligible, manifest):
     """Apply DWYU to roots in their original configurations, then audit each action."""
     expr = "outputs('.*(_dwyu_report[.]json|[.]dwyu_owned_headers[.]json)', deps(" + query_labels(roots) + "))"
@@ -651,6 +883,10 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         "--output_groups=dwyu",
     ))
     owners, headers = configured_analyzers(actions)
+    runtime_bindings = audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manifest)
+    manifest["runtime_analyzers_not_eligible"] = sorted(
+        key for key in owners if key in rows
+        and rows[key]["rule_class"] == "llvm_runtime_objects" and key not in eligible)
     manifest["analyzers_not_in_original_closure"] = sorted(set(owners) - set(rows))
     manifest["ambiguous_analyzers"] = {
         key: value for key, value in owners.items() if len(value) != 1
@@ -679,8 +915,12 @@ def audit_closure(audit, roots, rows, eligible, manifest):
                 path.unlink()
     bep = audit.out / "closure-strict.bep.json"
     native_bep = audit.out / "closure-ordinary.bep.json"
+    proto_selected = {key: row for key, row in rows.items()
+                      if row["rule_class"] == "cc_proto_library" and not row["is_tool"]
+                      and (not audit.production_census or row["owned_repository"])}
     native = audit.command("closure-ordinary", "build", [
         "--keep_going", "--remote_download_outputs=minimal",
+    ] + (["--build_event_publish_all_actions"] if proto_selected else []) + [
         "--build_event_json_file=" + str(native_bep),
     ] + roots)
     if audit.production_census:
@@ -789,13 +1029,25 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         try:
             validate_link_evidence(source)
             validate_compiler_coverage(source)
+            unverified_inputs = []
+            if runtime_cpp_candidate(row):
+                unverified_inputs = validate_runtime_compiler_inputs(
+                    source, configured_headers[0]["contents"])
         except ValueError as exc:
             report["status"] = "invalid"
             report["reason"] = str(exc)
             continue
         report["findings"] = {field: len(source[field]) for field in FIELDS}
         report["findings"]["unverified_link_deps"] = len(source.get("unverified_link_deps", []))
-        if source.get("unchecked_link_inputs") or configured_headers[0]["contents"]["unchecked_link_inputs"]:
+        if runtime_cpp_candidate(row):
+            report["compiler_binding"] = runtime_bindings[key]
+        if runtime_cpp_candidate(row) and runtime_bindings[key]["status"] != "matched_original_actions":
+            report["status"] = "not_proved"
+            report["reason"] = runtime_bindings[key].get("reason", "unmatched runtime compiler action")
+        elif unverified_inputs:
+            report["status"] = "unverified_compiler_inputs"
+            report["reason"] = unverified_inputs
+        elif source.get("unchecked_link_inputs") or configured_headers[0]["contents"]["unchecked_link_inputs"]:
             report["status"] = "unchecked_link_inputs"
         elif source["unentered_owned_files"]:
             report["status"] = "unentered_owned_files"
@@ -812,6 +1064,20 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         else:
             report["status"] = "not_proved"
             report["reason"] = "no matching successful action or original BEP file digest"
+
+
+    # Keep generated protobuf C++ results separate from native and LLVM owners.
+    # cc_proto_library itself remains a forwarding rule, never a CPP pass.
+    if proto_selected:
+        from audit_proto_dwyu import audit_proto
+        proto = audit_proto(audit, roots, rows, proto_selected, native_bep, execroot)
+        manifest["proto_cpp"] = proto
+        for key, report in proto["compiled_owners"].items():
+            rows[key]["category"] = "protobuf_generated_cpp"
+            rows[key]["proto_cpp"] = report
+        for key, report in proto["forwarders"].items():
+            rows[key]["category"] = "protobuf_forwarder_no_cpp"
+            rows[key]["proto_forwarder"] = report
 
 
 def report_path(execroot, row):
@@ -895,6 +1161,11 @@ def read_strict(row, events, path, original_deleted, filesets):
         elif not all(e.get("completed", {}).get("success") for e in selected):
             result["status"] = "failed"
             result["reason"] = "zero findings but aspect failed"
+        elif runtime_cpp_candidate(row):
+            # A top-level BEP alone does not bind the DWYU command to the
+            # original compile action. The configured-closure audit does.
+            result["status"] = "not_proved"
+            result["reason"] = "runtime CPP needs the configured-closure action binding"
         else:
             result["status"] = "clean"
     except (ValueError, AttributeError, KeyError, TypeError) as exc:
@@ -975,6 +1246,9 @@ def main():
                     eligible[key] = row
                 else:
                     row["category"] = "native_forwarder_no_sources"
+            elif runtime_cpp_candidate(row):
+                row["category"] = "llvm_runtime_compiler_candidate"
+                eligible[key] = row
             elif row["rule_class"] in OTHER_CC or any(
                     re.search(r"CppCompile|Assemble|Rustc|RustCompile", action) for action in row["actions"]):
                 row["category"] = "unsupported_compiled_or_cc_provider"
@@ -1075,7 +1349,9 @@ def main():
             "ambiguous_analyzers") and not manifest.get("analyzers_not_in_original_closure") and not any(
             row["category"] in blockers for row in rows.values()) and not manifest[
                 "actions_not_matched_to_configured_rules"] and not manifest.get(
-                    "requested_not_in_eligible_closure") and all(
+                    "requested_not_in_eligible_closure") and not manifest.get(
+                    "runtime_analyzers_not_eligible") and not manifest.get(
+                    "runtime_preprocessors_not_eligible") and all(
                         row["ordinary"]["status"] == "passed" and row["strict"]["status"] == "clean"
                         for row in eligible.values())
         if args.production_census:
@@ -1085,16 +1361,22 @@ def main():
             unsupported_cpp = {
                 key: row for key, row in rows.items()
                 if row["owned_repository"] and not row["is_tool"] and row["rule_class"] not in NATIVE_CC
+                and key not in eligible
+                and key not in manifest.get("proto_cpp", {}).get("compiled_owners", {})
                 and any(name in ("CppCompile", "CppCompileHeader", "CppModuleCompile")
                         for name in row["actions"])
             }
             manifest["unsupported_production_cpp"] = sorted(unsupported_cpp)
-            manifest["production_cpp_passed"] = bool(eligible) and not unsupported_cpp and not any(
+            manifest["production_cpp_passed"] = (
+                bool(eligible) and not unsupported_cpp
+                and manifest.get("proto_cpp", {"scope_complete": True})["scope_complete"]
+            ) and not any(
                 row["category"] == "unresolved_native_sources" for row in rows.values()
             ) and not any(manifest.get(field) for field in (
                 "ambiguous_analyzers", "analyzers_not_in_original_closure",
                 "analyzers_outside_production", "actions_not_matched_to_configured_rules", "census_unreached_declarations",
-                "requested_not_in_eligible_closure",
+                "requested_not_in_eligible_closure", "runtime_analyzers_not_eligible",
+                "runtime_preprocessors_not_eligible",
             )) and all(row["ordinary"]["status"] == "passed" and row["strict"]["status"] == "clean"
                       for row in eligible.values())
     except (OSError, ValueError, KeyError, RuntimeError) as exc:

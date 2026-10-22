@@ -609,5 +609,8 @@ cc_library(
         "//src:core_types",
         "//base:common",
         "//src/Common:exception_api",
+        "//src/Common",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "//src/Parsers:clickhouse_parsers",
     ],
 )

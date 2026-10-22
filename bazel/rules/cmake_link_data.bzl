@@ -445,7 +445,8 @@ CMAKE_LINK = {
     "//src/Common:action_lock",
     "//src/Common:current_metrics",
     "//src/Common:shared_mutex",
-    "//src/Functions/array:array_distance_transposed"
+    "//src/Functions/array:array_distance_transposed",
+    "//src/Common:assert_cast"
   ],
   "expected_objects": [
     170,
@@ -454,7 +455,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    425,
+    424,
     1,
     1,
     1,
@@ -890,6 +891,7 @@ CMAKE_LINK = {
     1,
     1,
     1,
+    1,
     1
   ],
   "archives": [
@@ -952,7 +954,9 @@ CMAKE_LINK = {
       "name": "src/libclickhouse_new_delete.a"
     },
     {
-      "objects": [[439, 0, 1], [6, 0, 17], [7, 0, 1], [6, 17, 26], [440, 0, 1], [6, 26, 44], [434, 0, 1], [6, 44, 60], [435, 0, 1], [6, 60, 72], [8, 0, 1], [6, 72, 117], [434, 1, 2], [6, 117, 137], [441, 0, 1], [6, 137, 149], [438, 0, 1], [6, 149, 163], [9, 0, 1], [6, 163, 425]],
+      "objects": [[439, 0, 1], [6, 0, 17], [7, 0, 1], [6, 17, 26], [440, 0, 1], [6, 26, 44], [434, 0, 1], [6, 44, 60], [435, 0, 1], [6, 60, 72], [8, 0, 1], [6, 72, 117], [434, 1, 2], [6, 117, 137], [441, 0, 1], [6, 137, 149], [438, 0, 1], [6, 149, 163], [9, 0, 1], [6, 163, 185],
+            [443, 0, 1],
+            [6, 185, 424]],
       "name": "src/libclickhouse_common_io.a"
     },
     {

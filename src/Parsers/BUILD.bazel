@@ -328,5 +328,6 @@ cc_library(
         "//src:core_types",
         "//base:common",
         "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
     ],
 )

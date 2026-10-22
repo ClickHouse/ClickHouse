@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package dwyu.proto_compile;
+
+import "dwyu_proto/leaf.proto";
+import "google/protobuf/timestamp.proto";
+
+message UsesLeaf {
+  Leaf leaf = 1;
+  google.protobuf.Timestamp created = 2;
+}

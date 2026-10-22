@@ -6,6 +6,16 @@ load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
+LlvmRuntimeCompileInfo = provider(
+    "The original compile commands and inputs of configured LLVM runtime C/C++ sources.",
+    fields = {
+        "units": "Ordered structs(src, output, compiler, command, inputs), one per compile action.",
+        "toolchain_files": "Files from the compiler toolchain; excludes other declared inputs.",
+        "declared_inputs": "Private compiler input availability from hdrs, not header ownership or exports.",
+        "language": "The configured C or CXX language.",
+    },
+)
+
 def _resource_dir(ctx, toolchain, features, action):
     # LLVM's registered toolchain declares its compile resource directory in
     # cc_args. Use that selected directory without importing its libc++ headers.
@@ -81,23 +91,41 @@ def _llvm_runtime_objects_impl(ctx):
         flags.append("-ffile-prefix-map=" + generated + "=" + generated + ctx.attr.arch + "/")
 
     outputs = []
+    units = []
+    extensions = {
+        "C": ["c"],
+        "CXX": ["cc", "cpp", "cxx", "c++", "C"],
+        "ASM": [],
+    }[ctx.attr.language]
+    collect_units = all([not src.is_directory and src.extension in extensions for src in ctx.files.srcs])
     for src in ctx.files.srcs:
         # .pic.o makes cc_library retain these CMake PIE/PIC objects for a
         # shared or PIE link. CMake's flags, rather than this suffix, select PIC.
         output = ctx.actions.declare_file(ctx.label.name + "/" + src.path + ".pic.o")
+        command = flags + ["-o", output.path, "-c", src.path]
+        inputs = depset([src], transitive = [header_inputs])
         args = ctx.actions.args()
-        args.add_all(flags)
-        args.add_all(["-o", output.path, "-c", src.path])
+        args.add_all(command)
         ctx.actions.run(
             executable = compiler,
-            inputs = depset([src], transitive = [header_inputs]),
+            inputs = inputs,
             outputs = [output],
             arguments = [args],
             mnemonic = "Assemble" if ctx.attr.language == "ASM" else "CppCompile",
             progress_message = "Compiling ClickHouse runtime %{input}",
         )
         outputs.append(output)
-    return [DefaultInfo(files = depset(outputs))]
+        if collect_units:
+            units.append(struct(src = src, output = output, compiler = compiler, command = command, inputs = inputs))
+    result = [DefaultInfo(files = depset(outputs))]
+    if collect_units:
+        result.append(LlvmRuntimeCompileInfo(
+            units = units,
+            toolchain_files = toolchain.all_files,
+            declared_inputs = depset(ctx.files.hdrs),
+            language = ctx.attr.language,
+        ))
+    return result
 
 llvm_runtime_objects = rule(
     implementation = _llvm_runtime_objects_impl,

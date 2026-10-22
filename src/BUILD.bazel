@@ -1426,7 +1426,6 @@ ch_cc_library(
         "//src/Common:XMLUtils.cpp",
         "//src/Common:ZooKeeperNodeVersion.cpp",
         "//src/Common:assertProcessUserMatchesDataOwner.cpp",
-        "//src/Common:assert_cast.cpp",
         "//src/Common:atomicRename.cpp",
         "//src/Common:blockDumper.cpp",
         "//src/Common:checkSSLReturnCode.cpp",
@@ -1684,6 +1683,7 @@ _CORE_TYPE_HEADERS = [
     "Core/TypeId.h",
     "Core/Types_fwd.h",
     "Core/LogsLevel.h",
+    "Core/Field.h",
 ]
 
 _GENERATED_HDRS_1 = glob(
@@ -2899,7 +2899,6 @@ _DBMS_EMBEDDED_PRIVATE_HEADERS = [
     "Core/CompareHelper.h",
     "Core/DecimalFunctions.h",
     "Core/ExternalTable.h",
-    "Core/Field.h",
     "Core/Joins.h",
     "Core/LoadBalancing.h",
     "Core/MergeSelectorAlgorithm.h",
@@ -4298,6 +4297,7 @@ ch_cc_library(
     deps = [
         "//base:common",
         "//src/Common:memory_tracking_api",
+        "@clickhouse_fmtlib//:_fmt",
     ],
 )
 
@@ -4369,5 +4369,9 @@ cc_library(
         "@clickhouse_azure//:_azure_sdk",
         "//src/Common:memory_tracking_api",
         "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src/Common:stopwatch",
+        "//src/Common:cache_policy",
+        "//src/Common:assert_cast",
     ],
 )

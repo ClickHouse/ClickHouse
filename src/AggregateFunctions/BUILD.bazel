@@ -690,5 +690,7 @@ cc_library(
         "//src:headers",
         "//base:common",
         "//src/Common:exception_api",
+        "//src/Common",
+        "@clickhouse_datasketches_cpp//:datasketches_cpp",
     ],
 )

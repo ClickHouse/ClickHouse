@@ -1,5 +1,4 @@
 diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
-index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109bbcddaee9 100644
 --- a/dwyu/cc/aspect/dwyu.bzl
 +++ b/dwyu/cc/aspect/dwyu.bzl
 @@ -1,6 +1,8 @@
@@ -12,7 +11,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
  load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
  load("//dwyu/cc/cc_info_mapping:providers.bzl", "DwyuCcInfoMappingInfo")
  load("//dwyu/private:utils.bzl", "make_param_file_args", "string_to_bool")
-@@ -28,7 +30,7 @@ _CPLUSPLUS_VERSIONS_MAP = {
+@@ -28,7 +30,7 @@
      "98": "199711",
  }
  
@@ -21,7 +20,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
  
  def _is_verbose(ctx):
      return ctx.attr.dwyu_verbose
-@@ -158,6 +160,11 @@ def _get_includes(ctx, target_cc):
+@@ -158,19 +160,36 @@
              if impl_dep_cc.system_includes:
                  system_includes.append(impl_dep_cc.system_includes)
  
@@ -32,12 +31,28 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        includes.append(target_cc.local_includes)
      return includes, quote_includes, external_includes, system_includes
  
- def _process_target(ctx, target, config, output_path, is_target_under_inspection):
-@@ -171,6 +178,13 @@ def _process_target(ctx, target, config, output_path, is_target_under_inspection
+-def _process_target(ctx, target, config, output_path, is_target_under_inspection):
++def _process_target(ctx, target, config, output_path, is_target_under_inspection, producer = None):
+     processing_output = ctx.actions.declare_file(output_path)
+-    header_files = _get_relevant_header(
+-        target_cc = target.cc_info.compilation_context,
+-        include_private_headers = is_target_under_inspection or not config.ignore_private_headers_from_deps,
+-    )
++    if producer != None:
++        # These objects export no header. Their actual TUs are their only
++        # declared owned files; compiler availability does not establish ownership.
++        header_files = [unit.src for unit in producer.units]
++    else:
++        header_files = _get_relevant_header(
++            target_cc = target.cc_info.compilation_context,
++            include_private_headers = is_target_under_inspection or not config.ignore_private_headers_from_deps,
++        )
+ 
+     args = make_param_file_args(ctx)
      args.add("--target", str(target.label))
      args.add("--output", processing_output)
      args.add_all("--header_files", header_files, expand_directories = True, omit_if_empty = False)
-+    if config.preprocessing_mode == "compiler":
++    if config.preprocessing_mode == "compiler" and producer == None:
 +        cc = target.cc_info.compilation_context
 +        args.add_all(
 +            "--exported_include_dirs",
@@ -47,7 +62,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
      if is_target_under_inspection:
          args.add("--is_target_under_inspection")
      if _is_verbose(ctx):
-@@ -363,7 +377,11 @@ def _dywu_results_from_deps(deps):
+@@ -363,7 +382,11 @@
      """
      We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
      """
@@ -60,7 +75,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
  
  def _gather_transitive_reports(ctx):
      """
-@@ -373,9 +391,29 @@ def _gather_transitive_reports(ctx):
+@@ -373,9 +396,29 @@
      """
      reports = []
      if ctx.attr._recursive:
@@ -87,13 +102,13 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +                if toolchain and OutputGroupInfo in toolchain and hasattr(toolchain[OutputGroupInfo], "dwyu"):
 +                    reports.append(toolchain[OutputGroupInfo].dwyu)
 +        else:
-+            reports.extend(_dywu_results_from_deps(ctx.rule.attr.deps))
++            reports.extend(_dywu_results_from_deps(getattr(ctx.rule.attr, "deps", [])))
 +            if hasattr(ctx.rule.attr, "implementation_deps"):
 +                reports.extend(_dywu_results_from_deps(ctx.rule.attr.implementation_deps))
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +424,318 @@ def _return_on_skip(ctx):
+@@ -386,12 +429,404 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -194,6 +209,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +            public[alias] = original
 +        else:
 +            private[alias] = original
++
 +    # These are the rule's own rules_cc compile inputs, not files inherited
 +    # from deps or additional_compiler_inputs. Preserve explicitly public TU files.
 +    private.update({file.path: file.path for file in srcs if file.path not in public})
@@ -207,6 +223,44 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        "unchecked_link_inputs": [file.path for file in link_inputs],
 +        "raw_assembly": [file.path for file in raw_assembly],
 +        "raw_link_candidates": link_candidates,
++    }))
++    return manifest
++
++def _producer_header_manifest(ctx, target, producer):
++    private = {}
++    objects = {}
++    for unit in producer.units:
++        if unit.src in private or unit.output in objects:
++            fail("{}: duplicate compiler producer unit {} -> {}".format(target.label, unit.src.path, unit.output.path))
++        private[unit.src] = unit.src.path
++        objects[unit.output] = True
++        extensions = cc_helper.extensions.C_SOURCE if producer.language == "C" else cc_helper.extensions.CC_SOURCE
++        if (unit.src.is_directory or "." + unit.src.extension not in extensions or
++            unit.output.is_directory or not unit.output.basename.endswith(".pic.o") or
++            unit.command[-4:] != ["-o", unit.output.path, "-c", unit.src.path]):
++            fail("{}: compiler producer command and C/CXX unit disagree: {} -> {}".format(
++                target.label,
++                unit.src.path,
++                unit.output.path,
++            ))
++
++    # declared_inputs is compile availability, not header ownership. Preserve
++    # each remaining input as unverified even when Clang never opens it.
++    # Do not silently accept a sibling .cpp, data file or CMake input.
++    unverified = sorted([
++        file.path
++        for file in producer.declared_inputs.to_list()
++        if file not in private
++    ])
++    manifest = ctx.actions.declare_file("{}.dwyu_owned_headers.json".format(target.label.name))
++    ctx.actions.write(manifest, json.encode({
++        "public": {},
++        "private": {path: path for path in private.values()},
++        "required": private.values(),
++        "unchecked_link_inputs": [],
++        "raw_assembly": [],
++        "raw_link_candidates": [],
++        "unverified_compiler_inputs": unverified,
 +    }))
 +    return manifest
 +
@@ -321,10 +375,6 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +            private_results.append(compiler_output)
 +            continue
 +
-+        public_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_public.json".format(name, attr_prefix, _hash(file.short_path)))
-+        private_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_private.json".format(name, attr_prefix, _hash(file.short_path)))
-+        compiler_headers = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.headers".format(name, attr_prefix, _hash(file.short_path)))
-+
 +        # Placing -x before the input matters for .h, .inc and generated files.
 +        # Replace -c with -E; Clang rejects both under -Werror. -dI emits active includes.
 +        args = ctx.actions.args()
@@ -337,88 +387,141 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +            args.add("-Wno-unused-macros")
 +        args.add("-dI")
 +
-+        # The same Clang invocation reports files suppressed by include guards.
-+        # System headers must be present too: Bazel can put project hdrs in
-+        # -isystem directories, which does not make them toolchain files.
-+        args.add_all([
-+            "-fshow-skipped-includes",
-+            "-Xclang",
-+            "-header-include-file",
-+            "-Xclang",
-+            compiler_headers.path,
-+            "-Xclang",
-+            "-sys-header-deps",
-+        ])
 +        compiler = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name)
-+        ctx.actions.run_shell(
-+            command = """compiler="$1"; pp="$2"; headers="$3"; shift 3
++        public_output, private_output = _process_compiler_command(
++            ctx,
++            file,
++            compiler_output,
++            name,
++            attr_prefix,
++            compiler,
++            command,
++            inputs,
++            cc_toolchain.all_files,
++            header_manifest,
++            args,
++            capture = capture,
++        )
++        public_results.append(public_output)
++        private_results.append(private_output)
++    return public_results, private_results
++
++def _process_compiler_command(ctx, file, compiler_output, name, attr_prefix, compiler, command, inputs, toolchain_files, header_manifest, args, capture = None, environment = None):
++    public_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_public.json".format(name, attr_prefix, _hash(file.short_path)))
++    private_output = ctx.actions.declare_file("{}.dwyu_psf_{}_{}_private.json".format(name, attr_prefix, _hash(file.short_path)))
++    compiler_headers = ctx.actions.declare_file("{}.dwyu_pp_{}_{}.headers".format(name, attr_prefix, _hash(file.short_path)))
++
++    # The same Clang invocation reports files suppressed by include guards.
++    # System headers must be present too: Bazel can put project hdrs in
++    # -isystem directories, which does not make them toolchain files.
++    args.add_all([
++        "-fshow-skipped-includes",
++        "-Xclang",
++        "-header-include-file",
++        "-Xclang",
++        compiler_headers.path,
++        "-Xclang",
++        "-sys-header-deps",
++    ])
++    ctx.actions.run_shell(
++        command = """compiler="$1"; pp="$2"; headers="$3"; shift 3
 +"$compiler" "$@" || {
 +    status=$?
 +    rm -f -- "$pp" "$headers" || :
 +    exit "$status"
 +}
 +""",
++        inputs = inputs,
++        tools = toolchain_files,
++        outputs = [compiler_output, compiler_headers],
++        arguments = [compiler, compiler_output.path, compiler_headers.path, args],
++        mnemonic = "DwyuCompilerPreprocess",
++        **({"env": environment} if environment != None else {})
++    )
++    if capture != None:
++        capture.append(struct(
++            source = file,
++            output = compiler_output,
++            compiler_headers = compiler_headers,
++            command = command,
 +            inputs = inputs,
-+            tools = cc_toolchain.all_files,
-+            outputs = [compiler_output, compiler_headers],
-+            arguments = [compiler, compiler_output.path, compiler_headers.path, args],
-+            mnemonic = "DwyuCompilerPreprocess",
-+        )
-+        if capture != None:
-+            capture.append(struct(
-+                source = file,
-+                output = compiler_output,
-+                compiler_headers = compiler_headers,
-+                command = command,
-+                inputs = inputs,
-+                toolchain_files = cc_toolchain.all_files,
-+            ))
-+        args = make_param_file_args(ctx)
-+        args.add_all("--files", [compiler_output])
-+        args.add("--mode", "compiler")
-+        args.add("--source", file)
-+        args.add("--compiler_headers", compiler_headers)
++            toolchain_files = toolchain_files,
++        ))
++    args = make_param_file_args(ctx)
++    args.add_all("--files", [compiler_output])
++    args.add("--mode", "compiler")
++    args.add("--source", file)
++    args.add("--compiler_headers", compiler_headers)
 +
-+        # Keep compiler feature directories in their configured order. A JSON
-+        # value protects compiler --options from DWYU's option parser.
-+        args.add("--compiler_command", json.encode(command))
++    # Keep compiler feature directories in their configured order. A JSON
++    # value protects compiler --options from DWYU's option parser.
++    args.add("--compiler_command", json.encode(command))
 +
-+        # LLVM's glibc input is a source directory; libc++ uses a tree artifact.
-+        # Classify the supplied inputs as files/directories during execution.
-+        args.add_all("--toolchain_files", cc_toolchain.all_files, expand_directories = False)
-+        args.add("--output", public_output)
-+        args.add("--private_output", private_output)
-+        args.add("--owned_headers", header_manifest)
-+        if _is_verbose(ctx):
-+            args.add("--verbose")
-+        ctx.actions.run(
-+            executable = ctx.executable._tool_preprocessing,
-+            inputs = depset(direct = [compiler_output, compiler_headers], transitive = [inputs]),
-+            outputs = [public_output, private_output],
-+            mnemonic = "DwyuProcessSourceFile",
-+            arguments = [args],
-+        )
-+        public_results.append(public_output)
-+        private_results.append(private_output)
-+    return public_results, private_results
++    # LLVM's glibc input is a source directory; libc++ uses a tree artifact.
++    # Classify the supplied inputs as files/directories during execution.
++    args.add_all("--toolchain_files", toolchain_files, expand_directories = False)
++    args.add("--output", public_output)
++    args.add("--private_output", private_output)
++    args.add("--owned_headers", header_manifest)
++    if _is_verbose(ctx):
++        args.add("--verbose")
++    ctx.actions.run(
++        executable = ctx.executable._tool_preprocessing,
++        inputs = depset(direct = [compiler_output, compiler_headers, header_manifest], transitive = [inputs]),
++        outputs = [public_output, private_output],
++        mnemonic = "DwyuProcessSourceFile",
++        arguments = [args],
++    )
 +
-+def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolchain, feature_configuration, attr_prefix, header_manifest):
++    return public_output, private_output
++
++def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolchain, feature_configuration, attr_prefix, header_manifest, producer = None):
      """
      For each given file perform a preprocessing step to find all relevant include statements
      """
      if not files:
 -        return []
 +        return [], []
++    if producer != None:
++        public_results = []
++        private_results = []
++        for unit in producer.units:
++            compiler_output = ctx.actions.declare_file("{}.dwyu_pp_priv_{}.i".format(
++                target.label.name,
++                _hash(unit.src.short_path),
++            ))
++            command = unit.command
++            args = ctx.actions.args()
++            args.add_all(command[:-4] + ["-o", compiler_output.path, "-E", unit.src.path])
++            args.add("-dI")
++            public, private = _process_compiler_command(
++                ctx,
++                unit.src,
++                compiler_output,
++                target.label.name,
++                "priv",
++                unit.compiler,
++                command,
++                unit.inputs,
++                producer.toolchain_files,
++                header_manifest,
++                args,
++            )
++            public_results.append(public)
++            private_results.append(private)
++        return public_results, private_results
 +    if config.preprocessing_mode == "compiler":
 +        return _preprocess_with_compiler(ctx, target, files, cc_toolchain, feature_configuration, attr_prefix, header_manifest)
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,7 +784,109 @@ def _extract_includes_from_files(ctx, config, target, files, defines, cc_toolcha
+@@ -440,9 +875,133 @@
  
          preprocessor_results.append(pp_output)
  
 -    return preprocessor_results
+-
+-def dwyu_cc_aspect_impl(target, ctx):
 +    return (preprocessor_results, []) if attr_prefix == "pub" else ([], preprocessor_results)
 +
 +def _link_library_path(file):
@@ -452,6 +555,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +            inputs = [f.path for f in _as_list(linker_input.additional_inputs)],
 +            linkstamps = [str(s) for s in _as_list(getattr(linker_input, "linkstamps", []))],
 +        )
++
 +        # File.path includes the Bazel configuration. The ordered library
 +        # metadata distinguishes flags and stamp inputs with the same owner.
 +        key = json.encode(record)
@@ -461,13 +565,34 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        route.append(interned[key])
 +    return dict(target = str(dep.label), records = route)
 +
-+def _owned_symbols(ctx, target, deps, implementation_deps):
++def _owned_symbols(ctx, target, deps, implementation_deps, producer = None):
 +    inventory = []
 +    interned = {}
 +    objects = {}
 +    archives = {}
 +    tool = ctx.attr._tool_nm[DefaultInfo].files_to_run
-+    owner = _symbol_route(struct(label = target.label, cc_info = target[CcInfo]), inventory, interned, objects, archives)
++    if producer == None:
++        owner = _symbol_route(struct(label = target.label, cc_info = target[CcInfo]), inventory, interned, objects, archives)
++    else:
++        for unit in producer.units:
++            objects[unit.output.path] = unit.output
++        inventory.append(dict(
++            owner = str(target.label),
++            libraries = [dict(
++                objects = objects.keys(),
++                unchecked_objects = [],
++                static = "",
++                pic_static = "",
++                dynamic = "",
++                interface = "",
++                alwayslink = False,
++            )],
++            flags = [],
++            inputs = [],
++            linkstamps = [],
++        ))
++        interned[json.encode(inventory[0])] = 0
++        owner = dict(target = str(target.label), records = [0])
 +    public = [_symbol_route(dep, inventory, interned, objects, archives) for dep in deps]
 +    private = [_symbol_route(dep, inventory, interned, objects, archives) for dep in implementation_deps]
 +    nm = ctx.actions.declare_file("{}.dwyu_nm.txt".format(ctx.label.name))
@@ -522,10 +647,12 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        archives = archive_manifest,
 +    )))
 +    return [symbols, nm] + archive_outputs
- 
- def dwyu_cc_aspect_impl(target, ctx):
++
++def dwyu_cc_aspect_impl(target, ctx, producer = None):
      """
-@@ -458,10 +904,26 @@ def dwyu_cc_aspect_impl(target, ctx):
+     Implementation for the "Depend on What You Use" (DWYU) aspect.
+ 
+@@ -458,9 +1017,25 @@
      # Check whether DWYU should run on this target
      #
  
@@ -533,9 +660,10 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        return []
 +
      # We might extend the list of supported rules eventually, but right now we only support and test the core cc_* rules.
-     if not ctx.rule.kind in ["cc_binary", "cc_library", "cc_test"]:
+-    if not ctx.rule.kind in ["cc_binary", "cc_library", "cc_test"]:
++    if not ctx.rule.kind in ["cc_binary", "cc_library", "cc_test"] and producer == None:
          return _return_on_skip(ctx)
- 
++
 +    # The configured closure inventories tools but audits production C++.
 +    # Keep descendants: an incoming transition below a tool may leave exec.
 +    if ctx.attr._follow_configured_closure and ctx.configuration.is_tool_configuration():
@@ -548,20 +676,29 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        repository = "@@" + target.label.repo_name + "//" if target.label.repo_name else "//"
 +        if repository not in repositories:
 +            return _return_on_skip(ctx)
-+
+ 
      # Skip targets which the user explicitly excluded from the analysis.
      # In contrast to the other skipping mechanisms we still propagate the reports of the dependencies.
-     # Excluding a single target from the analysis shall not stop the recursive analysis below it.
-@@ -510,8 +972,17 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -510,17 +1085,37 @@
      #
  
      config = _make_dwyu_config(ctx)
 -
 -    defines = [] if config.preprocessing_mode == "fast" else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
++    if producer != None:
++        # No metadata-only success when this producer stops matching its API.
++        if config.preprocessing_mode != "compiler" or not producer.units or producer.language not in ["C", "CXX"]:
++            fail("{}: compiler producer requires nonempty C/CXX units and compiler preprocessing".format(target.label))
++        if getattr(ctx.rule.attr, "deps", []) or getattr(ctx.rule.attr, "implementation_deps", []):
++            fail("{}: compiler producer link dependencies require a linking-context audit".format(target.label))
 +    header_manifest = None
 +    link_inputs = []
 +    raw_assembly = []
-+    if config.preprocessing_mode == "compiler":
++    if producer != None:
++        public_files = []
++        private_files = [unit.src for unit in producer.units]
++        header_manifest = _producer_header_manifest(ctx, target, producer)
++    elif config.preprocessing_mode == "compiler":
 +        # Textual and private headers get caller context; .S actual srcs still
 +        # compile even if also textual. Precompiled link inputs have no cpp roots.
 +        public_files = [file for file in getattr(ctx.rule.files, "hdrs", []) if not _is_rules_cc_textual_header(file)]
@@ -571,8 +708,22 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +    defines = [] if config.preprocessing_mode in ["fast", "compiler"] else _parse_compiler_command(ctx, target[CcInfo].compilation_context, cc_toolchain, feature_configuration)
      processed_target = _process_target(
          ctx,
-         target = struct(label = target.label, cc_info = target[CcInfo]),
-@@ -529,26 +1000,39 @@ def dwyu_cc_aspect_impl(target, ctx):
+-        target = struct(label = target.label, cc_info = target[CcInfo]),
++        target = struct(label = target.label, cc_info = target[CcInfo] if producer == None else None),
+         config = config,
+         output_path = "{}_processed_target_under_inspection.json".format(target.label.name),
+         is_target_under_inspection = True,
+-    )
+-
+-    target_deps, target_impl_deps = _preprocess_deps(ctx)
++        producer = producer,
++    )
++
++    target_deps, target_impl_deps = _preprocess_deps(ctx) if producer == None else ([], [])
+ 
+     # TODO Investigate if we can prevent running this multiple times for the same dep if multiple
+     #      target_under_inspection have the same dependency
+@@ -529,26 +1124,40 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -586,9 +737,10 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "pub",
-+        header_manifest = header_manifest,
-     )
+-    )
 -    preprocessed_private_files = _extract_includes_from_files(
++        header_manifest = header_manifest,
++    )
 +    public_from_srcs, private_from_srcs = _extract_includes_from_files(
          ctx = ctx,
          config = config,
@@ -598,8 +750,10 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
          cc_toolchain = cc_toolchain,
 +        feature_configuration = feature_configuration,
          attr_prefix = "priv",
+-    )
 +        header_manifest = header_manifest,
-     )
++        producer = producer,
++    )
 +    preprocessed_public_files = public_from_headers + public_from_srcs
 +    assembly_outputs = [file for file in private_from_srcs if file.extension == "o"]
 +    preprocessed_private_files = private_from_headers + [file for file in private_from_srcs if file.extension != "o"]
@@ -609,12 +763,12 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +    if header_manifest != None:
 +        args.add("--owned_headers", header_manifest)
 +        if ctx.attr._tool_nm:
-+            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps)
++            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps, producer = producer)
 +            args.add("--owned_symbols", symbols[0])
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,18 +1044,30 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -560,18 +1169,30 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -649,7 +803,7 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -584,3 +1080,186 @@ def dwyu_cc_aspect_impl(target, ctx):
+@@ -584,3 +1205,190 @@
  
      accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
      return [OutputGroupInfo(dwyu = accumulated_reports)]
@@ -836,8 +990,12 @@ index 13af75e7e81071dbf1c39cbb5e3a061ef7f5f236..2fcdcd9ff8b3cd0c1d7e7708656e109b
 +        arguments = [args],
 +    )
 +    return [DefaultInfo(files = depset([report])), OutputGroupInfo(dwyu_consumer = depset([report]))]
++
++# Reuse real compiler preprocessing without synthesizing a cc_library.
++dwyu_process_compiler_command = _process_compiler_command
++dwyu_configured_header_aliases = _configured_header_aliases
 diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
-index bd8a74564ca993c5dada35fe4f73cdb0714b921b..92d900b15271b7330ed490e08af1af51439b96b7 100644
+index bd8a74564ca993c5dada35fe4f73cdb0714b921b..6a01184737bfc8173d6264f0e6c6f946c09e6b01 100644
 --- a/dwyu/cc/aspect/factory.bzl
 +++ b/dwyu/cc/aspect/factory.bzl
 @@ -2,7 +2,7 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
@@ -859,18 +1017,34 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..92d900b15271b7330ed490e08af1af51
          recursion_stops_on_skip = False,
          skip_external_targets = False,
          skip_features = [],
-@@ -44,6 +46,10 @@ def dwyu_cc_aspect_factory(
+@@ -44,7 +46,13 @@ def dwyu_cc_aspect_factory(
          skip_toolchain_features = [],
          skipped_tags = [],
          target_mapping = None,
+-        verbose = False):
 +        tool_analyze_includes = None,
 +        tool_preprocessing = None,
 +        tool_process_target = None,
 +        tool_nm = None,
-         verbose = False):
++        verbose = False,
++        additional_providers = [],
++        implementation = None):
      """
      Create and configure a "**D**epend on **W**hat **Y**ou **U**se" (DWYU) aspect.
-@@ -131,6 +137,8 @@ def dwyu_cc_aspect_factory(
+ 
+@@ -68,6 +76,11 @@ def dwyu_cc_aspect_factory(
+     | `dwyu:preprocessing_mode=<mode>`                       | Control the preprocessing mode. |
+ 
+     Args:
++        additional_providers: Alternative providers accepted by a custom implementation
++                              when configured closure traversal is disabled.
++        implementation: Optional project aspect implementation. It can pass compiler
++                        producer data to dwyu_cc_aspect_impl without making the
++                        production rule depend on DWYU.
+         analysis_ignores_private_headers_from_deps: Setting this to `False` will allow headers listed in the `srcs` attributes of a dependency to fulfill the DWYU checks on top of those from the `hdrs` attribute.
+                                                     By default, DWYU uses only headers from the `hdrs` attribute.</br>
+                                                     Strictly speaking, using headers from the `srcs` attribute of a dependency is wrong, as they are an implementation detail of the dependency.
+@@ -131,6 +144,8 @@ def dwyu_cc_aspect_factory(
                     You can change this to recursively analyzing dependencies following the `deps` and `implementation_deps` attributes by setting this to True.<br>
                     This feature is demonstrated in the [recursion example](/examples/recursion).
  
@@ -879,7 +1053,7 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..92d900b15271b7330ed490e08af1af51
          recursion_stops_on_skip: If `True`, skipping a target will also stop the recursive analysis of its dependencies.
                                   This does not just influence the behavior of the `skip_*` options, but also skipping to inbuilt logic (e.g. skipping incompatible rule types).
  
-@@ -187,15 +195,25 @@ def dwyu_cc_aspect_factory(
+@@ -187,15 +202,25 @@ def dwyu_cc_aspect_factory(
                          For the full details see the `dwyu_make_cc_info_mapping` documentation.<br>
                          This feature is demonstrated in the [target_mapping example](/examples/target_mapping).
  
@@ -906,13 +1080,17 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..92d900b15271b7330ed490e08af1af51
      aspect_ignored_includes = [ignored_includes] if ignored_includes else []
  
      if skip_tags != _DEFAULT_SKIPPED_TAGS and skipped_tags:
-@@ -218,9 +236,12 @@ def dwyu_cc_aspect_factory(
-         implementation = dwyu_cc_aspect_impl,
+@@ -215,12 +240,15 @@ def dwyu_cc_aspect_factory(
+     _validate_skip_targets(skip_targets)
+ 
+     return aspect(
+-        implementation = dwyu_cc_aspect_impl,
++        implementation = implementation or dwyu_cc_aspect_impl,
          attr_aspects = attr_aspects,
          fragments = ["cpp"],
 -        required_providers = [CcInfo],
 -        toolchains = use_cc_toolchain(mandatory = True),
-+        required_providers = [] if follow_configured_closure else [CcInfo],
++        required_providers = [] if follow_configured_closure else [[CcInfo]] + [[p] for p in additional_providers],
 +        toolchains = use_cc_toolchain(mandatory = not follow_configured_closure),
 +        toolchains_aspects = ["*"] if follow_configured_closure else [],
 +        apply_to_generating_rules = follow_configured_closure,
@@ -921,7 +1099,7 @@ index bd8a74564ca993c5dada35fe4f73cdb0714b921b..92d900b15271b7330ed490e08af1af51
              "dwyu_analysis_ignores_private_headers_from_deps": attr.bool(
                  default = analysis_ignores_private_headers_from_deps,
              ),
-@@ -272,23 +293,81 @@ def dwyu_cc_aspect_factory(
+@@ -272,23 +300,81 @@ def dwyu_cc_aspect_factory(
                  default = aspect_target_mapping,
              ),
              "_tool_analyze_includes": attr.label(
@@ -1246,7 +1424,7 @@ index b0697ed43d4bf1e536194bb8f32bdb3e38d8fa4e..8e619c9c3517f81ccf5d1ebe8a7cd593
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb92d1d4e1 100644
+index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b3002dc18c65 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
 @@ -6,11 +6,16 @@
@@ -1631,7 +1809,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +440,84 @@ int main_impl(const ProgramOptions& options) {
+@@ -91,21 +440,87 @@ int main_impl(const ProgramOptions& options) {
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
@@ -1642,6 +1820,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb
 +                                 !options.owned_symbols.empty());
 +    std::vector<std::string> unchecked_link_inputs;
 +    std::vector<std::string> raw_link_candidates;
++    std::vector<std::string> unverified_compiler_inputs;
 +    auto unentered_owned_files = nlohmann::json::object();
 +    std::unordered_set<std::string> observed;
 +    auto public_includes = getIncludeStatements(options.preprocessed_public_files, ignored_includes, &observed);
@@ -1652,6 +1831,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb
 +        const auto headers = nlohmann::json::parse(headers_input);
 +        unchecked_link_inputs = headers.at("unchecked_link_inputs").get<std::vector<std::string>>();
 +        raw_link_candidates = headers.at("raw_link_candidates").get<std::vector<std::string>>();
++        unverified_compiler_inputs = headers.value("unverified_compiler_inputs", std::vector<std::string>{});
 +        for (const auto& file : headers.at("raw_assembly").get<std::vector<std::string>>())
 +            observed.insert(file);
 +        for (const auto& file : headers.at("required").get<std::vector<std::string>>()) {
@@ -1675,6 +1855,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb
  
 +    result.markUnverifiedLinkDeps(raw_link_candidates);
 +    result.markUnverifiedLinkDeps(link_evidence.unverified);
++    result.setUnverifiedCompilerInputs(std::move(unverified_compiler_inputs));
 +    if (!unentered_owned_files.empty()) {
 +        std::set<std::string> public_deps, private_deps;
 +        for (const auto& dep : system_under_inspection.public_deps) public_deps.insert(dep->name);
@@ -1722,16 +1903,21 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb374bcb55f1a4413034f67d60d3ecfb
      }
      else {
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.cpp b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..cb5795ef75844cc5402fe51db84d8aed85076422 100644
+index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..80558c4e17f1fe8014ef565d618ff44a37f3f882 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.cpp
-@@ -39,7 +39,32 @@ Result::Result(std::string target) : target_{std::move(target)} {}
+@@ -39,7 +39,37 @@ Result::Result(std::string target) : target_{std::move(target)} {}
  
  bool Result::isOk() const {
      return public_includes_without_direct_dep_.empty() && private_includes_without_direct_dep_.empty() &&
 -           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty();
 +           unused_deps_.empty() && unused_impl_deps_.empty() && public_dep_which_should_be_private_.empty() &&
-+           unverified_link_deps_.empty() && unverified_compilation_deps_.empty() && unentered_owned_files_.empty();
++           unverified_link_deps_.empty() && unverified_compilation_deps_.empty() &&
++           unverified_compiler_inputs_.empty() && unentered_owned_files_.empty();
++}
++
++void Result::setUnverifiedCompilerInputs(std::vector<std::string> inputs) {
++    unverified_compiler_inputs_ = std::move(inputs);
 +}
 +
 +void Result::markUnverifiedLinkDeps(const std::vector<std::string>& candidates) {
@@ -1759,7 +1945,7 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..cb5795ef75844cc5402fe51db84d8aed
  }
  
  void Result::setPublicIncludesWithoutDirectDep(std::vector<IncludeStatement> includes) {
-@@ -105,6 +130,23 @@ std::string Result::toString(const std::string& report_path) const {
+@@ -105,6 +135,27 @@ std::string Result::toString(const std::string& report_path) const {
          }
      }
  
@@ -1779,16 +1965,21 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..cb5795ef75844cc5402fe51db84d8aed
 +        content += "\nCompiler include observations cannot identify which dependency supplied an include directory:\n";
 +        for (const auto& dep : unverified_compilation_deps_) content += "  " + dep + "\n";
 +    }
++    if (!unverified_compiler_inputs_.empty()) {
++        content += "\nCompiler inputs have no declared header ownership or dependency:\n";
++        for (const auto& input : unverified_compiler_inputs_) content += "  " + input + "\n";
++    }
 +
      content += "\n";
      content += "DWYU Report: " + report_path + "\n";
  
-@@ -118,6 +160,11 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
+@@ -118,6 +169,12 @@ nlohmann::json Result::toJson(const bool use_implementation_deps) const {
      data["private_includes_without_dep"] = makeMissingIncludesMap(private_includes_without_direct_dep_);
      data["unused_deps"] = unused_deps_;
      data["unused_implementation_deps"] = unused_impl_deps_;
 +    if (!unverified_link_deps_.empty()) data["unverified_link_deps"] = unverified_link_deps_;
 +    data["unverified_compilation_deps"] = unverified_compilation_deps_;
++    data["unverified_compiler_inputs"] = unverified_compiler_inputs_;
 +    data["unentered_owned_files"] = unentered_owned_files_;
 +    data["reserved_compilation_deps"] = {{"deps", reserved_public_deps_},
 +                                         {"implementation_deps", reserved_private_deps_}};
@@ -1796,26 +1987,28 @@ index 5d235c17b61c7a853d9e5a234f34e1dc4371a4b7..cb5795ef75844cc5402fe51db84d8aed
      // The fixing script has to know if it should add missing private dependencies to 'deps' or 'implementation_deps'.
      // Only cc_library targets with the 'optimize_implementation_deps' flag set to true should add missing private
 diff --git a/dwyu/cc/aspect/private/analyze_includes/result.h b/dwyu/cc/aspect/private/analyze_includes/result.h
-index 4129d2d6190284c2174857a095afbada91b1a1dc..ff6a1766705cc476dea47fd1b5bd91333ec6b42e 100644
+index 4129d2d6190284c2174857a095afbada91b1a1dc..7d3b9804c6f41357ccc0609599a74eeddbc70121 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/result.h
 +++ b/dwyu/cc/aspect/private/analyze_includes/result.h
-@@ -16,6 +16,10 @@ class Result {
+@@ -16,6 +16,11 @@ class Result {
      explicit Result(std::string target);
  
      bool isOk() const;
 +    void markUnverifiedLinkDeps(const std::vector<std::string>& candidates);
 +    void markUnverifiedCompilationDep(const std::string& dep, const std::string& reason);
++    void setUnverifiedCompilerInputs(std::vector<std::string> inputs);
 +    void reserveForUnenteredOwnedFiles(nlohmann::json files, std::set<std::string> public_deps,
 +                                      std::set<std::string> private_deps);
  
      std::string toString(const std::string& report_path) const;
      nlohmann::json toJson(bool use_implementation_deps) const;
-@@ -33,6 +37,11 @@ class Result {
+@@ -33,6 +38,12 @@ class Result {
      std::vector<IncludeStatement> private_includes_without_direct_dep_;
      std::set<std::string> unused_deps_;
      std::set<std::string> unused_impl_deps_;
 +    std::set<std::string> unverified_link_deps_;
 +    std::set<std::string> unverified_compilation_deps_;
++    std::vector<std::string> unverified_compiler_inputs_;
 +    nlohmann::json unentered_owned_files_ = nlohmann::json::object();
 +    std::set<std::string> reserved_public_deps_;
 +    std::set<std::string> reserved_private_deps_;
@@ -2438,21 +2631,34 @@ index 0bd71e67e1a0494ee529fd83bb96fbb973b95f0c..c67b02e8efc1c14f712640121c680353
      std::ofstream output{options.output};
      if (output.is_open()) {
 diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
-index c7eda7077cd946545308f89c558b1d2e124e2251..3bd3eb24dd02b22ec6186020ef5013a59f690f05 100644
 --- a/dwyu/cc/defs.bzl
 +++ b/dwyu/cc/defs.bzl
-@@ -2,7 +2,7 @@
+@@ -2,7 +2,13 @@
  Public symbols available to DWYU users.
  """
  
 -load("//dwyu/cc/aspect:factory.bzl", _dwyu_cc_aspect_factory = "dwyu_cc_aspect_factory")
++load(
++    "//dwyu/cc/aspect:dwyu.bzl",
++    _dwyu_cc_aspect_impl = "dwyu_cc_aspect_impl",
++    _dwyu_configured_header_aliases = "dwyu_configured_header_aliases",
++    _dwyu_process_compiler_command = "dwyu_process_compiler_command",
++)
 +load("//dwyu/cc/aspect:factory.bzl", _dwyu_cc_aspect_factory = "dwyu_cc_aspect_factory", _dwyu_cc_consumer_audit = "dwyu_cc_consumer_audit")
  load(
      "//dwyu/cc/cc_info_mapping:cc_info_mapping.bzl",
      _MAP_DIRECT_DEPS = "MAP_DIRECT_DEPS",
-@@ -15,3 +15,5 @@ dwyu_cc_aspect_factory = _dwyu_cc_aspect_factory
+@@ -11,7 +17,13 @@
+ )
+ 
+ dwyu_cc_aspect_factory = _dwyu_cc_aspect_factory
++dwyu_cc_aspect_impl = _dwyu_cc_aspect_impl
+ 
  dwyu_make_cc_info_mapping = _dwyu_make_cc_info_mapping
  MAP_DIRECT_DEPS = _MAP_DIRECT_DEPS
  MAP_TRANSITIVE_DEPS = _MAP_TRANSITIVE_DEPS
 +
 +dwyu_cc_consumer_audit = _dwyu_cc_consumer_audit
++
++dwyu_process_compiler_command = _dwyu_process_compiler_command
++dwyu_configured_header_aliases = _dwyu_configured_header_aliases
