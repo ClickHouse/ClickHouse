@@ -110,4 +110,16 @@ void PulsarConsumer::rollback()
     usable = false;
 }
 
+void PulsarConsumer::release()
+{
+    /// Nothing is negatively acknowledged here: closing the consumer is what returns its messages
+    /// (the acknowledgement-pending ones, the prefetched tail of the batch and the receiver queue)
+    /// to the subscription, and a negative acknowledgement would only add a redelivery request
+    /// delayed by the client's negative acknowledgement delay.
+    pending_acks.clear();
+    polled_messages.clear();
+    next_message = polled_messages.end();
+    usable = false;
+}
+
 }

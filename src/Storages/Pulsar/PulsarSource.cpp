@@ -52,16 +52,23 @@ PulsarSource::~PulsarSource()
 {
     if (consumer)
     {
-        /// If some consumed messages were not acknowledged (an early stop of a direct SELECT
-        /// because of LIMIT or an exception, or `pulsar_commit_on_select = 0`), the read was
-        /// aborted: request redelivery of the whole batch, including the messages prefetched by
-        /// the client, instead of leaving it attached to the pooled consumer, where a later query
-        /// could acknowledge messages it never returned. After a successful `commit` there is
-        /// nothing uncommitted, and the leftover prefetched tail stays buffered for the next reader.
+        /// If some consumed messages were not acknowledged, they must not stay attached to the
+        /// pooled consumer, where a later query could acknowledge messages it never returned.
+        /// After a direct SELECT with `pulsar_commit_on_select = 0` read to its end, release them:
+        /// the consumer is closed and the broker hands them out again immediately, so a repeated
+        /// SELECT sees them. If the read was aborted (an early stop because of LIMIT or an
+        /// exception), request redelivery of the whole batch, including the messages prefetched by
+        /// the client. After a successful `commit` there is nothing uncommitted, and the leftover
+        /// prefetched tail stays buffered for the next reader.
         if (consumer->hasUncommitted())
-            consumer->rollback();
-        /// A rolled back consumer, or one that hit a terminal receive error, is closed and recreated
-        /// by the storage instead of being returned to the pool.
+        {
+            if (reached_end)
+                consumer->release();
+            else
+                consumer->rollback();
+        }
+        /// A rolled back or released consumer, or one that hit a terminal receive error, is closed
+        /// and recreated by the storage instead of being returned to the pool.
         storage.returnConsumer(consumer);
     }
 
@@ -72,8 +79,12 @@ PulsarSource::~PulsarSource()
 Chunk PulsarSource::generate()
 {
     auto chunk = generateImpl();
-    if (!chunk && commit_in_suffix)
-        commit();
+    if (!chunk)
+    {
+        reached_end = true;
+        if (commit_in_suffix)
+            commit();
+    }
 
     return chunk;
 }

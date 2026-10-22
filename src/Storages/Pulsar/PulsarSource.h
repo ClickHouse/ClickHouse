@@ -53,6 +53,8 @@ private:
     const UInt64 cancel_epoch;
 
     bool is_finished = false;
+    /// Whether `generate` returned the end of the stream, i.e. the read was not aborted.
+    bool reached_end = false;
     PulsarConsumerPtr consumer{nullptr};
 
     const Block non_virtual_header;

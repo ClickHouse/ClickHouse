@@ -28,6 +28,11 @@ public:
     /// tail of the current batch, requesting redelivery. The consumer becomes unusable: the
     /// storage closes it to also redeliver the messages prefetched by the client.
     void rollback();
+    /// Give up all consumed but unacknowledged messages without negatively acknowledging them,
+    /// after a read that completed normally but must not acknowledge (`pulsar_commit_on_select = 0`).
+    /// The consumer becomes unusable: the storage closes it, and the broker redelivers its
+    /// unacknowledged messages right away, without the negative acknowledgement delay.
+    void release();
 
     /// Whether some messages were handed to the parser but not yet acknowledged.
     bool hasUncommitted() const { return !pending_acks.empty(); }
