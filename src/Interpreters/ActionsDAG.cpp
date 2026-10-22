@@ -5506,11 +5506,13 @@ ActionsDAG ActionsDAG::deserialize(
         }
     }
 
-    auto adopt_state_variant = [](Node & node, const DataTypePtr & actual_type)
+    std::unordered_map<const Node *, DataTypePtr> wire_types;
+    auto adopt_state_variant = [&wire_types](Node & node, const DataTypePtr & actual_type)
     {
         if (node.column || !actual_type || !differsOnlyByAggregateStateVariant(actual_type, node.result_type))
             return false;
 
+        wire_types.emplace(&node, node.result_type);
         node.result_type = actual_type;
         return true;
     };
@@ -5520,8 +5522,12 @@ ActionsDAG ActionsDAG::deserialize(
 
     std::list<Node> nodes;
     std::unordered_map<size_t, Node *> id_to_node;
+    std::vector<std::list<Node>::iterator> positions;
     for (size_t i = 0; i < nodes_size; ++i)
+    {
         id_to_node.emplace(i, &nodes.emplace_back(Node{}));
+        positions.push_back(std::prev(nodes.end()));
+    }
 
     for (size_t i = 0; i < nodes_size; ++i)
     {
@@ -5586,6 +5592,48 @@ ActionsDAG ActionsDAG::deserialize(
         {
             String function_name;
             readStringBinary(function_name, in);
+
+            auto is_lambda = [](const Node * child)
+            { return typeid_cast<const DataTypeFunction *>(child->result_type.get()) != nullptr; };
+
+            /// A lambda is built for the wire types of its arguments, so the other arguments of a higher-order
+            /// function whose state variant was adopted are cast back to their wire types for this function.
+            if (!(column_flags & 4) && std::ranges::any_of(node.children, is_lambda))
+            {
+                std::unordered_map<const Node *, const Node *> casts;
+                for (auto & child : node.children)
+                {
+                    auto wire_type = wire_types.find(child);
+                    if (is_lambda(child) || wire_type == wire_types.end())
+                        continue;
+
+                    auto [cast, inserted] = casts.emplace(child, nullptr);
+                    if (inserted)
+                    {
+                        Field type_name(wire_type->second->getName());
+                        Node & type_name_node = *nodes.emplace(positions[i]);
+                        type_name_node.type = ActionType::COLUMN;
+                        type_name_node.result_type = std::make_shared<DataTypeString>();
+                        type_name_node.column = type_name_node.result_type->createColumnConst(0, type_name);
+                        type_name_node.result_name = calculateConstantActionNodeName(type_name);
+
+                        Node & cast_node = *nodes.emplace(positions[i]);
+                        cast_node.type = ActionType::FUNCTION;
+                        cast_node.children = {child, &type_name_node};
+                        cast_node.function_base = createInternalCast(
+                            {child->result_type, child->result_name}, wire_type->second, CastType::nonAccurate, {}, context);
+                        cast_node.function = cast_node.function_base->prepare(
+                            {{child->column, child->result_type, child->result_name},
+                             {type_name_node.column, type_name_node.result_type, type_name_node.result_name}});
+                        cast_node.result_type = cast_node.function_base->getResultType();
+                        cast_node.result_name
+                            = cast_node.function_base->getName() + "(" + child->result_name + ", " + type_name_node.result_name + ")";
+                        cast->second = &cast_node;
+                    }
+
+                    child = cast->second;
+                }
+            }
 
             ColumnsWithTypeAndName arguments;
             arguments.reserve(node.children.size());
