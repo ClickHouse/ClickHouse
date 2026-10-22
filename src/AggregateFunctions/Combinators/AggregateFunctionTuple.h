@@ -158,7 +158,6 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
     bool isOnlyWindowFunction() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;

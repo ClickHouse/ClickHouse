@@ -1,7 +1,9 @@
 <clickhouse>
     <iceberg_rest_catalog>
         <port>8182</port>
+        <secure_port>8183</secure_port>
         <warehouse>my_warehouse</warehouse>
         <base_location>s3://warehouse/my_warehouse</base_location>
+        <storage_named_collection>warehouse_storage</storage_named_collection>
     </iceberg_rest_catalog>
 </clickhouse>

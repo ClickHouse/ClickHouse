@@ -71,26 +71,30 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
-    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
-    if (use_query_condition_cache && filter_actions_dag)
-    {
-        /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
-        /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
-        /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
-        bool prewhere_covered = true;
-        if (prewhere_info)
-        {
-            const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-            prewhere_covered = prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node);
-        }
+    if (filter_actions_dag && context_->getSettingsRef()[Setting::use_query_condition_cache])
+        condition_hash = computeConditionHash(*filter_actions_dag, prewhere_info, context_);
+}
 
-        const auto & outputs = filter_actions_dag->getOutputs();
-        if (prewhere_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
-        {
-            condition_hash = queryConditionCacheHash(
-                filter_actions_dag->getHash(), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
-        }
+std::optional<size_t> FormatFilterInfo::computeConditionHash(
+    const ActionsDAG & filter_actions_dag,
+    const PrewhereInfoPtr & prewhere_info,
+    const ContextPtr & context)
+{
+    /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
+    /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
+    /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
+    if (prewhere_info)
+    {
+        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+        if (!prewhere_node || !VirtualColumnUtils::isDeterministic(prewhere_node))
+            return {};
     }
+
+    const auto & outputs = filter_actions_dag.getOutputs();
+    if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
+        return {};
+
+    return queryConditionCacheHash(filter_actions_dag.getHash(), queryConditionCacheSettingsSalt(context->getSettingsRef()));
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;

@@ -25,6 +25,8 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 基准 URL 可以采用 `s3` 表函数接受的任何形式，例如 `s3://bucket/`、`https://bucket.s3.amazonaws.com/` 或 `https://endpoint/bucket/`。
 
+当相对 URL 来自[命名集合](/zh/concepts/features/configuration/server-config/named-collections)时，对其进行解析即视为覆盖该集合的 `url` 键，因此需要对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 特权。
+
 ## s3_check_objects_after_upload {#s3_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

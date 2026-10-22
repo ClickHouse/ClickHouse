@@ -38,6 +38,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -60,6 +61,12 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -110,8 +117,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsBool log_queries;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
@@ -128,6 +135,11 @@ namespace DataLakeStorageSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+}
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool use_idempotency_id;
 }
 
 namespace ErrorCodes
@@ -159,16 +171,21 @@ constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default"
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
 DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
 {
+    DataLake::TableNameFilter filter;
     switch (tables_filter.kind)
     {
         case TablesFilter::Kind::None:
-            return {DataLake::TableNameFilter::Kind::All, {}};
-        case TablesFilter::Kind::Equals:
-            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
+            break;
+        case TablesFilter::Kind::In:
+            filter.kind = DataLake::TableNameFilter::Kind::In;
+            filter.values.assign(tables_filter.names->begin(), tables_filter.names->end());
+            break;
         case TablesFilter::Kind::Like:
-            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
+            filter.kind = DataLake::TableNameFilter::Kind::Like;
+            filter.value = tables_filter.pattern;
+            break;
     }
-    return {DataLake::TableNameFilter::Kind::All, {}};
+    return filter;
 }
 
 }
@@ -194,7 +211,7 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
-    /// On ATTACH (server startup / user `ATTACH DATABASE`) or internal creates (restore),
+    /// On ATTACH (server startup / user `ATTACH DATABASE`) or `RESTORE DATABASE`,
     ///  defer catalog construction to first use: building it can perform network I/O or credential validation
     ///  that must not block startup. On CREATE build eagerly so misconfiguration (including a restricted
     ///  server-credential catalog) is reported immediately.
@@ -1145,16 +1162,14 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto & query_settings = context_->getSettingsRef();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
-        && !context_->isDistributed();
+    const auto can_use_parallel_replicas = context_->canReplaceClusterEngineWithClusterVariant();
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
     const bool want_stateful = use_stateful_tables && !lightweight
         && !can_use_parallel_replicas
-        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction];
+        && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction]
+        && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG;
     if (want_stateful)
     {
         StoragePtr cached_storage;
@@ -1182,6 +1197,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
+    settings_copy[Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
     context_copy->setSettings(settings_copy);
 
     applyCatalogSpecificConfiguration(*configuration);
@@ -1189,6 +1205,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+
+#if USE_AWS_S3
+    /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with
+    /// `S3TablesUnsupportedHeader`, so don't stamp the idempotency id on the objects written into its tables.
+    /// An explicit `s3_use_idempotency_id` in the query settings still takes precedence on write.
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::S3_TABLES)
+    {
+        if (auto * s3_configuration = dynamic_cast<StorageS3Configuration *>(configuration.get()))
+            s3_configuration->s3_settings->request_settings[S3RequestSetting::use_idempotency_id] = false;
+    }
+#endif
 
     /// When we applied static credentials from database settings, they are authoritative:
     /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestCredentials`)
@@ -1365,12 +1392,16 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
 
     /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
+    /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
+    /// ask for here too - each surviving name costs a per-table metadata fetch below.
+    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
+
     DB::Names iceberg_tables;
     for (const auto & catalog_table : catalog_tables)
     {
         if (!catalog_table.is_readable)
             continue;
-        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+        if (keep_table_name && !keep_table_name(catalog_table.name))
             continue;
         iceberg_tables.push_back(catalog_table.name);
     }
@@ -1476,6 +1507,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
         [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
         chassert(inserted);
     }
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
@@ -1514,17 +1546,20 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
         LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
+    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
+
     for (const auto & catalog_table : catalog_tables)
     {
         /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
         /// full getTablesIterator path without a per-table metadata fetch.
         if (!catalog_table.is_readable)
             continue;
-        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+        if (keep_table_name && !keep_table_name(catalog_table.name))
             continue;
         result.emplace_back(catalog_table.name);
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, result.size());
     return result;
 }
 
@@ -2018,10 +2053,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
         /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` on startup
-        /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat an
-        /// internal attach (server startup / restore) as a metadata load so a now-restricted catalog is left
-        /// unavailable instead of aborting startup; a user `ATTACH DATABASE` stays fail-closed and is rejected.
-        const bool is_loading_from_existing_metadata = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat the
+        /// loader's attach (server startup) as a metadata load so a now-restricted catalog is left unavailable
+        /// instead of aborting startup. The loader flag, not `internal`, is the discriminator: wrappers such as
+        /// `PARALLEL WITH` run user statements as internal ones, and a user `ATTACH DATABASE` stays fail-closed.
+        const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -2032,14 +2068,20 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /// Internal creates (`RESTORE DATABASE`) shouldn't do network I/O.
-            /// We don't want an unreachable or unauthorized catalog to block replica startup.
-            /*lazy_init=*/args.create_query.attach || args.internal);
+            /// `RESTORE DATABASE` shouldn't do network I/O: an unreachable or unauthorized catalog must not block it.
+            /// Keyed on the restore flag, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
+            /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
+            /*lazy_init=*/args.create_query.attach || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
     /// for runtime-dependent or composite source checks exist.
-    factory.registerDatabase("DataLakeCatalog", create_fn, {
+    /// datalake catalog should support different storage types,
+    /// we need a function to check if the url is S3 or Azure.
+    /// right now we assume it's a S3 url
+    auto secret_arguments = s3DatabaseSecretArguments();
+    secret_arguments.secret_settings = DataLake::SETTINGS_TO_HIDE;
+    factory.registerDatabase("DataLakeCatalog", create_fn, std::move(secret_arguments), {
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
