@@ -36,6 +36,9 @@ public:
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 
+    void checkMetadataFilenameAvailability(const String & table_name) const override;
+    bool canReattachTableWithFullDefinition() const override { return false; }
+
     /// DatabaseMemory allows to create tables, which store data on disk.
     /// It's needed to create such tables in default database of clickhouse-local.
     /// TODO May be it's better to use DiskMemory for such tables.
@@ -60,6 +63,7 @@ protected:
 private:
     void removeDataPath(ContextPtr local_context);
     void alterTableImpl(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier);
+    void checkMetadataFilenameAvailabilityUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
 
     const String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;

@@ -81,6 +81,8 @@ private:
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderSharedPtr segment_holder;
     ByteRange aligned_range;
+    /// One state per writer: it owns a single append-only segment.
+    FileCacheReserveAhead reserve_ahead;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 

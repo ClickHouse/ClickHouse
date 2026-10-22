@@ -131,6 +131,9 @@ public:
         return shared_data;
     }
 
+    /// Must be called before any thread attaches to the group: threads copy the predicates on attach.
+    void setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
+
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
@@ -326,6 +329,21 @@ public:
 
     /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
     void throwIfQueryCanceled() const;
+
+    /// While alive, `isQueryCanceled` returns false and `throwIfQueryCanceled` does nothing in the current thread.
+    /// For code that must not be interrupted, like the finalization of a committed transaction.
+    class QueryCancellationBlocker : private boost::noncopyable
+    {
+    public:
+        QueryCancellationBlocker();
+        ~QueryCancellationBlocker();
+
+        /// Whether a blocker is alive in the current thread. `ThreadPool` carries it into the jobs scheduled under it.
+        static bool isActive();
+
+    private:
+        bool previous;
+    };
 
     /// Proper cal for fatal_error_callback
     void onFatalError();

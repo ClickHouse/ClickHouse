@@ -73,7 +73,7 @@ Cloud でのみ使用できます
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "デフォルトで 協調マージ を有効化"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-協調マージ 戦略を有効化します
+`SharedMergeTree` で、マージコーディネーター主導のマージ割り当てを有効にします。マージコーディネーターは、独立したマージ対象の選択だけに頼るのではなく、マージエントリを準備してアクティブなマージワーカーに分配します。
 
 ## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
 
@@ -89,7 +89,7 @@ Cloud でのみ使用できます
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
 
-古くなったパーツのチェックを有効にします。ClickHouse Cloud でのみ利用できます
+`SharedMergeTree` のバックグラウンドチェックを有効にします。このチェックでは、最新ではなくなったデータパーツを検出し、パーツ更新プロセスに渡します。ClickHouse Cloud でのみ利用できます。
 
 ## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
 
@@ -118,7 +118,7 @@ ClickHouse Cloud でのみ使用できます
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "新しい設定"}]}]} />
 
-パーツ更新時の初期バックオフ。ClickHouse Cloud でのみ利用可能
+`SharedMergeTree` のパーツ更新操作を再試行するまでの初期遅延時間 (ミリ秒) です。再試行を繰り返すたびに、遅延時間は `shared_merge_tree_max_parts_update_backoff_ms` を上限として増加します。ClickHouse Cloud でのみ利用可能です。
 
 ## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
 
@@ -171,7 +171,7 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "新しい設定"}]}]} />
 
-パーツ更新の最大バックオフ時間。ClickHouse Cloud でのみ利用可能
+`SharedMergeTree` のパーツ更新処理を再試行する際の、再試行間の最大待機時間 (ミリ秒) 。ClickHouse Cloud でのみ利用可能です。
 
 ## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
 
@@ -179,7 +179,7 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]} />
 
-パーツ更新リーダーの最大数。ClickHouse Cloudでのみ利用できます
+サービス全体で、パーツ更新リーダーのロールを同時に保持できるレプリカの最大数。ClickHouse Cloudでのみ利用できます。
 
 ## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
 
@@ -187,7 +187,7 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]} />
 
-パーツ更新リーダーの最大数。ClickHouse Cloud でのみ利用可能
+1 つのアベイラビリティゾーン内で、パーツ更新リーダーのロールを同時に担うことができるレプリカの最大数です。この上限と `shared_merge_tree_max_parts_update_leaders_in_total` の両方が適用されます。ClickHouse Cloud でのみ利用可能です。
 
 ## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
 
