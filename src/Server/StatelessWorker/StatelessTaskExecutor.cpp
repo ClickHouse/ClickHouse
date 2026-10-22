@@ -111,7 +111,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     query_context->setSetting("make_distributed_plan", false);
     query_context->setSetting("enable_cascades_optimizer", false);
 
-    /// The initiator's max_threads reflects its own cores, not this node's
+    /// The initiator sends `max_threads` only as the user's cap, which may still exceed this worker's cores.
     if (const UInt64 worker_cores = getNumberOfCPUCoresToUse(); query_context->getSettingsRef()[Setting::max_threads] > worker_cores)
         query_context->setSetting("max_threads", worker_cores);
 
