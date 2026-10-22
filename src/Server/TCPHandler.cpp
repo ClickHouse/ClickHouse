@@ -86,6 +86,7 @@
 #include <Interpreters/ClientInfo.h>
 
 #include <Server/TCPHandler.h>
+#include <Server/ConnectionRegistry.h>
 
 #include <Common/config_version.h>
 
@@ -568,6 +569,8 @@ void TCPHandler::runImpl()
         throw;
     }
 
+    registerConnectionIfNeeded();
+
     while (tcp_server.isOpen())
     {
         /// We don't really have session in interserver mode, new one is created for each query. It's better to reset it now.
@@ -889,6 +892,7 @@ void TCPHandler::runImpl()
                         try
                         {
                             const auto announcement_mode = announcement.mode;
+                            const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
                             sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
                             ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                             ProfileEvents::increment(
@@ -898,10 +902,13 @@ void TCPHandler::runImpl()
                             if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
                                 return std::nullopt;
 
-                            /// `Default` mode callers discard the response; the initiator side skips
-                            /// sending it (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`).
+                            /// In `Default` mode the initiator sends the response only when it was asked for the
+                            /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
+                            /// which an initiator older than this field cannot have been.
                             /// Don't block on a packet that will never arrive.
-                            if (announcement_mode == CoordinationMode::Default)
+                            if (announcement_mode == CoordinationMode::Default
+                                && (!wants_analyzed_ranges
+                                    || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
                                 return std::nullopt;
 
                             return receiveAllRangesAnnouncementResponse(*query_state);
@@ -974,6 +981,12 @@ void TCPHandler::runImpl()
 
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
+
+            /// If `collect_connection_metrics` was `false` after authentication, register the connection now.
+            registerConnectionIfNeeded();
+            /// Set the connection to idle in `system.connections` at each exit from this scope. This includes exceptions.
+            connection_handle.setActive(query_state->query_context->getCurrentQueryId());
+            SCOPE_EXIT(connection_handle.setIdle());
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
@@ -2990,8 +3003,10 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     if (scalar)
     {
-        /// Scalar value
-        state.query_context->addScalar(temporary_id.table_name, block);
+        /// Scalar value received from the client over the wire. It must not be trusted as a
+        /// server-computed scalar-subquery result (see Context::addClientScalar): otherwise a client
+        /// could name it with a row policy's scalar-subquery hash and forge the policy's result.
+        state.query_context->addClientScalar(temporary_id.table_name, block);
     }
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
@@ -3360,7 +3375,8 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
 
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *columns_buf);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+    /// The client needs only names, types and defaults.
+    writeStringBinary(columns.toString(/* include_comments = */ false, /* include_codecs = */ false), *columns_buf);
 
     if (columns_buf != out.get())
         columns_buf->next();
@@ -3532,6 +3548,33 @@ void TCPHandler::run()
         tryLogCurrentException(log, "TCPHandler");
         throw;
     }
+}
+
+void TCPHandler::registerConnectionIfNeeded()
+{
+    /// Do not register interserver connections (connections with the cluster secret). These connections are internal.
+    if (connection_handle || is_interserver_mode || !session || !ConnectionRegistry::instance().isEnabled())
+        return;
+
+    const auto & client_info = session->getClientInfo();
+    /// Use `getClientAddress`. `session->authenticate` and `system.processes` use the same function.
+    /// This function uses the PROXY protocol header and `auth_use_forwarded_address`.
+    /// Thus, behind a proxy, the table shows the address of the client, not the address of the proxy.
+    const auto client_addr = getClientAddress(client_info);
+    ConnectionInfo info;
+    info.protocol = "TCP";
+    info.server_port = tcp_server.portNumber();
+    info.client_version_major = client_version_major;
+    info.client_version_minor = client_version_minor;
+    info.client_version_patch = client_version_patch;
+    info.connected_time = connected_time;
+    ConnectionPeer peer;
+    peer.user = client_info.current_user;
+    peer.user_id = session->getUserID();
+    peer.client_address = client_addr.host();
+    peer.client_port = client_addr.port();
+    peer.client_name = client_name;
+    connection_handle = ConnectionRegistry::instance().add(std::move(info), std::move(peer));
 }
 
 bool TCPHandler::connectionLimitReached()
