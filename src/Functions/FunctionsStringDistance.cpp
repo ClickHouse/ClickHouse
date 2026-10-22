@@ -604,8 +604,21 @@ struct ByteEditDistanceImpl
 
     static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
+        /// The distance to an empty string is the length of the other string: its size in bytes,
+        /// or its number of code points for the UTF8 variant (validated as in the general case).
         if (haystack_size == 0 || needle_size == 0)
-            return haystack_size + needle_size;
+        {
+            if constexpr (is_utf8)
+            {
+                size_t length = 0;
+                parseUTF8String(haystack_size ? haystack : needle, haystack_size + needle_size, [&](UInt32) { ++length; });
+                return length;
+            }
+            else
+            {
+                return haystack_size + needle_size;
+            }
+        }
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
