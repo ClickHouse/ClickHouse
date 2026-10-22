@@ -945,7 +945,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         output_exchange_streams.push_back(stream_id.toString());
 
     /// Identifies the plan fragment in the span and in the query log alike.
-    const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+    const UInt64 query_plan_hash = sipHash64(*task_description.serialized_query_plan);
 
     addTaskSpanAttributes(*query_span, task_description, context, query_plan_hash, execute_locally, input_exchange_streams, output_exchange_streams);
 
@@ -995,7 +995,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     QueryPipeline pipeline;
 
     {
-        QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+        QueryPlan query_plan = deserializeQueryPlan(*task_description.serialized_query_plan, context);
 
         /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
         /// so both come from the query's settings.
@@ -1145,7 +1145,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
 
     /// A query's log row reports the profile counters of its process-list entry's thread group.
     auto process_list_entry = task_context->getProcessList().insert(
-        task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,
+        task.task.task_id, sipHash64(*task.serialized_query_plan), /*ast=*/ nullptr, task_context,
         clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ true);
     task_context->setProcessListElement(process_list_entry->getQueryStatus());
 
@@ -1231,7 +1231,7 @@ protected:
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
+        task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         /// Owned by the members before the first thread starts, so `cleanup` joins it if anything below throws.
@@ -1992,7 +1992,7 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = logicalQueryId(context->getClientInfo());
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
+        task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 
@@ -2045,7 +2045,6 @@ protected:
                     }
                     checkCancelled();
 
-                    /// A copy per job, so at most `max_concurrent_task_starts` copies of the plan exist at once.
                     DistributedQueryTaskDescription description = task_description;
                     description.task = task;
 
