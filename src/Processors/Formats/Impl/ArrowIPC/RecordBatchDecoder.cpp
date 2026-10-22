@@ -94,6 +94,9 @@ void declareNullable(ArrowField & copy, const ArrowField & original, const Unord
 {
     if (fields.contains(&original))
         copy.nullable = true;
+    /// Promotion depends on each batch's nulls, and a `Variant` type can't be converted to another one.
+    if (original.type.kind == TypeKind::Union)
+        return;
     for (size_t i = 0; i < original.type.children.size(); ++i)
         declareNullable(copy.type.children[i], original.type.children[i], fields);
 }
@@ -2264,7 +2267,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
         }
         /// `normalized_name` seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
-        result.push_back(decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0));
+        result.push_back(
+            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -2280,7 +2284,9 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
         convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
     ColumnUInt8::Ptr null_map;
-    DecodedColumn values = decodeBatchColumn(value_field, use.hint, use.position.path, use.position.list_depth, &null_map);
+    /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
+    DecodedColumn values = decodeBatchColumn(
+        value_field, use.hint, use.position.path, use.position.list_depth, /*read_undeclared_nulls=*/false, &null_map);
     finishBatch();
     ColumnPtr dictionary_null_map = std::move(null_map);
     if (dictionary_null_map && isColumnConst(*values.column))
@@ -2318,7 +2324,7 @@ void RecordBatchDecoder::beginBatch(
 }
 
 RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
-    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
     ColumnUInt8::Ptr * decoded_null_map)
 {
     const size_t batch_rows = static_cast<size_t>(current_batch->length());
@@ -2346,7 +2352,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
         node_index = first_node;
         buffer_index = first_buffer;
         variadic_index = first_variadic;
-        if (!undeclared_null_fields.empty())
+        if (read_undeclared_nulls && !undeclared_null_fields.empty())
         {
             nullable_copy = field;
             declareNullable(*nullable_copy, field, undeclared_null_fields);

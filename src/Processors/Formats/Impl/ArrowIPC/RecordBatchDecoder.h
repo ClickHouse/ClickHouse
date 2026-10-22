@@ -367,7 +367,7 @@ private:
     /// sit at the position of the field encoding the dictionary.
     DecodedColumn decodeBatchColumn(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        ColumnUInt8::Ptr * decoded_null_map = nullptr);
+        bool read_undeclared_nulls, ColumnUInt8::Ptr * decoded_null_map = nullptr);
     /// Verifies that the batch's nodes, buffers and variadic counts were consumed exactly, then releases the
     /// per-batch state `beginBatch` set up.
     void finishBatch();
