@@ -400,10 +400,12 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created or updated after all changed entities it references
+                // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target
+                // (a `FOR` clause may name a hidden resource) is not waited for, so nothing waits for a dropped entity and
+                // the rules form no cycle.
                 for (const auto & target : new_targets[change.key])
                 {
-                    if (change_by_key.contains(target))
+                    if (auto it = change_by_key.find(target); it != change_by_key.end() && it->second->after)
                         dependencies[change.key].insert(target);
                 }
 

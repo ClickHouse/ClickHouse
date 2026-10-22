@@ -2958,6 +2958,17 @@ TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
         " CREATE WORKLOAD a IN b SETTINGS weight = 1 FOR r; CREATE WORKLOAD c IN b SETTINGS weight = 1 FOR r");
     EXPECT_TRUE(hasWorkloadNodeUnder(u, "r", "b", "a"));
     EXPECT_TRUE(hasWorkloadNodeUnder(u, "r", "b", "c"));
+
+    // The same transaction drops a resource that the moved workloads still name in `FOR`, hidden by a role claim
+    ResourceTest v;
+    v.query("CREATE RESOURCE r (MEMORY RESERVATION)");
+    v.query("CREATE WORKLOAD b SETTINGS weight = 1 FOR r");
+    v.query("CREATE WORKLOAD c IN b SETTINGS weight = 1 FOR r");
+    v.loadConfig("CREATE RESOURCE r (MEMORY RESERVATION); CREATE WORKLOAD c SETTINGS weight = 1 FOR r;"
+        " CREATE WORKLOAD b IN c SETTINGS weight = 1 FOR r");
+    v.loadConfig("CREATE RESOURCE s (MEMORY RESERVATION)");
+    EXPECT_FALSE(v.manager->hasResource("r"));
+    EXPECT_TRUE(hasWorkloadNodeUnder(v, "s", "b", "c"));
 }
 
 // A load (configuration, Keeper, disk) rejects conflicts and broken references as a whole and keeps the previous
