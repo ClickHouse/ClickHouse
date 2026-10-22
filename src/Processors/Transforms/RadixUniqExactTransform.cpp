@@ -145,6 +145,11 @@ ALWAYS_INLINE inline UInt128 packShortString(const char * data, size_t size)
     return (UInt128(high) << 64) | low;
 }
 
+/// The packed short strings have the top bit clear, so the keys of the longer strings set it before `mixKey`: otherwise a
+/// `SipHash` could equal the key of a short string (`mixKey` is easy to invert), and they would be counted once. The
+/// longer strings keep 127 bits of their hash, so two of them collide with probability 2^-127 instead of 2^-128.
+constexpr UInt128 LONG_STRING_KEY_BIT = UInt128(1) << 127;
+
 /// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
 /// so that the cache misses of the inserts overlap.
 constexpr size_t PREFETCH_DISTANCE = 32;
@@ -1018,7 +1023,7 @@ void RadixUniqExactState<UInt256>::route(size_t stream, const IColumn & column, 
 
 /// The fixed-size values of 9 to 16 bytes are represented by a bijection of themselves (zero-padded), the strings of up
 /// to 15 bytes by a bijection of their bytes and size (see `packShortString`), the longer strings by the 128-bit
-/// `SipHash` of their bytes, the same key as in `uniqExact`, and the values of the other types by the 128-bit `SipHash`
+/// `SipHash` of their bytes with the top bit set (see `LONG_STRING_KEY_BIT`), and the values of the other types by the 128-bit `SipHash`
 /// of `updateHashWithValue`, as in `uniqExact`. Consecutive duplicates are compared by their bytes before they are
 /// hashed. The values of the other types are not compared: `compareAt` can find equal the values with different hashes
 /// (e.g. -0.0 and 0.0 in a `Tuple`).
@@ -1055,7 +1060,7 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
                 routed_empty_string |= size == 0;
                 if (size < sizeof(UInt128))
                     return mixKey(packShortString(chars + start_of(row), size));
-                return sipHash128Padded(chars + start_of(row), size);
+                return mixKey(sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT);
             },
             [&](size_t lhs, size_t rhs)
             {
