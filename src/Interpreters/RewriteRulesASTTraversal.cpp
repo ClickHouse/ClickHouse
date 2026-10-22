@@ -656,6 +656,11 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
                 }
                 else
                 {
+                    /// The alias written on the placeholder in the result template (`{x:Int} AS y`)
+                    /// names the substituted expression, as `ReplaceQueryParameterVisitor::visitQueryParameter`
+                    /// does for an ordinary query parameter.
+                    if (!query_parameter->alias.empty())
+                        captured->setAlias(query_parameter->alias);
                     replaced_children.emplace_back(child.get(), captured);
                     new_children.push_back(std::move(captured));
                 }
