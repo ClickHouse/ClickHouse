@@ -15214,8 +15214,21 @@ bool MergeTreeData::hasAutomaticLowCardinalitySerialization(const String & colum
 
     for (const auto & part : *snapshot_data->parts)
     {
+        /// A part with a pending `RENAME COLUMN` keeps its serialization infos under the old name, and
+        /// the reader translates the query name back to it, so look up the info by the name in the part.
+        String name_in_part = column_name;
+        if (snapshot_data->mutations_snapshot)
+        {
+            const auto commands = snapshot_data->mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part);
+            for (const auto & command : commands | std::views::reverse)
+            {
+                if (command.type == MutationCommand::RENAME_COLUMN && command.rename_to == name_in_part)
+                    name_in_part = command.column_name;
+            }
+        }
+
         const auto & infos = part.data_part->getSerializationInfos();
-        auto it = infos.find(column_name);
+        auto it = infos.find(name_in_part);
         if (it != infos.end() && it->second
             && ISerialization::hasKind(it->second->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
             return true;
