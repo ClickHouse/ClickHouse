@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: long, no-fasttest
 # Tag no-fasttest: Depends on S3
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
