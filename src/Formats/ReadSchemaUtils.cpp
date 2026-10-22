@@ -12,6 +12,7 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <cstring>
 #include <stdexcept>
 
 namespace DB
@@ -374,8 +375,16 @@ try
                 /// one according to the inferred schema.
                 if (!format_name)
                 {
+                    /// These text formats accept almost any bytes, so binary data (e.g. the `.dbf` table of a shapefile)
+                    /// would be detected as one of them with meaningless columns. Text has no zero bytes: if the first
+                    /// buffer of data has one, don't try them.
+                    ReadBuffer & detection_buf = support_buf_recreation ? *iterator_data.buf : *peekable_buf;
+                    bool has_zero_byte = !detection_buf.eof()
+                        && memchr(detection_buf.position(), 0, detection_buf.available()) != nullptr;
+
+                    static const std::vector<String> no_formats;
                     std::unordered_map<String, NamesAndTypesList> format_to_schema;
-                    const auto & formats_set_to_detect = getSimilarFormatsSetForDetection();
+                    const auto & formats_set_to_detect = has_zero_byte ? no_formats : getSimilarFormatsSetForDetection();
                     for (size_t i = 0; i != formats_set_to_detect.size(); ++i)
                     {
                         try
