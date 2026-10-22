@@ -717,7 +717,7 @@ class ArtifactConfigs:
         Artifact.Config(
             name=ArtifactNames.CH_AMD_ILLUMOS,
             type=Artifact.Type.S3,
-            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            path=f"{TEMP_DIR}/build/programs/stripped/bin/clickhouse",
             compress_zst=True,
         )
     )
