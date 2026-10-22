@@ -863,10 +863,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     for (const auto & part : parts)
     {
-        auto estimates = part.data_part->getEstimates();
+        auto estimates = part.data_part->getEstimates(required_columns);
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
@@ -1127,8 +1128,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    /// Perform top-K optimization during index analysis itself?
-    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
+    /// Perform top-K optimization during index analysis itself? Not with sampling: its filter runs after the read and
+    /// can discard every row of the granules selected here.
+    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering
+        && !top_k_filter_info->where_clause && !result.sampling.use_sampling;
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
@@ -2183,11 +2186,12 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks

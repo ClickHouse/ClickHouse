@@ -43,6 +43,13 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_
 {
 }
 
+HTTPHeaderEntries OpenAIProvider::getHeaders() const
+{
+    if (api_key.empty()) /// not all providers need API key
+        return {};
+    return {{"Authorization", "Bearer " + api_key}};
+}
+
 void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
     response = {};
@@ -80,8 +87,8 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     setCommonHeaders(http_request, ai_request);
     http_request.setContentLength(body.size());
 
@@ -190,8 +197,8 @@ void OpenAIProvider::embed(
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     setCommonHeaders(http_request, ai_embedding_request);
     http_request.setContentLength(body.size());
 
