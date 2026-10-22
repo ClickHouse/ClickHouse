@@ -123,6 +123,11 @@ bool worthConvertToTwoLevel(
         || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
 }
 
+bool reachedSpillFloor(size_t min_bytes_before_external_group_by, const DB::AggregatedDataVariants & result)
+{
+    return result.memoryUsage() >= min_bytes_before_external_group_by;
+}
+
 /// The row capacity of each chunk that `convertToBlockImpl` emits. +1 for `nullKeyData`: if the table
 /// doesn't have it, that's not a problem, just memory for one excessive row is preallocated.
 /// A non-zero `max_rows_per_block` lowers the `max_block_size` bound so that a table smaller than
@@ -412,6 +417,7 @@ Aggregator::Params::Params(
     size_t group_by_two_level_threshold_,
     size_t group_by_two_level_threshold_bytes_,
     size_t max_bytes_before_external_group_by_,
+    size_t min_bytes_before_external_group_by_,
     bool empty_result_for_aggregation_by_empty_set_,
     TemporaryDataOnDiskScopePtr tmp_data_scope_,
     size_t max_threads_,
@@ -442,6 +448,7 @@ Aggregator::Params::Params(
     , group_by_two_level_threshold(group_by_two_level_threshold_)
     , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
     , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
+    , min_bytes_before_external_group_by(min_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
     , max_threads(max_threads_)
@@ -1193,6 +1200,14 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    /// The block may be aggregated in parts (e.g. the remainder after an adaptive aggregation split),
+    /// the keys of the rows before `row_begin` are not needed. If all keys are const, only row 0 is used.
+    if constexpr (requires { state.skipRowsBefore(row_begin); })
+    {
+        if (!all_keys_are_const)
+            state.skipRowsBefore(row_begin);
+    }
+
     if (params.top_k && !method.top_k_heap.frozen)
     {
         method.top_k_heap.initIfNeeded(
@@ -2244,7 +2259,7 @@ void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
 
 
 void Aggregator::prepareAggregateInstructions(
-    Columns columns,
+    const Columns & columns,
     AggregateColumns & aggregate_columns,
     Columns & materialized_columns,
     AggregateFunctionInstructions & aggregate_functions_instructions,
@@ -2264,8 +2279,15 @@ void Aggregator::prepareAggregateInstructions(
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = aggregates_positions[i][j];
-            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
-            aggregate_columns[i][j] = materialized_columns.back().get();
+            aggregate_columns[i][j] = columns.at(pos).get();
+
+            /// Only the converted columns have to be held here, the original ones are held by the caller.
+            auto converted_column = columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            if (converted_column.get() != aggregate_columns[i][j])
+            {
+                materialized_columns.push_back(std::move(converted_column));
+                aggregate_columns[i][j] = materialized_columns.back().get();
+            }
 
             /// Sparse columns without defaults may be handled incorrectly.
             if (aggregate_columns[i][j]->isSparse()
@@ -2660,8 +2682,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// table. The session's shared drain table is memory no sweep writes once it is below the
     /// part floor, so left resident it keeps every later block over the threshold.
     Int64 spill_decision_memory = current_memory_usage;
+    bool reached_spill_floor = reachedSpillFloor(params.min_bytes_before_external_group_by, result);
     if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
-        && result.isTwoLevel() && worth_convert_to_two_level
+        && result.isTwoLevel() && worth_convert_to_two_level && reached_spill_floor
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
     {
         /// The backlog itself was already shed above, under the same trigger; what is left here
@@ -2682,6 +2705,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && result.isTwoLevel()
         && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level
+        && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
         size_t size = spill_decision_memory + params.min_free_disk_space;
@@ -3218,11 +3242,25 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * full_group_count,
+    std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
+
+    /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
+    /// groups that can rank among them. It is not used when:
+    /// - dataflow statistics are collected (`updater`): they must describe the merge of every group;
+    /// - the only aggregate is `count` (`bucket_top_k`): the ordinary conversion selects it cheaper;
+    /// - a throw-mode group limit is enforced: it needs the bucket's full group count;
+    /// - the HAVING pre-filter is enabled: only the ordinary conversion applies it.
+    const bool group_limit_needs_full_count = params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW;
+    if (final && params.threshold_top_k && (!params.bucket_top_k || params.aggregates_size > 1)
+        && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater && !group_limit_needs_full_count)
+        if (auto threshold_chunk
+            = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))
+            return std::move(*threshold_chunk);
 
     /// Filled by a conversion that materializes only some of the bucket's groups - the Top-K one or
     /// the HAVING pre-filter - when the statistics ask for it (left zero otherwise): the untruncated
@@ -5726,10 +5764,12 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
       * or re-seeds the kept keys into the emptied table (after it); see
       * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
+    bool reached_spill_floor = reachedSpillFloor(params.min_bytes_before_external_group_by, result);
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level
+        && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
         size_t size = current_memory_usage + params.min_free_disk_space;

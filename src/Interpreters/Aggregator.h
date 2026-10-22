@@ -150,6 +150,7 @@ public:
         /// Settings to flush temporary data to the filesystem (external aggregation).
         /// 0 - do not use external aggregation.
         size_t max_bytes_before_external_group_by = 0;
+        size_t min_bytes_before_external_group_by = 0;
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
@@ -175,11 +176,32 @@ public:
         /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
         /// only its n best cells by that count. Exact, because a group outside its own
         /// bucket's best n has at least n groups ahead of it globally. Zero disables. Kept
-        /// out of the constructor and of the plan serialization deliberately: a deserialized
-        /// plan re-runs without the optimization, which is the safe direction.
+        /// out of the constructor and off the wire deliberately: it is a property of the plan
+        /// shape, and the side that runs the aggregation derives it from its own plan (a
+        /// deserialized plan is optimized again before it is turned into a pipeline).
         size_t bucket_top_k = 0;
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
+
+        /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
+        /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds
+        /// `ORDER BY <the output of a single aggregate with a declared MergedValueBound> LIMIT n`.
+        /// Instead of merging every group of a two-level bucket across the per-thread hash tables
+        /// and materializing all of them, the merge walks the tables in the order of the partial
+        /// values of that aggregate and stops as soon as no unseen group can rank among the
+        /// bucket's n best, so only the candidate groups are merged and materialized. Exact for
+        /// the same reason as `bucket_top_k`: a group outside its own bucket's best n has at
+        /// least n groups ahead of it globally. Kept out of the constructor and off the wire
+        /// deliberately, like `bucket_top_k`.
+        struct ThresholdTopKParams
+        {
+            size_t k = 0;
+            bool ascending = false;
+            /// Index in `aggregates` of the function the query orders by.
+            size_t aggregate_index = 0;
+            MergedValueBound bound = MergedValueBound::Unknown;
+        };
+        std::optional<ThresholdTopKParams> threshold_top_k;
 
         /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
         /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
@@ -322,6 +344,7 @@ public:
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
+            size_t min_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
             size_t max_threads_,
@@ -407,6 +430,15 @@ public:
         AggregatedDataVariants & table,
         const std::vector<StagedChunkPtr> & chunks,
         std::atomic<bool> & is_cancelled,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
+    /// `drainStagedBatch` into the session's shared table, called under `pressure_sweep_mutex`.
+    /// A drain that throws midway (a memory limit hit while creating states, say) leaves keys
+    /// in the shared table whose states are null; the session is cancelled before the lock is
+    /// released, so no other producer drains into that table or writes it.
+    size_t drainStagedBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared,
+        const std::vector<StagedChunkPtr> & chunks,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
     /// A fresh drain destination of the session's method type, with one arena per bucket.
@@ -1325,7 +1357,41 @@ private:
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-        size_t * full_group_count) const;
+        size_t * full_group_count,
+        std::atomic<int> * threshold_top_k_verdict = nullptr) const;
+
+    /// The top-K threshold merge (see `Params::threshold_top_k`): merges and materializes only
+    /// the groups that can rank among the bucket's k best by the ordering aggregate. Returns
+    /// nothing when it declines at run time (a method it does not serve, a bucket too small
+    /// for the pruning to pay for the setup, or a value distribution the threshold cannot cut;
+    /// the latter verdict is shared across the buckets through `threshold_top_k_verdict`), and
+    /// the caller falls back to the ordinary merge. Defined in AggregatorThresholdTopK.cpp.
+    std::optional<AggregatedChunk> tryMergeAndConvertOneBucketToChunkThresholdTopK(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
+
+    template <typename Method>
+    requires MapAggregationMethod<Method>
+    std::optional<AggregatedChunk> mergeAndConvertOneBucketToChunkThresholdTopKImpl(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
+
+    /// The threshold merge ranks groups by an aggregate's value, which a set method cannot have.
+    /// This overload exists only because the call site tests it at run time.
+    template <typename Method>
+    requires SetAggregationMethod<Method>
+    std::optional<AggregatedChunk> mergeAndConvertOneBucketToChunkThresholdTopKImpl(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -1466,8 +1532,9 @@ private:
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
 
+    /// The columns must be alive while the instructions are used.
     void prepareAggregateInstructions(
-        Columns columns,
+        const Columns & columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
         AggregateFunctionInstructions & instructions,
