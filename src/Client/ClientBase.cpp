@@ -167,7 +167,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
-    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
     extern const SettingsString logsql_table;
     extern const SettingsString logsql_time_column;
@@ -204,6 +204,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_APPEND_TO_FILE;
 }
 
 }
@@ -221,6 +222,38 @@ namespace
 {
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
+
+/// The console output of the client. If the reader of the output goes away, as `head` does in
+/// `clickhouse-local -q '...' | head -1`, the write fails with `EPIPE` (`SIGPIPE` is blocked).
+/// The buffer remembers that, so the client can stop quietly, like `cat` and other tools do.
+/// It is done here and not in `WriteBufferFromFileDescriptor`, because only the client's own
+/// stdout is special: a broken pipe anywhere else (e.g. a pipe to a child process) is an error.
+class WriteBufferToStdout : public DB::WriteBufferFromFileDescriptor
+{
+public:
+    WriteBufferToStdout(int fd_, std::atomic<bool> & stdout_is_broken_)
+        : DB::WriteBufferFromFileDescriptor(fd_)
+        , stdout_is_broken(stdout_is_broken_)
+    {
+    }
+
+private:
+    std::atomic<bool> & stdout_is_broken;
+
+    void nextImpl() override
+    {
+        try
+        {
+            DB::WriteBufferFromFileDescriptor::nextImpl();
+        }
+        catch (const DB::ErrnoException & e)
+        {
+            if (e.getErrno() == EPIPE)
+                stdout_is_broken = true;
+            throw;
+        }
+    }
+};
 
 /// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
 bool hasStreamingTableExpression(const DB::IAST & ast)
@@ -504,7 +537,7 @@ ClientBase::ClientBase(
     , cmd_settings(std::make_unique<Settings>())
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
-    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
+    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferToStdout>>(out_fd_, stdout_is_broken))
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
@@ -717,7 +750,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
                 settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
-                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
+                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::enable_logsql_dialect], settings[Setting::max_parser_depth],
                 settings[Setting::max_query_size]);
         else if (dialect == Dialect::trino)
             parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::enable_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -1047,6 +1080,7 @@ try
         /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
         /// format, it must not be overridden by the `default_format` setting fallback below.
         bool outfile_format_from_extension = false;
+        String non_empty_appended_file;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -1090,8 +1124,12 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
+                auto file_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+                if ((flags & O_APPEND) && file_buf->size() > 0)
+                    non_empty_appended_file = out_file;
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
+                    std::move(file_buf),
                     compression_method,
                     static_cast<int>(compression_level),
                     /*zstd_window_log=*/ 0,
@@ -1102,7 +1140,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                        std::make_shared<WriteBufferToStdout>(stdout_fd, stdout_is_broken)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -1188,6 +1226,14 @@ try
             format_settings.pretty.squash_max_wait_ms = 0;
         }
 
+        if (!non_empty_appended_file.empty()
+            && !FormatFactory::instance().checkIfFormatSupportAppend(current_format, client_context, format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to file {} because the {} format doesn't support appends. "
+                "Use TRUNCATE instead of APPEND, or write into a new file",
+                non_empty_appended_file, current_format);
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -1197,6 +1243,10 @@ try
         else
             output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+
+        /// The file already starts with the prefix of the format, e.g. the header of `CSVWithNames`.
+        if (!non_empty_appended_file.empty())
+            output_format->doNotWritePrefix();
 
         output_format->setAutoFlush();
 
@@ -1653,7 +1703,7 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
     {
         /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
         /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`,
-        /// `SETTINGS allow_experimental_logsql_dialect = ...`) has already
+        /// `SETTINGS enable_logsql_dialect = ...`) has already
         /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
         /// not change how this very query text is parsed on the other side - it only applies to the
         /// statements that follow it. Only a value the query itself changed is restored (the others are
@@ -1666,7 +1716,7 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
         if (current_query_parse_trino_gate)
             client_context->setSetting("enable_trino_dialect", *current_query_parse_trino_gate);
         if (current_query_parse_logsql_gate)
-            client_context->setSetting("allow_experimental_logsql_dialect", *current_query_parse_logsql_gate);
+            client_context->setSetting("enable_logsql_dialect", *current_query_parse_logsql_gate);
         return;
     }
 
@@ -2006,6 +2056,25 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 }
             }
 
+            /// The output format may write in a background thread (squashing in `Pretty` formats). If that
+            /// write has failed (for example, the output pipe is broken), stop now: the query may have
+            /// produced all of its output already, and the next write would happen only at its end.
+            /// Handle it like any other local format error: cancel the query on the server and keep
+            /// receiving packets until the end, otherwise the query keeps running on the server.
+            if (output_format && !local_format_error)
+            {
+                try
+                {
+                    output_format->checkBackgroundError();
+                }
+                catch (...)
+                {
+                    local_format_error = std::make_exception_ptr(
+                        LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
+                    sendCancel(local_format_error);
+                }
+            }
+
             /// Poll for changes after a cancellation check, otherwise it never reached
             /// because of progress updates from server.
 
@@ -2302,10 +2371,28 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    if (need_render_progress_table && tty_buf)
+    auto handle_exception = [this]
     {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    };
+
+    try
+    {
+        if (need_render_progress_table && tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.clearTableOutput(*tty_buf, lock);
+        }
+    }
+    catch (...)
+    {
+        /// The terminal may be gone, e.g. a closed session of the client embedded into the server.
+        handle_exception();
     }
 
     /// Order is important: format, compression, file
@@ -2319,12 +2406,7 @@ void ClientBase::resetOutput()
     {
         /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
         /// as well as cleaning other output related setup
-        if (!have_error)
-        {
-            client_exception
-                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
-            have_error = true;
-        }
+        handle_exception();
     }
 
     output_format.reset();
@@ -2403,9 +2485,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onTimezoneUpdate(packet.server_timezone);
                 break;
 
+            /// A subquery executed while the server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are informational here.
+            case Protocol::Server::Progress:
+                onProgress(packet.progress);
+                break;
+
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
+                    "Progress or ProfileEvents, got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -3019,7 +3112,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
@@ -3033,7 +3126,7 @@ void ClientBase::processParsedSingleQuery(
         const Field parse_dialect = client_context->getSettingsRef().get("dialect");
         const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
         const Field parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
-        const Field parse_logsql_gate = client_context->getSettingsRef().get("allow_experimental_logsql_dialect");
+        const Field parse_logsql_gate = client_context->getSettingsRef().get("enable_logsql_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         /// Remember only the values this query's own `SETTINGS` clause changed: those are pinned back for
         /// the outbound query. A setting the query left alone is not pinned, so what
@@ -3047,8 +3140,7 @@ void ClientBase::processParsedSingleQuery(
         current_query_parse_dialect = changed_by_query("dialect", parse_dialect);
         current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
         current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
-        current_query_parse_logsql_gate = changed_by_query("allow_experimental_logsql_dialect", parse_logsql_gate);
-        connection->setFormatSettings(getFormatSettings(client_context));
+        current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3059,6 +3151,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
@@ -3865,6 +3958,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
+                if (have_error && stdout_is_broken)
+                    return false;
                 if (have_error && (buzz_house || !ignore_error))
                     return buzz_house || is_interactive;
 

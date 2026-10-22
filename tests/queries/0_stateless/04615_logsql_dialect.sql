@@ -23,7 +23,7 @@ INSERT INTO logs_04615 VALUES
     ('2024-01-02 12:01:00', 'user logged in successfully', 'info', 'sshd', 200, 88, '192.168.1.11', 'u4'),
     ('2024-01-02 12:02:00', 'fatal error: cannot allocate memory', 'fatal', 'app-server', 500, 4096, '10.2.3.6', 'u5');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04615';
 SET dialect = 'logsql';
 
@@ -149,7 +149,7 @@ SET dialect = 'clickhouse';
 DROP TABLE logs_04615;
 
 -- A multi-line query with a LogsQL comment.
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04615_multiline';
 CREATE TABLE logs_04615_multiline (`_time` DateTime, `_msg` String, level String) ENGINE = MergeTree ORDER BY _time;
 INSERT INTO logs_04615_multiline VALUES ('2024-01-01 00:00:00', 'error one', 'error'), ('2024-01-01 00:00:01', 'fine', 'info');
@@ -162,7 +162,7 @@ SET dialect = 'clickhouse';
 DROP TABLE logs_04615_multiline;
 
 -- New features: text pipes, join, union, window pipes, extended stats.
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS logs_04615_b;
 CREATE TABLE logs_04615_b

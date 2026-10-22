@@ -21,6 +21,7 @@ public:
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_,
+        FutureSetSettings set_settings_,
         bool recoverable_build_ = false);
 
     String getName() const override { return "CreatingSet"; }
@@ -45,6 +46,7 @@ private:
     SetAndKeyPtr set_and_key;
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
+    FutureSetSettings set_settings;
     bool preliminary_distinct = false;
 
     /// True only for the in-place build that runs against a CLONE of the subquery source
