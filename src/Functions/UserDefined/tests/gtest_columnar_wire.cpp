@@ -1059,6 +1059,93 @@ TEST(ColumnarWire, NullableLowCardinalityCompactionKeepsSpecialSlots)
     EXPECT_EQ(compacted->getDataAt(0), "public");
 }
 
+/// `LowCardinality` column whose rows are `-0.0`, then NULL when `nullable`.
+static ColumnPtr makeNegativeZeroLowCardinality(bool nullable)
+{
+    DataTypePtr float_type = std::make_shared<DataTypeFloat64>();
+    auto keys = ColumnFloat64::create();
+    keys->insertValue(0.0); /// default, or NULL when nullable
+    if (nullable)
+        keys->insertValue(0.0); /// default
+    keys->insertValue(-0.0);
+    const UInt8 negative_zero = nullable ? 2 : 1;
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(
+        nullable ? *makeNullable(float_type) : *float_type, std::move(keys));
+    auto index_column = ColumnUInt8::create();
+    index_column->insertValue(negative_zero);
+    if (nullable)
+        index_column->insertValue(0);
+    MutableColumnPtr indexes = std::move(index_column);
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+}
+
+/// Nested `LowCardinality` travels materialized in COL_COMPLEX; rebuilding the dictionary must not
+/// fold `-0.0` into the `+0.0` default.
+TEST(ColumnarWire, NestedLowCardinalityResultKeepsNegativeZero)
+{
+    for (bool nullable : {false, true})
+    {
+        DataTypePtr float_type = std::make_shared<DataTypeFloat64>();
+        DataTypePtr array_type = std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(nullable ? makeNullable(float_type) : float_type));
+        ColumnPtr elements = makeNegativeZeroLowCardinality(nullable);
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->insertValue(elements->size());
+        ColumnPtr array = ColumnArray::create(elements, std::move(offsets));
+
+        auto buf = encodeCHColumn(array.get(), 1);
+        auto decoded = readColumnarOutput({buf.data(), buf.size()}, array_type, 1);
+        const IColumn & decoded_elements = assert_cast<const ColumnArray &>(*decoded).getData();
+        ASSERT_EQ(decoded_elements.size(), elements->size());
+        EXPECT_TRUE(std::signbit(decoded_elements.getFloat64(0))) << "nullable=" << nullable;
+        if (nullable)
+            EXPECT_TRUE(decoded_elements.isNullAt(1));
+    }
+}
+
+/// Batch results are concatenated without reinserting dictionary entries by value.
+TEST(ColumnarWire, ConcatColumnarResultsKeepsNegativeZero)
+{
+    DataTypePtr float_type = std::make_shared<DataTypeFloat64>();
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(float_type);
+    ColumnPtr part = makeNegativeZeroLowCardinality(false);
+    ColumnPtr lc_result = concatColumnarResults({part, part}, lowcard_type);
+    ASSERT_EQ(lc_result->size(), 2u);
+    EXPECT_TRUE(std::signbit(lc_result->getFloat64(0)));
+    EXPECT_TRUE(std::signbit(lc_result->getFloat64(1)));
+
+    DataTypePtr nullable_type = std::make_shared<DataTypeLowCardinality>(makeNullable(float_type));
+    ColumnPtr nullable_part = makeNegativeZeroLowCardinality(true);
+    ColumnPtr nullable_result = concatColumnarResults({nullable_part, nullable_part}, nullable_type);
+    ASSERT_EQ(nullable_result->size(), 4u);
+    EXPECT_TRUE(std::signbit(nullable_result->getFloat64(2)));
+    EXPECT_TRUE(nullable_result->isNullAt(3));
+
+    /// Variant(LowCardinality(Float64), UInt64), one row of each alternative per part.
+    DataTypePtr variant_type = std::make_shared<DataTypeVariant>(DataTypes{lowcard_type, std::make_shared<DataTypeUInt64>()});
+    const auto & variants = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
+    const auto lc_global = assert_cast<const DataTypeVariant &>(*variant_type).tryGetVariantDiscriminator(lowcard_type->getName()).value();
+    auto numbers = ColumnUInt64::create();
+    numbers->insertValue(7);
+    Columns alternatives(variants.size());
+    alternatives[lc_global] = part;
+    alternatives[1 - lc_global] = std::move(numbers);
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+    discriminators->insertValue(static_cast<ColumnVariant::Discriminator>(1 - lc_global));
+    discriminators->insertValue(static_cast<ColumnVariant::Discriminator>(lc_global));
+    ColumnPtr variant_part = ColumnVariant::create(std::move(discriminators), alternatives);
+    ColumnPtr variant_result = concatColumnarResults({variant_part, variant_part}, variant_type);
+    const auto & result_variant = assert_cast<const ColumnVariant &>(*variant_result);
+    ASSERT_EQ(result_variant.size(), 4u);
+    const IColumn & lc_alternative = result_variant.getVariantByGlobalDiscriminator(lc_global);
+    ASSERT_EQ(lc_alternative.size(), 2u);
+    EXPECT_TRUE(std::signbit(lc_alternative.getFloat64(0)));
+    EXPECT_TRUE(std::signbit(lc_alternative.getFloat64(1)));
+    EXPECT_EQ(result_variant.getVariantByGlobalDiscriminator(1 - lc_global).getUInt(1), 7u);
+    EXPECT_EQ(result_variant.globalDiscriminatorAt(3), lc_global);
+    EXPECT_EQ(result_variant.offsetAt(3), 1u);
+}
+
 // ── Bounds check: wrapped offset must not bypass the check via integer overflow ──
 //
 // A malformed frame can set an offset field close to UINT64_MAX. The naive check

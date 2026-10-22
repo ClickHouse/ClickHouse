@@ -41,6 +41,12 @@ void validateColumnarWireSupportedType(const DataTypePtr & type, bool is_nested 
 /// row and needs no help. Returns `col` itself when every entry is referenced.
 ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col, const DataTypePtr & type);
 
+/// Concatenate the per-batch results `parts` of type `type`. `IColumn::insertRangeFrom` reinserts
+/// LowCardinality entries by value, which merges values that compare equal but differ in bytes
+/// (`-0.0` becomes `+0.0`); here every entry is appended byte for byte. Dictionaries are not
+/// deduplicated across parts.
+ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type);
+
 /// Data block of a COL_COMPLEX column's `n` rows, written at `dst`.
 void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst);
 

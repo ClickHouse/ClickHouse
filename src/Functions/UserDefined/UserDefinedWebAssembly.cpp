@@ -931,7 +931,7 @@ public:
 
                 auto stop_token = interrupt_source.get_token();
                 auto expected_col = user_defined_function->getResultType()->createColumn();
-                MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
+                Columns result_parts;
 
                 auto flush_columnar_batch = [&](size_t batch_start, size_t end_idx)
                 {
@@ -957,12 +957,7 @@ public:
                             "COLUMNAR_V1: returned column structure {} does not match declared type {}",
                             result->dumpStructure(),
                             user_defined_function->getResultType()->getName());
-                    /// Materialize a const result: ColumnConst::insertRangeFrom only bumps the row count.
-                    result = IColumn::mutate(result->convertToFullColumnIfConst());
-                    if (result_column->empty())
-                        result_column = result->assumeMutable();
-                    else
-                        result_column->insertRangeFrom(*result, 0, result->size());
+                    result_parts.push_back(result->convertToFullColumnIfConst());
                 };
 
                 const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
@@ -970,7 +965,7 @@ public:
                 {
                     for (size_t start = 0; start < input_rows_count; start += fixed_block_size)
                         flush_columnar_batch(start, std::min(start + fixed_block_size, input_rows_count));
-                    return result_column;
+                    return concatColumnarResults(result_parts, user_defined_function->getResultType());
                 }
 
                 /// Same budget and walk as the buffered path, measured by this frame's layout pass.
@@ -978,7 +973,7 @@ public:
                 if (!budget)
                 {
                     flush_columnar_batch(0, input_rows_count);
-                    return result_column;
+                    return concatColumnarResults(result_parts, user_defined_function->getResultType());
                 }
 
                 const WasmBatchMeasurer measure_columnar
@@ -996,7 +991,7 @@ public:
                     flush_columnar_batch(batch_start, batch_start + batch_rows);
                     batch_start += batch_rows;
                 }
-                return result_column;
+                return concatColumnarResults(result_parts, user_defined_function->getResultType());
             }
 
             return execute(compartment_ptr, arguments, input_rows_count);

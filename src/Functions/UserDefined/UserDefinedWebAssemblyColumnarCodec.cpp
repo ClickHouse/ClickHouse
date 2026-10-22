@@ -1,5 +1,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyColumnarCodec.h>
 
+#include <algorithm>
 #include <cstring>
 #include <span>
 #include <functional>
@@ -239,6 +240,221 @@ ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col, const DataTyp
             var_col->getLocalToGlobalDiscriminatorsMapping());
     }
     return col;
+}
+
+namespace
+{
+
+/// Index column of the narrowest width that addresses `dictionary_size` entries, filled by
+/// `fill(PaddedPODArray<T> &)`.
+template <typename Fill>
+MutableColumnPtr createLowCardinalityIndexes(size_t dictionary_size, Fill && fill)
+{
+    auto create = [&]<typename T>(T)
+    {
+        auto indexes = ColumnVector<T>::create();
+        fill(indexes->getData());
+        return MutableColumnPtr(std::move(indexes));
+    };
+    if (dictionary_size <= std::numeric_limits<UInt8>::max() + 1ULL)
+        return create(UInt8{});
+    if (dictionary_size <= std::numeric_limits<UInt16>::max() + 1ULL)
+        return create(UInt16{});
+    if (dictionary_size <= std::numeric_limits<UInt32>::max() + 1ULL)
+        return create(UInt32{});
+    return create(UInt64{});
+}
+
+/// Call `f` with the index array of `lc_col`, whatever its width.
+template <typename F>
+void withLowCardinalityIndexes(const ColumnLowCardinality & lc_col, F && f)
+{
+    const IColumn & indexes = lc_col.getIndexes();
+    if (const auto * u8 = typeid_cast<const ColumnUInt8 *>(&indexes))
+        f(u8->getData());
+    else if (const auto * u16 = typeid_cast<const ColumnUInt16 *>(&indexes))
+        f(u16->getData());
+    else if (const auto * u32 = typeid_cast<const ColumnUInt32 *>(&indexes))
+        f(u32->getData());
+    else
+        f(assert_cast<const ColumnUInt64 &>(indexes).getData());
+}
+
+/// Every row of `values` becomes its own dictionary entry, copied byte for byte. Unlike
+/// `ColumnLowCardinality::insertRangeFromFullColumn`, this does not merge a value that compares
+/// equal to the default, such as `-0.0`, into the default slot.
+MutableColumnPtr lowCardinalityFromFullColumn(const IColumn & values, const DataTypeLowCardinality & lc_type)
+{
+    const IDataType & dictionary_type = *lc_type.getDictionaryType();
+    const size_t num_special = dictionary_type.isNullable() ? 2 : 1;
+    const IColumn * nested = &values;
+    const NullMap * null_map = nullptr;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&values))
+    {
+        nested = &nullable->getNestedColumn();
+        null_map = &nullable->getNullMapData();
+    }
+
+    MutableColumnPtr keys = nested->cloneEmpty();
+    keys->insertManyDefaults(num_special);
+    keys->insertRangeFrom(*nested, 0, nested->size());
+
+    MutableColumnPtr indexes = createLowCardinalityIndexes(keys->size(), [&]<typename T>(PaddedPODArray<T> & data)
+    {
+        data.resize(values.size());
+        for (size_t i = 0; i < values.size(); ++i)
+            data[i] = (null_map && (*null_map)[i]) ? 0 : static_cast<T>(i + num_special);
+    });
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(dictionary_type, std::move(keys));
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+}
+
+/// The dictionary is the special slots of the first part followed by the other entries of every
+/// part in turn, so no entry is reinserted by value.
+MutableColumnPtr concatLowCardinality(const Columns & parts, const DataTypeLowCardinality & lc_type)
+{
+    const auto & first = assert_cast<const ColumnLowCardinality &>(*parts.front());
+    const size_t num_special = first.getDictionary().nestedColumnIsNullable() ? 2 : 1;
+    const IColumn & first_keys = *first.getDictionary().getNestedNotNullableColumn();
+    MutableColumnPtr keys = first_keys.cloneEmpty();
+    keys->insertRangeFrom(first_keys, 0, num_special);
+
+    std::vector<size_t> bases;
+    bases.reserve(parts.size());
+    size_t rows = 0;
+    for (const auto & part : parts)
+    {
+        const IColumn & part_keys = *assert_cast<const ColumnLowCardinality &>(*part).getDictionary().getNestedNotNullableColumn();
+        bases.push_back(keys->size());
+        keys->insertRangeFrom(part_keys, num_special, part_keys.size() - num_special);
+        rows += part->size();
+    }
+
+    MutableColumnPtr indexes = createLowCardinalityIndexes(keys->size(), [&]<typename T>(PaddedPODArray<T> & data)
+    {
+        data.reserve(rows);
+        for (size_t p = 0; p < parts.size(); ++p)
+        {
+            const UInt64 shift = bases[p] - num_special;
+            withLowCardinalityIndexes(assert_cast<const ColumnLowCardinality &>(*parts[p]), [&](const auto & src)
+            {
+                for (const auto index : src)
+                    data.push_back(static_cast<T>(index < num_special ? index : index + shift));
+            });
+        }
+    });
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*lc_type.getDictionaryType(), std::move(keys));
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+}
+
+bool containsLowCardinality(const DataTypePtr & type)
+{
+    if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return true;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return containsLowCardinality(array_type->getNestedType());
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return containsLowCardinality(map_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::any_of(tuple_type->getElements(), containsLowCardinality);
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+        return std::ranges::any_of(variant_type->getVariants(), containsLowCardinality);
+    return false;
+}
+
+}
+
+ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type)
+{
+    if (parts.empty())
+        return type->createColumn();
+    if (parts.size() == 1)
+        return parts.front();
+
+    if (!containsLowCardinality(type))
+    {
+        MutableColumnPtr result = parts.front()->cloneEmpty();
+        for (const auto & part : parts)
+            result->insertRangeFrom(*part, 0, part->size());
+        return result;
+    }
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return concatLowCardinality(parts, *lc_type);
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        Columns nested;
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        UInt64 shift = 0;
+        for (const auto & part : parts)
+        {
+            const auto & array = assert_cast<const ColumnArray &>(*part);
+            nested.push_back(array.getDataPtr());
+            for (const auto offset : array.getOffsets())
+                offsets->getData().push_back(offset + shift);
+            shift += array.getData().size();
+        }
+        return ColumnArray::create(concatColumnarResults(nested, array_type->getNestedType()), std::move(offsets));
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        Columns nested;
+        for (const auto & part : parts)
+            nested.push_back(assert_cast<const ColumnMap &>(*part).getNestedColumnPtr());
+        return ColumnMap::create(concatColumnarResults(nested, map_type->getNestedType()));
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & element_types = tuple_type->getElements();
+        Columns elements;
+        for (size_t i = 0; i < element_types.size(); ++i)
+        {
+            Columns element_parts;
+            for (const auto & part : parts)
+                element_parts.push_back(assert_cast<const ColumnTuple &>(*part).getColumnPtr(i));
+            elements.push_back(concatColumnarResults(element_parts, element_types[i]));
+        }
+        return ColumnTuple::create(elements);
+    }
+
+    /// Parts may order their alternatives differently, so the result uses global discriminators.
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+    auto offsets = ColumnVariant::ColumnOffsets::create();
+    std::vector<UInt64> variant_sizes(variant_types.size(), 0);
+    for (const auto & part : parts)
+    {
+        const auto & variant = assert_cast<const ColumnVariant &>(*part);
+        const auto & part_discriminators = variant.getLocalDiscriminators();
+        const auto & part_offsets = variant.getOffsets();
+        for (size_t i = 0; i < part_discriminators.size(); ++i)
+        {
+            const auto local = part_discriminators[i];
+            if (local == ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                discriminators->getData().push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                offsets->getData().push_back(0);
+                continue;
+            }
+            const auto global = variant.globalDiscriminatorByLocal(local);
+            discriminators->getData().push_back(global);
+            offsets->getData().push_back(part_offsets[i] + variant_sizes[global]);
+        }
+        for (size_t global = 0; global < variant_types.size(); ++global)
+            variant_sizes[global] += variant.getVariantByGlobalDiscriminator(global).size();
+    }
+    Columns variants;
+    for (size_t global = 0; global < variant_types.size(); ++global)
+    {
+        Columns variant_parts;
+        for (const auto & part : parts)
+            variant_parts.push_back(assert_cast<const ColumnVariant &>(*part).getVariantPtrByGlobalDiscriminator(global));
+        variants.push_back(concatColumnarResults(variant_parts, variant_types[global]));
+    }
+    return ColumnVariant::create(std::move(discriminators), std::move(offsets), variants);
 }
 
 /// COL_COMPLEX data, recursive:
@@ -742,9 +958,7 @@ MutableColumnPtr readColumnFromDesc(
         if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         {
             auto full_col = decode(p, lowcard_type->getDictionaryType(), n);
-            auto lc_col = lowcard_type->createColumn();
-            typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*full_col, 0, full_col->size());
-            return lc_col;
+            return lowCardinalityFromFullColumn(*full_col, *lowcard_type);
         }
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
