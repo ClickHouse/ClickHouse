@@ -918,19 +918,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    /// Also inside a view body: the query itself was printed from a resolved query tree.
     if (positional_arguments_already_resolved)
         return;
-    const bool is_view_inner = scope.context->isViewInnerQuery();
-    if (!is_view_inner)
-    {
-        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
-        /// already resolved positional arguments in the outer query. View-inner contexts are
-        /// exempt because views are expanded on the local node and were never resolved by the
-        /// initiator.
-        if (scope.context->isPositionalArgumentsAlreadyResolved())
-            return;
-    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -5838,7 +5827,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             scope_to_check = scope_to_check->parent_scope ? scope_to_check->parent_scope->getNearestQueryScope() : nullptr;
         }
     }
-    execution_context = Context::withUnresolvedPositionalArguments(execution_context);
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
@@ -6849,10 +6837,9 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         }
 
         /// Resolve the row policy filter expression against result_node's columns.
-        auto filter_context = Context::withUnresolvedPositionalArguments(scope.context);
-        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), filter_context);
+        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
         QueryAnalyzer filter_analyzer(this->only_analyze);
-        filter_analyzer.resolve(filter_node, result_node, filter_context);
+        filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
         auto result_columns = result_node->as<QueryNode>()

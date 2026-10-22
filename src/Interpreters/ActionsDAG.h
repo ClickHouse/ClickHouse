@@ -189,7 +189,13 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(
+        ReadBuffer & in,
+        DeserializedSetsRegistry & registry,
+        const ContextPtr & context,
+        size_t max_type_complexity = 0,
+        size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 

@@ -242,7 +242,7 @@ StorageTimeSeries::StorageTimeSeries(
         /// However for ATTACH InterpreterCreateQuery doesn't normalize the create query,
         /// so `columns` can contain prealpha outer columns which we should upgrade.
         auto normalized_columns = InterpreterCreateQuery::getColumnsDescription(
-            *normalized_create_query->columns_list->columns, local_context, mode);
+            *normalized_create_query->columns_list, local_context, mode);
         storage_metadata.setColumns(normalized_columns);
 
         /// The metadata must carry the whole `SETTINGS` clause because a settings alter changes that clause

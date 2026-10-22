@@ -68,6 +68,10 @@ elseif (USE_MUSL)
     # -static-pie: a static executable that relocates itself at startup (rcrt1.o), so it keeps ASLR.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/rcrt1.o ${MUSL_CRT_DIR}/crti.o")
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
+    # Every pointer in the binary's data still has to be patched at startup, but packed relative relocations
+    # (DT_RELR, applied by musl's ldso/dlstart.c) describe them in ~250 KB instead of ~34 MB of `.rela.dyn`:
+    # the binary is that much smaller, and a start with a cold page cache reads that much less.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,pack-relative-relocs")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
@@ -87,8 +91,21 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
 if (USE_MUSL)
+    # Sanitizer builds link the copy of musl with the intercepted functions
+    # renamed to __real_* (see contrib/compiler-rt-cmake). Standalone UBSan is
+    # the one sanitizer without libc interceptors (no REAL() bindings), so it
+    # links the plain musl; contrib/compiler-rt-cmake does not produce
+    # musl_intercepted for it. Any future sanitizer mode intentionally falls
+    # into the musl_intercepted branch: if compiler-rt does not build the
+    # archive for it, the configure fails loudly instead of silently linking
+    # a libc whose functions the runtime expects to intercept.
+    if (SANITIZE AND NOT SANITIZE STREQUAL "undefined")
+        set (MUSL_LIBC_TARGET musl_intercepted)
+    else ()
+        set (MUSL_LIBC_TARGET musl)
+    endif ()
     # musl provides pthread in libc.
-    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES ${MUSL_LIBC_TARGET})
 else ()
     set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 endif ()

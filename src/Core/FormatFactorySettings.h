@@ -1400,6 +1400,10 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 Put crc32 checksums in parquet page headers.
 )", 0, \
         {"25.11", false, true, "New setting."}) \
+    DECLARE(Bool, output_format_parquet_use_alp_encoding, false, R"(
+Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1975,7 +1979,7 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
     DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(
@@ -1986,6 +1990,10 @@ Read a Parquet group that has no `VARIANT` logical type, but has the layout of a
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \
         {"25.7", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."}) \
+    DECLARE(Bool, output_format_parquet_geometry_logical_type, false, R"(
+Annotate geo columns written as WKB (see `output_format_parquet_geometadata`) with the Parquet `GEOMETRY` logical type, and write `GeospatialStatistics` (bounding box and geometry types) for them instead of min/max statistics. Readers that support the logical type recognize such columns as geometries even without the GeoParquet `geo` metadata. Has no effect if `output_format_parquet_geometadata` is disabled. A `Geometry` column is also described in the GeoParquet `geo` metadata, with an empty list of geometry types. If disabled, these columns are written as `BYTE_ARRAY` without a geospatial annotation and with min/max statistics, and a `Geometry` column is not described in the `geo` metadata. Disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(Bool, output_format_parquet_write_file_logical_type, false, R"(
 Write a named `Tuple` whose element names are all fields of the Parquet `FILE` logical type (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; any non-empty subset in any order) as a group annotated with the `FILE` logical type, which represents a reference to a range of bytes stored inline or in an external file. The `offset` and `size` elements must be integers (written as `INT64`), the other elements must be `String` or `FixedString` (`inline` is written as `BYTE_ARRAY` without annotation, the others as `STRING`). As the specification requires, every field is written as `OPTIONAL`. Values are written as is, without checking that they form a valid reference.
 

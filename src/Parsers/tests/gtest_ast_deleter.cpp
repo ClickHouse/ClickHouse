@@ -145,3 +145,58 @@ TEST(ASTDeleter, DoubleChainLong)
         }
     }
 }
+
+namespace
+{
+
+class ASTDestructionObserver : public DB::IAST
+{
+public:
+    explicit ASTDestructionObserver(size_t & observations_) : observations(observations_) {}
+
+    String getID(char) const override { return "ASTDestructionObserver"; }
+    DB::ASTPtr clone() const override { return nullptr; }
+
+    ~ASTDestructionObserver() override
+    {
+        // dumpTree observes virtual dispatch while this intermediate base is still alive.
+        EXPECT_TRUE(dumpTree().starts_with("ASTDestructionObserver\n"));
+        ++observations;
+    }
+
+private:
+    size_t & observations;
+};
+
+class ASTSecondaryBase : public StackDecrementer, public ASTDestructionObserver
+{
+public:
+    ASTSecondaryBase(size_t & alive_, size_t & observations_)
+        : StackDecrementer(alive_), ASTDestructionObserver(observations_)
+    {
+    }
+
+    String getID(char) const override { return "ASTSecondaryBase"; }
+};
+
+}
+
+TEST(ASTDeleter, SecondaryBaseWithChild)
+{
+    size_t parents_alive = 1;
+    size_t children_alive = 1;
+    size_t observations = 0;
+    DB::ASTPtr parent = DB::make_intrusive<ASTSecondaryBase>(parents_alive, observations);
+    ASSERT_NE(static_cast<void *>(parent.get()), dynamic_cast<void *>(parent.get()));
+    EXPECT_TRUE(parent->dumpTree().starts_with("ASTSecondaryBase\n"));
+
+    parent->children.push_back(DB::make_intrusive<ASTCounting>(children_alive));
+    ASSERT_EQ(parent->use_count(), 1);
+    ASSERT_EQ(parent->children.front()->use_count(), 1);
+
+    parent.reset();
+
+    EXPECT_EQ(observations, 1);
+    EXPECT_EQ(parents_alive, 0);
+    EXPECT_EQ(children_alive, 0);
+}

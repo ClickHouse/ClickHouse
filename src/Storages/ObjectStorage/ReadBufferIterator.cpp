@@ -86,7 +86,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
                 /// plain string overload would drop it and could validate one shard using another's metadata.
                 auto metadata_object = object_info->relative_path_with_metadata;
                 metadata_object.relative_path = path;
-                auto meta = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
+                auto meta = tryGetObjectMetadataForRead(*object_storage, metadata_object, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }

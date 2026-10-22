@@ -44,6 +44,7 @@ enum class Source : uint8_t
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(BIGQUERY, "BigQuery") \
+    M(ELASTICSEARCH, "Elasticsearch") \
     M(DISK, "Disk") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
@@ -319,6 +320,7 @@ enum class AccessType : uint8_t
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
     M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
     M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
@@ -450,6 +452,7 @@ enum class AccessType : uint8_t
     M(YTSAURUS, "", GLOBAL, ALL) \
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     M(BIGQUERY, "", GLOBAL, ALL) \
+    M(ELASTICSEARCH, "", GLOBAL, ALL) \
     M(DISK, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \

@@ -83,7 +83,7 @@ bool dictionaryValueTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::Ar
         || a.decimal_bit_width != b.decimal_bit_width || a.unit != b.unit || a.time_bit_width != b.time_bit_width
         || a.timezone != b.timezone || a.byte_width != b.byte_width || a.list_size != b.list_size
         || a.union_mode != b.union_mode || a.union_type_ids != b.union_type_ids
-        || a.unsupported_type_name != b.unsupported_type_name || a.skip_layout != b.skip_layout
+        || a.unsupported_type_name != b.unsupported_type_name
         || a.children.size() != b.children.size())
         return false;
     const bool compare_child_names = a.kind == ArrowIPC::TypeKind::Struct || a.kind == ArrowIPC::TypeKind::Union;
@@ -1324,7 +1324,7 @@ The table below shows the supported data types and how they correspond to ClickH
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/reference/data-types/fixedstring)                                            | `FIXED_SIZE_BINARY`        |
 | `DECIMAL`                               | [Decimal](/reference/data-types/decimal)                                                    | `DECIMAL`                  |
 | `DECIMAL256`                            | [Decimal256](/reference/data-types/decimal)                                                 | `DECIMAL256`               |
-| `LIST`                                  | [Array](/reference/data-types/array)                                                        | `LIST`                     |
+| `LIST`, `LIST_VIEW`                     | [Array](/reference/data-types/array)                                                        | `LIST`                     |
 | `STRUCT`                                | [Tuple](/reference/data-types/tuple)                                                        | `STRUCT`                   |
 | `MAP`                                   | [Map](/reference/data-types/map)                                                            | `MAP`                      |
 | `UINT32`                                | [IPv4](/reference/data-types/ipv4)                                                          | `UINT32`                   |

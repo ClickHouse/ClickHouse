@@ -228,6 +228,12 @@ public:
     /// not marked expected, else 0. Points at the query that allocated something outliving it.
     Int64 unexpectedDrift() const;
 
+    /// `size` bytes charged to this tracker now belong to the server, which goes on holding them (e.g. an
+    /// entry of a cache): take them off this tracker and its parents up to the global one, which keeps them.
+    /// Each takes at most what its child gave up, so a tracker that holds less does not go below zero.
+    /// The release has to be server-owned as well, under `MemoryTrackerBlockerInThread`.
+    void handOverToServer(Int64 size);
+
     /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
     /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
     void reparent(MemoryTracker * new_parent);

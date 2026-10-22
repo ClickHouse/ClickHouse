@@ -136,7 +136,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
         throw;
     }
 
-    /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
+    /// We check that columns match only if permitted (otherwise we could reveal the structure to a user who must not know it).
     ColumnsDescription columns{sample_block->getNamesAndTypesList()};
     if (columns != else_columns)
     {

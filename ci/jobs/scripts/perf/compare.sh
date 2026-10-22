@@ -301,9 +301,15 @@ function restart
 
     match_reference_debug_info
 
-    # Intentionally unquoted below: expands to nothing on non-x86_64.
+    # Intentionally unquoted below: both expand to nothing when unused.
     local pinning_prefix
     pinning_prefix=$(cpu_pinning_prefix)
+    # ASLR off, so that both servers load the executable at the same address (Linux only).
+    local no_aslr_prefix=""
+    if [ "$(uname -s)" = "Linux" ]
+    then
+        no_aslr_prefix="setarch $(uname -m) -R"
+    fi
 
     set -m # Spawn servers in their own process groups
 
@@ -327,7 +333,7 @@ function restart
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    $pinning_prefix $no_aslr_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -349,7 +355,7 @@ function restart
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    $pinning_prefix $no_aslr_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -366,6 +372,13 @@ function restart
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
+
+    # Compare only two running servers: a server that failed to start keeps the callers' handling.
+    # exit, not return: confirm_changes only skips its rerun when the restart fails.
+    if [ -n "$no_aslr_prefix" ] && kill -0 $left_pid && kill -0 $right_pid
+    then
+        python3 "$script_dir/check_executable_base.py" left/db right/db || exit 1
+    fi
 
     # Check again that both servers we started are running -- this is important
     # for running locally, when there might be some other servers started and we
@@ -2058,7 +2071,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || { restart && get_profiles ; } ) ||:
+    ( get_profiles ) || { restart && ( get_profiles ) ; } ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

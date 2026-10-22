@@ -128,6 +128,37 @@ struct LowCardinalityArrayView
         return result;
     }
 
+    /// Given a per-dictionary-entry match number in [1, matches_count] (0 for no match), compute whether each
+    /// array row holds an element of every match number. [matches_count] is in [1, 64].
+    inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
+    {
+        UInt64 all_matched = matches_count == 64 ? ~UInt64(0) : (UInt64(1) << matches_count) - 1;
+
+        auto result = ColumnUInt8::create();
+        auto & result_data = result->getData();
+        result_data.resize_fill(rows);
+
+        forEachRange([&](size_t row, size_t begin, size_t end)
+        {
+            UInt64 matched = 0;
+            for (size_t i = begin; i != end; ++i)
+            {
+                UInt8 match = dictionary_matches[elements.getIndexAt(i)];
+                if (!match)
+                    continue;
+
+                matched |= UInt64(1) << (match - 1);
+                if (matched == all_matched)
+                {
+                    result_data[row] = 1;
+                    break;
+                }
+            }
+        });
+
+        return result;
+    }
+
     /// Given a per-dictionary-entry predicate result, build a filter and offsets for matching array elements.
     inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {

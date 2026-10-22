@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Formats/FormatSettings.h>
+
+#include <string_view>
 
 
 namespace DB
@@ -103,5 +106,22 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
 /// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
 /// those skip the round trip. Returns Null when the value is not representable.
 Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
+
+/// For a string `src` that `convertFieldToType` rejects because an integer element does not fit an `Array`, `Tuple`
+/// or `Map` type: converts it with the integer elements widened to 256 bits and replaces `type` with the wider type.
+/// Returns Null otherwise, and when the integers fit neither `Int256` nor `UInt256` elements.
+Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type, const IDataType * from_type_hint, const FormatSettings & format_settings);
+
+/// Where a decimal integer literal falls relative to the range of an integer type. `NotApplicable` also covers
+/// a non-integer type, a non-decimal literal, and `-0` against an unsigned type.
+enum class IntegerLiteralRange : uint8_t
+{
+    NotApplicable,
+    BelowMin,
+    InRange,
+    AboveMax,
+};
+
+IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const IDataType & to_type);
 
 }

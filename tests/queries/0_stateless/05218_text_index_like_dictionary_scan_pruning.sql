@@ -65,8 +65,6 @@ SELECT 'two prefixes, no index', groupArray(id) FROM tab WHERE message LIKE 'toa
 SELECT 'prefix and infix', groupArray(id) FROM tab WHERE message LIKE 'toaa%' AND message LIKE '%toaa0%' SETTINGS log_comment = '05218_prefix_infix';
 SELECT 'prefix and infix, no index', groupArray(id) FROM tab WHERE message LIKE 'toaa%' AND message LIKE '%toaa0%' SETTINGS use_skip_indexes = 0;
 
--- No ILIKE needle here may contain 'k' or 'K': such a needle is refused before the scan starts, because
--- U+212A folds onto 'k', so the scenario would assert nothing about the dictionary scan.
 SELECT 'ilike infix', groupArray(id) FROM tab WHERE message ILIKE '%TOAA0%' SETTINGS log_comment = '05218_ilike';
 SELECT 'ilike infix, no index', groupArray(id) FROM tab WHERE message ILIKE '%TOAA0%' SETTINGS use_skip_indexes = 0;
 

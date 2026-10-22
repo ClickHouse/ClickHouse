@@ -30,6 +30,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/RadixUniqExactTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -231,6 +232,13 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+    /// The in-order executors (`FinalizeAggregatedTransform`, `MergingAggregatedBucketTransform`)
+    /// never reach `Aggregator::mergeAndConvertOneBucketToChunk` or
+    /// `Aggregator::convertOneBucketToChunkTopK`, so the top-K threshold merge and the bucket-local
+    /// Top-K conversion set by the first optimization pass would be silent no-ops there. Drop them,
+    /// so that the plan does not claim an optimization the pipeline does not perform.
+    params.threshold_top_k.reset();
+    params.bucket_top_k = 0;
 
     /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
     /// which the GROUP BY top-K heap breaks by skipping rows.
@@ -285,6 +293,17 @@ static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processo
     bool tracked = false;
     for (const auto * processor : step_processors)
     {
+        /// The radix partitioned `uniqExact` has one state for all its transforms.
+        if (const auto * route_transform = typeid_cast<const RadixUniqExactRouteTransform *>(processor))
+        {
+            if (auto peak = route_transform->getState().getPeakMemoryUsage())
+            {
+                peak_memory += *peak;
+                tracked = true;
+            }
+            break;
+        }
+
         const auto * aggregating_transform = typeid_cast<const AggregatingTransform *>(processor);
         if (!aggregating_transform)
             continue;
@@ -478,6 +497,69 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     return nullptr;
 }
 
+bool AggregatingStep::canUseRadixUniqExact() const
+{
+    if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging || params.only_merge
+        || params.overflow_row || !params.keys.empty() || params.aggregates.size() != 1)
+        return false;
+
+    const auto & aggregate = params.aggregates[0];
+    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1
+        || !WhichDataType(aggregate.function->getResultType()).isUInt64())
+        return false;
+
+    /// The type of the column as the transforms read it, not the argument type of the function, which has no `LowCardinality`.
+    return isRadixUniqExactSupported(*input_headers.front()->getByName(aggregate.argument_names[0]).type);
+}
+
+void AggregatingStep::buildRadixUniqExact(
+    QueryPipelineBuilder & pipeline,
+    const AggregatingTransformParamsPtr & transform_params,
+    size_t max_threads,
+    const StatsCollectingParams & stats_collecting_params) const
+{
+    const auto & aggregator_params = transform_params->params;
+    const auto & aggregate = aggregator_params.aggregates[0];
+    const auto & output_header = transform_params->getHeader();
+
+    const auto & input_header = pipeline.getHeader();
+    const auto & argument = input_header.getByName(aggregate.argument_names[0]);
+    const size_t num_streams = pipeline.getNumStreams();
+    auto state = createRadixUniqExactState(*argument.type, num_streams, stats_collecting_params);
+
+    const size_t key_position = input_header.getPositionByName(argument.name);
+    auto result_header = std::make_shared<const Block>(output_header);
+
+    size_t stream = 0;
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<RadixUniqExactRouteTransform>(header, result_header, state, stream++, key_position);
+    });
+
+    const size_t num_builders = std::min(max_threads, state->numBuckets());
+    pipeline.transform([&](OutputPortRawPtrs ports)
+    {
+        auto barrier = std::make_shared<RadixUniqExactBarrierTransform>(result_header, ports.size(), num_builders);
+        Processors processors{barrier};
+
+        auto input = barrier->getInputs().begin();
+        for (auto * port : ports)
+            connect(*port, *input++);
+
+        for (auto & output : barrier->getOutputs())
+        {
+            auto builder = std::make_shared<RadixUniqExactBuildTransform>(result_header, state);
+            connect(output, builder->getInputs().front());
+            processors.push_back(std::move(builder));
+        }
+        return processors;
+    });
+
+    pipeline.resize(1);
+    pipeline.addTransform(std::make_shared<RadixUniqExactSumTransform>(
+        result_header, state, aggregator_params.empty_result_for_aggregation_by_empty_set));
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     size_t new_merge_threads = merge_threads;
@@ -539,8 +621,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
+    const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && canUseRadixUniqExact();
+
+    /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
+    const StatsCollectingParams radix_uniq_exact_stats_params = params.stats_collecting_params;
+    if (params.keys.empty())
+        params.stats_collecting_params.disable();
+
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
+    if (use_radix_uniq_exact)
+    {
+        buildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+        return;
+    }
 
     if (!grouping_sets_params.empty())
     {

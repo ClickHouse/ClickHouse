@@ -716,6 +716,18 @@ void MemoryTracker::settleDriftOnQueryEnd()
 }
 
 
+void MemoryTracker::handOverToServer(Int64 size)
+{
+    for (auto * tracker = this; size > 0 && tracker && tracker->level != VariableContext::Global;
+         tracker = tracker->parent.load(std::memory_order_relaxed))
+    {
+        /// A thread's tracker counts what the thread allocated, not what the query holds.
+        if (tracker->level != VariableContext::Thread)
+            size = tracker->adjustLocally(size);
+    }
+}
+
+
 Int64 MemoryTracker::unexpectedDrift() const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD

@@ -536,17 +536,17 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 template <typename TTraits>
 void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
 {
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
+    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool*
+    /// settings. This is where the settings schema is known, so this is where it is checked.
     if (!change.shorthand)
         return;
 
-    if (std::string_view type = getTypeName(change.name); type != "Bool")
+    if (std::string_view type = getTypeName(change.name); !type.starts_with("Bool"))
         BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
 
-    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
+    /// The type alone is not enough. The parser writes `Bool` `true` for the valueless form, but a
     /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
-    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
+    /// with any other value - and for a `Bool*` setting the check above lets that through. Such a
     /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
     /// name, so `system.query_log` and every other formatter would under-report what ran. This is
     /// the first point after deserialization where an exception is logged with the AST masked

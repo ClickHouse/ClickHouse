@@ -49,9 +49,9 @@ def blob_sizes(cluster, blob_path):
 def test_manifest_file_size_matches_blob_size(started_cluster):
     """`file_size_in_bytes` must be the real blob size.
 
-    ClickHouse only uses it as a hint, but Iceberg readers such as Spark take it as the length of
-    the file and look for the Parquet footer at `file_size_in_bytes - 8`, so a value that is short
-    by the trailing upload part makes the file unreadable outside of ClickHouse.
+    ClickHouse (for a Parquet or ORC data file read through a table) and Iceberg readers such as Spark
+    take it as the length of the file and look for the Parquet footer at `file_size_in_bytes - 8`, so a
+    value that is short by the trailing upload part makes the file unreadable.
     """
     node = started_cluster.instances["node1"]
     azurite_url = started_cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]

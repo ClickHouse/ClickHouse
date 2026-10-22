@@ -37,7 +37,7 @@ namespace ErrorCodes
 
 void checkAccessEntityHasNoQueryParameters(const ASTPtr & query)
 {
-    if (const auto parameter_names = analyzeReceiveQueryParams(query); !parameter_names.empty())
+    if (const auto parameter_names = analyzeReceiveQueryParams(query, /*include_deferred_expressions=*/ false); !parameter_names.empty())
         throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION,
             "Query parameters are not allowed in access entity definitions (found {})",
             fmt::join(parameter_names, ", "));

@@ -233,6 +233,12 @@ public:
     std::unique_ptr<ReadBuffer> read();
     std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
 
+    /// Puts the data written so far into separate compressed blocks and returns the position
+    /// in the file from which the data written after this call can be read with `readFromPosition`.
+    size_t startNewBlock();
+    /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
+    std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
+
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
     Stat finishWriting();

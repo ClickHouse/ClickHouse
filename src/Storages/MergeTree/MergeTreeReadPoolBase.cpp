@@ -172,15 +172,6 @@ static MergeTreeReaderSettings setColumnsCacheSchemaIdentity(
     return settings;
 }
 
-/// Turn the columns cache off in the reader settings of a pool that must never use it.
-/// See the comment on the projection-index constructor below.
-static MergeTreeReaderSettings disableColumnsCache(MergeTreeReaderSettings settings)
-{
-    settings.enable_columns_cache_reads = false;
-    settings.enable_columns_cache_writes = false;
-    return settings;
-}
-
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
@@ -229,14 +220,10 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 
 /// Constructor for `MergeTreeReadPoolProjectionIndex`, which reads projection index parts.
 ///
-/// This pool never uses the columns cache. Projection parts share the projection name
-/// (e.g. `ailog_rule_count`) as their part name, which is not unique across parent parts,
-/// so `MergeTreeReaderWide` rejects them for both cache reads and cache writes. Turning the
-/// cache off here as well makes that invariant explicit at the pool level instead of relying
-/// on a predicate in the reader, and it removes the question of the query-scoped write budget
-/// for this path: the pool builds its tasks in `getTask` rather than in `fillPerPartInfos`,
-/// so it never calls `prepareColumnsCacheWriteEstimate`, and `adjustReaderSettingsForColumnsCacheWrites`
-/// would have nothing to budget for a pool that cannot write to the cache in the first place.
+/// The pool builds its tasks in `getTask` rather than in `fillPerPartInfos`, so the reads of the
+/// projection index do not add to the estimate of the bytes the query writes to the columns cache.
+/// They are bounded by the runtime write budget of the query, which this pool shares with the
+/// others, and they do not write once the estimate of the other pools disables the writes.
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     MutationsSnapshotPtr mutations_snapshot_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -252,13 +239,20 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(disableColumnsCache(reader_settings_))
+    , reader_settings(setColumnsCacheSchemaIdentity(
+          adjustReaderSettingsForColumnsCacheWrites(
+              reader_settings_,
+              context_,
+              getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache),
+              pool_settings_.use_columns_cache),
+          storage_snapshot_,
+          getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , owned_columns_cache(nullptr)
+    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -343,15 +337,13 @@ static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & 
 }
 
 /// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`: only wide parts
-/// of a table with a non-nil UUID that are not projection parts ever write to the shared columns
-/// cache (compact parts use a reader that never writes to it; projection parts and nil-UUID tables
-/// are rejected there as well). A reader is created per part - the base part and every patch part -
+/// of a table with a non-nil UUID ever write to the shared columns cache (compact parts use a reader
+/// that never writes to it; nil-UUID tables are rejected there as well). A reader is created per part - the base part and every patch part -
 /// so this has to be evaluated for each of them separately.
 static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
 {
     return part.getType() == MergeTreeDataPartType::Wide
-        && !part.isProjectionPart()
-        && part.storage.getStorageID().uuid != UUIDHelpers::Nil;
+        && canUseColumnsCacheForPart(part.storage.getStorageID().uuid);
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.

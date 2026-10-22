@@ -89,6 +89,16 @@ Takes effect only together with `make_distributed_plan = 1`: the setting alone d
 
 Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there
 
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}]}]}/>
+
+Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
+
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

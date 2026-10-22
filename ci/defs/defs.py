@@ -141,14 +141,14 @@ DOCKERS = [
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=["clickhouse/fasttest", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/wasm-builder",
@@ -160,13 +160,14 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/utils",
@@ -178,7 +179,7 @@ DOCKERS = [
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
@@ -197,7 +198,7 @@ DOCKERS = [
         name="clickhouse/performance-comparison",
         path="./ci/docker/performance-comparison",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
@@ -215,13 +216,13 @@ DOCKERS = [
         name="clickhouse/integration-test",
         path="./ci/docker/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -380,6 +381,12 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
+    # The limited clang-tidy check. Configured exactly like `arm_tidy`, but
+    # instead of running clang-tidy over the whole tree it analyzes only the
+    # translation units the change touches, which is what makes it fast enough
+    # to be part of the merge queue.
+    # See ci/jobs/scripts/clang_tidy_changed_files.py.
+    ARM_TIDY_CHANGED_FILES = "arm_tidy_changed_files"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
@@ -409,6 +416,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
+    CLANG_TIDY_CHANGED_FILES = "Clang-tidy (changed files)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -709,7 +717,7 @@ class ArtifactConfigs:
         Artifact.Config(
             name=ArtifactNames.CH_AMD_ILLUMOS,
             type=Artifact.Type.S3,
-            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            path=f"{TEMP_DIR}/build/programs/stripped/bin/clickhouse",
             compress_zst=True,
         )
     )

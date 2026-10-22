@@ -650,7 +650,7 @@ void KeeperHandlingConsumer::stopUsing()
 
 CppKafkaConsumerPtr KeeperHandlingConsumer::moveConsumer() const
 {
-    chassert(!isInUse() && "KeeperHandlingConsumer cannot destroy consumer when it is in use!");
+    chassert(!isInUse() && "KeeperHandlingConsumer cannot destroy consumer when it is in use");
     return kafka_consumer->moveConsumer();
 }
 

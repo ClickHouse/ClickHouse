@@ -697,8 +697,20 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         },
         [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            std::optional<size_t> file_size;
+            /// Keep zero as unknown so the reader still opens the path and reports
+            /// open-time errors, matching the behavior before the size was forwarded.
+            if (object.bytes_size != StoredObject::UnknownSize && object.bytes_size != 0)
+                file_size = object.bytes_size;
+
+            /// The known size is forwarded only for the reader's EOF guard (the O_DIRECT read
+            /// past EOF issue). Reader selection (mmap / Direct I/O) must keep the previous
+            /// behavior: it is driven by the caller's read_hint, and a missing hint must not
+            /// turn file_size into the estimate - otherwise no-hint reads would start using
+            /// different readers and caches, which is a separate behavior change.
+            const auto selection_hint = s.read_hint.value_or(0);
             return createReadBufferFromFileBase(
-                s.path, settings, s.read_hint);
+                s.path, settings, selection_hint, file_size);
         },
         [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
