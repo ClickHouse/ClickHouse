@@ -16,6 +16,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedMergeTree.h>
 #endif
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
@@ -86,17 +87,43 @@ MergeTreeTransaction::State MergeTreeTransaction::getState() const
     return COMMITTED;
 }
 
-/// Blocks until `csn` leaves `current_state_csn`. Every writer that changes `csn`
-/// must call `csn.notify_all`, otherwise `csn.wait` here is not guaranteed to wake.
-bool MergeTreeTransaction::waitStateChange(CSN current_state_csn) const
+/// KILL QUERY and shutdown have no notifier, so poll for them.
+MergeTreeTransaction::StateWaitResult
+MergeTreeTransaction::waitStateChange(CSN current_state_csn) const
 {
-    CSN current_value = current_state_csn;
-    while (current_value == current_state_csn && !TransactionManager::instance().isShuttingDown())
+    static constexpr auto poll_interval = std::chrono::milliseconds(100);
+    const auto & manager = TransactionManager::instance();
+    const auto state_changed_or_shutting_down
+        = [&] { return csn.load() != current_state_csn || manager.isShuttingDown(); };
+
+    while (true)
     {
-        csn.wait(current_value);
-        current_value = csn.load();
+        {
+            std::unique_lock lock{state_change_mutex};
+            state_change_cv.wait_for(lock, poll_interval, state_changed_or_shutting_down);
+        }
+        if (csn.load() != current_state_csn)
+            return StateWaitResult::Changed;
+        if (manager.isShuttingDown())
+            return StateWaitResult::ShuttingDown;
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            return StateWaitResult::QueryCancelled;
     }
-    return current_value != current_state_csn;
+}
+
+MergeTreeTransaction::StateWaitResult MergeTreeTransaction::waitForCommitOutcome() const
+{
+    auto result = waitStateChange(Tx::CommittingCSN);
+    if (result == StateWaitResult::Changed && csn.load() == Tx::UnknownCSN)
+        result = waitStateChange(Tx::UnknownCSN);
+    return result;
+}
+
+void MergeTreeTransaction::notifyStateChange() const
+{
+    /// Under the mutex, so a waiter cannot miss the notify.
+    std::lock_guard lock{state_change_mutex};
+    state_change_cv.notify_all();
 }
 
 void MergeTreeTransaction::checkIsNotCancelled() const
@@ -464,14 +491,14 @@ scope_guard MergeTreeTransaction::beforeCommit()
         }
     }
 
-    csn.notify_all(); /// Wake `waitStateChange`.
+    notifyStateChange();
 
     /// We should set CSN back to Unknown if we will fail to commit transaction for some reason (connection loss, etc)
     return [this]()
     {
         CSN expected_value = Tx::CommittingCSN;
         if (csn.compare_exchange_strong(expected_value, Tx::UnknownCSN))
-            csn.notify_all();
+            notifyStateChange();
     };
 }
 
@@ -545,9 +572,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     /// Flip the atomic last so that `waitStateChange` only wakes up after all metadata is durable.
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
     chassert(prev_value == Tx::CommittingCSN);
-    /// `std::atomic::wait` requires a matching `notify`; a bare store does not wake a waiter
-    /// (works on the Linux libc++ global-table fallback by luck, but hangs on the native wait used for 8-byte atomics on macOS).
-    csn.notify_all();
+    notifyStateChange();
 }
 
 MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
@@ -569,8 +594,7 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
     if (!need_rollback)
         return RollbackResult::NotNeeded;
 
-    /// Wake any `waitStateChange` waiter (see the `notify` note in `afterCommit`).
-    csn.notify_all();
+    notifyStateChange();
 
     /// The transaction reads as rolled back, but no removal stamp is cleared yet.
     FailPointInjection::pauseFailPoint(FailPoints::transaction_rollback_pause_after_mark);

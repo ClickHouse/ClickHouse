@@ -9,3 +9,9 @@ next_committed 1
 next_writer	0	a
 next_writer	1	c
 next_writer	2	a
+kill_returned
+killed_committed 0
+next_refused 1
+killed	0	a
+killed	1	c
+killed	2	a
