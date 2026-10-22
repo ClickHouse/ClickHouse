@@ -1583,7 +1583,6 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
-    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
@@ -1598,6 +1597,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
     streaming_cursor(o.streaming_cursor),
+    query_execution_started_callback(o.query_execution_started_callback),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -1666,15 +1666,6 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
-}
-
-ContextPtr Context::withUnresolvedPositionalArguments(const ContextPtr & context)
-{
-    if (!context->isPositionalArgumentsAlreadyResolved())
-        return context;
-    auto copy = createCopy(context);
-    copy->setPositionalArgumentsAlreadyResolved(false);
-    return copy;
 }
 
 Context::~Context() = default;
@@ -4532,6 +4523,7 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
+        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -9129,6 +9121,22 @@ void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
 Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
 {
     return ddl_additional_checks_on_enqueue;
+}
+
+void Context::setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback)
+{
+    query_execution_started_callback = std::move(callback);
+}
+
+const QueryExecutionStartedCallback & Context::getQueryExecutionStartedCallback() const
+{
+    return query_execution_started_callback;
+}
+
+void Context::onQueryExecutionStarted() const
+{
+    if (query_execution_started_callback)
+        query_execution_started_callback();
 }
 
 
