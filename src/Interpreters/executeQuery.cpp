@@ -3019,7 +3019,11 @@ static BlockIO executeQueryImpl(
                     if (insert_query && insert_query->hasInlinedData())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "A query rewritten by a query rule into an INSERT with inline data cannot be run in the background");
-                    background_query_execution_started = executeQueryInBackground(out_ast->formatWithSecretsOneLine(), context);
+                    /// The rewritten query is formatted as ClickHouse SQL, so the worker must parse
+                    /// it as such regardless of the dialect the original request was submitted in.
+                    auto rewritten_query_context = Context::createCopy(context);
+                    rewritten_query_context->setSetting("dialect", String("clickhouse"));
+                    background_query_execution_started = executeQueryInBackground(out_ast->formatWithSecretsOneLine(), rewritten_query_context);
                 }
                 background_query_dispatched = true;
                 background_query_execution_started.get();
