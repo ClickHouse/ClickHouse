@@ -152,9 +152,7 @@ static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
 /// A later step never overrides an earlier decision: it reads the value the earlier step
 /// produced, not the on-disk one.
 ///
-/// Steps that are not on-fly mutation steps (`mutation_version` unset: query PREWHERE, row-level
-/// and lightweight-delete filters) are not scanned; they convert at their own turn. On-fly steps
-/// queued after the pending `MODIFY` are scanned: they read the column in its post-`MODIFY` type.
+/// Only on-fly mutation steps are scanned; `columns_overwritten_by_chain` is set on pre-`MODIFY` steps only.
 ///
 /// Keys are `NameAndTypePair::getNameInStorage`, matching the skip set in
 /// `executeActionsBeforePrewhere`. A physical column whose name contains dots (`info.name`)
@@ -163,7 +161,6 @@ static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
 /// as `info` and miss it in the skip set, reintroducing the type mismatch.
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers)
 {
-    /// Only pre-`MODIFY` steps carry the chain-wide set.
     const NameSet * overwritten_by_chain = nullptr;
     for (const auto & reader : range_readers)
     {
@@ -290,8 +287,6 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
-/// For every step, the read names of the columns still in their on-disk type after it: read under the
-/// skip set of `executeActionsBeforePrewhere` and not yet produced by an on-fly mutation step.
 static std::vector<NameSet> collectColumnsUnconvertedAfterStep(const RangeReaders & range_readers, const NameSet & consumed)
 {
     std::vector<NameSet> result(range_readers.size());
