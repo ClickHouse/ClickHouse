@@ -33,7 +33,7 @@
           ]
         },
         "ru/clickstack/architecture",
-        "clickstack/faq"
+        "ru/clickstack/faq"
       ]
     },
     {
@@ -97,11 +97,11 @@
         "ru/clickstack/text-to-chart",
         "ru/clickstack/features/event-patterns",
         "ru/clickstack/features/event-deltas",
-        "clickstack/features/alerts",
+        "ru/clickstack/features/alerts",
         "ru/clickstack/features/anomaly-detection",
         "ru/clickstack/service-maps",
         "ru/clickstack/features/session-replay",
-        "clickstack/mcp",
+        "ru/clickstack/mcp",
         "ru/clickstack/url-parameters",
         {
           "group": "Демонстрационные дни",
