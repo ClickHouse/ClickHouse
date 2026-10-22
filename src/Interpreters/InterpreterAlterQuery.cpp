@@ -28,6 +28,7 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -517,7 +518,15 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (command_ast->sql_security)
             InterpreterCreateQuery::processSQLSecurityOption(getContext(), command_ast->sql_security->as<ASTSQLSecurity &>());
         else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
+        {
+            /// Validate the original definition before `ON CLUSTER` or `Replicated` enqueueing strips
+            /// initiator-only settings. Otherwise `AlterCommand::parse` can no longer reject them.
+            if (hasConstructionSettings(*command_ast->select))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
+                    "are not supported in a materialized view definition. Specify them on the query that reads the view instead.");
             modify_query = command_ast->select->as<ASTSelectWithUnionQuery>();
+        }
     }
 
     BlockIO res;
