@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, zookeeper
+# Tags: no-fasttest, zookeeper, no-replicated-database
 # Tag no-fasttest: the `S3Queue` and `AzureQueue` engines are not built into the fast test build.
 # Tag zookeeper: `S3Queue` keeps its state in Keeper, and `ON CLUSTER` queries use the distributed DDL queue.
+# Tag no-replicated-database: with `access_control_improvements.enable_read_write_grants` disabled (the default),
+# a replicated access storage round-trips the user through serialized SQL, which rewrites `WRITE ON S3('<filter>')`
+# into the old-style whole-source `S3` grant without the filter.
 
 # The move destination of an `S3Queue` or `AzureQueue` table is the same data flow as
 # `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`: the table reads the processed files with its
