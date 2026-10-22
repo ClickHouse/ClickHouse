@@ -70,6 +70,7 @@ private:
     ColumnNumbers other_columns_pos;
     Sizes other_columns_sizes;
     ColumnRawPtrs other_columns; // used during processing
+    Columns canonicalized_other_columns; // owns the columns in `other_columns` with negative zeros canonicalized
 
     MutableColumns prev_chunk_latest_key;
 };

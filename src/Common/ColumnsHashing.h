@@ -139,11 +139,12 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         return *low_cardinality_column;
     }
 
-    /// The range is not forwarded to the base: the base is built over the dictionary's nested column,
-    /// whose rows are dictionary entries rather than block rows.
+    /// The rows of the range are not forwarded to the base: the base is built over the dictionary's nested column,
+    /// whose rows are dictionary entries rather than block rows. Whether the dictionary is canonicalized is forwarded.
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, RowRange /*rows*/ = {})
-        : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, RowRange rows = {})
+        : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context,
+            RowRange{.negative_zeros_canonicalized = rows.negative_zeros_canonicalized})
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
@@ -466,7 +467,7 @@ struct HashMethodSerialized
     /// (e.g. `executeOnBlockSmall` with non-zero `row_begin`).
     size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, RowRange /*rows*/ = {})
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, RowRange rows = {})
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
         const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
@@ -495,7 +496,8 @@ struct HashMethodSerialized
         }
 
         /// The keys are serialized as raw bytes, so negative zeros have to be canonicalized in advance.
-        canonicalizeNegativeZeroInKeyColumns(key_columns, canonicalized_columns);
+        if (!rows.negative_zeros_canonicalized)
+            canonicalizeNegativeZeroInKeyColumns(key_columns, canonicalized_columns);
 
         if constexpr (!nullable && Base::has_mapped)
         {
