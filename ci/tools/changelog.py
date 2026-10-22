@@ -4,7 +4,9 @@
 import argparse
 import logging
 import re
+import sys
 from datetime import date, timedelta
+from pathlib import Path
 from subprocess import DEVNULL
 from typing import Any, Dict, List, Optional, TextIO, Tuple
 
@@ -13,15 +15,17 @@ from github.GithubException import RateLimitExceededException, UnknownObjectExce
 from github.NamedUser import NamedUser
 from rapidfuzz.distance import Levenshtein  # type: ignore
 
-from ci_utils import Shell
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from version_helper import (
+from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
     get_version_from_repo,
     get_version_from_tag,
 )
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.utils import Shell
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.

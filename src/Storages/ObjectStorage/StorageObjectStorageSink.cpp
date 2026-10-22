@@ -61,7 +61,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     SharedHeader sample_block_,
     ContextPtr context,
     const String & format,
-    const String & compression_method)
+    const String & compression_method,
+    FormatFilterInfoPtr format_filter_info)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
@@ -79,7 +80,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
         settings[Setting::snappy_mode]);
 
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings_);
+    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
+        format, *write_buf, *sample_block, context, format_settings_, std::move(format_filter_info));
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
