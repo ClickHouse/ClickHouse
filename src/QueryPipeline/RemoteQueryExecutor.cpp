@@ -387,6 +387,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         /// May also throw (so as cancel() above)
         try
         {
+            read_context.reset();
             connections->disconnect();
         }
         catch (...)
