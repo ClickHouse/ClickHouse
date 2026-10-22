@@ -169,12 +169,14 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
     }
     catch (Exception & exception)
     {
-        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
-        /// It is logical error, and we need more information about pipeline.
-        WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf);
-        buf.finalize();
-        exception.addMessage("Query pipeline:\n" + buf.str());
+        /// A logical error here means the pipeline was built incorrectly: append a dump of it.
+        if (exception.code() == ErrorCodes::LOGICAL_ERROR)
+        {
+            WriteBufferFromOwnString buf;
+            printPipeline(*processors, buf);
+            buf.finalize();
+            exception.addMessage("Query pipeline:\n" + buf.str());
+        }
 
         throw;
     }
