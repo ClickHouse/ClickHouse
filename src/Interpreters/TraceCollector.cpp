@@ -29,6 +29,11 @@ void TraceCollector::initialize(std::shared_ptr<TraceLog>)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The trace collector is not implemented on Windows");
 }
 
+void TraceCollector::flush()
+{
+    /// Nothing ever sends traces on Windows, so there is nothing to wait for.
+}
+
 std::shared_ptr<TraceLog> TraceCollector::getTraceLog()
 {
     return nullptr;
