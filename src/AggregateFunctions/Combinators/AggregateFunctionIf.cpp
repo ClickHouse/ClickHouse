@@ -22,6 +22,8 @@ class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
 public:
     String getName() const override { return "If"; }
 
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())

@@ -15,6 +15,23 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// Where an aggregate function combinator converts the `Variant` arguments that it passes as is to the nested function,
+/// if the nested function does not support them.
+enum class VariantArgumentsOfNestedFunction : UInt8
+{
+    /// The adapter is applied to the nested function, and the combinator sees the original values (example: -Distinct, -State).
+    ConvertedByNested,
+    /// Same as `ConvertedByNested`, but an outer combinator with `ConvertedAround` converts them around itself as well.
+    /// The combinator must pass the arguments to the nested function at the same positions (example: -If).
+    Forwarded,
+    /// The adapter is applied around the combinator, so that the rows with NULL values are skipped before the combinator
+    /// processes them, as the `Null` combinator does for `Nullable` arguments. Otherwise, the result would differ
+    /// from the result for the arguments explicitly cast to `Nullable`: for example, -ArgMax would select the row
+    /// with a NULL value, and -OrDefault and -Resample would return NULL instead of the default value for empty states.
+    /// The combinator must pass the arguments to the nested function at the same positions (example: -ArgMax, -OrDefault).
+    ConvertedAround,
+};
+
 /** Aggregate function combinator allows to take one aggregate function
   *  and transform it to another aggregate function.
   *
@@ -59,6 +76,11 @@ public:
       *  They are converted by `AggregateFunctionVariantAdapter`, see `VariantArgumentsConversion`.
       */
     virtual VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & /*arguments*/) const { return {}; }
+
+    /** How the `Variant` arguments that are passed as is to the nested function are converted
+      *  if the nested function does not support them, see `VariantArgumentsOfNestedFunction`.
+      */
+    virtual VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const { return VariantArgumentsOfNestedFunction::ConvertedByNested; }
 
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).

@@ -56,6 +56,17 @@ FROM values('v Variant(UInt64), k Variant(UInt8)', (NULL, 2), (1, 1));
 SELECT argMax(v, k), argMax(v, CAST(k AS Nullable(UInt8))), topKWeighted(2)(v, k), groupArrayResample(0, 2, 1)(v, k)
 FROM values('v Variant(String, UInt64), k Variant(UInt8)', ('a', 1), (2, 0), ('a', 3));
 
+-- The NULL values of the Variant are skipped before -ArgMax, -OrDefault and -Resample, as for the explicit cast to Nullable.
+SELECT
+    sumArgMax(v, k), sumArgMax(CAST(v AS Nullable(UInt64)), k),
+    sumIfArgMin(v, 1, k), sumIfArgMin(CAST(v AS Nullable(UInt64)), 1, k),
+    sumIfOrDefault(v, 0), sumIfOrDefault(CAST(v AS Nullable(UInt64)), 0),
+    sumOrDefault(v), sumOrDefault(CAST(v AS Nullable(UInt64))),
+    sumResample(0, 3, 1)(v, k), sumResample(0, 3, 1)(CAST(v AS Nullable(UInt64)), k)
+FROM values('v Variant(UInt64), k UInt8', (NULL, 2), (3, 1), (NULL, 0));
+SELECT sumIfOrDefault(v, toNullable(1)), sumOrNull(v), groupArrayArgMax(v, k), toTypeName(sumArgMax(v, k))
+FROM values('v Variant(UInt64), k UInt8', (NULL, 2), (3, 1));
+
 -- DISTINCT distinguishes equal values of different alternatives, as a distinct subquery does.
 SELECT sum(DISTINCT v), sumDistinct(v), sumDistinctIf(v, 1), uniqExact(v), (SELECT sum(v) FROM (SELECT DISTINCT v FROM (SELECT arrayJoin([1::UInt8::Variant(UInt8, UInt16), 1::UInt16::Variant(UInt8, UInt16)]) AS v)))
 FROM (SELECT arrayJoin([1::UInt8::Variant(UInt8, UInt16), 1::UInt16::Variant(UInt8, UInt16)]) AS v);

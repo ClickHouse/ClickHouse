@@ -37,6 +37,8 @@ public:
         return {};
     }
 
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)

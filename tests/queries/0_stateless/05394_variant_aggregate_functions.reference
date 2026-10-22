@@ -32,4 +32,6 @@ Variant(Float64, Int32, UInt8)	Array(Variant(Float64, Int32, UInt8))	Nullable(UI
 2	10	5
 [NULL]	[NULL]	\N	Variant(UInt64)
 a	a	['a',2]	[[2],['a']]
+3	3	3	3	0	0	3	3	[0,3,0]	[0,3,0]
+3	3	[NULL]	Nullable(UInt64)
 2	2	2	2	2

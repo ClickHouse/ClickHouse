@@ -107,7 +107,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return isVariant(type); }))
     {
-        auto arguments_to_convert = getVariantArgumentsToConvert(name, action, types_without_low_cardinality);
+        auto arguments_to_convert = getVariantArgumentsToConvert(name, action, types_without_low_cardinality, /* including_nested = */ false);
         if (!arguments_to_convert.empty())
         {
             /// Apply the function to Nullable of the least common supertype of the alternatives of every Variant argument
@@ -466,7 +466,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
 
 VectorWithMemoryTracking<size_t> AggregateFunctionFactory::getVariantArgumentsToConvert(
-    const String & name_param, NullsAction action, const DataTypes & argument_types) const
+    const String & name_param, NullsAction action, const DataTypes & argument_types, bool including_nested) const
 {
     String name = getAliasToOrName(name_param);
     String lower_case_name;
@@ -515,16 +515,41 @@ VectorWithMemoryTracking<size_t> AggregateFunctionFactory::getVariantArgumentsTo
         return res;
     }
 
-    /// Only the arguments that the combinator itself does not support are converted around it (ex: the key of -ArgMin).
+    /// The arguments that the combinator itself does not support are converted around it (ex: the key of -ArgMin).
     /// The arguments passed to the nested function are converted by the adapter applied to the nested function,
     /// which is created by `get` as well. This way the combinator sees the original values: for example, -Distinct
     /// distinguishes equal values of different alternatives, and the payload of -ArgMin keeps its type.
+    /// But some combinators must not see the NULL values that the nested function skips, see `VariantArgumentsOfNestedFunction`.
     /// Unknown functions don't need the conversion, the exception is thrown by `getImpl`.
     AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name);
     if (!combinator || combinator->isForInternalUsageOnly())
         return {};
 
-    return combinator->getVariantArgumentsToConvert(argument_types);
+    auto res = combinator->getVariantArgumentsToConvert(argument_types);
+
+    auto nested_conversion = combinator->getVariantArgumentsOfNestedFunction();
+    if (nested_conversion == VariantArgumentsOfNestedFunction::ConvertedAround
+        || (including_nested && nested_conversion == VariantArgumentsOfNestedFunction::Forwarded))
+    {
+        /// `Nullable` arguments are passed to the combinator without `Nullable` by the `Null` combinator.
+        DataTypes types_without_nullable;
+        types_without_nullable.reserve(argument_types.size());
+        for (const auto & type : argument_types)
+            types_without_nullable.push_back(type->onlyNull() ? type : removeNullable(type));
+
+        String nested_name = name.substr(0, name.size() - combinator->getName().size());
+        DataTypes nested_types = combinator->transformArguments(types_without_nullable);
+        for (size_t i : getVariantArgumentsToConvert(nested_name, action, nested_types, /* including_nested = */ true))
+        {
+            chassert(i < argument_types.size() && nested_types[i]->equals(*argument_types[i]));
+            res.push_back(i);
+        }
+
+        std::sort(res.begin(), res.end());
+        res.erase(std::unique(res.begin(), res.end()), res.end());
+    }
+
+    return res;
 }
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) const
