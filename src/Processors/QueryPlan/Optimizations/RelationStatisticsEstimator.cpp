@@ -529,6 +529,9 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         return RelationStats{.estimated_rows = 1, .table_name = "system.one", .rows_exact = true};
     }
 
+    /// A join that has already been optimized enters its parent's join graph as a single relation,
+    /// and the row count it settled on is the only estimate that relation has. It is handled here,
+    /// before `estimateReadRowsCount` requires a single child, which a join never has.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
         /// Without the explicit opt-in, keep the previous behavior: a sub-join reports unknown statistics.
@@ -537,11 +540,18 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
 
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
+        /// to keep the parent from appending a second estimate to it.
+        /// A plan-time filter above the join (from a `FilterStep`) is not accounted for, so like a storage
+        /// read with a filter it cannot use, the row count is then unknown. A runtime filter prunes nothing
+        /// at plan time. Either way the `FilterStep` itself records the row subset in the provenance.
+        const bool has_plan_time_filter = filter && !prunesNothingAtPlanTime(filter);
         auto stats = RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
+            .estimated_rows = has_plan_time_filter ? std::nullopt : join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = join_step->hasImpreciseEstimate()};
+            .imprecise_estimate = has_plan_time_filter || join_step->hasImpreciseEstimate(),
+            .composite = true};
         addTransformation(stats.column_stats, Unsupported);
         const auto strictness = join_step->getJoinOperator().strictness;
         if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)

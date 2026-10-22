@@ -702,6 +702,30 @@ TEST(ColumnStatsProvenance, JoinEstimatesArePropagatedOnlyOnRequest)
     ASSERT_TRUE(propagated_stats.column_stats.contains("l"));
     EXPECT_TRUE(propagated_stats.column_stats.at("l").ndv_provenance.has(Unsupported));
     EXPECT_TRUE(propagated_stats.column_stats.at("l").range_provenance.has(Unsupported));
+    /// The relation name is a chain that already shows the sub-joins' estimates.
+    EXPECT_TRUE(propagated_stats.composite);
+}
+
+TEST(ColumnStatsProvenance, JoinEstimateUnderPlanTimeFilterIsUnknown)
+{
+    QueryPlan::Node join_node;
+    join_node.step = makeOptimizedJoinStep(JoinKind::Inner, JoinStrictness::All, "l");
+
+    const auto header = makeHeader("l");
+    QueryPlan::Node filter_node;
+    filter_node.step = std::make_unique<FilterStep>(header, makeFilterDAG(header), "__filter", true);
+    filter_node.children = {&join_node};
+
+    const auto stats = estimateReadRowsCount(filter_node, nullptr, RelationStatsOptions{.propagate_join_estimates = true});
+    /// The sub-join's estimate does not account for the filter above it, so the row count is unknown.
+    EXPECT_FALSE(stats.estimated_rows.has_value());
+    EXPECT_TRUE(stats.imprecise_estimate);
+    EXPECT_FALSE(stats.rows_exact);
+    EXPECT_TRUE(stats.composite);
+    ASSERT_TRUE(stats.column_stats.contains("l"));
+    EXPECT_TRUE(stats.column_stats.at("l").ndv_provenance.has(Unsupported));
+    EXPECT_TRUE(stats.column_stats.at("l").ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(stats.column_stats.at("l").range_provenance.has(RowSubset));
 }
 
 TEST(ColumnStatsProvenance, JoinKindsRecordUnsupportedAndSemiAntiSubsets)
