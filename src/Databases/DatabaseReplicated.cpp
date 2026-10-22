@@ -498,6 +498,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
+    Strings host_groups;
 
     auto zookeeper = getZooKeeper();
     constexpr int max_retries = 10;
@@ -506,6 +507,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     while (++iteration <= max_retries)
     {
         host_ids.resize(0);
+        host_groups.resize(0);
         Coordination::Stat stat;
         unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (unfiltered_hosts.empty())
@@ -513,28 +515,42 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
+        ::sort(unfiltered_hosts.begin(), unfiltered_hosts.end());
+
+        /// Read the replica group of every replica in a single batch; it's used to filter hosts
+        /// and/or to carry the group of every address of the cluster (e.g. `system.clusters` shows it).
+        /// Hosts are sorted beforehand so that `hosts`, `host_groups` and `host_ids` keep index alignment.
+        std::vector<String> group_paths;
+        group_paths.reserve(unfiltered_hosts.size());
+        for (const auto & host : unfiltered_hosts)
+            group_paths.emplace_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+        auto replica_groups = zookeeper->tryGet(group_paths);
+
         if (all_groups)
         {
+            /// The cluster consists of the replicas of all the groups.
             hosts = unfiltered_hosts;
+            host_groups.resize(hosts.size());
+            for (size_t i = 0; i < hosts.size(); ++i)
+            {
+                if (replica_groups[i].error == Coordination::Error::ZOK)
+                    host_groups[i] = std::move(replica_groups[i].data);
+            }
         }
         else
         {
+            /// The cluster consists of the replicas of the local replica group only.
             hosts.clear();
-            std::vector<String> paths;
-            for (const auto & host : unfiltered_hosts)
-                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-            auto replica_groups = zookeeper->tryGet(paths);
-
-            for (size_t i = 0; i < paths.size(); ++i)
+            for (size_t i = 0; i < unfiltered_hosts.size(); ++i)
             {
                 if (replica_groups[i].data == replica_group_name)
                     hosts.push_back(unfiltered_hosts[i]);
             }
+            host_groups.assign(hosts.size(), replica_group_name);
         }
 
         Int32 cversion = stat.cversion;
-        ::sort(hosts.begin(), hosts.end());
 
         std::vector<String> host_paths;
         host_paths.reserve(hosts.size());
@@ -569,6 +585,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
 
     chassert(!hosts.empty());
     chassert(hosts.size() == host_ids.size());
+    chassert(hosts.size() == host_groups.size());
     String current_shard;
     Shards shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -585,7 +602,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}, std::move(host_groups[i])});
     }
 
     if (shards.empty())
@@ -2378,7 +2395,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
     return ast;
 }
@@ -3313,6 +3330,10 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 ## Settings {#settings}
 The following settings are supported:
+
+<Note>
+The `default_replica_path`, `default_replica_shard_name` and `default_replica_name` settings were introduced in ClickHouse 25.10. On earlier versions these settings are not recognized, and configuring them fails with `Code: 115. DB::Exception: Unknown setting '<name>': in DatabaseReplicated config`.
+</Note>
 
 | Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                           |
 |------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

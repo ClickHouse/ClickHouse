@@ -86,13 +86,18 @@ void setSnapshotTotals(
             summary->set(field_name, std::to_string(added));
             return;
         }
-        /// The parent omits this data total, so the new table-wide total cannot be derived: fail the rewrite instead of corrupting the summary.
         auto parent_value = readParentTotal(parent_snapshot, field_name);
         if (!parent_value.has_value())
+        {
+            /// A zero delta leaves the total exactly as the parent had it, so an absent counter is carried
+            /// forward by staying absent; a non-zero delta genuinely cannot be derived from a missing total.
+            if (added == 0)
+                return;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot derive Iceberg snapshot total '{}': the parent snapshot's summary omits it",
                 field_name);
+        }
         summary->set(field_name, std::to_string(*parent_value + added));
     };
     /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe;
@@ -297,9 +302,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
             : 0;
+        /// `added-rows` and the table's `next-row-id` are set by `generateManifestList`, which assigns the row ids.
         new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
-        new_snapshot->set(Iceberg::f_added_rows, added_records);
-        metadata_object->set(Iceberg::f_next_row_id, next_row_id + added_records);
     }
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);

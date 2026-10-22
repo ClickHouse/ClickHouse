@@ -392,6 +392,7 @@ public:
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
+    /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
 
     /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
