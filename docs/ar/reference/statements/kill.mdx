@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 تصف هذه الصفحة عبارتي `KILL QUERY` و`KILL MUTATION`.
 
-افتراضيًا، يرفع `KILL QUERY` استثناء `NOTHING_TO_KILL` عندما لا يُبقي تعبير `WHERE` الخاص به أي صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، ويرفع `KILL MUTATION` استثناءً عندما لا يطابق تعبير `WHERE` الخاص به أي صف في `system.mutations`. للسماح بعدم وجود مطابقات دون رفع استثناء، اضبط [`kill_throw_if_noop`](/ar/operations/settings/settings#kill_throw_if_noop) على `false`.
+افتراضيًا، يرفع `KILL QUERY` استثناء `NOTHING_TO_KILL` عندما لا يُبقي تعبير `WHERE` الخاص به أي صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، ويرفع `KILL MUTATION` استثناءً عندما لا يطابق تعبير `WHERE` الخاص به أي صف في `system.mutations`. للسماح بعدم وجود مطابقات دون رفع استثناء، اضبط [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) على `false`.
 لا يرفع التنفيذ باستخدام `ON CLUSTER` استثناءً عند عدم وجود مطابقات، لأن نتائج المطابقة لا تُجمَّع عبر المضيفين.
 
 ## KILL QUERY {#kill-query}
@@ -76,7 +76,7 @@ KILL QUERY WHERE user='username' SYNC
 يمكن للمستخدم الذي لم يُمنح إذن `SELECT` على `system.processes` إلغاء استعلامه الخاص بتحديد معرّفه:
 `KILL QUERY WHERE query_id = '<id>'`. إذا لم يكن لدى المستخدم هذا الإذن ولا إذن `KILL QUERY`، فإن تحديد معرّف استعلام
 ليس قيد التشغيل باسمه لا يُلغي أي استعلام ويرفع استثناء `NOTHING_TO_KILL` افتراضيًا. أما عند ضبط
-الإعداد [`kill_throw_if_noop`](/ar/operations/settings/settings#kill_throw_if_noop) على `false`، فلا يُرجع أي صفوف بدلًا من ذلك؛
+الإعداد [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) على `false`، فلا يُرجع أي صفوف بدلًا من ذلك؛
 أما المستخدم الذي لديه إذن `KILL QUERY` دون إذن `SELECT` المذكور فيُرفَض طلبه لافتقاره إلى إذن `SELECT`.
 ويظل أي شرط آخر في `WHERE`، وكذلك `ON CLUSTER`، يتطلب الأذونات الموضّحة أعلاه.
 

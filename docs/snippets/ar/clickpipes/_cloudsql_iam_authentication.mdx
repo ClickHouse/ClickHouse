@@ -10,7 +10,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       port: '5432',
       createUserName: '<name>@<project>.iam',
       userNameHint: <>في Postgres، اسم المستخدم هو البريد الإلكتروني لحساب الخدمة <strong>بدون</strong> اللاحقة <code>.gserviceaccount.com</code>:</>,
-      grantsStep: <>اتصل عبر المستخدم المسؤول وأكمل الخطوات الواردة في <a href="/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">إنشاء مستخدم ClickPipes ومنح الصلاحيات</a>، مع تخطي الخطوة 1 لأن المستخدم موجود مسبقًا. استخدم <code>{'"<name>@<project>.iam"'}</code> بدلًا من <code>clickpipes_user</code>، واحتفظ بعلامتي الاقتباس المزدوجتين لأن الاسم يحتوي على أحرف خاصة.</>,
+      grantsStep: <>اتصل عبر المستخدم المسؤول وأكمل الخطوات الواردة في <a href="/ar/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">إنشاء مستخدم ClickPipes ومنح الصلاحيات</a>، مع تخطي الخطوة 1 لأن المستخدم موجود مسبقًا. استخدم <code>{'"<name>@<project>.iam"'}</code> بدلًا من <code>clickpipes_user</code>، واحتفظ بعلامتي الاقتباس المزدوجتين لأن الاسم يحتوي على أحرف خاصة.</>,
       firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
     },
     mysql: {
@@ -19,9 +19,9 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       port: '3306',
       createUserName: 'SERVICE_ACCOUNT_EMAIL',
       userNameHint: <>في MySQL، مرّر البريد الإلكتروني الكامل لحساب الخدمة. ينشئ Cloud SQL مستخدم MySQL من جزء البريد الإلكتروني الواقع <strong>قبل</strong> <code>@</code>، وهذا الاسم الأقصر (<code>{'<name>'}</code>) هو الذي تستخدمه في الأذونات أدناه:</>,
-      grantsStep: <>اتصل بصفتك المستخدم الجذر وأكمل الخطوات الواردة في <a href="/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">تهيئة مستخدم قاعدة البيانات</a>، مع تخطي الخطوة 1 لأن المستخدم موجود مسبقًا. استخدم <code>{"'<name>'@'%'"}</code> بدلًا من <code>'clickpipes_user'@'host'</code> و<code>'clickpipes_user'@'%'</code>.</>,
+      grantsStep: <>اتصل بصفتك المستخدم الجذر وأكمل الخطوات الواردة في <a href="/ar/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">تهيئة مستخدم قاعدة البيانات</a>، مع تخطي الخطوة 1 لأن المستخدم موجود مسبقًا. استخدم <code>{"'<name>'@'%'"}</code> بدلًا من <code>'clickpipes_user'@'host'</code> و<code>'clickpipes_user'@'%'</code>.</>,
       firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
-      tlsSuffix: <> يمكنك تخطي <a href="/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">خطوة الشهادة</a>.</>,
+      tlsSuffix: <> يمكنك تخطي <a href="/ar/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">خطوة الشهادة</a>.</>,
     },
   };
   const cfg = engines[String(engine).toLowerCase()];
@@ -40,7 +40,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
   return (
     <>
       <p>
-        بدلًا من كلمة المرور، يمكن لـ ClickPipes المصادقة باستخدام حساب خدمة Google التابع لخدمة ClickHouse Cloud الخاصة بك (راجع <a href="/integrations/clickpipes/security/gcp-workload-identity">هوية عبء العمل في GCP لـ ClickPipes</a>)، عبر <a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>مصادقة قاعدة البيانات التلقائية باستخدام IAM</a>. وبذلك يتصل ClickPipes بمثيل Cloud SQL دون تخزين أي بيانات اعتماد لقاعدة البيانات.
+        بدلًا من كلمة المرور، يمكن لـ ClickPipes المصادقة باستخدام حساب خدمة Google التابع لخدمة ClickHouse Cloud الخاصة بك (راجع <a href="/ar/integrations/clickpipes/security/gcp-workload-identity">هوية عبء العمل في GCP لـ ClickPipes</a>)، عبر <a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>مصادقة قاعدة البيانات التلقائية باستخدام IAM</a>. وبذلك يتصل ClickPipes بمثيل Cloud SQL دون تخزين أي بيانات اعتماد لقاعدة البيانات.
       </p>
 
       <Note>
@@ -50,7 +50,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       <h3 id="get-the-clickhouse-service-account">الحصول على حساب خدمة ClickHouse</h3>
 
       <p>
-        اتبع <a href="/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">استرداد حساب خدمة ClickPipes</a> للحصول على حساب الخدمة الخاص بخدمة ClickHouse من سياق خدمة ClickPipes. يُعاد البريد الإلكتروني في الحقل <code>principal</code> ويكون بالشكل <code>{'<name>@<project>.iam.gserviceaccount.com'}</code>. وتشير إليه الخطوات أدناه باسم <code>SERVICE_ACCOUNT_EMAIL</code>.
+        اتبع <a href="/ar/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">استرداد حساب خدمة ClickPipes</a> للحصول على حساب الخدمة الخاص بخدمة ClickHouse من سياق خدمة ClickPipes. يُعاد البريد الإلكتروني في الحقل <code>principal</code> ويكون بالشكل <code>{'<name>@<project>.iam.gserviceaccount.com'}</code>. وتشير إليه الخطوات أدناه باسم <code>SERVICE_ACCOUNT_EMAIL</code>.
       </p>
 
       <h3 id="configure-cloud-sql-for-iam">تهيئة Cloud SQL</h3>
@@ -63,7 +63,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
           فعّل الخيار <code>{cfg.flag}</code> على المثيل. يؤدي تغيير هذا الخيار إلى إعادة تشغيل المثيل.
         </li>
         <li>
-          <a href="/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">منح الوصول إلى المصدر</a>: امنح حساب الخدمة دوري IAM ‏<code>roles/cloudsql.client</code> و<code>roles/cloudsql.instanceUser</code> على المشروع الذي يستضيف المثيل. أنشئ الأذونات قبل إنشاء ClickPipe.
+          <a href="/ar/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">منح الوصول إلى المصدر</a>: امنح حساب الخدمة دوري IAM ‏<code>roles/cloudsql.client</code> و<code>roles/cloudsql.instanceUser</code> على المشروع الذي يستضيف المثيل. أنشئ الأذونات قبل إنشاء ClickPipe.
 
           <CodeBlock language="bash">{`${addBindingSql('roles/cloudsql.client')}
 
@@ -86,7 +86,7 @@ ${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
       <ul>
         <li>اضبط <strong>Host</strong> على اسم اتصال المثيل بالصيغة <code>PROJECT:REGION:INSTANCE</code>. لا يُقبل عنوان IP.</li>
         <li>يتصل ClickPipes بمنفذ الوكيل من جهة الخادم في المثيل، وهو <strong>3307</strong>، وليس بالمنفذ {cfg.port}. تأكد من إمكانية الوصول إلى هذا المنفذ. وإذا كان المثيل يستخدم عنوان IP عامًا، <a href={cfg.firewallAnchor}>فأضف عناوين IP الخاصة بـ ClickPipes إلى الشبكات المصرّح بها</a>.</li>
-        <li>يستخدم ClickPipes ‏Private Service Connect عندما تمتلك خدمتك <a href="/integrations/clickpipes/networking/gcp-psc">نقطة نهاية خاصة عكسية</a> تحلّ اسم DNS الخاص بـ PSC للمثيل. وإلا فإنه يتصل بعنوان IP العام للمثيل، أو بعنوانه الخاص إن لم يكن للمثيل عنوان عام.</li>
+        <li>يستخدم ClickPipes ‏Private Service Connect عندما تمتلك خدمتك <a href="/ar/integrations/clickpipes/networking/gcp-psc">نقطة نهاية خاصة عكسية</a> تحلّ اسم DNS الخاص بـ PSC للمثيل. وإلا فإنه يتصل بعنوان IP العام للمثيل، أو بعنوانه الخاص إن لم يكن للمثيل عنوان عام.</li>
         <li>لا تنطبق إعدادات TLS مثل شهادة CA الجذر، إذ يكون الاتصال مشفّرًا ويجري التحقق من هوية الخادم تلقائيًا.{cfg.tlsSuffix}</li>
       </ul>
     </>
