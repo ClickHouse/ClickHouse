@@ -230,9 +230,9 @@ private:
 struct HasTokenStartingWithMatcher
 {
     explicit HasTokenStartingWithMatcher(const TokensWithPosition & tokens_)
-        : prefix(tokens_.begin()->first)
     {
         chassert(tokens_.size() == 1);
+        prefix = tokens_.begin()->first;
     }
 
     template <typename OnMatchCallback>

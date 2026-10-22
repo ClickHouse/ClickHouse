@@ -5409,8 +5409,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
              "hasAnyToken",
              "hasAnyTokens",
              "hasAllToken",
-             "hasAllTokens",
-             "hasTokenStartingWith"},
+             "hasAllTokens"},
             /// Map containment checks
             {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
             /// Prefix/suffix predicates (string, string → UInt8)
