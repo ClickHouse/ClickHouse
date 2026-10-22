@@ -630,11 +630,11 @@ SELECT * FROM url('https://example.com/dataset{0,1}.zip :: data.csv');
 SELECT * FROM url('https://example.com/dataset{primary|mirror}.zip :: data.csv');
 ```
 
-Brace and numeric templates are expanded locally and do not require `allow_experimental_url_wildcard_from_index_pages`. Archive URL patterns containing `*` or `**` use HTTP index-page listing and require that setting. Path-level `|` failover cannot be combined with `*` or `**` index-page expansion.
+Brace and numeric templates are expanded locally and do not require [`allow_url_wildcard_from_index_pages`](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages). Archive URL patterns containing `*` or `**` use HTTP index-page listing and require that setting. Path-level `|` failover cannot be combined with `*` or `**` index-page expansion.
 
 The final combination of host/query shards, archive-path unions, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
 
-The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
+The [`allow_archive_path_syntax`](/reference/settings/session-settings/allow#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
 
 Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
 

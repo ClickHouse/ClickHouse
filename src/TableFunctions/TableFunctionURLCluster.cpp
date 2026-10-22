@@ -203,9 +203,9 @@ FROM urlCluster(
 );
 ```
 
-The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [cluster_function_process_archive_on_multiple_nodes](/operations/settings/settings#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes. Both modes process each matching archive member once when every participating server supports `urlCluster` archive reads; do not use this feature during a mixed-version upgrade with older servers.
+The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [`cluster_function_process_archive_on_multiple_nodes`](/reference/settings/session-settings/cluster#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes. Both modes process each matching archive member once when every participating server supports `urlCluster` archive reads; do not use this feature during a mixed-version upgrade with older servers.
 
-The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
+The [`allow_archive_path_syntax`](/reference/settings/session-settings/allow#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
 
 Wildcards can be used both in the archive URL and in the path inside the archive. Brace and numeric templates in the archive URL are expanded locally. Comma alternatives are processed as independent archives, while `|` alternatives form a failover group:
 
@@ -217,7 +217,7 @@ FROM urlCluster(
 );
 ```
 
-Expanding `*` or `**` in the archive URL requires [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages). Path-level `|` failover cannot be combined with this HTTP index-page expansion. The final combination of URL shards, archive paths, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
+Expanding `*` or `**` in the archive URL requires [`allow_url_wildcard_from_index_pages`](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages). Path-level `|` failover cannot be combined with this HTTP index-page expansion. The final combination of URL shards, archive paths, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
 
 Archive reads support only `cluster_table_function_split_granularity = 'file'`. Bucket-level splitting operates on blocks of a plain object and cannot preserve an archive member identity, so `cluster_table_function_split_granularity = 'bucket'` is rejected for archives.
 
@@ -228,7 +228,7 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 The addresses are generated one by one as tasks are handed to the nodes of the cluster, so `glob_expansion_max_elements` limits how many addresses a single query may read rather than how large the pattern is, as described for the [url](/reference/functions/table-functions/url#globs-in-url) function. A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the matching ones are dispatched.
 
-With [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) enabled, `urlCluster` expands `*` and `**` in URL paths by reading HTTP index pages and distributes the matched files across the cluster.
+With [`allow_url_wildcard_from_index_pages`](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) enabled, `urlCluster` expands `*` and `**` in URL paths by reading HTTP index pages and distributes the matched files across the cluster.
 
 ## Related {#related}
 
