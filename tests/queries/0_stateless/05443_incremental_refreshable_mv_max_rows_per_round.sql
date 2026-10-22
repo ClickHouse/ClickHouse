@@ -19,6 +19,9 @@ SETTINGS
     add_minmax_index_for_block_offset_column = 1,
     part_minmax_index_columns = 'with_block_number_offset';
 
+-- The limit is estimated from part sizes; single-block parts make it exact.
+SYSTEM STOP MERGES src;
+
 CREATE TABLE tgt_rows (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE tgt_bytes (k UInt64) ENGINE = MergeTree ORDER BY k;
 
