@@ -51,6 +51,20 @@
                  max_insert_block_size = 1000000
     ]]></fill_query>
 
+    <!-- `id` is like `UserID` in `hits.parquet`: 16 row groups of 100000 distinct values each, no bloom
+         filters, and min/max cannot prune because the searched values lie inside every row group's range.
+         Every dictionary page is read and none holds the values. -->
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_dictionary_filter_ids.parquet', Parquet)
+        SELECT intHash64(number % 100000) AS id
+        FROM numbers(16000000)
+        SETTINGS output_format_parquet_row_group_size = 1000000,
+                 output_format_parquet_write_bloom_filter = 0,
+                 engine_file_truncate_on_insert = 1,
+                 max_block_size = 1000000,
+                 max_insert_block_size = 1000000
+    ]]></fill_query>
+
     <!-- 30 of the 300 row groups contain the value. -->
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'rare_model' SETTINGS max_threads = 1 FORMAT Null]]></query>
 
@@ -65,4 +79,7 @@
 
     <!-- Counterweight: the value is in every row group, nothing is skipped. -->
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'model_7' SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id = 9223372036854775807 SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id IN (1, 2, 3, 4, 9223372036854775807) SETTINGS max_threads = 1 FORMAT Null]]></query>
 </test>
