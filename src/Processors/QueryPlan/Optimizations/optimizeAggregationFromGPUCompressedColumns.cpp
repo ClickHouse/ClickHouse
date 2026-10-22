@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -223,6 +224,20 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
     }
 }
 
+/// Whether the device can read a column as the compressed blocks of a codec it expands: those of the part's default codec,
+/// or a codec of the column's own that is one such codec alone, which a pipeline such as `CODEC(Delta, ZSTD)` is not.
+bool deviceExpandsColumnCodec(const ColumnsDescription & columns, const String & name)
+{
+    if (!columns.hasCompressionCodec(name))
+        return true;
+    if (columns.hasExplicitDefaultCompressionCodec(name))
+        return false;
+    const ColumnDescription & column = columns.get(name);
+    const CompressionCodecPtr codec = CompressionCodecFactory::instance().get(column.codec, column.type);
+    return GPU::codecOf(codec->getMethodByte()).has_value();
+}
+
+
 struct ReadColumns
 {
     std::vector<NameAndTypePair> keys;
@@ -272,8 +287,8 @@ std::optional<ReadColumns> matchReducedColumns(
         if (!table_columns.getPhysical(name).type->equals(*read_column->type))
             GPU_COMPRESSED_REFUSE("a key column whose type differs from the table's");
 
-        if (table_columns.hasCompressionCodec(name))
-            GPU_COMPRESSED_REFUSE("a key column with a CODEC of its own");
+        if (!deviceExpandsColumnCodec(table_columns, name))
+            GPU_COMPRESSED_REFUSE("a key column with a CODEC of its own the device does not expand");
 
         const auto [seen, inserted] = key_position_by_read_name.emplace(name, matched.keys.size());
         if (!inserted)
@@ -330,8 +345,8 @@ std::optional<ReadColumns> matchReducedColumns(
                     GPU_COMPRESSED_REFUSE("a column of a computed argument that is not a stored column the read produces");
                 if (!table_columns.getPhysical(name).type->equals(*read_column->type) || !read_column->type->equals(*float64))
                     GPU_COMPRESSED_REFUSE("a column of a computed argument that is not a stored `Float64`");
-                if (table_columns.hasCompressionCodec(name))
-                    GPU_COMPRESSED_REFUSE("a column of a computed argument with a CODEC of its own");
+                if (!deviceExpandsColumnCodec(table_columns, name))
+                    GPU_COMPRESSED_REFUSE("a column of a computed argument with a CODEC of its own the device does not expand");
                 if (key_position_by_read_name.contains(name))
                     GPU_COMPRESSED_REFUSE("a column that is both a key and the input of a computed argument");
 
@@ -376,8 +391,8 @@ std::optional<ReadColumns> matchReducedColumns(
         if (!table_columns.getPhysical(name).type->equals(*type))
             GPU_COMPRESSED_REFUSE("an aggregated column whose type differs from the table's");
 
-        if (table_columns.hasCompressionCodec(name))
-            GPU_COMPRESSED_REFUSE("an aggregated column with a CODEC of its own");
+        if (!deviceExpandsColumnCodec(table_columns, name))
+            GPU_COMPRESSED_REFUSE("an aggregated column with a CODEC of its own the device does not expand");
 
         if (key_position_by_read_name.contains(name))
             GPU_COMPRESSED_REFUSE("a column that is both a key and an aggregated column");
@@ -527,8 +542,8 @@ std::optional<MatchedFilter> matchPrewhere(const ReadFromMergeTree & reading, bo
         if (!table_columns.getPhysical(column.name).type->equals(*column.type))
             GPU_COMPRESSED_REFUSE("a PREWHERE over a column whose type differs from the table's");
 
-        if (table_columns.hasCompressionCodec(column.name))
-            GPU_COMPRESSED_REFUSE("a PREWHERE over a column with a CODEC of its own");
+        if (!deviceExpandsColumnCodec(table_columns, column.name))
+            GPU_COMPRESSED_REFUSE("a PREWHERE over a column with a CODEC of its own the device does not expand");
     }
 
     return MatchedFilter{ReadFromGPUCompressedColumns::DeviceFilter{

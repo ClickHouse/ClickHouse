@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Compression/ICompressionCodec.h>
 
 namespace DB
@@ -22,6 +24,10 @@ void registerCodecGCD(CompressionCodecFactory & factory);
 void registerCodecALP(CompressionCodecFactory & factory);
 void registerCodecQuantized(CompressionCodecFactory & factory);
 void registerCodecZXC(CompressionCodecFactory & factory);
+
+#if USE_GPU
+void registerCodecGDeflate(CompressionCodecFactory & factory);
+#endif
 void registerCodecSZ3(CompressionCodecFactory & factory);
 void registerCodecPco(CompressionCodecFactory & factory);
 

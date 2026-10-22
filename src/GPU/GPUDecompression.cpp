@@ -7,6 +7,9 @@
 
 #include <Common/Exception.h>
 
+#include <GPU/GPUGDeflate.h>
+
+#include <nvcomp/gdeflate.h>
 #include <nvcomp/lz4.h>
 #include <nvcomp/zstd.h>
 
@@ -42,6 +45,9 @@ nvcompStatus_t decompressTempBytes(
         case GPUCodec::ZSTD:
             return nvcompBatchedZstdDecompressGetTempSize(
                 num_blocks, max_decompressed, nvcompBatchedZstdDecompressDefaultOpts, temp_bytes, decompressed_total, stream.get());
+        case GPUCodec::GDEFLATE:
+            return nvcompBatchedGdeflateDecompressGetTempSize(
+                num_blocks, max_decompressed, nvcompBatchedGdeflateDecompressDefaultOpts, temp_bytes, decompressed_total, stream.get());
     }
     throw Exception(ErrorCodes::GPU_ERROR, "Unknown GPU codec {}", static_cast<int>(codec));
 }
@@ -87,6 +93,19 @@ nvcompStatus_t decompressAsync(
                 nvcompBatchedZstdDecompressDefaultOpts,
                 device_statuses,
                 stream.get());
+        case GPUCodec::GDEFLATE:
+            return nvcompBatchedGdeflateDecompressAsync(
+                device_compressed_ptrs,
+                device_compressed_bytes,
+                device_decompressed_bytes,
+                device_actual_bytes,
+                num_blocks,
+                device_temp,
+                temp_bytes,
+                device_value_ptrs,
+                nvcompBatchedGdeflateDecompressDefaultOpts,
+                device_statuses,
+                stream.get());
     }
     throw Exception(ErrorCodes::GPU_ERROR, "Unknown GPU codec {}", static_cast<int>(codec));
 }
@@ -107,6 +126,29 @@ size_t decompressedBytesOf(std::span<const CompressedBlock> blocks)
     for (const CompressedBlock & block : blocks)
         total += block.decompressed_bytes;
     return total;
+}
+
+void stageCompressedBlock(
+    PinnedBuffer & staged, std::vector<CompressedBlock> & blocks, GPUCodec codec, std::string_view payload, size_t decompressed_bytes)
+{
+    /// The device buffer the staged bytes go to starts at a multiple of 256 bytes.
+    constexpr size_t alignment = 4;
+    if (const size_t misaligned = staged.size() % alignment)
+        staged.resize_fill(staged.size() + alignment - misaligned, 0);
+
+    const size_t start = staged.size();
+    if (codec == GPUCodec::GDEFLATE)
+    {
+        forEachGDeflateChunk(payload, decompressed_bytes, [&](size_t offset, size_t compressed, size_t decompressed)
+        {
+            blocks.push_back({.offset = start + offset, .compressed_bytes = compressed, .decompressed_bytes = decompressed});
+        });
+    }
+    else
+    {
+        blocks.push_back({.offset = start, .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
+    }
+    appendHostBytes(staged, payload);
 }
 
 void SyncDecompressor::decompress(

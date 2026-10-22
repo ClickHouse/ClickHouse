@@ -53,6 +53,7 @@ std::optional<GPUCodec> codecOf(UInt8 method_byte)
     {
         case static_cast<UInt8>(CompressionMethodByte::LZ4): return GPUCodec::LZ4;
         case static_cast<UInt8>(CompressionMethodByte::ZSTD): return GPUCodec::ZSTD;
+        case static_cast<UInt8>(CompressionMethodByte::GDeflate): return GPUCodec::GDEFLATE;
     }
     return {};
 }

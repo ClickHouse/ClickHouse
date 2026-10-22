@@ -614,12 +614,7 @@ void GroupByGPUAccumulator::addCompressedBlock(
         column.staged.reserve(std::min(compressed_stage_bytes, std::max(expected_bytes, payload.size())));
 
     column.codec = codec;
-    column.blocks.push_back({
-        .offset = column.staged.size(),
-        .compressed_bytes = payload.size(),
-        .decompressed_bytes = decompressed_bytes,
-    });
-    appendHostBytes(column.staged, payload);
+    stageCompressedBlock(column.staged, column.blocks, codec, payload, decompressed_bytes);
     column.decompressed_bytes += decompressed_bytes;
 }
 

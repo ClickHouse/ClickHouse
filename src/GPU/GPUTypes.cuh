@@ -85,6 +85,8 @@ enum class GPUCodec : int
 {
     LZ4 = 0,
     ZSTD = 1,
+    /// A block in chunks, each a chunk of nvcomp, see `GPU::gdeflate_chunk_bytes`.
+    GDEFLATE = 2,
 };
 
 /// One aggregate of a `GROUP BY`: of the value column `column`, or of no column for `GPUAggregationKind::Count`, into a

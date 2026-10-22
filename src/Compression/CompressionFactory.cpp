@@ -365,6 +365,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+#if USE_GPU
+    registerCodecGDeflate(*this);
+#endif
 #if USE_PCO
     registerCodecPco(*this);
 #endif

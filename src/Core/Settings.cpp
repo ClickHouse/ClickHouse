@@ -10696,6 +10696,11 @@ Enables the `SZ3` compression codec.
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_gdeflate_codec, false, R"(
+Enables the `GDeflate` compression codec, which compresses and expands on the server's GPU with nvcomp's GDeflate. Only in
+a build with GPU support, on a server with `enable_gpu`.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

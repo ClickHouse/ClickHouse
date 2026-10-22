@@ -426,12 +426,7 @@ void CompressedUploadPipe::stageBlock(StagedBlocks & staged, std::string_view pa
     if (!staged.blocks.empty() && staged.bytes.size() + payload.size() > stage_bytes)
         sendStagedToDevice();
 
-    staged.blocks.push_back({
-        .offset = staged.bytes.size(),
-        .compressed_bytes = payload.size(),
-        .decompressed_bytes = decompressed_bytes,
-    });
-    appendHostBytes(staged.bytes, payload);
+    GPU::stageCompressedBlock(staged.bytes, staged.blocks, codec, payload, decompressed_bytes);
     staged.expanded_bytes += decompressed_bytes;
     staged_bytes += decompressed_bytes;
 }

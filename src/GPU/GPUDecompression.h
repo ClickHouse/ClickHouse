@@ -25,6 +25,11 @@ struct CompressedBlock
 
 size_t decompressedBytesOf(std::span<const CompressedBlock> blocks);
 
+/// Stages the payload of a compressed block of `codec` at the end of `staged`, from a multiple of 4 bytes, as nvcomp
+/// reads some codecs from, and adds what nvcomp expands of it to `blocks`: the block, or each chunk of a `GDEFLATE` one.
+void stageCompressedBlock(
+    PinnedBuffer & staged, std::vector<CompressedBlock> & blocks, GPUCodec codec, std::string_view payload, size_t decompressed_bytes);
+
 struct CompressedPiece
 {
     const char * device_compressed = nullptr;
