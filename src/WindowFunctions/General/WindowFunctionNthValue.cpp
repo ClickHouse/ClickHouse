@@ -1,6 +1,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
-#include <Processors/Transforms/WindowTransform.h>
+#include <Columns/IColumn.h>
+#include <WindowFunctions/Common/WindowArguments.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -15,71 +18,39 @@ namespace ErrorCodes
 namespace
 {
 
-struct WindowFunctionNthValue final : public StatelessWindowFunction
+DataTypePtr nthValueResultType(const String & name, const DataTypes & argument_types)
 {
-    WindowFunctionNthValue(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
+    if (argument_types.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly two arguments", name);
+
+    return argument_types[0];
+}
+
+class WindowFunctionNthValue final : public IGeneralWindowFunction
+{
+public:
+    WindowFunctionNthValue(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, nthValueResultType(name_, argument_types_))
     {
         if (!parameters.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} cannot be parameterized", name_);
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} cannot be parameterized", name_);
 
         if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Offset must be an integer, '{}' given",
-                argument_types[1]->getName());
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset must be an integer, '{}' given", argument_types[1]->getName());
     }
 
-    static DataTypePtr createResultType(const std::string & name_, const DataTypes & argument_types_)
+    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        if (argument_types_.size() != 2)
+        for (size_t i = 0; i < bounds.rows; ++i)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly two arguments", name_);
-        }
+            const Int64 offset = arguments.at(1, bounds.row[i]).getInt();
+            if (offset <= 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in (1, {}], {} given", getName(), INT64_MAX, offset);
 
-        return argument_types_[0];
-    }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
-    {
-        const auto & current_block = transform->blocks.blockAt(transform->peers.current().location.block);
-        IColumn & to = *current_block.result_columns[function_index];
-        const auto & workspace = transform->workspaces[function_index];
-
-        Int64 offset = (*current_block.materialized_columns[
-                workspace.argument_column_indices[1]])[
-            transform->peers.current().location.row].safeGet<Int64>();
-
-        /// Either overflow or really negative value, both is not acceptable.
-        if (offset <= 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be in (1, {}], {} given",
-                getName(), INT64_MAX, offset);
-        }
-
-        --offset;
-        const FrameBounds & frame = transform->frame.bounds();
-        if (offset >= frame.end.row_index_in_partition - frame.start.row_index_in_partition)
-        {
-            // Offset is outside the frame.
-            to.insertDefault();
-        }
-        else
-        {
-            // Offset is inside the frame.
-            const RowNumber target_row = transform->blocks.move(frame.start.location, offset);
-            to.insertFrom(*transform->blocks.blockAt(target_row.block).materialized_columns[
-                    workspace.argument_column_indices[0]],
-               target_row.row);
+            if (offset > bounds.frame_end[i] - bounds.frame_start[i])
+                result.insertDefault();
+            else
+                arguments.at(0, bounds.frame_start[i] + offset - 1).appendTo(result);
         }
     }
 };
@@ -92,8 +63,7 @@ void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const Ag
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionNthValue>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters));
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 

@@ -1,6 +1,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
-#include <Processors/Transforms/WindowTransform.h>
+#include <Columns/IColumn.h>
+#include <WindowFunctions/Common/WindowArguments.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -16,71 +19,60 @@ namespace ErrorCodes
 namespace
 {
 
-// ClickHouse-specific lag/lead family implementation.
-/// `full_partition_default_frame` controls whether the function supplies a default window frame:
-/// - `true` (used by `lag`/`lead`): use the full-partition ROWS frame (UNBOUNDED PRECEDING .. UNBOUNDED FOLLOWING).
-/// - `false` (used by `lagInFrame`/`leadInFrame`): no default frame, so the caller-provided frame is respected.
-template <bool is_lead, bool full_partition_default_frame>
-struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
+DataTypePtr lagLeadResultType(const String & name, const DataTypes & argument_types)
 {
-    WindowFunctionLagLeadImpl(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} takes at least one argument", name);
+
+    return argument_types[0];
+}
+
+Int64 checkedOffset(const String & name, Int64 offset)
+{
+    if (offset < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in (0, {}], {} given", name, INT64_MAX, offset);
+
+    return offset;
+}
+
+class WindowFunctionLagLead final : public IGeneralWindowFunction
+{
+public:
+    WindowFunctionLagLead(const String & name_, const DataTypes & argument_types_, const Array & parameters_, bool is_lead_, bool in_frame_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, lagLeadResultType(name_, argument_types_))
+        , is_lead(is_lead_)
+        , in_frame(in_frame_)
     {
         if (!parameters.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} cannot be parameterized", name_);
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} cannot be parameterized", name_);
 
         if (argument_types.size() == 1)
-        {
             return;
-        }
 
         if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Offset must be an integer, '{}' given",
-                argument_types[1]->getName());
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset must be an integer, '{}' given", argument_types[1]->getName());
 
         if (argument_types.size() == 2)
-        {
             return;
-        }
 
         if (argument_types.size() > 3)
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Function '{}' accepts at most 3 arguments, {} given",
-                name, argument_types.size());
-        }
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function '{}' accepts at most 3 arguments, {} given", name, argument_types.size());
 
         if (!argument_types[0]->equals(*argument_types[2]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The default value type '{}' must be the same as the argument type '{}'",
-                argument_types[2]->getName(),
-                argument_types[0]->getName());
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default value type '{}' must be the same as the argument type '{}'", argument_types[2]->getName(), argument_types[0]->getName());
     }
 
-    static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        if (argument_types_.empty())
-        {
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "Function {} takes at least one argument", name_);
-        }
+        if (in_frame)
+            return {};
 
-        return argument_types_[0];
+        return WindowFunctionRequirements{.frame = false, .partition = true};
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     std::optional<WindowFrame> getDefaultFrame() const override
     {
-        if constexpr (!full_partition_default_frame)
+        if (in_frame)
             return {};
 
         WindowFrame frame;
@@ -89,65 +81,26 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         return frame;
     }
 
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
+    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        const auto & current_block = transform->blocks.blockAt(transform->peers.current().location.block);
-        IColumn & to = *current_block.result_columns[function_index];
-        const auto & workspace = transform->workspaces[function_index];
-
-        Int64 offset = 1;
-        if (argument_types.size() > 1)
+        for (size_t i = 0; i < bounds.rows; ++i)
         {
-            offset = (*current_block.materialized_columns[
-                    workspace.argument_column_indices[1]])[
-                        transform->peers.current().location.row].safeGet<Int64>();
-
-            /// Either overflow or really negative value, both is not acceptable.
-            if (offset < 0)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be in (0, {}], {} given",
-                    getName(), INT64_MAX, offset);
-            }
-        }
-
-        const int64_t distance = is_lead ? offset : -offset;
-        const FrameBounds & frame = transform->frame.bounds();
-        const RowPoint & current = transform->peers.current();
-        const bool inside_frame = frame.start.row_index_in_partition - current.row_index_in_partition <= distance
-            && distance < frame.end.row_index_in_partition - current.row_index_in_partition;
-        if (!inside_frame)
-        {
-            // Offset is outside the frame.
-            if (argument_types.size() > 2)
-            {
-                // Column with default values is specified.
-                const IColumn & default_column = *current_block.materialized_columns[workspace.argument_column_indices[2]];
-
-                to.insert(default_column[transform->peers.current().location.row]);
-            }
+            const Int64 row = bounds.row[i];
+            const Int64 offset = arguments.size() > 1 ? checkedOffset(getName(), arguments.at(1, row).getInt()) : 1;
+            const Int64 distance = is_lead ? offset : -offset;
+            if (bounds.frame_start[i] - row <= distance && distance < bounds.frame_end[i] - row)
+                arguments.at(0, row + distance).appendTo(result);
+            else if (arguments.size() > 2)
+                arguments.at(2, row).appendTo(result);
             else
-            {
-                to.insertDefault();
-            }
-        }
-        else
-        {
-            // Offset is inside the frame.
-            const RowNumber target_row = transform->blocks.move(current.location, distance);
-            to.insertFrom(*transform->blocks.blockAt(target_row.block).materialized_columns[
-                    workspace.argument_column_indices[0]],
-                target_row.row);
+                result.insertDefault();
         }
     }
+
+private:
+    const bool is_lead;
+    const bool in_frame;
 };
-
-template <bool is_lead>
-using WindowFunctionLagLead = WindowFunctionLagLeadImpl<is_lead, true>;
-
-template <bool is_lead>
-using WindowFunctionLagLeadInFrame = WindowFunctionLagLeadImpl<is_lead, false>;
 
 }
 
@@ -157,8 +110,7 @@ void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const Ag
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, true));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 
@@ -240,8 +192,7 @@ ORDER BY date DESC
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead<false>>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, false));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
 This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
@@ -316,8 +267,7 @@ ORDER BY date DESC
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, true));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
@@ -390,8 +340,7 @@ LIMIT 9
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead<true>>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, false));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 This function is similar to [`leadInFrame`](/reference/functions/window-functions/leadInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.

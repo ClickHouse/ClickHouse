@@ -33,7 +33,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
@@ -856,11 +856,9 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
     const auto & window_frame = window_node.getWindowFrame();
     if (!window_frame.is_default)
         return window_frame;
-    auto aggregate_function = node.getAggregateFunction();
-    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
-    {
-        return win_func->getDefaultFrame();
-    }
+    if (const auto general = asGeneralWindowFunction(node.getAggregateFunction()))
+        return general->getDefaultFrame();
+
     return {};
 }
 

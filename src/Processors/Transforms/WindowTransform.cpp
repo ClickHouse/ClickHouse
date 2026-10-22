@@ -2,19 +2,12 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include <Common/Arena.h>
-
 #include <algorithm>
-#include <utility>
 #include <ranges>
+#include <utility>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace
 {
@@ -28,6 +21,13 @@ Columns materializeColumns(Columns columns, const std::vector<bool> & should_mat
     return columns;
 }
 
+std::vector<size_t> argumentColumnIndices(const Block & input_header, const WindowFunctionDescription & function)
+{
+    return function.argument_names
+        | std::views::transform([&](const String & argument_name) { return input_header.getPositionByName(argument_name); })
+        | std::ranges::to<std::vector<size_t>>();
+}
+
 WindowFunctionWorkspace createWorkspace(const Block & input_header, const WindowFunctionDescription & function)
 {
     WindowFunctionWorkspace workspace;
@@ -39,12 +39,37 @@ WindowFunctionWorkspace createWorkspace(const Block & input_header, const Window
         workspace.argument_column_indices.push_back(input_header.getPositionByName(argument_name));
     workspace.argument_columns.assign(function.argument_names.size(), nullptr);
 
-    /// Window and aggregate functions still share one interface, so the window part is found by a cast.
-    workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
     workspace.is_aggregate_function_state = aggregate_function->isState();
     workspace.aggregate_function_state.reset(aggregate_function->sizeOfData(), aggregate_function->alignOfData());
     aggregate_function->create(workspace.aggregate_function_state.data());
     return workspace;
+}
+
+char * createState(Arena & arena, const IGeneralWindowFunction & function)
+{
+    if (function.sizeOfState() == 0)
+        return nullptr;
+
+    char * place = arena.alignedAlloc(function.sizeOfState(), function.alignOfState());
+    function.createState(place);
+    return place;
+}
+
+std::vector<ArgumentBlock> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
+{
+    Int64 first_row = batch_start_position - batch_start.row;
+    for (int64_t block_number = batch_start.block; block_number > blocks.begin().block; --block_number)
+        first_row -= blocks.blockAt(block_number - 1).rows_count;
+
+    std::vector<ArgumentBlock> argument_blocks;
+    argument_blocks.reserve(blocks.end().block - blocks.begin().block);
+    for (int64_t block_number = blocks.begin().block; block_number < blocks.end().block; ++block_number)
+    {
+        const SlidingBlock & block = blocks.blockAt(block_number);
+        argument_blocks.push_back(ArgumentBlock{.columns = block.materialized_columns, .first_row = first_row, .end_row = first_row + block.rows_count});
+        first_row += block.rows_count;
+    }
+    return argument_blocks;
 }
 
 }
@@ -57,20 +82,40 @@ WindowTransform::WindowTransform(
     , indexes(params)
     , frame(params)
 {
-    workspaces.reserve(functions.size());
+    for (const auto & function : functions)
+        if (const auto general = asGeneralWindowFunction(function.aggregate_function))
+            general->checkWindowFrameType(params.window_description);
+
+    slots.reserve(functions.size());
     for (const auto & function : functions)
     {
-        const auto & workspace = workspaces.emplace_back(createWorkspace(params.input_header, function));
-        if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
+        WindowFunctionSlot & slot = slots.emplace_back(WindowFunctionSlot{
+            .general = asGeneralWindowFunction(function.aggregate_function),
+            .state = nullptr,
+            .workspace_index = 0,
+            .arguments = WindowArguments(argumentColumnIndices(params.input_header, function)),
+        });
 
-        if (!arena && workspace.aggregate_function->allocatesMemoryInArena())
-            arena = std::make_unique<Arena>();
+        if (slot.general)
+        {
+            slot.state = createState(states_arena, *slot.general);
+        }
+        else
+        {
+            slot.workspace_index = workspaces.size();
+            workspaces.push_back(createWorkspace(params.input_header, function));
+            if (!arena && function.aggregate_function->allocatesMemoryInArena())
+                arena = std::make_unique<Arena>();
+        }
     }
 }
 
 WindowTransform::~WindowTransform()
 {
+    for (auto & slot : slots)
+        if (slot.state)
+            slot.general->destroyState(slot.state);
+
     for (auto & ws : workspaces)
         ws.aggregate_function->destroy(ws.aggregate_function_state.data());
 }
@@ -86,9 +131,6 @@ void WindowTransform::updateAggregationState()
 
     for (auto & ws : workspaces)
     {
-        if (ws.window_function_impl)
-            continue;
-
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
         if (frame_start_moved)
@@ -125,16 +167,14 @@ void WindowTransform::writeOutCurrentRow()
         && current_frame.end.row_index_in_partition == prev_frame.end.row_index_in_partition;
 
     const SlidingBlock & block = blocks.blockAt(current.location.block);
-    for (size_t function_index = 0; function_index < workspaces.size(); ++function_index)
+    for (size_t slot_index = 0; slot_index < slots.size(); ++slot_index)
     {
-        auto & ws = workspaces[function_index];
-        if (ws.window_function_impl)
-        {
-            ws.window_function_impl->windowInsertResultInto(this, function_index);
+        const WindowFunctionSlot & slot = slots[slot_index];
+        if (slot.general)
             continue;
-        }
 
-        IColumn & result_column = *block.result_columns[function_index];
+        auto & ws = workspaces[slot.workspace_index];
+        IColumn & result_column = *block.result_columns[slot_index];
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
         if (frame_unchanged && !ws.is_aggregate_function_state && current.location.row > 0)
@@ -164,9 +204,10 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
     partition.advance(blocks);
 
-    for (auto & ws : workspaces)
+    for (const auto & slot : slots)
     {
-        block.result_columns.push_back(ws.aggregate_function->getResultType()->createColumn());
+        const DataTypePtr & result_type = slot.general ? slot.general->getResultType() : workspaces[slot.workspace_index].aggregate_function->getResultType();
+        block.result_columns.push_back(result_type->createColumn());
         block.result_columns.back()->reserve(block.rows_count);
     }
 }
@@ -176,26 +217,76 @@ void WindowTransform::computeReadyRows()
     /// The cancel check is per row, since one block can take long on quadratic frames; prepare picks up the rest.
     while (!isCancelled())
     {
+        if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
+            flushBatch();
+
         if (peers.current().location == partition.bounds().end.location)
         {
             /// The rest of this partition is not read yet, or the last partition is done.
             if (!partition.bounds().fully_visible || input_is_finished)
-                return;
+                break;
 
+            flushBatch();
             startNextPartition();
         }
 
         peers.advancePeerGroupBounds(blocks, partition.bounds());
         frame.advance(blocks, peers.current(), partition.bounds());
         if (!frame.bounds().fully_visible)
-            return;
+            break;
 
         updateAggregationState();
         writeOutCurrentRow();
+        appendCurrentRow();
 
         prev_frame = frame.bounds();
         peers.advanceCurrentRow(blocks, partition.bounds());
     }
+
+    if (input_is_finished)
+        flushBatch();
+}
+
+void WindowTransform::appendCurrentRow()
+{
+    const RowPoint & current = peers.current();
+    const FrameBounds & current_frame = frame.bounds();
+    const PeersBounds & current_peers = peers.bounds();
+    if (bounds.rows == 0)
+    {
+        batch_start = current.location;
+        batch_frame_start = current_frame.start.location;
+    }
+
+    bounds.row.push_back(current.row_index_in_partition);
+    bounds.frame_start.push_back(current_frame.start.row_index_in_partition);
+    bounds.frame_end.push_back(current_frame.end.row_index_in_partition);
+    bounds.peers_start.push_back(current_peers.start.row_index_in_partition);
+    bounds.peers_end.push_back(current_peers.end.row_index_in_partition);
+    bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
+    if (partition.bounds().fully_visible && bounds.partition_end.size() == bounds.rows)
+        bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
+    ++bounds.rows;
+}
+
+void WindowTransform::flushBatch()
+{
+    if (bounds.rows == 0)
+        return;
+
+    const std::vector<ArgumentBlock> argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
+    const SlidingBlock & block = blocks.blockAt(batch_start.block);
+    for (size_t slot_index = 0; slot_index < slots.size(); ++slot_index)
+    {
+        WindowFunctionSlot & slot = slots[slot_index];
+        if (!slot.general)
+            continue;
+
+        slot.arguments.rebuild(argument_blocks);
+        slot.general->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot_index]);
+    }
+
+    bounds.clear();
 }
 
 void WindowTransform::startNextPartition()
@@ -210,17 +301,19 @@ void WindowTransform::startNextPartition()
     frame.enterPartition(partition_start);
     prev_frame = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = true};
 
+    for (const auto & slot : slots)
+        if (slot.general)
+            slot.general->resetPartition(slot.state);
+
     for (auto & ws : workspaces)
-        if (!ws.window_function_impl)
-            ws.aggregate_function->destroy(ws.aggregate_function_state.data());
+        ws.aggregate_function->destroy(ws.aggregate_function_state.data());
 
     /// Replaced between destroy and create, so it does not grow across partitions.
     if (arena)
         arena = std::make_unique<Arena>();
 
     for (auto & ws : workspaces)
-        if (!ws.window_function_impl)
-            ws.aggregate_function->create(ws.aggregate_function_state.data());
+        ws.aggregate_function->create(ws.aggregate_function_state.data());
 }
 
 IProcessor::Status WindowTransform::prepare()
@@ -305,9 +398,11 @@ void WindowTransform::work()
 
 void WindowTransform::releaseUnusedBlocks()
 {
-    /// A block is dropped once it is output and both the previous frame start and the current row have left it.
-    /// The previous frame start is never after the current one, and the frame can start after the current row.
-    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block});
+    /// A block is dropped once it is output and the previous frame start, the current row and the frame start of the
+    /// first row of a waiting batch have left it. The previous frame start is never after the current one, and the
+    /// frame can start after the current row.
+    const int64_t batch_block = bounds.rows != 0 ? batch_frame_start.block : peers.current().location.block;
+    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block, batch_block});
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 }

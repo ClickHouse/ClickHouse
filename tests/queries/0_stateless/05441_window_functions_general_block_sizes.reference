@@ -1,0 +1,42 @@
+ranking, block size 1: 1482597792126963845
+ranking, block size 2: 1482597792126963845
+ranking, block size 3: 1482597792126963845
+ranking, block size 5: 1482597792126963845
+ranking, block size 8: 1482597792126963845
+ranking, block size 65505: 1482597792126963845
+partition readers, block size 1: 9069537175012342119
+partition readers, block size 2: 9069537175012342119
+partition readers, block size 3: 9069537175012342119
+partition readers, block size 5: 9069537175012342119
+partition readers, block size 8: 9069537175012342119
+partition readers, block size 65505: 9069537175012342119
+lag and lead beyond the block, block size 1: 10772610220622615221
+lag and lead beyond the block, block size 2: 10772610220622615221
+lag and lead beyond the block, block size 3: 10772610220622615221
+lag and lead beyond the block, block size 5: 10772610220622615221
+lag and lead beyond the block, block size 8: 10772610220622615221
+lag and lead beyond the block, block size 65505: 10772610220622615221
+offsets beyond the frame, block size 1: 6470805111545595971
+offsets beyond the frame, block size 2: 6470805111545595971
+offsets beyond the frame, block size 3: 6470805111545595971
+offsets beyond the frame, block size 5: 6470805111545595971
+offsets beyond the frame, block size 8: 6470805111545595971
+offsets beyond the frame, block size 65505: 6470805111545595971
+decayed over a sliding frame, block size 1: 1045102645762744780
+decayed over a sliding frame, block size 2: 1045102645762744780
+decayed over a sliding frame, block size 3: 1045102645762744780
+decayed over a sliding frame, block size 5: 1045102645762744780
+decayed over a sliding frame, block size 8: 1045102645762744780
+decayed over a sliding frame, block size 65505: 1045102645762744780
+decayed over a growing frame, block size 1: 11643873588672462781
+decayed over a growing frame, block size 2: 11643873588672462781
+decayed over a growing frame, block size 3: 11643873588672462781
+decayed over a growing frame, block size 5: 11643873588672462781
+decayed over a growing frame, block size 8: 11643873588672462781
+decayed over a growing frame, block size 65505: 11643873588672462781
+general with aggregates, block size 1: 7374826459270448937
+general with aggregates, block size 2: 7374826459270448937
+general with aggregates, block size 3: 7374826459270448937
+general with aggregates, block size 5: 7374826459270448937
+general with aggregates, block size 8: 7374826459270448937
+general with aggregates, block size 65505: 7374826459270448937
