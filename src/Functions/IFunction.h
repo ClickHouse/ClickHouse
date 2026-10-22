@@ -11,6 +11,8 @@
 #include <Functions/ComparisonOrderDomain.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <optional>
+
 #include "config.h"
 
 #include <functional>
@@ -369,6 +371,13 @@ public:
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
         bool force_enable_lazy_execution{};
+        /// Does the result of the function not depend on the order in which its arguments are executed,
+        /// and can the function receive any of its arguments lazily? Example: and, or.
+        /// Then `arguments_with_disabled_lazy_execution` is only a preference: if the argument listed there
+        /// is heavy while another one is cheap, the cheap one is executed on all rows instead,
+        /// and the function is free to execute its lazy arguments in any order,
+        /// see `ExpressionActions` and `ShortCircuitArgumentStatistics`.
+        bool arguments_are_commutative{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -388,6 +397,10 @@ public:
       * Suitability may depend on function arguments.
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /// True if the function might throw an exception while it is executed, for these argument types.
+    /// See `IFunction::canThrow`. The default is conservative.
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
     /// True if the result depends only on argument values, not column names. formatRowNoNewline
     /// and toTypeName are counter examples. Default is conservative
@@ -506,6 +519,35 @@ public:
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
     virtual bool allowsOmittingParentheses() const { return false; }
 
+    /** The error code reported when the number of arguments does not fit the function's signature.
+      *
+      * Several functions historically reported a code more specific than
+      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
+      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
+      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
+      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
+      */
+    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+
+    /** Declarative signature of this function, see DataTypes/FunctionSignature.h.
+      *
+      * When non-empty, the default getReturnTypeImpl uses this signature to validate argument
+      * types/constness and compute the return type, throwing ILLEGAL_TYPE_OF_ARGUMENT on mismatch.
+      *
+      * Example: "f(T : Number) -> T".
+      */
+    virtual String getSignatureString() const { return {}; }
+
+    /** Whether the declarative signature should propagate argument nullability into the result
+      * type instead of matching it literally. When true, the default getReturnTypeImpl applies the
+      * signature to the arguments with the outer Nullable removed and re-wraps the result in
+      * Nullable if any argument was Nullable (and returns Nullable(Nothing) for an only-NULL
+      * argument). This is for functions that do NOT use useDefaultImplementationForNulls (so the
+      * framework does not do it for them) but still want the declarative signature to own the
+      * non-Nullable result type — e.g. the conversion functions.
+      */
+    virtual bool signaturePropagatesNullability() const { return false; }
+
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
@@ -518,14 +560,7 @@ protected:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// This function will be called in default implementation. You can overload it or the previous one.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return getReturnTypeImpl(data_types);
-    }
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
     /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
@@ -722,15 +757,23 @@ public:
       * cannot throw while it can, surfaces as an exception thrown for rows that the query does
       * not use at all.
       *
-      * By default it falls back to `isSuitableForShortCircuitArgumentsExecution`, which answers a
-      * different question ("is it worth to evaluate this function lazily"), and is only a rough
-      * approximation of this one: a function that is expensive but cannot throw is reported as
-      * throwing (which is safe, it just loses an optimization), while a function that is cheap
-      * and can throw is reported as not throwing (which is not safe). Override this method
-      * whenever the two properties differ.
+      * It is also used to decide whether the arguments of `and`/`or` can be executed in another order
+      * (see `IFunctionBase::canThrow`), which does not accept an approximation, so a function
+      * describes this property in `canThrowIfKnown`, and `nullopt` means that it does not.
+      *
+      * For `ColumnReplicated`, the functions that do not describe it fall back to
+      * `isSuitableForShortCircuitArgumentsExecution`, which answers a different question ("is it
+      * worth to evaluate this function lazily"), and is only a rough approximation of this one:
+      * a function that is expensive but cannot throw is reported as throwing (which is safe, it
+      * just loses an optimization), while a function that is cheap and can throw is reported as
+      * not throwing (which is not safe). Override `canThrowIfKnown` whenever possible.
       */
-    virtual bool canThrow(const DataTypesWithConstInfo & arguments) const
+    virtual std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const { return {}; }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const
     {
+        if (auto res = canThrowIfKnown(arguments))
+            return *res;
         return isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
@@ -756,14 +799,23 @@ public:
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
-        return getReturnTypeImpl(data_types);
-    }
+    /** The error code reported when the number of arguments does not fit the function's signature.
+      *
+      * Several functions historically reported a code more specific than
+      * `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` - `TOO_FEW_ARGUMENTS_FOR_FUNCTION`,
+      * `TOO_MANY_ARGUMENTS_FOR_FUNCTION` or `BAD_ARGUMENTS` - and that code is part of their
+      * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
+      * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
+      */
+    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+
+    /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
+    virtual String getSignatureString() const { return {}; }
+
+    /// See IFunction::signaturePropagatesNullability.
+    virtual bool signaturePropagatesNullability() const { return false; }
 
     virtual bool isVariadic() const { return false; }
 
