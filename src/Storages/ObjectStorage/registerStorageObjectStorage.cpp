@@ -56,23 +56,20 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
-    // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
-    // on server startup.
-    const auto global_context = args.getContext();
+    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
-        Settings settings = global_context->getSettingsCopy();
+        Settings settings = context->getSettingsCopy();
 
         // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
-        format_settings = getFormatSettings(global_context, settings);
+        format_settings = getFormatSettings(context, settings);
     }
     else
     {
-        format_settings = getFormatSettings(global_context);
+        format_settings = getFormatSettings(context);
     }
 
     ASTPtr partition_by;

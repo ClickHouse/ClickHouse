@@ -679,6 +679,11 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
+    return totalRowsInSnapshot(nullptr, query_context);
+}
+
+std::optional<UInt64> StorageObjectStorage::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
     if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
         return std::nullopt;
 
@@ -688,9 +693,16 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    std::optional<DataLakeTableStateSnapshot> state;
+    if (storage_snapshot && storage_snapshot->metadata)
+        state = storage_snapshot->metadata->datalake_table_state;
 
-    return configuration->totalRows(query_context);
+    if (is_table_function || state)
+        configuration->lazyInitializeIfNeeded(object_storage, query_context);
+    else
+        configuration->update(object_storage, query_context);
+
+    return configuration->totalRows(query_context, state);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
@@ -965,13 +977,14 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr local_context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -1005,12 +1018,26 @@ void StorageObjectStorage::truncate(
             path.path);
     }
 
+    /// The credentials of the client follow the session that truncates, as for `write`.
+    if (!is_table_function)
+        configuration->update(object_storage, local_context);
+
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
     {
         objects.emplace_back(key.path);
     }
     object_storage->removeObjectsIfExist(objects);
+}
+
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// Dropping a data lake may delete its data with the client it holds: in the query, or later in the background with
+    /// the global settings.
+    if (configuration->isDataLakeConfiguration()
+        && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
+            || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
+        checkSessionMayUseServerIdentity(*object_storage, query_context);
 }
 
 void StorageObjectStorage::drop()
@@ -1194,6 +1221,8 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context_);
+
     /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
     /// storage snapshot contains the `datalake_table_state`. Without this the mutation
     /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
@@ -1213,6 +1242,7 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
@@ -1221,6 +1251,9 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
+    /// These entrypoints reuse the client without refreshing it for the session, so check its policy first.
+    checkSessionMayUseServerIdentity(*object_storage, context);
+
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
@@ -1300,12 +1333,14 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
 Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     if (catalog && std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY SETTING and RESET SETTING are not supported for tables of a data lake catalog");
 
