@@ -88,6 +88,16 @@ public:
     bool supportsExternalBufferMode() const override { return false; }
 
 private:
+    /// True if the next logical read would start at or past the known EOF, accounting for a
+    /// pending seek's bytes_to_ignore. Such a read must not be submitted: some kernels and
+    /// filesystems reject an O_DIRECT read starting at EOF with EINVAL instead of returning 0.
+    bool isNextReadAtOrPastKnownEOF() const
+    {
+        return file_size.has_value()
+            && (file_offset_of_buffer_end >= *file_size
+                || bytes_to_ignore >= *file_size - file_offset_of_buffer_end);
+    }
+
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 
     const std::string query_id;

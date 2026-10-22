@@ -34,6 +34,16 @@ The decode tasks pause once the queue is full and the query is not consuming, so
 
 Must be greater than zero.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to list only the `metadata\/v` key prefix when looking for the latest metadata file of an Iceberg table read by path."}]}]}/>
+
+Find the latest metadata file of an Iceberg table read by path on S3 or Azure by listing only the key prefix `metadata/v`, so that the manifests stored in the same `metadata` directory are not listed. If it holds `.metadata.json` files, only they are candidates; otherwise the whole directory is listed. Does not apply with `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` or `iceberg_recent_metadata_file_by_last_updated_ms_field`, nor to the tables of a data lake catalog database.
+
+Enable it only for tables whose metadata files are all named `v<N>...` (as ClickHouse and Hadoop catalogs name them): in a directory that also holds `<N>-<uuid>.metadata.json` files, those files are never candidates, so the commits of their writer are not seen.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`

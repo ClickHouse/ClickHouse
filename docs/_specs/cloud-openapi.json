@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1300420",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1310615",
       "email": "support@clickhouse.com"
     }
   },
@@ -27727,7 +27727,7 @@
             "example": "production_db"
           },
           "authentication": {
-            "description": "Authentication method for Postgres connection.",
+            "description": "Authentication method for Postgres connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27737,7 +27737,7 @@
             "example": "IAM_ROLE"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -27819,7 +27819,7 @@
             "$ref": "#/components/schemas/ClickPipePostgresPipeSettings"
           },
           "authentication": {
-            "description": "Authentication method for Postgres connection.",
+            "description": "Authentication method for Postgres connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27829,7 +27829,7 @@
             "example": "IAM_ROLE"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28213,7 +28213,7 @@
             "example": 3306
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -28223,7 +28223,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28308,7 +28308,7 @@
             "$ref": "#/components/schemas/ClickPipeMySQLPipeSettings"
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -28318,7 +28318,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28389,7 +28389,7 @@
             "example": 3306
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": [
               "string",
               "null"
@@ -28402,7 +28402,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": [
               "string",
               "null"
@@ -39179,6 +39179,18 @@
               "TLSv1.3"
             ]
           },
+          "default_toast_compression": {
+            "type": "string",
+            "description": "Sets the default compression method for compressible values stored out of line (TOAST).",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/default_toast_compression/"
+            },
+            "example": "lz4",
+            "enum": [
+              "pglz",
+              "lz4"
+            ]
+          },
           "maintenance_work_mem": {
             "type": [
               "string",
@@ -39299,6 +39311,134 @@
             "example": 25,
             "minimum": 25,
             "maximum": 75
+          },
+          "temp_buffers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the maximum memory each session uses for temporary table buffers.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/temp_buffers/"
+            },
+            "example": "8MB",
+            "minimum": 800
+          },
+          "hash_mem_multiplier": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiple of work_mem that hash-based operations may use.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/hash_mem_multiplier/"
+            },
+            "example": 2,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "enable_parallel_hash": {
+            "type": "string",
+            "description": "Enables the planner's use of parallel hash plans.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/enable_parallel_hash/"
+            },
+            "example": "on",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "maintenance_io_concurrency": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Number of concurrent disk I/O operations used for maintenance work such as vacuum.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/maintenance_io_concurrency/"
+            },
+            "example": 10,
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "io_method": {
+            "type": "string",
+            "description": "Selects the method used to perform asynchronous I/O.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_method/"
+            },
+            "example": "worker",
+            "enum": [
+              "sync",
+              "worker",
+              "io_uring"
+            ]
+          },
+          "io_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Number of I/O worker processes used when io_method is worker.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_workers/"
+            },
+            "example": 3,
+            "minimum": 1,
+            "maximum": 32
+          },
+          "bgwriter_delay": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sleep time between background writer activity rounds.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_delay/"
+            },
+            "example": "200ms",
+            "minimum": 10,
+            "maximum": 10000
+          },
+          "bgwriter_flush_after": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Amount of data written by the background writer after which the OS is asked to flush it to disk.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_flush_after/"
+            },
+            "example": "512kB",
+            "minimum": 0,
+            "maximum": 2048
+          },
+          "bgwriter_lru_maxpages": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of buffers the background writer writes per round.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_lru_maxpages/"
+            },
+            "example": 100,
+            "minimum": 0,
+            "maximum": 1073741823
+          },
+          "bgwriter_lru_multiplier": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiple of the average recent buffer demand that the background writer cleans per round.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_lru_multiplier/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 10
           },
           "statement_timeout": {
             "type": [
@@ -39460,6 +39600,70 @@
             "minimum": 32,
             "maximum": 262144
           },
+          "max_replication_slots": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of replication slots. Standbys and logical replication each use slots.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_replication_slots/"
+            },
+            "example": 10,
+            "minimum": 10,
+            "maximum": 262143
+          },
+          "max_wal_senders": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of simultaneously running WAL sender processes.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_wal_senders/"
+            },
+            "example": 10,
+            "minimum": 10,
+            "maximum": 262143
+          },
+          "max_logical_replication_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of logical replication workers for subscriptions on this server.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_logical_replication_workers/"
+            },
+            "example": 4,
+            "minimum": 0,
+            "maximum": 262143
+          },
+          "max_sync_workers_per_subscription": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of table synchronization workers per subscription.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_sync_workers_per_subscription/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 262143
+          },
+          "logical_decoding_work_mem": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum memory used for logical decoding before changes spill to disk.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/logical_decoding_work_mem/"
+            },
+            "example": "64MB",
+            "minimum": 64
+          },
           "autovacuum_max_workers": {
             "type": [
               "string",
@@ -39607,6 +39811,83 @@
             },
             "example": "2ms",
             "minimum": 0
+          },
+          "vacuum_cost_delay": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Time in milliseconds a manual VACUUM sleeps when its cost limit is exceeded. 0 disables cost-based delay.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/vacuum_cost_delay/"
+            },
+            "example": "0",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "log_min_duration_statement": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Logs statements that run at least this many milliseconds. 0 logs all statements; -1 disables.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_min_duration_statement/"
+            },
+            "example": 1000,
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "log_temp_files": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Logs temporary files of at least this size in kilobytes. 0 logs all temporary files; -1 disables.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_temp_files/"
+            },
+            "example": "-1",
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "log_lock_waits": {
+            "type": "string",
+            "description": "Logs a message when a session waits longer than deadlock_timeout to acquire a lock.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_lock_waits/"
+            },
+            "example": "off",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "log_parameter_max_length": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum bytes of each bind parameter value logged with statements. 0 disables; -1 logs values in full.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_parameter_max_length/"
+            },
+            "example": "-1",
+            "minimum": -1,
+            "maximum": 1073741823
+          },
+          "track_activity_query_size": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Bytes reserved to store the text of the currently running command of each session, shown in pg_stat_activity.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/track_activity_query_size/"
+            },
+            "example": 4096,
+            "minimum": 100,
+            "maximum": 1048576
           }
         },
         "additionalProperties": false,
@@ -42284,6 +42565,7 @@
               },
               "functionName": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
             },
@@ -42393,6 +42675,7 @@
               },
               "functionName": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
             },

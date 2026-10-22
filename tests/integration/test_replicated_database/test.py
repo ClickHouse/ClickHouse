@@ -1913,6 +1913,11 @@ def test_system_database_replicas_with_ro(started_cluster):
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
     )
 
+    zookeeper_exception = main_node.query(
+        f"SELECT zookeeper_exception FROM system.database_replicas WHERE database = '{database_1}'"
+    )
+    assert zookeeper_exception.strip()
+
     database_2 = f"{prefix}_test_system_database_replicas_2"
     main_node.query(
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
