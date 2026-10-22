@@ -381,6 +381,12 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
+    # The limited clang-tidy check. Configured exactly like `arm_tidy`, but
+    # instead of running clang-tidy over the whole tree it analyzes only the
+    # translation units the change touches, which is what makes it fast enough
+    # to be part of the merge queue.
+    # See ci/jobs/scripts/clang_tidy_changed_files.py.
+    ARM_TIDY_CHANGED_FILES = "arm_tidy_changed_files"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     # Cross-build for Windows (mingw-w64). It links a native PE `clickhouse.exe`, which has
@@ -414,6 +420,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
+    CLANG_TIDY_CHANGED_FILES = "Clang-tidy (changed files)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -714,7 +721,7 @@ class ArtifactConfigs:
         Artifact.Config(
             name=ArtifactNames.CH_AMD_ILLUMOS,
             type=Artifact.Type.S3,
-            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            path=f"{TEMP_DIR}/build/programs/stripped/bin/clickhouse",
             compress_zst=True,
         )
     )
