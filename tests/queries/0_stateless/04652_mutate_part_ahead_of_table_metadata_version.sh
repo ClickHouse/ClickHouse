@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # Tag no-parallel: replicated_queue_fail_next_entry is a server-global ONCE failpoint, so a
 #                  concurrent copy of this test would consume it instead of our ALTER_METADATA
 # Tag no-shared-merge-tree: tests ReplicatedMergeTree queue behaviour with failpoints

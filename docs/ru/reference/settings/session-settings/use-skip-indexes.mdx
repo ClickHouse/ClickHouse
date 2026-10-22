@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_skip_indexes">
-  ## use_skip_indexes
-</div>
+## use_skip_indexes {#use_skip_indexes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -26,9 +24,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_skip_indexes_for_disjunctions">
-  ## use_skip_indexes_for_disjunctions
-</div>
+## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -42,9 +38,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_skip_indexes_for_top_k">
-  ## use_skip_indexes_for_top_k
-</div>
+## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +53,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_skip_indexes_if_final">
-  ## use_skip_indexes_if_final
-</div>
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -76,9 +68,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_skip_indexes_if_final_exact_mode">
-  ## use_skip_indexes_if_final_exact_mode
-</div>
+## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -93,13 +83,11 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_skip_indexes_on_data_read">
-  ## use_skip_indexes_on_data_read
-</div>
+## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Текстовый индекс теперь имеет статус GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Включено по умолчанию"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "Включено по умолчанию"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Включает использование индексов пропуска данных при чтении данных.
 
