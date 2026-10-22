@@ -10,7 +10,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <base/types.h>
 #include <fmt/format.h>
 #include <IO/ReadHelpers.h>
@@ -18,7 +17,6 @@
 namespace ProfileEvents
 {
     extern const Event DistributedPlanTaskStartBytes;
-    extern const Event DistributedPlanTaskStartMicroseconds;
 }
 
 namespace DB
@@ -121,10 +119,8 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
 
     try
     {
-        Stopwatch watch;
         auto response = doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
         ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStartBytes, task_bytes);
-        ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStartMicroseconds, watch.elapsedMicroseconds());
         return response;
     }
     catch (...)

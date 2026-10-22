@@ -82,6 +82,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedPlanRemoteTasks;
+    extern const Event DistributedPlanStageStartMicroseconds;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
     extern const Event RuntimeFilterReceiveBranchFailures;
@@ -1991,6 +1992,7 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
+        Stopwatch watch;
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = logicalQueryId(context->getClientInfo());
         task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
@@ -2091,6 +2093,7 @@ protected:
         if (first_failure)
             std::rethrow_exception(first_failure);
         checkCancelled();
+        ProfileEvents::increment(ProfileEvents::DistributedPlanStageStartMicroseconds, watch.elapsedMicroseconds());
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
