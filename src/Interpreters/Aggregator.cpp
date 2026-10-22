@@ -3245,11 +3245,25 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * full_group_count,
+    std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
+
+    /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
+    /// groups that can rank among them. It is not used when:
+    /// - dataflow statistics are collected (`updater`): they must describe the merge of every group;
+    /// - the only aggregate is `count` (`bucket_top_k`): the ordinary conversion selects it cheaper;
+    /// - a throw-mode group limit is enforced: it needs the bucket's full group count;
+    /// - the HAVING pre-filter is enabled: only the ordinary conversion applies it.
+    const bool group_limit_needs_full_count = params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW;
+    if (final && params.threshold_top_k && (!params.bucket_top_k || params.aggregates_size > 1)
+        && params.having_prefilter_op == Params::HavingPrefilterOp::Disabled && !updater && !group_limit_needs_full_count)
+        if (auto threshold_chunk
+            = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))
+            return std::move(*threshold_chunk);
 
     /// Filled by a conversion that materializes only some of the bucket's groups - the Top-K one or
     /// the HAVING pre-filter - when the statistics ask for it (left zero otherwise): the untruncated
