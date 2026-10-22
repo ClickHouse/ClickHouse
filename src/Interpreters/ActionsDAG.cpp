@@ -5603,7 +5603,33 @@ ActionsDAG ActionsDAG::deserialize(
             {
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
-                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+
+                /// The captured columns are the node's children, in the order of the captured names.
+                const size_t num_captured = std::min(capture.captured_names.size(), capture.captured_types.size());
+                ColumnsWithTypeAndName captured_columns;
+                captured_columns.reserve(num_captured);
+                for (size_t k = 0; k < num_captured; ++k)
+                {
+                    if (k < node.children.size() && node.children[k]->result_name == capture.captured_names[k]
+                        && node.children[k]->result_type
+                        && differsOnlyByAggregateStateVariant(node.children[k]->result_type, capture.captured_types[k]))
+                        capture.captured_types[k] = node.children[k]->result_type;
+
+                    captured_columns.emplace_back(nullptr, capture.captured_types[k], capture.captured_names[k]);
+                }
+
+                auto capture_dag = ActionsDAG::deserialize(
+                    in, registry, context, max_type_complexity, nesting_depth + 1,
+                    {std::make_shared<const Block>(std::move(captured_columns))});
+
+                if (const auto * capture_output = capture_dag.tryFindInOutputs(capture.return_name);
+                    capture_output && differsOnlyByAggregateStateVariant(capture_output->result_type, capture.return_type))
+                    capture.return_type = capture_output->result_type;
+
+                if (const auto * function_type = typeid_cast<const DataTypeFunction *>(node.result_type.get());
+                    !node.column && function_type && function_type->getReturnType()
+                    && differsOnlyByAggregateStateVariant(capture.return_type, function_type->getReturnType()))
+                    node.result_type = std::make_shared<DataTypeFunction>(function_type->getArgumentTypes(), capture.return_type);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(

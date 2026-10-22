@@ -126,4 +126,11 @@ SELECT round(contingencyMerge(s), 6)
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0;
 
+SELECT '-- lambda capture of the window state: distributed then local';
+SELECT round(contingencyMerge(arrayElement(arrayMap(x -> s, [1]), 1)), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
+SELECT round(contingencyMerge(arrayElement(arrayMap(x -> s, [1]), 1)), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE t_window_state_variant_gather;

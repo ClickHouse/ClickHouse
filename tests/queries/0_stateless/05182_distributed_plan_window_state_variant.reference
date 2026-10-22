@@ -27,3 +27,6 @@ Variant shape distributes
 -- contingencyMerge of the window state: distributed then local
 0.075652
 0.075652
+-- lambda capture of the window state: distributed then local
+0.075652
+0.075652
