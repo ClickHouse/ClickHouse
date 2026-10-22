@@ -35,6 +35,13 @@ for _san in ASAN TSAN MSAN UBSAN LSAN; do
 done
 unset _san _var
 
+# The server dumps jemalloc heap profiles here on every 1 GiB of peak growth and when the
+# server-wide memory limit is hit (jemalloc_flush_profile.yaml). jemalloc names the files
+# itself from prof_prefix and does not create the directory.
+JEMALLOC_PROFILES_DIR="/workspace/jemalloc_profiles"
+mkdir -p "$JEMALLOC_PROFILES_DIR"
+export MALLOC_CONF="${MALLOC_CONF:+${MALLOC_CONF},}prof_prefix:${JEMALLOC_PROFILES_DIR}/clickhouse.jemalloc"
+
 function collect_sanitizer_reports
 {
     # Merge sanitizer reports captured via log_path into stderr.log (for the
@@ -77,6 +84,8 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/ssl_certs.xml $CONFIG_DIR/config.d
     # Without this the server applies its 1GiB core_dump.size_limit default, which truncates cores.
     cp -av --dereference "$repo_dir"/tests/config/config.d/core_dump.yaml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_enable_global_profiler.yaml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_flush_profile.yaml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/server.crt "$repo_dir"/tests/config/server.key $CONFIG_DIR
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
@@ -95,6 +104,38 @@ EOL
 
 
     (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+}
+
+function collect_jemalloc_profiles
+{
+    local server_died=$1
+    local profiles=("$JEMALLOC_PROFILES_DIR"/*.heap)
+    if [[ ! -e "${profiles[0]}" ]]; then
+        echo "No jemalloc profiles were dumped"
+        return 0
+    fi
+    local latest
+    latest=$(find "$JEMALLOC_PROFILES_DIR" -maxdepth 1 -name '*.heap' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)
+
+    # Symbolizing a debug build takes minutes, so render only the latest profile and only when
+    # the memory is actually in question. The raw .heap files always ship and can be rendered
+    # offline with jeprof and the job's binary.
+    if [[ "$server_died" == 1 ]] || grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' server.log; then
+        local collapsed="${latest%.heap}.collapsed"
+        # The whole pipeline is under the timeout: killing jeprof alone would leave an unfinished
+        # collapsed file that still looks valid.
+        if timeout --verbose --signal=TERM --kill-after=60 600 \
+            jeprof "$repo_dir/ci/tmp/clickhouse" "$latest" --collapsed > "$collapsed" 2> "${collapsed}.log"
+        then
+            flamegraph.pl --color mem --width 2560 < "$collapsed" > "${latest%.heap}.svg" || rm -f "${latest%.heap}.svg"
+        else
+            echo "Failed to symbolize $latest"
+            rm -f "$collapsed"
+        fi
+    fi
+
+    tar -C /workspace -cf - jemalloc_profiles | zstd --threads=0 -f -o jemalloc.tar.zst \
+        || echo "Failed to archive jemalloc profiles"
 }
 
 function filter_exists_and_template
@@ -438,6 +479,8 @@ function fuzz
     echo "Server exit code is $server_exit_code"
 
     echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv
+
+    collect_jemalloc_profiles "$server_died"
 
     if test -f core.*; then
         zstd --threads=0 core.*
