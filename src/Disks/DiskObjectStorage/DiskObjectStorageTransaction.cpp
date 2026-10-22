@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <IO/ForkWriteBuffer.h>
 #include <IO/WriteBuffer.h>
 #if ENABLE_DISTRIBUTED_CACHE
@@ -14,6 +15,7 @@
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
+#include <Common/ThreadStatus.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Logger.h>
 #include <Common/checkStackSize.h>
@@ -605,6 +607,8 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
 
 void DiskObjectStorageTransaction::commit()
 {
+    /// Disable task-level undo before commit can publish metadata or leave a partial rollback.
+    commit_started = true;
     auto component_guard = Coordination::setCurrentComponent("DiskObjectStorageTransaction::commit");
     chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
@@ -650,6 +654,8 @@ void DiskObjectStorageTransaction::commit()
 
 TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
 {
+    /// Keeper errors can leave publication unresolved; only the commit path may decide to roll back.
+    commit_started = true;
     chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
@@ -725,13 +731,37 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
     return outcome;
 }
 
+bool DiskObjectStorageTransaction::canUndoBeforeCommit() const
+{
+    /// With local metadata, we can delete newly written blobs before commit: no committed file references them yet,
+    /// and their random paths keep them separate from existing blobs. Hardlinks do not add blobs to `written_blobs`.
+    /// Other backends can reuse existing paths or make changes visible before commit, so deletion could remove live data.
+    return !commit_started
+        && metadata_storage->getType() == MetadataStorageType::Local
+        && metadata_storage->areBlobPathsRandom()
+        && !metadata_storage->appliesOperationsEagerly();
+}
+
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    /// Requires stopped writers and a commit outcome that permits rollback.
+    ThreadStatus::QueryCancellationBlocker cleanup;
     for (const auto & [location, blobs] : written_blobs)
     {
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            auto object_storage = object_storages->takePointingTo(location);
+            if (canUndoBeforeCommit())
+            {
+                /// Unpublished objects have no removal-queue entry: evict the cache, then delete physical objects.
+                while (auto * cached = dynamic_cast<CachedObjectStorage *>(object_storage.get()))
+                {
+                    cached->removeObjectsIfExist(blobs);
+                    object_storage = cached->getUnderlying();
+                }
+            }
+            /// TODO: Extend physical cache-backed cleanup to commit failures only with a confirmed metadata rollback.
+            object_storage->removeObjectsIfExist(blobs);
         }
         catch (...)
         {
@@ -739,6 +769,7 @@ void DiskObjectStorageTransaction::undo() noexcept
         }
     }
 
+    /// TODO: Retain failed-deletion keys and locations for durable retry; clearing them here can orphan objects.
     operations_to_execute.clear();
     written_blobs.clear();
 }

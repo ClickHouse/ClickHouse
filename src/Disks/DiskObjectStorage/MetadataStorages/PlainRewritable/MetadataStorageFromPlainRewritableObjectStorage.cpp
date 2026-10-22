@@ -1120,6 +1120,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    reclaims them (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`). It still runs under the locks, so
         ///    that a full reload (`dropCache`), which takes the lock of the root, does not see a removal half-done.
         ///    The locks are per path, so this does not delay unrelated transactions.
+        ///    Deferred reclamation requires surviving committed tombstones; pending backups may still hold live data.
         operations.finalize();
     }
 }

@@ -27,14 +27,7 @@ public:
 
     Priority getPriority() const override { return priority; }
 
-    void cancel() noexcept override
-    {
-        if (merge_task)
-            merge_task->cancel();
-
-        if (part)
-            part->removeIfNeeded();
-    }
+    void cancel() noexcept override;
 
 protected:
     /// Both return false if we can't execute merge.

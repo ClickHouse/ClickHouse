@@ -3,6 +3,9 @@
 #include <Core/Names.h>
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
+#include <Common/OperationCancellation.h>
+#include <Common/ActionBlocker.h>
+#include <optional>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
@@ -77,6 +80,18 @@ struct Settings;
 
 struct MergeListElement : boost::noncopyable
 {
+private:
+    struct CancellationState : OperationCancellationState
+    {
+        /// When `MergeTask` decides to remove expired values, `enableTTLCancellation` copies its TTL blocker here,
+        /// then sets `ttl_enabled`. The cancellation predicate reads the copy only after it sees that flag.
+        /// The copy shares ownership of the original blocker's counter, so it sees later cancellation requests
+        /// and keeps the counter alive while the predicate uses it.
+        std::optional<ActionBlocker> ttl_blocker;
+        std::atomic_bool ttl_enabled{false};
+    };
+
+public:
     static const MergeTreePartInfo FAKE_RESULT_PART_FOR_PROJECTION;
 
     const StorageID table_id;
@@ -95,7 +110,7 @@ struct MergeListElement : boost::noncopyable
 
     Stopwatch watch;
     std::atomic<Float64> progress{};
-    std::atomic<bool> is_cancelled{};
+    const std::shared_ptr<CancellationState> cancellation_state = std::make_shared<CancellationState>();
 
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
@@ -140,7 +155,13 @@ struct MergeListElement : boost::noncopyable
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        CancellationRequestPredicate operation_request_ = {},
+        ThreadGroupPtr foreground_group = {});
+
+    /// Called once by the preparing task if this merge will perform TTL work.
+    void enableTTLCancellation(const ActionBlocker & blocker);
+    CancellationRequestPredicate getCancellationRequestPredicate() const;
 
     MergeInfo getInfo() const;
 
@@ -151,6 +172,9 @@ struct MergeListElement : boost::noncopyable
     MergeListElement & ref() { return *this; }
 
     ~MergeListElement();
+
+private:
+    const CancellationRequestPredicate operation_request;
 };
 
 /** Maintains a list of currently running merges.
@@ -162,13 +186,13 @@ private:
     using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
     std::atomic<size_t> merges_with_ttl_counter = 0;
     /// Set by cancelAll (on server shutdown): entries inserted after it are cancelled at birth.
-    std::atomic<bool> all_cancelled = false;
+    OperationCancellationState all_cancelled;
 public:
     MergeList()
         : Parent(CurrentMetrics::Merge)
     {}
 
-    void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
+    void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version, CancellationRequest request = CancellationRequest::StopWork)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
@@ -177,39 +201,38 @@ public:
                 && merge_element.table_id == table_id
                 && merge_element.source_data_version < mutation_version
                 && merge_element.result_part_info.getDataVersion() >= mutation_version)
-                merge_element.is_cancelled = true;
+                merge_element.cancellation_state->request(request);
         }
     }
 
     /// Cancel all current and future merges and mutations.
     /// Used on server shutdown, when their results would be discarded anyway.
-    void cancelAll()
+    void cancelAll(CancellationRequest request = CancellationRequest::StopWork)
     {
         /// The flag is set before cancelCurrent(); insert checks it after linking
         /// a new entry, so none can escape.
-        all_cancelled = true;
-        cancelCurrent();
+        all_cancelled.request(request);
+        cancelCurrent(request);
     }
 
     /// Cancel all current merges and mutations.
     /// Used by the OOM canary to free resources (does not reject future merges).
-    void cancelCurrent()
+    void cancelCurrent(CancellationRequest request = CancellationRequest::StopWork)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
-            merge_element.is_cancelled = true;
+            merge_element.cancellation_state->request(request);
     }
 
     template <typename... Args>
     EntryPtr insert(Args &&... args)
     {
         auto entry = Parent::insert(std::forward<Args>(args)...);
-        if (all_cancelled)
-            (*entry)->is_cancelled = true;
+        (*entry)->cancellation_state->request(all_cancelled.getRequest());
         return entry;
     }
 
-    void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
+    void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number, CancellationRequest request = CancellationRequest::StopWork)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
@@ -217,7 +240,7 @@ public:
             if (merge_element.table_id == table_id
                 && merge_element.partition_id == partition_id
                 && merge_element.result_part_info.min_block < delimiting_block_number)
-                merge_element.is_cancelled = true;
+                merge_element.cancellation_state->request(request);
         }
     }
 

@@ -3,6 +3,12 @@
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferFromFile.h>
@@ -12,11 +18,15 @@
 #include <IO/ReadPipeline.h>
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
+#include <Interpreters/FileCache/FileCache.h>
 
 #include <Common/PageCache.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 
 #include <Core/Defines.h>
@@ -28,10 +38,19 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <future>
+#include <new>
 #include <string>
 #include <thread>
 
 namespace fs = std::filesystem;
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+}
 
 namespace
 {
@@ -129,6 +148,37 @@ DB::PageCachePtr makePageCacheForTest()
         /*max_size_in_bytes=*/ 64 << 20,
         /*free_memory_ratio=*/ 0.0,
         /*num_shards=*/ 1);
+}
+
+/// Reproduce failure while copying the removal list after metadata has already committed.
+class PostCommitFailureTransaction : public DB::MetadataStorageFromCacheObjectStorageTransaction
+{
+public:
+    using MetadataStorageFromCacheObjectStorageTransaction::MetadataStorageFromCacheObjectStorageTransaction;
+
+    DB::StoredObjects getSubmittedForRemovalBlobs() override { throw std::bad_alloc{}; }
+};
+
+class PostCommitFailureMetadata : public DB::MetadataStorageFromCacheObjectStorage
+{
+public:
+    using MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage;
+
+    DB::MetadataTransactionPtr createTransaction() override
+    {
+        return std::make_shared<PostCommitFailureTransaction>(getUnderlying()->createTransaction(), *this);
+    }
+};
+
+DB::DiskTransactionPtr makeCleanupTestTransaction(
+    DB::MetadataStoragePtr metadata, DB::ObjectStoragePtr objects, bool wait_blob_removal = false)
+{
+    auto cluster = std::make_shared<DB::ClusterConfiguration>(
+        "cleanup_test", std::unordered_map<DB::Location, DB::LocationInfo>{{"main", {true, true, ""}}});
+    auto router = std::make_shared<DB::ObjectStorageRouter>(
+        std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", std::move(objects)}});
+    return std::make_shared<DB::DiskObjectStorageTransaction>(
+        std::move(cluster), std::move(metadata), std::move(router), nullptr, nullptr, wait_blob_removal);
 }
 
 }
@@ -334,6 +384,187 @@ TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
 
     EXPECT_FALSE(disk->existsFile(file_name));
     waitBlobsCount(disk, 0);
+}
+
+TEST_F(DiskObjectStorageTest, AbandonedPartRemovesOnlyItsUncommittedBlobs)
+{
+    auto disk = getDiskObjectStorage();
+    {
+        auto out = disk->writeFile("source", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("source data", *out);
+        out->finalize();
+    }
+
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", disk, 0);
+    DB::DataPartStorageOnDiskFull source(volume, "", "");
+    DB::DataPartStorageOnDiskFull part(volume, "", "tmp_part");
+    part.beginTransaction();
+    part.createDirectories();
+    part.createHardLinkFrom(source, "source", "unchanged");
+    {
+        auto out = part.writeFile("rewritten", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("abandoned data", *out);
+        out->finalize();
+    }
+
+    waitBlobsCount(disk, 2);
+    part.undoTransactionIfUncommitted();
+    EXPECT_FALSE(part.hasActiveTransaction());
+    EXPECT_FALSE(part.exists());
+    waitBlobsCount(disk, 1);
+    auto in = disk->readFile("source", {});
+    EXPECT_EQ(readAll(*in), "source data");
+}
+
+TEST_F(DiskObjectStorageTest, AbandonedPartPreservesCommittedCheckpoint)
+{
+    auto disk = getDiskObjectStorage();
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", disk, 0);
+    DB::DataPartStorageOnDiskFull part(volume, "", "tmp_part");
+    part.beginTransaction();
+    part.createDirectories();
+    {
+        auto out = part.writeFile("checkpoint", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("committed data", *out);
+        out->finalize();
+    }
+    part.checkpointTransaction();
+    {
+        auto out = part.writeFile("unfinished", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("abandoned data", *out);
+        out->finalize();
+    }
+
+    part.undoTransactionIfUncommitted();
+    waitBlobsCount(disk, 1);
+    auto in = disk->readFile("tmp_part/checkpoint", {});
+    EXPECT_EQ(readAll(*in), "committed data");
+    EXPECT_FALSE(disk->existsFile("tmp_part/unfinished"));
+}
+
+TEST_F(DiskObjectStorageTest, ProjectionCannotUndoParentTransaction)
+{
+    auto disk = getDiskObjectStorage();
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", disk, 0);
+    DB::DataPartStorageOnDiskFull part(volume, "", "tmp_part");
+    part.beginTransaction();
+    part.createDirectories();
+    part.createProjection("p.proj");
+    auto projection = part.getProjection("p.proj");
+    {
+        auto out = projection->writeFile("data", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("projection data", *out);
+        out->finalize();
+    }
+
+    projection->undoTransactionIfUncommitted();
+    EXPECT_TRUE(part.hasActiveTransaction());
+    waitBlobsCount(disk, 1);
+    part.commitTransaction();
+    auto in = disk->readFile("tmp_part/p.proj/data", {});
+    EXPECT_EQ(readAll(*in), "projection data");
+}
+
+TEST_F(DiskObjectStorageTest, AbandonedPackedPartReclaimsPrecommittedArchive)
+{
+    auto disk = getDiskObjectStorage();
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", disk, 0);
+    DB::DataPartStorageOnDiskPacked part(volume, "", "tmp_part", {}, false);
+    part.beginTransaction();
+    part.createDirectories();
+    {
+        auto out = part.writeFile("data.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("archive member", *out);
+        out->finalize();
+    }
+    part.precommitTransaction();
+    waitBlobsCount(disk, 1);
+
+    part.undoTransactionIfUncommitted();
+    EXPECT_FALSE(part.hasActiveTransaction());
+    waitBlobsCount(disk, 0);
+    EXPECT_NO_THROW(part.beginTransaction());
+}
+
+TEST_F(DiskObjectStorageTest, UncommittedCleanupPreservesPathBasedWrites)
+{
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", disk, 0);
+    DB::DataPartStorageOnDiskFull part(volume, "", "part");
+    part.beginTransaction();
+    part.createDirectories();
+    {
+        auto out = part.writeFile("data", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("live data", *out);
+        out->finalize();
+    }
+    part.commitTransaction();
+
+    part.beginTransaction();
+    {
+        auto out = part.writeFile("data", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString("replacement data", *out);
+        out->finalize();
+    }
+    part.undoTransactionIfUncommitted();
+    EXPECT_TRUE(part.hasActiveTransaction());
+    part.commitTransaction();
+    auto in = disk->readFile("part/data", {});
+    EXPECT_EQ(readAll(*in), "replacement data");
+}
+
+TEST_F(DiskObjectStorageTest, CleanupDoesNotDeleteOutputAfterPostCommitException)
+{
+    auto disk = getDiskObjectStorage();
+    for (bool use_try_commit : {false, true})
+    {
+        const String name = use_try_commit ? "try_committed" : "committed";
+        auto metadata = std::make_shared<PostCommitFailureMetadata>(disk->getMetadataStorage(), disk->getObjectStorage());
+        auto tx = makeCleanupTestTransaction(metadata, disk->getObjectStorage(), /*wait_blob_removal=*/true);
+        {
+            auto out = tx->writeFile(name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+            DB::writeString("committed data", *out);
+            out->finalize();
+        }
+
+        if (use_try_commit)
+            EXPECT_THROW(tx->tryCommit(DB::NoCommitOptions{}), std::bad_alloc);
+        else
+            EXPECT_THROW(tx->commit(), std::bad_alloc);
+        ASSERT_TRUE(disk->existsFile(name));
+        EXPECT_FALSE(tx->canUndoBeforeCommit());
+        if (tx->canUndoBeforeCommit())
+            tx->undo();
+
+        auto in = disk->readFile(name, {});
+        EXPECT_EQ(readAll(*in), "committed data");
+    }
+}
+
+TEST_F(DiskObjectStorageTest, AbandonedCachedTransactionDeletesPhysicalObjects)
+{
+    auto disk = getDiskObjectStorage();
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = fs::absolute("metadata_storage_dir/cache").string();
+    settings[DB::FileCacheSetting::max_size] = 1024 * 1024;
+    settings[DB::FileCacheSetting::max_elements] = 100;
+    auto cache = std::make_shared<DB::FileCache>("cleanup_test", settings);
+    auto objects = std::make_shared<DB::CachedObjectStorage>(disk->getObjectStorage(), cache, settings, "cleanup_test");
+    auto metadata = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(disk->getMetadataStorage(), disk->getObjectStorage());
+    auto tx = makeCleanupTestTransaction(metadata, objects);
+    DB::WriteSettings write_settings;
+    write_settings.enable_filesystem_cache_on_write_operations = false;
+    {
+        auto out = tx->writeFile("abandoned", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, write_settings);
+        DB::writeString("abandoned data", *out);
+        out->finalize();
+    }
+
+    waitBlobsCount(disk, 1);
+    ASSERT_TRUE(tx->canUndoBeforeCommit());
+    tx->undo();
+    waitBlobsCount(disk, 0);
+    EXPECT_FALSE(disk->existsFile("abandoned"));
 }
 
 TEST_F(DiskObjectStorageTest, RewriteFile)
@@ -1155,6 +1386,59 @@ catch (...)
 
 
 #if USE_SSL
+TEST_F(DiskObjectStorageTest, AbandonedEncryptedPartRemovesOnlyItsUncommittedBlobs)
+{
+    auto disk = getDiskObjectStorage();
+    const String key = "1234567890123456";
+    const auto fingerprint = DB::FileEncryption::calculateKeyFingerprint(key);
+    auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    enc_settings->wrapped_disk = disk;
+    enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    enc_settings->all_keys[fingerprint] = key;
+    enc_settings->current_key = key;
+    enc_settings->current_key_fingerprint = fingerprint;
+    auto encrypted_disk = std::make_shared<DB::DiskEncrypted>("encrypted_cleanup_test", std::move(enc_settings));
+    DB::WriteSettings write_settings;
+    write_settings.inline_file_max_bytes = 0;
+    {
+        auto out = encrypted_disk->writeFile("source", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, write_settings);
+        DB::writeString("source data", *out);
+        out->finalize();
+    }
+    waitBlobsCount(disk, 1);
+
+    auto volume = std::make_shared<DB::SingleDiskVolume>("test", encrypted_disk, 0);
+    DB::DataPartStorageOnDiskFull source(volume, "", "");
+    DB::DataPartStorageOnDiskFull part(volume, "", "tmp_part");
+    part.beginTransaction();
+    part.createDirectories();
+    part.createHardLinkFrom(source, "source", "unchanged");
+    {
+        auto out = part.writeFile("rewritten", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, write_settings);
+        DB::writeString("abandoned data", *out);
+        out->finalize();
+    }
+    waitBlobsCount(disk, 2);
+
+    std::async(std::launch::async, [&part]
+    {
+        DB::ThreadStatus status;
+        auto state = std::make_shared<DB::OperationCancellationState>();
+        auto group = DB::ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        DB::ThreadGroupSwitcher attached(group, DB::ThreadName::MERGE_MUTATE);
+        state->request(DB::CancellationRequest::StopWork);
+        EXPECT_THROW(DB::CurrentThread::checkIfNotCancelled(), DB::Exception);
+        part.undoTransactionIfUncommitted();
+        EXPECT_THROW(DB::CurrentThread::checkIfNotCancelled(), DB::Exception);
+    }).get();
+
+    ASSERT_FALSE(part.hasActiveTransaction());
+    EXPECT_FALSE(part.exists());
+    waitBlobsCount(disk, 1);
+    auto in = encrypted_disk->readFile("source", {});
+    EXPECT_EQ(readAll(*in), "source data");
+}
+
 TEST_F(DiskObjectStorageTest, ReadPipelineEncrypted)
 try
 {

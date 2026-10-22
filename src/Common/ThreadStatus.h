@@ -4,6 +4,7 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
+#include <Common/OperationCancellation.h>
 #include <Common/Logger_fwd.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
@@ -120,6 +121,7 @@ public:
         std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
+        CancellationRequestPredicate operation_cancellation_request = {};
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
         ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
@@ -143,7 +145,11 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
+    /// Creates a merge/mutation group with `operation_request` installed before threads attach.
+    /// Attached threads copy the callback, so its captured state must remain valid and be thread-safe.
+    /// The caller owns cancellation state, including keeping observed cancellation set for the operation.
+    static ThreadGroupPtr createForMergeMutate(
+        ContextPtr storage_context, CancellationRequestPredicate operation_request = {}, ThreadGroupPtr foreground_group = {});
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
@@ -166,7 +172,7 @@ public:
 private:
     mutable std::mutex mutex;
 
-    /// Set up at creation, no race when reading
+    /// Mutable group data protected by `mutex`; copied into `ThreadStatus::local_data` when a thread attaches.
     SharedData shared_data TSA_GUARDED_BY(mutex);
 
     /// Set of all thread ids which has been attached to the group
@@ -325,6 +331,7 @@ public:
     void attachQueryForLog(const String & query_);
     const String & getQueryForLog() const;
 
+    CancellationRequest getCancellationRequest() const;
     bool isQueryCanceled() const;
 
     /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.

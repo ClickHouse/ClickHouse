@@ -1,6 +1,7 @@
 #include <base/sleep.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <ctime>
 #include <cerrno>
 #include <system_error>
@@ -73,6 +74,24 @@ void sleepForMicroseconds(uint64_t microseconds)
 void sleepForMilliseconds(uint64_t milliseconds)
 {
     sleepForMicroseconds(milliseconds * 1000);
+}
+
+void sleepForMilliseconds(uint64_t milliseconds, const std::function<void()> & cancellation_hook)
+{
+    if (!cancellation_hook)
+    {
+        sleepForMilliseconds(milliseconds);
+        return;
+    }
+
+    constexpr uint64_t cancellation_check_interval_ms = 100;
+    while (milliseconds)
+    {
+        cancellation_hook();
+        const auto sleep_ms = std::min(milliseconds, cancellation_check_interval_ms);
+        sleepForMilliseconds(sleep_ms);
+        milliseconds -= sleep_ms;
+    }
 }
 
 void sleepForSeconds(uint64_t seconds)

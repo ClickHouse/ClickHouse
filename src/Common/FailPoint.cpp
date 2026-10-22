@@ -52,6 +52,8 @@ static struct InitFiu
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    ONCE(temporary_part_cancel_after_remove_rename) \
+    ONCE(temporary_projection_fail_after_finalize) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
@@ -334,9 +336,12 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(packed_part_freeze_pause_before_copy) \
+    PAUSEABLE(text_index_pause_before_write_temporary_segment) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE_ONCE(merge_task_pause_after_write) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
     PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \

@@ -50,6 +50,7 @@ public:
 private:
     void prepare();
     void finish();
+    void cleanupAfterFailure() noexcept;
 
     enum class State : uint8_t
     {

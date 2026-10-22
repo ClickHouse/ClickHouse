@@ -82,8 +82,9 @@ INSERT INTO t_ttl_vert_coll VALUES
 INSERT INTO t_ttl_vert_coll_off SELECT * FROM t_ttl_vert_coll;
 SYSTEM START TTL MERGES t_ttl_vert_coll;
 
-OPTIMIZE TABLE t_ttl_vert_coll FINAL;
-OPTIMIZE TABLE t_ttl_vert_coll_off FINAL;
+-- These merges warn about the deliberately invalid signs. Keep error logs visible.
+OPTIMIZE TABLE t_ttl_vert_coll FINAL SETTINGS send_logs_level = 'error';
+OPTIMIZE TABLE t_ttl_vert_coll_off FINAL SETTINGS send_logs_level = 'error';
 
 SELECT 'test1_rows', id, sign, c1, c2, c3 FROM t_ttl_vert_coll ORDER BY id, c1;
 SELECT 'test1_control_same_rows', arraySort(groupArray((id, sign, d, c1, c2, c3)))

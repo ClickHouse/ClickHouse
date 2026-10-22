@@ -31,14 +31,7 @@ public:
 
     Priority getPriority() const override { return priority; }
 
-    void cancel() noexcept override
-    {
-        if (mutate_task)
-            mutate_task->cancel();
-
-        if (new_part)
-            new_part->removeIfNeeded();
-    }
+    void cancel() noexcept override;
 
 private:
 

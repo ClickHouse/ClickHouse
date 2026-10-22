@@ -230,8 +230,8 @@ private:
             FunctionResult res;
             {
                 ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                SCOPE_EXIT_SAFE({ callback = {}; });
                 res = callback();
-                callback = {};
             }
             promise.set_value(std::move(res));
         }
@@ -252,8 +252,8 @@ private:
         {
             {
                 ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                SCOPE_EXIT_SAFE({ callback = {}; });
                 callback();
-                callback = {};
             }
             promise.set_value();
         }

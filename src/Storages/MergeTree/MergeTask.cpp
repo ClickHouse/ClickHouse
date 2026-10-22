@@ -115,6 +115,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_write[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
@@ -342,22 +343,9 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    /// Once cancellation is detected, persist it so that subsequent checks still see it
-    /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
-    if (merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        return true;
-
-    bool cancelled = future_part
-        ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId())
-        : merges_blocker->isCancelled();
-
-    if (cancelled)
-    {
-        merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
-        return true;
-    }
-
-    return false;
+    /// A projection's synthetic partition ID does not identify the parent partition's blocker.
+    /// Use the inherited predicate so stopping the parent operation also stops its projection work.
+    return operation_request() != CancellationRequest::None;
 }
 
 void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
@@ -643,6 +631,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         builder->withPartType(global_ctx->future_part->part_format.part_type);
 
         global_ctx->new_data_part = std::move(*builder).build();
+        global_ctx->part_for_cleanup = global_ctx->new_data_part;
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
@@ -713,6 +702,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
     }
+
+    if (ctx->need_remove_expired_values)
+        global_ctx->merge_list_element_ptr->enableTTLCancellation(*global_ctx->ttl_merges_blocker);
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
@@ -1353,37 +1345,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
-    ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
-        ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values,
-        merge_list_element = global_ctx->merge_list_element_ptr,
-        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
+    ctx->is_cancelled = [request = global_ctx->operation_request]
     {
-        /// Once cancellation is detected, persist it so that subsequent checks still see it
-        /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
-        if (merge_list_element->is_cancelled.load(std::memory_order_relaxed))
-            return true;
-
-        bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
-            || (need_remove && ttl_merges_blocker->isCancelled());
-
-        if (cancelled)
-        {
-            merge_list_element->is_cancelled.store(true, std::memory_order_relaxed);
-            return true;
-        }
-
-        return false;
+        return request() != CancellationRequest::None;
     };
-
-    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
-    global_ctx->merge_list_element_ptr->thread_group->setQueryCancellationPredicates(
-        ctx->is_cancelled,
-        [is_cancelled = ctx->is_cancelled]
-        {
-            if (is_cancelled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
-        });
 
     /// This is the end of preparation. Execution will be per block.
     return false;
@@ -1781,8 +1746,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
             global_ctx->compression_codec, ++ctx->projection_block_num,
             /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
-        tmp_part->finalize();
-        tmp_part->part->getDataPartStorage().commitTransaction();
+        try
+        {
+            tmp_part->finalize();
+            tmp_part->part->getDataPartStorage().commitTransaction();
+        }
+        catch (...)
+        {
+            auto failed_part = tmp_part->part;
+            tmp_part->cancel();
+            failed_part->getDataPartStorage().undoTransactionIfUncommitted();
+            throw;
+        }
         ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
     }
     ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
@@ -1796,7 +1771,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     /// `projection.calculate` and temp-part write here only to throw the part away in
     /// `checkOperationIsNotCanceled` below wastes work proportional to the squash size.
     if (ctx->pre_calculate_squash
-        && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
+        && global_ctx->merge_list_element_ptr->cancellation_state->getRequest() == CancellationRequest::None)
     {
         auto & pre_squash = *ctx->pre_calculate_squash;
         Chunk remaining = Squashing::squash(pre_squash.flush(), pre_squash.getHeader());
@@ -1825,8 +1800,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
                 global_ctx->compression_codec, ++ctx->projection_block_num,
                 /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
-            temp_part->finalize();
-            temp_part->part->getDataPartStorage().commitTransaction();
+            try
+            {
+                temp_part->finalize();
+                temp_part->part->getDataPartStorage().commitTransaction();
+            }
+            catch (...)
+            {
+                auto failed_part = temp_part->part;
+                temp_part->cancel();
+                failed_part->getDataPartStorage().undoTransactionIfUncommitted();
+                throw;
+            }
             ctx->projection_parts[projection.name].emplace_back(std::move(temp_part->part));
         }
     }
@@ -1966,7 +1951,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         if (cancelled || !global_ctx->merging_executor->pull(block))
         {
             if (cancelled)
-                global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+                global_ctx->merge_list_element_ptr->cancellation_state->request(CancellationRequest::StopWork);
             else
                 throwIfPipelineCancelled(global_ctx->merged_pipeline);
             finalize();
@@ -1990,6 +1975,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         global_ctx->rows_written += block.rows();
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
+
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_write);
 
         if (global_ctx->merge_may_reduce_rows)
         {
@@ -2345,7 +2332,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
         if (cancelled || !ctx->executor->pull(block))
         {
             if (cancelled)
-                global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+                global_ctx->merge_list_element_ptr->cancellation_state->request(CancellationRequest::StopWork);
             else
                 throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
@@ -2464,7 +2451,9 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
         if (projection->type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
-        auto child_merge_list_element = std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context);
+        auto child_merge_list_element = std::make_unique<MergeListElement>(
+            (*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context,
+            global_ctx->merge_list_element_ptr->getCancellationRequestPredicate());
         if (!global_ctx->projection)
             child_merge_list_element->parent_progress = &(*global_ctx->merge_entry)->ptr()->current_projection_progress;
 
@@ -2934,8 +2923,16 @@ void MergeTask::cancel() noexcept
     if (global_ctx->to)
         global_ctx->to->cancel();
 
-    if (global_ctx->new_data_part)
-        global_ctx->new_data_part->removeIfNeeded();
+    /// Temporary text-index segments have their own transaction. Their stream holders are local to
+    /// `BuildTextIndexTransform::writeTemporarySegment`, which has returned or unwound before cancellation.
+    if (global_ctx->temporary_text_index_storage)
+        global_ctx->temporary_text_index_storage->undoTransactionIfUncommitted();
+
+    if (auto part = global_ctx->part_for_cleanup.lock())
+    {
+        part->getDataPartStorage().undoTransactionIfUncommitted();
+        part->removeIfNeeded();
+    }
 }
 
 

@@ -54,6 +54,7 @@ public:
 private:
     void prepare();
     void finish();
+    void cleanupAfterFailure() noexcept;
 
     enum class State : uint8_t
     {
@@ -83,7 +84,6 @@ private:
     Priority priority;
 
     std::function<void(const ExecutionStatus &)> write_part_log;
-    std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
     MergeTaskPtr merge_task{nullptr};
 
@@ -103,7 +103,17 @@ using MergePlainMergeTreeTaskPtr = std::shared_ptr<MergePlainMergeTreeTask>;
 
 [[ maybe_unused ]] static void executeHere(MergePlainMergeTreeTaskPtr task)
 {
-    while (task->executeStep()) {}
+    try
+    {
+        while (task->executeStep()) {}
+    }
+    catch (...)
+    {
+        /// `cancel` performs abort cleanup for any execution failure, including cooperative cancellation.
+        /// Match the background executor's cleanup path and propagate the original exception.
+        task->cancel();
+        throw;
+    }
 }
 
 
