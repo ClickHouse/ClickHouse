@@ -1480,6 +1480,15 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
+/// An entry of `ContextData::scalars`. `from_client` is true when the block arrived from the client
+/// over the wire (`Context::addClientScalar`) rather than being computed by the server, so that
+/// `Context::hasComputedScalar` can keep such a block out of the analyzer's scalar-subquery cache.
+struct ScalarEntry
+{
+    Block block;
+    bool from_client = false;
+};
+
 ContextData::ContextData()
 {
     settings = std::make_unique<Settings>();
@@ -2939,7 +2948,10 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
 Scalars Context::getScalars() const
 {
     std::lock_guard lock(mutex);
-    return scalars;
+    Scalars res;
+    for (const auto & [name, entry] : scalars)
+        res.emplace(name, entry.block);
+    return res;
 }
 
 
@@ -2954,7 +2966,7 @@ Block Context::getScalar(const String & name) const
         // often, so 'bad arguments' for now.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
-    return it->second;
+    return it->second.block;
 }
 
 std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
@@ -3108,7 +3120,18 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
-    scalars[name] = block;
+    /// A server-computed value overrides any client-supplied one of the same name and is trusted.
+    scalars[name] = ScalarEntry{block, /*from_client=*/ false};
+}
+
+
+void Context::addClientScalar(const String & name, const Block & block)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    scalars[name] = ScalarEntry{block, /*from_client=*/ true};
 }
 
 
@@ -3129,6 +3152,16 @@ bool Context::hasScalar(const String & name) const
 
     std::lock_guard lock(mutex);
     return scalars.contains(name);
+}
+
+bool Context::hasComputedScalar(const String & name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    auto it = scalars.find(name);
+    return it != scalars.end() && !it->second.from_client;
 }
 
 void Context::addQueryAccessInfo(
