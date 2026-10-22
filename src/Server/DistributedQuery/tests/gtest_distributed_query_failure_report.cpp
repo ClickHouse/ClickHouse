@@ -1,5 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <thread>
@@ -11,13 +12,23 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <Common/Epoll.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/ISource.h>
 #include <Processors/Port.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
+#include <Server/DistributedQuery/tests/FakeExchangePeer.h>
 #include <base/types.h>
 
 namespace DB
@@ -29,6 +40,11 @@ namespace ErrorCodes
     extern const int EXCHANGE_PEER_DISCONNECTED;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
+}
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeEarlyCloses;
 }
 
 using namespace DB;
@@ -116,42 +132,7 @@ TEST(DistributedQueryCancellation, PipelineCancel)
 
 namespace
 {
-    /// A producer's end of an exchange connection, driven by a thread: what the teardown of a failed
-    /// producer task looks like to a consumer.
-    class Peer
-    {
-    public:
-        /// `behaviour` runs on the accepted connection.
-        explicit Peer(std::function<void(Poco::Net::StreamSocket &)> behaviour_)
-            : listener(Poco::Net::SocketAddress("127.0.0.1", 0))
-            , thread([this, behaviour = std::move(behaviour_)]
-            {
-                accepted = listener.acceptConnection();
-                behaviour(accepted);
-            })
-        {
-        }
-
-        ~Peer()
-        {
-            join();
-            accepted.close();
-            listener.close();
-        }
-
-        void join()
-        {
-            if (thread.joinable())
-                thread.join();
-        }
-
-        UInt16 port() const { return listener.address().port(); }
-
-    private:
-        Poco::Net::ServerSocket listener;
-        Poco::Net::StreamSocket accepted;
-        std::thread thread;
-    };
+    using Peer = ExchangeTest::FakePeer;
 
     /// Half-closes at once, so the source's handshake read hits EOF. Only the sending direction is
     /// shut down: the peer still absorbs the source's SourceHello, so the read is what fails.
@@ -164,23 +145,7 @@ namespace
     /// the source's next write fails instead of being buffered.
     void handshakeThenReset(Poco::Net::StreamSocket & socket)
     {
-        using namespace StreamingExchangeProtocol;
-        PacketHeader header{};
-        size_t position = 0;
-        while (position < sizeof(header))
-            position += socket.receiveBytes(reinterpret_cast<char *>(&header) + position, static_cast<int>(sizeof(header) - position));
-        std::string body(header.bytes_size, '\0');
-        position = 0;
-        while (position < body.size())
-            position += socket.receiveBytes(body.data() + position, static_cast<int>(body.size() - position));
-
-        WriteBufferFromOwnString reply_body;
-        SinkHelloBody{.sink_version = PROTOCOL_VERSION}.write(reply_body);
-        reply_body.finalize();
-        PacketHeader reply_header{.packet_type = PacketType::SinkHello, .bytes_size = reply_body.str().size()};
-        socket.sendBytes(&reply_header, sizeof(reply_header));
-        socket.sendBytes(reply_body.str().data(), static_cast<int>(reply_body.str().size()));
-
+        ExchangeTest::completeSinkHandshake(socket);
         socket.setLinger(true, 0);
         socket.close();
     }
@@ -276,6 +241,7 @@ TEST(StreamingExchangeSourceFailureReport, NoMoreDataNeededToGonePeerIsNotAFailu
     Peer peer(handshakeThenReset);
     auto cancellation = std::make_shared<DistributedQueryCancellation>();
     auto source = makeSource(peer, cancellation);
+    const auto early_closes_before = ProfileEvents::global_counters[ProfileEvents::StreamingExchangeEarlyCloses];
 
     /// Connects and completes the handshake.
     ASSERT_NO_THROW(source->work());
@@ -292,6 +258,88 @@ TEST(StreamingExchangeSourceFailureReport, NoMoreDataNeededToGonePeerIsNotAFailu
     EXPECT_NO_THROW(source->work());
     EXPECT_EQ(source->prepare(), IProcessor::Status::Finished);
     EXPECT_FALSE(cancellation->isCancelled());
+    /// The peer never got the packet, so this is not an early close.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::StreamingExchangeEarlyCloses], early_closes_before);
+}
+
+namespace
+{
+    /// Stands in for `ReadFromDistributedPlanSource`: waits in the executor's async queue on the query's
+    /// wakeup and reports the recorded failure once the query is cancelled.
+    class DrivingSource final : public ISource
+    {
+    public:
+        explicit DrivingSource(DistributedQueryCancellationPtr cancellation_)
+            : ISource(std::make_shared<const Block>()), cancellation(std::move(cancellation_))
+        {
+        }
+
+        String getName() const override { return "DrivingSource"; }
+
+        Status prepare() override
+        {
+            const auto status = ISource::prepare();
+            return status == Status::Ready && waiting ? Status::Async : status;
+        }
+
+        std::tuple<int, uint32_t, Int64> scheduleForEvent() override
+        {
+            return {cancellation->getWakeup()->fd(), EPOLLIN | EPOLLERR, -1};
+        }
+
+        void onAsyncJobReady() override
+        {
+            cancellation->getWakeup()->drain();
+            waiting = false;
+        }
+
+    private:
+        std::optional<Chunk> tryGenerate() override
+        {
+            if (!cancellation->isCancelled())
+            {
+                waiting = true;
+                return Chunk();
+            }
+            cancellation->markExecutionFinished();
+            cancellation->rethrowIfFailed();
+            return std::nullopt;
+        }
+
+        const DistributedQueryCancellationPtr cancellation;
+        bool waiting = false;
+    };
+}
+
+/// With one execution thread, a source waiting for a `SinkHello` holds the thread the driving source
+/// needs, so a failure recorded elsewhere in the query has to end the handshake.
+TEST(StreamingExchangeSourceFailureReport, FailureRecordedDuringTheHandshakeIsReportedPromptly)
+{
+    MainThreadStatus::getInstance();
+
+    auto cancellation = std::make_shared<DistributedQueryCancellation>();
+    Peer peer([&](Poco::Net::StreamSocket & socket)
+    {
+        ExchangeTest::receiveSourceHello(socket);
+        /// Lets the source start waiting for the `SinkHello`, which never comes.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        recordFailure(*cancellation, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+        socket.poll(Poco::Timespan(60, 0), Poco::Net::Socket::SELECT_READ);
+    });
+
+    Pipes pipes;
+    pipes.emplace_back(makeSource(peer, cancellation));
+    pipes.emplace_back(std::make_shared<DrivingSource>(cancellation));
+    QueryPipelineBuilder builder;
+    builder.init(Pipe::unitePipes(std::move(pipes)));
+    builder.setSinks([](const SharedHeader & header, Pipe::StreamType) { return std::make_shared<EmptySink>(header); });
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    pipeline.setNumThreads(1);
+
+    const auto started = std::chrono::steady_clock::now();
+    CompletedPipelineExecutor executor(pipeline);
+    EXPECT_EQ(thrownCode([&] { executor.execute(); }), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS / 2));
 }
 
 #endif

@@ -206,8 +206,4 @@ private:
     ASTPtr & getExpression(Expression expr);
 };
 
-/// Whether the AST subtree contains an `arrayJoin` function call, without descending into nested
-/// SELECTs (their `arrayJoin` belongs to a different scope).
-bool astContainsArrayJoinFunction(const ASTPtr & ast);
-
 }

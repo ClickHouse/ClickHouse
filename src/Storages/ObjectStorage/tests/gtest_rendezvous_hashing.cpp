@@ -31,6 +31,7 @@ namespace
             for (const auto & path : paths)
                 objects.push_back(std::make_shared<ObjectInfo>(path));
         }
+        explicit TestIterator(const ObjectInfos & objects_) : objects(objects_.begin(), objects_.end()) {}
         ~TestIterator() override = default;
         ObjectInfoPtr next(size_t) override
         {
@@ -289,6 +290,101 @@ TEST(RendezvousHashing, DoesNotDeduplicateSamePathFromDifferentReadSources)
     ASSERT_EQ(actual, (std::set<size_t>{0, 1}));
 }
 
+TEST(RendezvousHashing, WaitsForOwnerBeforeTakingItsFiles)
+{
+    auto iterator = makeIterator();
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    const auto wait_for_owner = std::chrono::milliseconds(200);
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false, wait_for_owner);
+
+    std::vector<std::string> paths;
+    ASSERT_TRUE(extractNForReplica(distributor, paths, 0, 6));
+    ASSERT_TRUE(checkHead(paths, {1, 5, 6, 7, 8, 9}));
+
+    const auto start = std::chrono::steady_clock::now();
+    std::vector<std::string> stolen_paths;
+    ASSERT_TRUE(extractNForReplica(distributor, stolen_paths, 0, 4));
+    ASSERT_GE(std::chrono::steady_clock::now() - start, wait_for_owner);
+    ASSERT_TRUE(checkHead(stolen_paths, {0, 2, 3, 4}));
+    ASSERT_EQ(distributor.getNextTask(0), nullptr);
+}
+
+TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
+{
+    auto iterator = makeIterator();
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false, std::chrono::hours(1));
+
+    std::vector<std::string> paths1;
+    ASSERT_TRUE(extractNForReplica(distributor, paths1, 1, 1));
+
+    std::vector<std::string> paths0;
+    ASSERT_TRUE(extractNForReplica(distributor, paths0, 0, 9));
+    paths0.insert(paths0.end(), paths1.begin(), paths1.end());
+    ASSERT_TRUE(checkHead(paths0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
+}
+
+TEST(RendezvousHashing, TakesFilesOfReplicaWithMostRemainingBytes)
+{
+    std::vector<RelativePathWithMetadata> paths;
+    for (size_t i = 0; i < 10; ++i)
+    {
+        ObjectMetadata metadata;
+        metadata.size_bytes = (i == 1 || i == 5 || i == 7 || i == 8) ? 100 : 1;
+        paths.emplace_back(makePath(i), metadata);
+    }
+
+    auto iterator = std::make_shared<TestIterator>(paths);
+    std::vector<std::string> replicas = {"replica0", "replica1", "replica2"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::vector<std::string> paths1;
+    ASSERT_TRUE(extractNForReplica(distributor, paths1, 1, 1));
+    ASSERT_TRUE(checkHead(paths1, {0}));
+
+    std::vector<std::string> paths2;
+    ASSERT_TRUE(extractNForReplica(distributor, paths2, 2, 1));
+    ASSERT_TRUE(checkHead(paths2, {1}));
+
+    std::vector<std::string> paths0;
+    ASSERT_TRUE(extractNForReplica(distributor, paths0, 0, 2));
+    ASSERT_TRUE(checkHead(paths0, {6, 9}));
+
+    std::vector<std::string> stolen_paths;
+    ASSERT_TRUE(extractNForReplica(distributor, stolen_paths, 0, 3));
+    ASSERT_TRUE(checkHead(stolen_paths, {5, 7, 8}));
+}
+
+TEST(RendezvousHashing, DoesNotDeduplicateRepeatedArchiveEntryName)
+{
+    auto make_object = [](const std::string & path, std::optional<size_t> archive_entry_index)
+    {
+        auto object = std::make_shared<ObjectInfo>(path);
+        object->archive_entry_index = archive_entry_index;
+        return object;
+    };
+
+    /// Neither `archive.zip::a` nor `#1#archive.zip::a` is assigned to replica 0, so objects with the
+    /// same identifier would be queued together and only one of them would be handed out.
+    ObjectInfos objects{
+        make_object("archive.zip::a", std::nullopt),
+        make_object("archive.zip::a", 1),
+        make_object("#1#archive.zip::a", std::nullopt)};
+
+    auto iterator = std::make_shared<TestIterator>(objects);
+    std::vector<std::string> replicas = {"replica0", "replica1", "replica2", "replica3"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::set<std::pair<std::string, std::optional<size_t>>> actual;
+    while (auto object = distributor.getNextTask(0))
+        actual.emplace(object->getPath(), object->archive_entry_index);
+
+    ASSERT_EQ(
+        actual,
+        (std::set<std::pair<std::string, std::optional<size_t>>>{
+            {"archive.zip::a", std::nullopt}, {"archive.zip::a", 1}, {"#1#archive.zip::a", std::nullopt}}));
+}
+
 TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
 {
     RelativePathWithMetadata object_path("dir/part?.parquet#fragment");
@@ -357,4 +453,55 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
     auto object_info = deserialized.getObjectInfo();
     ASSERT_TRUE(object_info->relative_path_with_metadata.read_source_index.has_value());
     ASSERT_EQ(*object_info->relative_path_with_metadata.read_source_index, 42);
+}
+
+TEST(ClusterFunctionReadTaskResponse, ArchiveEntryIndexNeedsProtocolVersion)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "archive.zip::a";
+    response.archive_entry_index = 7;
+
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+        out.finalize();
+
+        ReadBufferFromString in(serialized);
+        ClusterFunctionReadTaskResponse deserialized;
+        deserialized.deserialize(in);
+
+        auto object_info = deserialized.getObjectInfo();
+        ASSERT_EQ(object_info->archive_entry_index, std::optional<size_t>(7));
+    }
+
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        std::optional<int> error_code;
+        try
+        {
+            response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        out.finalize();
+        ASSERT_EQ(error_code, std::optional<int>(ErrorCodes::UNKNOWN_PROTOCOL));
+    }
+
+    response.archive_entry_index.reset();
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
+        out.finalize();
+
+        ReadBufferFromString in(serialized);
+        ClusterFunctionReadTaskResponse deserialized;
+        deserialized.deserialize(in);
+        ASSERT_EQ(deserialized.getObjectInfo()->getPath(), "archive.zip::a");
+        ASSERT_FALSE(deserialized.getObjectInfo()->archive_entry_index.has_value());
+    }
 }

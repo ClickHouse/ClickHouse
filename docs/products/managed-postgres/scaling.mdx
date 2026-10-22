@@ -125,7 +125,7 @@ This approach is ideal for applications with high read-to-write ratios, such as 
 
 ### CDC scaling for ClickHouse integration {#cdc-scaling}
 
-If you're replicating data to ClickHouse using [ClickPipes](/products/managed-postgres/clickhouse-integration), you can independently scale the CDC (Change Data Capture) pipeline:
+If you're replicating data to ClickHouse using [ClickPipes](/products/managed-postgres/clickpipes), you can independently scale the CDC (Change Data Capture) pipeline:
 
 - Scale CDC workers from 1 to 24 CPU cores
 - Memory automatically scales at 4x the CPU core count

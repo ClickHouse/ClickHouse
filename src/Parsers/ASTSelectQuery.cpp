@@ -676,19 +676,6 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
     return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
 }
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
 void ASTSelectQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SelectQuery");
@@ -764,7 +751,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
     {
-        auto child = r.readChild(key);
+        auto child = r.readExpressionChild(key);
         if (child)
             this->setExpression(expr, std::move(child));
     };
@@ -774,7 +761,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// node from malformed `clickhouse_json` would reach an internal cast. Restore them with a typed read.
     auto setExprList = [&](const char * key, ASTSelectQuery::Expression expr)
     {
-        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+        if (auto child = r.readScreenedChildOfType<ASTExpressionList>(key))
             this->setExpression(expr, std::move(child));
     };
 
@@ -785,7 +772,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast
     /// `tables()` unconditionally, so a different node type from malformed `clickhouse_json` must be
     /// rejected here with `BAD_ARGUMENTS` instead of reaching an internal downcast path later.
-    if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
+    if (auto tables_child = r.readScreenedChildOfType<ASTTablesInSelectQuery>("tables"))
         this->setExpression(Expression::TABLES, std::move(tables_child));
 
     /// Both column `aliases` (`SELECT ... (a, b)`) and `cte_aliases` (`WITH (a, b) AS (...)`) are
@@ -845,7 +832,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `orderBy()` branch. Restore it with a typed read, validate every child, and reject it unless the
     /// ORDER BY list carries a `WITH FILL` element (the parser cannot produce it otherwise, and
     /// `formatImpl` would silently drop it). An empty list is the valid `INTERPOLATE`-all form.
-    if (auto interpolate_child = r.readChildOfType<ASTExpressionList>("interpolate"))
+    if (auto interpolate_child = r.readScreenedChildOfType<ASTExpressionList>("interpolate"))
     {
         for (const auto & elem : interpolate_child->children)
             if (!elem || !elem->as<ASTInterpolateElement>())

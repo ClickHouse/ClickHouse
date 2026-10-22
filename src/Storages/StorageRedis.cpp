@@ -123,8 +123,13 @@ public:
         MutableColumns columns = sample_block.cloneEmptyColumns();
 
         RedisArray values = storage.multiGet(scan_keys);
-        for (size_t i = 0; i < scan_keys.size() && !values.get<RedisBulkString>(i).isNull(); i++)
+        for (size_t i = 0; i < scan_keys.size(); ++i)
         {
+            /// MGET answers by position, and a scanned key can hold another Redis type or expire
+            /// before the MGET runs, so a nil marks one absent value, not the end of the batch.
+            if (values.get<RedisBulkString>(i).isNull())
+                continue;
+
             fillColumns(scan_keys.get<RedisBulkString>(i).value(),
                         values.get<RedisBulkString>(i).value(),
                         primary_key_pos, sample_block, columns
@@ -461,7 +466,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
             "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
             null_map->size(), keys.size());
 
-    for (size_t i = 0; i < values.size(); ++i)
+    for (size_t i = 0; i < keys.size(); ++i)
     {
         if (null_map && !(*null_map)[i])
         {
@@ -517,7 +522,18 @@ RedisArray StorageRedis::multiGet(const RedisArray & keys) const
     for (size_t i = 0; i < keys.size(); ++i)
         cmd_mget.add(keys.get<RedisBulkString>(i));
 
-    return connection->client->execute<RedisArray>(cmd_mget);
+    RedisArray values = connection->client->execute<RedisArray>(cmd_mget);
+
+    /// Callers pair the reply with the request by position, into arrays sized from `keys`.
+    if (values.isNull() || values.size() != keys.size())
+        throw Exception(
+            ErrorCodes::INTERNAL_REDIS_ERROR,
+            "Redis table {} returned {} values for MGET of {} keys",
+            getStorageID().getFullNameNotQuoted(),
+            values.isNull() ? 0 : values.size(),
+            keys.size());
+
+    return values;
 }
 
 void StorageRedis::multiSet(const RedisArray & data) const
@@ -700,7 +716,8 @@ void registerStorageRedis(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
-    factory.registerStorage("Redis", createStorageRedis, features, Documentation{
+    /// Redis('host:port', 'db_index', 'password', 'pool_size')
+    factory.registerStorage("Redis", createStorageRedis, SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"password"}}, features, Documentation{
         .description = R"DOCS_MD(
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 

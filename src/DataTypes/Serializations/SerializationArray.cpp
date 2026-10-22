@@ -212,29 +212,30 @@ namespace
         }
     }
 
-    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
-    {
-        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
+}
 
-        if (column_offsets.empty())
-            return column_sizes;
+ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+{
+    const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+    MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
 
-        const auto & offsets_data = column_offsets.getData();
-        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
-
-        sizes_data.resize(offsets_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
-        {
-            auto current_offset = offsets_data[i];
-            sizes_data[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
+    if (column_offsets.empty())
         return column_sizes;
+
+    const auto & offsets_data = column_offsets.getData();
+    auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+
+    sizes_data.resize(offsets_data.size());
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+    {
+        auto current_offset = offsets_data[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
     }
+
+    return column_sizes;
 }
 
 DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & prev) const
@@ -330,15 +331,23 @@ void SerializationArray::serializeOffsetsBinaryBulk(
     const IColumn & offsets_column,
     size_t offset,
     size_t limit,
+    WriteBuffer & stream,
+    bool position_independent_encoding)
+{
+    if (position_independent_encoding)
+        serializeArraySizesPositionIndependent(offsets_column, stream, offset, limit);
+    else
+        SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, stream, offset, limit);
+}
+
+void SerializationArray::serializeOffsetsBinaryBulk(
+    const IColumn & offsets_column,
+    size_t offset,
+    size_t limit,
     ISerialization::SerializeBinaryBulkSettings & settings)
 {
     if (auto * stream = settings.getter(settings.path))
-    {
-        if (settings.position_independent_encoding)
-            serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
-        else
-            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
-    }
+        serializeOffsetsBinaryBulk(offsets_column, offset, limit, *stream, settings.position_independent_encoding);
 }
 
 void SerializationArray::serializeBinaryBulkWithMultipleStreams(
@@ -490,11 +499,11 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
                 toString(nested_column.size()), toString(last_offset));
 
-        /// An empty elements column is ok for the sizes encoding: it is how a column of a Nested type
-        /// that was added by ALTER reads the parts written before that ALTER. The absolute-offsets
-        /// encoding always writes the elements next to the offsets, so there an empty elements column
-        /// means the data is corrupted and the offsets would index past the end of the elements.
-        if (!settings.position_independent_encoding)
+        /// Only a caller that discards this column and refills it afterwards may see it - see
+        /// `partially_read_columns_are_refilled`. For anyone else the column would reach the query
+        /// pipeline with offsets that index past the end of its elements, so it is rejected here
+        /// instead of being read out of bounds later.
+        if (!settings.partially_read_columns_are_refilled)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
     }

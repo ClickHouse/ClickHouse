@@ -5,12 +5,41 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
+from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
+
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
+
+
+# Rows the harness writes about a consequence of a server crash rather than
+# about its cause. When the server logs name the crash, such a row only repeats
+# it as a separate, less specific failure.
+CRASH_CONSEQUENCE_RESULT_NAMES = frozenset(
+    {
+        "Cannot start clickhouse-server",
+        "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)",
+        "Test script failed",
+    }
+)
+
+
+def container_memory_limit() -> int:
+    visible = Utils.physical_memory()
+    limit = visible - RUNNER_MEMORY_RESERVE
+    if limit <= 0:
+        raise RuntimeError(
+            f"Not enough RAM to run this job: {RUNNER_MEMORY_RESERVE} bytes are reserved for the "
+            f"runner agent outside the container and this host has {visible}. Docker refuses a "
+            f"negative --memory and reads 0 as no limit at all, so there is no safe cap to pass."
+        )
+    return limit
 
 
 def sanitize_test_result_line(line: str) -> str:
@@ -142,6 +171,14 @@ def get_additional_envs(info, check_name: str) -> List[str]:
         f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
     )
 
+    # Sanitizer builds have no jemalloc. The server dumps heap profiles here on peak growth
+    # and on hitting its memory limit (jemalloc_flush_profile.yaml from tests/config), and
+    # stress_tests.lib archives them.
+    if not any(san in check_name for san in SANITIZERS):
+        result.append(
+            "MALLOC_CONF=prof_prefix:/var/log/clickhouse-server/jemalloc_profiles/clickhouse.jemalloc"
+        )
+
     return result
 
 
@@ -169,6 +206,7 @@ def get_run_command(
         "--privileged "
         # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
         "--ulimit nofile=1048576:1048576 "
+        f"--memory={container_memory_limit()} "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
@@ -333,6 +371,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     additional_envs = get_additional_envs(info, check_name)
 
+    if not upgrade_check:
+        # The stress runner selects the stateless tests of this checkout, and some of them read the
+        # test data submodules. The upgrade check runs the tests of the previous release instead.
+        Shell.check(
+            "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- "
+            + " ".join(Targeting.TEST_DATA_SUBMODULES),
+            strict=True,
+            retries=3,
+            verbose=True,
+        )
+
     run_command = get_run_command(
         packages_path,
         result_path,
@@ -381,6 +430,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
+    crash_named = False
     failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
@@ -425,6 +475,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         else:
             results = select_replica_failures(replica_log_pairs)
             if results:
+                # The crash named in the server logs is the cause, so drop the rows
+                # about its consequences to report it once.
+                crash_named = any(
+                    name != FuzzerLogParser.UNKNOWN_ERROR for name, _, _ in results
+                )
+                if crash_named:
+                    failed_results = [
+                        r
+                        for r in failed_results
+                        if r.name not in CRASH_CONSEQUENCE_RESULT_NAMES
+                    ]
                 for name, description, files in results:
                     failed_results.append(
                         Result.create_from(
@@ -452,7 +513,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
-    if exit_code != 0:
+    # The crash named in the server logs explains the non-zero exit code of the
+    # script, so a generic row about it would only duplicate that failure. Any
+    # other failed row does not: the script may also have failed on its own later.
+    if exit_code != 0 and not crash_named:
         failed_results.append(
             Result.create_from(
                 name="Check failed",

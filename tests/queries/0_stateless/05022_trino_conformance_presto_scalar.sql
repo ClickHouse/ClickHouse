@@ -5,7 +5,7 @@
 -- Split over several test files so that a single test stays fast enough in the
 -- debug and sanitizer builds; this part covers the regexp, array, bitwise, conditional, date/time and JSON functions.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 SELECT '-- AbstractTestRegexpFunctions';

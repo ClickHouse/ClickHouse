@@ -3,6 +3,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/UUID.h>
 
 namespace DB
@@ -11,10 +12,14 @@ namespace DB
 template <int Length>
 using StringLiteral = const char(&)[Length];
 
-template<typename StorageT, int CommentSize, bool with_description, typename... StorageArgs>
-void attachImpl(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
+/// All documentation comments passed through these helpers are defined in `attachSystemTables.cpp`. Documentation
+/// constants defined elsewhere override this mapping after attachment.
+extern const char * const ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE;
+
+template<typename StorageT, bool with_description, typename... StorageArgs>
+void attachImpl(ContextPtr context, IDatabase & system_database, const String & table_name, std::string_view comment, StorageArgs && ... args)
 {
-    static_assert(CommentSize > 15, "The comment for a system table is too short or empty");
+    chassert(comment.size() > 15);
     chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
     auto table_id = StorageID::createEmpty();
@@ -42,22 +47,39 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
 
     /// Set the comment on the storage before attaching it, so that we neither look the table back up in
     /// `DatabaseCatalog` nor copy its whole metadata (including the full `ColumnsDescription`) an extra time.
-    storage->setInMemoryMetadataComment(comment);
+    storage->setInMemoryMetadataComment(String(comment));
 
     system_database.attachTable(context, table_name, storage, path);
+    registerSystemTableDocumentationSource(table_name, ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE, comment);
 }
 
 
 template<typename StorageT, int CommentSize, typename... StorageArgs>
 void attach(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
 {
-    attachImpl<StorageT, CommentSize, true>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
+    static_assert(CommentSize > 15, "The comment for a system table is too short or empty");
+    attachImpl<StorageT, true>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
 }
 
 template<typename StorageT, int CommentSize, typename... StorageArgs>
 void attachNoDescription(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
 {
-    attachImpl<StorageT, CommentSize, false>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
+    static_assert(CommentSize > 15, "The comment for a system table is too short or empty");
+    attachImpl<StorageT, false>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
+}
+
+/// Overloads for a comment which is not a string literal at the call site, e.g. a documentation constant defined
+/// next to the storage because the documentation has to be available even where the table is not attached.
+template<typename StorageT, typename... StorageArgs>
+void attach(ContextPtr context, IDatabase & system_database, const String & table_name, std::string_view comment, StorageArgs && ... args)
+{
+    attachImpl<StorageT, true>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
+}
+
+template<typename StorageT, typename... StorageArgs>
+void attachNoDescription(ContextPtr context, IDatabase & system_database, const String & table_name, std::string_view comment, StorageArgs && ... args)
+{
+    attachImpl<StorageT, false>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
 }
 
 }

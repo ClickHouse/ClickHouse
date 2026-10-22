@@ -34,7 +34,7 @@ set(OPENLDAP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap")
 # How these lists were generated?
 # I compiled the original OpenLDAP with it's original build system and copied the list of source files from build commands.
 
-set(OPENLDAP_VERSION_STRING "2.5.X")
+set(OPENLDAP_VERSION_STRING "2.6.15")
 
 macro(mkversion _lib_name)
     add_custom_command(
@@ -98,6 +98,7 @@ target_compile_definitions(_lber
 
 set(_ldap_srcs
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/abandon.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/account_usability.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/add.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/addentry.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/assertion.c"
