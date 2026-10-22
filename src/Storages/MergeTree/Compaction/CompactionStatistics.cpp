@@ -38,8 +38,10 @@
 #include <base/interpolate.h>
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <optional>
+#include <vector>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -2104,6 +2106,23 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// The marks compressor only writes when the marks are compressed; otherwise its block stays empty and
     /// it never needs a scratch buffer.
     const UInt64 marks_compression_scratch = settings[MergeTreeSetting::compress_marks] ? compression_scratch(marks_compress_block_size) : 0;
+    /// The scratch buffers the data-volume bounds must price: a scratch buffer is not an eager allocation,
+    /// but it is not data held in an upload buffer either, so neither the eager term nor the in-flight
+    /// allowance covers it. A stream allocates it on its first flush, sized for the block it flushes, so
+    /// it is bounded both by the per-stream ceiling (compression_scratch of the full block) and by the
+    /// data the stream writes: the reserve size of a block of y bytes is at most y plus the codec's
+    /// overhead for a full block, and rounding up to a power of two less than doubles it. Summed over the
+    /// streams, the second bound is twice the written volume plus twice the overhead per stream.
+    const auto scratch_for_written_bytes = [&](size_t streams, UInt64 compress_block_size, UInt64 written_bytes) -> UInt64
+    {
+        const UInt64 codec_overhead
+            = part_codec.codec->getCompressedReserveSize(static_cast<UInt32>(compress_block_size)) - compress_block_size;
+        return std::min(
+            saturatingStreamsTimesBuffer(streams, compression_scratch(compress_block_size)),
+            saturatingAdd(
+                saturatingStreamsTimesBuffer(2, written_bytes),
+                saturatingStreamsTimesBuffer(streams, 2 * codec_overhead)));
+    };
     const auto marks_worst_case_write_buffer_size = [&](bool adaptive_stream) -> UInt64
     {
         if (remote_write_buffer_size == 0)
@@ -2224,8 +2243,22 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const UInt64 output_eager_write_buffers = output_is_compact
         ? compact_eager_buffers(output_compact_block_size, output_compact_compressors)
         : eager_write_buffers(output_stream_counts, base_max_compress_block_size);
+    /// The data every stream writes is bounded by what the merge reads plus the synthesized fixed-size
+    /// defaults; the marks are written by every stream's marks compressor (a single one for a compact part).
+    const UInt64 output_written_bytes = saturatingAdd(sum_input_bytes_uncompressed, default_filled_value_bytes);
+    const auto scratch_for_streams = [&](size_t data_compressors, UInt64 data_block_size, size_t marks_streams)
+    {
+        return saturatingAdd(
+            scratch_for_written_bytes(data_compressors, data_block_size, output_written_bytes),
+            settings[MergeTreeSetting::compress_marks]
+                ? scratch_for_written_bytes(marks_streams, marks_compress_block_size, output_marks_bytes)
+                : 0);
+    };
+    const UInt64 output_scratch = output_is_compact
+        ? scratch_for_streams(output_compact_compressors, DBMS_DEFAULT_BUFFER_SIZE, 1)
+        : scratch_for_streams(output_stream_counts.total, base_max_compress_block_size, output_stream_counts.total);
     const UInt64 output_data_bound = saturatingAdd(
-        output_eager_write_buffers + 3 * sum_input_bytes_uncompressed + default_filled_term,
+        saturatingAdd(output_eager_write_buffers + 3 * sum_input_bytes_uncompressed + default_filled_term, output_scratch),
         output_marks_term);
 
     UInt64 output_memory = std::min(output_worst_case, output_data_bound);
@@ -2372,7 +2405,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// adaptive rule sees their stream count, not the whole part's), and each gathering column
                 /// is written by its own single-column writer, whose stream count is that one column's -
                 /// take the most expensive single gathering writer, since only one gathers at a time.
-                size_t gathering_streams_total = 0;
+                std::vector<size_t> gathering_column_streams;
+                gathering_column_streams.reserve(gathering_columns.size());
                 size_t max_gathering_column_streams = 0;
                 UInt64 max_gathering_column_eager_buffers = 0;
                 UInt64 max_gathering_column_uncompressed = 0;
@@ -2381,7 +2415,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     const NamesAndTypesList single_column{NameAndTypePair(part_source_name(column.name), column.type)};
                     const auto column_stream_counts
                         = countOutputStreams(single_column, source_and_patch_parts, settings, default_filled_dynamic_columns);
-                    gathering_streams_total += column_stream_counts.total;
+                    gathering_column_streams.push_back(column_stream_counts.total);
                     max_gathering_column_streams = std::max(max_gathering_column_streams, column_stream_counts.total);
                     max_gathering_column_eager_buffers
                         = std::max(
@@ -2404,24 +2438,43 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// write while its writer has no multipart buffers (getWriteBufferMemory returns nothing),
                 /// so gating on remote_write_buffer_size would price zero delayed streams for a vertical
                 /// merge that really keeps up to max_merge_delayed_streams_for_parallel_write of them alive.
-                const UInt64 delayed_streams = output_supports_parallel_write
-                    ? std::min<UInt64>(gathering_streams_total, settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write])
-                    : 0;
+                /// The limit counts column WRITERS, not streams: MergeTask::finalizeVerticalMergeForOneColumn
+                /// keeps one MergedColumnOnlyOutputStream per gathered column in delayed_streams, and each of
+                /// them keeps all the streams of its column (a Tuple of 16 elements keeps 16 compressors) until
+                /// it is finished. Which columns are delayed at the same time depends on the gathering order,
+                /// so take the columns with the most streams - the direction that can only over-price.
+                UInt64 delayed_streams = 0;
+                if (output_supports_parallel_write)
+                {
+                    const size_t delayed_writers = std::min<UInt64>(
+                        gathering_column_streams.size(), settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write]);
+                    std::partial_sort(
+                        gathering_column_streams.begin(),
+                        gathering_column_streams.begin() + delayed_writers,
+                        gathering_column_streams.end(),
+                        std::greater<>());
+                    for (size_t i = 0; i < delayed_writers; ++i)
+                        delayed_streams += gathering_column_streams[i];
+                }
                 const UInt64 alive_streams = merging_stream_counts.total + max_gathering_column_streams + delayed_streams;
 
                 const UInt64 vertical_worst_case = saturatingStreamsTimesBuffer(alive_streams, write_buffer_size);
                 /// A delayed stream's adaptivity is not attributable (any of the gathering columns' streams
                 /// can be the ones kept alive), so its eager buffers are priced at the full non-adaptive
-                /// size - the direction that can only over-price, and bounded by
-                /// max_merge_delayed_streams_for_parallel_write.
+                /// size - the direction that can only over-price, and bounded by the streams of
+                /// max_merge_delayed_streams_for_parallel_write column writers.
                 const UInt64 vertical_data_bound = saturatingAdd(
                     eager_write_buffers(merging_stream_counts, base_max_compress_block_size)
                         + max_gathering_column_eager_buffers
-                        + delayed_streams * eager_stream_buffers_with_marks(base_max_compress_block_size)
+                        + saturatingStreamsTimesBuffer(delayed_streams, eager_stream_buffers_with_marks(base_max_compress_block_size))
                         + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
                         + default_filled_term,
-                    /// The marks of the streams alive at once, with the same in-flight allowance.
-                    saturatingStreamsTimesBuffer(3, saturatingStreamsTimesBuffer(output_marks_bytes_per_stream, alive_streams)));
+                    /// The marks of the streams alive at once, with the same in-flight allowance, and the
+                    /// scratch buffers of those streams (a delayed writer keeps its scratch buffers until it
+                    /// is finished), bounded by the volume of the whole merge.
+                    saturatingAdd(
+                        saturatingStreamsTimesBuffer(3, saturatingStreamsTimesBuffer(output_marks_bytes_per_stream, alive_streams)),
+                        scratch_for_streams(alive_streams, base_max_compress_block_size, alive_streams)));
 
                 /// The horizontal bounds are not kept in this min: they take the adaptive-write-buffer decision for
                 /// the whole part's stream count, while a vertical merge takes it per writer. A part that crosses
@@ -2504,7 +2557,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     ///    price that nested merge with this same estimate, recursively - a projection has no projections
     ///    of its own, so the recursion is one level deep;
     ///  - when some or all source parts lack the projection, the merge rebuilds it from the merged rows
-    ///    only for commit-order projections (which are never written on insert) and under
+    ///    only for commit-order projections (which are never written on insert), when every source part
+    ///    lacking a loaded projection part has it on disk but not loaded, and under
     ///    materialize_projections_on_merge, and drops it from the result otherwise.
     /// A rebuild does not read the existing projection parts: it recalculates the projection from rows
     /// already flowing through the merge, writes temporary projection parts (one temp-part writer at a
@@ -2562,6 +2616,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             bool projection_part_misses_column = false;
 
             MergeTreeData::DataPartsVector projection_parts;
+            size_t parts_with_unloaded_projection = 0;
             for (const auto & part : future_part.parts)
             {
                 auto it = part->getProjectionParts().find(projection.name);
@@ -2580,6 +2635,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
                     projection_parts.push_back(it->second);
                 }
+                else if (part->hasUnloadedProjection(projection.name))
+                    ++parts_with_unloaded_projection;
             }
 
             /// Decide, exactly as the merge will, whether this projection is merged from the existing
@@ -2597,8 +2654,13 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     /// prepareProjectionsToMergeAndRebuild: a `_block_offset` one joined `_block_number`
                     /// in d673d9e5a6e ("Introduce Invalidated System Columns"), because a merge
                     /// invalidates `_block_offset` and the projection has to be recalculated from the
-                    /// merged rows rather than merged from stale per-part offsets.
-                    if (projection.with_block_number || projection.with_block_offset
+                    /// merged rows rather than merged from stale per-part offsets. A projection that every
+                    /// source part has either loaded or on disk but not loaded (a part fetched before the
+                    /// ALTER ... ADD PROJECTION was applied locally) is rebuilt as well, whatever
+                    /// materialize_projections_on_merge is.
+                    const bool every_part_has_projection_on_disk = parts_with_unloaded_projection != 0
+                        && projection_parts.size() + parts_with_unloaded_projection == future_part.parts.size();
+                    if (projection.with_block_number || projection.with_block_offset || every_part_has_projection_on_disk
                         || settings[MergeTreeSetting::materialize_projections_on_merge])
                         rebuild_projection = true;
                     else
