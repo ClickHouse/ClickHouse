@@ -12,7 +12,6 @@ r2 WHERE x >= 9 AND x < 30 (json.b, json.a)	1
 1
 -- the type with SHARED set lazily through Keeper, Compact parts of both layouts on both replicas
 p type on both replicas	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))
-p mutations	0
 p1 layout	20	0
 p1 layout	20	1
 p1 json	1

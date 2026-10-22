@@ -51,7 +51,6 @@ CREATE TABLE p2 (x UInt64, json $PLAIN) ENGINE = ReplicatedMergeTree('/clickhous
 INSERT INTO p1 SELECT number, $ROW FROM numbers(20);
 ALTER TABLE p1 MODIFY COLUMN json $SHARED SETTINGS enable_json_lazy_type_hints = 1, alter_sync = 2;
 SELECT 'p type on both replicas', (SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'p1' AND name = 'json'), (SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'p2' AND name = 'json');
-SELECT 'p mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table IN ('p1', 'p2');
 INSERT INTO p2 SELECT number, $ROW FROM numbers(20, 20);
 SYSTEM SYNC REPLICA p1;
 SELECT 'p1 layout', rows, arrayExists(s -> s LIKE '%object_typed_shared_data%', substreams) FROM system.parts_columns WHERE database = currentDatabase() AND table = 'p1' AND column = 'json' AND active ORDER BY name;

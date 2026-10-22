@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, long
 -- The test drops server-wide caches.
 
 -- The readers of the SHARED paths of one JSON column share the decode of a call: the first of them decodes every

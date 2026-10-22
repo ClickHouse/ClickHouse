@@ -109,6 +109,7 @@ a path read, 30 granules, one request per granule: 1
 the same in calls of 4 rows: 1
 two granules, two requests: 1
 two ranges of three granules, three requests: 1
+two granules of a path with small neighbours, one request: 1
 a subcolumn issues the requests of its path: 1
 whole column in calls of 5 rows	1
 the whole column reads the data in one request: 1

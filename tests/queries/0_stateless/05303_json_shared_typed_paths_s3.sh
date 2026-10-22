@@ -17,7 +17,7 @@ PLAIN="JSON(a UInt64, b String, c Array(UInt8), d.x UInt64, d.y String)"
 ROW="concat('{\"a\":', toString(number * 10), ',\"b\":\"', repeat('x', number % 7), '\",\"c\":', toString(range(number % 4)), ',\"d\":{\"x\":', toString(number), ',\"y\":\"', repeat('y', number % 5), '\"}', if(number % 2 = 0, concat(',\"e\":', toString(number)), ''), '}')"
 # Fixed granules of 4 rows, every substream of a granule in its own compressed block.
 LAYOUT="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, index_granularity_bytes = 10485760, min_compress_block_size = 1, min_bytes_for_full_part_storage = 0"
-NO_CACHE="enable_filesystem_cache = 0, use_page_cache_for_disks_without_file_cache = 0, use_page_cache_for_object_storage = 0, use_uncompressed_cache = 0, optimize_move_to_prewhere = 0, use_query_condition_cache = 0"
+NO_CACHE="enable_filesystem_cache = 0, use_page_cache_for_disks_without_file_cache = 0, use_page_cache_for_object_storage = 0, use_uncompressed_cache = 0, use_columns_cache = 0, optimize_move_to_prewhere = 0, use_query_condition_cache = 0"
 
 # The comparisons of a section are collected and sent in one client call: a client start is expensive under sanitizers.
 Q=""
@@ -77,7 +77,7 @@ run_batch
 echo "-- requests: rows of eight kilobytes, a remote buffer of 4 KiB, one request per seek"
 BIG_TYPE="JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))"
 BIG_ROW="concat('{\"a\":', toString(number * 10), ',\"b\":\"', arrayStringConcat(arrayMap(i -> hex(sipHash128(toString(number * 1000 + i))), range(256))), '\",\"c\":', toString(range(number % 4)), '}')"
-BIG_LAYOUT="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, index_granularity_bytes = 10485760, min_compress_block_size = 1, min_bytes_for_full_part_storage = 0, vertical_merge_algorithm_min_rows_to_activate = 1000000000"
+BIG_LAYOUT="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, index_granularity_bytes = 10485760, min_compress_block_size = 1, min_bytes_for_full_part_storage = 0, replace_long_file_name_to_hash = 0, vertical_merge_algorithm_min_rows_to_activate = 1000000000"
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS big;
 CREATE TABLE big (x UInt64, json $BIG_TYPE) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_no_cache', $BIG_LAYOUT;
@@ -88,35 +88,39 @@ object() { $CLICKHOUSE_CLIENT -q "SELECT remote_path FROM system.remote_data_pat
 object_size() { $CLICKHOUSE_CLIENT -q "SELECT size FROM system.remote_data_paths WHERE remote_path = '$1' LIMIT 1"; }
 KEY=$(object big paths_data)
 SIZE=$(object_size "$KEY")
-S="max_threads = 1, remote_read_min_bytes_for_seek = 1, max_read_buffer_size_remote_fs = 4096, remote_filesystem_read_method = 'read', remote_filesystem_read_prefetch = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, merge_tree_min_rows_for_concurrent_read = 1000000, merge_tree_min_bytes_for_concurrent_read = 1000000000, merge_tree_use_deserialization_prefixes_cache = 0, $NO_CACHE"
+S="max_threads = 1, remote_read_min_bytes_for_seek = 1, max_read_buffer_size_remote_fs = 4096, remote_filesystem_read_method = 'read', remote_filesystem_read_prefetch = 0, allow_prefetched_read_pool_for_remote_filesystem = 0, merge_tree_min_rows_for_concurrent_read = 1000000, merge_tree_min_bytes_for_concurrent_read = 1000000000, merge_tree_min_read_task_size = 1000, merge_tree_use_deserialization_prefixes_cache = 0, $NO_CACHE"
 ranges() # object key, query -> the ranges requested from the object, one "begin end" per line
 {
     $CLICKHOUSE_CLIENT --send_logs_level=test -q "$2 FORMAT Null" 2>&1 | grep "Read S3 object" | grep "Key: $1," | grep -o "Range: [0-9]*-[0-9]*" | sed -E 's/Range: ([0-9]+)-([0-9]+)/\1 \2/'
 }
 requests() { ranges "$1" "$2" | wc -l; }
 bytes() { ranges "$1" "$2" | awk '{ s += $2 - $1 + 1 } END { print s + 0 }'; }
-flag() { [ "$1" ] && echo "$2: 1" || echo "$2: 0 ($3)"; }
+flag() { [ "$1" "$2" "$3" ] && echo "$4: 1" || echo "$4: 0 ($5)"; } # value, operator, expected, label, detail
 # The marks and the primary key are loaded once per part: a warm-up so that only data requests differ between queries.
 $CLICKHOUSE_CLIENT -q "SELECT sum(json.a), sum(length(json.b)), sum(json.c.size0) FROM big FORMAT Null"
 # A path read seeks to its path in every granule; the granules are far apart, so every seek is a request.
 a_whole=$(requests "$KEY" "SELECT sum(json.a) FROM big SETTINGS $S")
 a_block4=$(requests "$KEY" "SELECT sum(json.a) FROM big SETTINGS $S, max_block_size = 4")
-flag "$a_whole -eq 30" "a path read, 30 granules, one request per granule" "$a_whole"
-flag "$a_block4 -eq 30" "the same in calls of 4 rows" "$a_block4"
-# The requests are not bounded, so their ranges run to the task's end: the counts tell the story, not the bytes.
+flag "$a_whole" -eq 30 "a path read, 30 granules, one request per granule" "$a_whole"
+flag "$a_block4" -eq 30 "the same in calls of 4 rows" "$a_block4"
+# The requests are not bounded, so their ranges run to the task's end: the counts tell the story, not the bytes. The
+# part is read as one task (merge_tree_min_read_task_size), since the pool otherwise makes two tasks per thread.
+a_8=$(requests "$KEY" "SELECT sum(json.a) FROM big WHERE x < 8 SETTINGS $S")
+flag "$a_8" -eq 2 "two granules, two requests" "$a_8"
+two_ranges=$(requests "$KEY" "SELECT sum(json.a) FROM big WHERE x < 8 OR (x > 52 AND x < 56) SETTINGS $S")
+flag "$two_ranges" -eq 3 "two ranges of three granules, three requests" "$two_ranges"
+# The next granule's b is a few bytes past the small c and a, so the read runs on into it without a seek.
 b_8=$(requests "$KEY" "SELECT sum(length(json.b)) FROM big WHERE x < 8 SETTINGS $S")
-flag "$b_8 -eq 2" "two granules, two requests" "$b_8"
-two_ranges=$(requests "$KEY" "SELECT sum(length(json.b)) FROM big WHERE x < 8 OR (x >= 52 AND x < 56) SETTINGS $S")
-flag "$two_ranges -eq 3" "two ranges of three granules, three requests" "$two_ranges"
+flag "$b_8" -eq 1 "two granules of a path with small neighbours, one request" "$b_8"
 c_size=$(requests "$KEY" "SELECT sum(json.c.size0) FROM big SETTINGS $S")
 c_whole=$(requests "$KEY" "SELECT sum(length(json.c)) FROM big SETTINGS $S")
-flag "$c_size -eq $c_whole" "a subcolumn issues the requests of its path" "$c_size vs $c_whole requests"
+flag "$c_size" -eq "$c_whole" "a subcolumn issues the requests of its path" "$c_size vs $c_whole requests"
 # The whole column reads the data in order: one request per task, covering the file once.
 $CLICKHOUSE_CLIENT -q "SELECT 'whole column in calls of 5 rows', (SELECT arraySort(groupArray((x, toString(json)))) FROM big SETTINGS $S, max_block_size = 5) = (SELECT arraySort(groupArray((number, toString(CAST($BIG_ROW, '$BIG_TYPE'))))) FROM numbers(120))"
 whole_requests=$(requests "$KEY" "SELECT json FROM big SETTINGS $S, max_block_size = 5")
 whole_bytes=$(bytes "$KEY" "SELECT json FROM big SETTINGS $S, max_block_size = 5")
-flag "$whole_requests -eq 1" "the whole column reads the data in one request" "$whole_requests"
-flag "$whole_bytes -le $(( SIZE * 11 / 10 ))" "the whole column reads the data about once" "$whole_bytes vs $SIZE bytes"
+flag "$whole_requests" -eq 1 "the whole column reads the data in one request" "$whole_requests"
+flag "$whole_bytes" -le "$(( SIZE * 11 / 10 ))" "the whole column reads the data about once" "$whole_bytes vs $SIZE bytes"
 
 echo "-- a merge of two parts in small blocks, and a one-row patch part of a lightweight update"
 $CLICKHOUSE_CLIENT -n -q "
