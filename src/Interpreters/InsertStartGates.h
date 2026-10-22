@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -36,6 +37,9 @@ public:
         std::weak_ptr<const void> key;
         std::function<void()> check;
     };
+
+    /// `InsertStartGates::get` moves the checks of a merged gate without allocating, so it cannot fail half way.
+    static_assert(std::is_nothrow_move_constructible_v<Check>);
 
     /// Registers the pre-write check of a sink holding the gate. The sinks get their gates while the
     /// pipeline is being built, before any of them writes, and the first sink to start runs the checks of
@@ -284,31 +288,53 @@ public:
             if (!gate)
                 gate = std::make_shared<InsertStartGate>();
 
-            std::unordered_set<const InsertStartGate *> merged;
+            /// Everything that can throw is done before the first gate is merged: once a gate forwards to
+            /// the chosen one, its checks must have moved there, otherwise a sink still holding the merged
+            /// gate would follow `forward_to` and write without its check ever running. An exception thrown
+            /// here leaves every gate as it was; the entries added to the registries are empty, which is the
+            /// same as no entry.
+            std::vector<InsertStartGate *> to_merge;
+            to_merge.reserve(candidates.size());
+            size_t num_checks = gate->checks.size();
             for (const auto & candidate : candidates)
             {
                 if (candidate != gate && !candidate->done)
                 {
-                    candidate->forward_to = gate;
-                    merged.insert(candidate.get());
-                    /// The checks of the sinks holding the merged gate now take part in the decision of
-                    /// the chosen gate, unless it has been made already (see `InsertStartGate::addCheck`).
-                    if (!gate->done)
-                        for (auto & check : candidate->checks)
-                            gate->checks.push_back(std::move(check));
-                    candidate->checks.clear();
+                    to_merge.push_back(candidate.get());
+                    num_checks += candidate->checks.size();
                 }
+            }
+
+            if (!gate->done)
+                gate->checks.reserve(num_checks);
+
+            std::vector<InsertStartGatePtr *> entries;
+            entries.reserve(registries.size());
+            for (auto * registry : registries)
+                entries.push_back(&registry->gates[table_id]);
+
+            /// Nothing below throws: the checks are moved into the reserved capacity.
+            for (auto * candidate : to_merge)
+            {
+                candidate->forward_to = gate;
+                /// The checks of the sinks holding the merged gate now take part in the decision of
+                /// the chosen gate, unless it has been made already (see `InsertStartGate::addCheck`).
+                if (!gate->done)
+                    for (auto & check : candidate->checks)
+                        gate->checks.push_back(std::move(check));
+                candidate->checks.clear();
             }
 
             /// A participant holding a gate that rejected a write keeps it - see above - and does not
             /// adopt the new one: the rejection is the pre-write decision of that query, and the write on
             /// behalf of its rows must not be mistaken for a decision the query itself made. The same
-            /// holds for a different gate that has already accepted a write of that query.
-            for (auto * registry : registries)
+            /// holds for a different gate that has already accepted a write of that query. Every gate in
+            /// the registries is a locked candidate, so the gates forwarding to the chosen one are exactly
+            /// the ones merged above.
+            for (auto * existing : entries)
             {
-                auto & existing = registry->gates[table_id];
-                if (!existing || merged.contains(existing.get()))
-                    existing = gate;
+                if (!*existing || (*existing)->forward_to == gate)
+                    *existing = gate;
             }
 
             break;
