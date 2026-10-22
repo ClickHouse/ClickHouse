@@ -9,7 +9,7 @@
 namespace DB
 {
 
-std::map<String, Command> KeeperClientBase::commands;
+[[clang::no_destroy]] std::map<String, Command> KeeperClientBase::commands;
 
 namespace ErrorCodes
 {
@@ -114,7 +114,7 @@ void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)
     }
 
     for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
+        registered_commands_and_four_letter_words.push_back(String(command));
 
     std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }

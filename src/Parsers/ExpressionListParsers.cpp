@@ -3456,7 +3456,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     return false;
 }
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
     {"?",             Operator("",                2,  0, OperatorType::StartIf)},
@@ -3519,7 +3519,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
 };
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {toStringView(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
     {"-", Operator("negate", 13, 1)},

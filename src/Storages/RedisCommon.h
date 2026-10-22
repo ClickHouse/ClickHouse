@@ -41,7 +41,6 @@ struct RedisConfiguration
 
 static uint32_t DEFAULT_REDIS_DB_INDEX = 0;
 static uint32_t DEFAULT_REDIS_POOL_SIZE = 16;
-static String DEFAULT_REDIS_PASSWORD;
 
 using RedisCommand = Poco::Redis::Command;
 using RedisArray = Poco::Redis::Array;

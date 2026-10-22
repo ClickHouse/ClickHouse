@@ -132,7 +132,7 @@ void TemporaryFile::registerForDeletion(const std::string& path)
 
 namespace
 {
-	static FastMutex mutex;
+	[[clang::no_destroy]] static FastMutex mutex;
 }
 
 

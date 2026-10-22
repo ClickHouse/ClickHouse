@@ -664,7 +664,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
-    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
+    getDataPartStorage().setPreferredFileOrder(getCommonMetadataFiles());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()

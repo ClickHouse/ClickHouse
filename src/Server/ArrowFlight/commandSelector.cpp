@@ -334,7 +334,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
     return {sql, {}, block_modifier};
 }
 
-const static std::vector<std::pair<std::string, std::string>> engine_to_type =
+[[clang::no_destroy]] const static std::vector<std::pair<std::string, std::string>> engine_to_type =
 {
     // Log tables
     {"Log", "LOG TABLE"},

@@ -1831,7 +1831,7 @@ bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     return keeper_feature_flags.isEnabled(feature_flag);
 }
 
-std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, const std::string & description)
+std::optional<String> ZooKeeper::tryGetSystemZnode(std::string_view path, const std::string & description)
 {
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();

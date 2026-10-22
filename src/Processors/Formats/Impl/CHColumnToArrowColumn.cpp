@@ -121,34 +121,39 @@ namespace DB
         std::string Serialize() const override { return ""; }
     };
 
-    static const std::initializer_list<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
+    /// Built on first use: the `arrow::*()` factories would otherwise run in a static initializer.
+    static const std::vector<std::pair<String, std::shared_ptr<arrow::DataType>>> & internalTypeToArrowType()
     {
-        {"UInt8", arrow::uint8()},
-        {"Int8", arrow::int8()},
-        {"Enum8", arrow::int8()},
-        {"UInt16", arrow::uint16()},
-        {"Int16", arrow::int16()},
-        {"Enum16", arrow::int16()},
-        {"UInt32", arrow::uint32()},
-        {"Int32", arrow::int32()},
-        {"UInt64", arrow::uint64()},
-        {"Int64", arrow::int64()},
-        {"Float32", arrow::float32()},
-        {"Float64", arrow::float64()},
+        static const std::vector<std::pair<String, std::shared_ptr<arrow::DataType>>> internal_type_to_arrow_type =
+        {
+            {"UInt8", arrow::uint8()},
+            {"Int8", arrow::int8()},
+            {"Enum8", arrow::int8()},
+            {"UInt16", arrow::uint16()},
+            {"Int16", arrow::int16()},
+            {"Enum16", arrow::int16()},
+            {"UInt32", arrow::uint32()},
+            {"Int32", arrow::int32()},
+            {"UInt64", arrow::uint64()},
+            {"Int64", arrow::int64()},
+            {"Float32", arrow::float32()},
+            {"Float64", arrow::float64()},
 
-        {"Date", arrow::date32()},
-        {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
-        {"Date32", arrow::date32()},
-        {"Time", arrow::time32(arrow::TimeUnit::type::SECOND)},
+            {"Date", arrow::date32()},
+            {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
+            {"Date32", arrow::date32()},
+            {"Time", arrow::time32(arrow::TimeUnit::type::SECOND)},
 
-        {"String", arrow::binary()},
-        {"FixedString", arrow::binary()},
+            {"String", arrow::binary()},
+            {"FixedString", arrow::binary()},
 
-        {"Int128", arrow::fixed_size_binary(sizeof(Int128))},
-        {"UInt128", arrow::fixed_size_binary(sizeof(UInt128))},
-        {"Int256", arrow::fixed_size_binary(sizeof(Int256))},
-        {"UInt256", arrow::fixed_size_binary(sizeof(UInt256))},
-    };
+            {"Int128", arrow::fixed_size_binary(sizeof(Int128))},
+            {"UInt128", arrow::fixed_size_binary(sizeof(UInt128))},
+            {"Int256", arrow::fixed_size_binary(sizeof(Int256))},
+            {"UInt256", arrow::fixed_size_binary(sizeof(UInt256))},
+        };
+        return internal_type_to_arrow_type;
+    }
 
 
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
@@ -1865,11 +1870,11 @@ namespace DB
             return arrow::uint16();
 
         const std::string type_name = column_type->getFamilyName();
-        if (const auto * arrow_type_it = std::find_if(
-                internal_type_to_arrow_type.begin(),
-                internal_type_to_arrow_type.end(),
+        if (const auto arrow_type_it = std::find_if(
+                internalTypeToArrowType().begin(),
+                internalTypeToArrowType().end(),
                 [=](auto && elem) { return elem.first == type_name; });
-            arrow_type_it != internal_type_to_arrow_type.end())
+            arrow_type_it != internalTypeToArrowType().end())
         {
             return arrow_type_it->second;
         }

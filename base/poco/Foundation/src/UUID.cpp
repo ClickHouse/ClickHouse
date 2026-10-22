@@ -329,11 +329,11 @@ void UUID::toNetwork()
 
 namespace
 {
-	static UUID uuidNull;
-	static UUID uuidDNS("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-	static UUID uuidURI("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
-	static UUID uuidOID("6ba7b812-9dad-11d1-80b4-00c04fd430c8");
-	static UUID uuidX500("6ba7b814-9dad-11d1-80b4-00c04fd430c8");
+	[[clang::no_destroy]] static UUID uuidNull;
+	[[clang::no_destroy]] static UUID uuidDNS("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+	[[clang::no_destroy]] static UUID uuidURI("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
+	[[clang::no_destroy]] static UUID uuidOID("6ba7b812-9dad-11d1-80b4-00c04fd430c8");
+	[[clang::no_destroy]] static UUID uuidX500("6ba7b814-9dad-11d1-80b4-00c04fd430c8");
 }
 
 

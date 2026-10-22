@@ -771,7 +771,7 @@ private:
         double fixed_estimate = 0;
 
         if (zeros != 0)
-            fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));
+            fixed_estimate = bucket_count * (getLogLUT().getLog(bucket_count) - getLogLUT().getLog(zeros));
         else
             fixed_estimate = raw_estimate;
 
@@ -791,36 +791,16 @@ private:
     using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
     ZerosCounterType zeros = bucket_count;
 
-    static details::LogLUT<precision> log_lut;
+    /// Built on first use rather than by a static initializer per instantiation.
+    static const details::LogLUT<precision> & getLogLUT()
+    {
+        static const details::LogLUT<precision> log_lut;
+        return log_lut;
+    }
 
     /// Checks.
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
 };
-
-
-/// Declaration of static variables for linker.
-template
-<
-    UInt8 precision,
-    typename Key,
-    typename Hash,
-    typename HashValueType,
-    typename DenominatorType,
-    typename BiasEstimator,
-    HyperLogLogMode mode,
-    DenominatorMode denominator_mode
->
-details::LogLUT<precision> HyperLogLogCounter
-<
-    precision,
-    Key,
-    Hash,
-    HashValueType,
-    DenominatorType,
-    BiasEstimator,
-    mode,
-    denominator_mode
->::log_lut;
 
 
 /// Lightweight implementation of expression's denominator is used in Metrage.

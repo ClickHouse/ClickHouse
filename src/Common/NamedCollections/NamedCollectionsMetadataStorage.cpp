@@ -45,7 +45,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static const std::string named_collections_storage_config_path = "named_collections_storage";
+[[clang::no_destroy]] static const std::string named_collections_storage_config_path = "named_collections_storage";
 
 namespace
 {

@@ -101,7 +101,7 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (args.size() > 4)
         configuration.password = checkAndGetLiteralArgument<String>(args[4], "password");
     else
-        configuration.password = DEFAULT_REDIS_PASSWORD;
+        configuration.password.clear();
     if (args.size() > 5)
         configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(args[5], "pool_size"));
     else

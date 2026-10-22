@@ -167,7 +167,7 @@ bool ISerialization::hasKind(const KindStack & kind_stack, Kind kind)
     return std::find(kind_stack.begin(), kind_stack.end(), kind) != kind_stack.end();
 }
 
-const std::set<SubstreamType> ISerialization::Substream::named_types
+[[clang::no_destroy]] const std::set<SubstreamType> ISerialization::Substream::named_types
 {
     StringSizes,
     InlinedStringSizes,

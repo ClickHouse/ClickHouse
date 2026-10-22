@@ -48,15 +48,16 @@ public:
         ORC,
     };
 
-    inline static const String RCFILE_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.RCFileInputFormat";
-    inline static const String TEXT_INPUT_FORMAT = "org.apache.hadoop.mapred.TextInputFormat";
-    inline static const String LZO_TEXT_INPUT_FORMAT = "com.hadoop.mapred.DeprecatedLzoTextInputFormat";
-    inline static const String SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
-    inline static const String PARQUET_INPUT_FORMAT = "com.cloudera.impala.hive.serde.ParquetInputFormat";
-    inline static const String MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
-    inline static const String AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
-    inline static const String ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
-    inline static const std::map<String, FileFormat> VALID_HDFS_FORMATS = {
+    static constexpr std::string_view RCFILE_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.RCFileInputFormat";
+    static constexpr std::string_view TEXT_INPUT_FORMAT = "org.apache.hadoop.mapred.TextInputFormat";
+    static constexpr std::string_view LZO_TEXT_INPUT_FORMAT = "com.hadoop.mapred.DeprecatedLzoTextInputFormat";
+    static constexpr std::string_view SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
+    static constexpr std::string_view PARQUET_INPUT_FORMAT = "com.cloudera.impala.hive.serde.ParquetInputFormat";
+    static constexpr std::string_view MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
+    static constexpr std::string_view AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
+    static constexpr std::string_view ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
+    static constexpr std::array<std::pair<std::string_view, FileFormat>, 8> VALID_HDFS_FORMATS
+    {{
         {RCFILE_INPUT_FORMAT, FileFormat::RC_FILE},
         {TEXT_INPUT_FORMAT, FileFormat::TEXT},
         {LZO_TEXT_INPUT_FORMAT, FileFormat::LZO_TEXT},
@@ -65,15 +66,21 @@ public:
         {MR_PARQUET_INPUT_FORMAT, FileFormat::PARQUET},
         {AVRO_INPUT_FORMAT, FileFormat::AVRO},
         {ORC_INPUT_FORMAT, FileFormat::ORC},
-    };
+    }};
 
-    static bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
+    static std::optional<FileFormat> tryGetFileFormat(std::string_view format_class)
+    {
+        for (const auto & [name, format] : VALID_HDFS_FORMATS)
+            if (name == format_class)
+                return format;
+        return std::nullopt;
+    }
+
+    static bool isFormatClass(const String & format_class) { return tryGetFileFormat(format_class).has_value(); }
     static FileFormat toFileFormat(const String & format_class)
     {
-        if (isFormatClass(format_class))
-        {
-            return VALID_HDFS_FORMATS.find(format_class)->second;
-        }
+        if (auto format = tryGetFileFormat(format_class))
+            return *format;
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported hdfs file format {}", format_class);
     }
 

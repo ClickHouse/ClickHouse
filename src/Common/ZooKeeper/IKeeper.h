@@ -707,7 +707,7 @@ struct ReconfigRequest : virtual Request
     String new_members;
     int32_t version{};
 
-    String getPath() const final { return keeper_config_path; }
+    String getPath() const final { return String(keeper_config_path); }
 
     size_t bytesSize() const final
     {

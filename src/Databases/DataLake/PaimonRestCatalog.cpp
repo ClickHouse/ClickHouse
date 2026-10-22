@@ -116,7 +116,7 @@ static String bytesToHex(const String & bytes)
 }
 
 
-const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS
+[[clang::no_destroy]] const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS
     = {Poco::toLower(String(DLF_CONTENT_MD5_HEADER_KEY)),
        Poco::toLower(String(DLF_CONTENT_TYPE_KEY)),
        Poco::toLower(String(DLF_CONTENT_SHA56_HEADER_KEY)),

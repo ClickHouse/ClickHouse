@@ -382,7 +382,7 @@ void XMLWriter::processingInstruction(const XMLString& target, const XMLString& 
 
 namespace
 {
-	static const XMLString CDATA = toXMLString("CDATA");
+	[[clang::no_destroy]] static const XMLString CDATA = toXMLString("CDATA");
 }
 
 

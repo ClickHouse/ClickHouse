@@ -49,7 +49,7 @@ public:
 
     static bool trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_);
 
-    inline static const String RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX = ".tmp_restore_db_for_table_dropping_";
+    [[clang::no_destroy]] inline static const String RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX = ".tmp_restore_db_for_table_dropping_";
 
 private:
     ASTPtr query_ptr;

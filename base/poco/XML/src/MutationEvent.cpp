@@ -19,13 +19,13 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString MutationEvent::DOMSubtreeModified          = toXMLString("DOMSubtreeModified");
-const XMLString MutationEvent::DOMNodeInserted             = toXMLString("DOMNodeInserted");
-const XMLString MutationEvent::DOMNodeRemoved              = toXMLString("DOMNodeRemoved");
-const XMLString MutationEvent::DOMNodeRemovedFromDocument  = toXMLString("DOMNodeRemovedFromDocument");
-const XMLString MutationEvent::DOMNodeInsertedIntoDocument = toXMLString("DOMNodeInsertedIntoDocument");
-const XMLString MutationEvent::DOMAttrModified             = toXMLString("DOMAttrModified");
-const XMLString MutationEvent::DOMCharacterDataModified    = toXMLString("DOMCharacterDataModified");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMSubtreeModified          = toXMLString("DOMSubtreeModified");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMNodeInserted             = toXMLString("DOMNodeInserted");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMNodeRemoved              = toXMLString("DOMNodeRemoved");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMNodeRemovedFromDocument  = toXMLString("DOMNodeRemovedFromDocument");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMNodeInsertedIntoDocument = toXMLString("DOMNodeInsertedIntoDocument");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMAttrModified             = toXMLString("DOMAttrModified");
+[[clang::no_destroy]] const XMLString MutationEvent::DOMCharacterDataModified    = toXMLString("DOMCharacterDataModified");
 
 
 MutationEvent::MutationEvent(Document* pOwnerDocument, const XMLString& type): 

@@ -1029,7 +1029,7 @@ KeeperTCPHandler::~KeeperTCPHandler()
 }
 
 std::mutex KeeperTCPHandler::conns_mutex;
-std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
+[[clang::no_destroy]] std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
 
 void KeeperTCPHandler::registerConnection(KeeperTCPHandler * conn)
 {

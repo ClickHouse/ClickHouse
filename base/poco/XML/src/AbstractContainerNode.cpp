@@ -27,7 +27,7 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString AbstractContainerNode::WILDCARD(toXMLString("*"));
+[[clang::no_destroy]] const XMLString AbstractContainerNode::WILDCARD(toXMLString("*"));
 
 
 AbstractContainerNode::AbstractContainerNode(Document* pOwnerDocument):

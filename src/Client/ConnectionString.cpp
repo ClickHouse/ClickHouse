@@ -27,7 +27,7 @@ using namespace std::literals::string_view_literals;
 
 constexpr auto CONNECTION_URI_SCHEME = "clickhouse:"sv;
 
-const std::unordered_map<std::string_view, std::string_view> PROHIBITED_CLIENT_OPTIONS = {
+[[clang::no_destroy]] const std::unordered_map<std::string_view, std::string_view> PROHIBITED_CLIENT_OPTIONS = {
     /// Client option, client option long name
     {"-h", "--host"},
     {"--host", "--host"},

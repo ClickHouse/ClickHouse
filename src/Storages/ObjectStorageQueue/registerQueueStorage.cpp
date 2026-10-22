@@ -190,7 +190,7 @@ void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
     auto secret_arguments = s3TableEngineSecretArguments();
-    secret_arguments.secret_settings = S3Queue::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = S3Queue::settingsToHide();
     factory.registerStorage(
         "S3Queue",
         [](const StorageFactory::Arguments & args)
@@ -795,7 +795,7 @@ void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
     auto secret_arguments = azureTableEngineSecretArguments();
-    secret_arguments.secret_settings = AzureQueue::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = AzureQueue::settingsToHide();
     factory.registerStorage(
         "AzureQueue",
         [](const StorageFactory::Arguments & args)

@@ -2080,7 +2080,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
     /// we need a function to check if the url is S3 or Azure.
     /// right now we assume it's a S3 url
     auto secret_arguments = s3DatabaseSecretArguments();
-    secret_arguments.secret_settings = DataLake::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = DataLake::settingsToHide();
     factory.registerDatabase("DataLakeCatalog", create_fn, std::move(secret_arguments), {
         .supports_arguments = true,
         .supports_settings = true,

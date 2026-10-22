@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_map<TypeIndex, String> protobuf_simple_type_names =
+[[clang::no_destroy]] const std::unordered_map<TypeIndex, String> protobuf_simple_type_names =
 {
     {TypeIndex::Int8, "int32"},
     {TypeIndex::UInt8, "uint32"},

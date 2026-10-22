@@ -228,7 +228,7 @@ void CoordinationSettings::updateHotReloadableSettings(const CoordinationSetting
     impl->updateHotReloadableSettings(*new_settings.impl);
 }
 
-const String KeeperConfiguration::DEFAULT_FOUR_LETTER_WORD_CMD =
+[[clang::no_destroy]] const String KeeperConfiguration::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif

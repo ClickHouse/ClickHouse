@@ -21,7 +21,7 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString CDATASection::NODE_NAME = toXMLString("#cdata-section");
+[[clang::no_destroy]] const XMLString CDATASection::NODE_NAME = toXMLString("#cdata-section");
 
 
 CDATASection::CDATASection(Document* pOwnerDocument, const XMLString& data): 

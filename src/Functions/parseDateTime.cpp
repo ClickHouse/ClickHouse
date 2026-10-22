@@ -68,30 +68,40 @@ namespace
         DateTime64
     };
 
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> dayOfWeekMap{
-        {"mon", {"day", 1}},
-        {"tue", {"sday", 2}},
-        {"wed", {"nesday", 3}},
-        {"thu", {"rsday", 4}},
-        {"fri", {"day", 5}},
-        {"sat", {"urday", 6}},
-        {"sun", {"day", 7}},
-    };
+    /// Built on first use rather than by a static initializer.
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> & dayOfWeekMap()
+    {
+        static const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> map{
+            {"mon", {"day", 1}},
+            {"tue", {"sday", 2}},
+            {"wed", {"nesday", 3}},
+            {"thu", {"rsday", 4}},
+            {"fri", {"day", 5}},
+            {"sat", {"urday", 6}},
+            {"sun", {"day", 7}},
+        };
+        return map;
+    }
 
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> monthMap{
-        {"jan", {"uary", 1}},
-        {"feb", {"ruary", 2}},
-        {"mar", {"ch", 3}},
-        {"apr", {"il", 4}},
-        {"may", {"", 5}},
-        {"jun", {"e", 6}},
-        {"jul", {"y", 7}},
-        {"aug", {"ust", 8}},
-        {"sep", {"tember", 9}},
-        {"oct", {"ober", 10}},
-        {"nov", {"ember", 11}},
-        {"dec", {"ember", 12}},
-    };
+    /// Built on first use rather than by a static initializer.
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> & monthMap()
+    {
+        static const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> map{
+            {"jan", {"uary", 1}},
+            {"feb", {"ruary", 2}},
+            {"mar", {"ch", 3}},
+            {"apr", {"il", 4}},
+            {"may", {"", 5}},
+            {"jun", {"e", 6}},
+            {"jul", {"y", 7}},
+            {"aug", {"ust", 8}},
+            {"sep", {"tember", 9}},
+            {"oct", {"ober", 10}},
+            {"nov", {"ember", 11}},
+            {"dec", {"ember", 12}},
+        };
+        return map;
+    }
 
     /// key: month, value: total days of current month if current year is leap year.
     constexpr Int32 leapDays[] = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -1032,8 +1042,8 @@ namespace
 
                 String text(cur, 3);
                 boost::to_lower(text);
-                auto it = dayOfWeekMap.find(text);
-                if (it == dayOfWeekMap.end())
+                auto it = dayOfWeekMap().find(text);
+                if (it == dayOfWeekMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
@@ -1052,8 +1062,8 @@ namespace
 
                 String text(cur, 3);
                 boost::to_lower(text);
-                auto it = monthMap.find(text);
-                if (it == monthMap.end())
+                auto it = monthMap().find(text);
+                if (it == monthMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year short text {}",
@@ -1072,8 +1082,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = monthMap.find(text1);
-                if (it == monthMap.end())
+                auto it = monthMap().find(text1);
+                if (it == monthMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
@@ -1269,8 +1279,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = dayOfWeekMap.find(text1);
-                if (it == dayOfWeekMap.end())
+                auto it = dayOfWeekMap().find(text1);
+                if (it == dayOfWeekMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
@@ -1667,8 +1677,8 @@ namespace
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = dayOfWeekMap.find(text1);
-                if (it == dayOfWeekMap.end())
+                auto it = dayOfWeekMap().find(text1);
+                if (it == dayOfWeekMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week text: {}",
@@ -1726,8 +1736,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = monthMap.find(text1);
-                if (it == monthMap.end())
+                auto it = monthMap().find(text1);
+                if (it == monthMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year text: {}",

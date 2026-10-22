@@ -3447,7 +3447,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsRejectedRecursiveRequ
 
     appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive("/")));
-    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(DB::keeper_system_path)));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(String(DB::keeper_system_path))));
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ true)));
     /// Control: the same recursive listing without a watch is valid and walks the pruned subtree.
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ false)));

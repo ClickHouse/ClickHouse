@@ -463,7 +463,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
 {
-    if (exit_strings.contains(text))
+    if (isExitString(text))
         return false;
 
     static constexpr size_t total_retries = 10;

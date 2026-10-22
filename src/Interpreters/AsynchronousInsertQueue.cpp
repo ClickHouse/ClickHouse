@@ -124,7 +124,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-static const NameSet settings_to_skip
+[[clang::no_destroy]] static const NameSet settings_to_skip
 {
     /// We don't consider this setting because it is only for deduplication,
     /// which means we can put two inserts with different tokens in the same block safely.

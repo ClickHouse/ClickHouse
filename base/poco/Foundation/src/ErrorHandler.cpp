@@ -20,7 +20,7 @@ namespace Poco {
 
 
 ErrorHandler* ErrorHandler::_pHandler = ErrorHandler::defaultHandler();
-FastMutex ErrorHandler::_mutex;
+[[clang::no_destroy]] FastMutex ErrorHandler::_mutex;
 
 
 ErrorHandler::ErrorHandler()

@@ -85,7 +85,7 @@ LDAPClient::~LDAPClient()
 namespace
 {
 
-    std::recursive_mutex ldap_global_mutex;
+    [[clang::no_destroy]] std::recursive_mutex ldap_global_mutex;
 
     auto escapeForDN(const String & src)
     {

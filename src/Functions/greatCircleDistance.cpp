@@ -112,7 +112,7 @@ struct Impl
         return f;
     }
 
-    T fastCos(T x)
+    T fastCos(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -121,7 +121,7 @@ struct Impl
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
 
-    T fastSin(T x)
+    T fastSin(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -132,7 +132,7 @@ struct Impl
 
     /// fast implementation of asin(sqrt(x))
     /// max error in floats 0.00369%, in doubles 0.00072%
-    T fastAsinSqrt(T x)
+    T fastAsinSqrt(T x) const
     {
         if (x < T(0.122))
         {
@@ -151,7 +151,13 @@ struct Impl
     }
 };
 
-template <typename T> Impl<T> impl;
+/// Built on first use: computing the tables with `sin`/`cos`/`asin` in a static initializer would run before `main`.
+template <typename T>
+const Impl<T> & impl()
+{
+    static const Impl<T> instance;
+    return instance;
+}
 
 DECLARE_MULTITARGET_CODE(
 
@@ -161,8 +167,8 @@ namespace
 template <Method method, typename T>
 T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
 {
-    T lat_diff = impl<T>.degDiff(lat1deg - lat2deg);
-    T lon_diff = impl<T>.degDiff(lon1deg - lon2deg);
+    T lat_diff = impl<T>().degDiff(lat1deg - lat2deg);
+    T lon_diff = impl<T>().degDiff(lon1deg - lon2deg);
 
     if (lon_diff < 13)
     {
@@ -175,7 +181,7 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
         T latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
-        size_t latitude_midpoint_index = impl<T>.toIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
+        size_t latitude_midpoint_index = impl<T>().toIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
@@ -186,23 +192,23 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
         {
             k_lat = 1;
 
-            k_lon = impl<T>.sphere_metric_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lon = impl<T>().sphere_metric_lut[latitude_midpoint_index]
+                + (impl<T>().sphere_metric_lut[latitude_midpoint_index + 1] - impl<T>().sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
             k_lat = sqr(T(EARTH_DIAMETER) * T(PI) / T(360.0));
 
-            k_lon = impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]
-                + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lon = impl<T>().sphere_metric_meters_lut[latitude_midpoint_index]
+                + (impl<T>().sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>().sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
         else if constexpr (method == Method::WGS84_METERS)
         {
-            k_lat = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lat = impl<T>().wgs84_metric_meters_lut[latitude_midpoint_index * 2]
+                + (impl<T>().wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - impl<T>().wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
 
-            k_lon = impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
-                + (impl<T>.wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>.wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
+            k_lon = impl<T>().wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
+                + (impl<T>().wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - impl<T>().wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - static_cast<T>(latitude_midpoint_index));
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
@@ -213,13 +219,13 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
     static constexpr T RAD_IN_DEG = T(PI / 180.0);
     static constexpr T RAD_IN_DEG_HALF = T(PI / 360.0);
 
-    T a = sqr(impl<T>.fastSin(lat_diff * RAD_IN_DEG_HALF))
-        + impl<T>.fastCos(lat1deg * RAD_IN_DEG) * impl<T>.fastCos(lat2deg * RAD_IN_DEG) * sqr(impl<T>.fastSin(lon_diff * RAD_IN_DEG_HALF));
+    T a = sqr(impl<T>().fastSin(lat_diff * RAD_IN_DEG_HALF))
+        + impl<T>().fastCos(lat1deg * RAD_IN_DEG) * impl<T>().fastCos(lat2deg * RAD_IN_DEG) * sqr(impl<T>().fastSin(lon_diff * RAD_IN_DEG_HALF));
 
     if constexpr (method == Method::SPHERE_DEGREES)
-        return (T(360.0) / T(PI)) * impl<T>.fastAsinSqrt(a);
+        return (T(360.0) / T(PI)) * impl<T>().fastAsinSqrt(a);
     else
-        return T(EARTH_DIAMETER) * impl<T>.fastAsinSqrt(a);
+        return T(EARTH_DIAMETER) * impl<T>().fastAsinSqrt(a);
 }
 
 }

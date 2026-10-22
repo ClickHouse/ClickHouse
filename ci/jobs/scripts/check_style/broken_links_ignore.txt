@@ -2,3 +2,9 @@
 # by a pull request to be reachable (see ci/jobs/scripts/check_style/check_broken_links.py).
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
+
+# Not pages: SAX feature and property identifiers in base/poco/XML, which only have the form of a URL.
+http://xml.org/sax/features/
+http://xml.org/sax/properties/
+http://www.appinf.com/features/
+http://www.appinf.com/properties/

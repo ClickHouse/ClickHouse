@@ -68,7 +68,7 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_set<String> possibly_injective_function_names
+[[clang::no_destroy]] const std::unordered_set<String> possibly_injective_function_names
 {
         "dictGet",
         "dictGetString",

@@ -526,10 +526,10 @@ static bool monotonicChainSupportsNullAtom(const KeyCondition::MonotonicFunction
 /// insert into test values ('2020-01-01', 1, '');
 /// insert into test values ('2020-01-02', 1, '');
 /// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
-static const std::set<std::string_view> no_relaxed_atom_functions
+[[clang::no_destroy]] static const std::set<std::string_view> no_relaxed_atom_functions
     = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty", "notHas"};
 
-static const std::map<std::string, std::string> inverse_relations =
+[[clang::no_destroy]] static const std::map<std::string, std::string> inverse_relations =
 {
     {"equals", "notEquals"},
     {"notEquals", "equals"},
@@ -962,7 +962,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
 /// connectives (handled structurally by `cloneDAGWithInversionPushDown`) and boolean comparisons
 /// `KeyCondition` does not prune (`isDistinctFrom`, `ilike`, `notILike`). The prunable boolean atoms
 /// are taken directly from `atom_map` (see `predicateIsBooleanResult`), so this only holds the extras.
-static const std::unordered_set<std::string_view> extra_boolean_result_functions
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> extra_boolean_result_functions
 {
     "not", "and", "or", "isDistinctFrom", "ilike", "notILike",
 };
@@ -1521,7 +1521,7 @@ static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predica
     return res;
 }
 
-const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
+[[clang::no_destroy]] const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
         {"mortonEncode", SpaceFillingCurveType::Morton},
         {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
@@ -4487,7 +4487,7 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
   * we want to apply the function to the constant for index analysis,
   * but should modify it to pass on un-parsable values.
   */
-static std::set<std::string_view> date_time_parsing_functions = {
+[[clang::no_destroy]] static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
     "toTime",
