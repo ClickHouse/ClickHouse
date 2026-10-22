@@ -137,7 +137,9 @@ private:
 #endif
 
 MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), span_name(fmt::format("MergeTreeSource({})::tryGenerate", log_name_))
+    : ISource(std::make_shared<const Block>(processor_->getHeader()), /*enable_auto_progress=*/ false)
+    , processor(std::move(processor_))
+    , span_name(fmt::format("MergeTreeSource({})::tryGenerate", log_name_))
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -146,6 +148,11 @@ MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const s
 }
 
 MergeTreeSource::~MergeTreeSource() = default;
+
+std::span<ISpillable * const> MergeTreeSource::getSpillables()
+{
+    return processor->getSpillables();
+}
 
 std::string MergeTreeSource::getName() const
 {
