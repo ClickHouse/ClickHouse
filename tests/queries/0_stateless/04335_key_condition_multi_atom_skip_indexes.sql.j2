@@ -30,10 +30,10 @@ INSERT INTO test_skip_mm SELECT number, toDateTime('2026-03-01 00:00:00', 'UTC')
 CREATE TABLE test_skip_disj (id UInt32, ta DateTime('UTC'), tb DateTime('UTC'), INDEX ia (toDate(ta), ta) TYPE minmax GRANULARITY 1, INDEX ib (toDate(tb), tb) TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_skip_disj SELECT number, toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL number HOUR, toDateTime('2026-06-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(48);
--- Small disjunction (within the 32-element template limit).
+-- Small disjunction (within the template limit `max_rpn_elements_for_skip_indexes_with_disjunctions`).
 {% set small = "ta = toDateTime('2026-03-01 05:00:00', 'UTC') OR tb = toDateTime('2026-06-02 07:00:00', 'UTC') OR ta = toDateTime('2026-03-02 11:00:00', 'UTC')" -%}
 {{ check('test_skip_disj', small, settings = 'use_skip_indexes_for_disjunctions = 1') }}
--- The 12-leaf disjunction has 23 template elements; its expanded RPN has more than 32 elements.
+-- The 12-leaf disjunction has 23 template elements; its expanded RPN has more elements than the template.
 {% set large = "ta = toDateTime('2026-03-01 01:00:00', 'UTC') OR tb = toDateTime('2026-06-01 02:00:00', 'UTC') OR ta = toDateTime('2026-03-01 03:00:00', 'UTC') OR tb = toDateTime('2026-06-01 04:00:00', 'UTC') OR ta = toDateTime('2026-03-01 05:00:00', 'UTC') OR tb = toDateTime('2026-06-01 06:00:00', 'UTC') OR ta = toDateTime('2026-03-01 07:00:00', 'UTC') OR tb = toDateTime('2026-06-01 08:00:00', 'UTC') OR ta = toDateTime('2026-03-01 09:00:00', 'UTC') OR tb = toDateTime('2026-06-01 10:00:00', 'UTC') OR ta = toDateTime('2026-03-01 11:00:00', 'UTC') OR tb = toDateTime('2026-06-01 12:00:00', 'UTC')" -%}
 {{ check('test_skip_disj', large, settings = 'use_skip_indexes_for_disjunctions = 1') }}
 
