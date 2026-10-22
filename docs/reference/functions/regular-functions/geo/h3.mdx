@@ -205,6 +205,18 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 └────────────────────┘
 ```
 
+**Example with integer coordinates and a UInt64 resolution**
+
+```sql title="Query"
+SELECT geoToH3(30, 120, toUInt64(5)) = geoToH3(30., 120., toUInt8(5)) AS sameIndex;
+```
+
+```text title="Response"
+┌─sameIndex─┐
+│         1 │
+└───────────┘
+```
+
 ## h3ToGeo {#h3togeo}
 
 Returns the centroid latitude and longitude corresponding to the provided [H3](#h3-index) index.
