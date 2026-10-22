@@ -60,6 +60,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
 
@@ -489,10 +490,6 @@ bool rewriteViewProjectionToSubcolumn(
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
-  *
-  * The context is also marked as a view inner context so that the query analyzer
-  * resolves positional arguments inside the view even on remote/secondary nodes
-  * (views are expanded on remote nodes, unlike the outer query).
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
@@ -707,6 +704,9 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         QueryTreePassManager pass_manager(context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
+        /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
+        if (containsCorrelatedSubquery(inner_query_tree))
+            return nullptr;
     }
     catch (const Exception &)
     {
