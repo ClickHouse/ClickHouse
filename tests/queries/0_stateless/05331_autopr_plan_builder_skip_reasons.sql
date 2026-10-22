@@ -21,9 +21,11 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replic
 SELECT b, count() FROM t_autopr_builder_skip GROUP BY b FORMAT Null
 SETTINGS parallel_replicas_local_plan = 0, log_comment = 'autopr_builder_skip_settings';
 
--- Shape: a FULL JOIN cannot be evaluated by parallelizing one of its sides.
+-- Shape: a FULL JOIN cannot be evaluated by parallelizing one of its sides. Pinned to the query-based
+-- implementation of parallel replicas: the check looks at the query tree, while the plan-based one
+-- decides on the plan, so it builds the plan and finds no read for the other replicas in it.
 SELECT l.b, r.b FROM t_autopr_builder_skip AS l FULL JOIN t_autopr_builder_skip_2 AS r ON l.a = r.a FORMAT Null
-SETTINGS query_plan_optimize_join_order_randomize = 0, log_comment = 'autopr_builder_skip_shape';
+SETTINGS query_plan_optimize_join_order_randomize = 0, parallel_replicas_plan_based = 0, log_comment = 'autopr_builder_skip_shape';
 
 -- Built: the plan is built, and its outcome is counted separately.
 SELECT b, count() FROM t_autopr_builder_skip GROUP BY b FORMAT Null
