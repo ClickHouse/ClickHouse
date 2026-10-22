@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
@@ -655,6 +656,8 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     for (const auto & granule : granules)
     {
+        CurrentThread::checkIfNotCancelled();
+
         data_written = true;
 
         if (granule.mark_on_start)
