@@ -93,7 +93,8 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
     {
         NodeInfo defaults = info;
         defaults.settings = {};
-        return updateNode(defaults, info);
+        updateNode(defaults, info);
+        return;
     }
 
     if (info.name == info.parent)
@@ -126,7 +127,8 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
     {
         NodeInfo defaults = info;
         defaults.settings = {};
-        return updateNode(info, defaults);
+        updateNode(info, defaults);
+        return;
     }
 
     if (!node_for_workload.contains(info.name))
