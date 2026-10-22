@@ -193,7 +193,7 @@ def test_object_storage_namespace_in_storage_policy(start_cluster):
     try:
         node.query("SYSTEM RELOAD CONFIG")
         assert node.wait_for_log_line(
-            "storage policy `object_storage_same_bucket` resolve to the same storage namespace"
+            "resolve to the same storage namespace"
         )
         assert (
             node.query(
@@ -227,7 +227,7 @@ def test_symlinked_metadata_path_in_storage_policy(start_cluster):
     try:
         node.query("SYSTEM RELOAD CONFIG")
         assert node.wait_for_log_line(
-            "storage policy `local_metadata_symlink_alias` resolve to the same storage namespace"
+            "resolve to the same storage namespace"
         )
         assert (
             node.query(

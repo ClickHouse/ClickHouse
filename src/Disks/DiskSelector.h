@@ -16,6 +16,10 @@ namespace DB
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
+/// Whether two disks read and write the same files, by endpoint, bucket and path. Disks that share a storage
+/// namespace cannot be registered together, because a storage policy over both loads every part twice.
+bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs);
+
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
 class DiskSelector

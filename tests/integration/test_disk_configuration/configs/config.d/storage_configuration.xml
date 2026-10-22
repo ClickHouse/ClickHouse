@@ -25,13 +25,6 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <readonly>true</readonly>
             </s3_plain_bucket_root2>
-            <s3_plain_bucket_root_alias>
-                <type>s3_plain</type>
-                <endpoint>http://minio1:9001/root/data/disks/shared_plain/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <readonly>true</readonly>
-            </s3_plain_bucket_root_alias>
         </disks>
         <policies>
             <local>
