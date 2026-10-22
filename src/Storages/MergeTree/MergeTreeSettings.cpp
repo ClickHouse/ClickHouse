@@ -864,7 +864,7 @@ Maximum estimated memory retained by a text index builder before flushing a temp
 Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0, \
-        {"26.10", "none", "pfor", "Use the `pfor` posting list codec for text indexes by default"}, \
+        {"26.11", "none", "pfor", "Use the `pfor` posting list codec for text indexes by default"}, \
         {"26.6", "none", "none", "New setting"}) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
 Allow creating text indexes with the experimental `support_phrase_search` argument
