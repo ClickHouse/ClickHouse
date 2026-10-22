@@ -40,6 +40,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
@@ -49,7 +50,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -488,11 +488,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     return res;
 }
 
-/// A move destination of an `S3Queue` or `AzureQueue` table receives whole source files, read with the credentials of the table.
-/// So setting one needs `WRITE` on the source of the destination (see `checkObjectStorageQueueMoveDestinationAccess`), and it is
-/// rejected for a user whose row policy hides rows of the table, because the move has no read path that could filter them
-/// (as `StorageSet::checkNoRowPolicy`). Both read only the query and the access entities, not the table, so this runs on the initiator.
-void checkMoveDestinationAccess(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
+/// A setting that sends the table's data elsewhere copies the data as it is stored, so nothing can filter the rows
+/// that a row policy hides (as `StorageSet::checkNoRowPolicy`). It reads only the query and the access entities,
+/// not the table, so it runs on the initiator.
+void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
 {
     for (const auto & child : alter.command_list->children)
     {
@@ -501,17 +500,15 @@ void checkMoveDestinationAccess(const ASTAlterQuery & alter, const String & data
             continue;
 
         const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
-        checkObjectStorageQueueMoveDestinationAccess(changes, context);
-
-        if (!hasObjectStorageQueueMoveDestination(changes))
+        if (StorageFactory::instance().getExportAccessOfAnyEngine(changes).empty())
             continue;
 
         auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
         if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
-                "Cannot set the move destination of table {}.{} because a row policy applies to it. "
-                "The move copies whole files and cannot filter the rows",
+                "Cannot change the settings of table {}.{} that send its data elsewhere because a row policy applies to it. "
+                "The data is copied as it is stored, so its rows cannot be filtered",
                 backQuoteIfNeed(database), backQuoteIfNeed(alter.getTable()));
     }
 }
@@ -615,8 +612,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
 
-            /// The hosts run the entry without the user, so the destination is authorized here, before the entry is enqueued.
-            checkMoveDestinationAccess(captured_alter, default_database, context);
+            /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
+            checkNoRowPolicyForExport(captured_alter, default_database, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -624,7 +621,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!skip_access_check)
     {
         getContext()->checkAccess(getRequiredAccess(table));
-        checkMoveDestinationAccess(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
+        checkNoRowPolicyForExport(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
     }
 
     if (!table_id)
@@ -1081,12 +1078,19 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
 
-            /// A move destination of an `S3Queue` or `AzureQueue` table receives the files that the table reads with its own
-            /// source credentials, so it is the same data flow as `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`.
-            /// The `WRITE` grant for the destination is checked by `checkMoveDestinationAccess`; the reading part is `SELECT` here.
-            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
-                && hasObjectStorageQueueMoveDestination(command.settings_changes->as<ASTSetQuery &>().changes))
-                required_access.emplace_back(AccessType::SELECT, database, table);
+            /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
+            /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
+            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
+            /// of `ON CLUSTER` can check them without the table.
+            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
+            {
+                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                if (!export_access.empty())
+                {
+                    required_access.append_range(std::move(export_access));
+                    required_access.emplace_back(AccessType::SELECT, database, table);
+                }
+            }
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:

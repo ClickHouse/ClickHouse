@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -203,6 +204,7 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getS3QueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -810,6 +812,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getAzureQueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(

@@ -53,7 +53,6 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
@@ -2244,10 +2243,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
-    /// Here the engine (also one inherited through `AS`) and the inner engines are final, and nothing is enqueued or created yet.
+    /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
-        checkQueueMoveDestinationAccess(create);
+        checkExportAccess(create);
 
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
@@ -3953,13 +3952,6 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
-    /// The hosts run the entry without the user, so the move destination of a queue table is authorized here:
-    /// after the standard checks and before the entry is enqueued. `executeDDLQueryOnCluster` calls it synchronously.
-    /// It checks the query as given: the explicit engines and the inner engines of views.
-    params.additional_access_check = [this, &create](const String & /* default_database */, bool /* throw_if_unresolved */)
-    {
-        checkQueueMoveDestinationAccess(create);
-    };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
 
@@ -4025,7 +4017,7 @@ BlockIO InterpreterCreateQuery::execute()
                 }
 
                 /// the worker inherits the move destination of the source too, and runs with no user
-                checkQueueMoveDestinationAccess(inherited);
+                checkExportAccess(inherited);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
@@ -4154,16 +4146,19 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (create.has_attach_from_path)
         required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
 
+    /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
+    required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
     return required_access;
 }
 
-void InterpreterCreateQuery::checkQueueMoveDestinationAccess(const ASTCreateQuery & create) const
+void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
     if (internal)
         return;
 
-    checkObjectStorageQueueMoveDestinationAccess(create, getContext());
+    getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

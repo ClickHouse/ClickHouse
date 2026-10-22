@@ -124,9 +124,9 @@ private:
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
-    /// Checks the grants for the move destination of an `S3Queue` or `AzureQueue` table in the engine and the inner engines
-    /// of `create`. It needs the definition after `setEngine`, so it is not a part of `getRequiredAccess`.
-    void checkQueueMoveDestinationAccess(const ASTCreateQuery & create) const;
+    /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
+    /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
+    void checkExportAccess(const ASTCreateQuery & create) const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);

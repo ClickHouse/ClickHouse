@@ -2,16 +2,10 @@
 
 #include "config.h"
 
-#include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
-#include <Access/ContextAccess.h>
 #include <Common/RemoteHostFilter.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <IO/S3/URI.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <Poco/URI.h>
 
@@ -52,60 +46,35 @@ bool isEmptyValue(const Field & value)
     return value.getType() == Field::Types::String && value.safeGet<String>().empty();
 }
 
-}
-
-bool hasObjectStorageQueueMoveDestination(const SettingsChanges & changes)
+/// A table moves files only to the destination of its own storage type, see `ObjectStorageQueuePostProcessor::process`.
+AccessRightsElements getMoveDestinationAccess(const SettingsChanges & changes, MoveDestinationKind table_kind)
 {
-    return std::ranges::any_of(
+    const bool sets_destination = std::ranges::any_of(
         changes,
-        [](const SettingChange & change) { return getMoveDestinationKind(change.name) && !isEmptyValue(change.value); });
+        [&](const SettingChange & change) { return getMoveDestinationKind(change.name) == table_kind && !isEmptyValue(change.value); });
+    if (!sets_destination)
+        return {};
+
+    /// Unfiltered on purpose: a move has no single destination path to match a filter against.
+    /// For S3, the move writes keys built from `after_processing_move_prefix` and the source keys, and uses only
+    /// the bucket of the URI, not its key. For Azure, the `azureBlobStorage` function matches source filters against
+    /// the blob path (`StorageAzureConfiguration::getRawURI` returns `blob_path.path`).
+    const auto source = table_kind == MoveDestinationKind::S3 ? AccessTypeObjects::Source::S3 : AccessTypeObjects::Source::AZURE;
+    AccessRightsElements res;
+    res.emplace_back(AccessType::WRITE, AccessTypeObjects::toStringSource(source));
+    return res;
 }
 
-void checkObjectStorageQueueMoveDestinationAccess(const SettingsChanges & changes, const ContextPtr & context)
-{
-    for (const auto & change : changes)
-    {
-        const auto kind = getMoveDestinationKind(change.name);
-        if (!kind || isEmptyValue(change.value))
-            continue;
-
-        /// Unfiltered on purpose: a move has no single destination path to match a filter against.
-        /// For S3, the move writes keys built from `after_processing_move_prefix` and the source keys, and uses only
-        /// the bucket of the URI, not its key. For Azure, the `azureBlobStorage` function matches source filters against
-        /// the blob path (`StorageAzureConfiguration::getRawURI` returns `blob_path.path`).
-        switch (*kind)
-        {
-            case MoveDestinationKind::S3:
-            {
-                context->getAccess()->checkAccess(AccessType::WRITE, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::S3));
-                break;
-            }
-            case MoveDestinationKind::Azure:
-            {
-                context->getAccess()->checkAccess(AccessType::WRITE, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::AZURE));
-                break;
-            }
-        }
-    }
 }
 
-void checkObjectStorageQueueMoveDestinationAccess(const ASTCreateQuery & create, const ContextPtr & context)
+AccessRightsElements getS3QueueMoveDestinationAccess(const SettingsChanges & changes)
 {
-    auto check_storage = [&context](const ASTStorage & storage)
-    {
-        if (storage.engine && storage.settings && (storage.engine->name == "S3Queue" || storage.engine->name == "AzureQueue"))
-            checkObjectStorageQueueMoveDestinationAccess(storage.settings->changes, context);
-    };
+    return getMoveDestinationAccess(changes, MoveDestinationKind::S3);
+}
 
-    if (create.storage)
-        check_storage(*create.storage);
-
-    /// Inner engines of materialized views and `TimeSeries` tables.
-    if (create.targets)
-    {
-        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
-            check_storage(*inner_engine);
-    }
+AccessRightsElements getAzureQueueMoveDestinationAccess(const SettingsChanges & changes)
+{
+    return getMoveDestinationAccess(changes, MoveDestinationKind::Azure);
 }
 
 void checkObjectStorageQueueS3MoveDestinationHost(
