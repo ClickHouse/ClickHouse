@@ -131,8 +131,7 @@ public:
     deserializeStructureStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache, size_t num_paths);
 
     /// The identity element of a path. Behind the ObjectTypedSharedData element it keys the path's column in the
-    /// substreams cache; in front of the stream elements of a reader of some paths it marks the enumeration as one
-    /// the reader must not prefetch, and is skipped in file names.
+    /// substreams cache; it is skipped in file names.
     static Substream getPathElement(const String & path);
 
     /// The three streams behind settings.path, the data stream with the size hint when given.

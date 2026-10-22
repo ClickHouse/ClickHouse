@@ -607,10 +607,6 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
         const auto & stream = column_streams.at(getStreamName(name_and_type, substream_path));
         return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
     };
-    serialize_settings.set_block_written_callback = [this, name_and_type](const ISerialization::SubstreamPath & substream_path, std::function<void(size_t)> callback)
-    {
-        column_streams.at(getStreamName(name_and_type, substream_path))->compressor.setBlockWrittenCallback(std::move(callback));
-    };
     return serialize_settings;
 }
 

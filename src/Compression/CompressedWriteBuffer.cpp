@@ -66,9 +66,6 @@ void CompressedWriteBuffer::nextImpl()
     else
         out.write(compressed_buffer.data(), compressed_size);
 
-    if (block_written_callback)
-        block_written_callback(out.count());
-
     growAdaptiveBufferAfterFlush();
 }
 

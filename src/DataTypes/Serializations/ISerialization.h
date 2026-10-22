@@ -547,10 +547,6 @@ public:
         /// False if the granule being written continues in the next call. Used only in MergeTree.
         bool granule_is_complete = true;
 
-        /// Subscribes to the end offsets of the compressed blocks written to the specific stream.
-        /// Used only in MergeTree for the typed shared data of Object.
-        std::function<void(const SubstreamPath &, std::function<void(size_t)>)> set_block_written_callback;
-
         /// Serialization version of the typed shared data of Object. 0 is reserved, so the field is not value-initialized.
         MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
             = MergeTreeObjectTypedSharedDataSerializationVersion::V1;

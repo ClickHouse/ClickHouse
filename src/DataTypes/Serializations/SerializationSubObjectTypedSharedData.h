@@ -11,9 +11,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/// Serialization of the SHARED typed paths under a sub-object prefix, read from the typed shared data: a container
-/// over one path reader per path, which delegates the prefix, the data and the stream enumeration to them. The first
-/// of them to miss the substreams cache decodes every requested path of the call for the others.
+/// Serialization of the SHARED typed paths under a sub-object prefix, read from the typed shared data. It requests its
+/// paths on the structure state of the column and decodes them in one call straight into its columns; when another
+/// reader of the column decoded the call first, it copies them from the substreams cache.
 class SerializationSubObjectTypedSharedData final : public SimpleTextSerialization
 {
 public:
@@ -78,8 +78,6 @@ private:
     size_t first_path_index;
     /// Of all shared typed paths of the type.
     size_t num_paths;
-    /// One SerializationObjectTypedSharedDataPath per path.
-    std::vector<SerializationPtr> path_readers;
 };
 
 }

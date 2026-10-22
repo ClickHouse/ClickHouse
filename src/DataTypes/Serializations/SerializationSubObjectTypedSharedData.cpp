@@ -1,9 +1,7 @@
 #include <Columns/ColumnObject.h>
-#include <DataTypes/Serializations/SerializationObjectTypedSharedDataPath.h>
 #include <DataTypes/Serializations/SerializationSubObjectTypedSharedData.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <base/scope_guard.h>
 
 #include <algorithm>
 
@@ -16,45 +14,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-
-struct DeserializeBinaryBulkStateSubObjectTypedSharedData : public ISerialization::DeserializeBinaryBulkState
-{
-    /// One per path reader.
-    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> path_states;
-
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
-    {
-        auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObjectTypedSharedData>();
-        for (const auto & path_state : path_states)
-            new_state->path_states.push_back(path_state ? path_state->clone(context) : nullptr);
-        return new_state;
-    }
-};
-
-/// The path readers push ObjectData and ObjectTypedSharedData themselves, which the sub-object has pushed already, so
-/// the two come off the path around their calls.
-template <typename F>
-void callPathReaders(ISerialization::SubstreamPath & path, F && call)
-{
-    using Substream = ISerialization::Substream;
-    if (path.size() < 2 || path.back().type != Substream::ObjectTypedSharedData || path[path.size() - 2].type != Substream::ObjectData)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream path of a sub-object of the typed shared data of Object");
-
-    auto typed_shared_data = std::move(path.back());
-    path.pop_back();
-    auto object_data = std::move(path.back());
-    path.pop_back();
-    SCOPE_EXIT({
-        path.push_back(std::move(object_data));
-        path.push_back(std::move(typed_shared_data));
-    });
-    call();
-}
-
-}
-
 SerializationSubObjectTypedSharedData::SerializationSubObjectTypedSharedData(
     const String & paths_prefix_, SharedTypedPaths paths_, size_t first_path_index_, size_t num_paths_)
     : paths_prefix(paths_prefix_)
@@ -62,12 +21,8 @@ SerializationSubObjectTypedSharedData::SerializationSubObjectTypedSharedData(
     , first_path_index(first_path_index_)
     , num_paths(num_paths_)
 {
-    path_readers.reserve(paths.size());
-    for (size_t i = 0; i != paths.size(); ++i)
-    {
-        const auto & path = paths[i];
-        path_readers.push_back(SerializationObjectTypedSharedDataPath::create(path.serialization, path, first_path_index + i, num_paths, ""));
-    }
+    if (paths.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sub-object {} of the typed shared data of Object has no paths", paths_prefix);
 }
 
 UInt128 SerializationSubObjectTypedSharedData::getHash(
@@ -98,9 +53,7 @@ SerializationPtr SerializationSubObjectTypedSharedData::create(
 
 size_t SerializationSubObjectTypedSharedData::allocatedBytes() const
 {
-    /// The path readers are pooled and accounted by the pool.
-    size_t bytes = sizeof(*this) + paths_prefix.capacity() + paths.capacity() * sizeof(SharedTypedPaths::value_type)
-        + path_readers.capacity() * sizeof(SerializationPtr);
+    size_t bytes = sizeof(*this) + paths_prefix.capacity() + paths.capacity() * sizeof(SharedTypedPaths::value_type);
     for (const auto & path : paths)
         bytes += path.name.capacity();
     return bytes;
@@ -114,19 +67,15 @@ bool SerializationSubObjectTypedSharedData::supportsPooling() const
 void SerializationSubObjectTypedSharedData::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
-    const auto * state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateSubObjectTypedSharedData>(data.deserialize_state) : nullptr;
-    callPathReaders(
-        settings.path,
-        [&]
-        {
-            for (size_t i = 0; i != path_readers.size(); ++i)
-            {
-                auto path_data = SubstreamData(path_readers[i]);
-                if (state)
-                    path_data.withDeserializeState(state->path_states[i]);
-                path_readers[i]->enumerateStreams(settings, callback, path_data);
-            }
-        });
+    /// The caller has pushed ObjectData and ObjectTypedSharedData. Each path is listed behind its identity element,
+    /// with its bytes of the data stream when a state is at hand.
+    for (size_t i = 0; i != paths.size(); ++i)
+    {
+        settings.path.push_back(SerializationObjectTypedSharedData::getPathElement(paths[i].name));
+        SerializationObjectTypedSharedData::enumerateTypedSharedDataStreams(
+            settings, callback, SerializationObjectTypedSharedData::pathsSizeHint(data.deserialize_state, first_path_index + i, 1));
+        settings.path.pop_back();
+    }
 }
 
 void SerializationSubObjectTypedSharedData::serializeBinaryBulkStatePrefix(
@@ -154,16 +103,20 @@ void SerializationSubObjectTypedSharedData::serializeBinaryBulkStateSuffix(
 void SerializationSubObjectTypedSharedData::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    auto sub_object_state = std::make_shared<DeserializeBinaryBulkStateSubObjectTypedSharedData>();
-    sub_object_state->path_states.resize(path_readers.size());
-    callPathReaders(
-        settings.path,
-        [&]
-        {
-            for (size_t i = 0; i != path_readers.size(); ++i)
-                path_readers[i]->deserializeBinaryBulkStatePrefix(settings, sub_object_state->path_states[i], cache);
-        });
-    state = std::move(sub_object_state);
+    if (settings.data_part_type == MergeTreeDataPartType::Unknown)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sub-object {} of the typed shared data of Object is read outside a data part", paths_prefix);
+
+    /// The caller has pushed ObjectData and ObjectTypedSharedData. The state is the structure state of the column,
+    /// shared with its other readers, with the sub-object's paths requested on it.
+    auto structure_state = SerializationObjectTypedSharedData::deserializeStructureStatePrefix(settings, cache, num_paths);
+    if (!structure_state)
+        return;
+
+    auto * structure
+        = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedDataStructure>(structure_state);
+    for (size_t i = 0; i != paths.size(); ++i)
+        structure->requestPath(first_path_index + i, paths[i]);
+    state = std::move(structure_state);
 }
 
 void SerializationSubObjectTypedSharedData::deserializeBinaryBulkWithMultipleStreams(
@@ -173,15 +126,37 @@ void SerializationSubObjectTypedSharedData::deserializeBinaryBulkWithMultipleStr
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * sub_object_state = checkAndGetState<DeserializeBinaryBulkStateSubObjectTypedSharedData>(state);
+    /// The column is absent from the part: the prefix found no header, and the reader fills the defaults.
+    if (!state)
+        return;
+
+    auto * structure
+        = checkAndGetState<SerializationObjectTypedSharedData::DeserializeBinaryBulkStateObjectTypedSharedDataStructure>(state);
     auto & typed_paths = assert_cast<ColumnObject &>(column).getTypedPaths();
-    callPathReaders(
-        settings.path,
-        [&]
+    auto own_column = [&](size_t i) -> IColumn & { return *typed_paths.at(paths[i].name.substr(paths_prefix.size())); };
+
+    /// The caller has pushed ObjectData and ObjectTypedSharedData. The first reader of a call decodes every requested
+    /// path, so either every path is in the cache or none is.
+    if (SerializationObjectTypedSharedData::insertPathFromCache(own_column(0), paths.front().name, settings, cache))
+    {
+        for (size_t i = 1; i != paths.size(); ++i)
         {
-            for (size_t i = 0; i != path_readers.size(); ++i)
-                path_readers[i]->deserializeBinaryBulkWithMultipleStreams(
-                    *typed_paths.at(paths[i].name.substr(paths_prefix.size())), limit, settings, sub_object_state->path_states[i], cache);
+            if (!SerializationObjectTypedSharedData::insertPathFromCache(own_column(i), paths[i].name, settings, cache))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} of the typed shared data of Object is not in the substreams cache", paths[i].name);
+        }
+        return;
+    }
+
+    SerializationObjectTypedSharedData::deserializeRequestedPaths(
+        limit,
+        settings,
+        *structure,
+        cache,
+        [&](size_t path_index) -> IColumn *
+        {
+            if (path_index < first_path_index || path_index >= first_path_index + paths.size())
+                return nullptr;
+            return &own_column(path_index - first_path_index);
         });
 }
 

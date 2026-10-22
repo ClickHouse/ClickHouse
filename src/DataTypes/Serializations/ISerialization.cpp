@@ -302,8 +302,8 @@ using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
 
 /// Renders the substream path by passing its pieces to `append` in order, so the same rendering can either
 /// be materialized into a string or fed into a hash without building the string.
-/// encode_for_cache_key renders the parts that exist in cache keys only: the sparse elements and the identity
-/// element of a SHARED path of Object.
+/// encode_for_cache_key renders the parts that exist in cache keys only: the sparse elements, the identity element
+/// of a SHARED path of Object and the keyword in front of a path name of Object.
 template <typename Append>
 void appendNameForSubstreamPath(
     Append && append,
@@ -430,21 +430,19 @@ void appendNameForSubstreamPath(
             append(".paths_marks");
         else if (it->type == SubstreamType::ObjectTypedSharedDataPath)
         {
-            /// The path shares its files with every other SHARED path, so the element names it in subcolumn names
-            /// and cache keys only.
-            if (!escape_for_file_name)
+            /// The path shares its files with every other SHARED path, so the element exists in cache keys only.
+            if (encode_for_cache_key)
             {
-                append(".");
-                append(it->object_path_name);
-            }
-            else if (encode_for_cache_key)
-            {
-                append(".");
+                append(".shared_paths.");
                 append(escapeForFileName(it->object_path_name));
             }
         }
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
         {
+            /// In cache keys a path name follows a keyword, so that no name can stand where a fixed stream name
+            /// stands: the key stays injective whatever the paths are called.
+            if (encode_for_cache_key)
+                append(".object_paths");
             append(".");
             if (escape_for_file_name)
                 append(escapeForFileName(it->object_path_name));
@@ -808,24 +806,14 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
 
 bool ISerialization::isPrefetchNeededForSubstream(const DB::ISerialization::SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams)
 {
-    if (prefix_len == 0 || prefix_len > path.size())
+    if (prefetch_json_shared_data_substreams || prefix_len == 0 || prefix_len > path.size())
         return true;
 
-    /// A reader of some SHARED paths of Object (its streams are enumerated behind the path's identity element) seeks to
-    /// its paths' marks inside each granule, so a prefetch from the granule's start fetches data the next seek discards.
-    for (size_t i = 0; i != prefix_len; ++i)
-    {
-        if (path[i].type == Substream::ObjectTypedSharedDataPath)
-            return false;
-    }
-
-    if (prefetch_json_shared_data_substreams)
-        return true;
-
-    /// The JSON shared data Data substream is not read from the start of the granule: a path's data is
-    /// located via a mark in another stream and read by seeking to it. With many JSON paths the granule
-    /// is large, so prefetching from the start can fetch data we never read.
-    return path[prefix_len - 1].type != Substream::ObjectSharedDataData;
+    /// The data substreams of the JSON shared data and of the typed shared data are not read from the start of the
+    /// granule: a path's data is located via a mark in another stream and read by seeking to it. With many JSON paths
+    /// the granule is large, so prefetching from the start can fetch data we never read.
+    auto last = path[prefix_len - 1].type;
+    return last != Substream::ObjectSharedDataData && last != Substream::ObjectTypedSharedDataPathsData;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -857,7 +845,7 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         return false;
 
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
+        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo || path[path.size() - 1].type == SubstreamType::ObjectTypedSharedDataHeader;
 }
 
 bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)

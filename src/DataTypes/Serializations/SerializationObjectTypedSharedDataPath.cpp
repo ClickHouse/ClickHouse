@@ -74,7 +74,7 @@ void SerializationObjectTypedSharedDataPath::enumerateStreams(
 {
     settings.path.push_back(Substream::ObjectData);
     settings.path.push_back(Substream::ObjectTypedSharedData);
-    /// The identity element marks the enumeration as a reader of some paths and keys the path's cache entries.
+    /// The identity element keys the path's cache entries.
     settings.path.push_back(SerializationObjectTypedSharedData::getPathElement(path.name));
     SCOPE_EXIT({
         settings.path.pop_back();

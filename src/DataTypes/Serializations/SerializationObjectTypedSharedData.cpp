@@ -29,7 +29,8 @@ struct SerializeBinaryBulkStateObjectTypedSharedData : public ISerialization::Se
     SerializationObjectTypedSharedData::Header header;
 
     /// Rows of the granule being written, one slice per serialize call. A slice references the block's columns, which
-    /// are immutable while referenced; a granule inside one block is one slice, a granule spanning blocks several.
+    /// are immutable while referenced; a granule inside one block is one slice, a granule that spans several blocks has
+    /// one slice per block.
     struct Slice
     {
         Columns path_columns;
@@ -46,10 +47,7 @@ struct SerializeBinaryBulkStateObjectTypedSharedData : public ISerialization::Se
 struct GranuleEntry
 {
     size_t num_rows = 0;
-    std::vector<MarkInCompressedFile> starts;
-    /// Compressed offsets after the blocks holding the paths' last bytes. Empty in Compact parts, and not kept by the
-    /// reader, which reads whole blocks.
-    std::vector<size_t> ends;
+    std::vector<MarkInCompressedFile> marks;
 };
 
 String getStreamName(ISerialization::Substream::Type type)
@@ -82,7 +80,7 @@ MarkInCompressedFile getStreamMark(ISerialization::Substream::Type type, ISerial
 using PathColumnGetter = std::function<const IColumn &(size_t path_index)>;
 
 /// Writes the granule's rows [offset, offset + num_rows) of every path into .paths_data, each path as one unit with a
-/// fresh state, and returns where each path's data starts and, in Wide parts, where the block holding its last byte ends.
+/// fresh state, and returns where each path's data starts.
 GranuleEntry writeGranulePathsData(
     const SerializationObjectTypedSharedData::SharedTypedPaths & paths,
     const PathColumnGetter & get_column,
@@ -104,43 +102,15 @@ GranuleEntry writeGranulePathsData(
 
     GranuleEntry entry;
     entry.num_rows = num_rows;
-    entry.starts.resize(paths.size());
-    if (!compact)
-        entry.ends.resize(paths.size());
+    entry.marks.resize(paths.size());
 
     /// A granule without rows has no path data (a limit of 0 would mean the whole column to the serializations); the
     /// caller still writes its marks entry, which the reader expects for every granule.
     if (num_rows == 0)
     {
-        auto mark = get_data_mark();
-        std::fill(entry.starts.begin(), entry.starts.end(), mark);
-        std::fill(entry.ends.begin(), entry.ends.end(), mark.offset_in_compressed_file);
+        std::fill(entry.marks.begin(), entry.marks.end(), get_data_mark());
         return entry;
     }
-
-    /// Where a path's data ends is known only when its block is compressed, which the compressor reports; every path
-    /// written since the previous report ended in that block. Compact parts write no ends.
-    std::vector<size_t> pending_paths;
-    if (!compact)
-    {
-        if (!settings.set_block_written_callback)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Block written callback is not set for the typed shared data of Object in a Wide part");
-
-        settings.set_block_written_callback(
-            settings.path,
-            [&](size_t offset_after_block)
-            {
-                for (auto path_index : pending_paths)
-                    entry.ends[path_index] = offset_after_block;
-                pending_paths.clear();
-            });
-    }
-    /// The callback refers to locals, so it is removed on every exit; this guard runs before the one popping the path.
-    SCOPE_EXIT({
-        if (!compact)
-            settings.set_block_written_callback(settings.path, {});
-    });
 
     auto path_settings = getObjectPathDataSerializationSettings(settings, settings.object_shared_data_serialization_version);
     path_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &) { return get_data_mark(); };
@@ -161,7 +131,7 @@ GranuleEntry writeGranulePathsData(
     {
         const auto & path = paths[path_index];
         cut_block_if_worth_it();
-        entry.starts[path_index] = get_data_mark();
+        entry.marks[path_index] = get_data_mark();
         size_t count_before_path = data_stream->count();
 
         const auto & column = get_column(path_index);
@@ -175,20 +145,11 @@ GranuleEntry writeGranulePathsData(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Suffix of path {} wrote data into the typed shared data of Object", path.name);
 
         paths_uncompressed_bytes[path_index] += data_stream->count() - count_before_path;
-        if (!compact)
-            pending_paths.push_back(path_index);
     }
 
-    /// The cut after the granule's last path: every end is known when the granule's marks are written, and the next
-    /// granule's mark is a block start.
+    /// The cut after the granule's last path: the next granule's mark is a block start, so a granule's blocks are its own.
     if (!compact)
-    {
         data_stream->next();
-        size_t granule_end = get_data_mark().offset_in_compressed_file;
-        for (auto path_index : pending_paths)
-            entry.ends[path_index] = granule_end;
-        pending_paths.clear();
-    }
 
     return entry;
 }
@@ -203,20 +164,8 @@ void writeGranuleEntry(
     size_t previous_compressed_offset = 0;
     for (size_t path_index = 0; path_index != paths.size(); ++path_index)
     {
-        writeMarkDelta(entry.starts[path_index], previous_compressed_offset, *marks_stream);
-        previous_compressed_offset = entry.starts[path_index].offset_in_compressed_file;
-        if (!entry.ends.empty())
-        {
-            size_t data_end = entry.ends[path_index];
-            if (data_end < previous_compressed_offset)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Block end of path {} goes backwards in the typed shared data of Object: data starts at {}, ends at {}",
-                    paths[path_index].name,
-                    previous_compressed_offset,
-                    data_end);
-            writeVarUInt(data_end - previous_compressed_offset, *marks_stream);
-        }
+        writeMarkDelta(entry.marks[path_index], previous_compressed_offset, *marks_stream);
+        previous_compressed_offset = entry.marks[path_index].offset_in_compressed_file;
     }
 }
 
@@ -241,15 +190,16 @@ void completeGranule(
     }
     else
     {
-        MutableColumns columns;
-        columns.reserve(paths.size());
-        for (size_t path_index = 0; path_index != paths.size(); ++path_index)
+        /// The writer takes each path once, in order, so one combined column at a time is enough.
+        MutableColumnPtr combined;
+        PathColumnGetter get_column = [&](size_t path_index) -> const IColumn &
         {
-            columns.push_back(slices.front().path_columns[path_index]->cloneEmpty());
+            combined = slices.front().path_columns[path_index]->cloneEmpty();
+            combined->reserve(num_rows);
             for (const auto & slice : slices)
-                columns.back()->insertRangeFrom(*slice.path_columns[path_index], slice.offset, slice.rows);
-        }
-        PathColumnGetter get_column = [&](size_t path_index) -> const IColumn & { return *columns[path_index]; };
+                combined->insertRangeFrom(*slice.path_columns[path_index], slice.offset, slice.rows);
+            return *combined;
+        };
         entry = writeGranulePathsData(paths, get_column, 0, num_rows, settings, state.paths_uncompressed_bytes);
     }
 
@@ -515,22 +465,16 @@ ReadBuffer * getReadStream(ISerialization::Substream::Type type, ISerialization:
     return stream;
 }
 
-GranuleEntry readGranuleEntry(ReadBuffer & stream, size_t num_paths, bool with_ends)
+GranuleEntry readGranuleEntry(ReadBuffer & stream, size_t num_paths)
 {
     GranuleEntry entry;
     readVarUInt(entry.num_rows, stream);
-    entry.starts.resize(num_paths);
+    entry.marks.resize(num_paths);
     size_t previous_compressed_offset = 0;
     for (size_t path_index = 0; path_index != num_paths; ++path_index)
     {
-        entry.starts[path_index] = readMarkDelta(previous_compressed_offset, stream);
-        previous_compressed_offset = entry.starts[path_index].offset_in_compressed_file;
-        /// Skipped, see GranuleEntry::ends.
-        if (with_ends)
-        {
-            size_t end_delta = 0;
-            readVarUInt(end_delta, stream);
-        }
+        entry.marks[path_index] = readMarkDelta(previous_compressed_offset, stream);
+        previous_compressed_offset = entry.marks[path_index].offset_in_compressed_file;
     }
     return entry;
 }
@@ -609,7 +553,7 @@ void decodeGranuleIntoPathDestinations(
         /// Every path is read at the position the previous one left the stream, unless some path lies between them.
         bool adjacent = previous_index && *previous_index + 1 == destination.path_index;
         if (!all_paths && !adjacent)
-            seek_to(entry.starts[destination.path_index]);
+            seek_to(entry.marks[destination.path_index]);
 
         if (!cut)
         {
@@ -725,7 +669,7 @@ void SerializationObjectTypedSharedData::deserializeRequestedPaths(
         auto path_settings = getPathDataDeserializeSettings(data_stream);
         while (rows_left != 0 && !marks_stream->eof())
         {
-            auto entry = readGranuleEntry(*marks_stream, state.num_paths, /*with_ends=*/ true);
+            auto entry = readGranuleEntry(*marks_stream, state.num_paths);
             decodeGranuleIntoPathDestinations(entry, all_paths, seek_to, path_settings, destinations, rows_left, state);
         }
     }
@@ -743,7 +687,7 @@ void SerializationObjectTypedSharedData::deserializeRequestedPaths(
         decodeGranuleIntoPathDestinations(entry, all_paths, seek_to, path_settings, destinations, rows_left, state);
 
         auto * marks_stream = getReadStream(Substream::ObjectTypedSharedDataPathsMarks, settings);
-        auto written_entry = readGranuleEntry(*marks_stream, state.num_paths, /*with_ends=*/ false);
+        auto written_entry = readGranuleEntry(*marks_stream, state.num_paths);
         if (written_entry.num_rows != limit)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -764,20 +708,20 @@ void SerializationObjectTypedSharedData::deserializeRequestedPaths(
 
         seek_to_current_mark(marks_path);
         auto * marks_stream = getReadStream(Substream::ObjectTypedSharedDataPathsMarks, settings);
-        auto entry = readGranuleEntry(*marks_stream, state.num_paths, /*with_ends=*/ false);
+        auto entry = readGranuleEntry(*marks_stream, state.num_paths);
 
         seek_to_current_mark(data_path);
         auto * data_stream = getReadStream(Substream::ObjectTypedSharedDataPathsData, settings);
         auto path_settings = getPathDataDeserializeSettings(data_stream);
         if (entry.num_rows != 0)
-            seek_to(entry.starts[destinations.front().path_index]);
+            seek_to(entry.marks[destinations.front().path_index]);
         decodeGranuleIntoPathDestinations(entry, all_paths, seek_to, path_settings, destinations, rows_left, state);
 
         if (all_paths)
         {
             seek_to_current_mark(marks_path);
             getReadStream(Substream::ObjectTypedSharedDataPathsMarks, settings);
-            readGranuleEntry(*marks_stream, state.num_paths, /*with_ends=*/ false);
+            readGranuleEntry(*marks_stream, state.num_paths);
         }
     }
 
