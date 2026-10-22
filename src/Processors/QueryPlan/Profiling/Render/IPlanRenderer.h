@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/QueryPlan/CapturedPlan.h>
+#include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 
 namespace DB
 {

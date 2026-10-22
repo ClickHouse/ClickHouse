@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/QueryPlan/PlanIndexStats.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>

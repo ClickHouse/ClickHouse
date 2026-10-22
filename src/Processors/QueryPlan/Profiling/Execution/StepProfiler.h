@@ -16,8 +16,6 @@
 namespace DB
 {
 
-class IQueryPlanStep;
-class QueryPlan;
 
 /// Keyed by the step's uniq id rather than its address: the clocks are read while the query runs
 /// and once it has finished, and by then the plan the steps belonged to may be long gone. The
@@ -28,16 +26,13 @@ using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 /// Everything the statistics of a query are produced from: the clocks the processors stamp while
 /// it runs, and the analyzer each step handed out for shaping what they measured.
 ///
-/// Both come from one walk of the plan, taken while the plan is alive, and both outlive it. The
+/// Both are read from a walk of the plan taken while it is alive, and both outlive it. The
 /// pipeline holds this, so a step's timings and its analyzer stay reachable from the same place
 /// for as long as the statistics can still be asked for.
 class StepProfiler
 {
 public:
-    /// `only_built_child_plans` keeps the walk from asking a step to build child plans it does not
-    /// already hold, which would make profiling change the work the query does. `EXPLAIN` wants
-    /// those plans and so passes false.
-    StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, bool only_built_child_plans = false);
+    StepProfiler(const PlanWalk & walk, bool collect_work_intervals_);
 
     StepWallClock * findClockForStep(const String & step_id, size_t group) const;
 

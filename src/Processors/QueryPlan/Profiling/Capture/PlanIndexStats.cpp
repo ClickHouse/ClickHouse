@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/PlanIndexStats.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 
 #include <memory>
 

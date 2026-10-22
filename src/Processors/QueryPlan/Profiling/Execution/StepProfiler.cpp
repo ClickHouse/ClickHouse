@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -22,9 +21,9 @@ StepWallClocks collectWallClocksForPlanSteps(const PlanAnalysisSnapshot & plan_s
 
 }
 
-StepProfiler::StepProfiler(const QueryPlan & plan, bool collect_work_intervals_, bool only_built_child_plans)
+StepProfiler::StepProfiler(const PlanWalk & walk, bool collect_work_intervals_)
     : collect_work_intervals(collect_work_intervals_)
-    , plan_snapshot(PlanAnalysisSnapshot::capture(plan, only_built_child_plans))
+    , plan_snapshot(PlanAnalysisSnapshot::capture(walk))
     , clocks(collectWallClocksForPlanSteps(plan_snapshot))
 {
 }

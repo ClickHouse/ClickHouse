@@ -1,69 +1,32 @@
 #include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 
-#include <vector>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
 
-PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan, bool only_built_child_plans)
+PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const PlanWalk & walk)
 {
     PlanAnalysisSnapshot snapshot;
+    snapshot.root_id = walk.root_id;
+    snapshot.shape.reserve(walk.steps.size());
+    snapshot.analyzers.reserve(walk.steps.size());
 
-    if (!plan.isInitialized())
-        return snapshot;
-
-    auto * root = plan.getRootNode();
-    if (!root || !root->step)
-        return snapshot;
-
-    snapshot.root_id = root->step->getUniqID();
-
-    std::vector<QueryPlan::Node *> to_visit{root};
-    while (!to_visit.empty())
+    for (const auto & visited : walk.steps)
     {
-        auto * node = to_visit.back();
-        to_visit.pop_back();
-        if (!node || !node->step)
-            continue;
+        PlanShapeNode node;
+        node.id = visited.id;
+        node.children = visited.children;
 
-        auto & step = *node->step;
-        const String step_id = step.getUniqID();
-
-        PlanShapeNode branch_node;
-        branch_node.id = step_id;
-
-        for (auto * child : node->children)
+        if (const auto * join_step = typeid_cast<const JoinStep *>(visited.step))
         {
-            if (!child || !child->step)
-                continue;
-            branch_node.children.push_back(child->step->getUniqID());
-            to_visit.push_back(child);
+            node.is_join = true;
+            node.cluster_id = join_step->getClusterId();
         }
 
-        for (auto * child_plan :
-            only_built_child_plans ? step.getBuiltChildPlans() : step.getChildPlans(/*for_explain=*/ false))
-        {
-            if (!child_plan || !child_plan->isInitialized())
-                continue;
-            auto * child_root = child_plan->getRootNode();
-            if (!child_root || !child_root->step)
-                continue;
-            branch_node.children.push_back(child_root->step->getUniqID());
-            to_visit.push_back(child_root);
-        }
-
-        if (const auto * join_step = typeid_cast<const JoinStep *>(&step))
-        {
-            branch_node.is_join = true;
-            branch_node.cluster_id = join_step->getClusterId();
-        }
-
-        snapshot.shape.push_back(std::move(branch_node));
-
-        snapshot.analyzers.emplace(step_id, step.makeAnalyzer());
+        snapshot.shape.push_back(std::move(node));
+        snapshot.analyzers.emplace(visited.id, visited.step->makeAnalyzer());
     }
 
     return snapshot;

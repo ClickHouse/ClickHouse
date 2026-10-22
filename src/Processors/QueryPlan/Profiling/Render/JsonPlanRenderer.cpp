@@ -3,7 +3,7 @@
 #include <Common/JSONBuilder.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/QueryPlan/PlanIndexStats.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <base/types.h>
 

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/JSONBuilder.h>
-#include <Processors/QueryPlan/PlanIndexStats.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <base/types.h>
 
@@ -50,11 +51,12 @@ struct CapturedPlan
 
     std::vector<CapturedStep> nodes;
 
-    /// Reads a plan into a `CapturedPlan`.
+    /// Reads a walked plan into a `CapturedPlan`. The walk gives the shape; each step is read
+    /// here for what it says about itself.
     ///
-    /// Must run after that plan's pipeline has been built and while the plan is still alive:
-    /// `buildQueryPipeline` optimizes the plan, so the shape that will run is only visible
-    /// afterwards, as are the index analysis and the child plans built along the way.
+    /// The walk must have been taken after the plan's pipeline was built and while the plan is
+    /// still alive: `buildQueryPipeline` optimizes the plan, so the shape that will run is only
+    /// visible afterwards, as are the index analysis and the child plans built along the way.
     /// `pretty_names` is the one input that has to have been read *before* the pipeline was
     /// built, since building it moves the `ActionsDAG` out of every expression step.
     ///
@@ -62,7 +64,7 @@ struct CapturedPlan
     /// has them. The logged plan does not: it captures before the query runs and fills them in
     /// afterwards, through `QueryPlanProfiler::captureStatistics`.
     static CapturedPlan capture(
-        const QueryPlan & plan,
+        const PlanWalk & walk,
         const ExplainPlanOptions & options,
         size_t max_description_length,
         const AnalyzeStepsStats * steps_to_stats,

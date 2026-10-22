@@ -106,13 +106,13 @@ void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * 
         reason);
 }
 
-void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const PrettyNamesPerPlan & pretty_names)
+void QueryPlanProfiler::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names)
 {
     /// One plan per query, and nothing is asked of the profiler before this.
     chassert(!captured);
 
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
-    captured = CapturedPlan::capture(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
+    captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 }
 
 void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)

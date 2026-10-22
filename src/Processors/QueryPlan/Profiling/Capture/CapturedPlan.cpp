@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/CapturedPlan.h>
+#include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -133,7 +133,7 @@ const PrettyNames * findPrettyNames(const PrettyNamesPerPlan * pretty_names, con
 }
 
 /// Everything the document needs about one step, read while the step and its pipeline are alive.
-/// `children` is left empty: only the walk below knows the shape.
+/// `children` is left empty: only the walk knows the shape.
 CapturedStep captureStep(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
@@ -154,82 +154,29 @@ CapturedStep captureStep(
     return captured;
 }
 
-/// Captures every step of a plan, and of any plan its steps have already built
-/// (`getBuiltChildPlans`, so that capturing never builds one). Only the walk
-/// knows the shape, so this is also what fills in each step's `children`.
-std::vector<CapturedStep> capturePlanSteps(
-    const QueryPlan & plan,
-    const ExplainPlanOptions & options,
-    size_t max_description_length,
-    const AnalyzeStepsStats * steps_to_stats,
-    const PrettyNamesPerPlan * pretty_names)
-{
-    struct Frame
-    {
-        const QueryPlan * plan = nullptr;
-        QueryPlan::Node * node = nullptr;
-    };
-
-    std::vector<CapturedStep> collected;
-
-    std::vector<Frame> stack;
-    stack.push_back({&plan, plan.getRootNode()});
-
-    while (!stack.empty())
-    {
-        auto frame = stack.back();
-        stack.pop_back();
-
-        if (!frame.node)
-            continue;
-
-        auto & step = *frame.node->step;
-        /// Collect the step
-        auto captured = captureStep(
-            step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, frame.plan));
-
-        /// Collect the children
-        for (auto * child : frame.node->children)
-        {
-            captured.children.push_back(child->step->getUniqID());
-            stack.push_back({frame.plan, child});
-        }
-
-        /// Collect child plans
-        for (auto * child_plan : step.getBuiltChildPlans())
-        {
-            if (!child_plan)
-                continue;
-
-            auto * child_root = child_plan->getRootNode();
-            if (!child_root)
-                continue;
-
-            captured.children.push_back(child_root->step->getUniqID());
-            stack.push_back({child_plan, child_root});
-        }
-
-        collected.push_back(std::move(captured));
-    }
-
-    return collected;
-}
-
 }
 
 CapturedPlan CapturedPlan::capture(
-    const QueryPlan & plan,
+    const PlanWalk & walk,
     const ExplainPlanOptions & options,
     size_t max_description_length,
     const AnalyzeStepsStats * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names)
 {
     CapturedPlan result;
-    if (!plan.isInitialized() || !plan.getRootNode())
+    if (!walk.plan)
         return result;
 
-    result.root_id = plan.getRootNode()->step->getUniqID();
-    result.nodes = capturePlanSteps(plan, options, max_description_length, steps_to_stats, pretty_names);
+    result.root_id = walk.root_id;
+
+    result.nodes.reserve(walk.steps.size());
+    for (const auto & visited : walk.steps)
+    {
+        auto captured = captureStep(
+            *visited.step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, visited.owning_plan));
+        captured.children = visited.children;
+        result.nodes.push_back(std::move(captured));
+    }
 
     if (steps_to_stats)
     {
@@ -240,12 +187,12 @@ CapturedPlan CapturedPlan::capture(
     /// The columns the query produces.
     if (options.pretty)
     {
-        const auto * root_pretty_names = findPrettyNames(pretty_names, &plan);
+        const auto * root_pretty_names = findPrettyNames(pretty_names, walk.plan);
         PrettyNames empty_pretty_names;
         const auto & names
             = root_pretty_names ? root_pretty_names->pretty_names : empty_pretty_names.pretty_names;
 
-        const auto & root_step = *plan.getRootNode()->step;
+        const auto & root_step = *walk.plan->getRootNode()->step;
         if (root_step.hasOutputHeader() && root_step.getOutputHeader())
             for (const auto & column : *root_step.getOutputHeader())
                 result.output.push_back(QueryPlanFormat::formatColumnPretty(column.name, names));

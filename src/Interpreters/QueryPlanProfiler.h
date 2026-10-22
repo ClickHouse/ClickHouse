@@ -4,7 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/CapturedPlan.h>
+#include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 namespace DB
 {
 
@@ -32,7 +32,7 @@ public:
     ///
     /// May throw: the caller starting the profiling is what keeps a diagnostic from failing a
     /// query that would otherwise have run.
-    void capturePlanStructure(const QueryPlan & plan, const PrettyNamesPerPlan & pretty_names);
+    void capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names);
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.

@@ -59,6 +59,7 @@
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
@@ -1462,7 +1463,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 planning_ns += watch.elapsed();
 
-                step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+                step_profiler = std::make_shared<StepProfiler>(PlanWalk::of(plan, /*only_built_child_plans=*/ false), analyzed.time);
                 pipeline.setStepProfiler(step_profiler);
 
                 CompletedPipelineExecutor executor(pipeline);

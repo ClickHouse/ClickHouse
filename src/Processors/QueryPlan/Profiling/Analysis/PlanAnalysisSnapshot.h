@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Profiling/Analysis/PlanShape.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <base/types.h>
 
@@ -28,13 +29,7 @@ struct PlanAnalysisSnapshot
     /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`.
     std::unordered_map<String, StepAnalyzer> analyzers;
 
-    /// Walks the plan and the child plans its steps own.
-    ///
-    /// `only_built_child_plans` keeps the walk from asking a step to build one it does not
-    /// already hold, so that capturing a plan does not change the work the query does. The logged
-    /// plan passes true. `EXPLAIN ANALYZE` passes false, because it analyses the plan through
-    /// `explainPlan`, which does build them, and every step reached there needs an entry here.
-    static PlanAnalysisSnapshot capture(const QueryPlan & plan, bool only_built_child_plans);
+    static PlanAnalysisSnapshot capture(const PlanWalk & walk);
 };
 
 }
