@@ -2924,12 +2924,16 @@ static void serializeNodeList(
 /// Bits of the flags byte written by `JoinStepLogical::serialize`. A reader that does not know a bit
 /// ignores it, so adding one keeps both directions of the wire compatible.
 static constexpr UInt8 JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED = 1 << 0;
+/// Written and read only from step version 1.
+static constexpr UInt8 JOIN_LOGICAL_FLAG_REORDER_BOUNDARY = 1 << 1;
 
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (disjunctions_optimization_applied)
         flags |= JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED;
+    if (join_reorder_boundary && ctx.step_version >= 1)
+        flags |= JOIN_LOGICAL_FLAG_REORDER_BOUNDARY;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -3014,6 +3018,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+    if (ctx.step_version >= 1)
+        step->join_reorder_boundary = (flags & JOIN_LOGICAL_FLAG_REORDER_BOUNDARY) != 0;
 
     /// The remote side optimizes the plan it receives, so the guard has to survive the wire: without it
     /// the disjunction push-down runs a second time there and duplicates a predicate the read already
@@ -3082,6 +3088,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->join_reorder_boundary = join_reorder_boundary;
 
     return result_step;
 }
@@ -3106,7 +3113,10 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep(
+        "Join",
+        JoinStepLogical::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_REORDER_BOUNDARY}});
 }
 
 
