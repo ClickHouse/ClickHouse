@@ -471,15 +471,6 @@ UInt64 SSTIndexWriter::writeDenseIndexOnInsert(
     /// throws SUPPORT_IS_DISABLED without RocksDB: a UNIQUE KEY INSERT that cannot
     /// build the dense index fails closed rather than publishing a part with no
     /// `unique_key_index.sst`.
-    ///
-    /// The SST needs Full part storage: load-time rebuild calls `removeFileIfExists`
-    /// + `writeFile`, but packed storage only supports these through the writer,
-    /// which is not initialized at load/ATTACH time.
-    /// (`MergeTreeData::choosePartFormat` forces Full storage for UNIQUE KEY parts.)
-    if (storage.getType() != MergeTreeDataPartStorageType::Full)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "UNIQUE KEY dense index requires full part storage, got part storage type {}",
-            storage.getType().toString());
     return write(
         storage,
         block,

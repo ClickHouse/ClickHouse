@@ -453,7 +453,7 @@ void MergeTreeTemporaryPart::cancel()
     part.reset();
 }
 
-void MergeTreeTemporaryPart::finalize()
+void MergeTreeTemporaryPart::finalize(bool precommit_storage)
 {
     for (auto & stream : streams)
         stream.finalizer.finish();
@@ -462,7 +462,9 @@ void MergeTreeTemporaryPart::finalize()
     auto file_order_hint = part->getPreferredFileOrder();
     part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
 
-    part->getDataPartStorage().precommitTransaction();
+    if (precommit_storage)
+        part->getDataPartStorage().precommitTransaction();
+    /// Projections share the part's disk transaction.
     for (const auto & [_, projection] : part->getProjectionParts())
     {
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);

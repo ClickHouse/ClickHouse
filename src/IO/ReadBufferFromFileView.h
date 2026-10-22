@@ -32,6 +32,10 @@ public:
 
     off_t getPosition() override;
 
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+    /// `offset` is relative to the view; a read past its right bound is clamped.
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override;
+
     /// `nextImpl` swaps state into `impl` and calls `impl->next()`, but `impl` may still have its
     /// own pending data, tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under
     /// set()+next(). Force the `read(dest, n)` fallback, which drains via `eof() -> next()` at the

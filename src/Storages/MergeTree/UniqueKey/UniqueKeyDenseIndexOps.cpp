@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 #include <Storages/SelectQueryInfo.h>
@@ -22,6 +23,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/status.h>
@@ -181,7 +183,6 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
                 LOG_WARNING(log, "ensureValidDenseIndex: part {} has a corrupt `{}` ({}); "
                             "removing and rebuilding",
                             part->name, SSTIndexWriter::FILE_NAME, reason);
-                storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
                 break;  /// fall through to the rebuild path below
             case DenseIndexSSTStatus::Transient:
                 /// Do not delete or rebuild: the file may be healthy but momentarily
@@ -250,12 +251,11 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// `unique_key_max_encoded_size` is an INSERT-time ingestion policy (a
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.
-        ///
-        /// `SSTIndexWriter::write` commits in one step: it records the file in
-        /// `part->checksums` (overwriting the stale entry of the removed corrupt
-        /// SST) and finalizes + fsyncs it inline before `writeChecksums` below -
-        /// the SST must be durable before its checksum is, or a crash would
-        /// reintroduce the missing-SST inconsistency the rebuild fixes.
+        storage.beginTransaction();
+        /// On failure nothing is committed, and the part is detached as broken outside this transaction.
+        SCOPE_EXIT_SAFE(if (storage.hasActiveTransaction()) storage.undoTransaction(););
+
+        storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
         SSTIndexWriter::write(
             storage,
             accumulated,
@@ -268,7 +268,10 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
             /*fsync=*/true,
             data.getContext());
 
-        part->writeChecksums(part->checksums, data.getContext()->getWriteSettings());
+        DeleteBitmapFileOps::replacePartFile(
+            storage, "checksums.txt", [&](WriteBuffer & out) { part->checksums.write(out); }, /*sync=*/true);
+        storage.commitTransaction();
+
         part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());
         part->setBytesUncompressedOnDisk(part->checksums.getTotalSizeUncompressedOnDisk());
 

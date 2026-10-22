@@ -2634,7 +2634,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
         global_ctx->new_data_part->getPreferredFileOrder());
 
-    global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
+    /// `UniqueKeyCommitBase::stage` commits a unique-key part's storage.
+    if (!global_ctx->is_unique_key_merge)
+        global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
 
     return false;

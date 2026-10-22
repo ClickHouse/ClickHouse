@@ -107,6 +107,19 @@ DeleteBitmapPtr tryReadBitmapFile(const IDataPartStorage & storage, const String
 
 }
 
+void replacePartFile(IDataPartStorage & storage, const String & file_name, const std::function<void(WriteBuffer &)> & write_body, bool sync)
+{
+    const String tmp_name = file_name + ".tmp";
+    {
+        auto out = storage.writeFile(tmp_name, /*buf_size=*/4096, WriteMode::Rewrite, WriteSettings{});
+        write_body(*out);
+        out->finalize();
+        if (sync)
+            out->sync();
+    }
+    storage.replaceFile(tmp_name, file_name);
+}
+
 MergeTreeDataPartChecksum stageBitmap(
     IDataPartStorage & holder,
     const BitmapFile & file,

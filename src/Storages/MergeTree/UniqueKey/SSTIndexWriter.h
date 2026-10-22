@@ -72,7 +72,7 @@ public:
         bool fsync,
         ContextPtr context);
 
-    /// INSERT-path wrapper: validates storage type, then delegates to `write`.
+    /// INSERT-path wrapper around `write`, taking the key columns from `metadata_snapshot`.
     /// The caller (`MergeTreeDataWriter`) must check `hasUniqueKey()` before calling.
     static UInt64 writeDenseIndexOnInsert(
         IDataPartStorage & storage,

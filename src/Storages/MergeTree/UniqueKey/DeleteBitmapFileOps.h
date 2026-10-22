@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <base/types.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,7 @@ namespace DB
 
 class IDataPartStorage;
 class IMergeTreeDataPart;
+class WriteBuffer;
 
 /// Primitive file-I/O helpers for delete-bitmap files
 namespace DeleteBitmapFileOps
@@ -48,6 +50,9 @@ namespace DeleteBitmapFileOps
     /// By target, then by version -- numerically, so a listing does not start putting
     /// `delete_bitmap_10_for_x` before `delete_bitmap_9_for_x` once a table crosses csn 10.
     void sortByVersion(std::vector<BitmapFile> & files);
+
+    /// Replaces `file_name` atomically through `<file_name>.tmp`.
+    void replacePartFile(IDataPartStorage & storage, const String & file_name, const std::function<void(WriteBuffer &)> & write_body, bool sync);
 
     /// Stage a bitmap file for the given holder
     MergeTreeDataPartChecksum stageBitmap(
