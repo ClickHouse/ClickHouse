@@ -30,3 +30,9 @@ Variant shape distributes
 -- lambda capture of the window state: distributed then local
 0.075652
 0.075652
+-- lambda over the window state: distributed then local
+[0.075652]
+[0.075652]
+-- lambda with the window state as argument and capture: distributed then local
+0.075652
+0.075652
