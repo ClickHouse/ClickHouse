@@ -56,7 +56,7 @@ UInt64 hideAllocationAddress(UInt64 ptr)
         std::array<UInt64, 2> words{};
 #if defined(OS_LINUX)
         /// Old glibc (e.g. the ppc64le sysroot) has no `getentropy`, so call `getrandom` directly.
-        if (::syscall(SYS_getrandom, words.data(), sizeof(words), 0) != static_cast<long>(sizeof(words)))
+        if (::syscall(SYS_getrandom, words.data(), sizeof(words), 0) != static_cast<ssize_t>(sizeof(words)))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getrandom");
 #else
         if (::getentropy(words.data(), sizeof(words)) != 0)
