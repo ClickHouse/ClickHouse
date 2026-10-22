@@ -9,7 +9,7 @@ from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
-from ci.jobs.scripts.docker_server.buildx import (
+from ci.jobs.scripts.buildx import (
     BUILDX_RETRIES,
     BUILDX_RETRY_ERRORS,
     build_rotating_apt_mirrors,

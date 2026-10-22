@@ -23,7 +23,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
-from ci.jobs.scripts.docker_server.buildx import build_rotating_apt_mirrors
+from ci.jobs.scripts.buildx import build_rotating_apt_mirrors
 from ci.jobs.scripts.create_release import (
     ReleaseContextManager,
     ReleaseInfo,
