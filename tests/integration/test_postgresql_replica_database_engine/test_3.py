@@ -3378,10 +3378,14 @@ def test_whole_schema_database_restart_after_new_postgresql_table(started_cluste
         instance.query(
             f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
         )
+    # The same, but with a name that contains a comma and a trailing space: it must be remembered exactly.
+    # It sorts after `published_table`, so the backup errors below report `published_table` first.
+    comma_table = "postgresql_replica_z,pending "
+    pg_manager.create_postgres_table(comma_table)
 
     instance.stop_clickhouse()
     pg_manager.execute(
-        f"ALTER PUBLICATION postgres_database_ch_publication ADD TABLE {published_table}"
+        f"ALTER PUBLICATION postgres_database_ch_publication ADD TABLE {published_table}, \"{comma_table}\""
     )
     instance.start_clickhouse()
 
@@ -3444,9 +3448,17 @@ def test_whole_schema_database_restart_after_new_postgresql_table(started_cluste
     instance.query(f"ATTACH TABLE test_database.{published_table}")
     check_tables_are_synchronized(instance, published_table)
 
+    # The table with a comma in its name is still not replicated, and is still remembered after a restart.
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, published_table)
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_comma_table')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and comma_table in error, error
+
     pg_manager.drop_materialized_db()
-    for table in (new_table, published_table):
-        pg_manager.execute(f"DROP TABLE {table}")
+    for table in (new_table, published_table, comma_table):
+        pg_manager.execute(f'DROP TABLE "{table}"')
 
 
 def test_explicit_tables_list_backup_with_shared_publication(started_cluster):

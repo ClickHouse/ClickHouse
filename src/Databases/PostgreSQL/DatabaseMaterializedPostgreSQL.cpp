@@ -38,6 +38,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -366,7 +367,8 @@ void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsC
         if (!unmaterialized_tables_list.empty())
             unmaterialized_tables_list += ',';
 
-        unmaterialized_tables_list += table_name;
+        /// Quoted, because a PostgreSQL table name can contain commas and leading or trailing whitespace.
+        unmaterialized_tables_list += backQuote(table_name);
     }
 
     if (unmaterialized_tables_list.empty() && (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_unmaterialized_tables_list].value.empty())

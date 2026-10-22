@@ -7,6 +7,8 @@
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -1424,15 +1426,21 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                 /// which can add their own tables to it.
                 if (!unmaterialized_tables_list.empty())
                 {
-                    Strings unmaterialized_tables;
-                    splitInto<','>(unmaterialized_tables, unmaterialized_tables_list);
+                    /// A comma-separated list of back-quoted names (see `DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange`),
+                    /// which preserves the names exactly, even if they contain commas or leading or trailing whitespace.
                     const std::set<String> expected_tables_set(expected_tables.begin(), expected_tables.end());
-                    for (auto & table_name : unmaterialized_tables)
+                    ReadBufferFromString in(unmaterialized_tables_list);
+                    while (true)
                     {
-                        boost::trim(table_name);
-                        if (!table_name.empty() && result_tables.contains(table_name)
+                        String table_name;
+                        readBackQuotedString(table_name, in);
+                        if (result_tables.contains(table_name)
                             && !expected_tables_set.contains(table_name) && !nested_tables_on_disk.contains(table_name))
                             published_but_not_materialized.insert(table_name);
+
+                        if (in.eof())
+                            break;
+                        assertChar(',', in);
                     }
                 }
 
