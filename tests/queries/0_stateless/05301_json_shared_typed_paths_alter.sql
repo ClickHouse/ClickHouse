@@ -262,7 +262,7 @@ INSERT INTO p_w SELECT number + 100, concat('{"a":"', toString(number), '","c":"
 SELECT 'p_w hints dropped', count(), toTypeName(json.a), uniqExact(json.a), sum(json.c = 'c') FROM p_w SETTINGS max_threads = 1;
 SELECT 'p_w layout', name, arrayExists(s -> s LIKE '%object_typed_shared_data%', substreams), arrayExists(s -> s LIKE '%json.a%' OR s LIKE '%json.b%', substreams) FROM system.parts_columns WHERE database = currentDatabase() AND table = 'p_w' AND column = 'json' AND active ORDER BY name;
 ALTER TABLE p_w MODIFY COLUMN json String SETTINGS mutations_sync = 2;
-SELECT 'p_w to String', count(), sum(length(json) > 0), any(json) FROM p_w SETTINGS max_threads = 1;
+SELECT 'p_w to String', count(), sum(length(json) > 0), argMin(json, x) FROM p_w SETTINGS max_threads = 1;
 CHECK TABLE p_w SETTINGS check_query_single_value_result = 1;
 DROP TABLE p_w;
 DROP TABLE IF EXISTS p_cn; CREATE TABLE p_cn (x UInt64, json JSON(SHARED a UInt64, SHARED c String)) ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 4, write_marks_for_substreams_in_compact_parts = 0;
@@ -271,7 +271,7 @@ ALTER TABLE p_cn MODIFY COLUMN json JSON(SHARED a UInt64, SHARED b UInt64, SHARE
 SELECT 'p_cn mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 'p_cn';
 SELECT 'p_cn added', count(), sum(json.a), sum(json.b), any(json.c), toTypeName(json.b) FROM p_cn SETTINGS max_threads = 1;
 INSERT INTO p_cn SELECT number, concat('{"a":', toString(number), ',"b":', toString(number * 2), ',"c":"c', toString(number), '","q":{"r":"r', toString(number), '"}}') FROM numbers(20, 20);
-SELECT 'p_cn two layouts', count(), sum(json.a), sum(json.b), any(json.c) FROM p_cn SETTINGS max_threads = 1, max_block_size = 7;
+SELECT 'p_cn two layouts', count(), sum(json.a), sum(json.b), argMin(json.c, x) FROM p_cn SETTINGS max_threads = 1, max_block_size = 7;
 ALTER TABLE p_cn MODIFY COLUMN json JSON(SHARED a UInt64, SHARED b UInt64, SHARED c String, SHARED q.r String) SETTINGS enable_json_lazy_type_hints = 1;
 SELECT 'p_cn nested path added', count(), uniqExact(json.q.r), (SELECT json.^q FROM p_cn WHERE x = 3), (SELECT json.^q FROM p_cn WHERE x = 23) FROM p_cn SETTINGS max_threads = 1;
 OPTIMIZE TABLE p_cn FINAL;
