@@ -116,6 +116,10 @@ struct NoOp
 /// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
 bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
 
+/// Whether a MergeTree read allows a second, row-addressed read of the rows it selected, which lazy materialization
+/// needs. Shared by both lazy materialization paths, so that they agree on it.
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading);
+
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
 {
