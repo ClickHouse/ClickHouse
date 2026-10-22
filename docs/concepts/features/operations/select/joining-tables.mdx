@@ -353,7 +353,7 @@ The limits act differently for other algorithms:
 
 - For `ie_join`, the limits apply to the accumulated input of both sides together.
 - For the block nested loop fallback, the limits apply to the materialized right-hand side, including spilled blocks.
-- For `partial_merge` and for the `auto` value, reaching a limit changes the execution strategy instead of stopping the query. `partial_merge` starts writing to disk, and `auto` switches from `hash` to `partial_merge`.
+- For `partial_merge`, reaching a limit changes the execution strategy instead of stopping the query: the JOIN starts writing its sorted right-hand blocks to disk.
 
 ### Spill thresholds {#spill-thresholds}
 
