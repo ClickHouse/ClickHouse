@@ -108,14 +108,14 @@ def test_background_download_after_query_end():
     while bg_download_cost() == cost:
         assert time.monotonic() < deadline, "no IO was scheduled after the query ended"
         time.sleep(0.1)
-    for _ in range(60):
-        if (
-            node.query(
-                "select countIf(state != 'DOWNLOADED') from system.filesystem_cache"
-            ).strip()
-            == "0"
-        ):
-            break
+    deadline = time.monotonic() + 60
+    while (
+        node.query(
+            "select count() = 0 or countIf(state != 'DOWNLOADED') > 0 from system.filesystem_cache"
+        ).strip()
+        == "1"
+    ):
+        assert time.monotonic() < deadline, "the background download did not finish"
         time.sleep(1)
 
     assert node.query("select 1").strip() == "1"
