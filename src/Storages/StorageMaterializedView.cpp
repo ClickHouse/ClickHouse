@@ -1013,8 +1013,11 @@ void StorageMaterializedView::alter(
         SipHash hash;
         if (metadata.refresh)
             metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
+        /// The operational entries of the query's own `SETTINGS` are left out, the same as in the persisted
+        /// definition hash (`computeViewDefinitionHash`): a `MODIFY QUERY` that changes only `log_comment`
+        /// reads and produces the same rows.
         if (metadata.select.select_query)
-            metadata.select.select_query->updateTreeHash(hash, /*ignore_aliases=*/ false);
+            updateHashWithQueryIgnoringOperationalSettings(hash, *metadata.select.select_query);
         hash.update(metadata.sql_security_type.has_value());
         if (metadata.sql_security_type)
             hash.update(static_cast<UInt8>(*metadata.sql_security_type));
