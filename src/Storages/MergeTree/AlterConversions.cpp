@@ -235,6 +235,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             rename_map.erase(it);
         }
 
+        /// The reader returns the replacement column's defaults instead of the stored values.
+        value_updated_columns.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)

@@ -5157,11 +5157,13 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
-    /// making the existing on-disk index data incompatible with the current column type.
+    /// making the existing on-disk index data incompatible with the current column type, and a pending
+    /// `DROP COLUMN` makes the reader return defaults instead of the indexed values.
     /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
     /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
-    /// any data/alter mutations or patches are pending.
-    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+    /// any data/alter/metadata mutations or patches are pending.
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+        || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts())
         return false;
 
     return true;
