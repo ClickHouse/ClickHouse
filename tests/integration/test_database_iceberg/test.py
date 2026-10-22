@@ -1000,43 +1000,50 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
-def test_plain_optimize_rejected_with_catalog(started_cluster):
+def test_plain_optimize_with_catalog(started_cluster):
+    # OPTIMIZE TABLE on a catalog-managed table commits one `replace` snapshot on top of the current one through the catalog.
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_plain_optimize_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    optimize_settings = {**write_settings, "allow_experimental_iceberg_compaction": 1}
 
     catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
-    create_clickhouse_iceberg_database(
-        started_cluster, node, CATALOG_NAME, additional_settings={"allow_experimental_iceberg_compaction": 0}
-    )
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('a'), ('b'), ('c');", settings=write_settings)
 
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    node.query(
-        f"INSERT INTO {table_ref} VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'))",
-        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
-    )
+    # Read only metadata.json through pyiceberg: it rejects the manifest lists ClickHouse writes (no field-ids).
+    def load_table():
+        return catalog.load_table(f"{root_namespace}.{table_name}")
 
     def catalog_state():
-        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        table = load_table()
         return table.metadata_location, table.metadata.current_snapshot_id
 
+    # Without position deletes there is nothing to compact.
     state_before = catalog_state()
-    rows_before = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
-
-    with pytest.raises(QueryRuntimeException) as exc_info:
-        node.query(f"OPTIMIZE TABLE {table_ref}", settings={"allow_experimental_iceberg_compaction": 1})
-
-    error = str(exc_info.value)
-    assert (
-        "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build" in error
-        or "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables." in error
-    ), error
+    node.query(f"OPTIMIZE TABLE {table_ref}", settings=optimize_settings)
     assert catalog_state() == state_before
-    assert node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL") == rows_before
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'b';", settings=write_settings)
+    table_before = load_table()
+
+    node.query(f"OPTIMIZE TABLE {table_ref}", settings=optimize_settings)
+
+    table_after = load_table()
+    snapshot = table_after.current_snapshot()
+    assert snapshot.parent_snapshot_id == table_before.metadata.current_snapshot_id
+    assert snapshot.summary.operation.value == "replace"
+    assert table_after.metadata.table_uuid == table_before.metadata.table_uuid
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY ALL") == "a\nc\n"
+    assert node.query(
+        f"SELECT countIf(content = 'POSITION_DELETE') FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
+        f"AND table = '{root_namespace}.{table_name}' SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    ) == "0\n"
 
 
 def test_optimize_manifest_with_catalog(started_cluster):

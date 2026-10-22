@@ -154,6 +154,28 @@ def test_insert_writes_data_and_metadata_to_their_own_buckets(
         == "a\nb\nc"
     )
 
+    # The data files rewritten by OPTIMIZE are written where the table writes data, too.
+    instance.query(
+        f"ALTER TABLE {table_expression} DELETE WHERE id = 1",
+        settings={**insert_settings, "mutations_sync": 2},
+    )
+    instance.query(
+        f"OPTIMIZE TABLE {table_expression}",
+        settings={**insert_settings, "allow_experimental_iceberg_compaction": 1},
+    )
+    def data_files(bucket):
+        return [key for key in list_s3_objects(minio, bucket, prefix=f"{prefix}/") if os.path.basename(key).startswith("data-")]
+
+    # The two inserted files and the rewritten one.
+    assert len(data_files(DATA_BUCKET)) == 3, data_files(DATA_BUCKET)
+    assert data_files(METADATA_BUCKET) == []
+    assert (
+        instance.query(
+            f"SELECT name FROM {table_expression} ORDER BY id"
+        ).strip()
+        == "b\nc"
+    )
+
 
 def _write_parquet(schema, tmp_path, first_id, count):
     df = pa.Table.from_pylist(

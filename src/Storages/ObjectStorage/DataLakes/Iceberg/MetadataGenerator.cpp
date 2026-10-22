@@ -21,6 +21,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -206,7 +207,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     std::optional<Int64> user_defined_timestamp,
     SnapshotOperation operation,
     const std::optional<String> & refresh_cursor,
-    const SnapshotRemovals & removals)
+    const SnapshotRemovals & removals,
+    const std::optional<Iceberg::SnapshotSummary> & precomputed_summary)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -249,7 +251,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
-    Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     /// A merge-on-read DELETE writes position-delete files (num_deleted_rows != 0): per the Iceberg
     /// spec that snapshot is an `overwrite`, not an `append`. Compaction passes `Replace` explicitly.
     const char * operation_name = Iceberg::f_append;
@@ -257,41 +258,60 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         operation_name = Iceberg::f_replace;
     else if (num_deleted_rows != 0)
         operation_name = Iceberg::f_overwrite;
-    summary->set(Iceberg::f_operation, operation_name);
-    carryForwardRefreshCursor(summary, parent_snapshot, refresh_cursor);
-    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-    summary->set(Iceberg::f_added_records, std::to_string(added_records));
-    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
-    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
-    if (num_deleted_rows != 0)
-    {
-        summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
-        summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
-        summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
-    }
 
-    if (removals.data_files != 0)
+    Poco::JSON::Object::Ptr summary;
+    if (precomputed_summary)
     {
-        summary->set(Iceberg::f_deleted_data_files, std::to_string(removals.data_files));
-        summary->set(Iceberg::f_deleted_records, std::to_string(removals.records));
-        summary->set(Iceberg::f_removed_files_size, std::to_string(removals.files_size));
+        const auto expected_operation = operation == SnapshotOperation::Replace ? Iceberg::SnapshotSummaryOperation::REPLACE
+            : num_deleted_rows != 0                                             ? Iceberg::SnapshotSummaryOperation::OVERWRITE
+                                                                                : Iceberg::SnapshotSummaryOperation::APPEND;
+        if (precomputed_summary->getOperation() != expected_operation)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Iceberg snapshot summary has operation {}, but the snapshot is generated as {}",
+                precomputed_summary->getOperation(),
+                operation_name);
+        summary = precomputed_summary->toJSON();
     }
-    if (removals.position_delete_files != 0)
+    else
     {
-        summary->set(Iceberg::f_removed_delete_files, std::to_string(removals.position_delete_files));
-        summary->set(Iceberg::f_removed_position_delete_files, std::to_string(removals.position_delete_files));
-        summary->set(Iceberg::f_removed_position_deletes, std::to_string(removals.position_deletes));
-    }
+        summary = new Poco::JSON::Object;
+        summary->set(Iceberg::f_operation, operation_name);
+        carryForwardRefreshCursor(summary, parent_snapshot, refresh_cursor);
+        summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
+        summary->set(Iceberg::f_added_records, std::to_string(added_records));
+        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+        if (num_deleted_rows != 0)
+        {
+            summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
+            summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
+            summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
+        }
 
-    setSnapshotTotals(
-        summary,
-        parent_snapshot,
-        /*added_records=*/added_records - removals.records,
-        /*added_files_size=*/added_files_size - removals.files_size,
-        /*added_data_files=*/added_files - removals.data_files,
-        /*added_delete_files=*/added_delete_files - removals.position_delete_files,
-        /*added_position_deletes=*/num_deleted_rows - removals.position_deletes,
-        /*added_equality_deletes=*/0);
+        if (removals.data_files != 0)
+        {
+            summary->set(Iceberg::f_deleted_data_files, std::to_string(removals.data_files));
+            summary->set(Iceberg::f_deleted_records, std::to_string(removals.records));
+            summary->set(Iceberg::f_removed_files_size, std::to_string(removals.files_size));
+        }
+        if (removals.position_delete_files != 0)
+        {
+            summary->set(Iceberg::f_removed_delete_files, std::to_string(removals.position_delete_files));
+            summary->set(Iceberg::f_removed_position_delete_files, std::to_string(removals.position_delete_files));
+            summary->set(Iceberg::f_removed_position_deletes, std::to_string(removals.position_deletes));
+        }
+
+        setSnapshotTotals(
+            summary,
+            parent_snapshot,
+            /*added_records=*/added_records - removals.records,
+            /*added_files_size=*/added_files_size - removals.files_size,
+            /*added_data_files=*/added_files - removals.data_files,
+            /*added_delete_files=*/added_delete_files - removals.position_delete_files,
+            /*added_position_deletes=*/num_deleted_rows - removals.position_deletes,
+            /*added_equality_deletes=*/0);
+    }
     new_snapshot->set(Iceberg::f_summary, summary);
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));

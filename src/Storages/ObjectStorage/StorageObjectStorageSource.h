@@ -35,6 +35,10 @@ struct ObjectStorageTopKQueryConditionCacheKey
 };
 using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
+/// Replaces the identity-partition columns of `header` with their values from the manifest: a data file may not store them.
+std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
+    const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns);
+
 class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;

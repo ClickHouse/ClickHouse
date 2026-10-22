@@ -960,7 +960,7 @@ bool StorageObjectStorage::optimize(
     [[maybe_unused]] ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog, storage_id);
 }
 
 void StorageObjectStorage::truncate(

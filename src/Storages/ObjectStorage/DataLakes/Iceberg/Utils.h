@@ -69,6 +69,26 @@ bool tryWriteVersionHintFile(
     bool create,
     bool assert_version_exactly);
 
+enum class MetadataWriteOutcome : uint8_t
+{
+    Written,
+    /// The metadata file holds another writer's content.
+    TargetExisted,
+    /// The write was attempted and failed, so the metadata file may or may not exist.
+    WriteFailed,
+};
+
+/// Like `writeMetadataFileAndVersionHint`, but after a failed write reads the metadata file back to tell a lost race
+/// from an unknown outcome.
+MetadataWriteOutcome writeMetadataFileAndVersionHintWithOutcome(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    bool try_write_version_hint);
+
 /// Existing callers keep the opportunistic hint update, including updates of an already-existing hint.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,

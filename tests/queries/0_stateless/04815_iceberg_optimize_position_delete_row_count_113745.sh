@@ -11,11 +11,9 @@
 #
 # The single-row delete below is a regression control: it is a shape the old guard
 # already accepted by coincidence (1 == 1), so it distinguishes nothing about the
-# new conjuncts, it only shows they did not break what already worked. The refused
-# shapes are covered by `IcebergCompactionOverwriteClassification` in
-# `gtest_iceberg_snapshot_summary.cpp`, not here: ClickHouse's own writer emits
-# neither equality deletes nor any removal counter, so they cannot be built through
-# `IcebergLocal` at all.
+# new conjuncts, it only shows they did not break what already worked. Equality
+# deletes, which ClickHouse's own writer cannot emit, are refused by `OPTIMIZE`:
+# covered by 05325 on the `deletes_db/eq_deletes_table` fixture.
 #
 # The bug lived in the synchronous compaction path (`compactIcebergTable`) used
 # by the open-source build. The cloud build routes `OPTIMIZE` through a different

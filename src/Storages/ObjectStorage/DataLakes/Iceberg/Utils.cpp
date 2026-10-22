@@ -396,7 +396,7 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
-bool writeMetadataFile(
+static MetadataWriteOutcome writeMetadataFileWithOutcome(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
@@ -408,7 +408,7 @@ bool writeMetadataFile(
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
-            return false;
+            return MetadataWriteOutcome::TargetExisted;
 
         write_attempted = true;
         Iceberg::writeMessageToFile(
@@ -427,15 +427,26 @@ bool writeMetadataFile(
         if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        return MetadataWriteOutcome::WriteFailed;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        return MetadataWriteOutcome::WriteFailed;
     }
 
-    return true;
+    return MetadataWriteOutcome::Written;
+}
+
+bool writeMetadataFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context)
+{
+    return writeMetadataFileWithOutcome(resolver, metadata_file_info, metadata_file_content, object_storage, context)
+        == MetadataWriteOutcome::Written;
 }
 
 bool tryWriteVersionHintFile(
@@ -520,6 +531,68 @@ bool tryWriteVersionHintFile(
         }
     }
     return false;
+}
+
+/// The metadata file is written create-only, so once its name holds bytes other than ours, no
+/// request of this write can land there any more. Absent, unreadable or our own bytes prove nothing.
+static bool metadataFileHoldsOtherContent(
+    const std::string & storage_metadata_path,
+    const std::string & metadata_file_content,
+    CompressionMethod compression_method,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context)
+{
+    try
+    {
+        auto read_settings = context->getReadSettings();
+        read_settings.disableCaches();
+        std::unique_ptr<ReadBuffer> buf = object_storage->readObject(StoredObject(storage_metadata_path), read_settings);
+        if (compression_method != CompressionMethod::None)
+            buf = wrapReadBufferWithCompressionMethod(std::move(buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
+
+        std::string stored_content;
+        readStringUntilEOF(stored_content, *buf);
+        return stored_content != metadata_file_content;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+}
+
+MetadataWriteOutcome writeMetadataFileAndVersionHintWithOutcome(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    bool try_write_version_hint)
+{
+    auto outcome = writeMetadataFileWithOutcome(resolver, metadata_file_info, metadata_file_content, object_storage, context);
+    if (outcome == MetadataWriteOutcome::Written)
+        (void)tryWriteVersionHintFile(
+            resolver,
+            metadata_file_info,
+            version_hint_path,
+            object_storage,
+            context,
+            /* create */ try_write_version_hint,
+            /* assert_version_exactly */ false);
+    if (outcome != MetadataWriteOutcome::WriteFailed)
+        return outcome;
+
+    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    if (!metadataFileHoldsOtherContent(
+            storage_metadata_path, metadata_file_content, metadata_file_info.compression_method, object_storage, context))
+        return MetadataWriteOutcome::WriteFailed;
+
+    LOG_INFO(
+        getLogger("IcebergMetadataCommit"),
+        "Metadata file {} holds another writer's content, the commit lost the race to that writer",
+        storage_metadata_path);
+    return MetadataWriteOutcome::TargetExisted;
 }
 
 bool writeMetadataFileAndVersionHint(

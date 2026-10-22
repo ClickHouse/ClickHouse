@@ -348,7 +348,7 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
         )
         assert tables.query(f"SELECT id FROM {tables.source(eqdel)} ORDER BY id") == "0\n2\n3\n5\n6", required
 
-    # `OPTIMIZE` rewrites data files only when there are position deletes.
+    # `OPTIMIZE` rewrites only the data files that position deletes apply to, so each file below gets one.
     table_name, key_prefix, table = tables.create("time_compaction")
     for k in range(3):
         table.append(rows([i for i in range(8) if i % 3 == k]))
@@ -360,7 +360,7 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
             url = 'http://minio1:9001/{tables.cluster.minio_bucket}/')
         """
     )
-    tables.instance.query(f"ALTER TABLE {table_name} DELETE WHERE id = 0", settings=write_settings)
+    tables.instance.query(f"ALTER TABLE {table_name} DELETE WHERE id IN (0, 1, 2)", settings=write_settings)
 
     # The delete is committed as `v<N>.metadata.json` next to pyiceberg's `<N>-<uuid>.metadata.json`
     # files, and `OPTIMIZE` refuses a table with both schemes.
@@ -375,5 +375,5 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
     source = tables.source(key_prefix)
     read_files = set(tables.query(f"SELECT DISTINCT _file FROM {source}").split())
     assert read_files and read_files.isdisjoint(written_by_pyiceberg), (read_files, written_by_pyiceberg)
-    assert tables.query(f"SELECT id, t FROM {source} ORDER BY id") == expected(range(1, 8), nested=False)
-    assert tables.query(f"SELECT id FROM {source} WHERE t = {micros_of(1)} ORDER BY id") == "1\n4\n7"
+    assert tables.query(f"SELECT id, t FROM {source} ORDER BY id") == expected(range(3, 8), nested=False)
+    assert tables.query(f"SELECT id FROM {source} WHERE t = {micros_of(1)} ORDER BY id") == "4\n7"

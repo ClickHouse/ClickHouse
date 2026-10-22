@@ -63,6 +63,8 @@ struct DataFileEntryLineage
     std::optional<Int64> added_snapshot_id;
     std::optional<Int64> sequence_number;
     std::optional<Int64> file_sequence_number;
+    /// The entry is written as DELETED by the new snapshot, keeping the sequence numbers above.
+    bool deleted = false;
 };
 
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
@@ -95,7 +97,7 @@ void generateManifestFile(
     const std::vector<DataFileColumnStatistics> & per_file_statistics = {},
     /// Optional per-file `sort_order_id` parallel to `data_file_names`; when set it is written back to preserve sortedness, else the field is left null.
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids = {},
-    /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number, else as ADDED by the new snapshot.
+    /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number (a DELETED entry takes the new snapshot's id), else as ADDED by the new snapshot.
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
@@ -108,6 +110,9 @@ struct ManifestListEntryCounts
 {
     Int64 files_count = 0;
     Int64 rows_count = 0;
+    /// Entries with status DELETED, not included in the counts above.
+    Int64 deleted_files_count = 0;
+    Int64 deleted_rows_count = 0;
     /// Minimum data sequence number across the entries in this manifest, used as the manifest-list `min_sequence_number`.
     Int64 min_sequence_number = 0;
     /// True when the manifest's entries are ADDED in the snapshot whose manifest list is being

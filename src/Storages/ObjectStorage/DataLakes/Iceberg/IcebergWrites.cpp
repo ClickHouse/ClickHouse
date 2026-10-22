@@ -584,10 +584,11 @@ void generateManifestFile(
         const DataFileEntryLineage * entry_lineage
             = per_file_entry_lineage.empty() ? nullptr : &per_file_entry_lineage[file_idx];
 
-        manifest.field(Iceberg::f_status)
-            = avro::GenericDatum(entry_lineage ? static_cast<Int32>(ManifestEntryStatus::EXISTING)
-                                               : static_cast<Int32>(ManifestEntryStatus::ADDED));
-        Int64 snapshot_id = (entry_lineage && entry_lineage->added_snapshot_id)
+        ManifestEntryStatus status = ManifestEntryStatus::ADDED;
+        if (entry_lineage)
+            status = entry_lineage->deleted ? ManifestEntryStatus::DELETED : ManifestEntryStatus::EXISTING;
+        manifest.field(Iceberg::f_status) = avro::GenericDatum(static_cast<Int32>(status));
+        Int64 snapshot_id = (entry_lineage && !entry_lineage->deleted && entry_lineage->added_snapshot_id)
             ? *entry_lineage->added_snapshot_id
             : user_defined_snapshot_id.value_or(new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id));
 
@@ -1106,10 +1107,10 @@ void generateManifestList(
             const auto & counts = entry_counts[entry_idx];
             setVersionedField(entry, counts.counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
+            setVersionedField(entry, counts.deleted_files_count, Iceberg::f_deleted_files_count);
             setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+            setVersionedField(entry, counts.deleted_rows_count, Iceberg::f_deleted_rows_count);
 
             write_partition_summary(entry, entry_idx);
 

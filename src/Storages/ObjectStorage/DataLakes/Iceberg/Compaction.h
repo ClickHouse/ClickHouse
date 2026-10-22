@@ -11,24 +11,17 @@ namespace DB::Iceberg
 {
 #if USE_AVRO && !CLICKHOUSE_CLOUD
 
-/// True when compaction can skip an `overwrite` snapshot: it adds only position delete files
-/// and removes nothing. Compaction collects only data and position delete files, so any other
-/// delta would be dropped from the rewritten table.
-bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update);
-
-/// The append delta compaction must replay, `std::nullopt` for a snapshot it may skip.
-/// Throws for one it cannot represent.
-[[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const IcebergHistoryRecord & history_record);
-
+/// Commits one `replace` snapshot on top of the current one, in which every data file with applicable position deletes is
+/// rewritten without the deleted rows and the position deletes are dropped. Earlier snapshots and their files are kept.
 void compactIcebergTable(
-    IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
-    DB::ObjectStoragePtr object_storage_,
+    DB::ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const std::optional<DB::FormatSettings> & format_settings_,
-    DB::SharedHeader sample_block_,
-    DB::ContextPtr context_,
-    const String & write_format);
+    const std::optional<DB::FormatSettings> & format_settings,
+    DB::ContextPtr context,
+    const String & write_format,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageID & table_id);
 
 void compactIcebergManifests(
     const PersistentTableComponents & persistent_table_components,

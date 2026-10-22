@@ -434,27 +434,38 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
+void Iceberg::registerIcebergMetadataSchemas(Poco::JSON::Object::Ptr metadata_object, IcebergSchemaProcessor & schema_processor)
+{
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
+    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 j = 0; j < schemas->size(); ++j)
+    {
+        auto schema = schemas->getObject(j);
+        schema_processor.addIcebergTableSchema(schema);
+    }
+    if (!metadata_object->has(f_snapshots))
+        return;
+    auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        schema_processor.registerSnapshotWithSchemaId(
+            snapshot->getValue<Int64>(f_metadata_snapshot_id), snapshot->getValue<Int32>(f_schema_id));
+    }
+}
+
 static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
-    {
-        auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
-    }
+    Iceberg::registerIcebergMetadataSchemas(metadata_object, *schema_processor);
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
         {
             current_snapshot = snapshot;
@@ -538,7 +549,8 @@ bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    [[maybe_unused]] const StorageID & storage_id)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
 
@@ -570,30 +582,17 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    /// `compactIcebergTable` rewrites files directly and cannot commit through a catalog.
-    if (catalog)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE is not supported for catalog-backed Iceberg tables in this build");
-
-    if (getMetadataLookupSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
-
     if (settings[Setting::allow_experimental_iceberg_compaction])
     {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
         compactIcebergTable(
-            snapshots_info,
             persistent_components,
             object_storage,
             getMetadataLookupSettings(),
             format_settings,
-            sample_block,
             context,
-            write_format);
+            write_format,
+            catalog,
+            storage_id);
         return true;
     }
     else
