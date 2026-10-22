@@ -469,7 +469,7 @@ void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_ma
     {
         lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_served_from_cache);
         LOG_TEST(log, "Range of marks [{}, {}) of part {}: {} of {} granules are in the columns cache",
-            range_first_mark, range_end_mark, data_part_info_for_read->getPartName(),
+            range_first_mark, range_end_mark, columns_cache_part_name,
             std::count(granule_served_from_cache.begin(), granule_served_from_cache.end(), true), granule_served_from_cache.size());
     }
 }

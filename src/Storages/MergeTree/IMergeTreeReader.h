@@ -231,9 +231,7 @@ protected:
     /// and compact parts; how a read is served from the cache and written to it is up to each of them.
 
     /// Decide whether this reader can use the cache: the cache is on, and the part is of a table
-    /// with a UUID (the key of the cache) and not a projection part - projection parts share the
-    /// projection name as their part name, which is not unique across parent parts. `can_read`
-    /// is false for a reader that cannot serve a granule from the cache, but can still write to it.
+    /// with a UUID (the key of the cache). `can_read` is false for a reader that cannot serve a granule from the cache, but can still write to it.
     /// Must be called from the constructor of the derived reader, before anything is read.
     void initColumnsCache(bool can_read);
 
@@ -274,6 +272,9 @@ protected:
     /// for the cache. See `ColumnsCacheKey`.
     ColumnsCacheStripes stripes;
     std::vector<UInt128> column_identities;
+
+    /// The name of the part in the cache, see `getColumnsCachePartName`.
+    String columns_cache_part_name;
 
     /// Names of the result columns as the query requests them, position by position with
     /// `columns_to_read`, which holds the names in the part: for a column renamed after the part

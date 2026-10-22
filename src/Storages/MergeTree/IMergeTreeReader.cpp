@@ -672,7 +672,7 @@ void IMergeTreeReader::initColumnsCache(bool can_read)
 
     /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
     const bool cache_possible = columns_cache
-        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID(), data_part_info_for_read->isProjectionPart());
+        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
 
     columns_cache_reads_possible = cache_possible && settings.enable_columns_cache_reads && can_read;
     columns_cache_writes_possible = cache_possible && settings.enable_columns_cache_writes;
@@ -681,11 +681,12 @@ void IMergeTreeReader::initColumnsCache(bool can_read)
         return;
 
     stripes = ColumnsCacheStripes::forPart(data_part_info_for_read->getIndexGranularity());
+    columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
 
     column_identities.reserve(requested_column_names.size());
     for (const auto & name : requested_column_names)
         column_identities.push_back(getColumnsCacheColumnIdentity(
-            data_part_info_for_read->getTableUUID(), data_part_info_for_read->getPartName(), name, settings.columns_cache_schema_identity));
+            data_part_info_for_read->getTableUUID(), columns_cache_part_name, name, settings.columns_cache_schema_identity));
 
     /// Capture the invalidation generation once, before anything is read, so that any
     /// invalidation racing with this reader is observed. It is passed to `setMany` by every
@@ -739,7 +740,7 @@ void IMergeTreeReader::addPendingColumnsCacheEntry(size_t pos, size_t first_mark
     auto entry = makeColumnsCacheEntry();
     {
         MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        entry->part_name = data_part_info_for_read->getPartName();
+        entry->part_name = columns_cache_part_name;
         entry->column_name = requested_column_names[pos];
     }
     entry->table_uuid = data_part_info_for_read->getTableUUID();
@@ -791,7 +792,7 @@ void IMergeTreeReader::serveRowsFromColumnsCacheEntry(
     if (row_begin < entry.row_begin || entry.row_begin + cached_column.size() < row_begin + rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Columns cache entry of column {} of part {} holds rows [{}, {}), but rows [{}, {}) are requested",
-            requested_column_names[pos], data_part_info_for_read->getPartName(),
+            requested_column_names[pos], columns_cache_part_name,
             entry.row_begin, entry.row_begin + cached_column.size(), row_begin, row_begin + rows);
     const size_t offset = row_begin - entry.row_begin;
 

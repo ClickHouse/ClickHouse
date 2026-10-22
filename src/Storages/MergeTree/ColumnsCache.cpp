@@ -40,6 +40,13 @@ size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_
     return static_cast<size_t>(static_cast<double>(physical_server_memory) * size_to_ram_ratio);
 }
 
+String getColumnsCachePartName(const String & part_name, const String & parent_part_name)
+{
+    if (parent_part_name.empty())
+        return part_name;
+    return parent_part_name + ":" + part_name;
+}
+
 UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity)
 {
     SipHash hash;
