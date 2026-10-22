@@ -176,10 +176,11 @@ private:
         std::vector<ConflictOperator> conflict_operators;
 
         /// Per edge, with a conflict detector: the index in `conflict_operators` of the join step
-        /// whose ON clause it comes from, and, for an inner join's conjunct, the relations that must
-        /// be present before it may be placed besides its own. See `initDPsubScratch`.
+        /// whose ON clause it comes from, and, for an inner join's conjunct, its outstanding relations:
+        /// the relations besides its own that must be present before it may be placed. See
+        /// `initDPsubScratch`.
         std::vector<size_t> edge_operator;
-        std::vector<TUInt> edge_defer_mask;
+        std::vector<TUInt> edge_outstanding_mask;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -228,7 +229,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.restriction_by_rel.assign(num_relations, {});
     dpsub_data.conflict_operators.clear();
     dpsub_data.edge_operator.assign(n, 0);
-    dpsub_data.edge_defer_mask.assign(n, 0);
+    dpsub_data.edge_outstanding_mask.assign(n, 0);
     if (useConflictDetector())
     {
         std::vector<ConflictOpMask> ops;
@@ -242,33 +243,41 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         /// conjuncts, filters placed each at the lowest join where it can be evaluated. Neither may
         /// get ahead of a join nested under the step whose padded side it reads: below an outer,
         /// semi or anti join, a filter may only go onto the preserved side, or it would remove rows
-        /// before that join pads or matches them. So the step, and each of its conjuncts, waits until
-        /// all relations of such a nested join are present.
+        /// before that join pads or matches them. So such a nested join must have been applied first:
+        /// the relations locating it are outstanding relations of the step, and of each of its
+        /// conjuncts, which may only be applied once they are present.
+        ///
+        /// Exactly those, and not all relations of the nested join, keep a conjunct that reads two
+        /// relations spanning the join it is placed at: the last of its relations and its outstanding
+        /// relations to be joined is either one of its own, or one locating the nested join, which is
+        /// then applied at that same join and takes the conjunct as a filter after it. More outstanding
+        /// relations would place it higher, with both of its relations on one input, as a one-sided
+        /// condition of an inner join that some join algorithms (`full_sorting_merge`) cannot execute.
         auto & operators = dpsub_data.conflict_operators;
-        auto relations_to_wait_for = [&](UInt32 reads, size_t step) -> UInt32
+        auto outstanding_relations = [&](UInt32 reads, size_t step) -> UInt32
         {
             const UInt32 step_relations = operators[step].relations;
-            UInt32 wait_for = 0;
+            UInt32 outstanding = 0;
             for (const auto & nested : operators)
             {
                 const bool is_nested = (nested.relations & ~step_relations) == 0 && nested.relations != step_relations;
                 if (is_nested && (reads & nested.nullSupplying()))
-                    wait_for |= nested.relations;
+                    outstanding |= nested.locatedBy();
             }
-            return wait_for;
+            return outstanding;
         };
 
         /// The inner steps first, from the ON clauses as written: `nel` is where `isAppliedAt` puts them.
-        std::vector<UInt32> step_wait_for(operators.size(), 0);
+        std::vector<UInt32> step_outstanding(operators.size(), 0);
         for (size_t step = 0; step < operators.size(); ++step)
             if (operators[step].freely_reorderable && !operators[step].degenerate)
-                step_wait_for[step] = relations_to_wait_for(operators[step].nel, step);
+                step_outstanding[step] = outstanding_relations(operators[step].nel, step);
         for (size_t step = 0; step < operators.size(); ++step)
-            operators[step].nel |= step_wait_for[step];
+            operators[step].nel |= step_outstanding[step];
 
         /// Where each condition is placed follows from the join step it comes from, see
         /// `collectJoinEdgesMask`: an outer, semi or anti join's condition goes where that join is
-        /// applied, an inner join's conjunct as low as its relations and the wait above allow.
+        /// applied, an inner join's conjunct as low as its relations and its outstanding relations allow.
         if (query_graph.edge_conflict_ops.size() != edges.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} of them",
                 edges.size(), query_graph.edge_conflict_ops.size());
@@ -284,11 +293,11 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             dpsub_data.edge_operator[i] = op_index;
             if (dpsub_data.edge_pinned[i])
                 continue;
-            /// A constant conjunct reads no relation, but it filters the result of its own step: it
-            /// waits for all relations of the step, so it is neither applied below a join nested
-            /// under the step nor to relations outside of it.
+            /// A constant conjunct reads no relation, but it filters the result of its own step: all
+            /// relations of the step are outstanding for it, so it is neither applied below a join
+            /// nested under the step nor to relations outside of it.
             const UInt32 sources = dpsub_data.edge_source_mask[i];
-            dpsub_data.edge_defer_mask[i] = sources ? relations_to_wait_for(sources, op_index) : operators[op_index].relations;
+            dpsub_data.edge_outstanding_mask[i] = sources ? outstanding_relations(sources, op_index) : operators[op_index].relations;
         }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
@@ -557,7 +566,7 @@ bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_
         if (dpsub_data.edge_pinned[i])
             continue;
         const UInt32 sources = dpsub_data.edge_source_mask[i];
-        if ((sources | dpsub_data.edge_defer_mask[i]) & ~combined)
+        if ((sources | dpsub_data.edge_outstanding_mask[i]) & ~combined)
             continue;
         if ((sources & left_mask) && (sources & right_mask))
             return true;
@@ -638,9 +647,9 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         /// alone would push it below (or drop it from) that join, silently changing outer-join
         /// semantics, since `t2` may already have been NULL-extended (or default-filled) by an
         /// earlier join. Without a conflict detector, a null-supplying side is a single relation, which
-        /// makes this placement exact. With one, the pin is unused, but an inner join's conjunct that
-        /// has to wait for a nested outer join is placed the same way (see `initDPsubScratch`).
-        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : dpsub_data.edge_defer_mask[i];
+        /// makes this placement exact. With one, the pin is unused, but an inner join's conjunct with
+        /// outstanding relations is placed the same way (see `initDPsubScratch`).
+        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : dpsub_data.edge_outstanding_mask[i];
         if (pin & ~joined)
             continue;
         const UInt32 applicable = sources | pin;
