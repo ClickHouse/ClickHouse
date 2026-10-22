@@ -1,11 +1,13 @@
 -- Tags: no-fasttest, no-parallel, no-replicated-database
 -- no-parallel -- uses a server-wide failpoint that would fail a metadata commit of a concurrently running test.
+-- All tables are dropped with `SYNC`: the data of a table dropped asynchronously is removed in the background,
+-- and that removal could consume the one-shot failpoint instead of the access check of the wrapper below.
 
 -- A `cache` disk over a `borrow_from_cache` disk shares its object storage. If the startup of such a
 -- wrapper fails (here: its access check), its shutdown must not release the objects of the tables
 -- that are already stored on the wrapped disk.
 
-DROP TABLE IF EXISTS cache_creator;
+DROP TABLE IF EXISTS cache_creator SYNC;
 CREATE TABLE cache_creator (x UInt64)
 ENGINE = MergeTree() ORDER BY x
 SETTINGS disk = disk(
@@ -17,7 +19,7 @@ SETTINGS disk = disk(
     load_metadata_asynchronously = 0
 );
 
-DROP TABLE IF EXISTS borrowed;
+DROP TABLE IF EXISTS borrowed SYNC;
 CREATE TABLE borrowed (k UInt64, v String)
 ENGINE = MergeTree() ORDER BY k
 SETTINGS disk = disk(
@@ -49,7 +51,7 @@ SELECT * FROM borrowed ORDER BY k;
 -- Moving a part onto the borrowed disk and off it again. The destination directory of a cloned part
 -- has a trailing slash, which used to create an empty-named child directory in the in-memory metadata:
 -- moving the part off the disk then recursed into the same directory endlessly.
-DROP TABLE IF EXISTS moved;
+DROP TABLE IF EXISTS moved SYNC;
 CREATE TABLE moved (k UInt64, v String) ENGINE = MergeTree() ORDER BY k SETTINGS storage_policy = 'borrow_from_cache_move';
 INSERT INTO moved VALUES (4, 'd'), (5, 'e');
 
@@ -61,6 +63,6 @@ ALTER TABLE moved MOVE PART 'all_1_1_0' TO DISK 'local_disk';
 SELECT 'moved off the borrowed disk', disk_name FROM system.parts WHERE database = currentDatabase() AND table = 'moved' AND active;
 SELECT * FROM moved ORDER BY k;
 
-DROP TABLE moved;
-DROP TABLE borrowed;
-DROP TABLE cache_creator;
+DROP TABLE moved SYNC;
+DROP TABLE borrowed SYNC;
+DROP TABLE cache_creator SYNC;
