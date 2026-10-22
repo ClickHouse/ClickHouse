@@ -302,9 +302,8 @@ struct AggregateFunctionUniqTraits
     {
         if constexpr (std::is_same_v<T, std::string_view>)
         {
-            SipHash hash;
-            hash.update(x.data(), x.size());
-            return hash.get128();
+            /// The strings come from the padded `ColumnString` and `ColumnFixedString`.
+            return sipHash128Padded(x.data(), x.size());
         }
         else if constexpr (std::is_same_v<T, IPv6>)
         {
