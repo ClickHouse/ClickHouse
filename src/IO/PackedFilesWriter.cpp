@@ -428,11 +428,14 @@ PackedFilesWriter::Data::~Data()
 
 void PackedFilesWriter::Data::addChunk()
 {
-    /// The previous last chunk is filled entirely now, so it can be moved out of memory.
-    if (!chunks.empty())
-        state->non_spillable_bytes_in_memory -= chunks.back().size();
-
+    /// Allocate first: if the allocation throws, the previous last chunk is still the last one,
+    /// and it must stay counted as non spillable, because the destructor subtracts it.
     chunks.emplace_back(next_chunk_size);
+
+    /// The previous last chunk is filled entirely now, so it can be moved out of memory.
+    if (chunks.size() > 1)
+        state->non_spillable_bytes_in_memory -= chunks[chunks.size() - 2].size();
+
     state->bytes_in_memory += next_chunk_size;
     state->non_spillable_bytes_in_memory += next_chunk_size;
     CurrentMetrics::add(CurrentMetrics::PackedPartsBufferedBytes, next_chunk_size);
