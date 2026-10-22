@@ -30,12 +30,14 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Parsers/makeASTForLogicalFunction.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/StoreLookedUpTagsStep.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -1132,7 +1134,7 @@ namespace
 
         InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
         auto io = interpreter.execute();
-        PullingPipelineExecutor executor(io.pipeline);
+        PullingAsyncPipelineExecutor executor(io.pipeline);
         Block block;
         while (executor.pull(block))
         {
@@ -1140,6 +1142,30 @@ namespace
                 return false;
         }
         return true;
+    }
+
+    /// Adds the step storing the tags on top of the plan of the lookup query. The step is added after the interpreter built the plan,
+    /// i.e. above any read from remote replicas, so the tags are stored on the initiator, unlike `timeSeriesStoreTags` written in SQL.
+    void addLookUpTagsStep(
+        QueryPlan & query_plan,
+        const size_t tags_start_index,
+        const std::shared_ptr<ContextTimeSeriesTagsCollector> & tags_collector)
+    {
+        const auto & header = query_plan.getCurrentHeader();
+        try
+        {
+            TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(StoreLookedUpTagsStep::FUNCTION_NAME, header->getColumnsWithTypeAndName(), 0);
+            TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(
+                StoreLookedUpTagsStep::FUNCTION_NAME, header->getColumnsWithTypeAndName(), tags_start_index);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(" while building the tags look up query. It's a bug, please report it.");
+
+            throw;
+        }
+
+        query_plan.addStep(std::make_unique<StoreLookedUpTagsStep>(header, tags_start_index, tags_collector));
     }
 
     /// Selects the series matching the matchers from the tags table, stores their tags into the tags collector of the query
@@ -1156,7 +1182,8 @@ namespace
         const StorageLimitsList & storage_limits,
         const bool track_range,
         bool read_sample_kinds,
-        const ContextMutablePtr & context)
+        const ContextMutablePtr & context,
+        const LoggerPtr & log)
     {
         auto tags_source = makeTagsTableSource(
             tags_table_id,
@@ -1192,29 +1219,20 @@ namespace
 
         const auto select_query = addProjectionToSelectQuery(std::move(tags_source.query), std::move(select_list));
 
-        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
-        interpreter.addStorageLimits(storage_limits);
-        auto io = interpreter.execute();
-        io.pipeline.setProcessListElement(context->getProcessListElement());
-
-        constexpr std::string_view function_name = "lookUpTags";
-        const auto header = io.pipeline.getHeader();
-        const auto & header_columns = header.getColumnsWithTypeAndName();
-        try
-        {
-            TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(function_name, header_columns, 0);
-            TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(function_name, header_columns, tags_start_index);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(" while building the tags look up query. It's a bug, please report it.");
-
-            throw;
-        }
-
         /// `TemporaryTableHolder` keeps a weak pointer to its context and needs it to drop the table. The holder lives as long
         /// as `context`, which the query plan keeps, so it gets the query context, which outlives the plan.
         const auto query_context = context->getQueryContext();
+
+        LOG_DEBUG(log, "Looking up the tags: {}", select_query->formatForLogging());
+        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
+        interpreter.addStorageLimits(storage_limits);
+        addLookUpTagsStep(interpreter.getQueryPlan(), tags_start_index, query_context->getTimeSeriesTagsCollector());
+        auto io = interpreter.execute();
+        io.pipeline.setProcessListElement(context->getProcessListElement());
+
+        /// The step storing the tags leaves the id and the kinds of samples.
+        const auto header = io.pipeline.getHeader();
+        const auto & header_columns = header.getColumnsWithTypeAndName();
         const auto & id_column = header_columns.front();
         auto ids_tmp_table = std::make_shared<TemporaryTableHolder>(
             query_context,
@@ -1243,8 +1261,7 @@ namespace
         ColumnPtr min_id;
         ColumnPtr max_id;
 
-        const auto tags_collector = query_context->getTimeSeriesTagsCollector();
-        PullingPipelineExecutor executor(io.pipeline);
+        PullingAsyncPipelineExecutor executor(io.pipeline);
         Block block;
         while (executor.pull(block))
         {
@@ -1253,16 +1270,6 @@ namespace
 
             const auto & columns = block.getColumnsWithTypeAndName();
             const auto & ids = columns.front();
-            try
-            {
-                tags_collector->storeTags(ids.column, TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(function_name, columns, tags_start_index));
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(" while storing tags and values. It's a bug, please report it.");
-
-                throw;
-            }
 
             if (track_range)
                 updateMinMax(*ids.column->convertToFullColumnIfConst(), min_id, max_id);
@@ -1452,7 +1459,8 @@ void StorageTimeSeriesSelector::readImpl(
         *query_info.storage_limits,
         /* track_range = */ has_id_range_candidate,
         /* read_sample_kinds = */ histograms_table_id && TimeSeriesSampleKinds::isStored(*time_series_settings),
-        modified_context);
+        modified_context,
+        log);
 
     /// Only the data tables with the kinds of samples of the selected series are read.
     const bool read_samples_table = (ids.sample_kinds & TimeSeriesSampleKinds::Float) != 0;
