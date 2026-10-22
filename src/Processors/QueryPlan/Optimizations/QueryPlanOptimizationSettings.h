@@ -110,6 +110,7 @@ struct QueryPlanOptimizationSettings
     bool merge_filter_into_join_condition;
     bool replace_always_true_filter;
     bool merge_expression_into_join;
+    bool merge_filters_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;

@@ -8033,9 +8033,14 @@ Replace a filter step with an expression step when the filter condition is alway
 )", 0, \
         {"26.10", true, true, "New setting."}) \
     DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
-Allow to merge expressions into JOIN step during join reordering optimization.
+Allow to merge `Expression` steps into JOIN step during join reordering optimization.
 )", 0, \
         {"26.7", false, true, "New setting. Allow to merge Expression step into JOIN step during join reordering optimization."}) \
+    DECLARE(Bool, query_plan_merge_filters_into_join, false, R"(
+Allow to merge `Filter` steps into JOIN step during join reordering optimization.
+A merged filter condition becomes a join condition of an inner join or a post-join filter of an outer join.
+)", 0, \
+        {"26.11", false, false, "New setting. Allow to merge `Filter` steps into the JOIN step during the join reordering optimization."}) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0, \
