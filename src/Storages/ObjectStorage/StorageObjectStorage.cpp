@@ -1320,7 +1320,10 @@ void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_met
             throw;
         }
         std::lock_guard lock(settings_changes_mutex);
-        setInMemoryMetadata(new_metadata);
+        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        auto latest_metadata = *latest_metadata_snapshot;
+        latest_metadata.settings_changes = new_metadata.settings_changes;
+        setInMemoryMetadata(latest_metadata);
     }
     catch (...)
     {
