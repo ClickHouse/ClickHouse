@@ -1646,13 +1646,13 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
 </Note>
 
-Merges are stopped only for the tables that exist when the statement runs, and only until the server restarts:
+Without `ON VOLUME`, merges are stopped only for the tables that exist when the statement runs, and only until the server restarts:
 
 - Without a table name (and without `ON VOLUME`), merges are stopped for every MergeTree table that exists at that moment. Tables created afterwards still merge.
 - With a table name, the statement returns `Ok.` even if the table does not exist, and it has no effect on a table created later with that name.
 - The stopped state is kept in memory. After a server restart, merges run again for all tables.
 
-While merges are stopped for a non-replicated MergeTree table, `OPTIMIZE TABLE` on that table also fails, with or without `FINAL`, with the error `Cancelled merging parts. (ABORTED)`. Run `SYSTEM START MERGES` for the table first.
+While merges are stopped for a non-replicated MergeTree table by `SYSTEM STOP MERGES [db.]merge_tree_family_table_name`, `OPTIMIZE TABLE` on that table also fails, with or without `FINAL`, with the error `Cancelled merging parts. (ABORTED)`. Run `SYSTEM START MERGES` for the table first.
 
 ### SYSTEM START MERGES {#start-merges}
 
