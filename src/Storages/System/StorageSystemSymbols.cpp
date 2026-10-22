@@ -82,7 +82,9 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
 #if USE_XRAY
-        const auto & instrumentation_functions = InstrumentationManager::instance().getFunctions();
+        /// Loading the instrumentation map demangles every instrumented function, so do it only when an XRay column is read.
+        const bool read_xray_columns = columns_mask[1] || columns_mask[2];
+        const auto * instrumentation_functions = read_xray_columns ? &InstrumentationManager::instance().getFunctions() : nullptr;
 #endif
 
         size_t rows_count = 0;
@@ -95,13 +97,13 @@ protected:
                 res_columns[res_index++]->insert(it->name);
 #if USE_XRAY
             /// Demangling every symbol dominates the scan, so skip it unless an XRay column is read.
-            if (columns_mask[src_index] || columns_mask[src_index + 1])
+            if (read_xray_columns)
             {
                 const auto function_name = demangle(it->name);
-                const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
+                const auto instrumentation_function = instrumentation_functions->get<InstrumentationManager::FunctionName>().find(function_name);
 
                 /// Not every function is instrumented, so we need to look for those which are.
-                if (instrumentation_function != instrumentation_functions.get<InstrumentationManager::FunctionName>().end())
+                if (instrumentation_function != instrumentation_functions->get<InstrumentationManager::FunctionName>().end())
                 {
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(instrumentation_function->function_name);
