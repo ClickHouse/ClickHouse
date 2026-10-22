@@ -577,13 +577,15 @@ void DatabaseMaterializedPostgreSQL::checkCanDetachTablePermanently(const String
     if (it == materialized_tables.end() || !it->second)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
 
-    /// A database without replicated tables cannot start again: on the next startup, nothing would distinguish
+    /// A database without materialized tables cannot start again: on the next startup, nothing would distinguish
     /// it from a database that did not finish its initial synchronization, so the detached tables
-    /// would be loaded from a new snapshot again.
+    /// would be loaded from a new snapshot again. A wrapper without a nested table (for example, the first snapshot
+    /// of its table failed) does not count, because on startup it is not distinguished from an unfinished one either.
     bool has_other_tables = false;
     for (const auto & [name, storage] : materialized_tables)
     {
-        if (name != table_name && !tables_detaching_permanently.contains(name))
+        if (name != table_name && !tables_detaching_permanently.contains(name)
+            && storage->as<StorageMaterializedPostgreSQL>()->hasNested())
         {
             has_other_tables = true;
             break;
@@ -593,7 +595,8 @@ void DatabaseMaterializedPostgreSQL::checkCanDetachTablePermanently(const String
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED,
             "Cannot detach table `{}` permanently: it is the only table replicated by MaterializedPostgreSQL "
-            "database `{}`, apart from the tables being detached. Use `DROP DATABASE {}` to stop replication",
+            "database `{}`, apart from the tables being detached and the tables that are not materialized yet. "
+            "Use `DROP DATABASE {}` to stop replication",
             table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
 }
 
