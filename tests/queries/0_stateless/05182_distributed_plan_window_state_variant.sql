@@ -17,6 +17,7 @@ INSERT INTO t_window_state_variant_gather SELECT number % 4, number % 3, intDiv(
 INSERT INTO t_window_state_variant_gather SELECT number % 4, number % 3, intDiv(number, 3) % 5, number + 2000 FROM numbers(40);
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
+    distributed_plan_fallback_to_local_execution = 0,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
     distributed_plan_default_shuffle_join_bucket_count = 8, distributed_plan_default_reader_bucket_count = 8,
     optimize_read_in_order = 0, optimize_sorting_by_input_stream_properties = 1,
@@ -102,8 +103,10 @@ FROM
         UNION ALL
         SELECT contingencyState(b, c) AS s FROM t_window_state_variant_gather
     )
+    SETTINGS make_distributed_plan = 1
 )
-WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
+WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1
+SETTINGS make_distributed_plan = 0;
 
 SELECT '-- Dynamic: distributed then local';
 SELECT round(contingencyMerge(dynamicElement(CAST(s AS Dynamic), 'AggregateFunction(contingency, UInt32, UInt32)')), 6)
