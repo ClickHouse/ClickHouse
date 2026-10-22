@@ -9239,6 +9239,10 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
                 original_active_part->force_keep_shared_data = true;
             }
 
+            /// The copy has the same name and data, so it takes over the entries of the columns cache.
+            original_active_part->owns_columns_cache_entries = false;
+            part_copy->owns_columns_cache_entries = true;
+
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);

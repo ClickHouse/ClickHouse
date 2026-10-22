@@ -276,8 +276,12 @@ public:
     /// Loads marks and saves them into mark cache for specified columns.
     virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
 
+    /// Calls `func` with the path of the marks file of every stream of the columns of the part,
+    /// relative to the directory of the part.
+    virtual void forEachMarksFile(const std::function<void(const String & marks_file)> & func) const = 0;
+
     /// Removes marks from cache for all columns in part.
-    virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+    void removeMarksFromCache(MarkCache * mark_cache) const;
 
     /// Loads index marks for secondary indices and saves them into the index mark cache.
     void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
@@ -287,6 +291,15 @@ public:
 
     /// Removes data related to data part from mark and primary index caches.
     void clearCaches();
+
+    /// Moves the entries of this part in the mark cache, the index mark cache, the primary index
+    /// cache and the vector similarity index cache to the keys of `target`, a copy of this part on
+    /// another disk that has just replaced it (see `MergeTreePartsMover::swapClonedPart`). The keys
+    /// of these caches contain the disk and the path of the part, so the entries of this part are
+    /// useless for `target` as they are.
+    /// Also hands over the primary index this part keeps in memory, if `target` has not loaded one.
+    /// Projection parts are handled recursively.
+    void moveCachesTo(const IMergeTreeDataPart & target) const;
 
     /// Returns true if data related to data part may be stored in mark and primary index caches.
     bool mayStoreDataInCaches() const;
@@ -394,6 +407,15 @@ public:
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
+
+    /// Whether `clearCaches` removes the entries of the columns cache for the name of this part.
+    /// They are keyed by the UUID of the table and the name of the part, not by its disk, so a copy
+    /// of the part with the same name and data shares them: the copy on another disk made by a
+    /// move, and the part it replaces. Only one of them owns the entries: the copy does not until
+    /// it replaces the original (see `MergeTreeData::swapActivePart`), and the original does not
+    /// after that. Otherwise destroying the replaced part, or a copy whose move failed, would remove
+    /// the entries the active part still uses.
+    mutable std::atomic_bool owns_columns_cache_entries = true;
 
     /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
     bool old_part_with_no_metadata_version_on_disk = false;
@@ -560,6 +582,10 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
+    /// Moves the entries of this part in the vector similarity index cache to the keys of `target`.
+    /// The counterpart of `removeFromVectorIndexCache` for a part that is moved to another disk.
+    void moveVectorSimilarityIndexCacheTo(VectorSimilarityIndexCache & vector_similarity_index_cache, const IMergeTreeDataPart & target) const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
@@ -633,6 +659,7 @@ public:
 
     /// This method ignores current tmp prefix of part and returns
     /// the name of part when it was or will be in Active state.
+    /// For a projection part, it is the directory of the projection inside its active parent part.
     String getRelativePathOfActivePart() const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
@@ -1055,6 +1082,11 @@ private:
 
     /// Returns the name of the part state as a string.
     String stateToString() const;
+
+    /// Calls `func` with the path of the marks file of every potential stream of the secondary
+    /// indices of the table, relative to the directory of the part. A superset of the files the
+    /// part has: finding the exact set needs I/O.
+    void forEachPotentialIndexMarksFile(const std::function<void(const String & marks_file)> & func) const;
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

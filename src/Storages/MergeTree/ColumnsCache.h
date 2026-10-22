@@ -267,6 +267,9 @@ public:
     /// so no reader can still write entries for the part after this call, and unlike removeTable
     /// this needs no invalidation stamp: nothing per part is retained once the entries are gone.
     /// Part names are not reused within a table, so a later part cannot find these entries either.
+    /// The exception is a move to another disk, where the copy and the part it replaces share the
+    /// name and the data: only one of them removes the entries, see
+    /// `IMergeTreeDataPart::owns_columns_cache_entries`.
     void removePart(const UUID & table_uuid, const String & part_name);
 
     /// Whether the cache holds any entry of the part. One lookup in the index, so that the cleanup

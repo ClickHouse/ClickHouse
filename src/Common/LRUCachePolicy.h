@@ -86,16 +86,23 @@ public:
 
     void remove(const Key & key) override
     {
+        take(key);
+    }
+
+    MappedPtr take(const Key & key) override
+    {
         auto it = cells.find(key);
         if (it == cells.end())
-            return;
+            return {};
         auto & cell = it->second;
         current_size_in_bytes -= cell.size;
         CurrentMetrics::sub(current_size_in_bytes_metric, cell.size);
 
+        MappedPtr value = std::move(cell.value);
         queue.erase(cell.queue_iterator);
         cells.erase(it);
         CurrentMetrics::sub(count_metric);
+        return value;
     }
 
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override

@@ -149,17 +149,24 @@ public:
 
     void remove(const Key & key) override
     {
+        take(key);
+    }
+
+    MappedPtr take(const Key & key) override
+    {
         auto it = cache.find(key);
         if (it == cache.end())
-            return;
+            return {};
         size_t sz = weight_function(*it->second);
         if (it->first.user_id.has_value())
             Base::user_quotas->decreaseActual(*it->first.user_id, sz);
+        MappedPtr value = std::move(it->second);
         cache.erase(it);
         size_in_bytes -= sz;
 
         CurrentMetrics::sub(size_in_bytes_metric, sz);
         CurrentMetrics::sub(count_metric);
+        return value;
     }
 
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override

@@ -1,0 +1,23 @@
+t_disabled	default	1
+t_enabled	default	1
+t_rmt	default	1
+t_disabled	p_value	1
+t_enabled	p_value	1
+t_rmt	p_value	1
+t_disabled	s3_disk	0
+t_enabled	s3_disk	1
+t_rmt	s3_disk	1
+t_disabled	p_value	0
+t_enabled	p_value	1
+t_rmt	p_value	1
+23212500
+23212500
+23212500
+23212500
+t_enabled	default	1
+23212500
+disabled	1
+enabled	0
+enabled_back_to_local	0
+enabled_projection	0
+rmt	0

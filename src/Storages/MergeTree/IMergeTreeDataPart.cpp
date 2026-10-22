@@ -1050,12 +1050,9 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
         loader->loadMarks();
 }
 
-void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache) const
+void IMergeTreeDataPart::forEachPotentialIndexMarksFile(const std::function<void(const String & marks_file)> & func) const
 {
-    if (!index_mark_cache)
-        return;
-
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIndexMarksFromCache");
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::forEachPotentialIndexMarksFile");
 
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
@@ -1077,9 +1074,134 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
             auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
             String stream_name = stream_name_opt.value_or(full_stream_name);
 
-            auto marks_file = index_granularity_info.getMarksFilePath(stream_name);
-            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
-            index_mark_cache->remove(key);
+            func(index_granularity_info.getMarksFilePath(stream_name));
+        }
+    }
+}
+
+namespace
+{
+
+/// The key of a marks file of the part in a mark cache. The same as the key `MergeTreeMarksLoader`
+/// uses while the part is at the path of an active part.
+UInt128 getMarksCacheKey(const IMergeTreeDataPart & part, const String & marks_file)
+{
+    return MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / marks_file).string());
+}
+
+UInt128 getPrimaryIndexCacheKey(const IMergeTreeDataPart & part)
+{
+    return PrimaryIndexCache::hash(part.getDataPartStorage().getDiskName() + ":" + part.getRelativePathOfActivePart());
+}
+
+template <typename Cache>
+void moveCacheEntry(Cache & cache, const typename Cache::Key & from, const typename Cache::Key & to)
+{
+    if (from == to)
+        return;
+
+    if (auto mapped = cache.take(from))
+        cache.set(to, mapped);
+}
+
+}
+
+void IMergeTreeDataPart::removeMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    forEachMarksFile([&](const String & marks_file)
+    {
+        mark_cache->remove(getMarksCacheKey(*this, marks_file));
+    });
+}
+
+void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache) const
+{
+    if (!index_mark_cache)
+        return;
+
+    forEachPotentialIndexMarksFile([&](const String & marks_file)
+    {
+        index_mark_cache->remove(getMarksCacheKey(*this, marks_file));
+    });
+}
+
+void IMergeTreeDataPart::moveCachesTo(const IMergeTreeDataPart & target) const
+{
+    chassert(name == target.name);
+    chassert(this != &target);
+
+    if (auto mark_cache = storage.getContext()->getMarkCache())
+    {
+        forEachMarksFile([&](const String & marks_file)
+        {
+            moveCacheEntry(*mark_cache, getMarksCacheKey(*this, marks_file), getMarksCacheKey(target, marks_file));
+        });
+    }
+
+    if (auto index_mark_cache = storage.getContext()->getIndexMarkCache())
+    {
+        forEachPotentialIndexMarksFile([&](const String & marks_file)
+        {
+            moveCacheEntry(*index_mark_cache, getMarksCacheKey(*this, marks_file), getMarksCacheKey(target, marks_file));
+        });
+    }
+
+    if (auto primary_index_cache = storage.getPrimaryIndexCache())
+        moveCacheEntry(*primary_index_cache, getPrimaryIndexCacheKey(*this), getPrimaryIndexCacheKey(target));
+
+    if (auto vector_similarity_index_cache = storage.getContext()->getVectorSimilarityIndexCache())
+        moveVectorSimilarityIndexCacheTo(*vector_similarity_index_cache, target);
+
+    /// Without the primary index cache, the part keeps its primary index in memory. The copy has
+    /// loaded its own already unless `primary_key_lazy_load` is enabled.
+    {
+        std::scoped_lock lock(index_mutex, target.index_mutex);
+        if (index && !target.index)
+            target.index = std::move(index);
+    }
+
+    const auto & target_projection_parts = target.getProjectionParts();
+    for (const auto & [projection_name, projection_part] : projection_parts)
+    {
+        if (auto it = target_projection_parts.find(projection_name); it != target_projection_parts.end())
+            projection_part->moveCachesTo(*it->second);
+    }
+}
+
+void IMergeTreeDataPart::moveVectorSimilarityIndexCacheTo(
+    VectorSimilarityIndexCache & vector_similarity_index_cache, const IMergeTreeDataPart & target) const
+{
+    if (isProjectionPart())
+        return;
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), /*bypass_metadata_cache=*/false);
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    String from_path = getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    String to_path = target.getDataPartStorage().getDiskName() + ":" + target.getRelativePathOfActivePart();
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
+        if (!skip_index->isVectorSimilarityIndex())
+            continue;
+
+        /// The keys are built like in `MergeTreeIndexReader::read`: the path of the part, the name
+        /// of the index and one entry per index granule. Granules the part does not have (e.g. the
+        /// index was defined after the part was written) simply have no entry.
+        const auto & index_name = skip_index->getFileName();
+        size_t marks_count = index_granularity->getMarksCountForSkipIndex(skip_index->getGranularity());
+        for (size_t mark = 0; mark < marks_count; ++mark)
+        {
+            moveCacheEntry(
+                vector_similarity_index_cache,
+                VectorSimilarityIndexCacheKey{from_path, index_name, mark},
+                VectorSimilarityIndexCacheKey{to_path, index_name, mark});
         }
     }
 }
@@ -1099,8 +1221,8 @@ void IMergeTreeDataPart::clearCaches()
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 
-    /// Remove deserialized columns from cache
-    if (mayStoreColumnsInColumnsCache())
+    /// Remove deserialized columns from cache, unless another part with the same name owns them.
+    if (mayStoreColumnsInColumnsCache() && owns_columns_cache_entries)
     {
         /// No reader can hold this part any more: clearCaches runs from the destructor of the
         /// part and for outdated parts that are uniquely owned, while a reader owns the part
@@ -1139,7 +1261,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     /// know nothing about it: a part whose only footprint is there has to be cleared as well, or its
     /// entries stay resident until a much later filesystem cleanup and evict entries of live parts
     /// in the meantime. Asking the cache is one lookup in its per-part index.
-    if (!mayStoreColumnsInColumnsCache())
+    if (!mayStoreColumnsInColumnsCache() || !owns_columns_cache_entries)
         return false;
 
     auto columns_cache = storage.getContext()->getColumnsCache();
@@ -3279,7 +3401,15 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
 
 String IMergeTreeDataPart::getRelativePathOfActivePart() const
 {
-    return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
+    if (!isProjectionPart())
+        return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
+
+    /// The directory of a projection part is not named after it: `<parent part>/<projection>.proj/`.
+    /// The root of its storage is the current directory of the parent part, which may have a
+    /// temporary name, so go up from it to the root of the parent and take the name of the
+    /// parent part instead. Not via `parent_part`: this runs while the parent part is destroyed.
+    auto parent_root = fs::path(getDataPartStorage().getFullRootPath()).parent_path().parent_path();
+    return parent_root / getParentPartName() / (name + ".proj") / "";
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)

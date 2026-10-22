@@ -50,6 +50,34 @@ TEST(LRUCache, get)
     ASSERT_EQ(*value, 3);
 }
 
+TEST(LRUCache, take)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    auto lru_cache = SimpleCacheBase("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto mapped = std::make_shared<int>(2);
+    lru_cache.set(1, mapped);
+    lru_cache.set(2, std::make_shared<int>(3));
+
+    /// The entry is removed and returned as it is, without counting a hit or a miss.
+    auto value = lru_cache.take(1);
+    ASSERT_EQ(value, mapped);
+    ASSERT_EQ(lru_cache.sizeInBytes(), 1);
+    ASSERT_EQ(lru_cache.count(), 1);
+    ASSERT_FALSE(lru_cache.contains(1));
+    ASSERT_TRUE(lru_cache.take(1) == nullptr);
+
+    size_t hits = 0;
+    size_t misses = 0;
+    lru_cache.getStats(hits, misses);
+    ASSERT_EQ(hits, 0);
+    ASSERT_EQ(misses, 0);
+
+    /// It can be put back under another key.
+    lru_cache.set(3, value);
+    ASSERT_EQ(lru_cache.get(3), mapped);
+    ASSERT_EQ(lru_cache.count(), 2);
+}
+
 struct ValueWeight
 {
     size_t operator()(const size_t & x) const { return x; }

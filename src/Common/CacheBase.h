@@ -283,6 +283,14 @@ public:
         cache_policy->remove(predicate);
     }
 
+    /// Removes the entry under `key` and returns it, or nullptr if there is none.
+    /// Counts neither as a hit nor as a miss.
+    MappedPtr take(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->take(key);
+    }
+
     /// O(1) "remove iff" by key: looks up the resident under `key` and
     /// removes it only when `predicate(resident)` returns true. Returns
     /// whether the entry was removed. Atomic with respect to concurrent
