@@ -33,7 +33,7 @@
           ]
         },
         "zh/clickstack/architecture",
-        "zh/clickstack/faq"
+        "clickstack/faq"
       ]
     },
     {
@@ -97,11 +97,11 @@
         "zh/clickstack/text-to-chart",
         "zh/clickstack/features/event-patterns",
         "zh/clickstack/features/event-deltas",
-        "zh/clickstack/features/alerts",
+        "clickstack/features/alerts",
         "zh/clickstack/features/anomaly-detection",
         "zh/clickstack/service-maps",
         "zh/clickstack/features/session-replay",
-        "zh/clickstack/mcp",
+        "clickstack/mcp",
         "zh/clickstack/url-parameters",
         {
           "group": "演示日",

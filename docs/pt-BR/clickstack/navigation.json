@@ -33,7 +33,7 @@
           ]
         },
         "pt-BR/clickstack/architecture",
-        "pt-BR/clickstack/faq"
+        "clickstack/faq"
       ]
     },
     {
@@ -97,11 +97,11 @@
         "pt-BR/clickstack/text-to-chart",
         "pt-BR/clickstack/features/event-patterns",
         "pt-BR/clickstack/features/event-deltas",
-        "pt-BR/clickstack/features/alerts",
+        "clickstack/features/alerts",
         "pt-BR/clickstack/features/anomaly-detection",
         "pt-BR/clickstack/service-maps",
         "pt-BR/clickstack/features/session-replay",
-        "pt-BR/clickstack/mcp",
+        "clickstack/mcp",
         "pt-BR/clickstack/url-parameters",
         {
           "group": "Demo days",
