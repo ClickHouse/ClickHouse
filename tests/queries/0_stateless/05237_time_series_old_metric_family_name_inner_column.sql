@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the initiator sends the argument of `timeSeriesMetricFamilies` to the replicas unqualified,
+-- so they look the table up in the `default` database, see https://github.com/ClickHouse/ClickHouse/issues/118130.
+
 -- Tables of versions before 6 name the column of the "metric families" target table with the name of a metric family
 -- `metric_family_name` (see TimeSeriesVersion.h) and stay readable and writable. The generation of the column and
 -- the checks of its name are covered by the unit test gtest_normalize_time_series_definition.cpp.

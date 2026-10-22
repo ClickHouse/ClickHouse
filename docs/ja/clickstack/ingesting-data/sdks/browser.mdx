@@ -6,6 +6,8 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack ブラウザ SDK を使用すると、フロントエンドアプリケーションをインストルメントし、
 イベントを ClickStack に送信できます。これにより、ネットワークリクエストや
 例外を、バックエンドのイベントとあわせて単一のタイムラインで確認できます。
@@ -14,22 +16,15 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
 アプリケーションの利用中にユーザーが見ていた内容を視覚的にたどりながら
 デバッグできます。
 
-このガイドでは、以下を統合します。
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-* **コンソールログ**
-* **セッションリプレイ**
-* **XHR/Fetch/WebSocket リクエスト**
-* **例外**
-
-<div id="getting-started">
-  ## はじめに
-</div>
+## はじめに {#getting-started}
 
 <br />
 
 <Tabs>
   <Tab title="パッケージのインポート">
-    **パッケージをインポートしてインストール (推奨)&#x20;**
+    **パッケージをインポートしてインストール (推奨)**
 
     以下のコマンドで、[browser package](https://www.npmjs.com/package/@hyperdx/browser) をインストールします。
 
@@ -43,8 +38,8 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
     import HyperDX from '@hyperdx/browser';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack の場合は省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack の場合は省略
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i], // フロントエンドからバックエンドへのリクエストにトレースを関連付けるために設定
         consoleCapture: true, // コンソールログを取得（デフォルトは false）
@@ -54,7 +49,7 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
   </Tab>
 
   <Tab title="スクリプトタグ">
-    **スクリプトタグでインストール (代替手段)&#x20;**
+    **スクリプトタグでインストール (代替手段)**
 
     NPM でインストールする代わりに、スクリプトタグを使ってスクリプトを読み込むこともできます。これによりグローバル変数 `HyperDX` が利用可能になり、NPM パッケージと同じように使用できます。
 
@@ -64,8 +59,8 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
     <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
     <script>
       window.HyperDX.init({
-        url: 'http://localhost:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack の場合は省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack の場合は省略
         service: 'my-frontend-app',
         tracePropagationTargets: [/api.myapp.domain/i], // フロントエンドからバックエンドへのリクエストにトレースを関連付けるために設定
       });
@@ -74,9 +69,7 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
   </Tab>
 </Tabs>
 
-<div id="options">
-  ### オプション
-</div>
+### オプション {#options}
 
 * `apiKey` - ClickStack のインジェスト API key。
 * `service` - イベントが HyperDX UI に表示される際のサービス名。
@@ -94,13 +87,9 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
 * `disableIntercom` -  (任意) Intercom インテグレーションを無効にするかどうか (デフォルト `false`) 
 * `disableReplay` -  (任意) セッションリプレイを無効にするかどうか (デフォルト `false`)
 
-<div id="additional-configuration">
-  ## 追加の設定
-</div>
+## 追加の設定 {#additional-configuration}
 
-<div id="attach-user-information-or-metadata">
-  ### ユーザー情報またはメタデータを関連付ける
-</div>
+### ユーザー情報またはメタデータを関連付ける {#attach-user-information-or-metadata}
 
 ユーザー情報を関連付けると、HyperDX UI で
 セッションやイベントを検索・絞り込みできるようになります。これはクライアントの
@@ -123,9 +112,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-<div id="auto-capture-react-error-boundary-errors">
-  ### React error boundary のエラーを自動的にキャプチャする
-</div>
+### React error boundary のエラーを自動的にキャプチャする {#auto-capture-react-error-boundary-errors}
 
 React を使用している場合は、error boundary コンポーネントを
 `attachToReactErrorBoundary` 関数に渡すことで、React の error boundary 内で発生した
@@ -139,9 +126,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-<div id="send-custom-actions">
-  ### カスタムアクションを送信する
-</div>
+### カスタムアクションを送信する {#send-custom-actions}
 
 特定のアプリケーションイベント (例: サインアップ、送信
 など) を明示的に追跡するには、イベント名と必要に応じて
@@ -157,9 +142,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-<div id="enable-network-capture-dynamically">
-  ### ネットワークキャプチャを動的に有効にする
-</div>
+### ネットワークキャプチャを動的に有効にする {#enable-network-capture-dynamically}
 
 ネットワークキャプチャを動的に有効または無効にするには、必要に応じて `enableAdvancedNetworkCapture` または `disableAdvancedNetworkCapture` 関数を呼び出すだけです。
 
@@ -167,9 +150,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-<div id="enable-resource-timing-for-cors-requests">
-  ### CORS リクエストのリソースタイミングを有効にする
-</div>
+### CORS リクエストのリソースタイミングを有効にする {#enable-resource-timing-for-cors-requests}
 
 フロントエンドアプリケーションが別ドメインに API リクエストを送信する場合は、必要に応じて
 `Timing-Allow-Origin`[ヘッダー](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)をリクエストとともに送信するよう有効化できます。これにより ClickStack は、DNS ルックアップやレスポンスの
