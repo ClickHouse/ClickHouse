@@ -16,8 +16,12 @@
 #include <base/defines.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
@@ -216,6 +220,42 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
     return res;
 }
 
+namespace
+{
+
+/// Copying a state may allocate with `operator new`, which the memory tracker counts but does not refuse.
+class StateCopyMemoryLimitChecker
+{
+public:
+    StateCopyMemoryLimitChecker()
+        : memory_tracker(CurrentThread::getMemoryTracker())
+    {
+        /// Levels blocked by `MemoryTrackerBlockerInThread` do not count allocations, so watch the first one that does.
+        while (memory_tracker && MemoryTrackerBlockerInThread::isBlocked(memory_tracker->level))
+            memory_tracker = memory_tracker->getParent();
+        if (memory_tracker)
+            memory_at_last_check = memory_tracker->get();
+    }
+
+    void check()
+    {
+        if (!memory_tracker)
+            return;
+        Int64 memory = memory_tracker->get();
+        if (memory != memory_at_last_check)
+        {
+            memory_at_last_check = memory;
+            CurrentMemoryTracker::check();
+        }
+    }
+
+private:
+    MemoryTracker * memory_tracker;
+    Int64 memory_at_last_check = 0;
+};
+
+}
+
 void ColumnAggregateFunction::ensureOwnership()
 {
     force_data_ownership = true;
@@ -239,6 +279,8 @@ void ColumnAggregateFunction::ensureOwnership()
         Container new_data;
         new_data.resize_exact(size);
 
+        StateCopyMemoryLimitChecker memory_limit_checker;
+
         size_t rollback_pos = 0;
         try
         {
@@ -252,6 +294,7 @@ void ColumnAggregateFunction::ensureOwnership()
                     throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
 
                 func->merge(new_data[i], data[i], &arena);
+                memory_limit_checker.check();
             }
         }
         catch (...)
@@ -307,9 +350,13 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
         ///  (only as a whole).
 
+        StateCopyMemoryLimitChecker memory_limit_checker;
         size_t end = start + length;
         for (size_t i = start; i < end; ++i)
+        {
             insertFromWithOwnership(from, i);
+            memory_limit_checker.check();
+        }
     }
     else
     {
@@ -655,6 +702,9 @@ void ColumnAggregateFunction::insert(const Field & x)
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.safeGet<AggregateFunctionStateData>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
+    /// Only a state with a non-trivial destructor can own memory outside the arena, e.g. allocated with `operator new`.
+    if (!func->hasTrivialDestructor())
+        CurrentMemoryTracker::check();
 }
 
 bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
@@ -671,6 +721,9 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.safeGet<AggregateFunctionStateData>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
+    /// Only a state with a non-trivial destructor can own memory outside the arena, e.g. allocated with `operator new`.
+    if (!func->hasTrivialDestructor())
+        CurrentMemoryTracker::check();
     return true;
 }
 
