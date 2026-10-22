@@ -4,25 +4,21 @@
 #include <base/EnumReflection.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
+#include <Common/HiddenSecret.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool format_display_secrets_in_show_and_select;
-}
 
 ColumnsDescription StorageSystemNamedCollections::getColumnsDescription()
 {
@@ -60,10 +56,8 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         auto & tuple_column = column_map->getNestedData();
         auto & key_column = tuple_column.getColumn(0);
         auto & value_column = tuple_column.getColumn(1);
-        bool access_secrets = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
-        access_secrets &= access->isGranted(AccessType::displaySecretsInShowAndSelect);
-        access_secrets &= context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
-        access_secrets &= context->displaySecretsInShowAndSelect();
+        const bool access_secrets
+            = access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS) && canDisplaySecrets(context);
 
         size_t size = 0;
         for (const auto & key : collection->getKeys())
@@ -72,7 +66,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
-                value_column.insert("[HIDDEN]");
+                value_column.insert(String(HIDDEN_SECRET));
             size++;
         }
 

@@ -19,7 +19,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -56,7 +55,19 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     select.tables()->children.resize(1);
 
     /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
+    /// The `group_by_all` flag must not survive either: a re-analysis of this rewritten query
+    /// (e.g. for a child plan of StorageMerge) would otherwise re-expand GROUP BY ALL over the
+    /// replaced select list. The `order_by_all` flag is reset by setExpression itself when the
+    /// ORDER BY clause is removed below.
     select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+    select.group_by_all = false;
+    /// The GROUP BY modifiers must not survive the removal of the clause either: with no
+    /// GROUP BY and no aggregates a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS flag makes
+    /// the interpreter reject the rewritten query as aggregation-free.
+    select.group_by_with_totals = false;
+    select.group_by_with_rollup = false;
+    select.group_by_with_cube = false;
+    select.group_by_with_grouping_sets = false;
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
@@ -98,6 +109,28 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     replace_where(select, ASTSelectQuery::Expression::PREWHERE);
     select.setExpression(ASTSelectQuery::Expression::HAVING, {});
     select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+    /// INTERPOLATE can only exist together with ORDER BY ... WITH FILL, and RequiredSourceColumnsVisitor
+    /// traverses it independently of ORDER BY, so if it were kept, it could still reference columns
+    /// of the removed joined table.
+    select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
+    /// WINDOW definitions and LIMIT BY expressions are analyzed unconditionally as well
+    /// (ExpressionAnalyzer::makeWindowDescriptions and appendLimitBy), so they must not keep
+    /// references to columns of the removed joined table either. QUALIFY is cleared for the same
+    /// reason (and, like HAVING, it is a filter that cannot affect the header anyway).
+    select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
+    select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
+    select.limit_by_all = false;
+    /// The `LIMIT AFTER`/`UNTIL` boundaries are analyzed unconditionally too (appendLimitRange) and may
+    /// refer to columns of the removed joined table.
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
+    select.limit_after_all = false;
+    /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
+    /// a stale flag would be a logical error in InterpreterSelectQuery.
+    select.limit_with_ties = false;
 
     return true;
 }
@@ -158,34 +191,25 @@ SharedHeader getHeaderForProcessingStage(
 
             SharedHeader result;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+                                                          storage_snapshot->getAllColumnsDescription(),
+                                                          storage_snapshot);
+            /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
+            /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
+            /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
+            /// initiator computed from the same tree.
+            if (query_info.query_tree && !query_rewritten_for_join)
             {
-                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-                                                                                        storage_snapshot->getAllColumnsDescription(),
-                                                                                        storage_snapshot);
-                /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
-                /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
-                /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
-                /// initiator computed from the same tree.
-                if (query_info.query_tree && !query_rewritten_for_join)
-                {
-                    /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
-                    QueryTreeNodePtr query_tree = query_info.query_tree;
-                    replaceStorageInQueryTree(query_tree, context, storage);
-                    result = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                        query_tree, context, SelectQueryOptions(processed_stage).analyze());
-                }
-                else
-                {
-                    InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
-                    result = interpreter.getSampleBlock();
-                }
+                /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
+                QueryTreeNodePtr query_tree = query_info.query_tree;
+                replaceStorageInQueryTree(query_tree, context, storage);
+                result = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                    query_tree, context, SelectQueryOptions(processed_stage).analyze());
             }
             else
             {
-                auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                        std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
-                result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+                InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
+                result = interpreter.getSampleBlock();
             }
 
             return result;

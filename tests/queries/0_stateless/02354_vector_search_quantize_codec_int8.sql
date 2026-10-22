@@ -4,9 +4,9 @@
 -- The `int8` method of the `Quantized(...)` column codec stores one Lloyd-Max Int8 code per coordinate (of the rotated,
 -- unit-variance vector) plus the per-vector L2 norm, exposed as the readable subcolumn `<column>.quantized`. The
 -- full-precision data is stored verbatim, so reading the vector itself is unaffected. The codec is gated behind
--- `allow_experimental_codecs`.
+-- `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
 -- below needs the analyzer (the old-analyzer CI config does not produce the lazy read).

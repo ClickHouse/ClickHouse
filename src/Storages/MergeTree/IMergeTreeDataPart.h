@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Common/UniqueLock.h>
+
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
@@ -24,7 +27,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
@@ -100,6 +104,10 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 class PrimaryIndexCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
+class StatisticsCache;
+using StatisticsCachePtr = std::shared_ptr<StatisticsCache>;
+struct StatisticsCacheCell;
+
 class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
@@ -114,6 +122,7 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
+    PINNED_BY_DELETE_BITMAP,
     REMOVE,
     REMOVE_ROLLED_BACK,
     REMOVE_RETRY,
@@ -149,7 +158,7 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_,
-        bool part_may_exist_on_disk = true);
+        PartDirIntent intent);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -184,7 +193,9 @@ public:
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
 
-    virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
+    /// First stream file name (no extension) in the column's serialization, or nullopt if the
+    /// column has no files here. A column may have several stream files; this returns only one.
+    virtual std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & column) const = 0;
 
     virtual ~IMergeTreeDataPart();
 
@@ -200,11 +211,11 @@ public:
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
+    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_, bool validate_against_loaded_columns = true);
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
-    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// `patch_part_index`) into that arena. A cheap copy of small objects; call once these members
     /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
     /// `setMinMaxIndex` / the population sites.
     void moveMetadataToDedicatedArena();
@@ -234,11 +245,26 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
+    /// A static subcolumn's serialization from the part's shared serializations;
+    /// see `PartSerializations::tryGetSubcolumnSerialization` for when it returns nothing.
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
+
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
-    Estimates getEstimates() const;
+    /// The statistics of the part's columns; an empty `required_columns` means all columns.
+    /// Without a cache, the statistics are read from disk and are private to the caller.
+    /// With a cache, the statistics of a column are read from disk only when they are not cached, and the
+    /// returned objects are shared with other callers, so they must not be modified.
+    ColumnsStatistics loadStatistics(const NameSet & required_columns = {}, StatisticsCache * cache = nullptr) const;
+    /// Loads the statistics of all columns into the cache (prewarming), unless the cache is already filled up to
+    /// `statistics_cache_prewarm_ratio`. Best-effort: an error is logged, not thrown.
+    void loadStatisticsToCache(StatisticsCache & cache) const;
+    /// Removes the statistics of all columns of the part from the cache.
+    void removeStatisticsFromCache(StatisticsCache * cache) const;
+    /// The estimates of the statistics of `required_columns`; an empty `required_columns` means all columns.
+    /// The estimates are memoized per column, so only the statistics of the columns that were not requested
+    /// before are read. The result may contain the estimates of other columns as well.
+    Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -264,6 +290,9 @@ public:
 
     /// Returns true if data related to data part may be stored in mark and primary index caches.
     bool mayStoreDataInCaches() const;
+
+    /// Whether the columns cache can hold entries of this part at all, by its type and its table.
+    bool mayStoreColumnsInColumnsCache() const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -331,14 +360,14 @@ public:
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
-    /// However in some special cases Clickhouse can make a decision without asking keeper.
+    /// However in some special cases ClickHouse can make a decision without asking keeper.
     enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
-        /// is set when Clickhouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
+        /// is set when ClickHouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
         REMOVE_BLOBS,
-        /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
+        /// is set when ClickHouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
         /// remove blobs even if the part is not temporary
         REMOVE_BLOBS_OF_NOT_TEMPORARY,
@@ -435,6 +464,12 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+
+        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
+        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
+        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
+        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
+        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
@@ -462,6 +497,7 @@ public:
 
     NameSet invalidated_system_columns;
     bool isSystemColumnInvalidated(const String & column_name) const;
+    static NameSet getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info);
     static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
@@ -469,6 +505,40 @@ public:
     static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
 
     CompressionCodecPtr default_codec;
+
+    /// Set when `default_codec` is not known exactly: `default_compression_codec.txt` was missing or
+    /// malformed and the codec had to be recovered. This covers two cases: either no column's on-disk
+    /// data proved the codec, so `default_codec` is only a best-effort guess from `checksums.txt`
+    /// (see `detectDefaultCompressionCodecFromChecksums`), or a column's data proved the codec, but a
+    /// compressed frame's method byte encodes neither the codec's numeric parameters (a `ZSTD(3)`
+    /// default reads back as `ZSTD(1)`) nor always the exact family (`LZ4` and `LZ4HC` share a method
+    /// byte, so an `LZ4HC(N)` default reads back as `LZ4`; see `detectDefaultCompressionCodec`). In
+    /// both cases the recovered value may not match the part's actual codec family or level.
+    /// Consumers that use `default_codec` to decide whether work can be skipped (e.g.
+    /// `TTLRecompressMergeSelector`) must treat this as "unknown" rather than trust the guess, so a
+    /// wrong guess cannot suppress a merge that is still needed.
+    mutable bool default_codec_is_approximate = false;
+
+    /// Whether `default_codec` was chosen by an explicit `RECOMPRESS` TTL rather than by the
+    /// `<compression>` config or the built-in default. It travels with `default_codec` so that the
+    /// projections written under this part - merged by `MergeProjectionPartsTask` or rebuilt by
+    /// `writeTempProjectionPart` - inherit the codec *and* the reason for it, and adaptive codec
+    /// selection does not replace a codec the user asked for. It is in-memory provenance of the write
+    /// that is producing the part: nothing on disk records it, so it stays `false` for a loaded part.
+    bool default_codec_is_explicit_recompression = false;
+
+    /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
+    /// during the current load. The regenerated file is compressed with the *current* built-in
+    /// default codec (`CompressionCodecFactory::getDefaultCodec`), not the codec the part was written
+    /// with, so its frame carries no write-time provenance. `detectDefaultCompressionCodecFromChecksums`
+    /// must not read the codec family from a regenerated `checksums.txt` and treats this case the same
+    /// as a part with no `checksums.txt` at all.
+    bool checksums_were_regenerated = false;
+
+    /// Whether `checksums` can vouch for the files of the part. They cannot when there are none (parts
+    /// of very old formats) or when `loadChecksums` regenerated them from the files as they are on disk:
+    /// then a marks file torn or lost in a crash has to be detected from the shape of the files instead.
+    bool hasTrustworthyChecksums() const { return !checksums.empty() && !checksums_were_regenerated; }
 
     mutable std::unique_ptr<VersionMetadata> version;
 
@@ -567,8 +637,8 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
-    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
-    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
+    void setPatchPartIndex(PatchPartIndex patch_part_index_);
+    const PatchPartIndex & getPatchPartIndex() const;
 
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
@@ -578,8 +648,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder
-    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder getProjectionPartBuilder(
+        const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -590,6 +660,9 @@ public:
     bool hasProjection() const { return !projection_parts.empty(); }
 
     bool hasBrokenProjection(const String & projection_name) const;
+
+    /// Listed in checksums but not loaded by loadProjections, e.g. because the part was loaded with table metadata that did not have it yet.
+    bool hasUnloadedProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
     void loadProjections(
@@ -602,6 +675,15 @@ public:
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
     bool areChecksumsLoaded() const { return !checksums.empty(); }
+
+    /// Whether this part's column and secondary index sizes are already computed.
+    /// Never triggers the lazy computation: that reads from the part storage, and callers
+    /// use this to decide whether reading is safe here.
+    bool areColumnAndSecondaryIndexSizesCalculated() const
+    {
+        UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
+        return are_columns_and_secondary_indices_sizes_calculated;
+    }
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -627,6 +709,9 @@ public:
     /// by default. Some columns may have their own compression codecs, but
     /// default will be stored in this file.
     static constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+    /// Stored in `default_compression_codec.txt` when the part has no authoritative default codec.
+    /// It is deliberately not a `CODEC` expression, so it cannot be mistaken for a concrete codec.
+    static constexpr auto UNKNOWN_DEFAULT_COMPRESSION_CODEC = "UNKNOWN";
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
     static constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
@@ -822,8 +907,8 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Set of source parts for patch parts. Empty for regular parts.
-    SourcePartsSetForPatch source_parts_set;
+    /// Index of source parts covered by a patch part. Non-empty only for patch parts.
+    std::optional<PatchPartIndex> patch_part_index;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -846,9 +931,16 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
-
     virtual void doCheckConsistency(bool require_part_metadata) const;
+
+    /// Checks that no mark of `marks_file_name` points past the end of `data_file_name`. Missing or
+    /// regenerated checksums cannot vouch for a data file torn by a crash: if it was cut at a compressed
+    /// block boundary, it still decompresses, only to fewer rows, and the marks of the rest point beyond it.
+    /// Without a final mark (non-adaptive granularity) the last mark is only the start of the last granule;
+    /// if `min_bytes_per_row` is known for a stream of a `Wide` part, the last granule is checked to have
+    /// at least that many bytes for each of its rows.
+    void checkDataFileCoversMarks(
+        const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark, size_t min_bytes_per_row = 0) const;
 
 private:
     String mutable_name;
@@ -877,9 +969,13 @@ private:
     PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
     /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// Lazily initialized per column on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
+    /// The columns whose statistics were already looked up, including the columns without statistics.
+    mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
+    /// The estimates of all columns are known.
+    mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -888,7 +984,7 @@ private:
     void loadColumns(bool require, bool load_metadata_version);
 
     /// Reads columns substreams from columns_substreams.txt.
-    void loadColumnsSubstreams();
+    void loadColumnsSubstreams(bool validate_against_loaded_columns = true);
 
     /// Reads invalidated_system_columns.txt if present.
     void loadInvalidatedSystemColumns();
@@ -923,20 +1019,31 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
-    void loadSourcePartsSet();
+    void loadPatchPartIndex();
 
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
+    /// statistics file separately instead of in the packed archive.
+    std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
+        const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
-    /// Found column without specific compression and return codec
-    /// for this column with default parameters.
-    CompressionCodecPtr detectDefaultCompressionCodec() const;
+    /// Find a column that was compressed with the default codec and return that codec.
+    /// If no such column exists (every column has an explicit `CODEC`), invokes `get_fallback_codec`.
+    CompressionCodecPtr detectDefaultCompressionCodec(const std::function<CompressionCodecPtr()> & get_fallback_codec) const;
+
+    /// Recover the default codec of a part whose `default_compression_codec.txt` file is unusable
+    /// (missing or malformed) and no column proves the codec, by reading the codec of `checksums.txt`
+    /// (its modern format is compressed with the default codec effective when the part was written).
+    /// Returns `LZ4` for a genuinely legacy part whose `checksums.txt` predates that compressed format
+    /// (or is absent).
+    CompressionCodecPtr detectDefaultCompressionCodecFromChecksums() const;
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
@@ -954,6 +1061,9 @@ private:
 
     /// If it's true then data related to this part is cleared from mark and index caches.
     mutable std::atomic_bool cleared_data_in_caches = false;
+
+    /// If it's true then the statistics of this part may have been put into the statistics cache.
+    mutable std::atomic_bool may_store_data_in_statistics_cache = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

@@ -1,5 +1,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -94,6 +95,18 @@ ASTPtr ASTIndexDeclaration::clone() const
     return res;
 }
 
+void ASTIndexDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` and `granularity` are not children, so the default implementation does not see them.
+    /// `part_of_create_index_query` only affects formatting and is deliberately not hashed.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTIndexDeclaration, hash them here unless they are purely cosmetic.");
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(granularity);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 ASTPtr ASTIndexDeclaration::getExpression() const
 {
     if (children.size() <= expression_idx)
@@ -130,7 +143,7 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
     granularity = r.getUInt("granularity");
     part_of_create_index_query = r.getBool("part_of_create_index_query");
 
-    auto expression = r.readChild("expression");
+    auto expression = r.readExpressionChild("expression");
     if (!expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration must have an expression during AST JSON deserialization");
     children.push_back(expression);

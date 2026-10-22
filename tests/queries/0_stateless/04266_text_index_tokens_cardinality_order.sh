@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: every replica forwards its own `Reading tokens` log lines, https://github.com/ClickHouse/ClickHouse/issues/123994
 # Verifies that, after the first data part is analyzed, subsequent parts read text-index tokens
 # in order of increasing cardinality (rarest first) rather than alphabetically.
 # See PR https://github.com/ClickHouse/ClickHouse/pull/98226.
@@ -52,10 +54,11 @@ WHERE hasAllTokens(s, ['aaaa', 'mmmm', 'zzzz']);
 # Capture the 'Reading tokens ... from part ...' log line for each part.
 # With max_threads = 1 the parts are processed in order, so the first line uses the
 # alphabetical fallback (empty cardinality cache) and the next two use cardinality order.
+# Parallel replicas are disabled for this query because the log lines are emitted on the replicas, not on the initiator.
 ${CLICKHOUSE_CLIENT} --send_logs_level=test -q "
 SELECT count() FROM t_text_index_tokens_order
 WHERE hasAllTokens(s, ['aaaa', 'mmmm', 'zzzz'])
-SETTINGS max_threads = 1, use_text_index_tokens_cache = 0;
+SETTINGS max_threads = 1, use_text_index_tokens_cache = 0, enable_parallel_replicas = 0;
 " 2>&1 \
     | grep "MergeTreeIndexGranuleText: Reading tokens" \
     | sed -E 's|^.*Reading tokens (\[[^]]*\]) from part .*/(all_[^/]+)/?$|Reading tokens \1 from part \2|'

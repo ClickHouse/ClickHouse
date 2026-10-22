@@ -1,0 +1,12 @@
+nested tuple element
+((0,0),3)
+column after the tuple
+((0,0),3)	7
+both widths in one input
+((1,2),3)	7
+((0,0),3)	8
+Nullable nested tuple element
+(NULL,3)
+flat tuple element, columns on both sides
+1	(0,0)	2
+null_as_default = 0 rejects both

@@ -24,7 +24,7 @@ Depois que os dados forem carregados, vamos visualizá-los por meio de gráficos
 A integração entre o JupySQL e o ClickHouse é viabilizada pelo uso da biblioteca clickhouse&#95;sqlalchemy. Essa biblioteca permite uma comunicação simples entre os dois sistemas e possibilita que você se conecte ao ClickHouse e especifique o dialeto SQL. Depois de se conectar, você pode executar consultas SQL diretamente pela UI nativa do ClickHouse ou pelo Jupyter notebook.
 
 ```python
-# Instalar pacotes necessários
+# Install required packages
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
@@ -34,7 +34,7 @@ Observação: talvez seja necessário reiniciar o kernel para usar os pacotes at
 import pandas as pd
 from sklearn_evaluation import plot
 
-# Importar a extensão Jupyter jupysql para criar células SQL
+# Import jupysql Jupyter extension to create SQL cells
 %load_ext sql
 %config SqlMagic.autocommit=False
 ```

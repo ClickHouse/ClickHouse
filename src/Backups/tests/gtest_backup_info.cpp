@@ -91,6 +91,58 @@ namespace
         std::_Exit(0);
     }
 
+    [[noreturn]] void checkExpressionRoleArnValueWithContext()
+    {
+        tryRegisterFunctions();
+        const auto & context = getContext().context;
+        /// `collectCredentials` resolves the value when opening the locator, so one written as an
+        /// expression names a role just as well and has to survive into the metadata.
+        auto info = BackupInfo::fromString(
+            "S3('https://s3.example.com/bucket/backup', extra_credentials(role_arn = concat('arn::', 'role')))");
+
+        String str = info.withoutS3Credentials(context).toString();
+        requireContains(str, "extra_credentials");
+        requireContains(str, "concat('arn::', 'role')");
+        std::_Exit(0);
+    }
+
+    [[noreturn]] void checkCopyS3CredentialsResolvesExtraCredentialsWithContext()
+    {
+        tryRegisterFunctions();
+        const auto & context = getContext().context;
+
+        /// `collectCredentials` resolves both sides of each assignment when the locator is opened, so what
+        /// a clause authenticates as is decided by what it loads, not by how it is written. A resolved
+        /// `role_arn` is lent whatever its spelling; a clause that resolves to no role is not.
+        const auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+        for (const auto * lendable :
+             {"S3('https://s3.example.com/backup', extra_credentials(concat('role_', 'arn') = 'arn::role'))",
+              "S3('https://s3.example.com/backup', extra_credentials(role_arn = concat('arn::', 'role')))"})
+        {
+            auto source = BackupInfo::fromString(lendable);
+            if (!source.canCopyS3CredentialsTo(dest, context))
+            {
+                std::cerr << "Expected to be able to lend the credentials of " << lendable << '\n';
+                std::_Exit(1);
+            }
+        }
+
+        for (const auto * barren :
+             {"S3('https://s3.example.com/backup', extra_credentials(concat('external_', 'id') = 'EXTERNALID'))",
+              "S3('https://s3.example.com/backup', extra_credentials(role_arn = concat('', '')))"})
+        {
+            auto source = BackupInfo::fromString(barren);
+            if (source.canCopyS3CredentialsTo(dest, context))
+            {
+                std::cerr << "Expected " << barren << " to name no role to assume\n";
+                std::_Exit(1);
+            }
+        }
+
+        std::_Exit(0);
+    }
+
     [[noreturn]] void checkExpressionURLKeyAndValueWithContext()
     {
         tryRegisterFunctions();
@@ -149,6 +201,20 @@ TEST(BackupInfoDeathTest, WithoutS3CredentialsStripsExpressionCredentialKey)
 }
 
 
+TEST(BackupInfoDeathTest, WithoutS3CredentialsKeepsExpressionRoleArnValue)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkExpressionRoleArnValueWithContext(), ::testing::ExitedWithCode(0), ".*");
+}
+
+
+TEST(BackupInfoDeathTest, CopyS3CredentialsToResolvesExtraCredentials)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(checkCopyS3CredentialsResolvesExtraCredentialsWithContext(), ::testing::ExitedWithCode(0), ".*");
+}
+
+
 TEST(BackupInfoDeathTest, WithoutS3CredentialsRedactsExpressionURLKeyAndValue)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
@@ -172,14 +238,55 @@ TEST(BackupInfo, WithoutS3CredentialsStripsAuthKeyValueArguments)
     String str = info.withoutS3Credentials().toString();
     EXPECT_NE(str.find("collection"), String::npos);
     EXPECT_NE(str.find("filename"), String::npos);
-    for (const auto * credential : {"KEYID", "KEYSECRET", "TOKEN", "ROLEARN", "ROLESESSION", "EXTERNALID"})
+    for (const auto * credential : {"KEYID", "KEYSECRET", "TOKEN", "EXTERNALID"})
         EXPECT_EQ(str.find(credential), String::npos) << str;
+    /// The role identifiers are not secrets and are needed to reopen the base backup on restore.
+    for (const auto * kept : {"ROLEARN", "ROLESESSION"})
+        EXPECT_NE(str.find(kept), String::npos) << str;
 }
 
-TEST(BackupInfo, WithoutS3CredentialsStripsExtraCredentials)
+TEST(BackupInfo, WithoutS3CredentialsKeepsNonSecretExtraCredentials)
 {
     auto info = BackupInfo::fromString(
         "S3('https://s3.example.com/bucket/backup', extra_credentials(role_arn = 'ROLEARN', role_session_name = 'ROLESESSION'))");
+
+    EXPECT_EQ(info.withoutS3Credentials().toString(), info.toString());
+}
+
+TEST(BackupInfo, WithoutS3CredentialsStripsExternalIdFromExtraCredentials)
+{
+    auto info = BackupInfo::fromString(
+        "S3('https://s3.example.com/bucket/backup', extra_credentials(role_arn = 'ROLEARN', external_id = 'EXTERNALID'))");
+
+    String str = info.withoutS3Credentials().toString();
+    EXPECT_NE(str.find("ROLEARN"), String::npos) << str;
+    EXPECT_EQ(str.find("EXTERNALID"), String::npos) << str;
+}
+
+TEST(BackupInfo, WithoutS3CredentialsStripsExtraCredentialsWithOnlySecrets)
+{
+    auto info
+        = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup', extra_credentials(external_id = 'EXTERNALID'))");
+
+    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup')");
+}
+
+TEST(BackupInfo, WithoutS3CredentialsRejectsNonLiteralExtraCredentialsValueWithoutContext)
+{
+    /// A value that is no literal has to be resolved to be classified, and a nested secret must not be
+    /// persisted on the guess that it is one of the identifiers. Without a context it fails closed, the
+    /// same way a key that is no literal does.
+    auto info = BackupInfo::fromString(
+        "S3('https://s3.example.com/bucket/backup', extra_credentials(role_arn = headers('Authorization' = 'SECRET')))");
+
+    EXPECT_THROW(info.withoutS3Credentials(), Exception);
+}
+
+TEST(BackupInfo, WithoutS3CredentialsStripsUnrecognizedTrailingFunction)
+{
+    /// Only `extra_credentials` is consumed by the `S3` backup engine; anything else is dropped.
+    auto info
+        = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup', headers('Authorization' = 'SECRET'))");
 
     EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup')");
 }
@@ -265,6 +372,151 @@ TEST(BackupInfo, CanCopyS3CredentialsToMatchesCopyS3CredentialsTo)
     checkCanCopyS3CredentialsInvariant("Disk('backups', 'path')", "S3('https://s3.example.com/base')");
     checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "Disk('backups', 'path')");
     checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup')", "S3('https://s3.example.com/base')");
+    checkCanCopyS3CredentialsInvariant(
+        "S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))", "S3('https://s3.example.com/base')");
+    checkCanCopyS3CredentialsInvariant(
+        "S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))", "S3(collection)");
+    checkCanCopyS3CredentialsInvariant(
+        "S3('https://s3.example.com/backup', headers('Authorization' = 'SECRET'))", "S3('https://s3.example.com/base')");
+    checkCanCopyS3CredentialsInvariant(
+        "S3('https://s3.example.com/backup', extra_credentials(role_session_name = 'SESSION'))",
+        "S3('https://s3.example.com/base')");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToRejectsClauseNamingNoRole)
+{
+    /// Only a non-empty `role_arn` makes `getCredentialsProvider` assume a role, so a clause carrying
+    /// just the session name or the external id lends no identity. Copying it would leave the base
+    /// backup unauthenticated instead of failing where the credentials are asked for.
+    for (const auto * source_str :
+         {"S3('https://s3.example.com/backup', extra_credentials(role_session_name = 'SESSION'))",
+          "S3('https://s3.example.com/backup', extra_credentials(external_id = 'EXTERNALID'))",
+          "S3('https://s3.example.com/backup', extra_credentials(role_arn = ''))"})
+    {
+        auto source = BackupInfo::fromString(source_str);
+        auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+        EXPECT_FALSE(source.canCopyS3CredentialsTo(dest)) << source_str;
+        expectExceptionCode([&] { source.copyS3CredentialsTo(dest); }, ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationCredentialsWhenSourceNamesNoRole)
+{
+    /// The rejection has to come before the destination is cleared: a source that cannot lend anything
+    /// must not cost the destination the credentials it was given.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_session_name = 'SESSION'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET')");
+    const String dest_before = dest.toString();
+
+    expectExceptionCode([&] { source.copyS3CredentialsTo(dest); }, ErrorCodes::BAD_ARGUMENTS);
+
+    EXPECT_EQ(dest.toString(), dest_before);
+}
+
+TEST(BackupInfo, CopyS3CredentialsToCarriesExtraCredentials)
+{
+    auto source = BackupInfo::fromString(
+        "S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN', external_id = 'EXTERNALID'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(
+        dest.toString(),
+        "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN'), equals(external_id, 'EXTERNALID')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToKeepsDestinationRoleBesideTheCopiedKeyPair)
+{
+    /// The setting repairs a base backup locator that cannot authenticate on its own, so a role the
+    /// destination names has to survive: it is opened as the copied key pair assuming that role, the
+    /// composition `getCredentialsProvider` builds, and what a key pair copied onto it always did.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(role_arn = 'OTHERROLE'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(
+        dest.toString(),
+        "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET', extra_credentials(equals(role_arn, 'OTHERROLE')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToOverwritesTheDestinationRoleWithTheCopiedOne)
+{
+    /// Same kind, so the source wins: the destination cannot assume two roles.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(role_arn = 'OTHERROLE'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToDropsADestinationKeyPairItCannotReplay)
+{
+    /// A key pair the source has none of to lend cannot come back: `withoutS3Credentials` strips it from
+    /// the metadata and re-copying restores only the role. Keeping it would open the base backup here and
+    /// leave it unopenable on restore, so it goes and the locator stays reconstructable.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', extra_credentials(role_arn = 'ROLEARN'))");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', 'OTHERKEYID', 'OTHERKEYSECRET')");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', extra_credentials(equals(role_arn, 'ROLEARN')))");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToRoundTripsTheMergedLocatorThroughRedaction)
+{
+    /// What `BackupImpl::writeBackupMetadata` compares before it may replace the credentials with the
+    /// `<base_backup_copy_s3_credentials_from_backup>` marker: strip the copied locator, copy onto the
+    /// stripped form again, and the two must agree. A destination role survives redaction, so the merge
+    /// this performs has to survive the round trip too.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(role_arn = 'OTHERROLE'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    auto stripped = dest.withoutS3Credentials();
+    EXPECT_NE(stripped.toString(), dest.toString());
+
+    auto replayed = stripped;
+    source.copyS3CredentialsTo(replayed);
+    EXPECT_EQ(replayed.toString(), dest.toString());
+}
+
+TEST(BackupInfo, CopyS3CredentialsToDropsADestinationClauseNamingNoRole)
+{
+    /// `external_id` without a `role_arn` assumes nothing, so it is not authentication to preserve.
+    /// Keeping it would also leave the locator unreconstructable from the stripped form, costing the
+    /// `<base_backup_copy_s3_credentials_from_backup>` marker for no gain.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base', extra_credentials(external_id = 'EXTERNALID'))");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToLeavesAnEmptyDestinationCarryingOnlyTheCopiedCredentials)
+{
+    /// The shape every locator written with the `<base_backup_copy_s3_credentials_from_backup>` marker
+    /// has, since stripping is what produced it. Nothing is there to keep, so copying reconstructs it
+    /// exactly -- which is what `BackupImpl::writeBackupMetadata` compares before emitting the marker.
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+    source.copyS3CredentialsTo(dest);
+
+    EXPECT_EQ(dest.toString(), "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
+}
+
+TEST(BackupInfo, CopyS3CredentialsToRejectsSourceWithoutCredentials)
+{
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup')");
+    auto dest = BackupInfo::fromString("S3('https://s3.example.com/base')");
+
+    expectExceptionCode([&] { source.copyS3CredentialsTo(dest); }, ErrorCodes::BAD_ARGUMENTS);
 }
 
 

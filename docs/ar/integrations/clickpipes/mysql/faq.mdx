@@ -16,6 +16,14 @@ integration:
 
 نعم، يدعم MySQL ClickPipe ‏MariaDB 10.0 وما بعده. وإعداده مشابه جدًا لـ MySQL، إذ يستخدم GTID النسخ المتماثل افتراضيًا.
 
+<div id="mariadb-partial-row-event-unsupported">
+  ### لماذا فشل الـ pipe الخاص بي بسبب حدث صف جزئي غير مدعوم من MariaDB؟
+</div>
+
+يمكن لـ MariaDB 12.3 والإصدارات الأحدث إصدار [حدث صفوف جزئية](https://mariadb.com/docs/server/server-management/server-monitoring-logs/binary-log/row-binlog-events#partial_rows_log_event) في binlog، وهو غير مدعوم لدينا حتى الآن.
+
+للتعافي، أعد مزامنة الـ pipe. ولتقليل احتمال حدوث ذلك مجددًا، يمكنك أيضًا رفع قيمة الإعداد `binlog_row_event_fragment_threshold` في المصدر لتقليل تجزئة تغييرات الصفوف — احرص على أن تبقيه أقل من `max_allowed_packet`، لأن حدث binlog واحدًا غير مُجزّأ يتجاوز `max_allowed_packet` سيؤدي بدلًا من ذلك إلى فشل تدفق النسخ المتماثل (راجع [لماذا يفشل الـ pipe الخاص بي بسبب خطأ binlog متعلق بـ max&#95;allowed&#95;packet؟](#binlog-event-exceeded-max-allowed-packet)).
+
 <div id="mariadb-compressed-column-unsupported">
   ### لماذا فشل الـ pipe الخاص بي بسبب عمود COMPRESSED غير مدعوم في MariaDB؟
 </div>
@@ -74,6 +82,47 @@ Increase max_allowed_packet on source
   ```
   اضبطها أيضًا في تهيئة الخادم لديك (مثل `my.cnf` أو `DB Parameter Group`) حتى تبقى سارية بعد إعادة التشغيل.
 * **إذا كان صف واحد أكبر من 1G:** أعد مزامنة الـ pipe.
+
+<div id="binlog-partial-json-unsupported">
+  ### لماذا يفشل الـpipe الخاص بي بسبب خطأ JSON جزئي في binlog؟
+</div>
+
+إذا فشل الـpipe الخاص بك بخطأ مشابه لما يلي:
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+يعني ذلك أن خادم MySQL المصدر يضبط [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) على `PARTIAL_JSON`. عند تفعيل هذا الخيار، يسجل MySQL تحديثات أعمدة `JSON` على شكل فروقات جزئية (المسارات التي تغيّرت فقط) بدلًا من المستند كاملًا. لا يستطيع ClickPipes تطبيق هذه الفروقات الجزئية، لذا لا يمكن لـ CDC المتابعة.
+
+لحل المشكلة:
+
+* **عطّل `PARTIAL_JSON` على المصدر.** أعد ضبط القيمة لتكون فارغة:
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  أزلها أيضًا من إعدادات الخادم (مثل `my.cnf` أو مجموعة معلمات DB) لضمان استمرار هذا الإعداد بعد إعادة التشغيل.
+* **أعد مزامنة المسار** لاستئناف النسخ المتماثل من إزاحة نظيفة.
+
+<div id="secure-transport-required">
+  ### لماذا يفشل pipe لديّ مع ظهور الخطأ require_secure_transport؟
+</div>
+
+إذا فشل pipe لديك مع ظهور خطأ مشابه لما يلي:
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+يعني ذلك أن الخادم المصدر قد فعّل [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport) — إذ يرفض أي اتصال غير مشفّر — بينما تم تعطيل TLS في ClickPipe. في RDS for MySQL، يأتي هذا الإعداد من [DB Parameter Group](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html) الخاصة بالمثيل. أما في Aurora MySQL، فهو إعداد ضمن [DB Parameter Group للمجموعة](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL)، ولا يتوفر مطلقًا في مجموعات معلمات المثيلات. لا يتطلب أي منهما إعادة تشغيل حتى يسري مفعوله، وفي Aurora MySQL 8.4 تكون قيمته الافتراضية `ON`، بينما تكون `OFF` في الإصدارين 2 و3. لذلك، قد يبدأ pipe كان ينسخ البيانات بصورة سليمة في الفشل بعد تغيير معلمة أو ترقية الإصدار، من دون أي تغيير من جانب pipe.
+
+لحل المشكلة:
+
+* **أعِد تفعيل TLS في pipe.** من **Settings** الخاصة بـ pipe، افتح إعدادات الاتصال وأوقِف مفتاح التبديل **Disable TLS**. إذا ظهر خطأ في الشهادة عند الحفظ، فراجع [لماذا أتلقى خطأ في التحقق من شهادة TLS عند الاتصال بـ MySQL؟](#tls-certificate-validation-error) لمعرفة كيفية تعيين مضيف TLS، أو تحميل CA جذرية، أو تجاوز التحقق من الشهادة.
+* **أو عطّل `require_secure_transport` في المصدر** — ضمن DB Parameter Group في RDS، أو DB Parameter Group للمجموعة في Aurora — إذا كانت الاتصالات غير المشفّرة مقبولة في بيئتك.
+
+تُستأنف النسخ المتماثل من حيث توقفت بمجرد نجاح الاتصال. إذا كان pipe يفشل لمدة أطول من فترة الاحتفاظ بـ binlog (راجع [كيف تتم إدارة النسخ المتماثل؟](#how-is-replication-managed))، فستحتاج إلى إعادة مزامنته.
 
 <div id="tls-certificate-validation-error">
   ### لماذا يظهر لي خطأ في التحقق من شهادة TLS عند الاتصال بـ MySQL؟

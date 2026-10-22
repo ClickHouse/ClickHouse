@@ -123,11 +123,11 @@ Snowflake هي منصة مستودعات بيانات سحابية توفّر ح
   أفضلية مقارنة بالأنظمة الأخرى.
 
 <div id="real-time-analytics">
-  ### التحليلات في الوقت الفعلي
+  ### التحليلات الآنية
 </div>
 
 استنادًا إلى بيانات [benchmark](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-) العامة،
-يتفوق ClickHouse على Snowflake في تطبيقات التحليلات في الوقت الفعلي في المجالات التالية:
+يتفوق ClickHouse على Snowflake في تطبيقات التحليلات الآنية في المجالات التالية:
 
 * **زمن استجابة الاستعلام**: تتمتع استعلامات Snowflake بزمن استجابة أعلى حتى
   عند تطبيق التجميع على الجداول لتحسين الأداء. وفي اختباراتنا،
@@ -143,10 +143,10 @@ Snowflake هي منصة مستودعات بيانات سحابية توفّر ح
   وأحدث. لاحظ أن ذاكرة التخزين المؤقت للاستعلامات في ClickHouse
   خاصة بكل عقدة وليست [متسقة على مستوى المعاملات](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)،
   مما يجعلها [أنسب](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
-  للتحليلات في الوقت الفعلي. كما يتمتع المستخدمون بتحكم دقيق في استخدامها،
-  مع إمكانية التحكم بها [لكل استعلام على حدة](/ar/reference/settings/session-settings#use_query_cache)،
-  و[حجمها الدقيق](/ar/reference/settings/session-settings#query_cache_max_size_in_bytes)،
-  وما إذا كان [الاستعلام يُخزَّن مؤقتًا](/ar/reference/settings/session-settings#enable_writes_to_query_cache)
+  للتحليلات الآنية. كما يتمتع المستخدمون بتحكم دقيق في استخدامها،
+  مع إمكانية التحكم بها [لكل استعلام على حدة](/ar/reference/settings/session-settings/use-query#use_query_cache)،
+  و[حجمها الدقيق](/ar/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes)،
+  وما إذا كان [الاستعلام يُخزَّن مؤقتًا](/ar/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (مثل حدود المدة أو العدد المطلوب من مرات التنفيذ)، وما إذا كان
   [يُستخدم استخدامًا سلبيًا فقط](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 
@@ -158,7 +158,7 @@ Snowflake هي منصة مستودعات بيانات سحابية توفّر ح
   قيد الاستخدام، فإن هذا السلوك يلائم أعباء العمل التي تبقى خاملة كثيرًا، مثل
   الاستعلامات المخصّصة.
 
-  ومع ذلك، تتطلب العديد من أعباء عمل التحليلات في الوقت الفعلي استمرار
+  ومع ذلك، تتطلب العديد من أعباء عمل التحليلات الآنية استمرار
   إدخال البيانات في الوقت الفعلي وكثرة الاستعلامات، وهي أمور لا تستفيد من الخمول (مثل
   لوحات المعلومات الموجَّهة للعملاء). وهذا يعني أن المستودعات يجب غالبًا أن تكون
   نشطة بالكامل وتتحمل الرسوم. وهذا يلغي جدوى الخمول من ناحية التكلفة،
@@ -170,7 +170,7 @@ Snowflake هي منصة مستودعات بيانات سحابية توفّر ح
 
 * **تسعير قابل للتنبؤ للميزات:** تُعد ميزات مثل العروض المادية
   والتجميع (المكافئ لـ `ORDER BY` في ClickHouse) مطلوبة للوصول
-  إلى أعلى مستويات الأداء في حالات استخدام التحليلات في الوقت الفعلي. وتترتب على هذه
+  إلى أعلى مستويات الأداء في حالات استخدام التحليلات الآنية. وتترتب على هذه
   الميزات رسوم إضافية في Snowflake، إذ لا تتطلب فقط
   فئة أعلى، ما يزيد التكاليف لكل رصيد بمقدار 1.5x، بل أيضًا
   تكاليف خلفية غير قابلة للتنبؤ. فعلى سبيل المثال، تترتب على العروض المادية

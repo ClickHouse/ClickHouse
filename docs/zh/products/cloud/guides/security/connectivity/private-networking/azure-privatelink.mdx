@@ -214,7 +214,7 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 
 <Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="专用终结点 视图" border />
 
-在 properties 下，找到 `id` 字段并复制该值：
+复制顶层的 `id` 字段 (即专用终结点的 Resource ID，格式为 `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) ，不要使用 `properties` 对象内嵌套的 `id` 字段：
 
 **首选方法：使用 Resource ID**
 

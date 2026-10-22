@@ -29,6 +29,10 @@ public:
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
 
+    /// Same handshake as the destructor. After this returns, no background task reads through the
+    /// ReadBuffer passed to init() anymore, so that buffer may be destroyed. Idempotent.
+    void shutdownTasks();
+
     /// Not thread safe.
     /// All ranges must be registered before any reading happens (except direct readSync).
     /// Ranges are allowed to overlap a little, but this decreases the effectiveness of range
@@ -62,6 +66,7 @@ public:
     void readSync(char * to, size_t n, size_t offset);
 
     size_t getFileSize() const { return file_size; }
+    bool isLocalFile() const { return is_local_file; }
 
 private:
     friend class PrefetchHandle;
@@ -88,6 +93,9 @@ private:
 
         /// Whether this range can be piggy-backed to nearby other reads.
         std::atomic<bool> allow_incidental_read {true};
+
+        /// Whether the data of this range was handed out by getRangeData. To count used bytes once (introspection only).
+        std::atomic<bool> data_used {false};
 
         Task * task = nullptr; // if HasTask
         size_t range_set_idx = 0;
@@ -176,6 +184,7 @@ private:
     PaddedPODArray<char> entire_file;
 
     size_t file_size{};
+    bool is_local_file = false;
     size_t min_bytes_for_seek{};
     size_t bytes_per_read_task{};
 
@@ -195,6 +204,8 @@ private:
     std::mutex exception_mutex;
 
     void determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options);
+    /// Reads from the underlying ReadBuffer, for readSync and for tasks.
+    void readImpl(char * to, size_t n, size_t offset);
     /// Creates and starts a Task covering this request and possibly other nearby ranges.
     ///
     /// If splitting, the request is being cancelled and replaced by a smaller range
