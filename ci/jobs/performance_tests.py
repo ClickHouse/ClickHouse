@@ -2442,8 +2442,7 @@ def rebuild_table(port, source, destination):
     # is what recomputes serialization from the data; a bare OPTIMIZE would
     # inherit the source parts' serialization, so it cannot replace the insert.
     # For an in-place rebuild the fresh copy is built under a temporary name and
-    # swapped in with RENAME (the datasets live in Ordinary databases, so
-    # EXCHANGE TABLES is not available).
+    # swapped in with RENAME.
     client = _perf_client(port)
     if Shell.get_output(f'{client} --query "EXISTS TABLE {source}"').strip() != "1":
         # A missing source is only expected for the cross-name rebuild
@@ -2483,6 +2482,70 @@ def rebuild_table(port, source, destination):
 
 POPULATE_DONE_MARKER = "test._populate_done"
 
+# The MergeTree datasets are attached to `Atomic` databases (the default engine), so that their
+# tables have UUIDs like the tables of a real server, which the columns cache, for one, needs.
+# The tarballs hold them in the `Ordinary` layout: data/<db>/<table>/ and metadata/<db>/<table>.sql.
+# Configure moves both into this directory under user_files (see stage_datasets), where nothing
+# loads them at startup, and attach_datasets attaches every table with `ATTACH TABLE ... FROM`,
+# which moves its data directory into the store of the database. All of it is renames within the
+# hardlinked copy of db0 of one server: nothing is copied, and db0 is not modified.
+DATASETS_STAGING_DIR = "perf_datasets"
+
+
+def stage_datasets(server_db):
+    """Move the extracted datasets of one server (`server_db` is its `db` directory) to the staging directory."""
+    data = Path(server_db) / "data"
+    metadata = Path(server_db) / "metadata"
+    staging = Path(server_db) / "user_files" / DATASETS_STAGING_DIR
+    if not data.is_dir():
+        return
+    for database_dir in sorted(data.iterdir()):
+        database = database_dir.name
+        if database == "system" or not database_dir.is_dir():
+            continue
+        (staging / database).mkdir(parents=True, exist_ok=True)
+        for table_dir in sorted(database_dir.iterdir()):
+            table_metadata = metadata / database / f"{table_dir.name}.sql"
+            # A data directory without metadata cannot be attached: fail rather than test without the table.
+            if not table_metadata.is_file():
+                raise RuntimeError(f"stage_datasets: no metadata {table_metadata} for {table_dir}")
+            table_dir.rename(staging / database / table_dir.name)
+            table_metadata.rename(staging / database / f"{table_dir.name}.sql")
+        database_dir.rmdir()
+        # The database is created by attach_datasets, with the default engine.
+        (metadata / f"{database}.sql").unlink(missing_ok=True)
+        if (metadata / database).is_dir():
+            shutil.rmtree(metadata / database)
+
+
+def attach_datasets(port, server_db):
+    """Attach the staged datasets of one server, see DATASETS_STAGING_DIR. Re-entrant: an attached table is skipped."""
+    client = _perf_client(port)
+    staging = Path(server_db) / "user_files" / DATASETS_STAGING_DIR
+    if not staging.is_dir():
+        return
+    for database_dir in sorted(p for p in staging.iterdir() if p.is_dir()):
+        database = database_dir.name
+        Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS {database}"', strict=True, verbose=True)
+        for table_metadata in sorted(database_dir.glob("*.sql")):
+            table = table_metadata.stem
+            if Shell.get_output(f'{client} --query "EXISTS TABLE {database}.{table}"').strip() == "1":
+                print(f"attach_datasets: {database}.{table} is already attached, skipping")
+                continue
+            # `ATTACH TABLE <table>` with the definition, as written by an `Ordinary` database, becomes
+            # `ATTACH TABLE <database>.<table> FROM '<data directory>'` with the same definition.
+            query, count = re.subn(
+                r"^ATTACH TABLE\s+(`[^`]+`|\w+)",
+                lambda m: f"ATTACH TABLE {database}.{m.group(1)} FROM '{DATASETS_STAGING_DIR}/{database}/{table}/'",
+                table_metadata.read_text(),
+                count=1,
+            )
+            if count != 1:
+                raise RuntimeError(f"attach_datasets: unexpected table definition in {table_metadata}")
+            attach_query_file = table_metadata.with_suffix(".attach")
+            attach_query_file.write_text(query)
+            Shell.check(f"{client} --queries-file {quote(str(attach_query_file))}", strict=True, verbose=True)
+
 
 def populate_data(port):
     # Rebuild the hits datasets on one server, sequentially. The three inserts
@@ -2512,14 +2575,15 @@ def populate_data_both(left_port, right_port):
     # changes a write-time default is reflected only on the right (patched) side.
     errors = []
 
-    def run(port):
+    def run(port, server_path):
         try:
+            attach_datasets(port, f"{server_path}/db")
             populate_data(port)
         except Exception as e:  # noqa: BLE001
             print(f"populate_data failed on port {port}: {e}")
             errors.append(e)
 
-    threads = [Thread(target=run, args=(p,)) for p in (left_port, right_port)]
+    threads = [Thread(target=run, args=args) for args in ((left_port, perf_left), (right_port, perf_right))]
     for t in threads:
         t.start()
     for t in threads:
@@ -2871,8 +2935,6 @@ def main():
         print("Configure")
 
         commands = [
-            f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
-            f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
             # Not to disable `text_log` - it is enabled (see
             # tests/performance/scripts/config/config.d/zzz-perf-comparison-tweaks-config.xml)
@@ -2898,6 +2960,9 @@ def main():
             f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
             f"cp -al {db_path} {perf_left}/db ||:",
             f"cp -al {db_path} {perf_right}/db ||:",
+            # The datasets are attached to `Atomic` databases after the servers start, see DATASETS_STAGING_DIR.
+            lambda: stage_datasets(f"{perf_left}/db"),
+            lambda: stage_datasets(f"{perf_right}/db"),
             # Each server bootstraps its own (embedded, non-replicated) keeper, so
             # an empty storage dir is enough.
             f"mkdir -p {perf_left}/coordination {perf_right}/coordination",
