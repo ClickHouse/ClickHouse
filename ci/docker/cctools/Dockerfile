@@ -2,12 +2,39 @@
 
 # This is a hack to significantly reduce the build time of the clickhouse/binary-builder
 # It's based on the assumption that we don't care of the cctools version so much
-# It even does not depend on the clickhouse/fasttest in the `docker/images.json`
-ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG AS builder
+# It is built from the plain ubuntu image and does not depend on any other image,
+# because the other images (e.g. clickhouse/fasttest) copy files from it
+FROM ubuntu:24.04 AS builder
 
-ENV CC=clang-${LLVM_VERSION}
-ENV CXX=clang++-${LLVM_VERSION}
+# See the comment in the clickhouse/fasttest Dockerfile
+ARG apt_archive="http://archive.ubuntu.com"
+ARG apt_ports_archive="http://ports.ubuntu.com"
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xargs -0 -r sed -i \
+        -e "s|http://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|https://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
+        -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
+    && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        cmake \
+        git \
+        libgmp-dev \
+        libmpfr-dev \
+        make \
+        ninja-build \
+        perl \
+        python3 \
+        wget
+
+ENV CC=clang
+ENV CXX=clang++
 
 RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
@@ -20,9 +47,6 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
 # Build and install tools for cross-linking to Darwin (x86-64)
 # Build and install tools for cross-linking to Darwin (aarch64)
 RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64-711 \
-    && apt-get update \
-    && apt-get install --yes \
-        make \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
@@ -37,17 +61,8 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
 #
 # GDB
 #
-# ld from binutils is 2.38, which has the following error:
-#
-#     DWARF error: invalid or unhandled FORM value: 0x23
-#
-ENV LD=ld.lld-${LLVM_VERSION}
 ARG GDB_VERSION=18.1
-RUN apt-get update \
-    && apt-get install --yes \
-        libgmp-dev \
-        libmpfr-dev \
-    && wget --waitretry 5 --retry-connrefused --retry-on-host-error --retry-on-http-error 403 --tries 10 https://mirrors.kernel.org/sourceware/gdb/releases/gdb-$GDB_VERSION.tar.gz \
+RUN wget --waitretry 5 --retry-connrefused --retry-on-host-error --retry-on-http-error 403 --tries 10 https://mirrors.kernel.org/sourceware/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
     && ./configure --prefix=/opt/gdb --with-separate-debug-dir=/usr/lib/debug \
@@ -78,15 +93,6 @@ RUN /opt/gdb/bin/gdb --version
 # Provider can be loaded by any OpenSSL version >= 3.1.
 # https://openssl-library.org/post/2025-03-11-fips-140-3/
 ENV OPENSSL_VERSION=3.1.2
-
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    wget \
-    perl \
-    python3 \
-    make \
-    git \
-    ca-certificates
 
 WORKDIR /tmp
 RUN wget https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz && \
