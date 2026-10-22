@@ -29,6 +29,26 @@ unsigned long readpassphrase_console_mode(unsigned long original_mode, int flags
     return mode;
 }
 
+size_t readpassphrase_read_line(void * handle, char * buf, size_t bufsiz)
+{
+    size_t length = 0;
+    char c;
+    DWORD read = 0;
+
+    /* One byte per `ReadFile`, never past the terminator: whatever follows the passphrase belongs to
+     * the caller, which reads stdin through the raw handle as well. */
+    while (ReadFile((HANDLE)handle, &c, 1, &read, NULL) && read == 1)
+    {
+        if (length + 1 < bufsiz)
+            buf[length++] = c;
+        if (c == '\n')
+            break;
+    }
+
+    buf[length] = '\0';
+    return length;
+}
+
 /* The original installs temporary signal handling so that an interrupt cannot leave the caller's
  * terminal with echo disabled. The console equivalent is a control handler that restores the mode
  * and then declines the event, so the application's own handler still runs. `SetConsoleCtrlHandler`
@@ -150,8 +170,13 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
             converted = WideCharToMultiByte(CP_UTF8, 0, wide, (int)read, buf, (int)bufsiz - 1, NULL, NULL);
             buf[converted > 0 ? converted : 0] = '\0';
         }
-        else if (!fgets(buf, (int)bufsiz, stdin))
-            buf[0] = '\0';
+        else
+        {
+            /* Not `fgets`: the C runtime's stream buffer would read ahead past the line, and the
+             * query or the data that follow the passphrase on a redirected stdin would be lost to
+             * the raw reads of the client. */
+            readpassphrase_read_line(input, buf, bufsiz);
+        }
     }
 
     if (is_console)

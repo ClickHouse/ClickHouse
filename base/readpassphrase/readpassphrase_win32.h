@@ -1,12 +1,14 @@
-/* Decisions of the Windows `readpassphrase` implementation that are worth checking on their own.
+/* Parts of the Windows `readpassphrase` implementation that are worth checking on their own.
  *
  * The prompt path itself needs a real console, which no CI job has: the only place a Windows
- * binary runs is the Wine step of `Build (amd_windows)`. Factoring the two decisions out keeps
+ * binary runs is the Wine step of `Build (amd_windows)`. Factoring these parts out keeps
  * them reachable from `clickhouse-windows-selftest` - the same approach as
  * `windowsJobObjectMemoryLimit` in `base/base/getMemoryAmount.h`. */
 
 #ifndef READPASSPHRASE_WIN32_H
 #define READPASSPHRASE_WIN32_H
+
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +21,10 @@ int readpassphrase_prompt_needs_console_output(int input_is_console, int stderr_
 /* The console mode to set while the passphrase is read, given the mode the console had and the
  * `RPP_*` flags. Line and processed input are always on; echo follows `RPP_ECHO_ON`. */
 unsigned long readpassphrase_console_mode(unsigned long original_mode, int flags);
+
+/* Reads one line from a file or pipe `HANDLE` into `buf`, keeping its terminator, and returns its
+ * length. Bytes after the terminator stay unread; those that do not fit into `buf` are dropped. */
+size_t readpassphrase_read_line(void * handle, char * buf, size_t bufsiz);
 
 #ifdef __cplusplus
 }

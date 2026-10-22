@@ -380,6 +380,37 @@ void passphrasePromptDecisions()
     check((hidden & ENABLE_INSERT_MODE) != 0, "the unrelated bits of the original console mode are preserved");
 }
 
+
+/// Without a console, the passphrase is the first line of the redirected stdin, and the query or the
+/// data that follow it are read by the client through the raw handle. The line must therefore be read
+/// without any read-ahead.
+void passphraseLineLeavesTheRestOfTheInputUnread()
+{
+    HANDLE read_end = nullptr;
+    HANDLE write_end = nullptr;
+    check(CreatePipe(&read_end, &write_end, nullptr, 0) != 0, "an anonymous pipe can be created");
+    if (!read_end || !write_end)
+        return;
+
+    const std::string input = "secret\r\nSELECT 1;\n";
+    DWORD written = 0;
+    check(
+        WriteFile(write_end, input.data(), static_cast<DWORD>(input.size()), &written, nullptr) && written == input.size(),
+        "the input is written to the pipe");
+    CloseHandle(write_end);
+
+    char line[64];
+    const size_t length = readpassphrase_read_line(read_end, line, sizeof(line));
+    check(length == 8 && std::string(line) == "secret\r\n", "the passphrase line is read up to and including its terminator");
+
+    char rest[64];
+    DWORD rest_length = 0;
+    check(
+        ReadFile(read_end, rest, sizeof(rest), &rest_length, nullptr) && std::string(rest, rest_length) == "SELECT 1;\n",
+        "a raw read after the passphrase still receives the query that follows it");
+    CloseHandle(read_end);
+}
+
 }
 
 
@@ -398,6 +429,7 @@ int main(int, char **)
     memoryAmountRespectsTheJobObject();
     terminationRequestSignalsTheEventTheServerWaitsOn();
     passphrasePromptDecisions();
+    passphraseLineLeavesTheRestOfTheInputUnread();
     lgammaRIsReentrant();
     alignedAllocationsOfZeroBytesSucceedAndReportTheirSize();
 
