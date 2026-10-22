@@ -73,6 +73,14 @@ WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today(
     AND metric = 'client_time'
     AND pr_number = 0
     AND workflow_name = 'MasterCI'
+    -- The same runs, selected by the key prefix so that the PR runs are not read.
+    AND new_sha IN (
+        SELECT new_sha FROM perf_test_times_v1
+        -- The job writes both tables, so their dates differ by a day at most.
+        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+            AND pr_number = 0
+            AND workflow_name = 'MasterCI')
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
