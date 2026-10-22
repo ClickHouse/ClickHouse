@@ -985,15 +985,31 @@ std::optional<time_t> ObjectStorageQueueSource::FileIterator::earliestForeignPro
 }
 
 void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
-    ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status)
+    ObjectInfoPtr object_info, const FileMetadataPtr & file_metadata)
 {
     using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
 
-    const bool foreign_processing = status
-        && status->state.load() == FileStatus::State::Processing
-        && status->isProcessingObservedInKeeper();
+    const auto status = file_metadata->getFileStatus();
+    const auto state = status->state.load();
+    const bool foreign_processing = state == FileStatus::State::Processing && status->isProcessingObservedInKeeper();
+
+    /// Ordered mode: only a foreign `processing` node or a terminal state is a known outcome.
+    /// A claim which lost the race for `processing_lock` consulted neither keeper nor the cached
+    /// state, and a file held by a concurrent local processor (e.g. of another table sharing the
+    /// keeper path) may still be released without a commit. Either way the file can still turn
+    /// out to be unprocessed, so it keeps blocking the later files of its ordering domain.
+    const bool outcome_unknown = mode == ObjectStorageQueueMode::ORDERED && !foreign_processing
+        && (file_metadata->isSetProcessingContended()
+            || (state != FileStatus::State::Processed && state != FileStatus::State::Failed));
 
     std::lock_guard lock(next_mutex);
+
+    if (outcome_unknown)
+    {
+        LOG_TEST(log, "The set-processing outcome of file {} is unknown (state: {}), will retry it", object_info->getPath(), state);
+        retryUnresolvedSetProcessingLater(std::move(object_info));
+        return;
+    }
 
     /// The set-processing attempt is resolved: wake up the later files of the
     /// ordering domain waiting for its outcome.
@@ -1161,10 +1177,23 @@ bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const st
     return dropped != dropped_blocked_files_per_domain.end() && dropped->second <= path;
 }
 
-void ObjectStorageQueueSource::FileIterator::queueReplay(ObjectInfoPtr object)
+void ObjectStorageQueueSource::FileIterator::queueReplay(ObjectInfoPtr object, time_t due_time)
 {
     pending_replays_per_domain[getOrderingDomain(object->getPath())].insert(object->getPath());
-    foreign_processing_files_to_recheck.push_back({std::move(object), 0, /* is_replay */ true});
+    foreign_processing_files_to_recheck.push_back({std::move(object), due_time, /* is_replay */ true});
+}
+
+void ObjectStorageQueueSource::FileIterator::retryUnresolvedSetProcessingLater(ObjectInfoPtr object)
+{
+    chassert(mode == ObjectStorageQueueMode::ORDERED);
+    const auto path = object->getPath();
+
+    /// The file becomes a pending replay before its unresolved barrier is removed, under the same
+    /// lock, so that no later file of the domain can pass the gate in between. The replay is
+    /// delayed a little: the outcome usually becomes known within a keeper round trip, and
+    /// retrying at once would spin the iterator while a concurrent local claim is in flight.
+    queueReplay(std::move(object), std::time(nullptr) + 1);
+    resolveSetProcessingUnlocked(path);
 }
 
 void ObjectStorageQueueSource::FileIterator::forgetPendingReplay(const std::string & path)
@@ -1219,6 +1248,20 @@ void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(con
     unresolved_set_processing_per_domain[getOrderingDomain(path)].insert(path);
 }
 
+void ObjectStorageQueueSource::FileIterator::onSetProcessingException(ObjectInfoPtr object)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    /// The exception establishes neither the ownership of the file nor its terminal state (e.g.
+    /// keeper retries were exhausted before a foreign `processing` node was observed), and the file
+    /// is not among the processed files of the source yet, so nothing else would retry it. Keep it
+    /// as an ordering barrier and retry it: the iterator outlives the failed source, and committing
+    /// a later file of the domain would advance the `processed` pointer past this one.
+    std::lock_guard lock(next_mutex);
+    retryUnresolvedSetProcessingLater(std::move(object));
+}
+
 void ObjectStorageQueueSource::FileIterator::resolveSetProcessing(const std::string & path)
 {
     if (mode != ObjectStorageQueueMode::ORDERED)
@@ -1254,14 +1297,20 @@ bool ObjectStorageQueueSource::FileIterator::hasSmallerUnresolvedSetProcessing(c
 }
 
 ObjectStorageQueueSource::FileIterator::OrderingDomainGate
-ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(const std::string & path)
+ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(ObjectInfoPtr & object_info)
 {
+    const auto path = object_info->getPath();
     std::unique_lock lock(next_mutex);
 
     while (!shutdown_called)
     {
+        /// The deferred file is queued before its unresolved barrier is removed, under the same
+        /// lock: otherwise its blocker could resolve in between and let a later file of the domain
+        /// pass the gate, and nothing would replay this file before the later one is committed.
         if (isBlockedByForeignHeldFile(path))
         {
+            LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", path);
+            rememberBlockedFile(std::move(object_info));
             resolveSetProcessingUnlocked(path);
             return OrderingDomainGate::Blocked;
         }
@@ -1269,6 +1318,8 @@ ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(const std::string
         /// A replay which is not handed out yet can wait in a bucket cache behind this file.
         if (isBehindPendingReplay(path) || isBehindInFlightReplay(path))
         {
+            LOG_TEST(log, "Deferring file {}: a smaller file of its ordering domain is pending a replay", path);
+            queueReplay(std::move(object_info));
             resolveSetProcessingUnlocked(path);
             return OrderingDomainGate::BehindReplay;
         }
@@ -1376,35 +1427,24 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             /// Wait until the set-processing attempts of the smaller files of the ordering
             /// domain are resolved: any of them can still turn out to be foreign-held, and
             /// committing this file would advance the `processed` pointer past a held file.
-            const auto gate = waitOrderingDomainGate(object_info->getPath());
+            ///
+            /// `Blocked`: a smaller file of the same ordering domain is held by a foreign
+            /// `processing` node: processing this file would advance the `processed` pointer past
+            /// the held file and lose it forever. The gate keeps it pending until the blocker
+            /// resolves, then it goes through filtering again.
+            /// `BehindReplay`: a smaller file of the same ordering domain is pending a replay and
+            /// is not handed out yet: the gate queues this file to be replayed together with it,
+            /// in path order.
+            const auto gate = waitOrderingDomainGate(object_info);
             if (gate == OrderingDomainGate::Shutdown)
                 return {};
-            if (gate == OrderingDomainGate::Blocked)
+            if (gate == OrderingDomainGate::Blocked || gate == OrderingDomainGate::BehindReplay)
             {
-                /// A smaller file of the same ordering domain is held by a foreign
-                /// `processing` node: processing this file would advance the `processed`
-                /// pointer past the held file and lose it forever. Keep it pending until
-                /// the blocker resolves, then put it through filtering again.
-                LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", object_info->getPath());
+                /// If the replay of the file is handed out before this reset completes, its claim
+                /// sees our `processing` node, and is retried as an unknown outcome
+                /// (see `recheckForeignProcessingLater`).
                 if (file_metadata)
                     file_metadata->resetProcessing();
-                {
-                    std::lock_guard lock(next_mutex);
-                    rememberBlockedFile(std::move(object_info));
-                }
-                continue;
-            }
-            if (gate == OrderingDomainGate::BehindReplay)
-            {
-                /// A smaller file of the same ordering domain is pending a replay and is not
-                /// handed out yet: replay this file together with it, in path order.
-                LOG_TEST(log, "Deferring file {}: a smaller file of its ordering domain is pending a replay", object_info->getPath());
-                if (file_metadata)
-                    file_metadata->resetProcessing();
-                {
-                    std::lock_guard lock(next_mutex);
-                    queueReplay(std::move(object_info));
-                }
                 continue;
             }
         }
@@ -1428,12 +1468,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 DimensionalMetrics::add(
                     DimensionalMetrics::ObjectStorageQueueFailures,
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
-                resolveSetProcessing(object_info->getPath());
+                onSetProcessingException(std::move(object_info));
                 throw;
             }
             catch (...)
             {
-                resolveSetProcessing(object_info->getPath());
+                onSetProcessingException(std::move(object_info));
                 throw;
             }
             if (!set_processing)
@@ -1442,7 +1482,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 /// the cached observation of its `processing` node expires.
                 /// In Ordered mode a foreign `processing` node also blocks the later
                 /// files of the ordering domain until the file is resolved.
-                recheckForeignProcessingLater(object_info, file_metadata->getFileStatus());
+                recheckForeignProcessingLater(object_info, file_metadata);
                 continue;
             }
             if (mode == ObjectStorageQueueMode::ORDERED)

@@ -222,7 +222,14 @@ public:
         void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         void recheckBlockedFilesForDomain(const OrderingDomain & domain, const std::optional<std::string> & smallest_remaining_blocker) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
-        void queueReplay(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
+        /// `due_time` delays the replay, see `PendingRecheck::due_time`.
+        void queueReplay(ObjectInfoPtr object, time_t due_time = 0) TSA_REQUIRES(next_mutex);
+        /// Ordered mode only. The set-processing attempt of a handed-out file ended without
+        /// establishing its outcome (the claim lost a local race, or threw): retry the file
+        /// later, keeping it as an ordering barrier of its domain meanwhile.
+        void retryUnresolvedSetProcessingLater(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
+        /// The set-processing attempt of a handed-out file threw.
+        void onSetProcessingException(ObjectInfoPtr object);
         void forgetPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         bool isBehindPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         void forgetInFlightReplay(const std::string & path) TSA_REQUIRES(next_mutex);
@@ -233,10 +240,13 @@ public:
         void resolveSetProcessing(const std::string & path);
         void resolveSetProcessingUnlocked(const std::string & path) TSA_REQUIRES(next_mutex);
         bool hasSmallerUnresolvedSetProcessing(const std::string & path) TSA_REQUIRES(next_mutex);
-        /// Waits until the file at `path` is allowed to start a set-processing attempt.
+        /// Waits until the file is allowed to start a set-processing attempt. A file which may not
+        /// proceed (`Blocked`, `BehindReplay`) is moved into its deferred queue under the same lock
+        /// which removes its unresolved set-processing barrier, so that no later file of the domain
+        /// can pass the gate in between; `object_info` is empty afterwards.
         /// TSA does not understand the `std::unique_lock` needed by the condition variable.
         enum class OrderingDomainGate { Proceed, Blocked, BehindReplay, Shutdown };
-        OrderingDomainGate waitOrderingDomainGate(const std::string & path) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        OrderingDomainGate waitOrderingDomainGate(ObjectInfoPtr & object_info) TSA_NO_THREAD_SAFETY_ANALYSIS;
         /// Ordered mode only. Waits until the set-processing outcomes of all handed-out files are known.
         void waitAllSetProcessingResolved() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
@@ -249,7 +259,7 @@ public:
         std::vector<PendingRecheck> takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
         /// Queues a recheck of a file skipped because of the foreign `processing` observation in `status`.
         void queueForeignProcessingRecheck(ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status) TSA_REQUIRES(next_mutex);
-        void recheckForeignProcessingLater(ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status);
+        void recheckForeignProcessingLater(ObjectInfoPtr object_info, const FileMetadataPtr & file_metadata);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;

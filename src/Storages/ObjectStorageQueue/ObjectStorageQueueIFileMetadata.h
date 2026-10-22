@@ -189,6 +189,10 @@ public:
 
     /// Try set file as Processing.
     bool trySetProcessing();
+    /// The last `trySetProcessing` returned `false` only because a concurrent local attempt
+    /// (another thread, or another table sharing the keeper path) held `processing_lock`:
+    /// neither keeper nor the cached state was consulted, so the outcome is unknown.
+    bool isSetProcessingContended() const { return set_processing_contended; }
     /// Reset processing
     /// (file will not be set neither as Failed nor Processed,
     /// simply Processing state will be cancelled).
@@ -307,6 +311,7 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    bool set_processing_contended = false;
     /// The terminal state generation of the cached record before this attempt read keeper
     /// (see `snapshotTerminalStateGeneration`).
     UInt64 terminal_state_generation_before_set_processing = 0;

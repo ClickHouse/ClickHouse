@@ -401,7 +401,8 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     /// An optimization for local parallel processing.
     std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-    if (!processing_lock.try_lock())
+    set_processing_contended = !processing_lock.try_lock();
+    if (set_processing_contended)
         return {};
 
     /// Under the lock, as `prepareSetProcessingRequests` does: a processor of this server
