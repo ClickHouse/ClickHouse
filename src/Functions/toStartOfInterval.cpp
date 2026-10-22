@@ -582,6 +582,21 @@ private:
 
             auto execute_default = [&]<bool saturate>()
             {
+                /// The start of the interval of one value, in the representation of the result type.
+                auto execute_row = [&](auto time)
+                {
+                    /// A `DateTime` result that clamps (`to_start_of_interval_preserves_argument_type`) is computed with the
+                    /// signed overload: the unsigned one clamps a day before the epoch to the first day after it, which
+                    /// starts after the timestamp zero in a time zone with a negative offset, and the result would exceed
+                    /// the argument. The legacy behavior keeps the unsigned overload, so that the setting restores the old results.
+                    if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
+                        return convertToResultRepresentation<unit, ResultDataType>(
+                            ToStartOfInterval<unit>::execute(static_cast<Int64>(time), num_units, time_zone, 1), time_zone, result_scale_multiplier);
+                    else
+                        return convertToResultRepresentation<unit, ResultDataType>(
+                            ToStartOfInterval<unit>::execute(time, num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier);
+                };
+
                 if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
                     && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
                 {
@@ -619,18 +634,14 @@ private:
                         {
                             for (size_t i = 0; i != size; ++i)
                                 if (time_data[i] < min_time_with_first_day_after_epoch)
-                                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
-                                        convertToResultRepresentation<unit, ResultDataType>(
-                                            ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier),
-                                            time_zone, result_scale_multiplier));
+                                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(execute_row(time_data[i]));
                         }
                         return;
                     }
                 }
 
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(convertToResultRepresentation<unit, ResultDataType>(
-                        ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier));
+                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(execute_row(time_data[i]));
             };
 
             /// A result of the argument type (`to_start_of_interval_preserves_argument_type`) clamps too: rounding the
@@ -863,14 +874,20 @@ public:
                     if (assert_cast<const DataTypeDateTime64 &>(*arguments[2].type.get()).getScale() != scale)
                         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same scale", getName());
                 }
-                if (preserve_argument_type && isDateTime64(arguments[0].type))
-                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
-                else if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
-                    scale = 9;
+                UInt32 unit_scale = 0;
+                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
+                    unit_scale = 9;
                 else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
-                    scale = 6;
+                    unit_scale = 6;
                 else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
-                    scale = 3;
+                    unit_scale = 3;
+
+                /// A subsecond unit finer than the argument (e.g. `1500 MILLISECOND` for a `DateTime64(0)`) has bucket
+                /// boundaries that the scale of the argument cannot represent, so the result has the scale of the unit then.
+                if (preserve_argument_type && isDateTime64(arguments[0].type))
+                    scale = std::max(assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale(), unit_scale);
+                else if (unit_scale != 0)
+                    scale = unit_scale;
 
                 const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
@@ -948,6 +965,7 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
 
 The result has the same type as the `value` argument: `Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime`, and `DateTime64` of the same scale for `DateTime64`.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument (for example, `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`): then the result has the scale of the unit, which can represent the bucket boundaries.
 A result that is below the range of `Date` or `DateTime` (for example, rounding `1970-01-01` down to a week) is clamped to its minimum value.
 With the setting [`to_start_of_interval_preserves_argument_type`](/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) disabled, the result type depends on the interval unit instead,
 as in versions before 26.11: `Date` for `WEEK` and longer units, `DateTime` for `DAY` down to `SECOND`, and `DateTime64` of the unit's scale for the subsecond units.

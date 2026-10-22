@@ -1601,6 +1601,7 @@ The table below shows the behavior of this setting for various date-time functio
     DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
 Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
 `Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+The only exception is a subsecond unit finer than the scale of a `DateTime64` argument, for example `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`: the result has the scale of the unit, because the scale of the argument cannot represent the bucket boundaries.
 
 Possible values:
 
