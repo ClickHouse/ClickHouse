@@ -92,9 +92,11 @@
 #include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <Formats/FormatFactory.h>
+#include <Storages/StorageFile.h>
 #include <Storages/StorageInput.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageSet.h>
+#include <Storages/StorageView.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -233,6 +235,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -1406,8 +1410,9 @@ struct CollectTablesData
     /// carrier (`UPDATE`, `ALTER`, and the rewritten forms of `DELETE`): their interpreters run
     /// `AddDefaultDatabaseVisitor` with the *target table's* database over the predicates and expressions,
     /// so `USE db1; UPDATE db2.dst SET x = 1 WHERE a IN (SELECT a FROM src)` reads `db2.src`, not `db1.src`
-    /// (see `mutationExpressionsDatabase`). Empty everywhere else, which keeps the session's current
-    /// database.
+    /// (see `mutationExpressionsDatabase`). The same applies to the `SELECT` of a refreshable materialized
+    /// view, which is analyzed in the view's own database. Empty everywhere else, which keeps the session's
+    /// current database.
     String default_database;
 
     /// The dictionaries a `dictGet`-family function names, as written in the query (the database is empty
@@ -3100,6 +3105,20 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                         Context::ResolveOrdinary, AccessType::SELECT | AccessType::INSERT,
                         /* existence_required */ target.kind == ViewTarget::To && to_target_existence_required);
             }
+
+            /// `InterpreterCreateQuery` analyzes the `SELECT` of a refreshable materialized view with the
+            /// view's own database as the current one, so `CREATE MATERIALIZED VIEW db2.mv REFRESH ... AS
+            /// SELECT * FROM src` reads `db2.src` regardless of the session's database. Walk the children with
+            /// that database in effect, the same way as for a mutation carrier below.
+            if (create->is_materialized_view && create->refresh_strategy && !create->getDatabase().empty())
+            {
+                const auto saved_default_database = data.default_database;
+                data.default_database = create->getDatabase();
+                for (const auto & child : ast->children)
+                    collectTablesInQuery(child, data, active_ctes, active_aliases);
+                data.default_database = saved_default_database;
+                return;
+            }
         }
 
         /// The tables named inside a mutation carrier's predicates and expressions are resolved against the
@@ -3344,6 +3363,22 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             row_policy_filter && !row_policy_filter->isAlwaysTrue())
             return;
 
+    /// A read of a view is checked for access on the tables of its `SELECT` only when the view is analyzed
+    /// (under the invoker or the definer, see `StorageInMemoryMetadata::getSQLSecurityOverriddenContext`),
+    /// and the collector does not look inside stored view definitions. A query reading a view could then
+    /// fail on the access to an inner table only after the other tables of the query were reattached, so
+    /// any read of a view skips the hook. Views are never loaded lazily, so the cast does not load anything.
+    for (const auto & table : data.tables)
+    {
+        if (!table.required_access.contains(AccessType::SELECT))
+            continue;
+        const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
+        if (!database || !database->supportsDetachingTables())
+            continue;
+        if (castStorage<const StorageView>(database->tryGetTable(table.id.getTableName(), context), DeferredTable::Skip))
+            return;
+    }
+
     /// `FunctionDictHelper::getDictionary` checks `dictGet` on the database of the loaded dictionary, or on
     /// `IDictionary::NO_DATABASE_TAG` for a dictionary defined in the configuration. An unqualified name
     /// can resolve to either, so require the access on both — over-requiring only skips the randomization.
@@ -3457,6 +3492,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// write the inserted rows to disk, so `ATTACH` would restore an empty set or hash table.
         if (const auto set_or_join = castStorage<const StorageSetOrJoinBase>(table, DeferredTable::Load);
             set_or_join && !set_or_join->isPersistent())
+            continue;
+
+        /// A `File` table that has written extra files (`engine_file_allow_create_multiple_files`) keeps their
+        /// names only in memory: `ATTACH` restores the single file named after the table, so the rows of the
+        /// other files would disappear from the table.
+        if (const auto file = castStorage<const StorageFile>(table, DeferredTable::Load);
+            file && file->getDataPaths().size() > 1)
             continue;
 
         /// A kind-specific metadata probe (`EXISTS VIEW`, `SHOW CREATE DICTIONARY`, ...) on a name that
@@ -3699,6 +3741,20 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                             ProjectionDescription::getProjectionFromAST(
                                 projection, columns, /* partition_key */ nullptr, validation_context, LoadingStrictnessLevel::ATTACH,
                                 /* attach_short_syntax */ true);
+
+                    /// The `MergeTree` keys are rebuilt by `registerStorageMergeTree` under the same settings,
+                    /// and a key set with `ALTER ... MODIFY ORDER BY` under a query-level setting can be
+                    /// rejected there the same way.
+                    if (create->storage && castStorage<const MergeTreeData>(table, DeferredTable::Load))
+                    {
+                        const auto partition_key = KeyDescription::getKeyFromAST(
+                            create->storage->partition_by ? create->storage->partition_by->ptr() : nullptr,
+                            columns, MergeTreeData::createVirtuals(nullptr), validation_context);
+                        const auto virtuals = MergeTreeData::createVirtuals(&partition_key);
+                        for (auto * key_ast : {create->storage->order_by, create->storage->primary_key, create->storage->sample_by})
+                            if (key_ast)
+                                KeyDescription::getKeyFromAST(key_ast->ptr(), columns, virtuals, validation_context);
+                    }
                 }
                 catch (const Exception &)
                 {
@@ -3749,6 +3805,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             try
             {
                 TableExclusiveLockHolder busy_probe = table->lockExclusively(context->getCurrentQueryId(), busy_probe_timeout);
+                /// `IStorage::lockExclusively` is not virtual, so for a loaded `StorageTableProxy` of a database
+                /// with `lazy_load_tables` it locks only the proxy, while the queries using the table (e.g.
+                /// `InterpreterInsertQuery`, through `resolveStorageProxyLoading`) hold the nested storage.
+                /// Probe the nested storage as well.
+                if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && proxy->isLazyStandIn())
+                    if (const auto nested = proxy->tryGetNested())
+                        TableExclusiveLockHolder nested_busy_probe = nested->lockExclusively(context->getCurrentQueryId(), busy_probe_timeout);
             }
             catch (...)
             {
@@ -5616,8 +5679,20 @@ static BlockIO executeQueryImpl(
             /// runs with it disabled, is executed without the randomization.
             bool may_hide_outer_scopes = !settings[Setting::enable_global_with_statement]
                 || astMentionsSetting(*out_ast, "enable_global_with_statement");
+            /// Some settings carry query text that is parsed and analyzed only during planning:
+            /// `additional_result_filter` and `additional_table_filters` hold expressions (which may call a
+            /// function checking its own access, such as `file`, or name tables), and
+            /// `implicit_table_at_top_level` adds a table the FROM-less query reads. The collector does not see
+            /// any of it, so a query that sets one of them anywhere, or runs with one set, is executed without
+            /// the randomization.
+            bool has_query_in_settings = !settings[Setting::additional_result_filter].value.empty()
+                || !settings[Setting::additional_table_filters].value.empty()
+                || !settings[Setting::implicit_table_at_top_level].value.empty()
+                || astMentionsSetting(*out_ast, "additional_result_filter")
+                || astMentionsSetting(*out_ast, "additional_table_filters")
+                || astMentionsSetting(*out_ast, "implicit_table_at_top_level");
             if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster && !may_use_query_result_cache
-                && !may_hide_outer_scopes)
+                && !may_hide_outer_scopes && !has_query_in_settings)
             {
                 bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
                 auto reattach_probability = std::clamp(

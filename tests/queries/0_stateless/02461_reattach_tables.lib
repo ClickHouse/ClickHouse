@@ -16,6 +16,7 @@
 #   `05406_reattach_tables_preflight_followups` - nested query cache, stored handler queries, privileges and row policies
 #   `05407_reattach_tables_transaction_mutation` - a mutation owned by an open transaction
 #   `05408_reattach_tables_review_followups` - stored projections, nested `EXPLAIN`, `EXECUTE AS`, outer CTE visibility, function privileges
+#   `05427_reattach_tables_review_followups_2` - multi-file `File` tables, stored keys, busy lazy tables, views, settings carrying query text, refreshable views
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
