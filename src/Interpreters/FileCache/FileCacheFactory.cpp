@@ -74,7 +74,8 @@ FileCachePtr FileCacheFactory::get(const std::string & cache_name)
 FileCachePtr FileCacheFactory::getOrCreate(
     const std::string & cache_name,
     const FileCacheSettings & file_cache_settings,
-    const std::string & config_path)
+    const std::string & config_path,
+    bool is_custom_disk)
 {
     std::lock_guard lock(mutex);
 
@@ -96,6 +97,9 @@ FileCachePtr FileCacheFactory::getOrCreate(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cache with name {} exists, but it has a different path", cache_name);
         }
+
+        if (is_custom_disk)
+            names_of_custom_disks.insert(cache_name);
     }
     else if (it->second->getSettings() != file_cache_settings)
     {
@@ -106,7 +110,8 @@ FileCachePtr FileCacheFactory::getOrCreate(
     }
     else if (it->first != cache_name)
     {
-        caches_by_name.emplace(cache_name, it->second);
+        if (caches_by_name.emplace(cache_name, it->second).second && is_custom_disk)
+            names_of_custom_disks.insert(cache_name);
     }
 
     return it->second->cache;
@@ -229,7 +234,10 @@ void FileCacheFactory::remove(FileCachePtr cache)
     for (auto it = caches_by_name.begin(); it != caches_by_name.end();)
     {
         if (it->second->cache == cache)
+        {
+            names_of_custom_disks.erase(it->first);
             it = caches_by_name.erase(it);
+        }
         else
             ++it;
     }
@@ -241,7 +249,11 @@ void FileCacheFactory::removeNameOfReleasedDisk(const std::string & cache_name)
     FileCacheDataPtr removed;
 
     std::lock_guard lock(mutex);
+    if (!names_of_custom_disks.contains(cache_name))
+        return;
+
     auto it = caches_by_name.find(cache_name);
+    chassert(it != caches_by_name.end());
     if (it == caches_by_name.end())
         return;
 
@@ -250,17 +262,21 @@ void FileCacheFactory::removeNameOfReleasedDisk(const std::string & cache_name)
         return cache_by_name.first != cache_name && cache_by_name.second == it->second;
     });
 
-    if (!has_other_names && (!it->second->config_path.empty() || it->second->cache.use_count() != 1))
+    /// The snapshots returned by `getAll` share the `FileCacheData`, not the `FileCachePtr`, so both are checked.
+    if (!has_other_names
+        && (!it->second->config_path.empty() || it->second.use_count() != 1 || it->second->cache.use_count() != 1))
         return;
 
     removed = std::move(it->second);
     caches_by_name.erase(it);
+    names_of_custom_disks.erase(cache_name);
 }
 
 void FileCacheFactory::clear()
 {
     std::lock_guard lock(mutex);
     caches_by_name.clear();
+    names_of_custom_disks.clear();
 }
 
 void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context)

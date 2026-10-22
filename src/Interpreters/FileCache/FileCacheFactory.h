@@ -41,10 +41,14 @@ public:
 
     static FileCacheFactory & instance();
 
+    /// `is_custom_disk` is set for the cache of a custom cache disk (see `disk(type = cache, ...)`): the name is
+    /// remembered if it is added by this call, so that `removeNameOfReleasedDisk` removes only the names the
+    /// custom disks added.
     FileCachePtr getOrCreate(
         const std::string & cache_name,
         const FileCacheSettings & file_cache_settings,
-        const std::string & config_path);
+        const std::string & config_path,
+        bool is_custom_disk = false);
 
     FileCachePtr get(const std::string & cache_name);
 
@@ -65,8 +69,10 @@ public:
     void remove(FileCachePtr cache);
 
     /// Removes the name `cache_name` of the cache of a custom cache disk (see `disk(type = cache, ...)`) that has been shut down,
-    /// so that the name can be used again, possibly with another path. A cache that has other names stays under them. A cache with
-    /// no other name is removed only if it was not defined in the configuration and nothing else uses it anymore.
+    /// so that the name can be used again, possibly with another path. Only a name added by a custom disk is removed, so a name
+    /// from the configuration stays even if a custom disk has the same name. A cache that has other names stays under them.
+    /// A cache with no other name is removed only if it was not defined in the configuration and nothing else uses it anymore,
+    /// including the snapshots returned by `getAll`, so that a new cache is never created for a path still used by the old one.
     void removeNameOfReleasedDisk(const std::string & cache_name);
 
     void clear();
@@ -74,6 +80,8 @@ public:
 private:
     std::mutex mutex;
     CacheByName caches_by_name;
+    /// The names in `caches_by_name` added by custom cache disks.
+    std::unordered_set<std::string> names_of_custom_disks;
 };
 
 /// Get default path prefix for non-disk caches.
