@@ -336,6 +336,7 @@ class Runner:
         return {unquote(PurePosixPath(urlparse(u).path).name) for u in urls}
 
     def _pre_run(self, workflow, job, local_job_run=False):
+        print("test-print-sasha")
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
         dirty = Shell.get_output("git status --short", verbose=False) or ""
