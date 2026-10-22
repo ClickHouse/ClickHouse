@@ -431,9 +431,9 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     if (type == MySQLQueryType::CREATE)
     {
         /// If we have CREATE query, we can extract columns names and types from it.
+        /// This reads the CREATE query up to and including its ';', so the next query can be the INSERT itself.
         if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
             column_names = structure_from_create.getNames();
-        skipQuery(in);
         insert_query_present = skipToInsertQuery(table_name, in);
     }
 
