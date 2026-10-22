@@ -2960,7 +2960,8 @@ void registerStorageRemote(StorageFactory & factory)
             RemoteDescriptionCaller{
                 fmt::format("Table engine '{}'", secure ? "RemoteSecure" : "Remote"),
                 TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
-                /*listing_alternative=*/ {}});
+                /*listing_alternative=*/ {}},
+            /* limit_total_addresses = */ !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
 
         DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
         if (args.storage_def->settings)

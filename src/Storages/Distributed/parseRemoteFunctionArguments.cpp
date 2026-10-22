@@ -42,7 +42,8 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     bool secure,
     const PreformattedMessage & help_message,
     const StorageID * dependent_table_id,
-    const RemoteDescriptionCaller & caller)
+    const RemoteDescriptionCaller & caller,
+    bool limit_total_addresses)
 {
     ParsedRemoteFunctionArguments result;
     ClusterPtr & cluster = result.cluster;
@@ -341,7 +342,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
         /// Create new cluster from the scratch
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
         /// The limit applies to the total number of addresses, over both the shards and their replicas.
-        auto shards = parseRemoteDescriptionWithFailover(cluster_description, max_addresses, caller);
+        auto shards = parseRemoteDescriptionWithFailover(cluster_description, max_addresses, caller, limit_total_addresses);
 
         HostsByShard names;
         names.reserve(shards.size());

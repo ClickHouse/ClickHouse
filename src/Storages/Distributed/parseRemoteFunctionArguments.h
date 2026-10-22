@@ -44,6 +44,10 @@ struct ParsedRemoteFunctionArguments
 /// `Table engine 'RemoteSecure'`, ...) when the addresses expression generates more addresses
 /// than `table_function_remote_max_addresses` allows. `name` cannot serve that purpose: it is an
 /// internal name shared by several surfaces (e.g. it stays `remote` for `remoteSecure`).
+///
+/// `limit_total_addresses` is passed on to `parseRemoteDescriptionWithFailover`: it is unset when the
+/// server loads a definition it stored itself, which has to load even if it was accepted by an older
+/// version that limited the shards and the replicas of every shard separately.
 ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     ASTs & args,
     ContextPtr context,
@@ -52,6 +56,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     bool secure,
     const PreformattedMessage & help_message,
     const StorageID * dependent_table_id = nullptr,
-    const RemoteDescriptionCaller & caller = {});
+    const RemoteDescriptionCaller & caller = {},
+    bool limit_total_addresses = true);
 
 }

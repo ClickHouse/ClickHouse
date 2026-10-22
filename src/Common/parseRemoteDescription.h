@@ -126,7 +126,7 @@ public:
 
 private:
     friend std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
-        const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller);
+        const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller, bool limit_total_addresses);
     friend std::vector<String> parseReplicasOfShard(
         const String & shard, const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller);
 
@@ -225,8 +225,16 @@ struct RemoteDescriptionShard
 /// every shard is then expanded into its replicas separated by `|`, e.g. `example01-0{1,2}-{1|2}` is
 /// two shards with two replicas each. `max_addresses` bounds the total number of generated addresses,
 /// not the number generated at each of the two stages, since that is what the setting promises.
+///
+/// With `limit_total_addresses` unset, `max_addresses` bounds the number of shards and the number of
+/// replicas of every shard separately, as it did before the total was limited. This is used when the
+/// server loads a definition it stored itself: a definition accepted by an older version must still
+/// load, otherwise the database or the table (and with them the whole server) would fail to start.
 std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
-    const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller = {});
+    const String & description,
+    size_t max_addresses,
+    const RemoteDescriptionCaller & caller = {},
+    bool limit_total_addresses = true);
 
 /// Parse remote description for external database (MySQL or PostgreSQL).
 std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDatabase(

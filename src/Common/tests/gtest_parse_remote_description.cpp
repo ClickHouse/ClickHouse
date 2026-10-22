@@ -188,6 +188,19 @@ TEST(ParseRemoteDescription, WithFailoverLimitsTheTotal)
     EXPECT_THROW(parseRemoteDescriptionWithFailover("a|b,c", 2), Exception);
 }
 
+TEST(ParseRemoteDescription, WithFailoverLimitsEveryStageOnLoad)
+{
+    /// A definition stored by an older version, which limited the shards and the replicas of every
+    /// shard separately, must still load: two shards with two replicas each fit into a limit of three.
+    const auto shards = parseRemoteDescriptionWithFailover("example01-0{1,2}-{1|2}", 3, {}, /*limit_total_addresses=*/ false);
+    ASSERT_EQ(shards.size(), 2);
+    EXPECT_EQ(shards[1].replicas, (std::vector<String>{"example01-02-1", "example01-02-2"}));
+
+    /// Each stage is still limited on its own.
+    EXPECT_THROW(parseRemoteDescriptionWithFailover("example01-0{1,2,3}-{1|2}", 2, {}, /*limit_total_addresses=*/ false), Exception);
+    EXPECT_THROW(parseRemoteDescriptionWithFailover("example01-0{1,2}-{1|2|3}", 2, {}, /*limit_total_addresses=*/ false), Exception);
+}
+
 TEST(ParseRemoteDescription, WithFailoverReportsTheWholeCardinality)
 {
     /// Whichever of the two stages hits the limit, the reported number covers both of them.

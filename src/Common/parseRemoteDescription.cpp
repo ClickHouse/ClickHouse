@@ -613,7 +613,7 @@ std::vector<String> parseReplicasOfShard(
 
 
 std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
-    const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller)
+    const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller, bool limit_total_addresses)
 {
     /// Whichever of the two stages hits the limit, the message reports the whole first argument.
     RemoteDescriptionGenerator shard_generator(description, 0, description.size(), ',', max_addresses, caller, '|');
@@ -632,7 +632,8 @@ std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
 
         /// Checked before generating any replica, so at most the limit is ever materialized.
         const auto replica_count = replica_generator.totalCount();
-        if (!replica_count || *replica_count > max_addresses - total)
+        const size_t max_replicas = limit_total_addresses ? max_addresses - total : max_addresses;
+        if (!replica_count || *replica_count > max_replicas)
             throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses);
         total += *replica_count;
 
