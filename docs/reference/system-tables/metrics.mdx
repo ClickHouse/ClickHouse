@@ -1118,6 +1118,10 @@ Number of container nodes currently stored in Keeper.
 
 Number of outstanding requests
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Number of Raft event loop threads waiting for the local log entries to be preprocessed after startup. The Raft event loop also runs the listener, the election and heartbeat timers and every RPC completion, so this should stay at zero or one.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Number of threads in the threadpool for keeper server reads.
@@ -2289,6 +2293,10 @@ Number of entries in the vector similarity index cache
 ### VersionInteger {#versioninteger}
 
 Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Number of queries waiting for asynchronous loading or startup to finish, limited by the 'max_waiting_queries' server setting
 
 ### Write {#write}
 

@@ -150,6 +150,19 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
+- `ProfileEvent_IcebergGetTableStateMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent resolving the current state of Iceberg tables: finding the current metadata file (version hint or listing), then reading and parsing it.
+- `ProfileEvent_IcebergVersionHintReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading and resolving `version-hint.text` of Iceberg tables.
+- `ProfileEvent_IcebergMetadataJSONReads` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg `metadata.json` files read from storage (not served from the Iceberg metadata cache).
+- `ProfileEvent_IcebergMetadataJSONReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading Iceberg `metadata.json` files from storage, including decompression.
+- `ProfileEvent_IcebergMetadataJSONParses` ([UInt64](/reference/data-types/int-uint)) — Number of times an Iceberg `metadata.json` was parsed. The parsing happens on every access, also when the file content is served from the Iceberg metadata cache.
+- `ProfileEvent_IcebergMetadataJSONParsedBytes` ([UInt64](/reference/data-types/int-uint)) — Total size of the Iceberg `metadata.json` content parsed.
+- `ProfileEvent_IcebergMetadataJSONParseMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent parsing Iceberg `metadata.json` files.
+- `ProfileEvent_IcebergManifestListsRead` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).
+- `ProfileEvent_IcebergManifestListsReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading and decoding Iceberg manifest lists from storage.
+- `ProfileEvent_IcebergManifestFilesRead` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).
+- `ProfileEvent_IcebergManifestFilesReadBytes` ([UInt64](/reference/data-types/int-uint)) — Total size of Iceberg manifest files read from storage.
+- `ProfileEvent_IcebergManifestFilesReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading and decoding Iceberg manifest files from storage.
+- `ProfileEvent_IcebergManifestFileIteratorCreateMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent preparing Iceberg manifest files for iteration: parsing their partition spec and schema headers and checking the schema against the table metadata. It is paid for every manifest file in every query, also when the manifest file is served from the Iceberg metadata cache.
 - `ProfileEvent_IcebergCompactionCleanupDeferredByReaders` ([UInt64](/reference/data-types/int-uint)) — Number of times the removal of data files superseded by Iceberg compaction was postponed because a query on this or another replica was still reading a snapshot that references them.
 - `ProfileEvent_IcebergCompactionCleanupDeferredBySnapshotLifetime` ([UInt64](/reference/data-types/int-uint)) — Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.
 - `ProfileEvent_ObjectStorageSharedLeasesAcquired` ([UInt64](/reference/data-types/int-uint)) — Number of shared leases of keys, such as Iceberg snapshots being read, written to object storage when a query of this server acquired a key that was not leased by the server yet.
@@ -855,6 +868,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/reference/data-types/int-uint)) — Number of metadata transaction rollbacks that did not run to completion, so the metadata keeps a part of a transaction that was reported as failed.
 - `ProfileEvent_S3Clients` ([UInt64](/reference/data-types/int-uint)) — Number of created S3 clients.
 - `ProfileEvent_TinyS3Clients` ([UInt64](/reference/data-types/int-uint)) — Number of S3 clients copies which reuse an existing auth provider from another client.
+- `ProfileEvent_ElasticsearchPointInTimeCloseFailures` ([UInt64](/reference/data-types/int-uint)) — Number of failed attempts to close an Elasticsearch point in time.
 - `ProfileEvent_EngineFileLikeReadFiles` ([UInt64](/reference/data-types/int-uint)) — Number of files read in table engines working with files (like File/S3/URL/HDFS).
 - `ProfileEvent_ReadBufferFromS3Microseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent on reading from S3.
 - `ProfileEvent_ReadBufferFromS3InitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent initializing connection to S3.
@@ -1199,6 +1213,11 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/reference/data-types/int-uint)) — Objects that did not match the glob or regex pattern and were skipped during listing.
 - `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/reference/data-types/int-uint)) — Objects removed by virtual column predicate filtering on _path/_file.
 - `ProfileEvent_ObjectStorageReadObjects` ([UInt64](/reference/data-types/int-uint)) — Objects actually opened for reading by the object storage source.
+- `ProfileEvent_ObjectStorageMetadataFetchedForRead` ([UInt64](/reference/data-types/int-uint)) — Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.
+- `ProfileEvent_ObjectStorageMetadataFetchMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent on object metadata requests counted in `ObjectStorageMetadataFetchedForRead`.
+- `ProfileEvent_ObjectStorageReaderWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time object storage sources spent waiting for the reader of the next object, which is prepared in the background.
+- `ProfileEvent_ObjectStorageQueryConditionCacheSkippedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of objects skipped entirely by the object storage source because the query condition cache showed that none of their row groups match the filter.
+- `ProfileEvent_ObjectStorageQueryConditionCacheSkippedRowGroups` ([UInt64](/reference/data-types/int-uint)) — Number of row groups skipped by the object storage source because the query condition cache showed that they don't match the filter.
 - `ProfileEvent_ServerStartupMilliseconds` ([UInt64](/reference/data-types/int-uint)) — Time elapsed from starting server to listening to sockets in milliseconds
 - `ProfileEvent_IOUringSQEsSubmitted` ([UInt64](/reference/data-types/int-uint)) — Total number of io_uring SQEs submitted
 - `ProfileEvent_IOUringSQEsResubmitsAsync` ([UInt64](/reference/data-types/int-uint)) — Total number of asynchronous io_uring SQE resubmits performed
@@ -1604,7 +1623,14 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExecutableUserDefinedFunctionOutputBytes` ([UInt64](/reference/data-types/int-uint)) — Total bytes read from the stdout of executable and executable_pool user-defined function child processes.
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
-- `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data before reading them (by min/max statistics and row group selection). Row groups pruned later by bloom filters and dictionaries are counted in `ParquetBloomFilterPrunedRowGroups` and `ParquetDictionaryFilterPrunedRowGroups`.
+- `ProfileEvent_ParquetBloomFilterPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of parquet row groups pruned by bloom filters.
+- `ProfileEvent_ParquetDictionaryFilterPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of parquet row groups pruned by dictionary filters (with a bloom filter fallback for columns whose dictionary does not fit the pruning memory budget).
+- `ProfileEvent_ParquetFooterReadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).
+- `ProfileEvent_ParquetPrefetcherReadBytes` ([UInt64](/reference/data-types/int-uint)) — Total bytes read from parquet files by DB::Parquet::Prefetcher. It is larger than `ParquetPrefetcherUsedBytes` when reads are coalesced over ranges that are not used in the end, e.g. column chunks of row groups pruned later by bloom filters.
+- `ProfileEvent_ParquetPrefetcherUsedBytes` ([UInt64](/reference/data-types/int-uint)) — Total bytes of the ranges read by DB::Parquet::Prefetcher that were actually used by the parquet reader.
+- `ProfileEvent_ParquetDecompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.
+- `ProfileEvent_ParquetPagesDecompressedToSkipRows` ([UInt64](/reference/data-types/int-uint)) — Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).
 - `ProfileEvent_ParquetTopKSkippedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
 - `ProfileEvent_ParquetReadMinMaxFromStatistics` ([UInt64](/reference/data-types/int-uint)) — The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)
 - `ProfileEvent_ParquetReadPages` ([UInt64](/reference/data-types/int-uint)) — The total number of Parquet data pages read

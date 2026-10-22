@@ -1034,7 +1034,7 @@ static void preferNullableRightKey(
 }
 
 /// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
-/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
+/// of the nested type. NULL matches NULL through the `isNull` key, and the value key is not nullable, so the join skips
 /// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
@@ -1155,10 +1155,11 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         {
             auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
             auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
-            table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
-            used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
-            lhs = std::move(lhs_value);
-            rhs = std::move(rhs_value);
+            /// The value key goes first: merge joins skip runs of rows only by the first key, and `isNull` is constant on non-NULL rows.
+            table_join_clause.addKey(lhs_value.getColumnName(), rhs_value.getColumnName(), /*null_safe_comparison=*/ false);
+            used_expressions.insert(used_expressions.end(), {lhs_value, rhs_value});
+            lhs = std::move(lhs_null);
+            rhs = std::move(rhs_null);
             null_safe_comparison = false;
         }
         else if (null_safe_nullable)

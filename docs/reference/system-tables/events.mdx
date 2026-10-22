@@ -1960,6 +1960,10 @@ Number of column-wise data-hash computations performed while deduplicating INSER
 
 Total time spent checking for duplication of INSERTed blocks to *MergeTree tables.
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Number of failed attempts to close an Elasticsearch point in time.
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.
@@ -2560,9 +2564,37 @@ Number of times the removal of data files superseded by Iceberg compaction was p
 
 Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Total time spent resolving the current state of Iceberg tables: finding the current metadata file (version hint or listing), then reading and parsing it.
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Total time spent on synchronous initialization of iceberg data iterators.
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Total time spent preparing Iceberg manifest files for iteration: parsing their partition spec and schema headers and checking the schema against the table metadata. It is paid for every manifest file in every query, also when the manifest file is served from the Iceberg metadata cache.
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+Total size of Iceberg manifest files read from storage.
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+Total time spent reading and decoding Iceberg manifest files from storage.
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+Total time spent reading and decoding Iceberg manifest lists from storage.
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2579,6 +2611,26 @@ Number of times iceberg metadata files have been found in the cache, but were co
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Approximate number of bytes evicted from the iceberg metadata cache.
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+Total size of the Iceberg `metadata.json` content parsed.
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Total time spent parsing Iceberg `metadata.json` files.
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Number of times an Iceberg `metadata.json` was parsed. The parsing happens on every access, also when the file content is served from the Iceberg metadata cache.
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+Total time spent reading Iceberg `metadata.json` files from storage, including decompression.
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+Number of Iceberg `metadata.json` files read from storage (not served from the Iceberg metadata cache).
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2615,6 +2667,10 @@ Number of Iceberg manifest files skipped without being read, using the partition
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Trivial count optimization applied while reading from Iceberg
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Total time spent reading and resolving `version-hint.text` of Iceberg tables.
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4040,9 +4096,25 @@ Objects that did not match the glob or regex pattern and were skipped during lis
 
 Total objects returned by object storage listing API before any filtering.
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+Total time spent on object metadata requests counted in `ObjectStorageMetadataFetchedForRead`.
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 Objects removed by virtual column predicate filtering on _path/_file.
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+Number of objects skipped entirely by the object storage source because the query condition cache showed that none of their row groups match the filter.
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+Number of row groups skipped by the object storage source because the query condition cache showed that they don't match the filter.
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4155,6 +4227,10 @@ The number of times we successfully set file as processing
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 Number of unsuccessful keeper commits
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+Total time object storage sources spent waiting for the reader of the next object, which is prepared in the background.
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4360,6 +4436,10 @@ Number of replicas which was chosen, but found to be unavailable during query ex
 
 Number of replicas used to execute a query with task-based parallel replicas
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+The total number of parquet row groups pruned by bloom filters.
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 The total number of columns that were passed through filter
@@ -4372,9 +4452,21 @@ Task groups sent to a thread pool by parquet reader
 
 Tasks issued by parquet reader
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+The total number of parquet row groups pruned by dictionary filters (with a bloom filter fallback for columns whose dictionary does not fit the pruning memory budget).
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Time of waiting for parquet file reads from decoding threads (not prefetching threads)
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4388,6 +4480,14 @@ Number of times parquet metadata has not been found in the cache and had to be r
 
 Approximate number of bytes evicted from the parquet metadata cache.
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+Total bytes read from parquet files by DB::Parquet::Prefetcher. It is larger than `ParquetPrefetcherUsedBytes` when reads are coalesced over ranges that are not used in the end, e.g. column chunks of row groups pruned later by bloom filters.
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher
@@ -4400,13 +4500,17 @@ The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher
 
 The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+Total bytes of the ranges read by DB::Parquet::Prefetcher that were actually used by the parquet reader.
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 The total number of pages pruned from parquet data via column index
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-The total number of row groups pruned from parquet data
+The total number of row groups pruned from parquet data before reading them (by min/max statistics and row group selection). Row groups pruned later by bloom filters and dictionaries are counted in `ParquetBloomFilterPrunedRowGroups` and `ParquetDictionaryFilterPrunedRowGroups`.
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 
