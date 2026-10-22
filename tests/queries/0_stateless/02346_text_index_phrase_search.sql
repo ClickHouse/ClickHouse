@@ -102,7 +102,8 @@ CREATE TABLE tab_m_idx (
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS allow_experimental_text_index_phrase_search = 1;
+-- The codec keeps the phrase on the index path, whose blocks are counted at the end.
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor';
 
 -- Stop background merges so the separate INSERTs stay as separate parts until the explicit OPTIMIZE.
 SYSTEM STOP MERGES tab_m_idx;

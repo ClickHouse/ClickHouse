@@ -1,4 +1,6 @@
--- Tags: long, no-asan, no-msan, no-tsan
+-- Tags: long, no-asan, no-msan, no-tsan, no-random-settings
+-- no-random-settings: the test asserts on the join plan, order and sharding clauses, which the
+-- randomized join settings move around.
 
 SET explain_query_plan_default = 'legacy';
 

@@ -12,13 +12,13 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     automatic_parallel_replicas_min_bytes_per_replica = 0, serialize_query_plan = 0;
 
--- The planner finds too few rows for even one replica, and plans the read locally.
-SELECT k % 10, sum(v) FROM t_autopr_plan_without_pr GROUP BY k % 10
-FORMAT Null SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1000000000, log_comment = 'plan_without_pr_declined';
+-- The planner does not allow `IN` with a subquery, and plans the read locally.
+SELECT k % 10, sum(v) FROM t_autopr_plan_without_pr WHERE k IN (SELECT number * 2 FROM numbers(50000)) GROUP BY k % 10
+FORMAT Null SETTINGS parallel_replicas_allow_in_with_subquery = 0, log_comment = 'plan_without_pr_declined';
 
--- The same query with enough rows per replica reads from the other replicas, and goes on to collect statistics.
-SELECT k % 10, sum(v) FROM t_autopr_plan_without_pr GROUP BY k % 10
-FORMAT Null SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0, log_comment = 'plan_without_pr_used';
+-- The same query with `IN` with a subquery allowed reads from the other replicas, and goes on to collect statistics.
+SELECT k % 10, sum(v) FROM t_autopr_plan_without_pr WHERE k IN (SELECT number * 2 FROM numbers(50000)) GROUP BY k % 10
+FORMAT Null SETTINGS parallel_replicas_allow_in_with_subquery = 1, log_comment = 'plan_without_pr_used';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
