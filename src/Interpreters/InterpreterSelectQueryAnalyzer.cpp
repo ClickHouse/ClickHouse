@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
+#include <Interpreters/QueryPlanProfiler.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -19,6 +20,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -557,6 +559,9 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
     result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
+    if (plan_profiler)
+        plan_profiler->instrumentPipeline(result.pipeline);
+
     return result;
 }
 
@@ -605,13 +610,36 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
+    if (plan_profiler)
+        optimization_settings.max_step_description_length = plan_profiler->getMaxDescriptionLength();
+
     /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
     /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
     /// would double-count the optimization phase.
     query_plan.optimize(optimization_settings);
 
+    /// Hashed after optimization, so it is the shape that runs, and before the pipeline is built,
+    /// which moves the `ActionsDAG` out of the steps. The profiler puts the hash of each step into
+    /// the plan it captures.
+    std::optional<QueryPlanShapeHashes> shape_hashes;
+    if (query_plan_hash_enabled || plan_profiler)
+    {
+        shape_hashes.emplace(hashQueryPlanShape(query_plan));
+        query_plan_hash = shape_hashes->root;
+    }
+
+    /// This is necessary because:
+    ///  - buildQueryPipeline moves each step's ActionsDAG into its ExpressionActions, and
+    ///    buildPrettyNamesPerPlan reads those DAGs, so the names must be built first;
+    ///  - PrettyNamesPerPlan is keyed by `const QueryPlan *` and explainPlan looks it up as
+    ///    `find(this)`, so it must be built on the very object that will later be rendered.
+    /// Hence: move the plan into the profiler, build the names there, then build the pipeline from it.
+    QueryPlan * plan_to_build = &query_plan;
+    if (plan_profiler)
+        plan_to_build = &plan_profiler->captureQueryPlan(std::move(planner).extractQueryPlan(), std::move(*shape_hashes));
+
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
+    return std::move(*plan_to_build->buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

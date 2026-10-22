@@ -19,6 +19,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Common/MemorySpillScheduler.h>
 #include <QueryPipeline/printPipeline.h>
@@ -303,6 +304,12 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 
 void PipelineExecutor::finalizeExecution()
 {
+    /// Stamped before the `SCOPE_EXIT` below rather than inside it: the output formats write their
+    /// epilogue in `onPipelineFinished`, and counting that towards the execution time would make the
+    /// plan logged for a `Parquet` or `ORC` query look slower than the work it actually did.
+    if (step_profiler)
+        step_profiler->markExecutionFinished();
+
     /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
     /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
     /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots

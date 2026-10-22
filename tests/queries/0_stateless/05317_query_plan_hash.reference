@@ -1,0 +1,15 @@
+different_column	2	2	0
+different_function	2	2	0
+different_join_algorithm	2	2	0
+different_read_in_order	2	2	0
+different_skip_index	2	2	0
+off	1	1	1
+profiled	2	1	0
+same_in	2	1	0
+same_join	2	1	0
+same_limit	2	1	0
+same_parameter	2	1	0
+same_string	2	1	0
+same_width	3	1	0
+query_start	1	0
+shape_hash	1	1	1

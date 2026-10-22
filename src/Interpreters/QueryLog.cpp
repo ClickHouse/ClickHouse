@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
@@ -17,9 +18,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatSettings.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/getFQDNOrHostName.h>
@@ -173,6 +177,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
+
+        {"query_plan", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON), "The query plan of the query this row describes, serialized as JSON, with per-step runtime statistics. Unlike `EXPLAIN ANALYZE`, which runs the query a second time, this is the plan the query itself was running. Only filled when the `log_query_plans` setting is enabled, and empty for `QueryStart` rows, because no plan exists yet at that point. On a row for a query that threw, the plan is the one the query had built when it threw, and it carries no statistics: a query that failed while running had its plan executed in part, and one that failed before running never executed it at all."},
+        {"query_plan_hash", std::make_shared<DataTypeUInt64>(), "A hash of the shape of the executed query plan, identical for plans that differ only in their constants and different whenever the optimizer made a different choice. Filled when the `log_query_plan_hash` or `log_query_plans` setting is enabled, otherwise 0. Not stable across ClickHouse versions."},
     };
 }
 
@@ -393,6 +400,42 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+
+    {
+        auto & query_plan_column = *columns[i++];
+        const size_t row_before_plan = query_plan_column.size();
+        if (query_plan.empty())
+        {
+            query_plan_column.insertDefault();
+        }
+        else
+        {
+            /// The serialization is built here rather than kept in a static, because a
+            /// SerializationJSON carries mutable per-use caches that must not be shared across
+            /// queries.
+            const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+            const auto plan_serialization = plan_type->getDefaultSerialization();
+
+            try
+            {
+                ReadBufferFromString plan_buffer(query_plan);
+                plan_serialization->deserializeWholeText(query_plan_column, plan_buffer, FormatSettings{});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    "QueryLog",
+                    "Could not parse the query plan of query " + client_info.current_query_id + ", storing it empty");
+
+                if (query_plan_column.size() > row_before_plan)
+                    query_plan_column.popBack(query_plan_column.size() - row_before_plan);
+
+                query_plan_column.insertDefault();
+            }
+        }
+    }
+
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(query_plan_hash);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
