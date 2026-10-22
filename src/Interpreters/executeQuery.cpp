@@ -2538,7 +2538,7 @@ static BlockIO executeQueryImpl(
                 checkASTSizeLimits(*out_ast, settings);
             }
         }
-        else if (settings[Setting::dialect] == Dialect::logsql && !internal)
+        else if (settings[Setting::dialect] == Dialect::logsql && use_request_dialect)
         {
             /// `ParserLogsQLQuery` handles SET queries internally even when the feature gate is off,
             /// so that users can recover from misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
