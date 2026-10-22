@@ -8,6 +8,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
@@ -33,8 +35,11 @@ namespace Setting
 {
     extern const SettingsBool check_table_dependencies;
     extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace ErrorCodes
@@ -66,6 +71,24 @@ std::vector<StoragePtr> getInnerTables(const IStorage & table, const ContextPtr 
                     res.push_back(inner_table);
     }
     return res;
+}
+
+/// The set operations of a definition read from metadata are normalized before a table uses it, as on load.
+void normalizeSetOperations(ASTPtr query, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    SelectIntersectExceptQueryVisitor::Data intersect_except_data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+    SelectIntersectExceptQueryVisitor{intersect_except_data}.visit(query);
+    NormalizeSelectWithUnionQueryVisitor::Data union_data{settings[Setting::union_default_mode]};
+    NormalizeSelectWithUnionQueryVisitor{union_data}.visit(query);
+}
+
+/// Temporary views belong to their sessions and keep their definitions.
+Databases getDatabasesWithViewsToRename()
+{
+    auto databases = DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false});
+    databases.erase(DatabaseCatalog::TEMPORARY_DATABASE);
+    return databases;
 }
 
 /// Rewrites the definitions of the views and TimeSeries tables of all databases that refer to tables of a renamed
@@ -131,7 +154,7 @@ ASTPtr ViewDefinitionsRenaming::rename(
 std::vector<ViewDefinitionsRenaming::View> ViewDefinitionsRenaming::scan(std::set<QualifiedTableName> & tables_to_check) const
 {
     std::vector<View> res;
-    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
+    for (const auto & [database_name, database] : getDatabasesWithViewsToRename())
     {
         for (auto it = database->getTablesIterator(context); it->isValid(); it->next())
         {
@@ -155,7 +178,7 @@ void ViewDefinitionsRenaming::checkDetachedTables() const
 {
     auto & catalog = DatabaseCatalog::instance();
     const auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
-    for (const auto & [database_name, database] : catalog.getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
+    for (const auto & [database_name, database] : getDatabasesWithViewsToRename())
     {
         DatabaseDetachedTablesSnapshotIteratorPtr it;
         try
@@ -309,6 +332,7 @@ void ViewDefinitionsRenaming::stage()
                     view.name.getFullName());
         }
 
+        normalizeSetOperations(view.definition, context->getGlobalContext());
         staged.push_back(view);
     }
     views = std::move(staged);

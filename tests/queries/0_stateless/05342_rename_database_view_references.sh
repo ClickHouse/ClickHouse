@@ -62,6 +62,10 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW ${SRC}.join_v AS SELECT ${SRC}.sample.a AS a, b FROM ${SRC}.sample JOIN ${SRC}.other ON ${SRC}.sample.a = ${SRC}.other.a;
     CREATE VIEW ${SRC}.intersect_v AS SELECT a FROM ${SRC}.sample INTERSECT DISTINCT SELECT a FROM ${SRC}.other;
     CREATE VIEW ${SRC}.except_v AS SELECT a FROM ${SRC}.sample EXCEPT DISTINCT SELECT a FROM ${SRC}.other;
+    CREATE VIEW ${SRC}.literal_v AS SELECT concat('${SRC}.sample.a', toString(a)) FROM ${SRC}.sample;
+    CREATE TABLE ${SRC}.tgt4 (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${SRC}.union_mv TO ${SRC}.tgt4 AS SELECT a FROM (SELECT a FROM ${SRC}.sample UNION ALL SELECT a FROM ${SRC}.sample);
+    CREATE MATERIALIZED VIEW ${SRC}.union_rmv REFRESH EVERY 1 YEAR APPEND ENGINE = Memory EMPTY AS SELECT a FROM ${SRC}.sample UNION ALL SELECT a FROM ${SRC}.sample;
 
     CREATE TABLE ${EXT}.s (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE ${EXT}.tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
@@ -84,22 +88,30 @@ ${CLICKHOUSE_CLIENT} -q "
 unrelated_src_before=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${SRC}.unrelated_v" | sed "s/${SRC}/db/g")
 unrelated_ext_before=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${EXT}.unrelated_v")
 
-${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${SRC} TO ${DST}"
+# A temporary view on the server does not make the rename fail.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TEMPORARY VIEW tmp_v AS SELECT a FROM ${EXT}.s;
+    RENAME DATABASE ${SRC} TO ${DST};
+    SELECT 'tmp_v: ' || toString(count()) FROM tmp_v;
+"
 
 function check()
 {
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DST}.sample SELECT number FROM numbers(5); INSERT INTO ${EXT}.s SELECT number FROM numbers(2)"
     rows ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v \
-        ${DST}.intersect_v ${DST}.except_v ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v
+        ${DST}.intersect_v ${DST}.except_v ${DST}.literal_v ${DST}.tgt4 ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v
 }
 
 echo "-- after the rename"
 check
 echo "occurrences of the old name: $(occurrences "${SRC}" ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv \
-    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${DST}.intersect_v ${DST}.except_v ${EXT}.mv ${EXT}.mv2 ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv)"
+    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${DST}.intersect_v ${DST}.except_v ${DST}.union_mv ${DST}.union_rmv ${EXT}.mv ${EXT}.mv2 \
+    ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv)"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM REFRESH VIEW ${DST}.rmv; SYSTEM WAIT VIEW ${DST}.rmv; SYSTEM REFRESH VIEW ${EXT}.rmv; SYSTEM WAIT VIEW ${EXT}.rmv"
-rows ${DST}.rt ${EXT}.rt
+${CLICKHOUSE_CLIENT} -q "
+    SYSTEM REFRESH VIEW ${DST}.rmv; SYSTEM WAIT VIEW ${DST}.rmv; SYSTEM REFRESH VIEW ${EXT}.rmv; SYSTEM WAIT VIEW ${EXT}.rmv;
+    SYSTEM REFRESH VIEW ${DST}.union_rmv; SYSTEM WAIT VIEW ${DST}.union_rmv"
+rows ${DST}.rt ${EXT}.rt ${DST}.union_rmv
 
 [ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${DST}.unrelated_v" | sed "s/${DST}/db/g")" = "${unrelated_src_before}" ] && echo "unchanged: ${DST}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"
 [ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${EXT}.unrelated_v")" = "${unrelated_ext_before}" ] && echo "unchanged: ${EXT}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"

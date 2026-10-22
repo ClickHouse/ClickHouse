@@ -42,10 +42,11 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${EXT}.events (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE VIEW ${R}.alias_v AS SELECT ${R}.t.a, 1 AS ${RN} FROM ${R}.t;
     CREATE VIEW ${R}.dotted_alias_v AS SELECT ${R}.t.a FROM ${R}.t WHERE a IN (SELECT 1 AS \`${R}.t.a\`);
+    CREATE VIEW ${R}.expression_header_v AS SELECT abs(${R}.events.x) FROM ${EXT}.events CROSS JOIN ${R}.events;
     CREATE VIEW ${R}.header_v AS SELECT * FROM ${EXT}.events JOIN ${R}.events ON ${R}.events.x = ${EXT}.events.x;
     CREATE VIEW ${R}.subquery_v AS SELECT ${R}.t.a FROM ${R}.t, (SELECT 1 AS z) AS sq;
 "
-for view in alias_v dotted_alias_v header_v subquery_v; do
+for view in alias_v dotted_alias_v expression_header_v header_v subquery_v; do
     before=$(definitions "${R}" "${EXT}")
     ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${R} TO ${RN}" 2>&1 | sed -n "s/.*the names in ${R}\.\([a-z_]*\) refer.*(\([A-Z_]*\)).*/\1: \2/p" | head -1
     [ "$(definitions "${R}" "${EXT}")" = "$before" ] && echo "nothing changed"

@@ -3,6 +3,8 @@ alias_v: AMBIGUOUS_IDENTIFIER
 nothing changed
 dotted_alias_v: AMBIGUOUS_IDENTIFIER
 nothing changed
+expression_header_v: AMBIGUOUS_IDENTIFIER
+nothing changed
 header_v: AMBIGUOUS_IDENTIFIER
 nothing changed
 subquery_v: AMBIGUOUS_IDENTIFIER

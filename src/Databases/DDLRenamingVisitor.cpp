@@ -8,6 +8,7 @@
 #include <Interpreters/misc.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -458,6 +459,39 @@ namespace
         return components;
     }
 
+    /// Whether the column name `name` contains `database.table.column` outside its string literals, as the whole name
+    /// or inside an expression like `abs(database.table.column)`.
+    bool containsNameQualifiedWithDatabase(const String & name, const String & database)
+    {
+        const String prefix = database + ".";
+        bool in_literal = false;
+        bool after_prefix = false;
+        for (size_t pos = 0; pos < name.size(); ++pos)
+        {
+            if (in_literal)
+            {
+                if (name[pos] == '\\')
+                    ++pos;
+                else if (name[pos] == '\'')
+                    in_literal = false;
+            }
+            else if ((pos == 0 || !isWordCharASCII(name[pos - 1])) && name.compare(pos, prefix.size(), prefix) == 0)
+            {
+                after_prefix = true;
+                pos += database.size();
+            }
+            else if (name[pos] == '.' && after_prefix)
+            {
+                return true;
+            }
+            else
+            {
+                in_literal = name[pos] == '\'';
+            }
+        }
+        return false;
+    }
+
     /// The table expressions of a SELECT, ARRAY JOIN elements excluded.
     std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery & select)
     {
@@ -672,12 +706,8 @@ void DatabaseRenamingInViewDefinition::check(const ColumnsDescription & view_col
 
     /// A column named `db.table.column` is how the analyzer names a column qualified with the database.
     for (const auto & column : view_columns)
-    {
-        auto components = splitIntoComponents(column.name);
-        for (size_t i = 0; i + 2 < components.size(); ++i)
-            if (components[i] == old_database_name)
-                throwAmbiguous(fmt::format("it has the column {}", column.name));
-    }
+        if (containsNameQualifiedWithDatabase(column.name, old_database_name))
+            throwAmbiguous(fmt::format("it has the column {}", column.name));
 
     if (candidates.empty())
         return;
