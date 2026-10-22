@@ -156,6 +156,19 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(s) FROM file(currentDataba
 WHERE explain ILIKE '%column_name: s.size%';
 SELECT sum(length(s)), countIf(s != ''), count() FROM file(currentDatabase() || '_05331_hive/*/*.parquet', Parquet, 'n UInt32, s String') SETTINGS use_hive_partitioning = 1;
 
+SELECT '-- an AggregateFunction column read from its values';
+INSERT INTO FUNCTION file(currentDatabase() || '_05331_agg.parquet', Parquet)
+SELECT if(number % 4 = 0, '', concat('v_', toString(number))) AS s, toUInt64(number) AS v FROM numbers(100);
+SELECT sum(length(s)), countIf(s != ''), sum(finalizeAggregation(v))
+FROM file(currentDatabase() || '_05331_agg.parquet', Parquet, 's String, v AggregateFunction(sum, UInt64)')
+SETTINGS aggregate_function_input_format = 'value';
+SELECT count(), sum(finalizeAggregation(v))
+FROM file(currentDatabase() || '_05331_agg.parquet', Parquet, 's String, v AggregateFunction(sum, UInt64)') WHERE notEmpty(s)
+SETTINGS aggregate_function_input_format = 'value';
+SELECT sum(length(s)), countIf(s != ''), sum(finalizeAggregation(v))
+FROM file(currentDatabase() || '_05331_agg.parquet', Parquet, 's String, v AggregateFunction(sum, UInt64)')
+SETTINGS aggregate_function_input_format = 'value', optimize_functions_to_subcolumns = 0;
+
 -- The table keeps the structure of its creation, `s Nullable(String)`, while the file now holds `s String`.
 SELECT '-- a table function whose schema changed';
 INSERT INTO FUNCTION file(currentDatabase() || '_05331_drift.parquet', Parquet) SELECT toUInt32(number) AS n, toNullable(toString(number)) AS s FROM numbers(10);

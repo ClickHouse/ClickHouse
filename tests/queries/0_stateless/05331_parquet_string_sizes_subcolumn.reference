@@ -85,6 +85,10 @@ abc	7
 -- a hive partition column
 0
 30	10	10
+-- an AggregateFunction column read from its values
+293	75	4950
+75	3750
+293	75	4950
 -- a table function whose schema changed
 5
 -- a table function whose schema changed, with a column named s.size
