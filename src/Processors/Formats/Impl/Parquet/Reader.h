@@ -202,6 +202,9 @@ struct Reader
         std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
+        /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
+        /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
+        bool decode_dictionary_as_replicated = false;
 
         /// A filter extracted from a substring search condition on this column in PREWHERE.
         /// String values that do not match it are decoded as empty strings (they are guaranteed
@@ -395,6 +398,8 @@ struct Reader
         /// zero when the dictionary is decoded later on the throttled data-read path instead.
         PruningMemoryReservation dictionary_reservation;
         size_t dictionary_reserved_bytes = 0;
+        /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
+        ColumnPtr dictionary_values;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -422,6 +427,9 @@ struct Reader
         /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
         /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
         MutableColumnPtr group_null_map;
+
+        /// If set, `column` is a `ColumnUInt32` of indexes into these values.
+        ColumnPtr dictionary_values;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
@@ -553,7 +561,10 @@ struct Reader
     FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 
-    parq::FileMetaData file_metadata;
+    std::shared_ptr<const FileFooter> file_footer;
+    /// `file_footer->metadata`, without column chunks; see getColumnChunk.
+    const parq::FileMetaData & file_metadata() const { return file_footer ? file_footer->metadata : empty_file_metadata; }
+    static const parq::FileMetaData empty_file_metadata;
     std::deque<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):
@@ -638,8 +649,22 @@ struct Reader
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
-    static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
+    static std::shared_ptr<const FileFooter> readFileFooter(Prefetcher & prefetcher, size_t footer_read_size);
+    /// Works around writer bugs in column chunk metadata.
+    static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
+    /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
+    void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
+    void parseColumnChunks();
+    /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
+    /// Never replaces an entry: ColumnChunk::meta points into them.
+    void ensureColumnChunks(const std::vector<size_t> & column_indices);
+    /// Only for the columns of `primitive_columns`, see parseColumnChunks.
+    const parq::ColumnChunk & getColumnChunk(size_t row_group_idx, size_t column_idx) const;
+    /// By Parquet column index, nullptr for the columns that are not parsed.
+    const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
+    size_t numColumnChunks(size_t row_group_idx) const;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -693,7 +718,7 @@ struct Reader
     /// nullopt when the statistics are missing or don't prove the absence of nulls (statistics
     /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
     /// are present but cannot be decoded throw, as in the static min/max pruning path.
-    std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
+    std::optional<Range> getTopKSortColumnRange(size_t row_group_idx) const;
     /// Two rows (min, max of every output column) from chunk statistics; nullopt if some chunk lacks exact statistics.
     std::optional<Chunk> readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const;
     /// If set, no row groups are read and the format returns this chunk instead.
@@ -763,13 +788,13 @@ private:
     /// headers (and their transitive includes) into every translation unit that includes Reader.h.
     struct DictionaryLookup;
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
+    void getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
     /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
     /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
     /// page level) is only allowed then: a NULL in any bbox column means the row's spatial extent is
     /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
     /// look false for the row group or page while a NULL-bbox row inside it still matches.
-    bool spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const;
+    bool spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     /// Look up the row groups in the columns cache and decide which columns to write to it.
@@ -788,6 +813,12 @@ private:
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
+    const ColumnPtr & getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+
+    /// By Parquet column index, nullptr if not parsed. Immutable, ColumnChunk::meta points into them.
+    std::vector<FileColumnChunksPtr> column_chunks;
+    /// See setFileFooter, released by prefilterAndInitRowGroups.
+    std::vector<FileColumnChunksPtr> cached_column_chunks;
 };
 
 }

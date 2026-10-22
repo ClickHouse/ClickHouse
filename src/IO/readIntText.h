@@ -24,6 +24,7 @@ enum class ReadIntTextCheckOverflow : uint8_t
 void assertEOF(ReadBuffer & buf);
 [[noreturn]] void throwReadAfterEOF();
 [[noreturn]] void throwNumberWithoutDigits();
+[[noreturn]] void throwIntegerTextOverflow();
 
 template <int base, typename T, typename ReturnType, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextInBaseImpl(T & x, ReadBuffer & buf)
@@ -376,11 +377,13 @@ bool tryParseInt(T & x, std::string_view str)
 
 
 /** More efficient variant (about 1.5 times on real dataset). Differs from `readIntText` in following:
-  * - overflow can never be checked; `readIntText` takes the overflow policy as a template parameter;
-  * - a '-' on an unsigned type is not a sign: it is left in the buffer for the caller to reject;
+  * - overflow is not checked by default; unlike `readIntText`, the check holds at every width when asked for;
+  * - a '-' on an unsigned type is not a sign: it is left in the buffer for the caller to reject,
+  *   unless overflow is checked, which reports a negative value as an overflow;
   * - a repeated sign is not diagnosed: '+-' reports a field without digits, '-+' stops at the second one.
   */
-template <typename T, typename ReturnType = void>
+template <typename T, typename ReturnType = void,
+          ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -400,7 +403,7 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
         return on_error();
 
     bool has_plus = false;
-    if (is_signed_v<T> && *buf.position() == '-')
+    if ((is_signed_v<T> || check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW) && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -414,11 +417,25 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// Without this a lone '+' would fall through to the digit loop, which reads nothing and returns zero.
-    if (has_plus && !is_digit()) [[unlikely]]
+    if ((has_plus || (!is_signed_v<T> && negative)) && !is_digit()) [[unlikely]]
     {
         if constexpr (throw_exception)
             throwNumberWithoutDigits();
         return ReturnType(false);
+    }
+
+    /// A per-digit threshold test: `common::mulOverflow` is a no-op for the big-int types.
+    [[maybe_unused]] bool overflow = false;
+    [[maybe_unused]] make_unsigned_t<T> bound_div_10 = 0;
+    [[maybe_unused]] make_unsigned_t<T> bound_mod_10 = 0;
+    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+    {
+        /// A negative value does not fit an unsigned type, `-0` included.
+        overflow = !is_signed_v<T> && negative;
+        const make_unsigned_t<T> bound = static_cast<make_unsigned_t<T>>(std::numeric_limits<T>::max())
+            + static_cast<make_unsigned_t<T>>(is_signed_v<T> && negative ? 1 : 0);
+        bound_div_10 = bound / 10;
+        bound_mod_10 = bound % 10;
     }
 
     while (!buf.eof())
@@ -427,12 +444,33 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
 
         if (value < 10)
         {
+            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+            {
+                if (overflow || res > bound_div_10
+                    || (res == bound_div_10 && static_cast<make_unsigned_t<T>>(value) > bound_mod_10))
+                {
+                    overflow = true;
+                    ++buf.position();
+                    continue;
+                }
+            }
+
             res *= 10;
             res += value;
             ++buf.position();
         }
         else
             break;
+    }
+
+    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+    {
+        if (overflow)
+        {
+            if constexpr (throw_exception)
+                throwIntegerTextOverflow();
+            return ReturnType(false);
+        }
     }
 
     /// See note about undefined behaviour above.

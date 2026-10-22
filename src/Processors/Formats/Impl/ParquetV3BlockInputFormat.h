@@ -102,7 +102,11 @@ private:
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    /// nullopt if the metadata cache is not used.
+    std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
+    std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
+    /// For count(), which needs no column chunks.
+    std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
@@ -117,7 +121,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    parquet::format::FileMetaData file_metadata;
+    std::shared_ptr<const Parquet::FileFooter> file_footer;
     bool initialized = false;
 };
 

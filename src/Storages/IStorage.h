@@ -207,6 +207,8 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if the storage compresses each stream of a column with its own codec, so codecs can be declared for subcolumns.
+    virtual bool supportsSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`), and to
@@ -804,6 +806,11 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if the table can store its own unreplicated data on disk.
+    /// Such a table cannot be created in a `Replicated` database while
+    /// `database_replicated_allow_only_replicated_engine` is enabled.
+    virtual bool hasUnreplicatedTableDataOnDisk() const { return storesDataOnDisk() && !supportsReplication(); }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -828,6 +835,11 @@ public:
     /// Does takes underlying Storage (if any) into account.
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
+
+    virtual std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
+    {
+        return totalRows(query_context);
+    }
 
     /// Same as above but also take partition predicate into account.
     /// Passed context pointer must not be `nullptr`.
