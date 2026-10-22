@@ -91,9 +91,9 @@ SELECT toTypeName(arrayMap(z -> tuple(* EXCEPT w APPLY toString), [1])) FROM r1 
 SELECT 'matcher in the select list';
 SELECT toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) FROM r1 INNER JOIN r2 USING (a);
 -- With analyzer_compatibility_join_using_top_level_identifier the USING key comes from the SELECT
--- projection, so the helper returns before touching the matched column's type. Read the resolved
--- expansion directly: it must stay at the projection's type on both sides of the fix.
-SELECT 'top level identifier compatibility', countIf(explain LIKE '%function_name: tuple, function_type: ordinary, result_type: Tuple(UInt64, Int16)%')
+-- projection, so the matcher keeps each table's own columns. Read the resolved expansion directly: it
+-- must be the same on both sides of the fix.
+SELECT 'top level identifier compatibility', countIf(explain LIKE '%function_name: tuple, function_type: ordinary, result_type: Tuple(UInt32, Int16, UInt64)%')
 FROM (EXPLAIN QUERY TREE run_passes = 1
     SELECT a + 1 AS a, arrayMap(z -> tuple(* EXCEPT w), [1]) FROM r1 INNER JOIN r2 USING (a)
     SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1);
@@ -126,6 +126,12 @@ PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
 SELECT 'join_use_nulls with ON, bare column';
 SELECT count() FROM r1 LEFT JOIN r2 ON r1.a = r2.a
 PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
+-- PREWHERE reads one table, and a lambda body is checked like the rest of the expression: without a
+-- USING key the matcher reaches the right table, which the direct form already refuses.
+SELECT 'cross join lambda reads the right table';
+SELECT count() FROM r1 CROSS JOIN r2 PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0; -- { serverError ILLEGAL_PREWHERE }
+SELECT 'join on lambda reads the right table';
+SELECT count() FROM r1 INNER JOIN r2 ON r1.a = r2.a PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0; -- { serverError ILLEGAL_PREWHERE }
 SELECT 'lambda argument is not replaced';
 SELECT count() FROM r1 INNER JOIN r2 USING (a) PREWHERE (arrayMap(z -> z + v, [1])[1]) != 0;
 SELECT 'lambda argument beside a matcher';

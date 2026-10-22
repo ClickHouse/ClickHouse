@@ -50,6 +50,8 @@ join_use_nulls widens the lambda body, full value
 1
 join_use_nulls with ON, bare column
 1
+cross join lambda reads the right table
+join on lambda reads the right table
 lambda argument is not replaced
 1
 lambda argument beside a matcher
