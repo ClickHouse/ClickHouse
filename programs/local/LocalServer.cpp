@@ -1440,8 +1440,6 @@ try
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();
 
-    processConfig();
-
     /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
     /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
     /// the checker running while `cleanup()` waits for listener connections to drain.
@@ -1455,7 +1453,14 @@ try
         }
     });
 
+    /// Registered before `processConfig`, because it can throw after scheduling the asynchronous load
+    /// of the persisted tables (e.g. `--database` names a nonexistent database). Without the guard,
+    /// the members would be destroyed with the load jobs still running: `status` would release the
+    /// lock of the directory while the jobs still access it, and they would race with the shutdown
+    /// of the context. `cleanup` copes with a partially initialized state.
     SCOPE_EXIT({ cleanup(); });
+
+    processConfig();
 
     cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
