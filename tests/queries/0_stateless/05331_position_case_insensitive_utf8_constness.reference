@@ -45,6 +45,17 @@ ascii	2	2	2	2
 count with start_pos
 a-bar from 3	2	2	2	2	2	2	2
 kelvin from 2	2	2	2	2	2	2	2
+ascii straddle	1	1	1	1
+ascii repeated	2	2	2	2
+ascii case-insensitive straddle	1	1	1	1
+utf8 case-insensitive straddle	1	1	1	1
+start past end	0	0	0	0
+	2	0	0
+aaa	2	1	1
+aaa	4	0	0
+aaaaa	2	2	2
+abc	2	0	0
+baaab	3	1	1
 ILIKE
 A-bar to a-bar	1	1	1	1
 STRASSE	1	1	1	1
