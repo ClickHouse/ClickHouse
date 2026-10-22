@@ -127,6 +127,9 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    /// For every reader, the read names of the columns still in their on-disk type after its step.
+    std::vector<NameSet> columns_unconverted_after_step;
+
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };

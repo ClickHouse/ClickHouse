@@ -28,6 +28,7 @@ LoggerPtr getMergeTreeReadersChainLogger()
 }
 
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
+static std::vector<NameSet> collectColumnsUnconvertedAfterStep(const RangeReaders & range_readers, const NameSet & consumed);
 
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
@@ -45,6 +46,9 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     for (size_t i = 1; i < range_readers.size(); ++i)
         for (const auto & column : range_readers[i - 1].getSampleBlock())
             previous_steps_columns[i].insert(column.name);
+
+    if (!patch_readers.empty())
+        columns_unconverted_after_step = collectColumnsUnconvertedAfterStep(range_readers, columns_consumed_by_chain_actions);
 }
 
 size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const
@@ -148,10 +152,9 @@ static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
 /// A later step never overrides an earlier decision: it reads the value the earlier step
 /// produced, not the on-disk one.
 ///
-/// Query PREWHERE / row-level-filter steps (`perform_alter_conversions == true`) are not
-/// scanned: they run after the whole mutation chain has produced the final column and convert
-/// at their own turn. Counting their consumption would force a premature conversion of an
-/// about-to-be-discarded on-disk value (e.g. `PREWHERE v > 50` before `UPDATE v = '100'`).
+/// Steps that are not on-fly mutation steps (`mutation_version` unset: query PREWHERE, row-level
+/// and lightweight-delete filters) are not scanned; they convert at their own turn. On-fly steps
+/// queued after the pending `MODIFY` are scanned: they read the column in its post-`MODIFY` type.
 ///
 /// Keys are `NameAndTypePair::getNameInStorage`, matching the skip set in
 /// `executeActionsBeforePrewhere`. A physical column whose name contains dots (`info.name`)
@@ -160,6 +163,20 @@ static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
 /// as `info` and miss it in the skip set, reintroducing the type mismatch.
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers)
 {
+    /// Only pre-`MODIFY` steps carry the chain-wide set.
+    const NameSet * overwritten_by_chain = nullptr;
+    for (const auto & reader : range_readers)
+    {
+        const auto * prewhere_info = reader.getPrewhereInfo();
+        if (prewhere_info && prewhere_info->mutation_version && !prewhere_info->perform_alter_conversions)
+        {
+            overwritten_by_chain = &prewhere_info->columns_overwritten_by_chain;
+            break;
+        }
+    }
+    if (!overwritten_by_chain || overwritten_by_chain->empty())
+        return {};
+
     /// Map each column's read name to its storage-name key, so a name from an action DAG
     /// resolves to the same key the skip set uses.
     std::unordered_map<String, String> name_in_storage_by_read_name;
@@ -184,7 +201,7 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
             continue;
 
         /// Query PREWHERE / row-level-filter steps convert at their own turn; never force here.
-        if (prewhere_info->perform_alter_conversions)
+        if (!prewhere_info->mutation_version)
             continue;
 
         const auto & dag = prewhere_info->actions->getActionsDAG();
@@ -201,7 +218,7 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
             if (output->type == ActionsDAG::ActionType::INPUT)
                 continue;
             auto key = to_storage_key(output->result_name);
-            if (!prewhere_info->columns_overwritten_by_chain.contains(key))
+            if (!overwritten_by_chain->contains(key))
                 continue;
             overwritten_here.insert(key);
 
@@ -271,6 +288,49 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
             decided.insert(col);
     }
     return must_convert;
+}
+
+/// For every step, the read names of the columns still in their on-disk type after it: read under the
+/// skip set of `executeActionsBeforePrewhere` and not yet produced by an on-fly mutation step.
+static std::vector<NameSet> collectColumnsUnconvertedAfterStep(const RangeReaders & range_readers, const NameSet & consumed)
+{
+    std::vector<NameSet> result(range_readers.size());
+    NameSet unconverted;
+
+    for (size_t i = 0; i < range_readers.size(); ++i)
+    {
+        const auto * prewhere_info = range_readers[i].getPrewhereInfo();
+
+        if (prewhere_info && !prewhere_info->perform_alter_conversions)
+        {
+            if (const auto * merge_tree_reader = range_readers[i].getReader())
+            {
+                for (const auto & name_and_type : merge_tree_reader->getColumns())
+                {
+                    const auto name_in_storage = name_and_type.getNameInStorage();
+                    if (prewhere_info->columns_overwritten_by_chain.contains(name_in_storage) && !consumed.contains(name_in_storage))
+                        unconverted.insert(name_and_type.name);
+                }
+            }
+        }
+
+        if (prewhere_info && prewhere_info->actions && prewhere_info->mutation_version && !unconverted.empty())
+        {
+            for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
+            {
+                const auto * node = output;
+                while (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+                    node = node->children.front();
+
+                if (node->type != ActionsDAG::ActionType::INPUT)
+                    unconverted.erase(output->result_name);
+            }
+        }
+
+        result[i] = unconverted;
+    }
+
+    return result;
 }
 
 /// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
@@ -817,8 +877,16 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
     const auto & result_header = current_reader.getSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, result.columns);
 
+    /// After a step a column has its requested type, or is unconverted and overwritten later, which discards its patches.
+    if (reader_index < columns_unconverted_after_step.size() && !columns_unconverted_after_step[reader_index].empty())
+    {
+        const auto & unconverted = columns_unconverted_after_step[reader_index];
+        for (auto & columns_for_patch : columns_for_patches)
+            std::erase_if(columns_for_patch, [&](const ColumnForPatch & column) { return unconverted.contains(column.column_name); });
+    }
+
     using enum ColumnForPatch::Order;
-    std::set<ColumnForPatch::Order> suitable_orders = {AfterConversions, AfterEvaluatingDefaults};
+    std::set<ColumnForPatch::Order> suitable_orders = {BeforeConversions, AfterConversions, AfterEvaluatingDefaults};
 
     applyPatches(
         result_header,
