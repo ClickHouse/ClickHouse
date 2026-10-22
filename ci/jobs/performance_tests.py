@@ -73,6 +73,14 @@ WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today(
     AND metric = 'client_time'
     AND pr_number = 0
     AND workflow_name = 'MasterCI'
+    -- The same runs, selected by the key prefix so that the PR runs are not read.
+    AND new_sha IN (
+        SELECT new_sha FROM perf_test_times_v1
+        -- The job writes both tables, so their dates differ by a day at most.
+        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+            AND pr_number = 0
+            AND workflow_name = 'MasterCI')
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
@@ -1279,6 +1287,11 @@ def match_reference_debug_info():
         print("Patched binary has comparable line info, leaving reference as-is")
 
 
+# Both servers start with ASLR disabled, so that they load the executable at the same address (checked in the
+# Start stage). Linux only, like the CPU pinning.
+NO_ASLR_PREFIX = f"setarch {os.uname().machine} -R " if os.uname().sysname == "Linux" else ""
+
+
 class CHServer:
     # `tpcds_sf100`: 2.7–3 h.
     NIGHTLY_TEST_TIMEOUT_SEC = 4 * 3600
@@ -1341,7 +1354,7 @@ class CHServer:
         # command line (a documented config override, see Server.cpp) with a
         # distinct port per server, so that shell-script tests can talk to the
         # server over HTTP.
-        self.start_cmd = f"{taskset_prefix}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
+        self.start_cmd = f"{taskset_prefix}{NO_ASLR_PREFIX}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
@@ -2952,6 +2965,10 @@ def main():
             restart_ch1,
             restart_ch2,
         ]
+        if NO_ASLR_PREFIX:
+            commands.append(
+                f"python3 {Path(__file__).resolve().parent}/scripts/perf/check_executable_base.py {perf_left}/db {perf_right}/db"
+            )
         results.append(Result.from_commands_run(name="Start", command=commands))
         # TODO : check datasets are loaded:
         print(
