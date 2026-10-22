@@ -519,7 +519,7 @@ TEST_F(DiskObjectStorageTest, CleanupDoesNotDeleteOutputAfterPostCommitException
     for (bool use_try_commit : {false, true})
     {
         const String name = use_try_commit ? "try_committed" : "committed";
-        auto metadata = std::make_shared<PostCommitFailureMetadata>(disk->getMetadataStorage());
+        auto metadata = std::make_shared<PostCommitFailureMetadata>(disk->getMetadataStorage(), disk->getObjectStorage());
         auto tx = makeCleanupTestTransaction(metadata, disk->getObjectStorage(), /*wait_blob_removal=*/true);
         {
             auto out = tx->writeFile(name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
@@ -550,7 +550,7 @@ TEST_F(DiskObjectStorageTest, AbandonedCachedTransactionDeletesPhysicalObjects)
     settings[DB::FileCacheSetting::max_elements] = 100;
     auto cache = std::make_shared<DB::FileCache>("cleanup_test", settings);
     auto objects = std::make_shared<DB::CachedObjectStorage>(disk->getObjectStorage(), cache, settings, "cleanup_test");
-    auto metadata = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(disk->getMetadataStorage());
+    auto metadata = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(disk->getMetadataStorage(), disk->getObjectStorage());
     auto tx = makeCleanupTestTransaction(metadata, objects);
     DB::WriteSettings write_settings;
     write_settings.enable_filesystem_cache_on_write_operations = false;
