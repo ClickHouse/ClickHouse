@@ -117,6 +117,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
     }
+
+    /// The callback is called with `true` when the interactive client starts waiting for the user
+    /// to type a query, and with `false` when it stops waiting to process the query.
+    void setWaitingForQueryInputCallback(std::function<void(bool)> callback) { on_waiting_for_query_input = std::move(callback); }
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -456,8 +460,13 @@ protected:
 
     /// Buffer that reads from stdin in batch mode.
     std::unique_ptr<ReadBuffer> std_in;
+    /// The reader of the console output went away (a write to it failed with `EPIPE`), as in
+    /// `clickhouse-client -q '...' | head -1`. Then the client stops quietly, without an error
+    /// message and with a zero exit code. Set from the thread that writes the output.
+    /// Declared before `std_out`, which references it.
+    std::atomic<bool> stdout_is_broken = false;
     /// Console output.
-    std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
+    std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// Wrapper for hooking into the flush event.
@@ -604,7 +613,7 @@ protected:
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
 
-    /// The `dialect`, `enable_json_ast_dialect`, `enable_trino_dialect` and `allow_experimental_logsql_dialect`
+    /// The `dialect`, `enable_json_ast_dialect`, `enable_trino_dialect` and `enable_logsql_dialect`
     /// values the current query text was accepted with, kept only when the query's own `SETTINGS` clause changed them.
     /// `pinOutboundDialect` restores them for the outbound settings, so a query-local
     /// `SETTINGS dialect = ...` cannot change how this very query text is parsed on the other side.
@@ -622,6 +631,8 @@ protected:
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
+
+    std::function<void(bool)> on_waiting_for_query_input;
 
     /// Unpacked descriptors and streams for the ease of use.
     std::istream & input_stream;

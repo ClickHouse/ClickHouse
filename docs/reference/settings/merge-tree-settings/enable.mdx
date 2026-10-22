@@ -69,6 +69,15 @@ Possible values:
 - `true`
 - `false`
 
+## enable_row_mask_update_coalescing {#enable_row_mask_update_coalescing}
+<SettingsInfoBlock type="Bool" default_value="1" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Enable row-mask update coalescing by default"}]}]}/>
+
+Coalesce adjacent singleton `UPDATE _row_exists = 0` commands while mutating a
+Wide part with Full storage. The persisted mutation commands and their
+versions are unchanged.
+Set to false to execute each command separately.
+
 ## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
 <SettingsInfoBlock type="Bool" default_value="0" />
 

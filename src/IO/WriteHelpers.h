@@ -60,8 +60,8 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
 /// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
 inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
 {
-    /// WriteBuffer::write is defined out of line and copies a run-time size, while __builtin_memcpy
-    /// of a size the caller knows at compile time lowers to a couple of stores.
+    /// Unlike `WriteBuffer::write`, it does not check that the buffer is neither finalized nor canceled, which
+    /// saves a load per value in loops that write many small values of a size known at compile time.
     if (size <= buf.available()) [[likely]]
     {
         __builtin_memcpy(buf.position(), input, size);
@@ -363,49 +363,48 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         {
             buf.write(pos, next_pos - pos);
             pos = next_pos;
+            /// One `write` of a constant size per escape sequence keeps this function small enough to be inlined.
+            char escaped[2] = {'\\', 0};
+            size_t escaped_size = 2;
             switch (*pos)
             {
                 case quote_character:
-                {
                     if constexpr (escape_quote_with_quote)
-                        writeChar(quote_character, buf);
-                    else
-                        writeChar('\\', buf);
-                    writeChar(quote_character, buf);
+                        escaped[0] = quote_character;
+                    escaped[1] = quote_character;
                     break;
-                }
                 case '\b':
-                    writeChar('\\', buf);
-                    writeChar('b', buf);
+                    escaped[1] = 'b';
                     break;
                 case '\f':
-                    writeChar('\\', buf);
-                    writeChar('f', buf);
+                    escaped[1] = 'f';
                     break;
                 case '\n':
-                    writeChar('\\', buf);
-                    writeChar('n', buf);
+                    escaped[1] = 'n';
                     break;
                 case '\r':
-                    writeChar('\\', buf);
-                    writeChar('r', buf);
+                    escaped[1] = 'r';
                     break;
                 case '\t':
-                    writeChar('\\', buf);
-                    writeChar('t', buf);
+                    escaped[1] = 't';
                     break;
                 case '\0':
-                    writeChar('\\', buf);
-                    writeChar('0', buf);
+                    escaped[1] = '0';
                     break;
                 case '\\':
                     if constexpr (escape_backslash_with_backslash)
-                        writeChar('\\', buf);
-                    writeChar('\\', buf);
+                        escaped[1] = '\\';
+                    else
+                        escaped_size = 1;
                     break;
                 default:
-                    writeChar(*pos, buf);
+                    escaped[0] = *pos;
+                    escaped_size = 1;
             }
+            if (escaped_size == 2)
+                buf.write(escaped, 2);
+            else
+                buf.write(escaped[0]);
             ++pos;
         }
         /// NOLINTEND(readability-else-after-return)
@@ -1416,7 +1415,10 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
 
-    char buf[max_digits];
+    /// The decimal point and the digits are written with one `write`.
+    char point_and_digits[max_digits + 1];
+    point_and_digits[0] = '.';
+    char * buf = point_and_digits + 1;
     if constexpr (sizeof(T) <= sizeof(UInt64))
         writeFixedDigits(static_cast<UInt64>(x), scale, buf);
     else if constexpr (sizeof(T) <= sizeof(UInt128))
@@ -1442,8 +1444,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             --length;
     }
 
-    writeChar('.', ostr);
-    ostr.write(buf, length);
+    ostr.write(point_and_digits, length + 1);
 }
 
 template <typename T>
