@@ -852,7 +852,9 @@ ColumnPtr ColumnNullable::compress(bool force_compression) const
     ColumnPtr nested_compressed = nested_column->compress(force_compression);
     ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
-    size_t byte_size = nested_column->byteSize() + null_map->byteSize();
+    /// The footprint of the compressed children, as in `ColumnArray::compress`: reporting the source size would make
+    /// the compressed column look as large as the original one however well its children compressed.
+    size_t byte_size = nested_compressed->byteSize() + null_map_compressed->byteSize();
     Columns parts{nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
