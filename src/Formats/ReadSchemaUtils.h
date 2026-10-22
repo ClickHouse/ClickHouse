@@ -129,7 +129,17 @@ std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     IReadBufferIterator & read_buffer_iterator,
     const ContextPtr & context);
 
-SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
-SchemaCache::Keys getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+SchemaCache::Key getKeyForSchemaCache(
+    const String & source,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context,
+    const String & compression_method = "");
+SchemaCache::Keys getKeysForSchemaCache(
+    const Strings & sources,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context,
+    const String & compression_method = "");
 
 }
