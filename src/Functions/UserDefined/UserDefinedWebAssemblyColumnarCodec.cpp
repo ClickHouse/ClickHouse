@@ -319,7 +319,7 @@ MutableColumnPtr concatLowCardinality(const Columns & parts, const DataTypeLowCa
     MutableColumnPtr keys = first_keys.cloneEmpty();
     keys->insertRangeFrom(first_keys, 0, num_special);
 
-    std::vector<size_t> bases;
+    VectorWithMemoryTracking<size_t> bases;
     bases.reserve(parts.size());
     size_t rows = 0;
     for (const auto & part : parts)
@@ -424,7 +424,7 @@ ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type)
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
     auto discriminators = ColumnVariant::ColumnDiscriminators::create();
     auto offsets = ColumnVariant::ColumnOffsets::create();
-    std::vector<UInt64> variant_sizes(variant_types.size(), 0);
+    VectorWithMemoryTracking<UInt64> variant_sizes(variant_types.size(), 0);
     for (const auto & part : parts)
     {
         const auto & variant = assert_cast<const ColumnVariant &>(*part);
