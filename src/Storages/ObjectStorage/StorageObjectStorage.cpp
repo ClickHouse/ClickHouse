@@ -728,6 +728,12 @@ void StorageObjectStorage::read(
         }
     });
 
+    /// The state can be pinned on another storage object of the same table (a `DataLakeCatalog` builds one per lookup),
+    /// so the configuration of this one may not be initialized yet.
+    if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
+        && storage_snapshot->metadata->datalake_table_state.has_value())
+        configuration->lazyInitializeIfNeeded(object_storage, local_context);
+
     /// The read pipeline needs a single, internally consistent metadata snapshot: the requested
     /// columns (prepareReadingFromFormat below), the field-id mapping used to list/read files, and
     /// the read-in-order sorting key must all come from the SAME data lake snapshot. Normally
