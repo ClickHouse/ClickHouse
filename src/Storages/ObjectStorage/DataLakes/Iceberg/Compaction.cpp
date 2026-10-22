@@ -192,6 +192,41 @@ namespace
 void checkIfIcebergHistorySupported(const IcebergHistory & history);
 }
 
+/// Always check the authoritative metadata head, not a cached path or version hint.
+static MetadataFileWithInfo getLiveCompactionMetadata(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    const DataLakeStorageSettings & data_lake_settings,
+    ContextPtr context,
+    LoggerPtr log)
+{
+    return getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_table_components.table_path,
+        data_lake_settings,
+        persistent_table_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_table_components.table_uuid,
+        persistent_table_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_metadata_pointer_overrides */ true);
+}
+
+/// Select the same current-schema entry for compaction planning and both rewrite paths.
+static Poco::JSON::Object::Ptr findCompactionCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
+{
+    const auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+    const auto schemas = metadata->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(static_cast<UInt32>(i));
+        if (schema->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            return schema;
+    }
+    return {};
+}
+
 static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
@@ -204,17 +239,12 @@ static Plan getPlan(
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
     Plan plan;
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method] = getLiveCompactionMetadata(
         object_storage,
-        persistent_table_components.table_path,
+        persistent_table_components,
         data_lake_settings,
-        persistent_table_components.metadata_cache,
         context,
-        log.get(),
-        persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_metadata_pointer_overrides */ true);
+        log);
 
     plan.metadata_compression_method = compression_method;
     plan.metadata_file_path = metadata_file_path;
@@ -243,17 +273,11 @@ static Plan getPlan(
     validateGarbageCollectionEnabled(initial_metadata_object, "optimize Iceberg table");
     checkIfIcebergHistorySupported(snapshots_info);
 
-    auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+    const auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
     Poco::JSON::Array::Ptr current_schema;
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i))->getArray(Iceberg::f_fields);
-            break;
-        }
-    }
+    if (auto schema = findCompactionCurrentSchema(initial_metadata_object))
+        current_schema = schema->getArray(Iceberg::f_fields);
 
     for (UInt32 i = 0; i < schemas->size(); ++i)
         persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
@@ -358,19 +382,8 @@ static void writeDataFiles(
     const String & write_format)
 {
     ColumnMapperPtr column_mapper;
-    {
-        auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
-        auto schemas = initial_plan.initial_metadata_object->getArray(Iceberg::f_schemas);
-        for (size_t i = 0; i < schemas->size(); ++i)
-        {
-            auto schema_object = schemas->getObject(static_cast<UInt32>(i));
-            if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-            {
-                column_mapper = createColumnMapper(schema_object);
-                break;
-            }
-        }
-    }
+    if (auto schema = findCompactionCurrentSchema(initial_plan.initial_metadata_object))
+        column_mapper = createColumnMapper(schema);
 
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
@@ -513,17 +526,9 @@ static bool writeConsolidatedManifestFile(
 
     LOG_INFO(log, "Writing consolidated manifest file from current snapshot {}", current_snapshot_id);
 
-    auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
-    Poco::JSON::Object::Ptr current_schema;
+    const auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
-            break;
-        }
-    }
+    auto current_schema = findCompactionCurrentSchema(metadata_object);
 
     if (!current_schema)
         throw Exception(
@@ -1088,17 +1093,7 @@ static String writeMetadataFiles(
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
-    auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
-    Poco::JSON::Object::Ptr current_schema;
-    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
-            break;
-        }
-    }
+    auto current_schema = findCompactionCurrentSchema(metadata_object);
 
     MetadataGenerator metadata_generator(metadata_object);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
@@ -1536,17 +1531,12 @@ void compactIcebergTable(
                 "Iceberg metadata changed since the table metadata was loaded; refusing OPTIMIZE to avoid rewriting stale metadata");
 
         auto log = getLogger("IcebergCompaction");
-        const auto [_metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        const auto [_metadata_version, metadata_file_path, compression_method] = getLiveCompactionMetadata(
             object_storage_,
-            persistent_table_components.table_path,
+            persistent_table_components,
             data_lake_settings,
-            persistent_table_components.metadata_cache,
             context_,
-            log.get(),
-            persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method,
-            /* force_fetch_latest_metadata */ true,
-            /* ignore_metadata_pointer_overrides */ true);
+            log);
         auto current_metadata = getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
@@ -1573,17 +1563,12 @@ void compactIcebergTable(
             write_format);
 
         const auto [_post_write_metadata_version, post_write_metadata_file_path, _post_write_compression_method]
-            = getLatestOrExplicitMetadataFileAndVersion(
+            = getLiveCompactionMetadata(
                 object_storage_,
-                persistent_table_components.table_path,
+                persistent_table_components,
                 data_lake_settings,
-                persistent_table_components.metadata_cache,
                 context_,
-                log.get(),
-                persistent_table_components.table_uuid,
-                persistent_table_components.metadata_compression_method,
-                /* force_fetch_latest_metadata */ true,
-                /* ignore_metadata_pointer_overrides */ true);
+                log);
         if (post_write_metadata_file_path != plan.metadata_file_path)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -1599,17 +1584,12 @@ void compactIcebergTable(
             persistent_table_components.table_path);
 
         const auto [_committed_metadata_version, current_metadata_file_path, _committed_compression_method]
-            = getLatestOrExplicitMetadataFileAndVersion(
+            = getLiveCompactionMetadata(
                 object_storage_,
-                persistent_table_components.table_path,
+                persistent_table_components,
                 data_lake_settings,
-                persistent_table_components.metadata_cache,
                 context_,
-                log.get(),
-                persistent_table_components.table_uuid,
-                persistent_table_components.metadata_compression_method,
-                /* force_fetch_latest_metadata */ true,
-                /* ignore_metadata_pointer_overrides */ true);
+                log);
         if (current_metadata_file_path != committed_metadata_file_path)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
