@@ -228,7 +228,7 @@ StorageSystemColumnsCache::StorageSystemColumnsCache(const StorageID & table_id_
         {"database", std::make_shared<DataTypeString>(), "Database name of the table the part belongs to."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"table_uuid", std::make_shared<DataTypeUUID>(), "UUID of the table. Stable across renames."},
-        {"part", std::make_shared<DataTypeString>(), "Name of the data part."},
+        {"part", std::make_shared<DataTypeString>(), "Name of the data part. For a part of a projection, the name of the parent part and the name of the projection, as `parent_part:projection`."},
         {"column", std::make_shared<DataTypeString>(), "Name of the column."},
         {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index of the cached range (inclusive)."},
         {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index of the cached range (exclusive)."},

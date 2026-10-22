@@ -364,6 +364,17 @@ public:
 
     [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
+    /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
+    /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
+    /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
+    /// nullable result is excluded because its NULLs do not take part in the nested comparison.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] bool isCompilable() const override

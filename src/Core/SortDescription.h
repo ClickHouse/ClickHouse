@@ -163,6 +163,9 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// grouping by them yields contiguous groups.
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
 
+/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header);
+
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
   */

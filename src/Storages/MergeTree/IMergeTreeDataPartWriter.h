@@ -83,11 +83,6 @@ public:
 protected:
     [[nodiscard]] SerializationPtr getSerialization(const String & column_name) const;
 
-    [[nodiscard]] ASTPtr getCodecDescriptionOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-
-    /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
-    [[nodiscard]] bool columnUsesDefaultCodec(const String & column_name) const;
-
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
     const String data_part_name;
