@@ -534,7 +534,10 @@ void EnabledQuota::usedProfileEvents(
     std::initializer_list<const ProfileEvents::Counters::Snapshot *> counters,
     bool check_exceeded) const
 {
-    if (empty)
+    /// Gate on the conservative `has_profile_event_limits` hint rather than on `empty`: the hint is
+    /// raised before a set with profile-event limits is published, while `empty` is lowered only after,
+    /// so trusting `empty` here would let a query that has already seen the hint skip the charge.
+    if (!hasProfileEventLimits())
         return;
     auto loaded = quotas.load();
     auto current_time = std::chrono::system_clock::now();
