@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -966,6 +967,14 @@ std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDepen
             new_name.getFullName());
 
     auto ast = database.getCreateTableQuery(table_name, query_context);
+    if (is_ordinary_view)
+    {
+        /// The query of the loaded view may be more qualified than the stored definition (see
+        /// `qualifyNamesFromLegacyMetadata`), and it is the one the view reads.
+        auto & create = ast->as<ASTCreateQuery &>();
+        auto metadata = table->getInMemoryMetadataPtr(query_context, false);
+        create.replace(create.select, metadata->getSelectQuery().inner_query->clone());
+    }
     auto global_context = query_context->getGlobalContext();
 
     /// The visitor erases the name it is given from the dependencies. For an ordinary view it is given the
