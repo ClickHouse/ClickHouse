@@ -142,26 +142,10 @@ public:
         Cancelled,
     };
 
-    /// Working memory of `updateNode`. The caller keeps it between the calls,
-    /// so that memory is not allocated every time a processor is updated.
-    struct UpdateNodeBuffers
-    {
-        DevectorWithMemoryTracking<Edge *> updated_edges;
-        DevectorWithMemoryTracking<Node *> updated_processors;
-        VectorWithMemoryTracking<Node *> pending_expansion;
-
-        /// A buffer that has grown larger than this number of elements is released instead of being kept,
-        /// so that a single wide wave of updates does not hold its memory until the end of the execution.
-        static constexpr size_t max_kept_capacity = 1024;
-
-        /// Empty the buffers before the next use.
-        void reset();
-    };
-
     /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);

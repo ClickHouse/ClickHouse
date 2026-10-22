@@ -8,7 +8,6 @@ from pathlib import Path
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
-from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.settings_history import (
     SETTINGS_DECLARATION_FILES,
     parse_declaration_changes,
@@ -278,15 +277,6 @@ if __name__ == "__main__":
         or []
     )
     info.store_kv_data("changed_files", changed_files)
-
-    # The merge-queue flaky check also reruns the tests that `master` changed
-    # after the PR's last CI run. Computed here, because only this job has the
-    # commit history.
-    if info.is_merge_queue_event:
-        info.store_kv_data(
-            "merge_queue_drift_tests",
-            Targeting.get_merge_queue_drift_tests(changed_files),
-        )
 
     # For the settings-history style check (check_style.py): when a settings declaration file
     # changed in a PR or merge-queue run, record which history records and declarations the

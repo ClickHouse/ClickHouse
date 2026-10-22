@@ -50,9 +50,8 @@ void intrusive_ptr_release(const IAST * p) noexcept
 
                 ASTs children;
                 children.swap(ptr->children);
-                void * storage = dynamic_cast<void *>(ptr);
                 ptr->~IAST();
-                LinkedList * elem = new (storage) LinkedList;
+                LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
                 elem->children.swap(children);
                 return elem;
             }

@@ -1,6 +1,6 @@
--- A null-safe comparison (`<=>`) of nullable keys is joined through two plain keys, `if(isNull(x), default, assumeNotNull(x))`
--- and `isNull(x)`, instead of a serialized `tuple(x)`, if all keys of the clause still pack into the 32 bytes of a
--- fixed-width hash key. The value key goes first, so that merge joins can skip runs of rows by it.
+-- A null-safe comparison (`<=>`) of nullable keys is joined through two plain keys, `isNull(x)` and
+-- `if(isNull(x), default, assumeNotNull(x))`, instead of a serialized `tuple(x)`, if all keys of the clause still pack
+-- into the 32 bytes of a fixed-width hash key.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
@@ -49,8 +49,6 @@ SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r
 SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.d <=> r.d SETTINGS join_algorithm = 'grace_hash';
 SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.d <=> r.d SETTINGS join_algorithm = 'full_sorting_merge';
 SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.d <=> r.d SETTINGS join_algorithm = 'partial_merge';
-SELECT count(), sum(l.id + r.id) FROM t_ns_left l ASOF JOIN t_ns_right r ON l.a <=> r.a AND l.id >= r.id SETTINGS join_algorithm = 'hash';
-SELECT count(), sum(l.id + r.id) FROM t_ns_left l ASOF JOIN t_ns_right r ON l.a <=> r.a AND l.id >= r.id SETTINGS join_algorithm = 'full_sorting_merge';
 
 SELECT 'String, compound and Nothing keys keep the tuple';
 SELECT * FROM (SELECT NULL AS x) l JOIN (SELECT NULL AS x) r ON l.x <=> r.x;

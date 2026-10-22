@@ -16,11 +16,11 @@ cleanup()
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --multiquery --query "
-SET sql_compatible_division_for_integers = 1;
+SET exact_division_for_integers = 1;
 CREATE FUNCTION ${exact_function} AS x -> x / 2;
-SET sql_compatible_division_for_integers = 0;
+SET exact_division_for_integers = 0;
 SELECT ${exact_function}(toInt64(5));
 CREATE FUNCTION ${legacy_function} AS x -> x / 2;
-SET sql_compatible_division_for_integers = 1;
+SET exact_division_for_integers = 1;
 SELECT ${legacy_function}(toInt64(5));
 "

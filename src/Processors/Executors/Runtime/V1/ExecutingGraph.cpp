@@ -34,7 +34,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char executing_graph_add_node_fail[];
-    extern const char executing_graph_build_fail[];
 }
 
 namespace Runtime::V1
@@ -46,12 +45,6 @@ ExecutingGraph::ExecutingGraph(
     , profile_processors(profile_processors_)
     , spill_state(nodes, memory_reservation_)
 {
-    /// Stands in for an allocation failure while the graph is built.
-    fiu_do_on(FailPoints::executing_graph_build_fail,
-    {
-        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_build_fail);
-    });
-
     /// Create nodes for every processor and register their spillable components.
     for (auto it = processors->begin(); it != processors->end(); ++it)
         addNode(it);
@@ -478,7 +471,6 @@ void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & proces
 void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
     StackWithMemoryTracking<Node *> stack;
-    UpdateNodeBuffers buffers;
 
     /// Add childless processors to stack.
     for (auto & node : nodes)
@@ -496,40 +488,16 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(*node->processor(), queue, async_queue, buffers);
+        updateNode(*node->processor(), queue, async_queue);
     }
 }
 
-namespace
-{
-
-template <typename Container>
-void resetBuffer(Container & container)
-{
-    if (container.capacity() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity)
-        Container().swap(container);
-    else
-        container.clear();
-}
-
-}
-
-void ExecutingGraph::UpdateNodeBuffers::reset()
-{
-    resetBuffer(updated_edges);
-    resetBuffer(updated_processors);
-    resetBuffer(pending_expansion);
-}
-
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
 {
     Processors delayed_destruction;
-    auto & updated_edges = buffers.updated_edges;
-    auto & updated_processors = buffers.updated_processors;
-    auto & pending_expansion = buffers.pending_expansion;
-
-    /// The buffers may be left non-empty by a previous call that exited early or threw.
-    buffers.reset();
+    DevectorWithMemoryTracking<Edge *> updated_edges;
+    DevectorWithMemoryTracking<Node *> updated_processors;
+    VectorWithMemoryTracking<Node *> pending_expansion;
 
     std::shared_lock read_lock(nodes_mutex);
 

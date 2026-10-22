@@ -5,7 +5,6 @@ import gzip
 import json
 import time
 import uuid
-from urllib.parse import quote
 
 import pytest
 import requests
@@ -304,14 +303,7 @@ def test_load_namespace(started_cluster):
 
 
 def test_malformed_create_namespace(started_cluster):
-    for body in [
-        None,
-        {},
-        {"namespace": []},
-        {"namespace": [""]},
-        {"namespace": ["a\x1fb"]},
-        {"namespace": ["ok", "a\x1fb"]},
-    ]:
+    for body in [None, {}, {"namespace": []}, {"namespace": [""]}]:
         response = requests.post(catalog_url("/v1/my_warehouse/namespaces"), json=body)
         assert response.status_code == 400, response.text
         assert_error_shape(response, "BadRequestException")
@@ -525,10 +517,6 @@ def test_clickhouse_rest_catalog_client(started_cluster):
     ns = f"client_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
     create_table(ns, "events")
-    level = "a b?#%41+/é&:;=@"
-    create_namespace([ns, level], properties={"location": f"s3://{BUCKET}/{ns}_special"})
-    create_table(f"{ns}%1F{quote(level, safe='')}", "events")
-    create_table(ns, "t?#x")
 
     node.query(f"""
         DROP DATABASE IF EXISTS rest_client_db;
@@ -539,17 +527,12 @@ def test_clickhouse_rest_catalog_client(started_cluster):
             storage_endpoint = 'http://minio1:9001/{BUCKET}'
         """)
     try:
-        tables = node.query("SHOW TABLES FROM rest_client_db").splitlines()
+        tables = node.query("SHOW TABLES FROM rest_client_db").split()
         assert f"{ns}.events" in tables
         assert node.query(f"SELECT count() FROM rest_client_db.`{ns}.events`") == "0\n"
         assert node.query(
             f"DESCRIBE rest_client_db.`{ns}.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
         ) == "id\tInt64\nname\tNullable(String)\n"
-        assert f"{ns}.{level}.events" in tables
-        assert node.contains_in_log(f"Requesting: .*/namespaces/{ns}%1F{quote(level, safe='')}/tables")
-        assert f"{ns}.t%3F%23x" in tables
-        assert node.query(f"SELECT count() FROM rest_client_db.`{ns}.{level}.events`") == "0\n"
-        assert node.query(f"EXISTS TABLE rest_client_db.`{ns}.t%3F%23x`") == "1\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 

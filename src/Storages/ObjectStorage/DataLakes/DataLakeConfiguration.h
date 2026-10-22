@@ -268,9 +268,9 @@ public:
         return DataLakeMetadata::supportsTotalRows(context, storage_type);
     }
 
-    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) override
+    std::optional<size_t> totalRows(ContextPtr local_context) override
     {
-        return getMetadata()->totalRows(local_context, state);
+        return getMetadata()->totalRows(local_context);
     }
 
     bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override

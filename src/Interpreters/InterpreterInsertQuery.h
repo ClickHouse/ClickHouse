@@ -31,8 +31,7 @@ public:
         bool no_squash_,
         bool no_destination,
         bool async_insert_,
-        bool is_initial_insert_ = false,
-        bool positional_arguments_already_resolved_ = false);
+        bool is_initial_insert_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -113,8 +112,6 @@ private:
     const bool async_insert;
     /// True only for the user-initiated INSERT the factory builds; internal inserts stay synchronous.
     const bool is_initial_insert;
-    /// See `SelectQueryOptions::positional_arguments_already_resolved`, applies to `query.select`.
-    const bool positional_arguments_already_resolved;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
 

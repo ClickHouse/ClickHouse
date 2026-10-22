@@ -128,7 +128,7 @@ public:
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 
-/// Wraps a reference to a SeekableReadBuffer into a unique pointer to SeekableReadBuffer.
+/// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);

@@ -111,10 +111,6 @@ public:
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
     virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
-    /// Makes this empty statistics object compatible with `other` (see `isCompatibleWith`), e.g. adopts
-    /// the set of sub-statistics of `other` deserialized from an older format.
-    virtual void copyStructureFrom(const IStatistics &) {}
-
 protected:
     /// The memory allocated by a `Field` outside of the `Field` itself.
     static size_t fieldAllocatedBytes(const Field & field);

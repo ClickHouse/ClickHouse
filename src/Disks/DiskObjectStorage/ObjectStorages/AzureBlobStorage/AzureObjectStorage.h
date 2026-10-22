@@ -60,8 +60,7 @@ public:
 
     bool exists(const StoredObject & object) const override;
 
-    /// Callers obtain tokens from it directly, bypassing the client, so a restricted server identity is never handed out.
-    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return connection_params.get()->getPermittedAuthMethod(); }
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return connection_params.get()->auth_method; }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
