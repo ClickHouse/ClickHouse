@@ -158,6 +158,18 @@ Number of aggregation streams that rebuilt their hash table to the shared set of
 
 Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).
 
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+Number of groups the top-K threshold merge actually merged and ranked as candidates.
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+Number of two-level buckets merged through the top-K threshold merge (Fagin's Threshold Algorithm) instead of the ordinary merge of every group.
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+Number of per-thread hash table cells the top-K threshold merge never touched because no group hiding behind them could rank among the top K.
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
@@ -2067,6 +2079,18 @@ Amount of data (uncompressed, before compression) written for JOIN in external m
 ### ExternalJoinWritePart {#externaljoinwritepart}
 
 Number of times a temporary file was written to disk for JOIN in external memory.
+
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+Number of compressed bytes written to temporary files to free the memory taken by the buffered data of packed data parts being written.
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+Amount of data (uncompressed, before compression) written to temporary files to free the memory taken by the buffered data of packed data parts being written.
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+Number of times the buffered data of a packed data part being written was moved to its temporary file to free memory.
 
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
@@ -4524,6 +4548,10 @@ The total number of Parquet data pages read
 
 The total number of row groups read from parquet data
 
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so that the functions applied to such a column are evaluated once per dictionary value
+
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 The total number of rows that were passed through filter
@@ -6448,6 +6476,14 @@ Number of times a text index pattern dictionary scan was skipped because an earl
 
 Candidate rows (postings intersection) examined by candidate-driven phrase search.
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+Total time spent finding the candidate rows of a phrase search: reading and intersecting the phrase tokens' posting lists.
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+Number of phrase searches that found their candidate rows with posting list cursors instead of intersecting bitmaps.
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 Number of times a phrase query skipped the text index because the phrase was estimated to match more rows than 'text_index_hint_max_selectivity', and was evaluated on the column instead.
@@ -6458,7 +6494,7 @@ Total time spent matching phrase positions over candidate rows.
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-Number of phrase searches executed over a text index. Repeated searches of the same phrase in the same part are served from the cache and are not counted.
+Number of phrase searches executed over a text index, one per reader of a granule. Readers served entirely from the cache are not counted.
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 

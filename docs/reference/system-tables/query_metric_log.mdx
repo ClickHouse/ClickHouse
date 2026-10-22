@@ -195,11 +195,13 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent reading and analyzing granules of the text index.
 - `ProfileEvent_TextIndexPositionsDecodeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent decoding text index position lists (.pos) for phrase search.
 - `ProfileEvent_TextIndexPhraseMatchMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent matching phrase positions over candidate rows.
+- `ProfileEvent_TextIndexPhraseCandidatesMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent finding the candidate rows of a phrase search: reading and intersecting the phrase tokens' posting lists.
 - `ProfileEvent_TextIndexPositionsBlocksRead` ([UInt64](/reference/data-types/int-uint)) — Number of position blocks read to match phrase queries over a text index. A block spanning two candidate windows is counted once per read.
 - `ProfileEvent_TextIndexPositionsBlocksTotal` ([UInt64](/reference/data-types/int-uint)) — Number of total position blocks of the phrase tokens before selecting which ones to read.
 - `ProfileEvent_TextIndexPositionsBytesRead` ([UInt64](/reference/data-types/int-uint)) — Bytes of position blocks read to match phrase queries over a text index.
 - `ProfileEvent_TextIndexPhraseCandidates` ([UInt64](/reference/data-types/int-uint)) — Candidate rows (postings intersection) examined by candidate-driven phrase search.
-- `ProfileEvent_TextIndexPhraseSearches` ([UInt64](/reference/data-types/int-uint)) — Number of phrase searches executed over a text index. Repeated searches of the same phrase in the same part are served from the cache and are not counted.
+- `ProfileEvent_TextIndexPhraseSearches` ([UInt64](/reference/data-types/int-uint)) — Number of phrase searches executed over a text index, one per reader of a granule. Readers served entirely from the cache are not counted.
+- `ProfileEvent_TextIndexPhraseCursorSearches` ([UInt64](/reference/data-types/int-uint)) — Number of phrase searches that found their candidate rows with posting list cursors instead of intersecting bitmaps.
 - `ProfileEvent_TextIndexPhraseFallbacks` ([UInt64](/reference/data-types/int-uint)) — Number of times a phrase query skipped the text index because the phrase was estimated to match more rows than 'text_index_hint_max_selectivity', and was evaluated on the column instead.
 - `ProfileEvent_TextIndexReadPostings` ([UInt64](/reference/data-types/int-uint)) — Number of times a posting list has been read from the text index.
 - `ProfileEvent_TextIndexUsedEmbeddedPostings` ([UInt64](/reference/data-types/int-uint)) — Number of times a posting list embedded in the dictionary has been used.
@@ -488,6 +490,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalJoinMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for JOIN in external memory.
 - `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for JOIN in external memory.
 - `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for JOIN in external memory.
+- `ProfileEvent_ExternalPackedPartWriterWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times the buffered data of a packed data part being written was moved to its temporary file to free memory.
+- `ProfileEvent_ExternalPackedPartWriterCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written to temporary files to free the memory taken by the buffered data of packed data parts being written.
+- `ProfileEvent_ExternalPackedPartWriterUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written to temporary files to free the memory taken by the buffered data of packed data parts being written.
 - `ProfileEvent_ExternalDistinctWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for DISTINCT in external memory.
 - `ProfileEvent_ExternalDistinctMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for DISTINCT in external memory.
 - `ProfileEvent_ExternalDistinctTailSpilledRows` ([UInt64](/reference/data-types/int-uint)) — Number of buffered rows selected for spilling before the final external DISTINCT merge.
@@ -1037,6 +1042,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AdaptiveAggregationSharedTableSpills` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation wrote its shared drain table out under memory pressure, at the part bound or on an explicit spill request.
 - `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.
 - `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).
+- `ProfileEvent_AggregationThresholdTopKMerges` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets merged through the top-K threshold merge (Fagin's Threshold Algorithm) instead of the ordinary merge of every group.
+- `ProfileEvent_AggregationThresholdTopKMergedGroups` ([UInt64](/reference/data-types/int-uint)) — Number of groups the top-K threshold merge actually merged and ranked as candidates.
+- `ProfileEvent_AggregationThresholdTopKPrunedCells` ([UInt64](/reference/data-types/int-uint)) — Number of per-thread hash table cells the top-K threshold merge never touched because no group hiding behind them could rank among the top K.
 - `ProfileEvent_AggregationHavingPrefilterGroupsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
@@ -1642,6 +1650,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ParquetPrefetcherReadEntireFile` ([UInt64](/reference/data-types/int-uint)) — The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher
 - `ProfileEvent_ParquetRowsFilterExpression` ([UInt64](/reference/data-types/int-uint)) — The total number of rows that were passed through filter
 - `ProfileEvent_ParquetColumnsFilterExpression` ([UInt64](/reference/data-types/int-uint)) — The total number of columns that were passed through filter
+- `ProfileEvent_ParquetRowsDecodedAsDictionaryIndexes` ([UInt64](/reference/data-types/int-uint)) — Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so that the functions applied to such a column are evaluated once per dictionary value
 - `ProfileEvent_FilterTransformPassedRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows that passed the filter in the query
 - `ProfileEvent_FilterTransformPassedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes that passed the filter in the query
 - `ProfileEvent_QueryPreempted` ([UInt64](/reference/data-types/int-uint)) — How many times tasks are paused and waiting due to 'priority' setting
