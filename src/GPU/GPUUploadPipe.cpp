@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -72,6 +73,20 @@ void DeviceFixedColumnBuffer::dropFront(size_t num_rows)
         "Cannot move bytes to the front of a device column");
     std::swap(values, spare);
     spare = DeviceBuffer(stream);
+}
+
+DeviceBuffer DeviceFixedColumnBuffer::takeFront(size_t bytes)
+{
+    if (bytes > values.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Taking {} bytes of a device column of {}", bytes, values.size());
+
+    DeviceBuffer taken = std::exchange(values, DeviceBuffer(stream));
+    const size_t tail = taken.size() - bytes;
+    if (tail != 0)
+        checkCuda(
+            cudaMemcpyAsync(values.grow(tail), taken.data() + bytes, tail, cudaMemcpyDeviceToDevice, stream.get()),
+            "Cannot keep the rest of a device column");
+    return taken;
 }
 
 DeviceVariableColumnBuffer::DeviceVariableColumnBuffer(cuda::stream_ref stream_)

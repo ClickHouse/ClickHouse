@@ -117,6 +117,10 @@ public:
 
     void clear() { used = 0; }
 
+    /// Allocates and frees in the order of `stream_` from now on, which the caller has made wait for what the old stream
+    /// does with the memory.
+    void setStream(cuda::stream_ref stream_) { stream = stream_; }
+
     const char * data() const { return memory; }
     char * data() { return memory; }
     size_t size() const { return used; }

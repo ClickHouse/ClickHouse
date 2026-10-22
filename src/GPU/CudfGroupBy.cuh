@@ -12,17 +12,26 @@ namespace DB::GPU
 /// A `GROUP BY` on the device through one `cudf::groupby::streaming_groupby`, which keeps the groups on the device across
 /// the batches: of keys of integers and strings, by the aggregates of value columns, several of one column or a `count` of
 /// none among them.
+///
+/// The last `derived.size()` of `values` are not in the batches: they are computed on the device from the others, the
+/// `Float64` values of each `GPUDerivedValue`, over the rows of a batch that its `WHERE` keeps.
 class CudfGroupBy
 {
 public:
     __host__ CudfGroupBy(
-        GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, cuda::stream_ref stream);
+        GPUSpan<GPUElementType> keys,
+        GPUSpan<GPUElementType> values,
+        GPUSpan<GPUDerivedValue> derived,
+        GPUSpan<GPUGroupByAggregate> aggregates,
+        cuda::stream_ref stream);
     __host__ ~CudfGroupBy();
 
     CudfGroupBy(const CudfGroupBy &) = delete;
     CudfGroupBy & operator=(const CudfGroupBy &) = delete;
 
-    /// The rows for which `filter`, when given, is false over `filter_columns` are left out.
+    /// The rows for which `filter`, when given, is false over `filter_columns` are left out. Of `values`, those of the
+    /// batch, without the derived ones. The columns must be there in the order of the stream of the `CudfGroupBy`, and
+    /// must stay until it has grouped them, in its order as well.
     __host__ void addBatch(
         GPUSpan<DeviceColumnView> keys,
         GPUSpan<DeviceColumnView> values,

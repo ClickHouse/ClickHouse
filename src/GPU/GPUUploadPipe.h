@@ -45,9 +45,11 @@ public:
 
     char * grow(size_t bytes) { return values.grow(bytes); }
 
-    char * mutableData() { return values.data(); }
-
     void dropFront(size_t num_rows);
+
+    /// Gives away the buffer of the column, of which the first `bytes` are taken, and keeps a copy of the rest, made in
+    /// the order of the stream, in a buffer of its own.
+    DeviceBuffer takeFront(size_t bytes);
 
     void clear() { values.clear(); }
 

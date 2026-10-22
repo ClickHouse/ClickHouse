@@ -106,8 +106,8 @@ for mode in device host; do
     compare_with_cpu "SELECT s, k, sum(v), max(i) FROM gpu_group_by_strings GROUP BY s, k ORDER BY s, k $SETTINGS"
     compare_with_cpu "SELECT t, s, min(v) FROM gpu_group_by_strings GROUP BY t, s ORDER BY t, s $SETTINGS"
     compare_with_cpu "SELECT k, s, sum(i) FROM gpu_group_by_strings GROUP BY k, s ORDER BY k, s $SETTINGS, gpu_aggregation_readers = 3"
-    # Pieces of a part grouped as they arrive, and the bytes of the grouped rows dropped from the
-    # device before the part ends.
+    # Pieces of a part much smaller than the part: the rows of strings wait on the device until the
+    # part ends, and are grouped then.
     compare_with_cpu "SELECT s, t, sum(v), min(b) FROM gpu_group_by_strings GROUP BY s, t ORDER BY s, t $SETTINGS, gpu_aggregation_batch_bytes = 65536"
 done
 

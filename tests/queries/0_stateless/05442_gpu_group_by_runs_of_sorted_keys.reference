@@ -1,0 +1,17 @@
+compressed
+- default batches
+ok
+ok
+ok
+ok
+ok
+ok
+ok
+- gpu_aggregation_batch_bytes = 65536, gpu_aggregation_readers = 3
+ok
+ok
+ok
+ok
+ok
+ok
+ok

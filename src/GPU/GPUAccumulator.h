@@ -129,6 +129,10 @@ private:
     size_t bytes = 0;
 };
 
+/// A `GROUP BY` on the device. Over compressed blocks, two threads of its own work for it: the device thread takes the
+/// pieces the readers send, expands them and puts the rows of each reader together column by column, and hands the rows
+/// that are there in every column over to the grouping thread, which groups them through the `CudfGroupBy`. So the
+/// device expands and copies the next rows while it groups those before, each on a stream of its own.
 class GroupByGPUAccumulator
 {
 public:
@@ -224,10 +228,18 @@ private:
         std::vector<StagedColumn> staging;
         std::vector<DeviceFixedColumnBuffer> device_columns;
         std::vector<std::vector<UInt64>> variable_offsets;
-        std::vector<DeviceBuffer> piece_offsets;
-        std::vector<DeviceBuffer> derived_values;
-        size_t grouped_rows = 0;
-        size_t dropped_rows = 0;
+        /// Of the part being read, the rows handed over to the grouping thread.
+        size_t sent_rows = 0;
+    };
+
+    /// Rows that the device thread hands over to the grouping thread, with the buffers they are in, from the first byte
+    /// of each, of the columns as `numColumns` orders them. The grouping thread frees them once it has grouped them.
+    struct GroupingBatch
+    {
+        std::vector<DeviceBuffer> columns;
+        size_t rows = 0;
+        /// In the compute stream, after the rows are in the buffers.
+        EventPtr filled;
     };
 
     size_t stagedRows() const { return value_pipes.front().stagedRows(); }
@@ -249,7 +261,11 @@ private:
     void enqueue(DeviceWork && work);
     void rethrowDeviceError();
 
+    /// Keeps the first error, and stops both threads of the device and the readers.
+    void fail(std::exception_ptr error) noexcept;
+
     void runDeviceThread();
+    void runGroupingThread();
 
     void appendRaw(DeviceWork && work);
     void flushPendingRaw(bool wait);
@@ -264,10 +280,12 @@ private:
     void finishPartOnDevice(size_t reader, size_t num_rows);
     size_t rowsOnDeviceInEveryColumn(const Reader & reader) const;
 
-    void groupRowsOnDevice(Reader & reader, size_t up_to);
+    /// Hands the first `num_rows` rows on the device of `reader` over to the grouping thread, and keeps the rest.
+    void sendRowsToGrouping(Reader & reader, size_t num_rows);
 
-    void dropGroupedRows(Reader & reader);
+    void groupOnDevice(GroupingBatch & batch);
 
+    /// Of plain columns, staged in the compute stream, and grouped before it goes on.
     void groupBatch(
         const std::vector<DeviceColumnView> & keys,
         const std::vector<DeviceColumnView> & value_columns,
@@ -316,6 +334,7 @@ private:
 
     DeviceStagingBudget staging_budget;
     std::unique_ptr<ConcurrentBoundedQueue<DeviceWork>> work_queue;
+    std::unique_ptr<ConcurrentBoundedQueue<GroupingBatch>> grouping_queue;
 
     std::mutex device_error_mutex;
     std::exception_ptr device_error;
@@ -325,6 +344,7 @@ private:
     std::atomic<UInt64> device_wait_microseconds{0};
 
     ThreadFromGlobalPool device_thread;
+    ThreadFromGlobalPool grouping_thread;
 };
 
 }

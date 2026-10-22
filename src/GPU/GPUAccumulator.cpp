@@ -4,8 +4,6 @@
 
 #include <GPU/GPUColumns.h>
 #include <GPU/GPUDevice.h>
-#include <GPU/GPUExpression.cuh>
-#include <GPU/OffsetsKernels.cuh>
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -326,6 +324,10 @@ constexpr size_t max_staged_device_bytes = 2UL * 1024 * 1024 * 1024;
 
 constexpr size_t queued_buffers_per_column = 2;
 
+/// The batches handed over to the grouping thread that wait for it, besides the one it groups: one, for the device
+/// thread to go on while it groups, as each holds its rows on the device besides those the readers gather.
+constexpr size_t queued_grouping_batches = 1;
+
 }
 
 GroupByGPUAccumulator::GroupByGPUAccumulator(
@@ -354,7 +356,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , staging_budget(max_staged_device_bytes)
 {
     group_stream = createStream();
-    group_by = std::make_unique<CudfGroupBy>(group_keys, withDerived(values, derived.size()), aggregates, cuda::stream_ref{group_stream.get()});
+    group_by = std::make_unique<CudfGroupBy>(
+        group_keys, withDerived(values, derived.size()), derived, aggregates, cuda::stream_ref{group_stream.get()});
 
     for (const auto & value : derived)
     {
@@ -395,31 +398,51 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
         reader.staging.resize(num_columns);
         reader.device_columns = deviceColumnsFor(key_element_types, values, filter_element_types, variable_column_indices.size(), compressed);
         reader.variable_offsets.resize(variable_column_indices.size());
-        for (size_t j = 0; j < variable_column_indices.size(); ++j)
-            reader.piece_offsets.emplace_back(GPUResources::get().compute.get());
-        for (size_t j = 0; j < derived.size(); ++j)
-            reader.derived_values.emplace_back(GPUResources::get().compute.get());
     }
 
     work_queue = std::make_unique<ConcurrentBoundedQueue<DeviceWork>>(queued_buffers_per_column * (num_columns + 1) * num_readers_);
+    grouping_queue = std::make_unique<ConcurrentBoundedQueue<GroupingBatch>>(queued_grouping_batches);
 
-    device_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup()]
+    grouping_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup()]
     {
         ThreadGroupSwitcher switcher(thread_group, ThreadName::GPU_GROUP_BY);
-        runDeviceThread();
+        runGroupingThread();
     });
+
+    try
+    {
+        device_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup()]
+        {
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::GPU_EXPANSION);
+            runDeviceThread();
+            /// After the last batch, or after an error, which has already stopped the grouping thread.
+            grouping_queue->finish();
+        });
+    }
+    catch (...)
+    {
+        /// No destructor runs for an object whose constructor throws.
+        grouping_queue->finish();
+        grouping_thread.join();
+        throw;
+    }
 }
 
 GroupByGPUAccumulator::~GroupByGPUAccumulator()
 {
-    if (!device_thread.joinable())
+    if (!device_thread.joinable() && !grouping_thread.joinable())
         return;
 
     try
     {
         work_queue->finish();
         staging_budget.cancel();
-        device_thread.join();
+        /// Lets the device thread through, should it wait for room for a batch.
+        grouping_queue->clearAndFinish();
+        if (device_thread.joinable())
+            device_thread.join();
+        if (grouping_thread.joinable())
+            grouping_thread.join();
     }
     catch (...)
     {
@@ -706,6 +729,19 @@ void GroupByGPUAccumulator::rethrowDeviceError()
     std::rethrow_exception(device_error);
 }
 
+void GroupByGPUAccumulator::fail(std::exception_ptr error) noexcept
+{
+    {
+        std::lock_guard lock(device_error_mutex);
+        if (!device_error)
+            device_error = std::move(error);
+    }
+    device_failed.store(true, std::memory_order_release);
+    work_queue->finish();
+    grouping_queue->clearAndFinish();
+    staging_budget.cancel();
+}
+
 void GroupByGPUAccumulator::finishPart(size_t reader_index, size_t num_rows)
 {
     Reader & reader = readerOrThrow(reader_index);
@@ -834,13 +870,7 @@ void GroupByGPUAccumulator::runDeviceThread()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        {
-            std::lock_guard lock(device_error_mutex);
-            device_error = std::current_exception();
-        }
-        device_failed.store(true, std::memory_order_release);
-        work_queue->finish();
-        staging_budget.cancel();
+        fail(std::current_exception());
     }
 }
 
@@ -965,10 +995,13 @@ void GroupByGPUAccumulator::finishExpansion()
 
 bool GroupByGPUAccumulator::hasPieceToGroup() const
 {
+    /// Of columns of varying width, the rows of a part are grouped at its end, see `sendRowsToGrouping`.
+    if (!variable_column_indices.empty())
+        return false;
+
     for (const Reader & reader : readers)
     {
-        const size_t ready = rowsOnDeviceInEveryColumn(reader);
-        if (ready > reader.grouped_rows && (reader.grouped_rows > 0 || ready - reader.grouped_rows >= reader_batch_rows))
+        if (rowsOnDeviceInEveryColumn(reader) >= reader_batch_rows)
             return true;
     }
     return false;
@@ -976,18 +1009,17 @@ bool GroupByGPUAccumulator::hasPieceToGroup() const
 
 bool GroupByGPUAccumulator::groupPiece()
 {
+    if (!variable_column_indices.empty())
+        return false;
+
     for (Reader & reader : readers)
     {
         const size_t ready = rowsOnDeviceInEveryColumn(reader);
-        if (ready <= reader.grouped_rows || (reader.grouped_rows == 0 && ready - reader.grouped_rows < reader_batch_rows))
+        if (ready < reader_batch_rows)
             continue;
 
-        groupRowsOnDevice(reader, ready);
-        /// At once, so that a reader keeps on the device only what is not grouped yet. Not in a part of columns of varying
-        /// width: the offsets of their rows still to arrive count from the part's start, and only the end of the part
-        /// clears them.
-        if (variable_column_indices.empty())
-            dropGroupedRows(reader);
+        /// At once, so that a reader keeps on the device only what is not handed over yet.
+        sendRowsToGrouping(reader, ready);
         return true;
     }
     return false;
@@ -1010,12 +1042,12 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
             continue;
 
         const DeviceFixedColumnBuffer & column = reader.device_columns[i];
-        if (reader.dropped_rows * column.elementSize() + column.bytes() != num_rows * column.elementSize())
+        if (reader.sent_rows * column.elementSize() + column.bytes() != num_rows * column.elementSize())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Column {} of a part came to {} rows and {} bytes on the device, where the part has {} rows of {} bytes",
+                "Column {} of a part came to {} rows grouped and {} bytes on the device, where the part has {} rows of {} bytes",
                 i,
-                reader.dropped_rows,
+                reader.sent_rows,
                 column.bytes(),
                 num_rows,
                 column.elementSize());
@@ -1025,25 +1057,24 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
     {
         const std::vector<UInt64> & offsets = reader.variable_offsets[j];
         const size_t chars_bytes = reader.device_columns[variable_column_indices[j]].bytes();
-        if (offsets.empty() || reader.dropped_rows + offsets.size() - 1 != num_rows || offsets.back() != chars_bytes)
+        if (offsets.empty() || reader.sent_rows + offsets.size() - 1 != num_rows || offsets.back() != chars_bytes)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Column {} of varying width of a part came to {} rows of {} offsets and {} bytes on the device, where the part has {} rows",
+                "Column {} of varying width of a part came to {} rows grouped, {} offsets and {} bytes on the device, where the part has {} rows",
                 variable_column_indices[j],
-                reader.dropped_rows,
+                reader.sent_rows,
                 offsets.size(),
                 chars_bytes,
                 num_rows);
     }
 
-    groupRowsOnDevice(reader, num_rows - reader.dropped_rows);
+    sendRowsToGrouping(reader, num_rows - reader.sent_rows);
 
     for (auto & column : reader.device_columns)
         column.clear();
     for (auto & offsets : reader.variable_offsets)
         offsets.clear();
-    reader.grouped_rows = 0;
-    reader.dropped_rows = 0;
+    reader.sent_rows = 0;
 }
 
 size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) const
@@ -1064,11 +1095,78 @@ size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) c
     return rows;
 }
 
-void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
+void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
 {
-    const size_t num_rows = up_to - reader.grouped_rows;
     if (num_rows == 0)
         return;
+
+    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+
+    GroupingBatch batch;
+    batch.rows = num_rows;
+    batch.columns.reserve(numColumns());
+    size_t next_variable = 0;
+    for (size_t i = 0; i < numColumns(); ++i)
+    {
+        DeviceFixedColumnBuffer & column = reader.device_columns[i];
+
+        /// The offsets of the rows of varying width still to arrive count from the part's start, so only the end of the
+        /// part hands them over, with all of its rows.
+        size_t bytes = num_rows * column.elementSize();
+        if (i >= first_offsets_column)
+            bytes = (num_rows + 1) * sizeof(UInt64);
+        else if (isVariableColumn(i))
+            bytes = reader.variable_offsets[next_variable++][num_rows];
+
+        if ((i >= first_offsets_column || isVariableColumn(i)) && (reader.sent_rows != 0 || bytes != column.bytes()))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{} rows of column {} of varying width of a part are grouped, of which {} were before, in {} bytes of {}",
+                num_rows,
+                i,
+                reader.sent_rows,
+                bytes,
+                column.bytes());
+
+        batch.columns.push_back(column.takeFront(bytes));
+    }
+
+    batch.filled = createEvent();
+    checkCuda(cudaEventRecord(batch.filled.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
+
+    if (!grouping_queue->push(std::move(batch)))
+    {
+        rethrowDeviceError();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU aggregation's grouping thread stopped taking rows without an error");
+    }
+
+    reader.sent_rows += num_rows;
+}
+
+void GroupByGPUAccumulator::runGroupingThread()
+{
+    try
+    {
+        GroupingBatch batch;
+        while (grouping_queue->pop(batch))
+        {
+            groupOnDevice(batch);
+            /// Freed in the order of the grouping stream, after the groups are made of them.
+            batch = {};
+        }
+    }
+    catch (...)
+    {
+        fail(std::current_exception());
+    }
+}
+
+void GroupByGPUAccumulator::groupOnDevice(GroupingBatch & batch)
+{
+    const cuda::stream_ref grouping = cuda::stream_ref{group_stream.get()};
+    checkCuda(cudaStreamWaitEvent(grouping.get(), batch.filled.get(), 0), "Cannot make the grouping stream wait for the compute stream");
+    for (DeviceBuffer & column : batch.columns)
+        column.setStream(grouping);
 
     std::vector<DeviceColumnView> keys;
     std::vector<DeviceColumnView> value_columns;
@@ -1081,40 +1179,25 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
     size_t next_variable = 0;
     for (size_t i = 0; i < first_offsets_column; ++i)
     {
+        const DeviceBuffer & column = batch.columns[i];
         if (isVariableColumn(i))
         {
-            const std::vector<UInt64> & host_offsets = reader.variable_offsets[next_variable];
-            const UInt64 first = host_offsets[reader.grouped_rows];
-            const UInt64 last = host_offsets[up_to];
-
-            const DeviceFixedColumn offsets = reader.device_columns[first_offsets_column + next_variable].fixedView();
-            DeviceBuffer & rebased = reader.piece_offsets[next_variable];
-            rebased.clear();
-            auto * rebased_offsets = reinterpret_cast<uint64_t *>(rebased.grow((num_rows + 1) * sizeof(UInt64)));
-            subtractFromOffsets(
-                reinterpret_cast<const uint64_t *>(offsets.data) + reader.grouped_rows,
-                num_rows + 1,
-                first,
-                rebased_offsets,
-                GPUResources::get().compute.get());
-
             const DeviceVariableColumn view{
-                .offsets = rebased_offsets,
-                .chars = reader.device_columns[i].fixedView().data + first,
-                .rows = num_rows,
-                .chars_bytes = last - first,
+                .offsets = reinterpret_cast<const uint64_t *>(batch.columns[first_offsets_column + next_variable].data()),
+                .chars = column.data(),
+                .rows = batch.rows,
+                .chars_bytes = column.size(),
             };
             (i < group_keys.size() ? keys : value_columns).push_back(view);
             ++next_variable;
             continue;
         }
 
-        const DeviceFixedColumn whole = reader.device_columns[i].fixedView();
-        const DeviceFixedColumn view{
-            .element_type = whole.element_type,
-            .data = whole.data + reader.grouped_rows * sizeOf(whole.element_type),
-            .rows = num_rows,
-        };
+        const GPUElementType element_type = i < group_keys.size()
+            ? key_element_types[i]
+            : (i < group_keys.size() + values.size() ? dataElementTypeOf(values[i - group_keys.size()])
+                                                      : filter_element_types[i - group_keys.size() - values.size()]);
+        const DeviceFixedColumn view{.element_type = element_type, .data = column.data(), .rows = batch.rows};
 
         if (i < group_keys.size())
             keys.push_back(view);
@@ -1124,33 +1207,13 @@ void GroupByGPUAccumulator::groupRowsOnDevice(Reader & reader, size_t up_to)
             filter_columns.push_back(view);
     }
 
-    if (!derived.empty())
-    {
-        std::vector<DeviceFixedColumn> fixed_values;
-        fixed_values.reserve(value_columns.size());
-        for (const auto & value : value_columns)
-            fixed_values.push_back(value.kind == GPUColumnKind::Fixed ? value.fixed : DeviceFixedColumn{});
-
-        for (size_t j = 0; j < derived.size(); ++j)
-        {
-            DeviceBuffer & buffer = reader.derived_values[j];
-            buffer.clear();
-            auto * out = reinterpret_cast<double *>(buffer.grow(num_rows * sizeof(double)));
-            evaluateDerivedValue(derived[j], fixed_values, num_rows, out, GPUResources::get().compute);
-            value_columns.push_back(DeviceFixedColumn{
-                .element_type = GPUElementType::Float64, .data = reinterpret_cast<const char *>(out), .rows = num_rows});
-        }
-    }
-
     Stopwatch watch;
 
-    groupBatch(keys, value_columns, filter_columns);
+    group_by->addBatch(keys, value_columns, filter_columns, filter ? &*filter : nullptr);
 
-    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
-
-    reader.grouped_rows = up_to;
 }
 
 void GroupByGPUAccumulator::groupBatch(
@@ -1172,37 +1235,6 @@ void GroupByGPUAccumulator::groupBatch(
     checkCuda(cudaStreamWaitEvent(compute.get(), grouped.get(), 0), "Cannot make the compute stream wait for the grouping stream");
 }
 
-void GroupByGPUAccumulator::dropGroupedRows(Reader & reader)
-{
-    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
-    for (size_t i = 0; i < first_offsets_column; ++i)
-    {
-        if (isVariableColumn(i))
-            continue;
-        reader.device_columns[i].dropFront(reader.grouped_rows);
-    }
-
-    for (size_t j = 0; j < variable_column_indices.size(); ++j)
-    {
-        std::vector<UInt64> & offsets = reader.variable_offsets[j];
-        const UInt64 dropped_bytes = offsets[reader.grouped_rows];
-
-        reader.device_columns[variable_column_indices[j]].dropFront(dropped_bytes);
-
-        DeviceFixedColumnBuffer & device_offsets = reader.device_columns[first_offsets_column + j];
-        device_offsets.dropFront(reader.grouped_rows);
-        auto * offsets_on_device = reinterpret_cast<uint64_t *>(device_offsets.mutableData());
-        subtractFromOffsets(offsets_on_device, device_offsets.rows(), dropped_bytes, offsets_on_device, GPUResources::get().compute.get());
-
-        offsets.erase(offsets.begin(), offsets.begin() + reader.grouped_rows);
-        for (UInt64 & offset : offsets)
-            offset -= dropped_bytes;
-    }
-
-    reader.dropped_rows += reader.grouped_rows;
-    reader.grouped_rows = 0;
-}
-
 size_t GroupByGPUAccumulator::finalize()
 {
     if (compressed)
@@ -1211,6 +1243,7 @@ size_t GroupByGPUAccumulator::finalize()
         work.kind = DeviceWork::Kind::Finish;
         enqueue(std::move(work));
         device_thread.join();
+        grouping_thread.join();
         rethrowDeviceError();
     }
     else
