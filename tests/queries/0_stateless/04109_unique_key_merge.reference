@@ -25,3 +25,7 @@ no_sorting_key	103	c
 no_sorting_key	104	new
 no_sorting_key	105	c
 no_sorting_key_count	19	19
+storage insert	all_1_1_0	Full
+storage insert	all_2_2_0	Full
+storage merge	all_1_2_1	Full
+storage mutation	all_1_2_1_3	Full

@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 
 
@@ -78,6 +79,9 @@ private:
 
     IExecutableTask::TaskResultCallback task_result_callback;
     MutateTaskPtr mutate_task;
+
+    /// UNIQUE KEY only, committed by `UniqueKeyTxnCommit::merge`.
+    MergeTreeTransactionHolder uk_txn;
 
     ProfileEvents::Counters profile_counters;
 

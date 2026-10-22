@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 
 #include <Core/Settings.h>
+#include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -294,6 +295,16 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
     }
 }
 
+
+void UniqueKeyDenseIndexOps::copyDenseIndex(const IDataPartStorage & source, IDataPartStorage & destination, bool fsync)
+{
+    auto in = source.readFile(SSTIndexWriter::FILE_NAME, getReadSettings(), std::nullopt);
+    auto out = destination.writeFile(SSTIndexWriter::FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, {});
+    copyData(*in, *out);
+    out->finalize();
+    if (fsync)
+        out->sync();
+}
 
 void UniqueKeyDenseIndexOps::onPartAttach(MutableDataPartPtr & part) const
 {

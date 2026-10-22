@@ -6,6 +6,7 @@
 --   4. DEDUPLICATE: OPTIMIZE ... DEDUPLICATE and its DRY RUN form are rejected
 --   5. merged index: an overwrite after the merge kills the key's own row when a source had dead rows
 --      (interleaved sources; no sorting key with a source whose every row is dead)
+--   6. storage: the insert, the merge and a mutation write Full parts under Packed storage settings
 
 SET enable_unique_key = 1;
 SET optimize_trivial_count_query = 0;
@@ -146,6 +147,29 @@ SELECT 'no_sorting_key', id, v FROM uk_merge_index WHERE id IN (4, 5, 6, 103, 10
 SELECT 'no_sorting_key_count', count(), countDistinct(id) FROM uk_merge_index; -- 19 19
 
 DROP TABLE uk_merge_index;
+
+-- 6. storage: red if a UNIQUE KEY part can be written with Packed storage.
+DROP TABLE IF EXISTS uk_merge_storage;
+CREATE TABLE uk_merge_storage (id UInt32, v UInt32)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
+SETTINGS min_bytes_for_full_part_storage = 1000000000, min_rows_for_full_part_storage = 1000000000;
+
+SYSTEM STOP MERGES uk_merge_storage;
+INSERT INTO uk_merge_storage SELECT number, 1 FROM numbers(10);
+INSERT INTO uk_merge_storage SELECT number + 10, 1 FROM numbers(10);
+SELECT 'storage insert', name, part_storage_type FROM system.parts
+WHERE database = currentDatabase() AND table = 'uk_merge_storage' AND active ORDER BY name;
+
+SYSTEM START MERGES uk_merge_storage;
+OPTIMIZE TABLE uk_merge_storage FINAL;
+SELECT 'storage merge', name, part_storage_type FROM system.parts
+WHERE database = currentDatabase() AND table = 'uk_merge_storage' AND active ORDER BY name;
+
+ALTER TABLE uk_merge_storage MODIFY COLUMN v UInt64 SETTINGS mutations_sync = 2;
+SELECT 'storage mutation', name, part_storage_type FROM system.parts
+WHERE database = currentDatabase() AND table = 'uk_merge_storage' AND active ORDER BY name;
+
+DROP TABLE uk_merge_storage;
 
 DROP TABLE uk_merge_delete;
 DROP TABLE uk_merge_background;

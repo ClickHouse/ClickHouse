@@ -12,6 +12,7 @@ namespace DB
 {
 
 class MergeTreeData;
+class IDataPartStorage;
 class IMergeTreeDataPart;
 struct StorageInMemoryMetadata;
 
@@ -35,6 +36,9 @@ public:
         const std::shared_ptr<const IMergeTreeDataPart> & part,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & uk_names);
+
+    /// Copy `unique_key_index.sst` into a part whose rows are the source's, in the same order.
+    static void copyDenseIndex(const IDataPartStorage & source, IDataPartStorage & destination, bool fsync);
 
     /// ===== Per-storage load lifecycle (instance) =====
 

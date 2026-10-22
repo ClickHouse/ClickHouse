@@ -53,6 +53,9 @@
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -3349,6 +3352,19 @@ private:
             }
         }
 
+        /// Rows and key are unchanged, so the source's dense index fits the new part.
+        /// A hardlink cannot cross storage types or packed storage.
+        if (const auto sst = ctx->source_part->checksums.files.find(SSTIndexWriter::FILE_NAME); sst != ctx->source_part->checksums.files.end())
+        {
+            const auto & source_storage = ctx->source_part->getDataPartStorage();
+            auto & new_storage = ctx->new_data_part->getDataPartStorage();
+            if (!isPackedPartStorage(source_storage) && source_storage.getType() == new_storage.getType())
+                entries_to_hardlink.insert(SSTIndexWriter::FILE_NAME);
+            else
+                UniqueKeyDenseIndexOps::copyDenseIndex(source_storage, new_storage, ctx->need_sync);
+            ctx->all_gathered_data.checksums.addFile(SSTIndexWriter::FILE_NAME, sst->second);
+        }
+
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
         bool lightweight_delete_drop = lightweight_delete_mode
             && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
@@ -4768,6 +4784,10 @@ bool MutateTask::prepare()
         if (copy_checksumns)
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
+        /// The UNIQUE KEY commit rewrites it in place.
+        if (ctx->metadata_snapshot->hasUniqueKey())
+            files_to_copy_instead_of_hardlinks.insert("checksums.txt");
+
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
 
         IDataPartStorage::ClonePartParams clone_params
@@ -4790,6 +4810,11 @@ bool MutateTask::prepare()
                 part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
             ctx->temporary_directory_lock = std::move(lock);
         }
+
+        /// No longer shared with the source, so zero-copy replication must not keep their blobs for it.
+        if (ctx->metadata_snapshot->hasUniqueKey())
+            for (const auto & file : DeleteBitmapFileOps::removeClonedBitmaps(*part))
+                ctx->hardlinked_files.hardlinks_from_source_part.erase(file.fileName());
 
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
         promise.set_value(std::move(part));
@@ -5113,6 +5138,11 @@ bool MutateTask::prepare()
             ctx->updated_header,
             ctx->files_to_skip,
             ctx->files_to_rename);
+
+        /// The UNIQUE KEY commit writes the result's bitmaps.
+        if (ctx->metadata_snapshot->hasUniqueKey())
+            for (const auto & file : DeleteBitmapFileOps::enumerateFiles(ctx->source_part->getDataPartStorage()))
+                ctx->files_to_rename.emplace_back(file.fileName(), "");
 
         /// In case of replicated merge tree with zero copy replication
         /// Here ClickHouse has to follow the common procedure when deleting new part in temporary state

@@ -2,6 +2,7 @@
 # Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
 # UNIQUE KEY: a DELETE racing another writer, one case per pair, ordered by the other writer.
 #   1. vs merge, the DELETE parked: the merge retires the DELETE's target, so the partition is rescanned and the DELETE applies
+#   2. vs mutation, the mutation parked: the DELETE's kill is moved onto the result with the source's other kills
 #   3. vs insert, the DELETE parked: no conflict, both commit, the INSERT's rows are neither killed nor lost
 #   4. vs DELETE, both parked: two overlapping DELETEs both commit, and each matched row is dead once
 #   5. vs TRUNCATE, the DELETE parked: the target is gone, so the rescan finds nothing and the DELETE leaves no marker part
@@ -10,15 +11,19 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=./mergetree_mutations.lib
+. "$CUR_DIR"/mergetree_mutations.lib
 
 set -e
 
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_unique_key 1 --optimize_trivial_count_query 0 --optimize_use_implicit_projections 0"
 
 DELETE_FP="unique_key_delete_pause_before_commit"
+MERGE_FP="unique_key_merge_pause_before_commit"
 
 cleanup() {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $DELETE_FP" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MERGE_FP" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -116,6 +121,44 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_del_vs_merge"
+
+# 2. vs mutation, the mutation parked: red if the late kill is not moved onto the result (`survivors`
+# regains 0, 1, 2).
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_mut_late SYNC"
+
+$CLICKHOUSE_CLIENT --query "
+CREATE TABLE uk_mut_late (id UInt64, v String)
+ENGINE = MergeTree
+UNIQUE KEY (id)
+ORDER BY (id)
+SETTINGS merge_selector_algorithm = 'Manual',
+         min_bytes_for_wide_part = 0"
+
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_mut_late SELECT number, 'a' FROM numbers(0, 10)"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $MERGE_FP"
+
+# alter_sync = 0, or the ALTER blocks on the pause the next line waits for.
+$CLICKHOUSE_CLIENT --alter_sync 0 --query "ALTER TABLE uk_mut_late RENAME COLUMN v TO w"
+
+$CLICKHOUSE_CLIENT --max_execution_time 120 --query "SYSTEM WAIT FAILPOINT $MERGE_FP PAUSE"
+
+$CLICKHOUSE_CLIENT --query "DELETE FROM uk_mut_late WHERE id < 3"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MERGE_FP"
+wait_for_all_mutations uk_mut_late
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'late_kill_on_the_result', name, rows, unique_key_bitmap_versions FROM system.parts
+    WHERE database = currentDatabase() AND table = 'uk_mut_late' AND active AND rows > 0
+    ORDER BY name"
+
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'survivors', groupArray(id) FROM (SELECT id FROM uk_mut_late ORDER BY id)"
+
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_mut_late SYNC"
 
 # 3. vs insert, the DELETE parked: red if the DELETE fails (`insert_delete_ok 0`), kills a row
 # committed after its snapshot (`expected_rows` 0), or leaves a key live twice (`every_id_unique` 0).
