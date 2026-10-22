@@ -44,3 +44,10 @@ NOT_IMPLEMENTED
 2
 2
 0
+-- table function arguments that the rename cannot rewrite
+index_v: NOT_IMPLEMENTED
+loop_v: NOT_IMPLEMENTED
+qualified_loop_v: NOT_IMPLEMENTED
+param_v: NOT_IMPLEMENTED
+1
+1

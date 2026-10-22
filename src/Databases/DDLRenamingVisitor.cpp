@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AMBIGUOUS_IDENTIFIER;
+    extern const int NOT_IMPLEMENTED;
     extern const int WRONG_DDL_RENAMING_SETTINGS;
 }
 
@@ -562,6 +563,66 @@ namespace
             return nullptr;
         return identifier;
     }
+
+    /// The table functions that read a table of a local database, with the number of arguments of their form whose first
+    /// argument is the database (0 if every form). The form with one argument less takes the table, maybe as `db.t`.
+    constexpr std::pair<std::string_view, size_t> local_table_functions[] = {
+        {"loop", 2}, {"merge", 2}, {"mergeTreeAnalyzeIndexes", 0}, {"mergeTreeCodecBlockCounts", 0}, {"mergeTreeIndex", 0},
+        {"mergeTreeProjection", 0}, {"mergeTreeTextIndex", 0}, {"prometheusQuery", 4}, {"prometheusQueryRange", 6},
+        {"timeSeriesData", 2}, {"timeSeriesMetricFamilies", 2}, {"timeSeriesMetrics", 2}, {"timeSeriesSamples", 2},
+        {"timeSeriesSelector", 5}, {"timeSeriesTags", 2}, {"timeSeriesTimeRanges", 2}};
+
+    /// Whether the table function `function` reads a table of `database` or is a parameterized view call `database.view(...)`.
+    bool tableFunctionNamesDatabase(const ASTFunction & function, const String & database)
+    {
+        if (function.name.starts_with(database + "."))
+            return true;
+        const auto * form = std::ranges::find(local_table_functions, std::string_view(function.name), [](const auto & entry) { return entry.first; });
+        if (form == std::end(local_table_functions) || !function.arguments || function.arguments->children.empty())
+            return false;
+
+        const auto & arguments = function.arguments->children;
+        const auto * identifier = dynamic_cast<const ASTIdentifier *>(arguments[0].get());
+        if (identifier && identifier->isParam())
+            return false;
+        if (form->second == 0 || arguments.size() == form->second)
+        {
+            if (const auto * literal = arguments[0]->as<ASTLiteral>())
+                return literal->value.getType() == Field::Types::String && literal->value.safeGet<String>() == database;
+            return identifier && identifier->name() == database;
+        }
+        return arguments.size() + 1 == form->second && identifier && identifier->name_parts.size() == 2
+            && identifier->name_parts[0] == database;
+    }
+
+    /// `function`, or a function passed to it as in `loop(mergeTreeIndex(...))`, that names `database`.
+    const ASTFunction * findInTableFunction(const ASTFunction & function, const String & database)
+    {
+        if (isRemoteTableFunction(function))
+            return nullptr;
+        if (tableFunctionNamesDatabase(function, database))
+            return &function;
+        if (function.arguments)
+            for (const auto & argument : function.arguments->children)
+                if (const auto * nested = argument->as<ASTFunction>())
+                    if (const auto * found = findInTableFunction(*nested, database))
+                        return found;
+        return nullptr;
+    }
+
+    const ASTFunction * findTableFunctionNamingDatabase(const IAST & ast, const String & database)
+    {
+        if (isRemoteTableFunction(ast))
+            return nullptr;
+        if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+            if (const auto * function = table_expression->table_function->as<ASTFunction>())
+                if (const auto * found = findInTableFunction(*function, database))
+                    return found;
+        for (const auto & child : ast.children)
+            if (const auto * found = findTableFunctionNamingDatabase(*child, database))
+                return found;
+        return nullptr;
+    }
 }
 
 DatabaseRenamingInViewDefinition::DatabaseRenamingInViewDefinition(
@@ -812,6 +873,15 @@ void DatabaseRenamingInViewDefinition::apply(const ContextPtr & global_context)
     DDLRenamingMap renaming_map;
     renaming_map.setNewDatabaseName(old_database_name, new_database_name);
     renameDatabaseAndTableNameInCreateQuery(create_query, renaming_map, global_context);
+}
+
+void DatabaseRenamingInViewDefinition::checkTableFunctions() const
+{
+    if (const auto * function = findTableFunctionNamingDatabase(*create_query, old_database_name))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot rename database {} to {}, because {} refers to it in the table function {}, which the rename cannot rewrite. "
+            "Drop or rewrite it before renaming",
+            backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), view_name.getFullName(), function->name);
 }
 
 void DatabaseRenamingInViewDefinition::throwAmbiguous(const String & reason) const

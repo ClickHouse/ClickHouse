@@ -166,6 +166,31 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "
 "
 rm -rf "${LOCAL_DIR}"
 
+echo "-- table function arguments that the rename cannot rewrite"
+function refused_by()
+{
+    ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "$1" 2>&1 >/dev/null \
+        | sed -n "s/.*because ext\.\([a-z_]*\) refers to it in the table function .*(\([A-Z_]*\)).*/\1: \2/p"
+}
+${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "
+    CREATE DATABASE f ENGINE = Atomic;
+    CREATE DATABASE ext ENGINE = Atomic;
+    CREATE TABLE f.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO f.t VALUES (1);
+    CREATE VIEW f.p AS SELECT {n:UInt64} AS x;
+    CREATE VIEW ext.index_v AS SELECT x FROM loop(mergeTreeIndex(f, t)) LIMIT 1;
+    CREATE VIEW ext.loop_v AS SELECT * FROM loop('f', 't') LIMIT 1;
+    CREATE VIEW ext.qualified_loop_v AS SELECT * FROM loop(f.t) LIMIT 1;
+    CREATE VIEW ext.param_v AS SELECT * FROM f.p(n = 1);
+    CREATE VIEW ext.file_v AS SELECT * FROM file('f', 'CSV', 'x UInt64');
+"
+refused_by "RENAME DATABASE f TO g"
+refused_by "DROP VIEW ext.index_v; RENAME DATABASE f TO g"
+refused_by "DROP VIEW ext.loop_v; RENAME DATABASE f TO g"
+refused_by "DROP VIEW ext.qualified_loop_v; RENAME DATABASE f TO \`g.dot\`"
+${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "SELECT * FROM ext.param_v; RENAME DATABASE f TO g; SELECT * FROM ext.param_v"
+rm -rf "${LOCAL_DIR}"
+
 query=""
 for db in ${DICT_B} ${EXT} ${RN} ${C0} ${GB} ${TB} ${TM}; do
     query+="DROP DATABASE IF EXISTS ${db} SYNC;"

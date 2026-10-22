@@ -141,6 +141,7 @@ ASTPtr ViewDefinitionsRenaming::rename(
     auto renamed = definition->clone();
     DatabaseRenamingInViewDefinition renaming(renamed, old_database_name, new_database_name, name);
     renaming.apply(context->getGlobalContext());
+    renaming.checkTableFunctions();
     if (getObjectDefinitionFromCreateQuery(renamed) == getObjectDefinitionFromCreateQuery(definition))
         return nullptr;
     if (tables_to_check)

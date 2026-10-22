@@ -75,6 +75,10 @@ public:
     /// Renames in place.
     void apply(const ContextPtr & global_context);
 
+    /// Throws NOT_IMPLEMENTED if, after `apply`, a table function still names the old database: in an argument
+    /// the rename does not rewrite, or as a parameterized view call it cannot represent.
+    void checkTableFunctions() const;
+
 private:
     /// A name written in the definition outside the renamed positions, split into components on '.'.
     struct WrittenName
