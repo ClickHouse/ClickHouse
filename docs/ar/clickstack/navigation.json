@@ -98,12 +98,13 @@
         "ar/clickstack/features/event-patterns",
         "ar/clickstack/features/event-deltas",
         "ar/clickstack/features/alerts",
+        "ar/clickstack/features/anomaly-detection",
         "ar/clickstack/service-maps",
         "ar/clickstack/features/session-replay",
         "ar/clickstack/mcp",
         "ar/clickstack/url-parameters",
         {
-          "group": "أيام العروض التوضيحية",
+          "group": "Demo days",
           "pages": [
             "ar/clickstack/demo-days/index",
             {

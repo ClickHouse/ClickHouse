@@ -98,6 +98,7 @@
         "zh/clickstack/features/event-patterns",
         "zh/clickstack/features/event-deltas",
         "zh/clickstack/features/alerts",
+        "zh/clickstack/features/anomaly-detection",
         "zh/clickstack/service-maps",
         "zh/clickstack/features/session-replay",
         "zh/clickstack/mcp",
@@ -110,14 +111,14 @@
               "group": "2026",
               "pages": [
                 {
-                  "group": "10 月",
+                  "group": "十月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-10-08",
                     "zh/clickstack/demo-days/2026/2026-10-01"
                   ]
                 },
                 {
-                  "group": "9 月",
+                  "group": "九月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-09-24",
                     "zh/clickstack/demo-days/2026/2026-09-17",
@@ -126,7 +127,7 @@
                   ]
                 },
                 {
-                  "group": "8 月",
+                  "group": "八月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-08-28",
                     "zh/clickstack/demo-days/2026/2026-08-21",
@@ -135,7 +136,7 @@
                   ]
                 },
                 {
-                  "group": "7 月",
+                  "group": "七月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-07-31",
                     "zh/clickstack/demo-days/2026/2026-07-24",
@@ -145,7 +146,7 @@
                   ]
                 },
                 {
-                  "group": "6 月",
+                  "group": "六月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-06-26",
                     "zh/clickstack/demo-days/2026/2026-06-18",
@@ -154,7 +155,7 @@
                   ]
                 },
                 {
-                  "group": "5 月",
+                  "group": "五月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-05-29",
                     "zh/clickstack/demo-days/2026/2026-05-22",
@@ -163,7 +164,7 @@
                   ]
                 },
                 {
-                  "group": "4 月",
+                  "group": "四月",
                   "pages": [
                     "zh/clickstack/demo-days/2026/2026-04-17",
                     "zh/clickstack/demo-days/2026/2026-04-10",

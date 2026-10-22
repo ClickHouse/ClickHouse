@@ -98,6 +98,7 @@
         "ko/clickstack/features/event-patterns",
         "ko/clickstack/features/event-deltas",
         "ko/clickstack/features/alerts",
+        "ko/clickstack/features/anomaly-detection",
         "ko/clickstack/service-maps",
         "ko/clickstack/features/session-replay",
         "ko/clickstack/mcp",

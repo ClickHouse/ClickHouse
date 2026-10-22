@@ -18,7 +18,7 @@ ClickStack 内置了 [Model Context Protocol (MCP)](https://modelcontextprotocol
 </Frame>
 
 <div id="availability">
-  ## 可用性
+  ## 可用性 {#availability}
 </div>
 
 MCP 服务器可用于以下 ClickStack 部署类型：
@@ -37,20 +37,20 @@ MCP 服务器可用于以下 ClickStack 部署类型：
 </Info>
 
 <div id="managed-clickstack">
-  ## ClickHouse Cloud 上的 ClickStack
+  ## ClickHouse Cloud 上的 ClickStack {#managed-clickstack}
 </div>
 
 ClickHouse Cloud 上的 ClickStack 通过 Cloud MCP 端点 `https://mcp.clickhouse.cloud/clickstack` 连接，并使用 OAuth 2.0 进行身份验证。该端点不支持 API key 身份验证。
 
 <div id="managed-prerequisites">
-  ### 前置条件
+  ### 前置条件 {#managed-prerequisites}
 </div>
 
 * 一个正在运行且已[启用 ClickStack](/zh/clickstack/deployment/managed)的 ClickHouse Cloud 服务
 * 服务上已[启用 MCP](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)——打开 Cloud 控制台，点击 **Connect**，选择 **Connect with MCP**，然后将其切换为开启状态
 
 <div id="managed-endpoint">
-  ### 端点
+  ### 端点 {#managed-endpoint}
 </div>
 
 ```text
@@ -60,7 +60,7 @@ https://mcp.clickhouse.cloud/clickstack
 身份验证采用 OAuth 2.0。首次连接时，MCP 客户端会打开浏览器窗口，供你使用 ClickHouse Cloud 凭据登录。无需 API 密钥。
 
 <div id="managed-connecting-a-client">
-  ### 连接 MCP 客户端
+  ### 连接 MCP 客户端 {#managed-connecting-a-client}
 </div>
 
 每个客户端在首次连接时都会自动处理 OAuth 流程。
@@ -137,20 +137,18 @@ https://mcp.clickhouse.cloud/clickstack
 </Tabs>
 
 <div id="managed-service-override">
-  ### 指定特定服务
+  ### 指定特定服务 {#managed-service-override}
 </div>
 
 如果未提供 `x-service-id` 请求头，请求默认会发送到你账户中第一个已预配并使用的 ClickStack 服务。若要指定其他服务，请在 MCP 客户端配置中将 `x-service-id: <YOUR_SERVICE_ID>` 作为请求头传入。
 
 <div id="oss-byoc">
-  ## 开源和 BYOC
+  ## 开源和 BYOC {#oss-byoc}
 </div>
 
 开源和 BYOC 部署使用您的 ClickStack 实例内置的 MCP 端点，并采用 Bearer 令牌身份验证。
 
-<div id="oss-prerequisites">
-  ### 前置条件
-</div>
+### 前置条件 {#oss-prerequisites}
 
 * 一个正在运行的 ClickStack 实例 (有关设置选项，请参见 [部署](/zh/clickstack/deployment/overview))
 * 一个 **Personal API Access Key** — 您可以在 HyperDX 的 **Team Settings → API Keys → Personal API Access Key** 中找到
@@ -162,7 +160,7 @@ https://mcp.clickhouse.cloud/clickstack
 </Note>
 
 <div id="managed-endpoint">
-  ### 端点
+  ### 端点 {#oss-endpoint}
 </div>
 
 可通过 ClickStack 前端 URL 上的 `/api/mcp` 路径访问 MCP 服务器。例如，使用默认本地部署时，URL 为 `http://localhost:8080/api/mcp`。如果你修改了默认设置，请将 `localhost:8080` 替换为你的实例主机和端口。
@@ -174,7 +172,7 @@ https://mcp.clickhouse.cloud/clickstack
 MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证。
 
 <div id="managed-connecting-a-client">
-  ### 连接 MCP 客户端
+  ### 连接 MCP 客户端 {#oss-connecting-a-client}
 </div>
 
 将 `<YOUR_CLICKSTACK_URL>` 替换为你的实例 URL (例如 `http://localhost:8080`) ，并将 `<YOUR_API_KEY>` 替换为你的 Personal API Access Key。
@@ -262,16 +260,14 @@ MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证
   </Tab>
 </Tabs>
 
-<div id="capabilities">
-  ## 你可以用 MCP 做什么？
-</div>
+## 你可以用 MCP 做什么？ {#capabilities}
 
 连接后，你的 AI 助手可以访问覆盖 ClickStack 核心领域的一系列工具，包括：
 
 * **查询数据** — 使用 ClickStack 的查询构建器、搜索语法或原生 SQL，对日志、链路追踪和指标进行搜索与聚合。
 * **数据源** — 列出可用的数据源、数据库连接、列 schema 和属性键。
 * **仪表盘** — 创建、更新、删除和查看仪表盘及其卡片。
-* **告警** — 创建、更新和查看告警及其评估历史。
+* **告警** — 创建、更新和查看告警及其评估历史。如果已启用[异常检测](/zh/clickstack/features/anomaly-detection)，助手还可以在保存异常告警设置之前，基于近期历史数据对其进行回测。
 * **已保存的搜索** — 创建、更新和查看可复用的已保存搜索定义。
 * **Webhooks** — 列出可用于告警通知的 webhook 目标端。
 * **团队** — 列出当前用户所属的团队，并识别当前活动团队。
@@ -279,7 +275,7 @@ MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证
 具体可用的工具集可能会随时间不断扩展。MCP 客户端 会在连接时自动发现可用工具。
 
 <div id="multi-team">
-  ## 多团队使用 (OSS/BYOC)
+  ## 多团队使用 (OSS/BYOC) {#multi-team}
 </div>
 
 这仅适用于 开源和 BYOC 部署。对于 ClickHouse Cloud 上的 ClickStack，请参阅[指定特定服务](#managed-service-override)。
@@ -289,11 +285,11 @@ MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证
 使用 MCP 客户端 中的团队列表工具，查看你可以访问哪些团队以及当前处于活动状态的是哪个团队。
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-managed">
-  ### ClickHouse Cloud 上的 ClickStack
+  ### ClickHouse Cloud 上的 ClickStack {#troubleshooting-managed}
 </div>
 
 <Accordion title="OAuth 流程未完成">
@@ -312,7 +308,7 @@ MCP 服务器 使用 **Streamable HTTP** 传输和 **Bearer token** 身份验证
 </Accordion>
 
 <div id="troubleshooting-oss">
-  ### 开源和 BYOC
+  ### 开源和 BYOC {#troubleshooting-oss}
 </div>
 
 <Accordion title="我遇到了 403 身份验证错误">

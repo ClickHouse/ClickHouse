@@ -10,37 +10,34 @@ keywords: ['ClickStack', 'FAQ', 'alertes', 'tableaux de bord', 'drill-down', 'd�
 Cette page répond aux questions fréquemment posées sur les fonctionnalités de ClickStack, notamment les alertes, les tableaux de bord, les drill-downs et la découverte des métriques.
 
 <div id="alerting">
-  ## Alertes
+  ## Alertes {#alerting}
 </div>
 
-<Accordion title="Quels types d’alertes sont pris en charge par ClickStack ?">
-  ClickStack prend en charge deux types d’alertes :
+<Accordion title="Quels types d’alertes sont pris en charge par ClickStack ?">
+  ClickStack prend en charge deux types d’alertes :
 
-  * [Alertes de recherche](/fr/clickstack/features/alerts#search-alerts) : déclenchent des notifications lorsque le nombre de résultats de logs ou de traces correspondants, dans une fenêtre temporelle donnée, dépasse un seuil ou passe en dessous de celui-ci.
-  * [Alertes de graphiques de tableau de bord](/fr/clickstack/features/alerts#dashboard-alerts) : déclenchent des notifications lorsqu’une métrique affichée sur une tuile de tableau de bord franchit un seuil défini.
+  * [Alertes de recherche](/fr/clickstack/features/alerts#search-alerts) : déclenchent des notifications lorsque le nombre de résultats de logs ou de traces correspondants, dans une fenêtre temporelle donnée, dépasse un seuil ou passe en dessous de celui-ci.
+  * [Alertes sur les graphiques du tableau de bord](/fr/clickstack/features/alerts#dashboard-alerts) : déclenchent des notifications lorsqu’une métrique affichée sur une tuile de tableau de bord franchit un seuil défini.
 
-  Ces deux types d’alertes reposent sur des conditions de seuil statiques. Pour plus d’informations, consultez [Alertes](/fr/clickstack/features/alerts).
+  Par défaut, ces deux types d’alertes reposent sur des conditions de seuil statiques. Sur Managed ClickStack, ils peuvent également s’appuyer sur la [détection d’anomalies](/fr/clickstack/features/anomaly-detection), qui se déclenche lorsqu’une valeur sort de sa plage attendue. Pour plus d’informations, consultez [Alertes](/fr/clickstack/features/alerts).
 </Accordion>
 
-<Accordion title="Puis-je créer des alertes sur des conditions de métriques complexes, comme des ratios, des valeurs p95/p99 ou des formules multi-métriques ?">
+<Accordion title="Puis-je créer des alertes sur des conditions de métriques complexes, comme des ratios, des valeurs p95/p99 ou des formules multi-métriques ?">
   Les ratios entre deux métriques ainsi que les valeurs p95 et p99 peuvent être affichés sur une tuile de tableau de bord à l’aide de l’UI du [constructeur de graphiques](/fr/clickstack/features/dashboards/overview#navigate-chart-explorer). Vous pouvez ensuite créer des alertes basées sur des seuils pour ces tuiles.
 
-  Cependant, ClickStack ne prend actuellement pas en charge :
+  Cependant, ClickStack ne prend actuellement pas en charge :
 
   * Les alertes sur des requêtes SQL personnalisées pour les métriques.
   * Les règles d’alerte à conditions multiples ou portant sur plusieurs métriques, regroupées dans une seule alerte.
-  * Les conditions d’alerte dynamiques ou basées sur la détection d’anomalies (la détection d’anomalies est prévue).
 
-  Si vous devez créer une alerte sur une métrique complexe, l’approche recommandée consiste à créer d’abord la visualisation sous forme de graphique de tableau de bord, puis à y associer une alerte de seuil.
+  Si vous devez créer une alerte sur une métrique complexe, l’approche recommandée consiste à créer d’abord la visualisation sous forme de graphique de tableau de bord, puis à y associer une alerte de seuil. Sur Managed ClickStack, vous pouvez plutôt associer au graphique une [alerte de détection d’anomalies](/fr/clickstack/features/anomaly-detection), qui se déclenche lorsque la valeur sort de sa plage attendue, et non lorsqu’elle franchit un seuil fixe.
 </Accordion>
 
-<Accordion title="Puis-je utiliser des vues matérialisées pour des cas d’usage liés aux alertes ?">
+<Accordion title="Puis-je utiliser des vues matérialisées pour des cas d’usage liés aux alertes ?">
   Les vues matérialisées sont automatiquement utilisées par ClickStack pour les alertes, lorsque cela s’applique. Cependant, elles ne sont actuellement pas prises en charge pour les data sources de métriques OpenTelemetry. Pour les métriques, ClickStack fonctionne de manière optimale avec le [schéma de métriques OpenTelemetry ClickHouse](/fr/clickstack/ingesting-data/schemas) par défaut. Pour en savoir plus sur les vues matérialisées, consultez [Vues matérialisées](/fr/clickstack/managing/materialized-views).
 </Accordion>
 
-<div id="dashboards-and-drill-downs">
-  ## Tableaux de bord et drill-downs
-</div>
+## Tableaux de bord et drill-downs {#dashboards-and-drill-downs}
 
 <Accordion title="ClickStack prend-il en charge les tableaux de bord paramétrables ou les variables de tableau de bord ?">
   Oui, ClickStack prend en charge les tableaux de bord paramétrés par des filtres et des variables personnalisés, alimentés par des données interrogées dans ClickHouse. Ces filtres permettent de limiter dynamiquement certaines ou toutes les tuiles d&#39;un tableau de bord à une valeur spécifique (par exemple, un nom de service, un environnement ou un hôte).
@@ -62,9 +59,7 @@ Cette page répond aux questions fréquemment posées sur les fonctionnalités d
   </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## Découverte des métriques
-</div>
+## Découverte des métriques {#metrics-discovery}
 
 <Accordion title="Existe-t-il une UI pour parcourir et rechercher des métriques ?">
   ![Metric Attribute Explorer](/images/clickstack/faq/metrics-explorer.webp)
@@ -78,9 +73,7 @@ Cette page répond aux questions fréquemment posées sur les fonctionnalités d
   Non. Bien qu&#39;il soit aujourd&#39;hui possible d&#39;utiliser des requêtes SQL pour découvrir des métriques, ce n&#39;est pas l&#39;approche envisagée à long terme. Des outils de découverte des métriques plus avancés sont en cours de développement.
 </Accordion>
 
-<div id="further-reading">
-  ## Pour aller plus loin
-</div>
+## Pour aller plus loin {#further-reading}
 
 * [Alertes](/fr/clickstack/features/alerts): alertes de recherche, alertes sur graphiques de tableau de bord et intégrations webhook.
 * [Tableaux de bord](/fr/clickstack/features/dashboards/overview): création de visualisations, conception de tableaux de bord et application de filtres.

@@ -98,12 +98,13 @@
         "fr/clickstack/features/event-patterns",
         "fr/clickstack/features/event-deltas",
         "fr/clickstack/features/alerts",
+        "fr/clickstack/features/anomaly-detection",
         "fr/clickstack/service-maps",
         "fr/clickstack/features/session-replay",
         "fr/clickstack/mcp",
         "fr/clickstack/url-parameters",
         {
-          "group": "Journées de démonstration",
+          "group": "Demo days",
           "pages": [
             "fr/clickstack/demo-days/index",
             {
