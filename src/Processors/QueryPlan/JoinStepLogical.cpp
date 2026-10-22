@@ -2985,6 +2985,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     readIntBinary(flags, ctx.in);
 
     ActionsDAG actions_dag;
+    ActionsDAG::NodeRawConstPtrs id_to_node;
     {
         UInt64 num_dags = 0;
         readVarUInt(num_dags, ctx.in);
@@ -2993,15 +2994,14 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
 
         actions_dag = ActionsDAG::deserialize(
-            ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, /*nesting_depth=*/ 0, ctx.input_headers);
+            ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, /*nesting_depth=*/ 0, ctx.input_headers, &id_to_node);
     }
-    auto id_to_node = actions_dag.getIdToNode();
 
     auto left_header = ctx.input_headers.front();
     auto right_header = ctx.input_headers.back();
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
-    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions, id_to_node);
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);

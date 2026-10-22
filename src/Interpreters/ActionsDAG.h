@@ -183,7 +183,6 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    std::vector<const Node *> getIdToNode() const;
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header = nullptr) const;
@@ -192,13 +191,15 @@ public:
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
     /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
     /// `actual_input_headers` are the headers of the streams the DAG is executed over, if known.
+    /// `wire_nodes`, if set, receives the nodes in their serialized order, without the nodes the deserializer adds.
     static ActionsDAG deserialize(
         ReadBuffer & in,
         DeserializedSetsRegistry & registry,
         const ContextPtr & context,
         size_t max_type_complexity = 0,
         size_t nesting_depth = 0,
-        const SharedHeaders & actual_input_headers = {});
+        const SharedHeaders & actual_input_headers = {},
+        NodeRawConstPtrs * wire_nodes = nullptr);
 
     static Node createAlias(const Node & child, std::string alias);
 

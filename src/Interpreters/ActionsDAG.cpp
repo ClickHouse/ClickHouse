@@ -5334,11 +5334,6 @@ std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap(
     return node_to_id;
 }
 
-std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
-{
-    return std::ranges::to<std::vector>(nodes | std::views::transform([](const auto & node) { return &node; }));
-}
-
 /// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
 static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
 {
@@ -5484,7 +5479,8 @@ ActionsDAG ActionsDAG::deserialize(
     const ContextPtr & context,
     size_t max_type_complexity,
     size_t nesting_depth,
-    const SharedHeaders & actual_input_headers)
+    const SharedHeaders & actual_input_headers,
+    NodeRawConstPtrs * wire_nodes)
 {
     /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
     /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
@@ -5768,6 +5764,13 @@ ActionsDAG ActionsDAG::deserialize(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized input {} is not in the inputs list",
                 node.result_name);
+
+    if (wire_nodes)
+    {
+        wire_nodes->resize(nodes_size);
+        for (size_t k = 0; k < nodes_size; ++k)
+            (*wire_nodes)[k] = id_to_node.at(k);
+    }
 
     ActionsDAG dag;
     dag.nodes = std::move(nodes);

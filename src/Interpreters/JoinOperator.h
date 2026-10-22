@@ -53,7 +53,8 @@ struct JoinOperator
     {}
 
     void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions,
+        const ActionsDAG::NodeRawConstPtrs & id_to_node);
 
     String dump() const;
 };
