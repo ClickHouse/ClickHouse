@@ -276,7 +276,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 if (delete_bytes == 0)
                     delete_bytes = object_storage->getObjectMetadata(
                         path_resolver.resolve(delete_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_bytes);
+                delete_data_result[partition_key].total_bytes = delete_bytes;
             }
         }
     }
@@ -350,7 +350,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 if (update_bytes == 0)
                     update_bytes = object_storage->getObjectMetadata(
                         path_resolver.resolve(update_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                update_data_result[partition_key].total_bytes = static_cast<Int32>(update_bytes);
+                update_data_result[partition_key].total_bytes = update_bytes;
             }
         }
     }

@@ -253,8 +253,9 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = catalog ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
-                                               : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
+        auto [snapshot, table_state] = catalog
+            ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
+            : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_metadata_pointer_overrides=*/true);
         if (!snapshot)
             return std::nullopt;
 
@@ -556,7 +557,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parent snapshot {} has no summary", parent_snapshot_id);
 
     auto parent_summary = parent_snapshot->getObject(f_summary);
-    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/true, /*require_totals=*/true);
+    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false, /*require_totals=*/true);
     if (!parsed_summary)
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -564,8 +565,9 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             parent_snapshot_id,
             parsed_summary.error());
 
-    /// TODO: copy refresh cursor explicitly
-    auto summary = SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals(), parsed_summary->getExtraFields()}.toJSON();
+    auto summary = SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals()}.toJSON();
+    if (parent_summary->has(f_refresh_cursor))
+        summary->set(f_refresh_cursor, parent_summary->getValue<String>(f_refresh_cursor));
     new_snapshot->set(f_summary, summary);
 
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);

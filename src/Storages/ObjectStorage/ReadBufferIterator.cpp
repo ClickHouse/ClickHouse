@@ -87,7 +87,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
                 auto metadata_object = object_info->relative_path_with_metadata;
                 metadata_object.relative_path = path;
                 auto storage_to_use = object_info->getResolvedStorage(object_storage);
-                auto meta = storage_to_use->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
+                auto meta = tryGetObjectMetadataForRead(*storage_to_use, metadata_object, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }

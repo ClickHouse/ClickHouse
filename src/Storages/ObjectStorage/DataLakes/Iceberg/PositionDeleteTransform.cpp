@@ -81,7 +81,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             path_resolver.getTableLocation(), position_deletes_object.file_path, object_storage, *external_storages, context,
             path_resolver);
 
-        auto object_metadata = delete_storage_to_use->getObjectMetadata(resolved_key, /*with_tags=*/ false);
+        auto object_metadata = getObjectMetadataForRead(*delete_storage_to_use, RelativePathWithMetadata(resolved_key), /*with_tags=*/ false);
         RelativePathWithMetadata object_info(resolved_key, object_metadata);
 
         String format = position_deletes_object.file_format;
