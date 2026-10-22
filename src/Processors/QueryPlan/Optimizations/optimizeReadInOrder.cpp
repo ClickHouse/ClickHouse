@@ -709,7 +709,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
         const size_t prev_match_infos_size = match_infos.size();
         const size_t prev_order_key_prefix_size = order_key_prefix_descr.size();
         const size_t prev_num_virtual_row_columns = num_virtual_row_columns;
-        const bool prev_virtual_row_prefix_open = virtual_row_prefix_open;
 
         /// If required order depend on collation, it cannot be matched with primary key order.
         /// Because primary keys cannot have collations.
@@ -874,9 +873,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 next_sort_key = prev_sort_key;
                 match_infos.resize(prev_match_infos_size);
                 order_key_prefix_descr.resize(prev_order_key_prefix_size);
-                /// The virtual row prefix indexes `match_infos`, so it must not outgrow it.
+                /// The virtual row prefix indexes `match_infos`, so it must not outgrow it. The loop ends
+                /// here, so `virtual_row_prefix_open` needs no rollback.
                 num_virtual_row_columns = prev_num_virtual_row_columns;
-                virtual_row_prefix_open = prev_virtual_row_prefix_open;
                 break;
             }
         }
