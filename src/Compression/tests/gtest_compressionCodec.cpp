@@ -3127,8 +3127,13 @@ protected:
         const std::vector<UInt8> data = constructSourceWithHeader(payload, dest_size);
         const auto codec = makeCodec("Wallaby", std::make_shared<DataType>());
 
+        /// The decompressed stream is the serialized little-endian column, not native objects.
+        std::vector<char> bytes(dest_size);
+        codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), bytes.data());
+
         std::vector<FloatType> dest(values_count);
-        codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), reinterpret_cast<char *>(dest.data()));
+        for (UInt32 i = 0; i < values_count; ++i)
+            dest[i] = unalignedLoadLittleEndian<FloatType>(bytes.data() + i * sizeof(FloatType));
         return dest;
     }
 
@@ -3141,8 +3146,12 @@ protected:
             values[index] = value;
         std::vector<UInt64> packed(DB::Compression::FFOR::DEFAULT_VALUES, 0);
         DB::Compression::FFOR::bitPack(values.data(), packed.data(), bits, UInt64{0});
-        const auto * bytes = reinterpret_cast<const UInt8 *>(packed.data());
-        payload.insert(payload.end(), bytes, bytes + DB::Compression::FFOR::calculateBitpackedBytes(bits));
+        /// The persisted lane words are little-endian regardless of the host.
+        const size_t packed_bytes = DB::Compression::FFOR::calculateBitpackedBytes(bits);
+        const size_t offset = payload.size();
+        payload.resize(offset + packed_bytes);
+        for (size_t i = 0; i < packed_bytes / sizeof(UInt64); ++i)
+            unalignedStoreLittleEndian<UInt64>(payload.data() + offset + i * sizeof(UInt64), packed[i]);
     }
 
     template <typename T = DataTypeFloat64>
@@ -3270,10 +3279,8 @@ TEST_F(WallabyTest, DecodesRawVectorAndTrailingBytes)
     std::vector<char> dest(19);
     codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), dest.data());
 
-    Float64 values[2];
-    memcpy(values, dest.data(), sizeof(values));
-    EXPECT_EQ(values[0], 1.0);
-    EXPECT_EQ(values[1], 0x1.921fb54442d18p+1);
+    EXPECT_EQ(unalignedLoadLittleEndian<Float64>(dest.data()), 1.0);
+    EXPECT_EQ(unalignedLoadLittleEndian<Float64>(dest.data() + sizeof(Float64)), 0x1.921fb54442d18p+1);
     EXPECT_EQ(static_cast<UInt8>(dest[16]), 0xAA);
     EXPECT_EQ(static_cast<UInt8>(dest[17]), 0xBB);
     EXPECT_EQ(static_cast<UInt8>(dest[18]), 0xCC);
