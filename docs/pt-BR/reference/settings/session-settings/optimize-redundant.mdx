@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_redundant_comparisons">
-  ## optimize_redundant_comparisons
-</div>
+## optimize_redundant_comparisons {#optimize_redundant_comparisons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nova configuração para detectar condições de comparação conflitantes e redundantes na mesma expressão em encadeamentos AND."}]}]} />
 
-Detecta condições de comparação conflitantes e redundantes na mesma expressão em encadeamentos AND. Por exemplo, `a < 1 AND a > 5` seria reescrito como `false`.
+Detecta condições de comparação conflitantes e redundantes na mesma expressão em encadeamentos AND. Por exemplo, `a < 1 AND a > 5` seria reescrito como `false`. Uma contradição entre dois `equals` na mesma expressão (por exemplo, `a = 1 AND a = 2`) é detectada independentemente desta configuração.
 
-<div id="optimize_redundant_functions_in_order_by">
-  ## optimize_redundant_functions_in_order_by
-</div>
+## optimize_redundant_functions_in_order_by {#optimize_redundant_functions_in_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

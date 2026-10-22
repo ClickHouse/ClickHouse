@@ -95,7 +95,7 @@ int executeCommand(char * const argv[])
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
@@ -388,7 +388,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         }
     }
 
-    rx.install_window_change_handler();
+    /// The handler of `SIGWINCH` is process-wide. In the embedded mode the process is the server,
+    /// and the pseudoterminal is not its controlling terminal, so the signal is never delivered.
+    if (!options.embedded_mode)
+        rx.install_window_change_handler();
 
     /// `context` is the input up to the cursor, and `context_size` how much of its end the
     /// completion replaces - by default the last word, which the callback may extend (see the
@@ -593,7 +596,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (options.ignore_shell_suspend)
+    /// In the embedded mode, it would stop the whole server process with `SIGSTOP`.
+    if (options.ignore_shell_suspend || options.embedded_mode)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)

@@ -1096,6 +1096,46 @@ Minimal amount of data parts which merge selector can pick to merge at once
 (expert level setting, don't change if you don't understand what it is doing).
 0 - disabled. Works for Simple and StochasticSimple merge selectors.
 )", 0) \
+    DECLARE(UInt64, merge_selector_small_parts_threshold, 10 * 1024 * 1024, R"(
+Size threshold in bytes: a merge range is considered "all small parts" when every part
+is below this size. Used together with `merge_selector_small_parts_min_count`.
+Works for Simple and StochasticSimple merge selectors, and only for background merge
+selection: aggressive selection (`OPTIMIZE` without `FINAL`) ignores the `small_parts_*`
+settings.
+)", 0, \
+        {"26.10", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"}) \
+    DECLARE(UInt64, merge_selector_small_parts_min_count, 0, R"(
+When all parts in a merge range are small (below `merge_selector_small_parts_threshold`)
+and fresh (below `merge_selector_small_parts_max_age`), require at least this many parts
+to allow the merge. Reduces the number of merge operations under rapid small-part insertion.
+0 means disabled. Works for Simple and StochasticSimple merge selectors.
+
+The gate applies to background merge selection only. Aggressive selection - `OPTIMIZE`
+without `FINAL` - is an explicit user request that ignores part novelty, so it ignores this
+setting and merges small fresh parts regardless of their count.
+
+The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, nor
+candidates reaching further back than `merge_selector_window_size` parts, so configuring
+either of them below this minimum is a contradictory configuration: small fresh parts then
+merge only after `merge_selector_small_parts_max_age` (or earlier, once force merge applies by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`). Keep both at
+or above this minimum.
+(If the built-in fullness heuristic temporarily lowers its effective cap below this minimum,
+the selector still considers the first all-small, all-fresh candidate of this width. Stale or
+large candidates, and candidates that already qualify for force merge by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`, retain the
+lowered cap.)
+)", 0, \
+        {"26.10", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"}) \
+    DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
+Age limit in seconds for the small-parts restriction: as soon as any part in a range
+exceeds this age, the restriction from `merge_selector_small_parts_min_count` is lifted,
+so backlogs of stale small parts can still merge even if the range is shorter than
+`merge_selector_small_parts_min_count`. Works for Simple and StochasticSimple merge selectors,
+and only for background merge selection: aggressive selection (`OPTIMIZE` without `FINAL`)
+ignores the `small_parts_*` settings.
+)", 0, \
+        {"26.10", 600, 600, "Age limit for the small-parts merge restriction"}) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0, \
@@ -1410,6 +1450,30 @@ High-cardinality primary keys, e.g. involving timestamp columns of type
 Allow to use adaptive writer buffers during writing dynamic subcolumns to
 reduce memory usage
 )", 0) \
+    DECLARE(Bool, optimize_row_order_if_no_order_by, false, R"(
+Controls whether row order optimization (see `optimize_row_order`) is applied
+automatically on insert for tables with an empty sorting key, i.e. tables
+declared with `ORDER BY ()` or `ORDER BY tuple()`.
+
+Disabled by default. Enable it for tables where improving the compressibility
+of newly inserted parts with LZ4 or ZSTD is more important than preserving
+insertion order and insert throughput.
+
+As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
+optimize the row order of the new data. Disable this setting if preserving the
+original insert order of the rows or maximizing insert throughput matters more
+than compression.
+
+An explicitly set `optimize_row_order = 0` takes precedence: such a table is
+never row-order optimized, regardless of this setting.
+
+As with `optimize_row_order`, the optimization applies to ordinary
+`MergeTree`-family tables only, including `ReplicatedMergeTree`. Specialized
+engines of the family, e.g. `ReplacingMergeTree`,
+`CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
+and keep the order of the inserted rows.
+)", 0, \
+        {"26.10", false, false, "New setting to enable row order optimization automatically for ordinary MergeTree-family tables without a sorting key."}) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
@@ -2198,6 +2262,9 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
+A writable disk holds the data of only one table: the other tables over the same path,
+or over a path inside or above it, have to use a read-only disk.
+`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.
@@ -2658,6 +2725,12 @@ memory usage by not loading useless columns of the primary key.
     prewarmed by saving marks to mark cache on inserts, merges, fetches and on
     startup of server
 )", 0) \
+    DECLARE(Bool, prewarm_statistics_cache, false, R"(If true the statistics cache
+    will be prewarmed by loading the column statistics of data parts on inserts,
+    merges, fetches and on startup of server. Without it the statistics of a part
+    are loaded into the cache by the first query that needs them.
+)", 0, \
+        {"26.11", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
@@ -2744,11 +2817,6 @@ Possible values:
 - none - empty scope, do not search
 )", 0, \
         {"25.8", "any", "any", "New setting"}) \
-    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
-The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
-)", 0, \
-        {"26.2", 0, 300, "Enable statistics cache"}, \
-        {"25.11", 0, 0, "New setting"}) \
     DECLARE(UniqueKeyConflictAction, unique_key_conflict_action, UniqueKeyConflictAction::Overwrite, R"(
 For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
 
@@ -2788,7 +2856,6 @@ but had not started, and the parts that remain unloaded are loaded once the sett
 before the `ALTER` that enables the setting commits it, so no cleanup or part load starts on a table that is already durably read-only. Other
 operations already in progress, including the loading of the parts that had already started, may finish.
 
-The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
 Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
 
 The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
@@ -2820,6 +2887,9 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
 #define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. */ \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_relative_delay_to_yield_leadership, 120) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, refresh_statistics_interval, 300, \
+        {"26.2", 0, 300, "Enable statistics cache"}, \
+        {"25.11", 0, 0, "New setting"}) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, check_delay_period, 60) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends_for_table, 0) \
@@ -3229,6 +3299,11 @@ MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIP
 bool MergeTreeSettings::has(std::string_view name) const
 {
     return impl->has(name);
+}
+
+bool MergeTreeSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
 }
 
 bool MergeTreeSettings::tryGet(std::string_view name, Field & value) const

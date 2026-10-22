@@ -1,0 +1,46 @@
+s3 lines	14	1	['{"x":7,"y":8}']
+s3 lines	16	2	['{"y":5}','{"y":6}']
+s3 lines	32	4	['{"x":1}','{"x":2}','{"x":3}','{"x":4}']
+s3 count	7
+s3 count	7
+file count	7
+file count	7
+s3 union	7	17	19
+s3 union	7	17	19
+file union	7	17	19
+file union	7	17	19
+s3 cache	JSONEachRow		\N	1	0
+s3 cache	JSONEachRow	#1#	\N	0	1
+s3 cache	JSONEachRow	#2#	\N	1	1
+s3 cache	LineAsString		4	\N	\N
+s3 cache	LineAsString	#1#	2	\N	\N
+s3 cache	LineAsString	#2#	1	\N	\N
+file cache	JSONEachRow		\N	1	0
+file cache	JSONEachRow	#1#	\N	0	1
+file cache	JSONEachRow	#2#	\N	1	1
+file cache	LineAsString		4	\N	\N
+file cache	LineAsString	#1#	2	\N	\N
+file cache	LineAsString	#2#	1	\N	\N
+s3 auto	7	17	19
+s3 parquet	321	2	0	11
+s3 parquet	338	4	10	0
+s3 parquet	321	2	0	11
+s3 parquet	338	4	10	0
+s3 skip	3	3	3
+file skip count	3
+file skip count	3
+file skip union	3	3	3
+s3Cluster lines	14	1	['{"x":7,"y":8}']
+s3Cluster lines	16	2	['{"y":5}','{"y":6}']
+s3Cluster lines	32	4	['{"x":1}','{"x":2}','{"x":3}','{"x":4}']
+s3Cluster parquet	321	2	0	11
+s3Cluster parquet	338	4	10	0
+s3Cluster whole archive	14	['{"x":7,"y":8}']
+s3Cluster whole archive	16	['{"y":5}','{"y":6}']
+s3Cluster whole archive	32	['{"x":1}','{"x":2}','{"x":3}','{"x":4}']
+cache hits	file_count	1
+cache hits	file_skip_count	1
+cache hits	file_union	1
+cache hits	s3_count	1
+cache hits	s3_parquet	1
+cache hits	s3_union	1
