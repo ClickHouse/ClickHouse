@@ -36,7 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
@@ -431,10 +430,8 @@ void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
-    if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnDecimal<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+    if (start > src_vec.data.size() || length > src_vec.data.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnDecimal<T>", start, length, src_vec.data.size());
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -481,11 +478,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
             {
                 size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
@@ -541,11 +534,7 @@ void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
             {
                 size_t index = std::countr_zero(mask);
                 res_data[res_size++] = data_pos[index];
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
