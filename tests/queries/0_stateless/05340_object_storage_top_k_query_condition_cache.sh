@@ -24,7 +24,7 @@ function write_object()
 {
     ${CLICKHOUSE_CLIENT} --query "
         INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}/$1.parquet', format = Parquet)
-        SELECT if(number < 1000, $2 + number, number % $3) AS k, toString(k) AS s FROM numbers(100000)
+        SELECT if(number < 1000, $2 + number, number % $3) AS k, toString(k) AS s FROM numbers(20000)
         SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
 }
 write_object a 1000000 1000
@@ -48,15 +48,18 @@ function run()
 function events()
 {
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    local ids=""
     for name in "$@"
     do
-        ${CLICKHOUSE_CLIENT} --query "
-            SELECT '${name}',
-                ProfileEvents['QueryConditionCacheHits'] + ProfileEvents['QueryConditionCacheMisses'] > 0,
-                ProfileEvents['QueryConditionCacheHits'] > 0
-            FROM system.query_log
-            WHERE query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_${name}' AND current_database = currentDatabase() AND type = 'QueryFinish'"
+        ids+="${ids:+, }'${CLICKHOUSE_TEST_UNIQUE_NAME}_${name}'"
     done
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT substring(query_id, length('${CLICKHOUSE_TEST_UNIQUE_NAME}_') + 1),
+            ProfileEvents['QueryConditionCacheHits'] + ProfileEvents['QueryConditionCacheMisses'] > 0,
+            ProfileEvents['QueryConditionCacheHits'] > 0
+        FROM system.query_log
+        WHERE query_id IN (${ids}) AND current_database = currentDatabase() AND type = 'QueryFinish'
+        ORDER BY indexOf([${ids}], query_id)"
 }
 
 echo "--- no predicate"
@@ -127,11 +130,11 @@ echo "--- format settings changed by a reload of the table"
 # key has to cover the format settings it captured.
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}_case/c.parquet', format = Parquet)
-    SELECT if(number < 1000, 1000000 + number, number % 1000) AS K FROM numbers(100000)
+    SELECT if(number < 1000, 1000000 + number, number % 1000) AS K FROM numbers(20000)
     SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}_case/d.parquet', format = Parquet)
-    SELECT if(number < 1000, 100000 + number, number % 1000) AS k FROM numbers(100000)
+    SELECT if(number < 1000, 100000 + number, number % 1000) AS k FROM numbers(20000)
     SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_case"
 ${CLICKHOUSE_CLIENT} --input_format_parquet_case_insensitive_column_matching 1 --query "
