@@ -203,6 +203,9 @@ struct Reader
         std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
+        /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
+        /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
+        bool decode_dictionary_as_replicated = false;
 
         /// A filter extracted from a substring search condition on this column in PREWHERE.
         /// String values that do not match it are decoded as empty strings (they are guaranteed
@@ -392,6 +395,8 @@ struct Reader
         /// zero when the dictionary is decoded later on the throttled data-read path instead.
         PruningMemoryReservation dictionary_reservation;
         size_t dictionary_reserved_bytes = 0;
+        /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
+        ColumnPtr dictionary_values;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -419,6 +424,9 @@ struct Reader
         /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
         /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
         MutableColumnPtr group_null_map;
+
+        /// If set, `column` is a `ColumnUInt32` of indexes into these values.
+        ColumnPtr dictionary_values;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
@@ -803,6 +811,7 @@ private:
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
+    const ColumnPtr & getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
     /// By Parquet column index, nullptr if not parsed. Immutable, ColumnChunk::meta points into them.
     std::vector<FileColumnChunksPtr> column_chunks;

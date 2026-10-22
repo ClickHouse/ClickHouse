@@ -75,12 +75,16 @@ struct ColumnsCacheKeyHash
 UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
 
 /// Whether the columns cache can hold the columns of a part: entries are keyed by the table's UUID, which only
-/// the tables of `Atomic` and `Replicated` databases have, and the name of a projection part (the name of the
-/// projection) is not unique across its parent parts.
-inline bool canUseColumnsCacheForPart(const UUID & table_uuid, bool is_projection_part)
+/// the tables of `Atomic` and `Replicated` databases have.
+inline bool canUseColumnsCacheForPart(const UUID & table_uuid)
 {
-    return table_uuid != UUIDHelpers::Nil && !is_projection_part;
+    return table_uuid != UUIDHelpers::Nil;
 }
+
+/// The name a part is known by in the columns cache: the name of the part, or for a projection part,
+/// whose own name (the name of the projection) is not unique across its parent parts, the name of
+/// the parent part and the projection, as `parent:projection`. Unique within a table.
+String getColumnsCachePartName(const String & part_name, const String & parent_part_name);
 
 /// The table that owns the columns cache entries of an external file (such as a `Parquet` file
 /// in an object storage) read by the storage `storage_id`. `system.columns_cache` shows the entries

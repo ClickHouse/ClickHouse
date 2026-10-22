@@ -749,6 +749,7 @@ void BackupsWorker::doBackup(
         backup_settings.copySettingsToQuery(*backup_query);
         sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
                               context, required_access, backup_coordination->getOnClusterInitializationKeeperRetriesInfo());
+        context->onQueryExecutionStarted();
         backup_coordination->setBackupQueryIsSentToOtherHosts();
 
         /// Wait until all the hosts have written their backup entries.
@@ -756,6 +757,7 @@ void BackupsWorker::doBackup(
     }
     else
     {
+        context->onQueryExecutionStarted();
         backup_query->setCurrentDatabase(context->getCurrentDatabase());
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
@@ -1221,6 +1223,7 @@ void BackupsWorker::doRestore(
         restore_settings.copySettingsToQuery(*restore_query);
         sendQueryToOtherHosts(*restore_query, cluster, restore_settings.shard_num, restore_settings.replica_num,
                               context, {}, restore_coordination->getOnClusterInitializationKeeperRetriesInfo());
+        context->onQueryExecutionStarted();
         restore_coordination->setRestoreQueryIsSentToOtherHosts();
 
         /// Wait until all the hosts have done with their restoring work.

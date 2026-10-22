@@ -75,8 +75,9 @@ static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStor
 
 /// The columns cache options for reading a file, or nullptr if the read does not use the cache.
 /// The cache is used only for a file whose content is identified by a strong version token:
-/// an ETag of an object in an object storage, or the version token of a local file once it has
-/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
+/// an ETag of an object in an object storage, the identity of an immutable file recorded by its
+/// table, or the version token of a local file once it has settled (see `StorageFile`), the same
+/// as for the userspace page cache. The file must also be
 /// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
 static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
     const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
@@ -90,7 +91,10 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     if (!enable_reads && !enable_writes)
         return nullptr;
 
-    if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+    if (!object_with_metadata || !object_with_metadata->metadata)
+        return nullptr;
+    const auto content_token = object_with_metadata->metadata->getContentCacheToken();
+    if (!content_token)
         return nullptr;
 
     if (!object_with_metadata->path_for_content_cache)
@@ -120,7 +124,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     const ObjectMetadata & metadata = *object_with_metadata->metadata;
     SipHash hash;
     hash.update(*object_with_metadata->path_for_content_cache);
-    hash.update(metadata.etag);
+    hash.update(*content_token);
     hash.update(metadata.size_bytes);
     /// The format settings that change the values decoded from the file without changing their
     /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
@@ -224,7 +228,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(object_with_metadata->getPath(), object_with_metadata->metadata->etag);
+        return ParquetMetadataCache::createKey(
+            object_with_metadata->getPath(),
+            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
     return std::nullopt;
 }
 
