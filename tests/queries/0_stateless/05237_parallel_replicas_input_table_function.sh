@@ -11,18 +11,16 @@ PR="enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tre
 PR="$PR, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'"
 PR="$PR, max_parallel_replicas = 3, parallel_replicas_local_plan = 1"
 PR="$PR, parallel_replicas_min_number_of_rows_per_replica = 1"
-# The estimate is reached both directly and from the automatic-parallel-replicas probe plan, so pin
-# the mode explicitly instead of inheriting it.
+# The automatic mode does not run the estimate, so pin the mode instead of inheriting it.
 PR_DIRECT="$PR, automatic_parallel_replicas_mode = 0"
-PR_AUTO="$PR, automatic_parallel_replicas_mode = 2"
 
 $CLICKHOUSE_CLIENT -m -q "
-DROP TABLE IF EXISTS src, dst_http, dst_tcp, dst_auto;
+DROP TABLE IF EXISTS src, dst_http, dst_tcp, dst_hint;
 CREATE TABLE src (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 16;
 INSERT INTO src SELECT number, number * 2 FROM numbers(20000);
 CREATE TABLE dst_http (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE dst_tcp (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE dst_auto (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE dst_hint (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 "
 
 # Every case prints 1 for a counter that reads 0 unless that case really planned for parallel
@@ -62,7 +60,7 @@ QUERY_ID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -q "SELECT sum(v) FROM src WHERE k % 3 = 1 SETTINGS $PR_DIRECT FORMAT Null"
 route_taken "$QUERY_ID" ParallelReplicasUsedCount
 
-# `GLOBAL IN` and not `IN` in the two cases that read from a replica: a plain `IN (subquery)` is
+# `GLOBAL IN` and not `IN`, because these cases read from a replica: a plain `IN (subquery)` is
 # re-executed on every follower, and a follower has no client input stream, so it cannot read
 # `input()` at all. `GLOBAL IN` evaluates the subquery on the initiator and ships the result as a
 # temporary table, which is what lets a multi-replica route serve this query.
@@ -87,13 +85,10 @@ $CLICKHOUSE_CLIENT -q "SELECT toUInt64(arrayJoin([7, 19, 12345])) FORMAT RowBina
 $CLICKHOUSE_CLIENT -q "SELECT k, v FROM dst_tcp ORDER BY ALL"
 route_taken "$QUERY_ID" ParallelReplicasUsedCount
 
-# Statistics-only automatic mode plans the same estimate inside its probe plan. It deliberately
-# leaves the read on the initiator, so `ParallelReplicasUsedCount` is 0 for it and no follower is
-# contacted at all, which is why a plain `IN` is served here; the statistics collector is installed
-# only by considerEnablingParallelReplicas, so its counter stands for that probe plan having been
-# built.
+# `indexHint` keeps its argument in a DAG of its own, which index analysis reads all the same. The hint
+# passes every row of the granules it selects, so the bound shows the read still pruned by the set.
 QUERY_ID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 $CLICKHOUSE_CLIENT -q "SELECT toUInt64(arrayJoin([7, 19, 12345])) FORMAT RowBinary" \
-    | $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -q "INSERT INTO dst_auto SELECT k, v FROM src WHERE k IN (SELECT n FROM input('n UInt64')) SETTINGS $PR_AUTO FORMAT RowBinary"
-$CLICKHOUSE_CLIENT -q "SELECT k, v FROM dst_auto ORDER BY ALL"
-route_taken "$QUERY_ID" RuntimeDataflowStatisticsInputBytes
+    | $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -q "INSERT INTO dst_hint SELECT k, v FROM src WHERE indexHint(k GLOBAL IN (SELECT n FROM input('n UInt64'))) SETTINGS $PR_DIRECT FORMAT RowBinary"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(k IN (7, 19, 12345)), count() < 1000 FROM dst_hint"
+route_taken "$QUERY_ID" ParallelReplicasUsedCount

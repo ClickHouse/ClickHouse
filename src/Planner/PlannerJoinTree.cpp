@@ -2925,8 +2925,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
                         const ActionsDAG * estimate_filter
                             = estimate_reading_step ? estimate_reading_step->getQueryInfo().filter_actions_dag.get() : nullptr;
+                        /// Also collects the sets in `indexHint` arguments, which live in a DAG of their own.
+                        UsefulSets estimate_filter_sets;
+                        if (estimate_filter)
+                            appendSetsFromActionsDAG(*estimate_filter, estimate_filter_sets);
                         const bool estimate_needs_unbuilt_set
-                            = estimate_filter && QueryPlanOptimizations::dagContainsNonReadySet(*estimate_filter);
+                            = std::ranges::any_of(estimate_filter_sets, [](const FutureSetPtr & set) { return !set || !set->get(); });
 
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                         // Note: reading_steps can have several steps in case of reading from view with UNION
