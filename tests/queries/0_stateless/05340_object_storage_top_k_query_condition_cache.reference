@@ -81,6 +81,32 @@
 999
 999
 999
+--- explicit keys
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
+--- format settings changed by a reload of the table
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+100999
+100998
+100997
+100999
+100998
+100997
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998
@@ -113,5 +139,13 @@ time_1	0	0
 time_2	0	0
 default_1	1	0
 default_2	1	0
+keys_1	0	0
+keys_2	0	0
+key_1	1	0
+key_2	1	1
+case_1	1	0
+case_2	1	1
+case_reloaded_1	1	0
+case_reloaded_2	1	1
 gate_1	0	0
 gate_2	0	0

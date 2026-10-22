@@ -107,12 +107,51 @@ DEFAULT_SETTINGS=", input_format_defaults_for_omitted_fields = 1, optimize_move_
 run default_1 "$DEFAULT_QUERY" "$DEFAULT_SETTINGS"
 run default_2 "$DEFAULT_QUERY" "$DEFAULT_SETTINGS"
 
+echo "--- explicit keys"
+# Listing several explicit keys ahead of the read would serialize a request for each of them, so a brace
+# expansion makes no key. A single explicit key does.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_keys"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340_keys (k Int64, s String) ENGINE = S3(s3_conn, filename = '${S3_DIR}/{a,b}.parquet', format = Parquet)"
+run keys_1 "SELECT k FROM t_05340_keys ORDER BY k DESC LIMIT 3"
+run keys_2 "SELECT k FROM t_05340_keys ORDER BY k DESC LIMIT 3"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_key"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340_key (k Int64, s String) ENGINE = S3(s3_conn, filename = '${S3_DIR}/b.parquet', format = Parquet)"
+run key_1 "SELECT k FROM t_05340_key ORDER BY k DESC LIMIT 3"
+run key_2 "SELECT k FROM t_05340_key ORDER BY k DESC LIMIT 3"
+
+echo "--- format settings changed by a reload of the table"
+# `c.parquet` keeps the largest values under `K`, `d.parquet` smaller ones under `k`. With case-insensitive
+# column matching, the result comes from `c.parquet`. After the table is attached again without it,
+# `c.parquet` supplies defaults for `k`, and the result comes from `d.parquet`, whose row groups the
+# entries of the first load recorded as holding no row of the result. The table keeps its UUID, so the
+# key has to cover the format settings it captured.
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}_case/c.parquet', format = Parquet)
+    SELECT if(number < 1000, 1000000 + number, number % 1000) AS K FROM numbers(100000)
+    SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}_case/d.parquet', format = Parquet)
+    SELECT if(number < 1000, 100000 + number, number % 1000) AS k FROM numbers(100000)
+    SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_case"
+${CLICKHOUSE_CLIENT} --input_format_parquet_case_insensitive_column_matching 1 --query "
+    CREATE TABLE t_05340_case (k Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_case/*.parquet', format = Parquet)"
+run case_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
+run case_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_05340_case"
+${CLICKHOUSE_CLIENT} --input_format_parquet_case_insensitive_column_matching 0 --query "ATTACH TABLE t_05340_case"
+run case_reloaded_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
+run case_reloaded_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
+
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_default"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_keys"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_key"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case"

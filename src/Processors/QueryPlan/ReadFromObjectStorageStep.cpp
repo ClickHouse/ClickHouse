@@ -287,6 +287,19 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     if (is_data_lake ? !datalake_table_state : !isReadPinnedToListedGeneration())
         return {};
 
+    /// Listing explicit keys (or a brace expansion) takes a `HEAD` request for each object, which the
+    /// sources issue concurrently otherwise, while listing all objects ahead of the read serializes them.
+    if (!is_data_lake && iterator_wrapper->estimatedKeysCount() > 1
+        && dynamic_cast<const StorageObjectStorageSource::KeysIterator *>(iterator_wrapper.get()))
+        return {};
+
+    /// Which column of a file is read and how its values are decoded depend on the format settings (e.g.
+    /// `input_format_parquet_case_insensitive_column_matching`). A table captures them when it is loaded,
+    /// so a `DETACH` / `ATTACH`, which keeps the UUID, may change them, and the hash of the filter does
+    /// not cover them.
+    if (!format_settings || !format_settings->source_settings_hash)
+        return {};
+
     /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
     /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
     /// yields different sets of files from query to query.
@@ -376,6 +389,7 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     SipHash hash;
     hash.update(condition_hash);
     hash.update(top_k_filter->plan_hash);
+    hash.update(*format_settings->source_settings_hash);
 
     if (!is_data_lake)
     {
