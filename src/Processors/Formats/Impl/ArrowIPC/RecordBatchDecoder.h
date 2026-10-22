@@ -304,6 +304,7 @@ private:
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
+    /// With `validate_lengths`, also collects the non-nullable fields with nulls into `undeclared_null_fields`.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
     /// Converts the buffers of `fields` in the current batch from big-endian to little-endian in place: walks
     /// them in layout order with `advanceField`, which byte-swaps every buffer it passes, then rewinds the
@@ -324,16 +325,14 @@ private:
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
     /// validity buffer), so this function needs no separate null map for the indices. `path` and
-    /// `list_depth` are the field's position, which selects the dictionary values decoded for it. `nullable` is
-    /// the field's effective nullability: its declared one, or true if its `FieldNode` reports nulls.
+    /// `list_depth` are the field's position, which selects the dictionary values decoded for it.
     ColumnPtr decodeDictionary(
-        const ArrowField & field, bool nullable, size_t rows, bool allow_low_cardinality,
-        const InvisibleRowsMask * invisible_rows, const String & path, size_t list_depth);
+        const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
+        const String & path, size_t list_depth);
     ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
-    bool wrapsInNullable(
-        const ArrowField & field, bool nullable, const IColumn & inner, const DataTypePtr & effective_hint) const;
+    bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
     /// run's value repeated for its rows. The nulls are those of the values.
     ColumnPtr decodeRunEndEncoded(
@@ -402,6 +401,7 @@ private:
     size_t variadic_index = 0;
     /// Set during `convertBuffersFromBigEndian`: `advanceField` byte-swaps the buffers it passes.
     bool swap_from_big_endian = false;
+    UnorderedSetWithMemoryTracking<const ArrowField *> undeclared_null_fields;
 };
 
 }

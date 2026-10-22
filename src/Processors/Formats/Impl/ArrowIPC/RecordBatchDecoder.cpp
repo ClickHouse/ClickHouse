@@ -58,14 +58,6 @@ namespace
 /// null maps until conversion, including when schema inference produces a plain `Tuple`.
 DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & column)
 {
-    if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column.get()))
-    {
-        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get());
-        if (low_cardinality_type && low_cardinality_column->nestedIsNullable())
-            return std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
-        return type;
-    }
-
     const bool is_nullable = column->isNullable();
     const IColumn & nested_column = is_nullable
         ? assert_cast<const ColumnNullable &>(*column).getNestedColumn() : *column;
@@ -96,6 +88,14 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
     }
 
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
+}
+
+void declareNullable(ArrowField & copy, const ArrowField & original, const UnorderedSetWithMemoryTracking<const ArrowField *> & fields)
+{
+    if (fields.contains(&original))
+        copy.nullable = true;
+    for (size_t i = 0; i < original.type.children.size(); ++i)
+        declareNullable(copy.type.children[i], original.type.children[i], fields);
 }
 
 /// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
@@ -1571,14 +1571,14 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
     /// Every row is valid: the same wrapper decision as `decodeField`, with an all-zero null map.
-    if (wrapsInNullable(field, field.nullable, *inner, effective_hint))
+    if (wrapsInNullable(field, *inner, effective_hint))
         return ColumnNullable::create(inner, ColumnUInt8::create(rows, UInt8{0}));
     return inner;
 }
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
-    const ArrowField & field, bool nullable, size_t rows, bool allow_low_cardinality,
-    const InvisibleRowsMask * invisible_rows, const String & path, size_t list_depth)
+    const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
+    const String & path, size_t list_depth)
 {
     const Slice indices_slice = nextBuffer();
     const DictionaryRegistry::Dictionary & dictionary
@@ -1593,9 +1593,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     for (const auto & segment : dictionary.segments)
         segments.push_back(dictionaryValuesFor(field, segment));
 
-    /// Null indices of a field declared non-nullable read as NULL, like the nulls of an inline field.
-    const bool wrap_index_nulls = nullable && !field.nullable && segments.front().type->canBeInsideNullable();
-    const DataTypePtr value_type = wrap_index_nulls ? makeNullable(segments.front().type) : segments.front().type;
+    const DataTypePtr & value_type = segments.front().type;
     const IColumn * first_column = segments.front().column.get();
     if (const auto * constant = typeid_cast<const ColumnConst *>(first_column))
         first_column = &constant->getDataColumn();
@@ -1615,11 +1613,6 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
         keys->insertRangeFrom(*values, 0, values->size());
     }
     const size_t default_key_index = keys->size();
-    if (wrap_index_nulls)
-    {
-        auto keys_null_map = ColumnUInt8::create(default_key_index, UInt8{0});
-        keys = ColumnNullable::create(std::move(keys), std::move(keys_null_map));
-    }
     if (invisible_rows)
         keys->insertDefault();
 
@@ -1918,9 +1911,12 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();
 
-    /// A field declared non-nullable that still has nulls is decoded as nullable; the conversion to the
-    /// requested type then applies `input_format_null_as_default`.
-    const bool nullable = field.nullable || node.null_count() != 0;
+    /// A non-nullable field must declare a zero null count.
+    if (!field.nullable && node.null_count() != 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC field '{}' is declared non-nullable but its FieldNode reports {} nulls",
+            field.name, node.null_count());
 
     /// Null rows have undefined value bytes and join the inherited invisible rows before value decoding.
     ColumnUInt8::Ptr own_null_map;
@@ -1936,10 +1932,10 @@ ColumnPtr RecordBatchDecoder::decodeField(
 
     /// Dictionary values come from separate batches; `effective_invisible` controls index visibility.
     if (field.dictionary)
-        return decodeDictionary(field, nullable, rows, allow_low_cardinality, effective_invisible, path, list_depth);
+        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, path, list_depth);
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
-    if (wrapsInNullable(field, nullable, *inner, resolveTargetHint(target_hint, path, list_depth)))
+    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
     {
         ColumnUInt8::Ptr null_map = own_null_map ? own_null_map : buildNullMap(validity, rows, node.null_count());
         return ColumnNullable::create(inner, null_map);
@@ -2043,13 +2039,12 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     return values->index(*indexes, 0);
 }
 
-bool RecordBatchDecoder::wrapsInNullable(
-    const ArrowField & field, bool nullable, const IColumn & inner, const DataTypePtr & effective_hint) const
+bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const
 {
     const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))));
-    return nullable && inner.canBeInsideNullable()
+    return field.nullable && inner.canBeInsideNullable()
         && (field.type.kind != TypeKind::Struct || preserve_struct_nulls);
 }
 
@@ -2058,6 +2053,10 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     const auto & node = nextNode();
     if (validate_lengths && node.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node.length());
+    /// Unions and run-end-encoded fields have no validity bitmap: `decodeField` rejects their nulls.
+    if (validate_lengths && !field.nullable && node.null_count() != 0
+        && (field.dictionary || (field.type.kind != TypeKind::Union && field.type.kind != TypeKind::RunEndEncoded)))
+        undeclared_null_fields.insert(&field);
     const size_t rows = validate_lengths ? static_cast<size_t>(node.length()) : 0;
 
     auto consume_buffer = [&](size_t count, size_t width, const char * what, ByteSwap swap = ByteSwap::Elements)
@@ -2327,28 +2326,13 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     DecodedColumn decoded;
     decoded.name = field.name;
     decoded.field = &field;
-    /// Dictionary values retain the type produced by their requested hints. The referencing field
-    /// determines whether that type keeps its outer `Nullable` wrapper.
-    if (field.dictionary)
-    {
-        const auto & dictionary = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
-        const DataTypePtr & value_type = dictionary.segments.front().type;
-        decoded.type = field.nullable ? value_type : removeNullable(value_type);
-        if (decoded.type->canBeInsideLowCardinality())
-            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
-    }
-    else
-        decoded.type = fieldToCHType(field, settings, isNullableField(field), /*allow_null_type=*/true);
     /// Bufferless roots store one physical value. The reader chooses the output row count before
     /// expanding it, and dictionaries retain its compact representation across deltas.
     const bool constant = batch_rows != 0 && isSizeDeterminedSubtree(field);
-    if (constant)
-    {
-        decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
-        if (decoded_null_map && field.type.kind == TypeKind::Null)
-            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
-    }
-    else
+    /// Nulls in fields declared non-nullable are read as NULL, as the Apache Arrow library did. Decoding a
+    /// nullable copy of the field keeps the types derived from the schema consistent with the decoded columns.
+    std::optional<ArrowField> nullable_copy;
+    if (!constant)
     {
         if (hasRowsBackedByBuffers(field))
             checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
@@ -2357,12 +2341,41 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
         const size_t first_node = node_index;
         const size_t first_buffer = buffer_index;
         const size_t first_variadic = variadic_index;
+        undeclared_null_fields.clear();
         advanceField(field, /*validate_lengths=*/true);
         node_index = first_node;
         buffer_index = first_buffer;
         variadic_index = first_variadic;
+        if (!undeclared_null_fields.empty())
+        {
+            nullable_copy = field;
+            declareNullable(*nullable_copy, field, undeclared_null_fields);
+        }
+    }
+    const ArrowField & effective_field = nullable_copy ? *nullable_copy : field;
+
+    /// Dictionary values retain the type produced by their requested hints. The referencing field
+    /// determines whether that type keeps its outer `Nullable` wrapper.
+    if (effective_field.dictionary)
+    {
+        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth});
+        const DataTypePtr & value_type = dictionary.segments.front().type;
+        decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
+        if (decoded.type->canBeInsideLowCardinality())
+            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
+    }
+    else
+        decoded.type = fieldToCHType(effective_field, settings, isNullableField(effective_field), /*allow_null_type=*/true);
+    if (constant)
+    {
+        decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
+        if (decoded_null_map && field.type.kind == TypeKind::Null)
+            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
+    }
+    else
+    {
         decoded.column = decodeField(
-            field,
+            effective_field,
             /*allow_low_cardinality=*/true,
             target_hint,
             path,

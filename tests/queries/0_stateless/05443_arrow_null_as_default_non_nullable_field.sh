@@ -33,6 +33,16 @@ with ipc.new_file(f"{out}/data.arrow", schema) as w:
     w.write_table(table)
 with ipc.new_stream(f"{out}/data.arrows", schema) as w:
     w.write_table(table)
+
+# A union alternative and dictionary values with non-nullable children that contain nulls.
+item = pa.field("item", pa.int64(), nullable=False)
+lists = pa.array([[None], [7]], pa.list_(item))
+union_type = pa.sparse_union([pa.field("l", lists.type, nullable=False)])
+union = pa.Array.from_buffers(union_type, 2, [None, pa.array([0, 0], pa.int8()).buffers()[1]], children=[lists])
+dict_of_lists = pa.DictionaryArray.from_arrays(pa.array([1, 0], pa.int32()), lists)
+nested = pa.Table.from_arrays([union, dict_of_lists], names=["u", "dl"])
+with ipc.new_stream(f"{out}/nested.arrows", nested.schema) as w:
+    w.write_table(nested)
 PYEOF
 
 $CLICKHOUSE_CLIENT -q "
@@ -40,7 +50,7 @@ $CLICKHOUSE_CLIENT -q "
     (
         i Int64 DEFAULT 42,
         s String DEFAULT 'default',
-        d LowCardinality(String),
+        d LowCardinality(String) DEFAULT 'none',
         arr Array(Int64),
         tup Tuple(x Int64)
     ) ENGINE = Memory"
@@ -61,5 +71,11 @@ for format in Arrow ArrowStream; do
     $CLICKHOUSE_LOCAL -q "SELECT d FROM file('$file', $format, 'd String') SETTINGS input_format_null_as_default = 0" 2>&1 \
         | grep -o -m1 "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN"
 done
+
+echo "Nested"
+$CLICKHOUSE_LOCAL -q "SELECT u, dl FROM file('$TMP_DIR/nested.arrows', ArrowStream, 'u Variant(Array(Nullable(Int64))), dl Array(Nullable(Int64))')"
+$CLICKHOUSE_LOCAL -q "SELECT dl FROM file('$TMP_DIR/nested.arrows', ArrowStream, 'dl Array(Int64)')"
+$CLICKHOUSE_LOCAL -q "SELECT u FROM file('$TMP_DIR/nested.arrows', ArrowStream, 'u Variant(Array(Int64))')" 2>&1 \
+    | grep -o -m1 "CANNOT_CONVERT_TYPE"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_arrow_null_as_default"
