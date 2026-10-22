@@ -11,6 +11,8 @@
     <create_query>CREATE TABLE perf_has_const_front (a Array(UInt64), f Array(Float64)) ENGINE = Memory</create_query>
     <!-- The first rows of each block are searched long and switch to the lookup, the others are at the start of the constant. -->
     <create_query>CREATE TABLE perf_has_const_front_mixed (a Array(UInt64), b Array(UInt8)) ENGINE = Memory</create_query>
+    <!-- Rows shorter than a constant with duplicates, which have its first values, and miss the next one. -->
+    <create_query>CREATE TABLE perf_has_const_short_rows (a Array(UInt64)) ENGINE = Memory</create_query>
 
     <fill_query>
         INSERT INTO perf_has_const_u64
@@ -58,6 +60,11 @@
         SELECT if(number % 65536 &lt; 64, arrayWithConstant(128, toUInt64(199)), arrayWithConstant(128, toUInt64(1))), arrayWithConstant(128, toUInt8(1))
         FROM numbers(262144) SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
     </fill_query>
+    <fill_query>
+        INSERT INTO perf_has_const_short_rows
+        SELECT arrayConcat(range(toUInt64(4)), arrayWithConstant(496, toUInt64(100000)))
+        FROM numbers(131072) SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
 
     <!-- A list of 600 numbers, as in https://github.com/ClickHouse/ClickHouse/issues/18843 -->
     <query>SELECT count() FROM perf_has_const_u64 WHERE hasAny(a, arrayMap(x -> x * 97, range(600)))</query>
@@ -78,6 +85,7 @@
     <query>SELECT count() FROM perf_has_const_front WHERE hasAll(arrayMap(x -> toFloat64(x), range(600)), f)</query>
     <query>SELECT count() FROM perf_has_const_front_mixed WHERE hasAll(range(toUInt64(200)), a)</query>
     <query>SELECT count() FROM perf_has_const_front_mixed WHERE hasAll(arrayMap(x -> toUInt8(x), range(200)), b)</query>
+    <query>SELECT count() FROM perf_has_const_short_rows WHERE hasAll(a, arrayMap(x -> toUInt64(x % 300), range(1024)))</query>
     <!-- Short constant arrays keep the search with vectors. -->
     <query>SELECT count() FROM perf_has_const_u64 WHERE hasAny(a, range(8))</query>
     <query>SELECT count() FROM perf_has_const_long WHERE hasAny(range(16), a)</query>
@@ -91,4 +99,5 @@
     <drop_query>DROP TABLE IF EXISTS perf_has_const_mixed_all</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_has_const_front</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_has_const_front_mixed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_has_const_short_rows</drop_query>
 </test>

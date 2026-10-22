@@ -56,7 +56,7 @@ constexpr bool uses_bitmap = sizeof(T) <= 2;
 
 enum class Operation : uint8_t
 {
-    /// `hasAny` with either argument constant, and `hasAll(constant, column)`: each element of a row is searched in the constant.
+    /// `hasAny(constant, column)` and `hasAll(constant, column)`: each element of a row is searched in the constant.
     SearchElementsInConst,
     /// `hasAny(column, constant)`: each element of the constant is searched in a row, until one is found.
     SearchConstInRows,
@@ -584,9 +584,10 @@ void lookupAllOfConst(
         }
         const size_t row_size = end - begin;
         const UInt8 * null_map = has_null_map ? elements.null_map + begin : nullptr;
-        /// The lookup rejects a row shorter than the constant, as that usually has fewer elements than the constant has distinct values.
-        /// Otherwise it searches the first values too, and goes through the row if it has them all.
-        const bool looked_up = row_size >= array.size;
+        /// The lookup searches the first values too, and goes through the row if it has them all. It rejects a row with fewer elements
+        /// than the constant has distinct values, but their number is not known before the table is built, so every row is counted as
+        /// looked up. That counts at most the work of the search of the row, so the search is not slower than without the table. After
+        /// the table is built, the rows that the lookup rejects are not searched.
         bool all = !needs_null || hasNull(null_map, row_size);
         size_t num_found = 0;
         for (size_t j = 0; j < array.size && all; ++j)
@@ -597,7 +598,7 @@ void lookupAllOfConst(
                 return false;
             const size_t search_before = work.search;
             all = countedContains<has_null_map>(elements.data + begin, null_map, row_size, array.data[j], row_first_part_size, work.search);
-            if (looked_up && num_found < num_searched_values)
+            if (num_found < num_searched_values)
             {
                 /// The lookup searches this value too.
                 work.search = search_before;
@@ -707,10 +708,16 @@ bool tryExecute(
 
     auto execute = [&]<bool has_null_map>()
     {
-        if (operation == Operation::CountConstInRows)
-            lookupAllOfConst<has_null_map>(array, elements, offsets, result, size);
-        else
-            lookupElements<search_type, has_null_map>(array, is_first_const, elements, offsets, result, size);
+        /// `hasAny` does not compile `lookupAllOfConst`.
+        if constexpr (search_type == ArraySearchType::All)
+        {
+            if (operation == Operation::CountConstInRows)
+            {
+                lookupAllOfConst<has_null_map>(array, elements, offsets, result, size);
+                return;
+            }
+        }
+        lookupElements<search_type, has_null_map>(array, is_first_const, elements, offsets, result, size);
     };
     if (elements.null_map)
         execute.template operator()<true>();

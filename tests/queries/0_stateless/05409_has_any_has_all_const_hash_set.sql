@@ -117,7 +117,7 @@ FROM
 );
 
 -- Explicit results. The other argument is the constant, and is long enough for the lookup.
-SELECT 'hasAny(materialize([-0.]), arrayMap(x -> x / 1, range(20)))', countIf(hasAny(materialize([-0.]), arrayMap(x -> x / 1, range(20))) = 1) FROM numbers(3000);
+SELECT 'hasAny(materialize([-0.]), arrayReverse(arrayMap(x -> x / 1, range(20))))', countIf(hasAny(materialize([-0.]), arrayReverse(arrayMap(x -> x / 1, range(20)))) = 1) FROM numbers(3000);
 SELECT 'hasAny(materialize([nan]), arrayPushBack(arrayMap(x -> x / 1, range(20)), nan))', countIf(hasAny(materialize([nan]), arrayPushBack(arrayMap(x -> x / 1, range(20)), nan)) = 0) FROM numbers(3000);
 SELECT 'hasAll(arrayPushBack(arrayMap(x -> x / 1, range(20)), nan), materialize([1., nan]))', countIf(hasAll(arrayPushBack(arrayMap(x -> x / 1, range(20)), nan), materialize([1., nan])) = 0) FROM numbers(3000);
 SELECT 'hasAll(materialize(arrayMap(x -> x / 1, range(100))), arrayPushBack(arrayMap(x -> x / 1, range(70)), nan))', countIf(hasAll(materialize(arrayMap(x -> x / 1, range(100))), arrayPushBack(arrayMap(x -> x / 1, range(70)), nan)) = 0) FROM numbers(3000);

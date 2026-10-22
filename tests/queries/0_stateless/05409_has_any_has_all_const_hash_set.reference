@@ -6,7 +6,7 @@ BFloat16	0	0	0	0	1	1	1
 Decimal32	0	0	0	0	1	1	1
 UInt256	0	0	0	0	1	1	1
 Nullable	0	0	0	0	1	1	1
-hasAny(materialize([-0.]), arrayMap(x -> x / 1, range(20)))	3000
+hasAny(materialize([-0.]), arrayReverse(arrayMap(x -> x / 1, range(20))))	3000
 hasAny(materialize([nan]), arrayPushBack(arrayMap(x -> x / 1, range(20)), nan))	3000
 hasAll(arrayPushBack(arrayMap(x -> x / 1, range(20)), nan), materialize([1., nan]))	3000
 hasAll(materialize(arrayMap(x -> x / 1, range(100))), arrayPushBack(arrayMap(x -> x / 1, range(70)), nan))	3000
