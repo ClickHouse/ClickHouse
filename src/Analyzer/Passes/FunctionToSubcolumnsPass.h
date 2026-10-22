@@ -15,7 +15,7 @@ namespace DB
   * Result: SELECT array_column.size0 FROM test_table;
   *
   * Example: SELECT nullable_column IS NULL FROM test_table;
-  * Result: SELECT nullable_column.null FROM test_table;
+  * Result: SELECT nullable_column.null != 0 FROM test_table;
   */
 class FunctionToSubcolumnsPass final : public IQueryTreePass
 {

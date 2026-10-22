@@ -6,6 +6,8 @@
 1970-01-01 00:02:30.000	10
 1970-01-01 00:04:10.000	20
 1	1
+-- the range is an index condition only: it is not part of any row-level filter
+1	1	1
 -- whole-metric-by-data selector (a matcher every series passes): the range is still emitted
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
@@ -51,7 +53,7 @@
 1970-01-01 00:01:40.000	1
 1970-01-01 00:02:30.000	10
 0
--- id_generator changed after ingestion: old series ids are outside the range, the probe detects them and falls back
+-- a series written with another id generator has an id outside the range: the probe detects it and falls back
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
 0
@@ -59,3 +61,6 @@
 1970-01-01 00:01:40.000	1
 1970-01-01 00:02:30.000	10
 1
+-- the index-only range still drops the part that holds another metric
+3	2
+1	1

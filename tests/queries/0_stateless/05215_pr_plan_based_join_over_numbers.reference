@@ -1,0 +1,21 @@
+bounded numbers on the broadcast side: the join is shipped
+1
+10	45	10
+an offset range is shipped too
+1
+10	45	25
+a filtered read is shipped too
+1
+10	45	18
+an unbounded read is shipped too
+1
+10	45	10
+an unbounded multithreaded read is shipped too
+1
+10	45	10
+generate_series with a step is shipped too
+1
+10	45	20
+the filter still prunes the domain on the replicas
+10
+1

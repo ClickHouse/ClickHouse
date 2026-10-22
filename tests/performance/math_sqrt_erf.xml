@@ -1,0 +1,22 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>sqrt</value>
+                <value>erf</value>
+                <value>erfc</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>arg</name>
+            <values>
+                <value>toFloat64(number)</value>
+                <value>toFloat32(number)</value>
+                <value>number</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}({arg}))</query>
+</test>

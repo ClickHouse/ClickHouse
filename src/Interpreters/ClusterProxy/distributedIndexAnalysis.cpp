@@ -14,7 +14,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/Epoll.h>
 #endif
@@ -258,7 +258,7 @@ public:
         , context(std::move(context_))
         , logger(getLogger("DistributedIndexAnalysis"))
         , settings(context->getSettingsRef())
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         , use_hedged_requests(settings[Setting::use_hedged_requests])
         , use_async_reading(settings[Setting::async_socket_for_remote])
 #endif
@@ -345,7 +345,7 @@ private:
     /// so that subsequent queries can deprioritize replicas that failed during this analysis.
     void propagateErrorCounts()
     {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         if (hedged_factory.has_value())
         {
             /// Reset the factory so its destructor propagates error counts into remote_pool via updateSharedError.
@@ -372,7 +372,7 @@ private:
         return establishConnectionsSync(timeouts);
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts & timeouts)
     {
         std::vector<Connection *> connections(remote_replicas, nullptr);
@@ -393,6 +393,7 @@ private:
             /// Exclude local replica
             max_active_replicas - 1,
             /*skip_unavailable_shards_=*/ true,
+            /*fail_if_replica_unprobed_=*/ false,
             /// FIXME: we can pass db.table, but, we use UUIDs internally, so we need first to add support of checking UUIDs
             /*table_to_check=*/ nullptr,
             replicaIndexPriorityFunc());
@@ -595,7 +596,7 @@ private:
             executeRemoteAnalysisSync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
@@ -612,7 +613,7 @@ private:
         };
 
         auto sample_block = indexAnalysisSampleBlock();
-        Epoll readers_epoll;
+        Epoll readers_epoll{EpollNesting::PipelinePoller};
         std::vector<ReplicaReader> readers;
         std::unordered_map<int, size_t> fd_to_reader;
 
@@ -860,7 +861,7 @@ private:
     /// Keep `ConnectionPool::Entry` objects alive for the sync path.
     std::vector<ConnectionPool::Entry> connection_entries;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Keep `HedgedConnectionsFactory` alive for the async path.
     std::optional<HedgedConnectionsFactory> hedged_factory;
 #endif

@@ -18,7 +18,8 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO alter_table SELECT number, toString(nu
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM alter_table WHERE value == '733'"
 
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE alter_table MODIFY COLUMN value LowCardinality(String)" &
+# Merges are stopped, so the mutation never runs: do not wait for it, or the DROP below fails the wait with UNFINISHED.
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE alter_table MODIFY COLUMN value LowCardinality(String) SETTINGS alter_sync = 0" &
 
 # waiting until schema will change (but not data)
 show_query="SHOW CREATE TABLE alter_table"

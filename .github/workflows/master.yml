@@ -151,11 +151,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (multiplatform manifest)' --workflow "MasterCI" --ci --timestamp
 
-  build_arm_tidy:
-    runs-on: [self-hosted, arm-large]
+  build_arm_tidy_1_4:
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5KQ==') }}
-    name: "Build (arm_tidy)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCAxLzQp') }}
+    name: "Build (arm_tidy, 1/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -183,10 +183,112 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 1/4)' --workflow "MasterCI" --ci --timestamp
+
+  build_arm_tidy_2_4:
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCAyLzQp') }}
+    name: "Build (arm_tidy, 2/4)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 2/4)' --workflow "MasterCI" --ci --timestamp
+
+  build_arm_tidy_3_4:
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCAzLzQp') }}
+    name: "Build (arm_tidy, 3/4)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 3/4)' --workflow "MasterCI" --ci --timestamp
+
+  build_arm_tidy_4_4:
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCA0LzQp') }}
+    name: "Build (arm_tidy, 4/4)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 4/4)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_debug:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
     name: "Build (amd_debug)"
@@ -220,7 +322,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_debug)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_asan_ubsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuX3Vic2FuKQ==') }}
     name: "Build (amd_asan_ubsan)"
@@ -254,7 +356,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_asan_ubsan)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_tsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
     name: "Build (amd_tsan)"
@@ -288,7 +390,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_tsan)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_msan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tc2FuKQ==') }}
     name: "Build (amd_msan)"
@@ -322,7 +424,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_msan)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_binary:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
@@ -356,7 +458,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_binary)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_debug:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9kZWJ1Zyk=') }}
     name: "Build (arm_debug)"
@@ -390,7 +492,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_debug)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_asan_ubsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9hc2FuX3Vic2FuKQ==') }}
     name: "Build (arm_asan_ubsan)"
@@ -424,7 +526,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_asan_ubsan)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_tsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90c2FuKQ==') }}
     name: "Build (arm_tsan)"
@@ -458,7 +560,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tsan)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_msan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9tc2FuKQ==') }}
     name: "Build (arm_msan)"
@@ -492,7 +594,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_msan)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_binary:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9iaW5hcnkp') }}
     name: "Build (arm_binary)"
@@ -524,40 +626,6 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_binary)' --workflow "MasterCI" --ci --timestamp
-
-  build_llvm_coverage_build:
-    runs-on: [self-hosted, amd-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxsdm1fY292ZXJhZ2VfYnVpbGQp') }}
-    name: "Build (llvm_coverage_build)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (llvm_coverage_build)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_release:
     runs-on: [self-hosted, arm-large]
@@ -627,11 +695,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "MasterCI" --ci --timestamp
 
-  build_amd_release_pr_cache_warmup:
+  build_amd_release_performance_reference:
     runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlX3ByX2NhY2hlX3dhcm11cCk=') }}
-    name: "Build (amd_release_pr_cache_warmup)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlX3BlcmZvcm1hbmNlX3JlZmVyZW5jZSk=') }}
+    name: "Build (amd_release_performance_reference)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -659,13 +727,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_release_pr_cache_warmup)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_release_performance_reference)' --workflow "MasterCI" --ci --timestamp
 
-  build_arm_release_pr_cache_warmup:
+  build_arm_release_performance_reference:
     runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlX3ByX2NhY2hlX3dhcm11cCk=') }}
-    name: "Build (arm_release_pr_cache_warmup)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlX3BlcmZvcm1hbmNlX3JlZmVyZW5jZSk=') }}
+    name: "Build (arm_release_performance_reference)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -693,11 +761,11 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release_pr_cache_warmup)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release_performance_reference)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_darwin:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, amd-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9kYXJ3aW4p') }}
     name: "Build (amd_darwin)"
     outputs:
@@ -730,8 +798,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_darwin)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_darwin:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9kYXJ3aW4p') }}
     name: "Build (arm_darwin)"
     outputs:
@@ -764,8 +832,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_v80compat:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV92ODBjb21wYXQp') }}
     name: "Build (arm_v80compat)"
     outputs:
@@ -798,8 +866,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_v80compat)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_freebsd:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9mcmVlYnNkKQ==') }}
     name: "Build (amd_freebsd)"
     outputs:
@@ -831,9 +899,43 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_freebsd)' --workflow "MasterCI" --ci --timestamp
 
+  build_amd_illumos:
+    runs-on: [self-hosted, amd-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9pbGx1bW9zKQ==') }}
+    name: "Build (amd_illumos)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_illumos)' --workflow "MasterCI" --ci --timestamp
+
   build_ppc64le:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHBwYzY0bGUp') }}
     name: "Build (ppc64le)"
     outputs:
@@ -866,8 +968,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (ppc64le)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_compat:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9jb21wYXQp') }}
     name: "Build (amd_compat)"
     outputs:
@@ -900,8 +1002,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_compat)' --workflow "MasterCI" --ci --timestamp
 
   build_amd_musl:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tdXNsKQ==') }}
     name: "Build (amd_musl)"
     outputs:
@@ -934,8 +1036,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_musl)' --workflow "MasterCI" --ci --timestamp
 
   build_riscv64:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHJpc2N2NjQp') }}
     name: "Build (riscv64)"
     outputs:
@@ -968,8 +1070,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (riscv64)' --workflow "MasterCI" --ci --timestamp
 
   build_s390x:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHMzOTB4KQ==') }}
     name: "Build (s390x)"
     outputs:
@@ -1002,8 +1104,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (s390x)' --workflow "MasterCI" --ci --timestamp
 
   build_loongarch64:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxvb25nYXJjaDY0KQ==') }}
     name: "Build (loongarch64)"
     outputs:
@@ -1036,8 +1138,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (loongarch64)' --workflow "MasterCI" --ci --timestamp
 
   build_wasm64:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHdhc202NCk=') }}
     name: "Build (wasm64)"
     outputs:
@@ -1070,8 +1172,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (wasm64)' --workflow "MasterCI" --ci --timestamp
 
   build_arm_fuzzers:
-    runs-on: [self-hosted, arm-large]
-    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-medium-cpu]
+    needs: [build_amd_asan_ubsan, build_amd_binary, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_debug, build_arm_msan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
     name: "Build (arm_fuzzers)"
     outputs:
@@ -1104,7 +1206,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_fuzzers)' --workflow "MasterCI" --ci --timestamp
 
   build_wasm_parser:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHdhc21fcGFyc2VyKQ==') }}
     name: "Build (wasm_parser)"
@@ -1341,40 +1443,6 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_amd_llvm_coverage:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2xsdm1fY292ZXJhZ2Up') }}
-    name: "Unit tests (amd_llvm_coverage)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_llvm_coverage)' --workflow "MasterCI" --ci --timestamp
-
   docker_server_image:
     runs-on: [self-hosted, amd-tiny]
     needs: [build_amd_release, build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
@@ -1443,11 +1511,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker keeper image' --workflow "MasterCI" --ci --timestamp
 
-  install_packages_amd_release:
+  install_packages_amd_release_deb:
     runs-on: [self-hosted, amd-tiny]
     needs: [build_amd_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2Up') }}
-    name: "Install packages (amd_release)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIGRlYik=') }}
+    name: "Install packages (amd_release, deb)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1475,13 +1543,81 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release, deb)' --workflow "MasterCI" --ci --timestamp
 
-  install_packages_arm_release:
+  install_packages_amd_release_rpm:
+    runs-on: [self-hosted, amd-tiny]
+    needs: [build_amd_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIHJwbSk=') }}
+    name: "Install packages (amd_release, rpm)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release, rpm)' --workflow "MasterCI" --ci --timestamp
+
+  install_packages_amd_release_tgz:
+    runs-on: [self-hosted, amd-tiny]
+    needs: [build_amd_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIHRneik=') }}
+    name: "Install packages (amd_release, tgz)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release, tgz)' --workflow "MasterCI" --ci --timestamp
+
+  install_packages_arm_release_deb:
     runs-on: [self-hosted, arm-tiny]
     needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2Up') }}
-    name: "Install packages (arm_release)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIGRlYik=') }}
+    name: "Install packages (arm_release, deb)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1509,7 +1645,75 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release, deb)' --workflow "MasterCI" --ci --timestamp
+
+  install_packages_arm_release_rpm:
+    runs-on: [self-hosted, arm-tiny]
+    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIHJwbSk=') }}
+    name: "Install packages (arm_release, rpm)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release, rpm)' --workflow "MasterCI" --ci --timestamp
+
+  install_packages_arm_release_tgz:
+    runs-on: [self-hosted, arm-tiny]
+    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIHRneik=') }}
+    name: "Install packages (arm_release, tgz)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release, tgz)' --workflow "MasterCI" --ci --timestamp
 
   compatibility_check_amd_release:
     runs-on: [self-hosted, amd-tiny]
@@ -1714,312 +1918,6 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_1_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAxLzMp') }}
-    name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, 1/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, 1/3)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_2_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAyLzMp') }}
-    name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, 2/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, 2/3)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_3_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAzLzMp') }}
-    name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, 3/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, 3/3)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_sequential_1_2:
-    runs-on: [self-hosted, amd-small]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHNlcXVlbnRpYWwsIDEvMik=') }}
-    name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, 1/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, 1/2)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_sequential_2_2:
-    runs-on: [self-hosted, amd-small]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgb2xkIGFuYWx5emVyLCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHNlcXVlbnRpYWwsIDIvMik=') }}
-    name: "Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, 2/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
-    name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, parallel)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential:
-    runs-on: [self-hosted, amd-small]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgUGFyYWxsZWxSZXBsaWNhcywgczMgc3RvcmFnZSwgc2VxdWVudGlhbCk=') }}
-    name: "Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, parallel)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
-
-  stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential:
-    runs-on: [self-hosted, amd-small]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgQXN5bmNJbnNlcnQsIHMzIHN0b3JhZ2UsIHNlcXVlbnRpYWwp') }}
-    name: "Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, sequential)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, AsyncInsert, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_debug_parallel:
     runs-on: [self-hosted, amd-medium-cpu]
@@ -2803,11 +2701,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_release, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
 
-  stateless_tests_amd_llvm_coverage_1_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMS8zKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, 1/3)"
+  stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAxLzIp') }}
+    name: "Stateless tests (arm_binary, s3 storage, DBReplicated, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2835,13 +2733,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 1/3)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, s3 storage, DBReplicated, parallel, 1/2)' --workflow "MasterCI" --ci --timestamp
 
-  stateless_tests_amd_llvm_coverage_2_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMi8zKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, 2/3)"
+  stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_2_2:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHBhcmFsbGVsLCAyLzIp') }}
+    name: "Stateless tests (arm_binary, s3 storage, DBReplicated, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2869,13 +2767,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 2/3)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, s3 storage, DBReplicated, parallel, 2/2)' --workflow "MasterCI" --ci --timestamp
 
-  stateless_tests_amd_llvm_coverage_3_3:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZSwgMy8zKQ==') }}
-    name: "Stateless tests (amd_llvm_coverage, 3/3)"
+  stateless_tests_arm_binary_s3_storage_dbreplicated_sequential:
+    runs-on: [self-hosted, arm-small]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzMyBzdG9yYWdlLCBEQlJlcGxpY2F0ZWQsIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (arm_binary, s3 storage, DBReplicated, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2903,7 +2801,143 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage, 3/3)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, s3 storage, DBReplicated, sequential)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, s3 storage, parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential:
+    runs-on: [self-hosted, arm-small]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_asyncinsert_s3_storage_parallel:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBBc3luY0luc2VydCwgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
+    name: "Stateless tests (arm_binary, AsyncInsert, s3 storage, parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, AsyncInsert, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_asyncinsert_s3_storage_sequential:
+    runs-on: [self-hosted, arm-small]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBBc3luY0luc2VydCwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (arm_binary, AsyncInsert, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, AsyncInsert, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_parallel:
     runs-on: [self-hosted, arm-large]
@@ -2939,11 +2973,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, parallel)' --workflow "MasterCI" --ci --timestamp
 
-  stateless_tests_arm_asan_ubsan_azure_sequential:
+  stateless_tests_arm_asan_ubsan_azure_sequential_1_2:
     runs-on: [self-hosted, arm-small-mem]
     needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHNlcXVlbnRpYWwp') }}
-    name: "Stateless tests (arm_asan_ubsan, azure, sequential)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHNlcXVlbnRpYWwsIDEvMik=') }}
+    name: "Stateless tests (arm_asan_ubsan, azure, sequential, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -2971,13 +3005,47 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, sequential)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, sequential, 1/2)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6:
+  stateless_tests_arm_asan_ubsan_azure_sequential_2_2:
+    runs-on: [self-hosted, arm-small-mem]
+    needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHNlcXVlbnRpYWwsIDIvMik=') }}
+    name: "Stateless tests (arm_asan_ubsan, azure, sequential, 2/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_amd_asan_ubsan_db_disk_1_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDEvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAxLzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 1/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3005,13 +3073,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 1/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6:
+  integration_tests_amd_asan_ubsan_db_disk_2_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDIvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAyLzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 2/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3039,13 +3107,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 2/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6:
+  integration_tests_amd_asan_ubsan_db_disk_3_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDMvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAzLzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 3/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3073,13 +3141,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 3/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6:
+  integration_tests_amd_asan_ubsan_db_disk_4_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDQvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA0Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 4/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3107,13 +3175,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 4/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6:
+  integration_tests_amd_asan_ubsan_db_disk_5_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDUvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA1Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 5/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3141,13 +3209,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 5/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6:
+  integration_tests_amd_asan_ubsan_db_disk_6_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDYvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA2Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 6/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3175,7 +3243,75 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 6/8)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_amd_asan_ubsan_db_disk_7_8:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA3Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 7/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 7/8)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_amd_asan_ubsan_db_disk_8_8:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA4Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 8/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 8/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_arm_binary_distributed_plan_1_4:
     runs-on: [self-hosted, arm-medium]
@@ -3313,11 +3449,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 4/4)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_tsan_1_6:
+  integration_tests_amd_tsan_1_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzYp') }}
-    name: "Integration tests (amd_tsan, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzgp') }}
+    name: "Integration tests (amd_tsan, 1/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3345,13 +3481,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_tsan_2_6:
+  integration_tests_amd_tsan_2_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzYp') }}
-    name: "Integration tests (amd_tsan, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzgp') }}
+    name: "Integration tests (amd_tsan, 2/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3379,13 +3515,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_tsan_3_6:
+  integration_tests_amd_tsan_3_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzYp') }}
-    name: "Integration tests (amd_tsan, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzgp') }}
+    name: "Integration tests (amd_tsan, 3/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3413,13 +3549,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_tsan_4_6:
+  integration_tests_amd_tsan_4_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0LzYp') }}
-    name: "Integration tests (amd_tsan, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0Lzgp') }}
+    name: "Integration tests (amd_tsan, 4/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3447,13 +3583,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_tsan_5_6:
+  integration_tests_amd_tsan_5_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1LzYp') }}
-    name: "Integration tests (amd_tsan, 5/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1Lzgp') }}
+    name: "Integration tests (amd_tsan, 5/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3481,13 +3617,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_tsan_6_6:
+  integration_tests_amd_tsan_6_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2LzYp') }}
-    name: "Integration tests (amd_tsan, 6/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2Lzgp') }}
+    name: "Integration tests (amd_tsan, 6/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3515,7 +3651,75 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/8)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_amd_tsan_7_8:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA3Lzgp') }}
+    name: "Integration tests (amd_tsan, 7/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 7/8)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_amd_tsan_8_8:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA4Lzgp') }}
+    name: "Integration tests (amd_tsan, 8/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 8/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_1_8:
     runs-on: [self-hosted, amd-medium]
@@ -3789,11 +3993,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 8/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_llvm_coverage_1_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAxLzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 1/8)"
+  integration_tests_arm_binary_1_4:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDEvNCk=') }}
+    name: "Integration tests (arm_binary, 1/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3821,13 +4025,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 1/8)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 1/4)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_llvm_coverage_2_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAyLzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 2/8)"
+  integration_tests_arm_binary_2_4:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDIvNCk=') }}
+    name: "Integration tests (arm_binary, 2/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3855,13 +4059,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 2/8)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 2/4)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_llvm_coverage_3_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCAzLzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 3/8)"
+  integration_tests_arm_binary_3_4:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDMvNCk=') }}
+    name: "Integration tests (arm_binary, 3/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3889,13 +4093,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 3/8)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 3/4)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_amd_llvm_coverage_4_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA0Lzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 4/8)"
+  integration_tests_arm_binary_4_4:
+    runs-on: [self-hosted, arm-medium]
+    needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDQvNCk=') }}
+    name: "Integration tests (arm_binary, 4/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3923,177 +4127,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 4/8)' --workflow "MasterCI" --ci --timestamp
-
-  integration_tests_amd_llvm_coverage_5_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA1Lzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 5/8)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 5/8)' --workflow "MasterCI" --ci --timestamp
-
-  integration_tests_amd_llvm_coverage_6_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA2Lzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 6/8)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 6/8)' --workflow "MasterCI" --ci --timestamp
-
-  integration_tests_amd_llvm_coverage_7_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA3Lzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 7/8)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 7/8)' --workflow "MasterCI" --ci --timestamp
-
-  integration_tests_amd_llvm_coverage_8_8:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlLCA4Lzgp') }}
-    name: "Integration tests (amd_llvm_coverage, 8/8)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_llvm_coverage, 8/8)' --workflow "MasterCI" --ci --timestamp
-
-  integration_tests_amd_binary_excluded_from_llvm:
-    runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9iaW5hcnlfZXhjbHVkZWRfZnJvbV9sbHZtKQ==') }}
-    name: "Integration tests (amd_binary_excluded_from_llvm)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_binary_excluded_from_llvm)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 4/4)' --workflow "MasterCI" --ci --timestamp
 
   stress_test_amd_debug:
     runs-on: [self-hosted, amd-medium]
@@ -5217,210 +5251,6 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "MasterCI" --ci --timestamp
 
-  performance_comparison_arm_release_release_base_1_6:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIHJlbGVhc2VfYmFzZSwgMS82KQ==') }}
-    name: "Performance Comparison (arm_release, release_base, 1/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, release_base, 1/6)' --workflow "MasterCI" --ci --timestamp
-
-  performance_comparison_arm_release_release_base_2_6:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIHJlbGVhc2VfYmFzZSwgMi82KQ==') }}
-    name: "Performance Comparison (arm_release, release_base, 2/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, release_base, 2/6)' --workflow "MasterCI" --ci --timestamp
-
-  performance_comparison_arm_release_release_base_3_6:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIHJlbGVhc2VfYmFzZSwgMy82KQ==') }}
-    name: "Performance Comparison (arm_release, release_base, 3/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, release_base, 3/6)' --workflow "MasterCI" --ci --timestamp
-
-  performance_comparison_arm_release_release_base_4_6:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIHJlbGVhc2VfYmFzZSwgNC82KQ==') }}
-    name: "Performance Comparison (arm_release, release_base, 4/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, release_base, 4/6)' --workflow "MasterCI" --ci --timestamp
-
-  performance_comparison_arm_release_release_base_5_6:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIHJlbGVhc2VfYmFzZSwgNS82KQ==') }}
-    name: "Performance Comparison (arm_release, release_base, 5/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, release_base, 5/6)' --workflow "MasterCI" --ci --timestamp
-
-  performance_comparison_arm_release_release_base_6_6:
-    runs-on: [self-hosted, arm-medium]
-    needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIHJlbGVhc2VfYmFzZSwgNi82KQ==') }}
-    name: "Performance Comparison (arm_release, release_base, 6/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, release_base, 6/6)' --workflow "MasterCI" --ci --timestamp
-
   clickbench_amd_release:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_release, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
@@ -5625,43 +5455,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Docs examples' --workflow "MasterCI" --ci --timestamp
 
-  llvm_coverage:
-    runs-on: [self-hosted, amd-small]
-    needs: [build_llvm_coverage_build, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, integration_tests_amd_llvm_coverage_1_8, integration_tests_amd_llvm_coverage_2_8, integration_tests_amd_llvm_coverage_3_8, integration_tests_amd_llvm_coverage_4_8, integration_tests_amd_llvm_coverage_5_8, integration_tests_amd_llvm_coverage_6_8, integration_tests_amd_llvm_coverage_7_8, integration_tests_amd_llvm_coverage_8_8, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_1_3, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_2_3, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_3_3, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_sequential_1_2, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_sequential_2_2, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential, unit_tests_amd_llvm_coverage]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TExWTSBDb3ZlcmFnZQ==') }}
-    name: "LLVM Coverage"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'LLVM Coverage' --workflow "MasterCI" --ci --timestamp
-
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
-    needs: [ast_fuzzer_amd_debug, ast_fuzzer_amd_msan, ast_fuzzer_amd_release_oracle, ast_fuzzer_amd_tsan, ast_fuzzer_arm_asan_ubsan, build_amd_asan_ubsan, build_amd_binary, build_amd_compat, build_amd_darwin, build_amd_debug, build_amd_freebsd, build_amd_msan, build_amd_musl, build_amd_release, build_amd_release_pr_cache_warmup, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_darwin, build_arm_debug, build_arm_fuzzers, build_arm_msan, build_arm_release, build_arm_release_pr_cache_warmup, build_arm_tidy, build_arm_tsan, build_arm_v80compat, build_llvm_coverage_build, build_loongarch64, build_ppc64le, build_riscv64, build_s390x, build_wasm64, build_wasm_parser, buzzhouse_amd_debug, buzzhouse_amd_msan, buzzhouse_amd_tsan, buzzhouse_arm_asan_ubsan, clickbench_amd_release, clickbench_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, docs_examples, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6, integration_tests_amd_binary_excluded_from_llvm, integration_tests_amd_llvm_coverage_1_8, integration_tests_amd_llvm_coverage_2_8, integration_tests_amd_llvm_coverage_3_8, integration_tests_amd_llvm_coverage_4_8, integration_tests_amd_llvm_coverage_5_8, integration_tests_amd_llvm_coverage_6_8, integration_tests_amd_llvm_coverage_7_8, integration_tests_amd_llvm_coverage_8_8, integration_tests_amd_msan_1_8, integration_tests_amd_msan_2_8, integration_tests_amd_msan_3_8, integration_tests_amd_msan_4_8, integration_tests_amd_msan_5_8, integration_tests_amd_msan_6_8, integration_tests_amd_msan_7_8, integration_tests_amd_msan_8_8, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, llvm_coverage, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, performance_comparison_arm_release_release_base_1_6, performance_comparison_arm_release_release_base_2_6, performance_comparison_arm_release_release_base_3_6, performance_comparison_arm_release_release_base_4_6, performance_comparison_arm_release_release_base_5_6, performance_comparison_arm_release_release_base_6_6, sqllogic_test, sqlstorm_test, sqltest, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3, stateless_tests_amd_asan_ubsan_distributed_plan_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_llvm_coverage_1_3, stateless_tests_amd_llvm_coverage_2_3, stateless_tests_amd_llvm_coverage_3_3, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_parallel, stateless_tests_amd_llvm_coverage_asyncinsert_s3_storage_sequential, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_1_3, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_2_3, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_parallel_3_3, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_sequential_1_2, stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_sequential_2_2, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel, stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential, stateless_tests_amd_msan_parallel_1_3, stateless_tests_amd_msan_parallel_2_3, stateless_tests_amd_msan_parallel_3_3, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_release_parallel_1_2, stateless_tests_amd_release_parallel_2_2, stateless_tests_amd_release_sequential_1_2, stateless_tests_amd_release_sequential_2_2, stateless_tests_amd_tsan_parallel, stateless_tests_amd_tsan_s3_storage_parallel_1_3, stateless_tests_amd_tsan_s3_storage_parallel_2_3, stateless_tests_amd_tsan_s3_storage_parallel_3_3, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_arm_asan_ubsan_azure_parallel, stateless_tests_arm_asan_ubsan_azure_sequential, stateless_tests_arm_release_parallel, stateless_tests_arm_release_sequential, stress_test_amd_asan_ubsan, stress_test_amd_debug, stress_test_amd_msan, stress_test_amd_tsan, stress_test_arm_asan_ubsan, stress_test_arm_asan_ubsan_s3, stress_test_arm_debug, stress_test_arm_msan, stress_test_arm_release, stress_test_arm_tsan, stress_test_azure_amd_msan, stress_test_azure_amd_tsan, unit_tests_amd_llvm_coverage, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
+    needs: [ast_fuzzer_amd_debug, ast_fuzzer_amd_msan, ast_fuzzer_amd_release_oracle, ast_fuzzer_amd_tsan, ast_fuzzer_arm_asan_ubsan, build_amd_asan_ubsan, build_amd_binary, build_amd_compat, build_amd_darwin, build_amd_debug, build_amd_freebsd, build_amd_illumos, build_amd_msan, build_amd_musl, build_amd_release, build_amd_release_performance_reference, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_darwin, build_arm_debug, build_arm_fuzzers, build_arm_msan, build_arm_release, build_arm_release_performance_reference, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, build_arm_tsan, build_arm_v80compat, build_loongarch64, build_ppc64le, build_riscv64, build_s390x, build_wasm64, build_wasm_parser, buzzhouse_amd_debug, buzzhouse_amd_msan, buzzhouse_amd_tsan, buzzhouse_arm_asan_ubsan, clickbench_amd_release, clickbench_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, docs_examples, install_packages_amd_release_deb, install_packages_amd_release_rpm, install_packages_amd_release_tgz, install_packages_arm_release_deb, install_packages_arm_release_rpm, install_packages_arm_release_tgz, integration_tests_amd_asan_ubsan_db_disk_1_8, integration_tests_amd_asan_ubsan_db_disk_2_8, integration_tests_amd_asan_ubsan_db_disk_3_8, integration_tests_amd_asan_ubsan_db_disk_4_8, integration_tests_amd_asan_ubsan_db_disk_5_8, integration_tests_amd_asan_ubsan_db_disk_6_8, integration_tests_amd_asan_ubsan_db_disk_7_8, integration_tests_amd_asan_ubsan_db_disk_8_8, integration_tests_amd_msan_1_8, integration_tests_amd_msan_2_8, integration_tests_amd_msan_3_8, integration_tests_amd_msan_4_8, integration_tests_amd_msan_5_8, integration_tests_amd_msan_6_8, integration_tests_amd_msan_7_8, integration_tests_amd_msan_8_8, integration_tests_amd_tsan_1_8, integration_tests_amd_tsan_2_8, integration_tests_amd_tsan_3_8, integration_tests_amd_tsan_4_8, integration_tests_amd_tsan_5_8, integration_tests_amd_tsan_6_8, integration_tests_amd_tsan_7_8, integration_tests_amd_tsan_8_8, integration_tests_arm_binary_1_4, integration_tests_arm_binary_2_4, integration_tests_arm_binary_3_4, integration_tests_arm_binary_4_4, integration_tests_arm_binary_distributed_plan_1_4, integration_tests_arm_binary_distributed_plan_2_4, integration_tests_arm_binary_distributed_plan_3_4, integration_tests_arm_binary_distributed_plan_4_4, performance_comparison_amd_release_master_head_1_6, performance_comparison_amd_release_master_head_2_6, performance_comparison_amd_release_master_head_3_6, performance_comparison_amd_release_master_head_4_6, performance_comparison_amd_release_master_head_5_6, performance_comparison_amd_release_master_head_6_6, performance_comparison_arm_release_master_head_1_6, performance_comparison_arm_release_master_head_2_6, performance_comparison_arm_release_master_head_3_6, performance_comparison_arm_release_master_head_4_6, performance_comparison_arm_release_master_head_5_6, performance_comparison_arm_release_master_head_6_6, sqllogic_test, sqlstorm_test, sqltest, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3, stateless_tests_amd_asan_ubsan_distributed_plan_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_parallel, stateless_tests_amd_debug_distributed_plan_s3_storage_sequential, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_sequential, stateless_tests_amd_msan_parallel_1_3, stateless_tests_amd_msan_parallel_2_3, stateless_tests_amd_msan_parallel_3_3, stateless_tests_amd_msan_sequential_1_2, stateless_tests_amd_msan_sequential_2_2, stateless_tests_amd_release_parallel_1_2, stateless_tests_amd_release_parallel_2_2, stateless_tests_amd_release_sequential_1_2, stateless_tests_amd_release_sequential_2_2, stateless_tests_amd_tsan_parallel, stateless_tests_amd_tsan_s3_storage_parallel_1_3, stateless_tests_amd_tsan_s3_storage_parallel_2_3, stateless_tests_amd_tsan_s3_storage_parallel_3_3, stateless_tests_amd_tsan_s3_storage_sequential_1_2, stateless_tests_amd_tsan_s3_storage_sequential_2_2, stateless_tests_amd_tsan_sequential_1_2, stateless_tests_amd_tsan_sequential_2_2, stateless_tests_arm_asan_ubsan_azure_parallel, stateless_tests_arm_asan_ubsan_azure_sequential_1_2, stateless_tests_arm_asan_ubsan_azure_sequential_2_2, stateless_tests_arm_binary_asyncinsert_s3_storage_parallel, stateless_tests_arm_binary_asyncinsert_s3_storage_sequential, stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel, stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential, stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2, stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_2_2, stateless_tests_arm_binary_s3_storage_dbreplicated_sequential, stateless_tests_arm_release_parallel, stateless_tests_arm_release_sequential, stress_test_amd_asan_ubsan, stress_test_amd_debug, stress_test_amd_msan, stress_test_amd_tsan, stress_test_arm_asan_ubsan, stress_test_arm_asan_ubsan_s3, stress_test_arm_debug, stress_test_arm_msan, stress_test_arm_release, stress_test_arm_tsan, stress_test_azure_amd_msan, stress_test_azure_amd_tsan, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
