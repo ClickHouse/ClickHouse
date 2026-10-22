@@ -56,9 +56,7 @@ public:
         }
         else if (auto * lambda_node = node->as<LambdaNode>())
         {
-            /// The lambda caches its own result type, so replacing a column inside its body leaves that
-            /// cache stale and the mismatch resurfaces later as a header type mismatch. Recompute it from
-            /// the rewritten body, keeping the argument types.
+            /// The lambda caches its result type, so recompute it from the rewritten body.
             const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
             if (!lambda_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -74,10 +72,7 @@ public:
 
     bool needChildVisit(QueryTreeNodePtr & /* parent */, QueryTreeNodePtr & child)
     {
-        /// Visit only expressions, but not subqueries.
-        /// LAMBDA is an expression too: a matcher inside a lambda body (`arrayMap(x -> *, ...)`) is
-        /// rewritten by the same JOIN type corrections as one outside it, so the replacement must reach
-        /// it, otherwise the registered entry is never applied.
+        /// Visit only expressions, including lambda bodies, but not subqueries
         return child->getNodeType() == QueryTreeNodeType::IDENTIFIER
             || child->getNodeType() == QueryTreeNodeType::LIST
             || child->getNodeType() == QueryTreeNodeType::FUNCTION
