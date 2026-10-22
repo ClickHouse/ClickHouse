@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -186,7 +187,10 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
         for (auto it = std::next(args.begin()); it != args.end(); ++it)
         {
             if (auto dsl_query = tryGetQueryFunctionArgument(*it, context))
+            {
+                *it = makeASTFunction("query", make_intrusive<ASTLiteral>(*dsl_query));
                 configuration.query = std::move(*dsl_query);
+            }
         }
     }
     else
@@ -203,6 +207,7 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
             {
                 if (!provided.emplace("query").second)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch argument 'query' is specified more than once");
+                arg = makeASTFunction("query", make_intrusive<ASTLiteral>(*dsl_query));
                 configuration.query = std::move(*dsl_query);
             }
             else if (const auto * equals_function = arg->as<ASTFunction>(); equals_function && equals_function->name == "equals")
