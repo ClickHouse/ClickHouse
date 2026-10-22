@@ -215,6 +215,9 @@ public:
         bool has_exact_ranges = false;
         /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
         bool exact_ranges_excluded = false;
+        /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
+        /// from the analysis done on the initiator.
+        bool index_analysis_was_already_done_on_initiator = false;
         /// The filter constrains the primary key of the analyzed parts (the same criterion the
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
@@ -244,6 +247,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
             , key_condition_not_applied(other.key_condition_not_applied)
             , exceeded_row_limits(other.exceeded_row_limits.load())
@@ -267,6 +271,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
+            , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
             , pk_condition_useful(other.pk_condition_useful)
             , key_condition_not_applied(std::move(other.key_condition_not_applied))
             , exceeded_row_limits(other.exceeded_row_limits.load())
