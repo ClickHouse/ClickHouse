@@ -1563,7 +1563,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
     /// Every row is valid: the same wrapper decision as `decodeField`, with an all-zero null map.
-    if (wrapsInNullable(field, *inner, effective_hint))
+    if (wrapsInNullable(field, field.nullable, *inner, effective_hint))
         return ColumnNullable::create(inner, ColumnUInt8::create(rows, UInt8{0}));
     return inner;
 }
@@ -1903,8 +1903,10 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();
 
-    /// A non-nullable field must declare a zero null count.
-    if (!field.nullable && node.null_count() != 0)
+    /// A non-nullable field must declare a zero null count, unless `input_format_null_as_default` turns its nulls
+    /// into defaults: then it is decoded as nullable.
+    const bool nullable = field.nullable || node.null_count() != 0;
+    if (nullable && !field.nullable && !settings.null_as_default)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC field '{}' is declared non-nullable but its FieldNode reports {} nulls",
@@ -1927,7 +1929,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
         return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, path, list_depth);
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
-    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
+    if (wrapsInNullable(field, nullable, *inner, resolveTargetHint(target_hint, path, list_depth)))
     {
         ColumnUInt8::Ptr null_map = own_null_map ? own_null_map : buildNullMap(validity, rows, node.null_count());
         return ColumnNullable::create(inner, null_map);
@@ -2031,12 +2033,13 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     return values->index(*indexes, 0);
 }
 
-bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const
+bool RecordBatchDecoder::wrapsInNullable(
+    const ArrowField & field, bool nullable, const IColumn & inner, const DataTypePtr & effective_hint) const
 {
     const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))));
-    return field.nullable && inner.canBeInsideNullable()
+    return nullable && inner.canBeInsideNullable()
         && (field.type.kind != TypeKind::Struct || preserve_struct_nulls);
 }
 
