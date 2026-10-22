@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Common/PODArray.h>
 
@@ -238,7 +239,7 @@ struct ALPPage
             /// The deltas are added in unsigned arithmetic (wrapping, as the specification says),
             /// then reinterpreted as signed.
             for (size_t i = 0; i < n; ++i)
-                out[i] = static_cast<T>(static_cast<Signed>(deltas[i] + frame_of_reference)) * multiplier_factor * multiplier_exponent;
+                out[i] = static_cast<T>(static_cast<Signed>(common::addIgnoreOverflow(deltas[i], frame_of_reference))) * multiplier_factor * multiplier_exponent;
         }
         ptr += packed_size;
 
@@ -673,7 +674,7 @@ private:
             max = std::max(max, encoded[i]);
         }
         const Exact frame_of_reference = static_cast<Exact>(min);
-        const UInt8 bit_width = static_cast<UInt8>(std::bit_width(static_cast<UInt64>(static_cast<Exact>(max) - frame_of_reference)));
+        const UInt8 bit_width = static_cast<UInt8>(std::bit_width(static_cast<UInt64>(common::subIgnoreOverflow(static_cast<Exact>(max), frame_of_reference))));
 
         const size_t packed_size = (n * bit_width + 7) / 8;
         const size_t vector_size = vectorHeaderSize<T>() + packed_size + num_exceptions * (sizeof(UInt16) + sizeof(T));
@@ -698,7 +699,7 @@ private:
             char * pos = ptr;
             for (size_t i = 0; i < n; ++i)
             {
-                const UInt64 delta = static_cast<Exact>(static_cast<Exact>(encoded[i]) - frame_of_reference);
+                const UInt64 delta = common::subIgnoreOverflow(static_cast<Exact>(encoded[i]), frame_of_reference);
                 accumulator |= delta << accumulated_bits;
                 accumulated_bits += bit_width;
                 if (accumulated_bits >= 64)
