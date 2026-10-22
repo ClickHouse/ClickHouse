@@ -71,9 +71,10 @@ SETTINGS use_query_condition_cache = true;
 
 ### `ORDER BY ... LIMIT n` (TopK) 查询 {#top-k-queries}
 
-使用 TopK 优化的查询 (`ORDER BY <column> LIMIT n`，通过动态筛选或排序列上的 minmax 跳过索引加速) 也会使用查询条件缓存。
+使用 TopK 优化的查询 (`ORDER BY <column> LIMIT n`，通过动态过滤或排序列上的 minmax 跳过索引加速) 也会使用查询条件缓存。
 TopK 读取可根据查询执行期间不断变化的阈值跳过粒度，因此其缓存条目会按 TopK 计划参数以及读取的 parts 集合进行分区：只有使用相同计划读取相同 parts 的查询才会复用这些条目。
 这同样适用于通过 `File` 表引擎对 Parquet 文件进行的 TopK 读取：此时，缓存会记录不包含任何结果行的行组，条目则按 TopK 计划参数、过滤条件 (如有) 以及所读取的文件集合及其版本进行分区，因此只要任一文件被修改，就会生成新的条目。
+对于以 Parquet 作为数据文件的数据湖表 (例如 `Iceberg`、`DeltaLake`、`Paimon`)，其 TopK 读取同样如此：条目按 TopK 计划参数、过滤条件 (如有) 以及表的快照进行分区，因此每生成一个新快照，都会产生新的条目。
 与其他读取不同，此类 TopK 读取即使没有过滤条件也会使用缓存，例如 `SELECT * FROM hits ORDER BY EventTime LIMIT 10`。
 可通过设置 [`use_query_condition_cache_for_top_k`](/zh/reference/settings/session-settings/use-query) (默认：启用) 将此类读取完全排除在缓存之外；仅当同时启用 `use_query_condition_cache` 时，该设置才会生效。
 

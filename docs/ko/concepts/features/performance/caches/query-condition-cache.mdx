@@ -74,6 +74,7 @@ SETTINGS use_query_condition_cache = true;
 TopK 최적화(`ORDER BY <column> LIMIT n`, 동적 필터링 또는 정렬 컬럼의 minmax 스킵 인덱스로 가속됨)를 사용하는 쿼리도 쿼리 조건 캐시를 사용합니다.
 TopK 읽기는 쿼리 실행 중 변하는 임계값을 기준으로 그래뉼을 건너뛸 수 있으므로, 해당 캐시 엔트리는 TopK 계획 매개변수와 읽은 파트 집합에 따라 분할됩니다. 동일한 파트에서 동일한 계획을 사용하는 쿼리만 이를 재사용합니다.
 이는 `File` 테이블 엔진을 통해 Parquet 파일을 TopK 방식으로 읽는 경우에도 적용됩니다. 이때 캐시는 결과 행이 하나도 없는 행 그룹(row groups)을 기억하며, 엔트리는 TopK 계획 매개변수, 필터 조건(filter condition)(있는 경우), 읽은 파일 집합과 각 파일의 버전에 따라 분할됩니다. 따라서 파일 중 하나라도 수정되면 새 엔트리가 생성됩니다.
+Parquet 데이터 파일을 사용하는 데이터 레이크 테이블(예: `Iceberg`, `DeltaLake`, `Paimon`)을 TopK 방식으로 읽는 경우에도 마찬가지입니다. 이 경우 엔트리는 TopK 계획 매개변수, 필터 조건(있는 경우), 테이블 스냅샷에 따라 분할되므로 새 스냅샷이 생길 때마다 새 엔트리가 생성됩니다.
 다른 읽기와 달리 이러한 TopK 읽기는 필터 조건(filter condition)이 없어도 캐시를 사용합니다(예: `SELECT * FROM hits ORDER BY EventTime LIMIT 10`).
 이러한 읽기는 [`use_query_condition_cache_for_top_k`](/ko/reference/settings/session-settings/use-query) 설정(기본값: 활성화됨)을 통해 캐시에서 완전히 제외할 수 있으며, 이 설정은 `use_query_condition_cache`도 활성화된 경우에만 적용됩니다.
 
