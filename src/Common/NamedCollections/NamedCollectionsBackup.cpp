@@ -217,6 +217,11 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         String stored;
         try
         {
+            /// An exception is recorded into `system.errors` (and `system.error_log`) when it is
+            /// constructed, before the sanitizing catch below replaces it, so the suppression keeps
+            /// the original out of the error statistics too. The sanitized replacement is
+            /// constructed outside the scope and is recorded normally.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             auto in = backup->readFile(filepath);
             readStringUntilEOF(stored, *in);
         }
@@ -251,6 +256,9 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
 
         try
         {
+            /// Keeps the parser exception, which embeds the decrypted statement, out of the error
+            /// statistics; see the read above.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             ParserCreateNamedCollectionQuery parser;
             ASTPtr ast = parseQuery(
                 parser,
@@ -311,6 +319,9 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         /// Keeper for the Keeper storage types).
         try
         {
+            /// Keeps the name-bearing errors of `createFromSQL` out of the error statistics; see
+            /// the read in the first loop.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             factory.createFromSQL(create_query);
         }
         catch (...)

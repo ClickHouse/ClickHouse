@@ -70,3 +70,12 @@ error=$(${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.named_collections FRO
 echo "${error}" | grep -m1 -c "Cannot read a named collection entry"
 echo "${error}" | grep -c "${collection}" || true
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${collection}'"
+
+# The sanitized errors above replace originals that are recorded into the error statistics when
+# they are constructed, before any catch runs: the parser error embeds the decrypted statement,
+# and the backup read error embeds the entry path. The restore must suppress those records.
+echo "no error-statistics row holds the secret or the collection name"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM system.errors
+    WHERE last_error_message LIKE '%${secret}%' OR last_error_message LIKE '%${collection}%'
+"

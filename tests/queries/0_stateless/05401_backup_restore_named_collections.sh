@@ -105,6 +105,12 @@ error=$(${CLICKHOUSE_CLIENT} --query "
 " 2>&1)
 echo "${error}" | grep -m1 -c "NAMED_COLLECTION_ALREADY_EXISTS"
 echo "${error}" | grep -c "${collection}" || true
+# The original name-bearing error is recorded into the error statistics on construction, before
+# the sanitizing catch runs, so the restore must suppress that record.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM system.errors
+    WHERE name = 'NAMED_COLLECTION_ALREADY_EXISTS' AND last_error_message LIKE '%${collection}%'
+"
 
 echo "an existing collection is replaced with create_named_collection = 'replace'"
 ${CLICKHOUSE_CLIENT} --query "

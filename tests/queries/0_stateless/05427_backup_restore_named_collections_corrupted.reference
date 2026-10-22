@@ -15,3 +15,5 @@ the restore fails without naming the entry when the entry data is missing from t
 1
 0
 0
+no error-statistics row holds the secret or the collection name
+0

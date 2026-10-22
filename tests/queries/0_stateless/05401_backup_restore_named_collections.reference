@@ -23,6 +23,7 @@ an existing collection is kept with create_named_collection = 'if-not-exists' (t
 an existing collection fails the restore with create_named_collection = 'create', without the name
 1
 0
+0
 an existing collection is replaced with create_named_collection = 'replace'
 1
 0
