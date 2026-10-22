@@ -22,6 +22,12 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
 #include <Common/checkStackSize.h>
@@ -36,6 +42,45 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int BAD_QUERY_PARAMETER;
+}
+
+namespace
+{
+
+/// The parsers of access-entity statements keep a name list in `children` only when it contains a name
+/// written as a query parameter (see e.g. `ParserCreateUserQuery`). After the substitution drop it from
+/// `children`, so the statement has the same shape and tree hash as the one written with the concrete
+/// names: the query rewrite rules match on the substituted query. The `usernameWasQueryParameter` flag
+/// is kept, because the formatting relies on it (e.g. to check `enforce_strict_identifier_format`).
+bool hasUnsubstitutedNames(const ASTUserNamesWithHost * names)
+{
+    if (!names)
+        return false;
+    for (const auto & name : *names)
+        if (name->as<const ASTUserNameWithHost &>().usernameIsQueryParameter())
+            return true;
+    return false;
+}
+
+void normalizeAccessEntityNames(IAST & ast)
+{
+    if (!ast.as<ASTCreateUserQuery>() && !ast.as<ASTCreateRoleQuery>() && !ast.as<ASTDropAccessEntityQuery>()
+        && !ast.as<ASTGrantQuery>() && !ast.as<ASTRolesOrUsersSet>())
+        return;
+
+    auto & children = ast.children;
+    children.erase(std::remove_if(children.begin(), children.end(), [](const ASTPtr & child)
+    {
+        if (const auto * names = child->as<ASTUserNamesWithHost>())
+            return !hasUnsubstitutedNames(names);
+        if (const auto * name = child->as<ASTUserNameWithHost>())
+            return !name->usernameIsQueryParameter();
+        if (const auto * roles_or_users = child->as<ASTRolesOrUsersSet>())
+            return !hasUnsubstitutedNames(roles_or_users->names.get()) && !hasUnsubstitutedNames(roles_or_users->except_names.get());
+        return false;
+    }), children.end());
+}
+
 }
 
 /// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
@@ -148,6 +193,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         else
             visitChildren(ast);
     }
+
+    normalizeAccessEntityNames(*ast);
 }
 
 

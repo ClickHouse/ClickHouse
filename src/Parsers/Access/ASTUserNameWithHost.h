@@ -24,6 +24,10 @@ public:
     String toString() const;
     bool usernameWasQueryParameter() const { return username_was_query_parameter; }
 
+    /// Whether the user name is still an unsubstituted query parameter. Unlike `usernameWasQueryParameter`,
+    /// this is false after the substitution, when the name is the same as one written literally.
+    bool usernameIsQueryParameter() const;
+
     /// Folds the name into `hash_state` as the access-entity formatters that write it as text emit it:
     /// a plain name is written with `toString`, so it is parsed back as an identifier or a string
     /// literal depending on the quoting, and only a query parameter keeps its subtree.
