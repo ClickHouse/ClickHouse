@@ -45,6 +45,16 @@ Multiple rules can be combined to form a full weekly schedule, as long as their 
 A scheduled scaling action and a concurrent autoscaling recommendation may interact — the schedule takes precedence at its trigger time.
 </Note>
 
+## Changing memory and replicas in the same rule {#changing-memory-and-replicas-in-the-same-rule}
+
+<Warning>
+If a rule lowers the memory per replica while the replica range stays open (minimum below maximum), expect [horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) to scale out to the maximum shortly after the rule starts.
+</Warning>
+
+Horizontal autoscaling compares the last 30 hours of per-replica usage with the replica size in force right now. When a rule shrinks each replica, usage measured on the larger replicas is divided by the new, smaller size and reads as high utilization. For example, replicas that peaked at 13 vCPU out of 41 (32%) read as 130% once the rule drops them to 10 vCPU, so the autoscaler adds replicas up to your maximum. When the next rule grows the replicas again, the same history reads as low utilization and the replicas are removed, so the service oscillates with the schedule.
+
+To avoid this, change one dimension per rule: either keep the memory per replica fixed and schedule the replica range, or keep the replica range fixed (minimum equal to maximum) and schedule the memory. If you need both, set the maximum replicas in the smaller-memory window to a count you are willing to run.
+
 ## Handling spikes in workload {#handling-bursty-workloads}
 
 If you have an upcoming expected spike in your workload, you can use the
