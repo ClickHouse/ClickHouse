@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -1297,9 +1298,11 @@ void MergeTreeData::checkProperties(
 
         for (const auto & name : key_columns)
         {
-            const auto column = new_metadata.columns.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-            if (!column || !column->codec)
+            /// A key may use a subcolumn, whose streams are a part of the streams of its column.
+            const auto written_column = new_metadata.columns.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), name);
+            const auto * column = written_column ? new_metadata.columns.tryGet(written_column->getNameInStorage()) : nullptr;
+            if (!column || (!column->codec && column->subcolumn_codecs.empty()))
                 continue;
 
             /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
@@ -1309,10 +1312,15 @@ void MergeTreeData::checkProperties(
             {
                 if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
                     return;
-                is_lossy = CompressionCodecFactory::instance()
-                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+                if (auto codec = getSubstreamCodecDescription(substream_path, *column))
+                    is_lossy = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
             };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+            /// The serialization of a subcolumn enumerates its streams with the full path from the column, as the writer does.
+            const auto & type_in_storage = written_column->getTypeInStorage();
+            auto serialization = written_column->isSubcolumn()
+                ? type_in_storage->getSubcolumnSerialization(written_column->getSubcolumnName(), type_in_storage->getDefaultSerialization())
+                : type_in_storage->getDefaultSerialization();
+            serialization->enumerateStreams(callback, written_column->type);
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

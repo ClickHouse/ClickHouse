@@ -1203,14 +1203,14 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
 
-    metadata = getMetadataJSONObject(
+    metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
         object_storage,
         persistent_table_components.metadata_cache,
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.table_uuid));
     metadata_compression_method = compression_method;
     previous_metadata_file_path = metadata_path;
     filename_generator = FileNamesGenerator(
@@ -1539,14 +1539,14 @@ bool IcebergStorageSink::initializeMetadata()
             previous_metadata_file_path = metadata_path;
             filename_generator.setVersion(last_version + 1);
 
-            metadata = getMetadataJSONObject(
+            metadata = deepCopy(getMetadataJSONObject(
                 metadata_path,
                 object_storage,
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites"),
                 compression_method,
-                persistent_table_components.table_uuid);
+                persistent_table_components.table_uuid));
 
             auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
             if (new_schema_id != current_schema_id)

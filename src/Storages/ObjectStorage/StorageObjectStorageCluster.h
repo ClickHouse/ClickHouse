@@ -80,6 +80,7 @@ public:
     String getPathSample(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;

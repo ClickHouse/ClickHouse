@@ -673,6 +673,11 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
+    return totalRowsInSnapshot(nullptr, query_context);
+}
+
+std::optional<UInt64> StorageObjectStorage::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
     if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
         return std::nullopt;
 
@@ -682,9 +687,16 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     if (distributed_processing)
         return std::nullopt;
 
-    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    std::optional<DataLakeTableStateSnapshot> state;
+    if (storage_snapshot && storage_snapshot->metadata)
+        state = storage_snapshot->metadata->datalake_table_state;
 
-    return configuration->totalRows(query_context);
+    if (is_table_function || state)
+        configuration->lazyInitializeIfNeeded(object_storage, query_context);
+    else
+        configuration->update(object_storage, query_context);
+
+    return configuration->totalRows(query_context, state);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
