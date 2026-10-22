@@ -58,7 +58,7 @@ public:
 
     /// The number of granules in a stripe of the columns cache for this part, 0 if the reader does
     /// not use the cache. See `ColumnsCacheStripes`.
-    virtual size_t getColumnsCacheStripeMarks() const { return 0; }
+    [[nodiscard]] virtual size_t getColumnsCacheStripeMarks() const { return 0; }
 
     /// Whether a block of the whole stripe of `mark` takes no memory beyond what the columns cache
     /// holds anyway: the stripe is served from the cache, or is going to be written to it.

@@ -162,7 +162,7 @@ struct ObjectMetadata
     /// same-second, same-size rewrite could serve stale data.
     [[nodiscard]] bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 
-    std::optional<String> getContentCacheToken() const
+    [[nodiscard]] std::optional<String> getContentCacheToken() const
     {
         if (isEtagUsableAsCacheKey())
             return etag;

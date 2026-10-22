@@ -337,7 +337,7 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVector>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 };
 
 struct NameNumericIndexedVectorPointwiseAdd { static constexpr auto name = "numericIndexedVectorPointwiseAdd"; };

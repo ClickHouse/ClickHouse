@@ -231,7 +231,7 @@ public:
 
     /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
     /// merging into it can make its counts wrap, so the merged state then fails this check.
-    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
+    [[nodiscard]] bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
     {
         UInt64 sum = 0;
         for (size_t i = 0; i < size; ++i)

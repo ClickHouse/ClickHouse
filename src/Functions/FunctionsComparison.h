@@ -1234,7 +1234,7 @@ private:
         return c_res;
     }
 
-    bool acceptsArgumentTypes(const DataTypes & arguments, const DataTypePtr & result_type) const
+    [[nodiscard]] bool acceptsArgumentTypes(const DataTypes & arguments, const DataTypePtr & result_type) const
     {
         try
         {

@@ -130,7 +130,7 @@ struct LowCardinalityArrayView
 
     /// Given a per-dictionary-entry match number in [1, matches_count] (0 for no match), compute whether each
     /// array row holds an element of every match number. [matches_count] is in [1, 64].
-    inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
+    [[nodiscard]] inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
     {
         UInt64 all_matched = matches_count == 64 ? ~UInt64(0) : (UInt64(1) << matches_count) - 1;
 

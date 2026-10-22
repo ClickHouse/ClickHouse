@@ -297,7 +297,7 @@ public:
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
 
-    size_t sizeOfObject() const override { return sizeof(Derived); }
+    [[nodiscard]] size_t sizeOfObject() const override { return sizeof(Derived); }
 
 protected:
     MutablePtr shallowMutate() const { return MutablePtr(static_cast<Derived *>(Base::shallowMutate().get())); }

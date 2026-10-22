@@ -737,7 +737,7 @@ public:
     /// `uniqExact` counts an exact set union: at least the largest and at most the sum of the
     /// partial counts. The bound is not declared for the estimating variants (`uniq`,
     /// `uniqHLL12`): their estimates are only approximately subadditive.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return MergedValueBound::Subadditive;
@@ -882,7 +882,7 @@ public:
     }
 
     /// See `AggregateFunctionUniq::getMergedValueBound`.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return MergedValueBound::Subadditive;

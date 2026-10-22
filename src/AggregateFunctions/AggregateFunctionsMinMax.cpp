@@ -170,7 +170,7 @@ public:
     /// because the merge skips `NaN` (partials `NaN` and `1` of `max` merge to `1`, which is not
     /// the maximum of the two under any `NaN` placement), and so are compound types, which may
     /// contain floating-point elements.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         const auto type = removeLowCardinality(this->result_type);
         const WhichDataType which(type);

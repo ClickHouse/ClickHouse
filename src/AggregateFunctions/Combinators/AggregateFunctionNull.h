@@ -368,7 +368,7 @@ public:
     /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
     /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
     /// nullable result is excluded because its NULLs do not take part in the nested comparison.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
             return MergedValueBound::Subadditive;

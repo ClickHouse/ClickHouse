@@ -157,7 +157,7 @@ private:
     /// all its column chunks list the same single 2D geometry type, returns that type. If any of
     /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
     /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
-    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
+    [[nodiscard]] std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.

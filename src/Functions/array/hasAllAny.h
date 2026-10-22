@@ -89,7 +89,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Hook called by FunctionWithLowCardinalityFastPath (FunctionLowCardinalityFastPath.h); nullptr declines it.
-    ColumnPtr tryExecuteLowCardinality(
+    [[nodiscard]] ColumnPtr tryExecuteLowCardinality(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
     {
         if (search_type != GatherUtils::ArraySearchType::All && search_type != GatherUtils::ArraySearchType::Any)

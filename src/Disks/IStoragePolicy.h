@@ -62,7 +62,7 @@ public:
     [[nodiscard]] virtual UInt64 getMaxUnreservedFreeSpace() const = 0;
     /// The storage provides the data of tables on this policy (`<backup_metadata_only>`), so `BACKUP` stores only their
     /// metadata and `RESTORE` doesn't restore their data.
-    virtual bool isBackupMetadataOnly() const = 0;
+    [[nodiscard]] virtual bool isBackupMetadataOnly() const = 0;
     /// Reserves space on any volume with index > min_volume_index or returns error
     [[nodiscard]] virtual ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const = 0;
     /// Returns valid reservation or error

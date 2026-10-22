@@ -220,11 +220,11 @@ struct SettingFieldTriBool
     SettingFieldTriBool & operator=(const SettingFieldTriBool &) = default;
     SettingFieldTriBool & operator=(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     explicit operator Field() const;
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;

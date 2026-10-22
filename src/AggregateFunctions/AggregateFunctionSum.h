@@ -495,7 +495,7 @@ public:
     /// when the accumulator wraps around. Signed and floating-point sums do not qualify
     /// (negative addends break the bound), and neither do the decimal and wide-integer results
     /// (the bound's arithmetic works on `UInt64` values).
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (is_unsigned_v<T> && std::is_same_v<TResult, UInt64>)
             return MergedValueBound::Subadditive;

@@ -506,7 +506,7 @@ protected:
 class ParserCodecDeclaration : public IParserBase
 {
 protected:
-    const char * getName() const override { return "codec declaration"; }
+    [[nodiscard]] const char * getName() const override { return "codec declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

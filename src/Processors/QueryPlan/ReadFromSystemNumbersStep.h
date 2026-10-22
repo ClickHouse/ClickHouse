@@ -34,7 +34,7 @@ public:
     /// LIMIT are not serialized: the replica sets them again when it optimizes the received plan.
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:

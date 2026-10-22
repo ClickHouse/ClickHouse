@@ -175,13 +175,13 @@ struct ConnectionParams
     [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
 
     /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool checkOrDropServerManagedCredentials() const;
+    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
-    bool usesServerManagedCredentials() const;
+    [[nodiscard]] bool usesServerManagedCredentials() const;
 
     /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
-    AuthMethod getPermittedAuthMethod() const;
+    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
 
     /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
     /// is restricted. Does not change the parameters, so a client kept for others is not affected.

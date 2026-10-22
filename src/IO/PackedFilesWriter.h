@@ -205,10 +205,10 @@ private:
 
         void addChunk();
         /// Size of the data written into the chunk with the given index.
-        size_t getChunkDataSize(size_t chunk_index) const;
+        [[nodiscard]] size_t getChunkDataSize(size_t chunk_index) const;
         /// Returns the number of the first chunks that can be moved out of memory:
         /// the last chunk of a file that is still being written is used by its write buffer.
-        size_t getNumSpillableChunks() const;
+        [[nodiscard]] size_t getNumSpillableChunks() const;
         /// Frees the first `num_chunks` chunks.
         void removeChunks(size_t num_chunks);
 

@@ -136,7 +136,7 @@ public:
         size_t index_in_segment = 0;
         size_t segment_doc_count = 0;
     };
-    Position position() const
+    [[nodiscard]] Position position() const
     {
         if (is_embedded)
             return {0, index, decoded_count};

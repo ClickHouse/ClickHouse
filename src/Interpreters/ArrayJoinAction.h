@@ -74,7 +74,7 @@ private:
     [[nodiscard]] const PaddedPODArray<UInt64> & anyOffsets() const;
     [[nodiscard]] ColumnPtr cutAnyArray(size_t start, size_t length) const;
     /// Window of the joined column `name` as a full ColumnArray, padded for aligned LEFT ARRAY JOIN.
-    ColumnPtr cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const;
+    [[nodiscard]] ColumnPtr cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const;
 
     const ArrayJoinAction * array_join;
     Block block;

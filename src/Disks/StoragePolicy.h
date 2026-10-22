@@ -51,7 +51,7 @@ public:
     [[nodiscard]] UInt64 getMaxUnreservedFreeSpace() const override;
 
     /// Throws if the policy is marked `backup_metadata_only` but one of its volumes is not read-only.
-    bool isBackupMetadataOnly() const override;
+    [[nodiscard]] bool isBackupMetadataOnly() const override;
 
     [[nodiscard]] const String & getName() const override{ return name; }
 

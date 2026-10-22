@@ -77,13 +77,13 @@ struct PartialAggregationStrategy final : IAggregationStrategy
 /// All partial states are gathered to one node and merged there.
 struct LocalMergeStrategy final : IImplementationStrategy
 {
-    String getName() const override { return "LocalMerge"; }
+    [[nodiscard]] String getName() const override { return "LocalMerge"; }
 };
 
 /// The partial states arrive shuffled by the group keys, and each node merges the states of its own keys.
 struct ShuffleMergeStrategy final : IImplementationStrategy
 {
-    String getName() const override { return "ShuffleMerge"; }
+    [[nodiscard]] String getName() const override { return "ShuffleMerge"; }
 };
 
 /// --- Replicated subplan ---

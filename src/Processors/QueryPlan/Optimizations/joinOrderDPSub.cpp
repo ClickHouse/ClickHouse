@@ -101,15 +101,15 @@ private:
 
     /// True when an inner-join condition joins the two sides here: all its tables are present and it
     /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
-    bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
 
     /// The join kind as the query wrote it (`Left` or `Right`) of the semi/anti join step applied where
     /// `left_mask` and `right_mask` are joined, if there is one.
-    std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
+    [[nodiscard]] std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
 
     /// True when a column equivalence ties the two sides together: some equivalence class has a
     /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
-    bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
+    [[nodiscard]] bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
 
     [[nodiscard]] bool useConflictDetector() const
     {
