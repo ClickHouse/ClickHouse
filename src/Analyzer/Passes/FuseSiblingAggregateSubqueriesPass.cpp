@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
@@ -114,15 +115,11 @@ QueryTreeNodePtr makeLogicalFunction(const String & function_name, QueryTreeNode
 /// (`FunctionsComparison.h`), but inside a tuple its elements are compared by a comparison of their own.
 bool typeDispatchesPerRow(const IDataType & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested)
+    return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isVariant() || which.isDynamic() || which.isObject();
-    };
-    check(type);
-    type.forEachChild(check);
-    return result;
+        return which.isVariant() || which.isDynamic() || which.isObject();
+    });
 }
 
 /// Whether this expression yields a value for every row, whatever the column values are.

@@ -145,7 +145,7 @@ SELECT '29b', x.a, y.b FROM (SELECT count() AS a FROM cols WHERE c1 = 0) AS x, (
 SELECT '29b', x.a, y.b FROM (SELECT count() AS a FROM cols WHERE c1 = 0) AS x, (SELECT count() AS b FROM cols WHERE c2 = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_columns_to_read = 1;
 SELECT '29b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM cols WHERE c1 = 0) AS x, (SELECT count() AS b FROM cols WHERE c2 = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_columns_to_read = 1);
 -- The rest of the family, each measured to turn a query that succeeds into one that fails once
--- fused (evidence.md has the codes); asserted as a refusal, because a row-count bound tight
+-- fused; asserted as a refusal, because a row-count bound tight
 -- enough to separate the two arms would move with the randomized index granularity.
 SELECT '29c max_rows_to_read', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_rows_to_read = 1000000);
 SELECT '29c max_bytes_to_read', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, max_bytes_to_read = 1000000);

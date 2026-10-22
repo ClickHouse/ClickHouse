@@ -7398,7 +7398,7 @@ to reject.
 Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting: answer sibling single-row aggregate subqueries over the same tables with one scan. Opt-in, because the rewrite loses when each branch's own filter is prunable by the sorting key."}) \
+        {"26.11", false, false, "New setting: answer sibling single-row aggregate subqueries over the same tables with one scan. Opt-in, because the rewrite loses when each branch's own filter is prunable by the sorting key."}) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
