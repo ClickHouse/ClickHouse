@@ -10,7 +10,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -36,11 +35,8 @@ String dumpRelationStatsForLogs(const RelationStats & stats)
     auto dump_column = [](const auto & column)
     {
         const auto & [name, column_stats] = column;
+        /// No min/max: they can be values of rows hidden by a row policy, and this line reaches clients with `send_logs_level`.
         std::vector<String> fields;
-        if (column_stats.min_value)
-            fields.push_back(fmt::format("min {}", applyVisitor(FieldVisitorToString(), *column_stats.min_value)));
-        if (column_stats.max_value)
-            fields.push_back(fmt::format("max {}", applyVisitor(FieldVisitorToString(), *column_stats.max_value)));
         if (column_stats.null_fraction)
             fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
         if (column_stats.avg_bytes != 0)

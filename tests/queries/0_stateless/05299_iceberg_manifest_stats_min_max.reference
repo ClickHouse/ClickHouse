@@ -6,18 +6,25 @@ ice_types	1	1000
 --- T1: ie_join keys chosen by the min/max from the manifests
 Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
---- T2: rows, then NDV [min, max, NULL fraction] per column
+--- T2: rows, then NDV [NULL fraction] per column
 Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range, decimal_value column_sizes / 8, string_value
-10% of rows, event_time range clamped to rows; nullable_int NULL every 4th row; Date32 in days, DateTime64 in s.
+10% of rows, event_time range clamped to rows; nullable_int NULL every 4th row.
 ice_types: 1000 rows
-__table1.day: 365 [min 18262, max 18626]
-__table1.decimal_value: <column_sizes / 8> [min '0', max '249.75']
-__table1.event_time: 1000 [min '1577836800', max '1577837799']
-__table1.id: 1000 [min 0, max 999]
-__table1.nullable_int: 99 [min 1, max 99, null 0.25]
+__table1.day: 365
+__table1.decimal_value: <column_sizes / 8>
+__table1.event_time: 1000
+__table1.id: 1000
+__table1.nullable_int: 99 [null 0.25]
 __table1.string_value: 100
 --- T3: a file before ADD COLUMN and an all-NULL file, then values
 Expect added 2000, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is clamped to the 2000 others.
 ice_added_column: 4000 rows
-__table1.added: 2000 [min 0, max 3998, null 0.5]
-__table1.id: 4000 [min 0, max 3999]
+__table1.added: 2000 [null 0.5]
+__table1.id: 4000
+--- T4: rows of a range condition over half of each range
+Expect about 500 of the 1000 rows: Decimal, DateTime64 in s, Date32 in days, Int64; nullable_int 3/4 non-NULL.
+decimal_value < 125: ice_types: 500 rows
+event_time < '2020-01-01 00:08:20': ice_types: 500 rows
+day < '2020-07-01': ice_types: 497 rows
+id < 500: ice_types: 499 rows
+nullable_int < 50: ice_types: 367 rows

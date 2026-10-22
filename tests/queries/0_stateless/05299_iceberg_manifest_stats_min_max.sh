@@ -7,8 +7,9 @@
 # them: bounds decoded per type and merged over the files, NULLs counted per file, the NDV by the first rule that
 # applies, clamped to the non-NULL rows; and that the min/max reach an optimizer decision.
 # - T1: `ie_join` picks its two key conditions by the min/max (port of `05023` to Iceberg).
-# - T2: the `Estimated statistics` trace line: rows, then NDV [min, max, NULL fraction] per column.
+# - T2: the `Estimated statistics` trace line: rows, then NDV [NULL fraction] per column.
 # - T3: files without values of a column count as NULLs, and its NDV is clamped to the non-NULL rows.
+# - T4: range conditions estimated on the bounds of each type, since the trace line prints no min/max.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -86,16 +87,24 @@ DECIMAL_NDV=$(${CLICKHOUSE_CLIENT} --query "
     SELECT greatest(least(intDiv(sum(column_sizes[5]), 8), 1000), 1)
     FROM system.iceberg_files WHERE database = currentDatabase() AND table = 'ice_types'")
 
-echo '--- T2: rows, then NDV [min, max, NULL fraction] per column'
+echo '--- T2: rows, then NDV [NULL fraction] per column'
 echo 'Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range, decimal_value column_sizes / 8, string_value'
-echo '10% of rows, event_time range clamped to rows; nullable_int NULL every 4th row; Date32 in days, DateTime64 in s.'
+echo '10% of rows, event_time range clamped to rows; nullable_int NULL every 4th row.'
 relation ice_types "SELECT ice_types.nullable_int, ice_types.day, ice_types.event_time, ice_types.decimal_value,
     ice_types.string_value FROM ice_types JOIN dim10 ON ice_types.id = dim10.id" \
-    | sed "s/__table1\.decimal_value: ${DECIMAL_NDV} /__table1.decimal_value: <column_sizes \/ 8> /"
+    | sed "s/__table1\.decimal_value: ${DECIMAL_NDV}$/__table1.decimal_value: <column_sizes \/ 8>/"
 
 echo '--- T3: a file before ADD COLUMN and an all-NULL file, then values'
 echo 'Expect added 2000, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is clamped to the 2000 others.'
 relation ice_added_column "SELECT ice_added_column.added FROM ice_added_column
     JOIN dim10 ON ice_added_column.id = dim10.id"
+
+# The trace line prints no min/max: they can be values of rows hidden by a row policy.
+echo '--- T4: rows of a range condition over half of each range'
+echo 'Expect about 500 of the 1000 rows: Decimal, DateTime64 in s, Date32 in days, Int64; nullable_int 3/4 non-NULL.'
+for condition in "decimal_value < 125" "event_time < '2020-01-01 00:08:20'" "day < '2020-07-01'" "id < 500" "nullable_int < 50"; do
+    echo "${condition}: $(relation ice_types "SELECT count() FROM ice_types JOIN dim10 ON ice_types.id = dim10.id
+        WHERE ice_types.${condition}" | head -n 1)"
+done
 
 rm -rf "${LAKE}"
