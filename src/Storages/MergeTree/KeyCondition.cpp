@@ -5607,7 +5607,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not in the order of a string key.
     /// An `Enum` ordered against a string constant converts the constant to the `Enum`, which matches the numeric key order.
-    if (func_name != "equals" && func_name != "notEquals"
+    if ((func_name == "less" || func_name == "greater" || func_name == "lessOrEquals" || func_name == "greaterOrEquals")
         && comparesStringWithEnum(key_arg.getDAGNode()->result_type, getConstantValueType(*constant_for_transform.column, const_type)))
         return candidates;
 

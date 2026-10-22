@@ -81,6 +81,9 @@ SELECT count() FROM numbers(2) WHERE materialize('1') < CAST('a', 'Enum8(''z'' =
 SELECT count() FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT arraySort(groupArray(e)) FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
 
+-- equality keeps the primary key of a string column
+SELECT s FROM t_string_key WHERE isNotDistinctFrom(s, CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)')) SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 0;
+
 SELECT e < 'q' FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
