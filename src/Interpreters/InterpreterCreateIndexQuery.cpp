@@ -6,6 +6,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTFunction.h>
 
 #include <Core/Settings.h>
@@ -37,6 +38,10 @@ bool validateCreateIndexQuery(const ASTCreateIndexQuery & query, const ContextPt
                 " SET create_index_ignore_unique=1 to ignore this UNIQUE keyword.");
         }
     }
+
+    /// Only a definition written here and now is rejected; a replay carries one an earlier version accepted.
+    if (!context->isDDLOrOnClusterInternal() && !context->isRecoveryFromStoredMetadata())
+        rejectLegacyNameSyntax(query);
 
     // Noop if allow_create_index_without_type = true. throw otherwise
     if (!query.index_decl->as<ASTIndexDeclaration>()->getType())

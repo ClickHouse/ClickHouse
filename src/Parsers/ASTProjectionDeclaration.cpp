@@ -5,7 +5,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -84,10 +84,10 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
         set(index, index_child);
     }
 
-    /// `projection_type` and `with_settings` are typed members (`ASTFunction *` / `ASTSetQuery *`);
-    /// restoring them through the generic child path would let a wrong node type reach `IAST::set`
-    /// as an internal cast error instead of a user-facing `BAD_ARGUMENTS`.
-    auto type_child = r.readChildOfType<ASTFunction>("projection_type");
+    /// `projection_type` and `with_settings` are typed members; restoring them through the generic
+    /// child path would let a wrong node type reach `IAST::set` as an internal cast error instead of
+    /// a user-facing `BAD_ARGUMENTS`.
+    auto type_child = r.readChildOfType<ASTNameWithParameters>("projection_type");
     if (type_child)
         set(type, type_child);
 

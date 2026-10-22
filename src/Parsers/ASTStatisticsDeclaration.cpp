@@ -6,7 +6,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNameWithParameters.h>
 
 
 namespace DB
@@ -47,7 +47,7 @@ std::vector<String> ASTStatisticsDeclaration::getTypeNames() const
     result.reserve(types->children.size());
     for (const ASTPtr & column_ast : types->children)
     {
-        result.push_back(column_ast->as<ASTFunction &>().name);
+        result.push_back(column_ast->as<ASTNameWithParameters &>().name);
     }
     return result;
 
@@ -64,10 +64,8 @@ void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    /// `columns` is an `ASTExpressionList` of `ASTIdentifier` and `types` (when present) an
-    /// `ASTExpressionList` of `ASTFunction`: `getColumnNames` does `column_ast->as<ASTIdentifier &>()`
-    /// and `getTypeNames` does `column_ast->as<ASTFunction &>()`. Validate both layers so malformed
-    /// `clickhouse_json` fails with `BAD_ARGUMENTS` instead of reaching those internal casts.
+    /// `getColumnNames` and `getTypeNames` downcast every element, so validate both lists here, where
+    /// malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of an internal cast.
     auto child = r.readChildOfType<ASTExpressionList>("columns");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'columns' field in `StatisticsDeclaration` during AST JSON deserialization");
@@ -76,14 +74,9 @@ void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`StatisticsDeclaration` 'columns' must contain only identifiers during AST JSON deserialization");
     set(columns, child);
 
-    child = r.readChildOfType<ASTExpressionList>("types");
+    child = r.readNameWithParametersListChild("types");
     if (child)
-    {
-        for (const auto & type : child->children)
-            if (!type || !type->as<ASTFunction>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`StatisticsDeclaration` 'types' must contain only statistic-type functions during AST JSON deserialization");
         set(types, child);
-    }
 }
 
 void ASTStatisticsDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

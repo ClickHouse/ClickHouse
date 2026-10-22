@@ -1,8 +1,8 @@
 #include <Compression/ICompressionCodec.h>
 
 #include <Compression/CompressionCodecMultiple.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCodec.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <base/unaligned.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -31,16 +31,14 @@ void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
 
 ASTPtr ICompressionCodec::makeCodecDescription(const String & name, const ASTs & arguments)
 {
-    if (arguments.empty())
-        return make_intrusive<ASTIdentifier>(name);
-    return makeASTFunction(name, arguments);
+    return make_intrusive<ASTNameWithParameters>(name, arguments);
 }
 
 ASTPtr ICompressionCodec::getFullCodecDescription() const
 {
     if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(this))
         return multiple->getFullCodecDescription();
-    return makeASTFunction("CODEC", getCodecDescription());
+    return make_intrusive<ASTCodec>(ASTs{getCodecDescription()});
 }
 
 UInt64 ICompressionCodec::getHash() const

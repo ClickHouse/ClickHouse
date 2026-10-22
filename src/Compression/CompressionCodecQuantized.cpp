@@ -8,8 +8,9 @@
 #include <Common/StringUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCodec.h>
+#include <Parsers/ASTNameWithParameters.h>
+#include <Parsers/ASTExpressionList.h>
 
 #include <cstring>
 
@@ -161,25 +162,21 @@ std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr 
     if (!codec_desc)
         return {};
 
-    const auto * func = codec_desc->as<ASTFunction>();
-    if (!func || !func->arguments)
+    const auto * codec = codec_desc->as<ASTCodec>();
+    if (!codec)
         return {};
 
     /// The codec description usually holds the canonical `Quantized` spelling, but a chain whose arguments
     /// could not be substituted keeps the AST as the user wrote it, and codec names are case-insensitive.
-    for (const auto & param_ast : func->arguments->children)
+    for (const auto & element_ast : codec->elements().children)
     {
-        if (const auto * inner_func = param_ast->as<ASTFunction>())
-        {
-            if (equalsCaseInsensitive(inner_func->name, "Quantized"))
-                return parseQuantizeCodecArguments(inner_func->arguments);
-        }
-        else if (const auto * inner_identifier = param_ast->as<ASTIdentifier>())
-        {
-            if (equalsCaseInsensitive(inner_identifier->name(), "Quantized"))
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
-                    "Codec Quantized requires parameters: Quantized(method, dimensions[, bits])");
-        }
+        const auto & element = element_ast->as<const ASTNameWithParameters &>();
+        if (!equalsCaseInsensitive(element.name, "Quantized"))
+            continue;
+        if (!element.getParameters())
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
+                "Codec Quantized requires parameters: Quantized(method, dimensions[, bits])");
+        return parseQuantizeCodecArguments(element.getParameters());
     }
 
     return {};

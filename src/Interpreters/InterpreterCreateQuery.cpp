@@ -42,6 +42,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -3954,6 +3955,13 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
+
+    /// Only a definition written here and now is rejected. A replay (a DDL worker, a `Replicated`
+    /// database recovering from Keeper, a backup) carries a definition an earlier version accepted.
+    const bool is_replayed_definition = create.attach || is_metadata_replay || is_restore_from_backup
+        || getContext()->isDDLOrOnClusterInternal() || getContext()->isRecoveryFromStoredMetadata();
+    if (!is_replayed_definition)
+        rejectLegacyNameSyntax(create);
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 

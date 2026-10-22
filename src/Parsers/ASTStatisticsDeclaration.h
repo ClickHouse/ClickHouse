@@ -7,14 +7,13 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
-class ASTFunction;
-
-/** name BY columns TYPE typename(args) in create query
-  */
+/// `columns TYPE tdigest, uniq` of `ALTER TABLE ... ADD STATISTICS`
 class ASTStatisticsDeclaration : public IAST
 {
 public:
+    /// `ASTExpressionList` of `ASTIdentifier`.
     IAST * columns{};
+    /// `ASTExpressionList` of `ASTNameWithParameters`, absent for `DROP`/`CLEAR`/`MATERIALIZE`.
     IAST * types{};
 
     /** Get the text that identifies this element. */

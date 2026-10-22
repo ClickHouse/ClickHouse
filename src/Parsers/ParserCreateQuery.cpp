@@ -7,6 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -172,7 +173,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_granularity(Keyword::GRANULARITY);
 
     ParserIdentifier name_p;
-    ParserExpressionWithOptionalArguments type_p;
+    ParserNameWithParameters type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -210,7 +211,7 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_type(Keyword::TYPE);
 
     ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserList types_p(std::make_unique<ParserExpressionWithOptionalArguments>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList types_p(std::make_unique<ParserNameWithParameters>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
     ASTPtr types;
@@ -293,7 +294,7 @@ bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, con
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserKeyword s_index(Keyword::INDEX);
     ParserKeyword s_type(Keyword::TYPE);
-    ParserExpressionWithOptionalArguments type_p;
+    ParserNameWithParameters type_p;
     ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr query;

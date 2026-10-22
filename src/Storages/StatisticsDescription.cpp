@@ -1,9 +1,9 @@
 #include <Storages/StatisticsDescription.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -107,7 +107,7 @@ size_t stringAllocatedBytes(const String & str)
 /// The bound covers the node, the semantic object of an identifier, and the control blocks of the pointers.
 constexpr size_t AST_NODE_SIZE_BOUND = 512;
 static_assert(sizeof(ASTIdentifier) + sizeof(IdentifierSemanticImpl) + 2 * 4 * sizeof(void *) <= AST_NODE_SIZE_BOUND);
-static_assert(sizeof(ASTFunction) <= AST_NODE_SIZE_BOUND);
+static_assert(sizeof(ASTNameWithParameters) <= AST_NODE_SIZE_BOUND);
 static_assert(sizeof(ASTExpressionList) <= AST_NODE_SIZE_BOUND);
 static_assert(sizeof(ASTLiteral) <= AST_NODE_SIZE_BOUND);
 
@@ -207,7 +207,7 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
     StatisticsTypeDescMap statistics_types;
     for (const auto & stat_ast : stat_definition_ast->types->children)
     {
-        String stat_type_name = stat_ast->as<ASTFunction &>().name;
+        String stat_type_name = stat_ast->as<ASTNameWithParameters &>().name;
         auto stat_type = stringToStatisticsType(Poco::toLower(stat_type_name));
         if (statistics_types.contains(stat_type))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type {} was specified more than once", stat_type_name);
@@ -241,14 +241,14 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
 
 ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type)
 {
-    const auto & stat_type_list_ast = statistics_desc->as<ASTFunction &>().arguments;
-    if (stat_type_list_ast->children.empty())
+    const auto & stat_type_list = statistics_desc->as<const ASTExpressionList &>().children;
+    if (stat_type_list.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column_name);
 
     ColumnStatisticsDescription stats;
-    for (const auto & ast : stat_type_list_ast->children)
+    for (const auto & ast : stat_type_list)
     {
-        const auto & stat_type = ast->as<const ASTFunction &>().name;
+        const auto & stat_type = ast->as<const ASTNameWithParameters &>().name;
 
         SingleStatisticsDescription stat(stringToStatisticsType(Poco::toLower(stat_type)), ast->clone(), false);
         if (stats.types_to_desc.contains(stat.type))
@@ -262,22 +262,16 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescripti
 
 ASTPtr ColumnStatisticsDescription::getAST() const
 {
-    auto function_node = make_intrusive<ASTFunction>();
-    function_node->name = "STATISTICS";
-    function_node->setKind(ASTFunction::Kind::STATISTICS);
-    function_node->arguments = make_intrusive<ASTExpressionList>();
-
+    auto list = make_intrusive<ASTExpressionList>();
     for (const auto & [type, desc] : types_to_desc)
     {
         if (desc.ast == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown ast");
 
         if (!desc.is_implicit)
-            function_node->arguments->children.push_back(desc.ast);
+            list->children.push_back(desc.ast);
     }
-
-    function_node->children.push_back(function_node->arguments);
-    return function_node;
+    return list;
 }
 
 String ColumnStatisticsDescription::getNameForLogs() const

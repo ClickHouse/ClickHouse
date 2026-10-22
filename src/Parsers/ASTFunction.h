@@ -91,8 +91,6 @@ public:
         TABLE_ENGINE,
         DATABASE_ENGINE,
         BACKUP_NAME,
-        CODEC,
-        STATISTICS,
     };
     Kind getKind() const { return static_cast<Kind>(flags<ASTFunctionFlags>().kind); }
     void setKind(Kind value) { flags<ASTFunctionFlags>().kind = static_cast<UInt32>(value); }

@@ -142,8 +142,7 @@ ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json \
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE tk"
 
 # A well-formed payload still applies every screened slot through the same entry point, including the
-# `TYPE minmax`, `CODEC` and `RECOMPRESS CODEC` functions that are argument-less by construction and that
-# an over-broad screen would reject.
+# `TYPE minmax`, `CODEC` and `RECOMPRESS CODEC` elements, which are names rather than functions.
 ${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
     "$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('CREATE TABLE tk (a UInt8, b UInt8 CODEC(LZ4), d DateTime TTL d + toIntervalDay(2), INDEX i a TYPE minmax GRANULARITY 1) ENGINE = MergeTree PARTITION BY a % 8 PRIMARY KEY a ORDER BY (a, b) SAMPLE BY a TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4)') FORMAT TSVRaw")"
 for pattern in 'PARTITION BY a % 8' 'ORDER BY (a, b)' 'SAMPLE BY a' 'INDEX i a TYPE minmax GRANULARITY 1' \

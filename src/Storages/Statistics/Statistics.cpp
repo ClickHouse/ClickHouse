@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -33,7 +33,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_STATISTICS;
 extern const int INCORRECT_QUERY;
 extern const int NOT_IMPLEMENTED;
@@ -978,13 +977,9 @@ static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsF
 
     ColumnStatisticsDescription::StatisticsTypeDescMap result;
 
-    for (const auto & arg : stats_ast->as<ASTFunction &>().arguments->children)
+    for (const auto & arg : stats_ast->children)
     {
-        const auto * arg_func = arg->as<ASTFunction>();
-        if (!arg_func)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function for statistic type, got: {}", arg->formatForLogging());
-
-        auto stat_type = stringToStatisticsType(arg_func->name);
+        auto stat_type = stringToStatisticsType(arg->as<const ASTNameWithParameters &>().name);
         result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg, true));
     }
 

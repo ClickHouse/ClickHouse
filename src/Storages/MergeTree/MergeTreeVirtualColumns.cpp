@@ -5,9 +5,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 
 namespace DB
 {
@@ -19,9 +19,7 @@ namespace ErrorCodes
 
 static ASTPtr getCompressionCodecDeltaLZ4()
 {
-    return makeASTFunction("CODEC",
-        make_intrusive<ASTIdentifier>("Delta"),
-        make_intrusive<ASTIdentifier>("LZ4"));
+    return make_intrusive<ASTCodec>(ASTs{make_intrusive<ASTNameWithParameters>("Delta"), make_intrusive<ASTNameWithParameters>("LZ4")});
 }
 
 const String RowExistsColumn::name = "_row_exists";

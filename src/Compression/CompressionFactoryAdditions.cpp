@@ -7,9 +7,10 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Compression/ICompressionCodec.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCodec.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -33,7 +34,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNEXPECTED_AST_STRUCTURE;
 extern const int UNKNOWN_CODEC;
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
@@ -59,17 +59,12 @@ namespace
 template <typename Check>
 void forEachCodecFamilyNameInChain(const ASTPtr & ast, Check && check)
 {
-    const auto * func = ast->as<ASTFunction>();
-    if (!func || !func->arguments)
+    const auto * codec = ast->as<ASTCodec>();
+    if (!codec)
         return;
 
-    for (const auto & inner_codec_ast : func->arguments->children)
-    {
-        if (const auto * identifier = inner_codec_ast->as<ASTIdentifier>())
-            check(identifier->name());
-        else if (const auto * inner_func = inner_codec_ast->as<ASTFunction>())
-            check(inner_func->name);
-    }
+    for (const auto & element : codec->elements().children)
+        check(element->as<const ASTNameWithParameters &>().name);
 }
 
 }
@@ -97,24 +92,20 @@ void CompressionCodecFactory::validateCodec(
 
     checkCodecIsNotColumnLevelOnly(family_name);
 
+    ASTs parameters;
     if (level)
-    {
-        auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(
-            makeASTFunction("CODEC", makeASTFunction(family_name, literal)), {}, validation_settings);
-    }
-    else
-    {
-        auto identifier = make_intrusive<ASTIdentifier>(family_name);
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, validation_settings);
-    }
+        parameters.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(*level)));
+    validateCodecAndGetPreprocessedAST(
+        make_intrusive<ASTCodec>(ASTs{make_intrusive<ASTNameWithParameters>(family_name, std::move(parameters))}), {}, validation_settings);
 }
 
 void CompressionCodecFactory::validateCodecString(
-    const String & compression_codec, const CodecValidationSettings & validation_settings) const
+    const String & compression_codec, const CodecValidationSettings & validation_settings, bool allow_legacy_syntax) const
 {
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    if (!allow_legacy_syntax)
+        rejectLegacyNameSyntax(*ast);
     checkCodecChainIsNotColumnLevelOnly(ast);
 
     validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
@@ -171,9 +162,10 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
     const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const
 {
-    if (const auto * func = ast->as<ASTFunction>())
+    if (const auto * codec_ast = ast->as<ASTCodec>())
     {
-        ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
+        const ASTs & elements = codec_ast->elements().children;
+        ASTs codecs_descriptions;
 
         /// A codec that depends on the data type resolves differently per substream, and every
         /// substream is compressed with its own chain, so there is one chain per substream.
@@ -199,23 +191,11 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
         SetWithMemoryTracking<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
-        for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
+        for (size_t i = 0, size = elements.size(); i < size; ++i)
         {
-            const ASTPtr & inner_codec_ast = func->arguments->children[i];
-            String codec_family_name;
-            ASTPtr codec_arguments;
-            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
-            {
-                codec_family_name = family_name->name();
-                codec_arguments = {};
-            }
-            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
-            {
-                codec_family_name = ast_func->name;
-                codec_arguments = ast_func->arguments;
-            }
-            else
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+            const auto & element = elements[i]->as<const ASTNameWithParameters &>();
+            const String & codec_family_name = element.name;
+            ASTPtr codec_arguments = element.getParameters();
 
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
@@ -227,7 +207,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
 
                 result_codec = default_codec;
-                codecs_descriptions->children.emplace_back(make_intrusive<ASTIdentifier>(DEFAULT_CODEC_NAME));
+                codecs_descriptions.emplace_back(make_intrusive<ASTNameWithParameters>(DEFAULT_CODEC_NAME));
             }
             else
             {
@@ -325,7 +305,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "Codec {} requires the column type to compress and can only be specified for a column",
                         codec_family_name);
 
-                codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
+                codecs_descriptions.emplace_back(result_codec->getCodecDescription());
             }
 
             /// A codec that was not resolved per substream is the same one for all of them.
@@ -349,18 +329,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 encryption_codecs_pos.insert(i);
         }
 
-        String codec_description = codecs_descriptions->formatWithSecretsOneLine();
+        auto result = make_intrusive<ASTCodec>(std::move(codecs_descriptions));
+        String codec_description = result->elements().formatWithSecretsOneLine();
 
         if (sanity_check)
         {
             /// CompressionCodecMultiple stores the number of codecs in a single byte, so a longer chain
             /// describes a part that cannot be read back. Being a sanity check, this is not enforced on
             /// the metadata-load path, where an already stored table must stay loadable.
-            if (codecs_descriptions->children.size() > std::numeric_limits<UInt8>::max())
+            if (elements.size() > std::numeric_limits<UInt8>::max())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
                     "so at most {} are supported.",
-                    codecs_descriptions->children.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+                    elements.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
 
             /// A codec never reserves less than its input, so a reserve below the input means the
             /// UInt32 compounding wrapped. One byte is the weakest block there is: a chain that
@@ -380,7 +361,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 }
             }
 
-            if (codecs_descriptions->children.size() > 1 && with_none_codec)
+            if (elements.size() > 1 && with_none_codec)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "It does not make sense to have codec NONE along with other compression codecs: {}. "
                     "(Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
@@ -389,7 +370,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
             /// Allow to explicitly specify single NONE codec if user don't want any compression.
             /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
             /// It's okay to apply encryption codecs solely without anything else.
-            if (!with_compression_codec && !with_none_codec && encryption_codecs_pos.size() != codecs_descriptions->children.size())
+            if (!with_compression_codec && !with_none_codec && encryption_codecs_pos.size() != elements.size())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Compression codec {} does not compress anything. "
                     "You may want to add generic compression algorithm after other transformations, like: {}, LZ4. "
@@ -398,7 +379,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
 
             /// It does not make sense to apply any non-encryption codecs after encryption one.
             if (!encryption_codecs_pos.empty() &&
-                *encryption_codecs_pos.begin() != codecs_descriptions->children.size() - encryption_codecs_pos.size())
+                *encryption_codecs_pos.begin() != elements.size() - encryption_codecs_pos.size())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The combination of compression codecs {} is meaningless, "
                     "because it does not make sense to apply any non-post-processing codecs after "
@@ -425,7 +406,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
             /// It does not make sense to apply any transformations after generic compression algorithm
             /// So, generic compression can be only one and only at the end.
             if (first_generic_compression_codec_pos &&
-                *first_generic_compression_codec_pos != codecs_descriptions->children.size() - 1 - encryption_codecs_pos.size())
+                *first_generic_compression_codec_pos != elements.size() - 1 - encryption_codecs_pos.size())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The combination of compression codecs {} is meaningless, "
                     "because it does not make sense to apply any transformations after generic "
@@ -442,12 +423,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
         /// other types it's better to substitute parameters, for better
         /// readability and backward compatibility.
         if (can_substitute_codec_arguments)
-        {
-            boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
-            result->name = "CODEC";
-            result->arguments = codecs_descriptions;
             return result;
-        }
 
         return ast;
     }

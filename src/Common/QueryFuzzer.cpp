@@ -48,6 +48,7 @@
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
@@ -90,6 +91,7 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
@@ -2514,12 +2516,18 @@ static const Strings & statTypes()
     return stat_types;
 }
 
-void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
+static ASTPtr makeCodecElement(String name, ASTs parameters = {})
 {
-    if (codec_fn.name != "CODEC" || !codec_fn.arguments || fuzz_rand() % 5 != 0)
+    return make_intrusive<ASTNameWithParameters>(std::move(name), std::move(parameters));
+}
+
+void QueryFuzzer::fuzzCodec(ASTCodec & codec)
+{
+    if (fuzz_rand() % 5 != 0)
         return;
 
-    codec_fn.arguments->children.clear();
+    auto & elements = codec.elements().children;
+    elements.clear();
 
     static const Strings pool
         = {"NONE",
@@ -2548,36 +2556,34 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
             /// Optional second argument: zstd window log; 0 means the library default.
             /// Interacts with the `zstd_window_log_max` setting on the read side.
             const UInt64 window_log = (fuzz_rand() % 2 == 0) ? 0 : (fuzz_rand() % 22 + 10);
-            codec_fn.arguments->children.push_back(makeASTFunction("ZSTD", level, make_intrusive<ASTLiteral>(window_log)));
+            elements.push_back(makeCodecElement("ZSTD", {level, make_intrusive<ASTLiteral>(window_log)}));
         }
         else
-            codec_fn.arguments->children.push_back(makeASTFunction("ZSTD", level));
+            elements.push_back(makeCodecElement("ZSTD", {level}));
     }
     else if (chosen == "LZ4HC" && fuzz_rand() % 2 == 0)
-        codec_fn.arguments->children.push_back(makeASTFunction("LZ4HC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
+        elements.push_back(makeCodecElement("LZ4HC", {make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))}));
     else if (chosen == "ZXC" && fuzz_rand() % 2 == 0)
         /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
-        codec_fn.arguments->children.push_back(makeASTFunction("ZXC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 7 + 1))));
+        elements.push_back(makeCodecElement("ZXC", {make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 7 + 1))}));
     else if ((chosen == "Delta" || chosen == "DoubleDelta" || chosen == "Gorilla") && fuzz_rand() % 2 == 0)
     {
         /// Optional data byte-size argument, shared by the three delta-style codecs.
         static const UInt64 delta_sizes[] = {1, 2, 4, 8};
-        codec_fn.arguments->children.push_back(makeASTFunction(chosen, make_intrusive<ASTLiteral>(delta_sizes[fuzz_rand() % 4])));
+        elements.push_back(makeCodecElement(chosen, {make_intrusive<ASTLiteral>(delta_sizes[fuzz_rand() % 4])}));
     }
     else if (chosen == "FPC" && fuzz_rand() % 2 == 0)
-        codec_fn.arguments->children.push_back(makeASTFunction(
-            "FPC",
-            make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 28 + 1)),
-            make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2 == 0 ? 4 : 8))));
+        elements.push_back(makeCodecElement("FPC", {make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 28 + 1)),
+            make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2 == 0 ? 4 : 8))}));
     else if (chosen == "T64" && fuzz_rand() % 2 == 0)
-        codec_fn.arguments->children.push_back(
-            makeASTFunction("T64", make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "bit" : "byte"))));
+        elements.push_back(
+            makeCodecElement("T64", {make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "bit" : "byte"))}));
     else if (chosen == "ALP" && fuzz_rand() % 2 == 0)
     {
         /// Optional encoding variant; must be a bare identifier, not a literal.
         static const char * alp_variants[] = {"AUTO", "STD", "RD"};
-        codec_fn.arguments->children.push_back(
-            makeASTFunction("ALP", make_intrusive<ASTIdentifier>(String(alp_variants[fuzz_rand() % std::size(alp_variants)]))));
+        elements.push_back(
+            makeCodecElement("ALP", {make_intrusive<ASTIdentifier>(String(alp_variants[fuzz_rand() % std::size(alp_variants)]))}));
     }
     else if (chosen == "SZ3" && fuzz_rand() % 2 == 0)
     {
@@ -2586,11 +2592,9 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
         static const char * sz3_algorithms[] = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
         static const char * sz3_error_modes[] = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
         static const Float64 sz3_error_values[] = {0.0001, 0.001, 0.01, 0.1, 1.0};
-        codec_fn.arguments->children.push_back(makeASTFunction(
-            "SZ3",
-            make_intrusive<ASTLiteral>(String(sz3_algorithms[fuzz_rand() % std::size(sz3_algorithms)])),
+        elements.push_back(makeCodecElement("SZ3", {make_intrusive<ASTLiteral>(String(sz3_algorithms[fuzz_rand() % std::size(sz3_algorithms)])),
             make_intrusive<ASTLiteral>(String(sz3_error_modes[fuzz_rand() % std::size(sz3_error_modes)])),
-            make_intrusive<ASTLiteral>(sz3_error_values[fuzz_rand() % std::size(sz3_error_values)])));
+            make_intrusive<ASTLiteral>(sz3_error_values[fuzz_rand() % std::size(sz3_error_values)])}));
     }
     else if (chosen == "Quantized")
     {
@@ -2601,30 +2605,26 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
         const UInt64 dimensions = (fuzz_rand() % 64 + 1) * 8;
         if (method == "prefix")
             /// Quantized('prefix', dimensions, leading_dimensions in [1, dimensions], 'int8'|'bf16').
-            codec_fn.arguments->children.push_back(makeASTFunction(
-                "Quantized",
-                make_intrusive<ASTLiteral>(String("prefix")),
+            elements.push_back(makeCodecElement("Quantized", {make_intrusive<ASTLiteral>(String("prefix")),
                 make_intrusive<ASTLiteral>(dimensions),
                 make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % dimensions + 1)),
-                make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "int8" : "bf16"))));
+                make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "int8" : "bf16"))}));
         else if (method == "product")
         {
             /// Quantized('product', dimensions, nbits in [1, 16], m > 0 dividing dimensions).
             /// Keep nbits <= 8 so the codebook stays within MAX_FIXEDSTRING_SIZE.
             static const UInt64 subspaces[] = {1, 2, 4, 8};
-            codec_fn.arguments->children.push_back(makeASTFunction(
-                "Quantized",
-                make_intrusive<ASTLiteral>(String("product")),
+            elements.push_back(makeCodecElement("Quantized", {make_intrusive<ASTLiteral>(String("product")),
                 make_intrusive<ASTLiteral>(dimensions),
                 make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1)),
-                make_intrusive<ASTLiteral>(subspaces[fuzz_rand() % std::size(subspaces)])));
+                make_intrusive<ASTLiteral>(subspaces[fuzz_rand() % std::size(subspaces)])}));
         }
         else
-            codec_fn.arguments->children.push_back(
-                makeASTFunction("Quantized", make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions)));
+            elements.push_back(
+                makeCodecElement("Quantized", {make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions)}));
     }
     else
-        codec_fn.arguments->children.push_back(makeASTFunction(chosen));
+        elements.push_back(makeCodecElement(chosen));
 }
 
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
@@ -2640,20 +2640,10 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
     if (auto stats = column.getStatisticsDesc())
     {
-        auto * stats_decl = stats->as<ASTStatisticsDeclaration>();
-        if (stats_decl && stats_decl->types)
-        {
-            for (auto & type_ast : stats_decl->types->children)
-            {
-                if (auto * fn = type_ast->as<ASTFunction>(); fn && fuzz_rand() % 5 == 0)
-                    fn->name = pickRandomly(fuzz_rand, statTypes());
-            }
-        }
+        for (auto & type_ast : stats->children)
+            if (fuzz_rand() % 5 == 0)
+                type_ast->as<ASTNameWithParameters &>().name = pickRandomly(fuzz_rand, statTypes());
     }
-
-    if (auto codec = column.getCodec())
-        if (auto * codec_fn = codec->as<ASTFunction>())
-            fuzzCodecFunction(*codec_fn);
 
     if (column.default_specifier != ColumnDefaultSpecifier::Empty && column.default_specifier != ColumnDefaultSpecifier::AutoIncrement
         && column.getDefaultExpression() && fuzz_rand() % 5 == 0)
@@ -2866,6 +2856,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     auto index_type = index.getType();
     if (!index_type)
         return;
+    auto parameters = index_type->getParameters();
 
     /// No-arg index types: safe to swap to and clear any existing arguments.
     static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
@@ -2878,10 +2869,10 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     static const Strings vector_similarity_quantizations = {"i8", "b1", "bf16", "f16", "f32", "f64"};
 
     /// Fuzz named parameters of text index independently of type swap.
-    if (index_type->name == "text" && index_type->arguments)
+    if (index_type->name == "text" && parameters)
     {
         std::unordered_set<String> seen_params;
-        for (auto & arg_ast : index_type->arguments->children)
+        for (auto & arg_ast : parameters->children)
         {
             auto * equals_fn = arg_ast->as<ASTFunction>();
             if (!equals_fn || equals_fn->name != "equals" || !equals_fn->arguments || equals_fn->arguments->children.size() != 2)
@@ -2979,7 +2970,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         auto add_missing_param = [&](const String & name, Field value)
         {
             if (!seen_params.contains(name) && fuzz_rand() % 10 == 0)
-                index_type->arguments->children.push_back(
+                parameters->children.push_back(
                     makeASTFunction("equals", make_intrusive<ASTIdentifier>(name), make_intrusive<ASTLiteral>(std::move(value))));
         };
         add_missing_param("dictionary_block_size", UInt64(fuzz_rand() % 2048 + 1));
@@ -2997,7 +2988,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
             if (seen_params.contains(name) || fuzz_rand() % 10 != 0)
                 return;
             if (auto expression = index.getExpression())
-                index_type->arguments->children.push_back(makeASTFunction(
+                parameters->children.push_back(makeASTFunction(
                     "equals",
                     make_intrusive<ASTIdentifier>(name),
                     makeASTFunction(pickRandomly(fuzz_rand, stringCaseFunctions()), expression->clone())));
@@ -3010,9 +3001,9 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     /// Signature: vector_similarity('hnsw', distance, M, quantization,
     ///                              hnsw_max_connections_per_layer,
     ///                              hnsw_candidate_list_size_for_construction)
-    if (index_type->name == "vector_similarity" && index_type->arguments)
+    if (index_type->name == "vector_similarity" && parameters)
     {
-        auto & args = index_type->arguments->children;
+        auto & args = parameters->children;
         /// distance (arg 1): string literal
         if (args.size() > 1 && args[1]->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
             args[1] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, vector_similarity_distances));
@@ -3046,9 +3037,9 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
             ///   sparse_grams(min_ngram_length, max_ngram_length[, min_cutoff_length], bf_bytes, hashes, seed)
             static const Strings bf_swap_targets = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
             index_type->name = pickRandomly(fuzz_rand, bf_swap_targets);
-            if (index_type->arguments)
+            if (parameters)
             {
-                auto & args = index_type->arguments->children;
+                auto & args = parameters->children;
                 args.clear();
                 if (index_type->name == "ngrambf_v1")
                 {
@@ -3074,8 +3065,8 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         {
             /// For text and other simple types, swap to a no-arg type and clear arguments.
             index_type->name = pickRandomly(fuzz_rand, simple_index_types);
-            if (index_type->arguments)
-                index_type->arguments->children.clear();
+            if (parameters)
+                parameters->children.clear();
         }
     }
 }
@@ -3174,9 +3165,7 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
             index_list->children.emplace_back(make_intrusive<ASTAsterisk>());
             projection.set(projection.index, index_list);
 
-            auto type_func = make_intrusive<ASTFunction>();
-            type_func->name = pickRandomly(fuzz_rand, projection_index_types);
-            projection.set(projection.type, type_func);
+            projection.set(projection.type, make_intrusive<ASTNameWithParameters>(pickRandomly(fuzz_rand, projection_index_types)));
         }
         else
         {
@@ -3286,8 +3275,8 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
         {
             /// Swap between the two valid projection index types.
             projection.type->name = pickRandomly(fuzz_rand, projection_index_types);
-            if (projection.type->arguments)
-                projection.type->arguments->children.clear();
+            if (auto parameters = projection.type->getParameters())
+                parameters->children.clear();
         }
     }
 
@@ -6776,7 +6765,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             fuzzWindowDefinition(def);
         }
 
-        fuzzCodecFunction(*fn);
         fuzz(fn->children);
 
         /// Wrap `-State` aggregate and window calls in `finalizeAggregation`, materializing the
@@ -8579,9 +8567,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
             /// Clear all mode-specific fields so no stale data from the old mode remains.
             ttl_elem->if_exists = false;
-            ttl_elem->group_by_key.clear();
-            ttl_elem->group_by_assignments.clear();
-            ttl_elem->recompression_codec.reset();
+            ttl_elem->setGroupByKey({});
+            ttl_elem->setGroupByAssignments({});
+            ttl_elem->setRecompressionCodec({});
 
             if (ttl_elem->mode == TTLMode::MOVE)
             {
@@ -8589,7 +8577,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (ttl_elem->mode == TTLMode::RECOMPRESS)
             {
-                ttl_elem->recompression_codec = makeASTFunction("CODEC", makeASTFunction("LZ4"));
+                ttl_elem->setRecompressionCodec(make_intrusive<ASTCodec>(ASTs{makeCodecElement("LZ4")}));
             }
         }
         if (ttl_elem->mode == TTLMode::MOVE)
@@ -8602,26 +8590,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (ttl_elem->mode == TTLMode::GROUP_BY)
         {
-            if (ttl_elem->group_by_key.empty())
+            auto keys = ttl_elem->groupByKey();
+            if (!keys || keys->children.empty())
             {
                 /// GROUP_BY requires at least one key; seed with the TTL expression.
-                ttl_elem->group_by_key.push_back(ttl_elem->ttl()->clone());
+                keys = make_intrusive<ASTExpressionList>();
+                keys->children.push_back(ttl_elem->ttl()->clone());
+                ttl_elem->setGroupByKey(ASTPtr(keys));
             }
             /// The key has to be a prefix of the sorting key, so permuting it reaches that check
-            if (ttl_elem->group_by_key.size() > 1 && fuzz_rand() % 20 == 0)
-                std::shuffle(ttl_elem->group_by_key.begin(), ttl_elem->group_by_key.end(), fuzz_rand);
-            if (ttl_elem->group_by_assignments.size() > 1 && fuzz_rand() % 20 == 0)
-                std::shuffle(ttl_elem->group_by_assignments.begin(), ttl_elem->group_by_assignments.end(), fuzz_rand);
-            fuzz(ttl_elem->group_by_key);
-            fuzz(ttl_elem->group_by_assignments);
+            if (keys->children.size() > 1 && fuzz_rand() % 20 == 0)
+                std::shuffle(keys->children.begin(), keys->children.end(), fuzz_rand);
+            if (auto assignments = ttl_elem->groupByAssignments(); assignments && assignments->children.size() > 1 && fuzz_rand() % 20 == 0)
+                std::shuffle(assignments->children.begin(), assignments->children.end(), fuzz_rand);
         }
         else if (ttl_elem->mode == TTLMode::RECOMPRESS && fuzz_rand() % 10 == 0)
         {
             /// RECOMPRESS requires a codec; synthesize CODEC(LZ4) and immediately randomize it.
-            ttl_elem->recompression_codec.reset();
-            ttl_elem->recompression_codec = makeASTFunction("CODEC", makeASTFunction("LZ4"));
-            fuzzCodecFunction(*ttl_elem->recompression_codec->as<ASTFunction>());
+            auto codec = make_intrusive<ASTCodec>(ASTs{makeCodecElement("LZ4")});
+            fuzzCodec(*codec);
+            ttl_elem->setRecompressionCodec(std::move(codec));
         }
+        /// Keys, assignments and the codec are children, so they are fuzzed here as well.
         fuzz(ttl_elem->children);
     }
     else if (auto * stats_decl = typeid_cast<ASTStatisticsDeclaration *>(ast.get()))
@@ -8629,9 +8619,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Mutate statistic type names with low probability.
         if (stats_decl->types)
             for (auto & type_ast : stats_decl->types->children)
-                if (auto * afn = type_ast->as<ASTFunction>(); afn && fuzz_rand() % 5 == 0)
-                    afn->name = pickRandomly(fuzz_rand, statTypes());
+                if (fuzz_rand() % 5 == 0)
+                    type_ast->as<ASTNameWithParameters &>().name = pickRandomly(fuzz_rand, statTypes());
         fuzz(stats_decl->children);
+    }
+    else if (auto * codec = typeid_cast<ASTCodec *>(ast.get()))
+    {
+        fuzzCodec(*codec);
+        fuzz(codec->children);
     }
     else if (auto * constraint = typeid_cast<ASTConstraintDeclaration *>(ast.get()))
     {

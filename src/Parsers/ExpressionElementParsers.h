@@ -224,16 +224,15 @@ class ParserWindowList : public IParserBase
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserCodecDeclarationList : public IParserBase
+/// `LZ4`, `ZSTD(3)`: an `ASTNameWithParameters`.
+class ParserNameWithParameters : public IParserBase
 {
 protected:
-    const char * getName() const override { return "codec declaration list"; }
+    const char * getName() const override { return "name with parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Parse compression codec
-  * CODEC(ZSTD(2))
-  */
+/// `(Delta(4), ZSTD(3))` after the `CODEC` keyword: an `ASTCodec`.
 class ParserCodec : public IParserBase
 {
 protected:
@@ -241,7 +240,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// STATISTICS(tdigest(200))
+/// `(tdigest, uniq)` after the `STATISTICS` keyword: an `ASTExpressionList` of `ASTNameWithParameters`.
 class ParserStatisticsType : public IParserBase
 {
 protected:

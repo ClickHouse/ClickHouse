@@ -21,6 +21,7 @@ def started_cluster():
             image="clickhouse/clickhouse-server",
             tag="25.10",
             main_configs=["configs/zz_disable_system_logs.xml"],
+            user_configs=["configs/allow_statistics.xml"],
             with_installed_binary=True,
             stay_alive=True,
         )
@@ -250,6 +251,53 @@ def test_implicit_index_upgrade_alter_replay(started_cluster):
     node.restart_with_original_version()
 
 
+def test_legacy_function_syntax_in_names(started_cluster):
+    """25.10 parsed statistics and index type names as function calls, so it accepted and stored
+    the parametric form `name(x)(y)` and the `IGNORE NULLS` modifier in them. The upgraded server
+    must still load such a definition, from the `.sql` metadata and from Keeper.
+
+    Only names with parameters are covered: 25.10 formats a parameterless one without `()`, so
+    `tdigest() IGNORE NULLS` comes back as the unparseable `tdigest IGNORE NULLS` and no table with
+    it survives there (fixed in 26.9), and a column codec is normalized by its own validation."""
+    node = started_cluster.instances["node"]
+
+    node.query("DROP TABLE IF EXISTS test_legacy_syntax SYNC;")
+    node.query(
+        """
+        CREATE TABLE test_legacy_syntax (
+            key UInt64 STATISTICS(uniq(1)(2)),
+            s String,
+            INDEX idx s TYPE ngrambf_v1(3, 256, 2, 0) IGNORE NULLS GRANULARITY 1
+        )
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_legacy_syntax', 'r1')
+        ORDER BY key;
+        """
+    )
+    node.query(
+        "INSERT INTO test_legacy_syntax SELECT number, toString(number) FROM numbers(10000);"
+    )
+
+    create_before = node.query("SHOW CREATE TABLE test_legacy_syntax;")
+    assert "STATISTICS(uniq(1)(2))" in create_before
+    assert "IGNORE NULLS" in create_before
+
+    node.restart_with_latest_version()
+    wait_for_active_replica(node, "test_legacy_syntax")
+
+    assert node.query("SELECT count() FROM test_legacy_syntax;").strip() == "10000"
+    node.query("INSERT INTO test_legacy_syntax VALUES (99999, 'x');")
+    assert node.query("SELECT count() FROM test_legacy_syntax;").strip() == "10001"
+
+    # The names are normalized on the way in: the second parameter list is the one that was read.
+    create_after = node.query("SHOW CREATE TABLE test_legacy_syntax;")
+    assert "IGNORE NULLS" not in create_after
+    assert "STATISTICS(uniq(2))" in create_after
+    assert "TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1" in create_after
+
+    node.query("DROP TABLE test_legacy_syntax SYNC;")
+    node.restart_with_original_version()
+
+
 def test_implicit_index_upgrade_alias_join_dropped(started_cluster):
     """25.10 stores the implicit indices over the ALIAS columns in Keeper and, after an
     ALTER, in the local definition. The newer server generates them as for a new table
@@ -346,3 +394,4 @@ def test_reserved_name_index_differing_from_implicit_is_kept(started_cluster):
     )
 
     node2.query("DROP TABLE test_reserved_name SYNC;")
+>>>>>>> u/master

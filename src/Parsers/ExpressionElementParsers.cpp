@@ -26,10 +26,12 @@
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -975,63 +977,102 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserCodecDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+namespace
 {
-    return ParserList(std::make_unique<ParserIdentifierWithOptionalParameters>(),
-        std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+
+/// `(a, b)` at `pos`, which must be on the opening bracket.
+bool parseParameterList(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ++pos;
+    if (!ParserExpressionList(false).parse(pos, node, expected))
+        return false;
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+    return true;
 }
 
-bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserCodecDeclarationList codecs;
-    ASTPtr expr_list_args;
+}
 
-    if (pos->type != TokenType::OpeningRoundBracket)
+bool ParserNameWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr name;
+    if (!ParserIdentifier().parse(pos, name, expected))
         return false;
 
+    ASTPtr parameters;
+    bool legacy_syntax = false;
+
+    if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        if (!parseParameterList(pos, parameters, expected))
+            return false;
+
+        /// Parametric call form `name(x)(y)` is legacy
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            parameters.reset();
+            if (!parseParameterList(pos, parameters, expected))
+                return false;
+            legacy_syntax = true;
+        }
+    }
+
+    /// ... and the modifiers of an aggregate or window call, which nothing ever read.
+    if (ParserKeyword(Keyword::RESPECT_NULLS).ignore(pos, expected) || ParserKeyword(Keyword::IGNORE_NULLS).ignore(pos, expected))
+        legacy_syntax = true;
+    if (ParserKeyword(Keyword::OVER).ignore(pos, expected))
+    {
+        ASTPtr window;
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            if (!ParserWindowDefinition().parse(pos, window, expected))
+                return false;
+        }
+        else if (!ParserIdentifier().parse(pos, window, expected))
+            return false;
+        legacy_syntax = true;
+    }
+
+    auto result = make_intrusive<ASTNameWithParameters>(getIdentifierName(name), parameters ? std::move(parameters->children) : ASTs{});
+    result->legacy_syntax = legacy_syntax;
+    node = std::move(result);
+    return true;
+}
+
+namespace
+{
+
+/// `(LZ4, ZSTD(3))`
+bool parseNameWithParametersList(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
     ++pos;
-    if (!codecs.parse(pos, expr_list_args, expected))
+
+    if (!ParserList(std::make_unique<ParserNameWithParameters>(), std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected))
         return false;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
+    return true;
+}
 
-    auto function_node = make_intrusive<ASTFunction>();
-    function_node->name = "CODEC";
-    function_node->setKind(ASTFunction::Kind::CODEC);
-    function_node->arguments = expr_list_args;
-    function_node->children.push_back(function_node->arguments);
+}
 
-    node = function_node;
+bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr elements;
+    if (!parseNameWithParametersList(pos, elements, expected))
+        return false;
+    node = make_intrusive<ASTCodec>(std::move(elements->children));
     return true;
 }
 
 bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
-        std::make_unique<ParserToken>(TokenType::Comma), false);
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ASTPtr stat_type;
-
-    ++pos;
-
-    if (!stat_type_parser.parse(pos, stat_type, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    auto function_node = make_intrusive<ASTFunction>();
-    function_node->name = "STATISTICS";
-    function_node->setKind(ASTFunction::Kind::STATISTICS);
-    function_node->arguments = stat_type;
-    function_node->children.push_back(function_node->arguments);
-    node = function_node;
-    return true;
+    return parseNameWithParametersList(pos, node, expected);
 }
 
 bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -3071,13 +3112,13 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::GROUP_BY)
     {
-        ttl_element->group_by_key = std::move(group_by_key->children);
+        ttl_element->setGroupByKey(std::move(group_by_key));
         if (group_by_assignments)
-            ttl_element->group_by_assignments = std::move(group_by_assignments->children);
+            ttl_element->setGroupByAssignments(std::move(group_by_assignments));
     }
 
     if (mode == TTLMode::RECOMPRESS)
-        ttl_element->recompression_codec = recompression_codec;
+        ttl_element->setRecompressionCodec(std::move(recompression_codec));
 
     node = ttl_element;
     return true;

@@ -7,7 +7,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWithAlias.h>
 
 namespace DB
@@ -87,15 +86,6 @@ bool normalize(IAST & ast, bool exact, const ContextPtr & context)
         }
         else
             changed |= normalize(*child, exact, current_context);
-    }
-
-    /// These expressions are stored outside `children`.
-    if (auto * ttl = ast.as<ASTTTLElement>())
-    {
-        for (const auto & key : ttl->group_by_key)
-            changed |= normalize(*key, exact, current_context);
-        for (const auto & assignment : ttl->group_by_assignments)
-            changed |= normalize(*assignment, exact, current_context);
     }
     return changed;
 }

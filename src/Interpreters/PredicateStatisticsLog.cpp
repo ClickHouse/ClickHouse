@@ -9,8 +9,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/PredicateStatisticsLog.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/config_version.h>
 
@@ -23,15 +24,15 @@ namespace
 
 ASTPtr codecZSTD(UInt64 level)
 {
-    return makeASTFunction("CODEC",
-        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(level)));
+    return make_intrusive<ASTCodec>(ASTs{
+        make_intrusive<ASTNameWithParameters>("ZSTD", ASTs{make_intrusive<ASTLiteral>(level)})});
 }
 
 ASTPtr codecDeltaZSTD(UInt64 delta_bytes)
 {
-    return makeASTFunction("CODEC",
-        makeASTFunction("Delta", make_intrusive<ASTLiteral>(delta_bytes)),
-        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64(1))));
+    return make_intrusive<ASTCodec>(ASTs{
+        make_intrusive<ASTNameWithParameters>("Delta", ASTs{make_intrusive<ASTLiteral>(delta_bytes)}),
+        make_intrusive<ASTNameWithParameters>("ZSTD", ASTs{make_intrusive<ASTLiteral>(UInt64(1))})});
 }
 
 }

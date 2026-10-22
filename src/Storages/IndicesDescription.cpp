@@ -4,6 +4,7 @@
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
@@ -127,9 +128,6 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (!index_type)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
 
-    if (index_type->parameters && !index_type->parameters->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
-
     if (index_definition->granularity == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
@@ -156,9 +154,9 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (result.column_names.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
-    if (index_type && index_type->arguments)
+    if (auto arguments = index_type->getParameters())
     {
-        result.arguments = index_type->arguments->clone();
+        result.arguments = arguments->clone();
 
         if (result.type == TEXT_INDEX_NAME)
             expandTextIndexTransformAliases(result.arguments, columns);
@@ -319,9 +317,8 @@ VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() con
 
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
 {
-    auto index_type = makeASTFunction("minmax");
     auto index_ast = make_intrusive<ASTIndexDeclaration>(
-        make_intrusive<ASTIdentifier>(column_name), index_type,
+        make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTNameWithParameters>("minmax"),
         IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
 
     index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;

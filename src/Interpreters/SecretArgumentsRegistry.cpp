@@ -67,8 +67,6 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
             break;
         case ASTFunction::Kind::WINDOW_FUNCTION:
         case ASTFunction::Kind::LAMBDA_FUNCTION:
-        case ASTFunction::Kind::CODEC:
-        case ASTFunction::Kind::STATISTICS:
             return {};
     }
 

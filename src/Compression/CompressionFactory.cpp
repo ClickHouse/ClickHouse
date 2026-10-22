@@ -6,9 +6,10 @@
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/StringUtils.h>
@@ -43,11 +44,8 @@ bool CompressionCodecFactory::isDefaultCodec(const ASTPtr & codec)
     if (codec == nullptr)
         return true;
     /// CODEC(Default)
-    const auto * func = codec->as<ASTFunction>();
-    if (!func || func->name != "CODEC" || !func->arguments || func->arguments->children.size() != 1)
-        return false;
-    const auto * ident = func->arguments->children[0]->as<ASTIdentifier>();
-    return ident && equalsCaseInsensitive(ident->name(), DEFAULT_CODEC_NAME);
+    const auto & elements = codec->as<const ASTCodec &>().elements().children;
+    return elements.size() == 1 && equalsCaseInsensitive(elements[0]->as<const ASTNameWithParameters &>().name, DEFAULT_CODEC_NAME);
 }
 
 
@@ -55,14 +53,10 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 {
     checkCodecIsNotColumnLevelOnly(family_name);
 
+    ASTs parameters;
     if (level)
-    {
-        auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        return get(makeASTFunction("CODEC", makeASTFunction(family_name, level_literal)), {});
-    }
-
-    auto identifier = make_intrusive<ASTIdentifier>(family_name);
-    return get(makeASTFunction("CODEC", identifier), {});
+        parameters.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(*level)));
+    return get(make_intrusive<ASTCodec>(ASTs{make_intrusive<ASTNameWithParameters>(family_name, std::move(parameters))}), {});
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
@@ -79,26 +73,16 @@ CompressionCodecPtr CompressionCodecFactory::get(
     if (current_default == nullptr)
         current_default = default_codec;
 
-    if (const auto * func = ast->as<ASTFunction>())
+    if (const auto * codec_ast = ast->as<ASTCodec>())
     {
+        const ASTs & elements = codec_ast->elements().children;
         Codecs codecs;
-        codecs.reserve(func->arguments->children.size());
-        for (const auto & inner_codec_ast : func->arguments->children)
+        codecs.reserve(elements.size());
+        for (const auto & element_ast : elements)
         {
-            String codec_family_name;
-            ASTPtr codec_arguments;
-            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
-            {
-                codec_family_name = family_name->name();
-                codec_arguments = {};
-            }
-            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
-            {
-                codec_family_name = ast_func->name;
-                codec_arguments = ast_func->arguments;
-            }
-            else
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+            const auto & element = element_ast->as<const ASTNameWithParameters &>();
+            const String & codec_family_name = element.name;
+            ASTPtr codec_arguments = element.getParameters();
 
             CompressionCodecPtr codec;
             if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))

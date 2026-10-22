@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <Poco/String.h>
@@ -48,15 +47,6 @@ bool replaceLegacyToTime(IAST & ast)
                     expression->setAlias(original_name);
             }
         }
-    }
-
-    /// TTL GROUP BY keys and assignments are not `children` of their `ASTTTLElement`.
-    if (auto * ttl_element = ast.as<ASTTTLElement>())
-    {
-        for (const auto & group_by_key : ttl_element->group_by_key)
-            changed |= replaceLegacyToTime(*group_by_key);
-        for (const auto & group_by_assignment : ttl_element->group_by_assignments)
-            changed |= replaceLegacyToTime(*group_by_assignment);
     }
 
     return changed;

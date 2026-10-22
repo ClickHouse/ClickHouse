@@ -65,7 +65,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -1377,16 +1376,8 @@ static void replaceAliasColumns(ASTPtr & ast, const std::unordered_map<String, A
         return;
     }
 
-    /// `TTL ... GROUP BY key SET column = expr` keeps the keys and assignments outside `children`.
-    if (auto * ttl_element = ast->as<ASTTTLElement>())
-    {
-        for (auto & key : ttl_element->group_by_key)
-            replaceAliasColumns(key, alias_expressions);
-        for (auto & assignment : ttl_element->group_by_assignments)
-            replaceAliasColumns(assignment, alias_expressions);
-    }
     /// The assigned column is a name, not an expression, so only an alias to a renamed column can be mapped.
-    else if (auto * assignment = ast->as<ASTAssignment>())
+    if (auto * assignment = ast->as<ASTAssignment>())
     {
         if (auto it = alias_expressions.find(assignment->column_name); it != alias_expressions.end())
             if (const auto * target = it->second->as<ASTIdentifier>())

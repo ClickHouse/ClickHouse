@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDataType.h>
@@ -28,6 +29,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -842,8 +844,8 @@ namespace
     {
         auto index = make_intrusive<ASTIndexDeclaration>(
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
-            makeASTFunction("text", makeASTOperator("equals",
-                make_intrusive<ASTIdentifier>("tokenizer"), make_intrusive<ASTLiteral>("keyValuePairs"))),
+            make_intrusive<ASTNameWithParameters>("text", ASTs{makeASTOperator("equals",
+                make_intrusive<ASTIdentifier>("tokenizer"), make_intrusive<ASTLiteral>("keyValuePairs"))}),
             "tags_idx");
         /// A text index covers the whole part; its posting lists identify individual rows.
         index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
@@ -1108,14 +1110,14 @@ namespace
                 /// Generated `value` columns use `ALP` and `ZSTD(3)`.
                 /// Explicitly declared columns keep the user's codecs.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(makeASTFunction(
-                        "CODEC",
-                        make_intrusive<ASTIdentifier>("Delta"),
-                        make_intrusive<ASTIdentifier>("T64"),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                    timestamp_decl->setCodec(make_intrusive<ASTCodec>(ASTs{
+                        make_intrusive<ASTNameWithParameters>("Delta"),
+                        make_intrusive<ASTNameWithParameters>("T64"),
+                        make_intrusive<ASTNameWithParameters>("ZSTD", ASTs{make_intrusive<ASTLiteral>(UInt64{3})})}));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.value_type)))
-                    value_decl->setCodec(makeASTFunction(
-                        "CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                    value_decl->setCodec(make_intrusive<ASTCodec>(ASTs{
+                        make_intrusive<ASTNameWithParameters>("ALP"),
+                        make_intrusive<ASTNameWithParameters>("ZSTD", ASTs{make_intrusive<ASTLiteral>(UInt64{3})})}));
 
                 break;
             }

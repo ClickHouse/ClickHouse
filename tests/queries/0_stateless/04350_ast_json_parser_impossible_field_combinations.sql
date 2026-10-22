@@ -193,7 +193,7 @@ SELECT formatQueryFromJSON('{"type":"WithElement","name":"x","subquery":{"type":
 -- (formats `ADD STATISTICS a` with no `TYPE`) or a `DROP` carrying `types` is parser-impossible.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ADD STATISTICS a TYPE tdigest'), '"types":{"type":"ExpressionList"', '"renamed":{"type":"ExpressionList"')); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns":', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"Function","name":"tdigest","no_empty_args":true}]},"columns":')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns":', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"NameWithParameters","name":"tdigest"}]},"columns":')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- ALTER ... STATISTICS ALL: `ParserAlterCommand` reads `IF EXISTS` and `IN PARTITION` only in the

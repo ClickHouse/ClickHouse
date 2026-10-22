@@ -33,6 +33,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTNameWithParameters.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -522,6 +523,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     BlockIO res;
     const auto & settings = getContext()->getSettingsRef();
+
+    /// Only a definition written here and now is rejected; a replay carries one an earlier version accepted.
+    if (!getContext()->isDDLOrOnClusterInternal() && !getContext()->isRecoveryFromStoredMetadata())
+        rejectLegacyNameSyntax(*query_ptr);
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());

@@ -2,6 +2,8 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTCodec.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -22,47 +24,21 @@ namespace ErrorCodes
 ASTPtr ASTTTLElement::clone() const
 {
     auto clone = make_intrusive<ASTTTLElement>(*this);
-    clone->children.clear();
-    clone->ttl_expr_pos = -1;
-    clone->where_expr_pos = -1;
-
-    clone->setExpression(clone->ttl_expr_pos, getExpression(ttl_expr_pos, true));
-    clone->setExpression(clone->where_expr_pos, getExpression(where_expr_pos, true));
-
-    for (auto & expr : clone->group_by_key)
-        expr = expr->clone();
-    for (auto & expr : clone->group_by_assignments)
-        expr = expr->clone();
-    /// Not a child either, so the copy constructor left it shared with the source.
-    if (clone->recompression_codec)
-        clone->recompression_codec = clone->recompression_codec->clone();
-
+    clone->cloneChildren();
     return clone;
 }
 
 void ASTTTLElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 120, "If members were added to ASTTTLElement, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTTTLElement, hash them here unless they are purely cosmetic.");
     hash_state.update(mode);
     hash_state.update(destination_type);
     hash_state.update(destination_name.size());
     hash_state.update(destination_name);
     hash_state.update(if_exists);
-
-    /// `group_by_key`, `group_by_assignments` and `recompression_codec` are not stored
-    /// in `children`, so the generic tree walk does not reach them.
-    hash_state.update(group_by_key.size());
-    for (const auto & expr : group_by_key)
-        expr->updateTreeHash(hash_state, ignore_aliases);
-
-    hash_state.update(group_by_assignments.size());
-    for (const auto & expr : group_by_assignments)
-        expr->updateTreeHash(hash_state, ignore_aliases);
-
-    hash_state.update(recompression_codec != nullptr);
-    if (recompression_codec)
-        recompression_codec->updateTreeHash(hash_state, ignore_aliases);
-
+    /// Which slot a child occupies is part of the meaning, not only its content.
+    for (int pos : {ttl_expr_pos, where_expr_pos, group_by_key_pos, group_by_assignments_pos, recompression_codec_pos})
+        hash_state.update(pos);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -79,19 +55,19 @@ void ASTTTLElement::writeJSON(WriteBuffer & out) const
     w.writeChild("ttl_expr", ttl());
     w.writeChild("where_expr", where());
 
-    if (!group_by_key.empty())
+    if (auto keys = groupByKey(); keys && !keys->children.empty())
     {
         w.writeKey("group_by_key");
-        w.writeArray(group_by_key);
+        w.writeArray(keys->children);
     }
 
-    if (!group_by_assignments.empty())
+    if (auto assignments = groupByAssignments(); assignments && !assignments->children.empty())
     {
         w.writeKey("group_by_assignments");
-        w.writeArray(group_by_assignments);
+        w.writeArray(assignments->children);
     }
 
-    w.writeChild("recompression_codec", recompression_codec);
+    w.writeChild("recompression_codec", recompressionCodec());
 }
 
 void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
@@ -122,21 +98,23 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     if (where_child)
         setWhere(std::move(where_child));
 
-    auto arr = r.getArray("group_by_key");
-    if (arr)
+    /// An empty array leaves the slot absent, so the mode checks below treat it like a missing key.
+    if (auto arr = r.getArray("group_by_key"); arr && arr->size() > 0)
     {
+        auto keys = make_intrusive<ASTExpressionList>();
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto child_obj = arr->getObject(i);
             if (!child_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'group_by_key' array during AST JSON deserialization", i);
-            group_by_key.push_back(IAST::createFromJSON(*child_obj));
+            keys->children.push_back(IAST::createFromJSON(*child_obj));
         }
+        setGroupByKey(std::move(keys));
     }
 
-    arr = r.getArray("group_by_assignments");
-    if (arr)
+    if (auto arr = r.getArray("group_by_assignments"); arr && arr->size() > 0)
     {
+        auto assignments = make_intrusive<ASTExpressionList>();
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto child_obj = arr->getObject(i);
@@ -146,19 +124,17 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
             /// `TTLDescription::getTTLFromAST` does `ast->as<const ASTAssignment &>()` for each element.
             if (!assignment || !assignment->as<ASTAssignment>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in 'group_by_assignments' must be an assignment during AST JSON deserialization", i);
-            group_by_assignments.push_back(std::move(assignment));
+            assignments->children.push_back(std::move(assignment));
         }
+        setGroupByAssignments(std::move(assignments));
     }
 
-    /// `RECOMPRESS` is not a free-form expression slot: `ParserTTLElement` always fills it through
-    /// `ParserCodec`, so it is a `CODEC(...)` function with a non-empty argument list, and
-    /// `TTLDescription::getTTLFromAST` hands the node to `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`,
-    /// which assumes that shape. Only `RECOMPRESS` carries a codec; `formatImpl` drops it for every other
-    /// mode, so a codec on a non-`RECOMPRESS` element would be silently lost.
-    recompression_codec = r.readSpecialFunctionChild("recompression_codec", "CODEC");
-    if (mode == TTLMode::RECOMPRESS && !recompression_codec)
+    /// Only `RECOMPRESS` carries a codec; `formatImpl` drops it for every other mode, so a codec on a
+    /// non-`RECOMPRESS` element would be silently lost.
+    setRecompressionCodec(r.readChildOfType<ASTCodec>("recompression_codec"));
+    if (mode == TTLMode::RECOMPRESS && !recompressionCodec())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'recompression_codec' is missing for RECOMPRESS mode during AST JSON deserialization");
-    if (mode != TTLMode::RECOMPRESS && recompression_codec)
+    if (mode != TTLMode::RECOMPRESS && recompressionCodec())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'recompression_codec' is only valid for TTL RECOMPRESS during AST JSON deserialization");
 
     /// Only `TTL ... TO DISK/VOLUME '<name>'` (mode `MOVE`) carries a destination. `ParserTTLElement`
@@ -186,10 +162,10 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     /// expressions) or these fields on `DELETE`/`MOVE`/`RECOMPRESS` (where `formatImpl` drops them).
     if (mode == TTLMode::GROUP_BY)
     {
-        if (group_by_key.empty())
+        if (!groupByKey())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TTL GROUP BY requires a non-empty 'group_by_key' during AST JSON deserialization");
     }
-    else if (!group_by_key.empty() || !group_by_assignments.empty())
+    else if (groupByKey() || groupByAssignments())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'group_by_key'/'group_by_assignments' are only valid for TTL GROUP BY during AST JSON deserialization");
 }
@@ -220,19 +196,22 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     else if (mode == TTLMode::GROUP_BY)
     {
         ostr << " GROUP BY ";
-        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
+        if (auto keys = groupByKey())
         {
-            if (it != group_by_key.begin())
-                ostr << ", ";
-            (*it)->format(ostr, settings, state, frame);
+            for (auto it = keys->children.begin(); it != keys->children.end(); ++it)
+            {
+                if (it != keys->children.begin())
+                    ostr << ", ";
+                (*it)->format(ostr, settings, state, frame);
+            }
         }
 
-        if (!group_by_assignments.empty())
+        if (auto assignments = groupByAssignments(); assignments && !assignments->children.empty())
         {
             ostr << " SET ";
-            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (auto it = assignments->children.begin(); it != assignments->children.end(); ++it)
             {
-                if (it != group_by_assignments.begin())
+                if (it != assignments->children.begin())
                     ostr << ", ";
                 (*it)->format(ostr, settings, state, frame);
             }
@@ -241,7 +220,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     else if (mode == TTLMode::RECOMPRESS)
     {
         ostr << " RECOMPRESS ";
-        recompression_codec->format(ostr, settings, state, frame);
+        recompressionCodec()->format(ostr, settings, state, frame);
     }
     else if (mode == TTLMode::DELETE)
     {
@@ -265,21 +244,24 @@ void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
         if (pos == -1)
         {
             pos = static_cast<int>(children.size());
-            children.emplace_back(ast);
+            children.emplace_back(std::move(ast));
         }
         else
-            children[pos] = ast;
+            children[pos] = std::move(ast);
+        return;
     }
-    else if (pos != -1)
-    {
-        children[pos] = ASTPtr{};
-        pos = -1;
-    }
-}
 
-ASTPtr ASTTTLElement::getExpression(int  pos, bool clone) const
-{
-    return pos != -1 ? (clone ? children[pos]->clone() : children[pos]) : ASTPtr{};
+    if (pos == -1)
+        return;
+
+    /// Erase instead of leaving a null child, which the generic tree walks do not expect.
+    children.erase(children.begin() + pos);
+    for (int * other : {&ttl_expr_pos, &where_expr_pos, &group_by_key_pos, &group_by_assignments_pos, &recompression_codec_pos})
+    {
+        if (*other > pos)
+            --*other;
+    }
+    pos = -1;
 }
 
 }

@@ -1016,7 +1016,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (codec.empty())
                     return;
                 if (is_fresh_definition || !is_stored_in_definition(name))
-                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings), is_stored_definition);
             };
 
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);

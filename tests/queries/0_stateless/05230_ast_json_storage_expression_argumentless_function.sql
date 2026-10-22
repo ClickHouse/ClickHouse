@@ -13,7 +13,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt8) ENGINE = M
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (d Date, x UInt64) ENGINE = MergeTree(d, x, 8192)'));
 
 -- The `ALTER` slots, the `Assignment` reader (`GROUP BY ... SET` and `UPDATE`), and a `RECOMPRESS` codec,
--- which `ASTTTLElement` holds outside `IAST::children` so the recursive screen never reaches it.
+-- whose parameterless elements are not functions and so pass the recursive screen.
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ORDER BY (a, b), MODIFY SAMPLE BY a, ADD INDEX i a TYPE minmax GRANULARITY 1, UPDATE a = a + 1 WHERE a > 0, MODIFY TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY TTL d + toIntervalDay(1) GROUP BY a SET d = max(d)'));
 

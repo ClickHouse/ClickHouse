@@ -1,5 +1,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/SipHash.h>
+#include <Parsers/ASTCodec.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
@@ -185,8 +186,12 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (auto statistics_desc = getStatisticsDesc())
     {
-        ostr << ' ';
-        statistics_desc->format(ostr, format_settings, state, frame);
+        auto nested_frame = frame;
+        nested_frame.expression_list_prepend_whitespace = false;
+        nested_frame.allow_operators = false;
+        ostr << ' ' << "STATISTICS" << '(';
+        statistics_desc->format(ostr, format_settings, state, nested_frame);
+        ostr << ')';
     }
 
     if (auto ttl = getTTL())
@@ -297,17 +302,16 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     setDefaultExpression(std::move(default_expression));
 
     /// These sub-slots are parser-produced as fixed concrete types and are downcast later
-    /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`;
-    /// the compression/statistics factories take the parser-shaped `CODEC`/`STATISTICS` `ASTFunction`s,
-    /// which `readSpecialFunctionChild` validates down to their argument list). Validate them
-    /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
-    /// `ttl`/`default_expression` are arbitrary expressions and stay untyped.
+    /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`,
+    /// the compression and statistics factories downcast the codec and every statistics element).
+    /// Validate them so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later
+    /// internal cast. `ttl`/`default_expression` are arbitrary expressions and stay untyped.
     setComment(r.readStringLiteralChild("comment"));
-    setCodec(r.readSpecialFunctionChild("codec", "CODEC"));
+    setCodec(r.readChildOfType<ASTCodec>("codec"));
     /// `ParserColumnDeclaration` inserts `settings` right after `codec`; reproduce that order so
     /// the restored AST has the same shape - and the same tree hash - as a parsed one.
     setSettings(r.readChildOfType<ASTSetQuery>("settings"));
-    setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
+    setStatisticsDesc(r.readNameWithParametersListChild("statistics_desc"));
     setTTL(r.readExpressionChild("ttl"));
     setCollation(r.readChildOfType<ASTCollation>("collation"));
 }

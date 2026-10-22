@@ -27,6 +27,7 @@ namespace DB
 {
 
 class ASTExpressionList;
+class ASTCodec;
 class ASTFunction;
 class ASTIdentifier;
 class ASTOrderByElement;
@@ -332,7 +333,7 @@ private:
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
-    void fuzzCodecFunction(ASTFunction & codec_fn);
+    void fuzzCodec(ASTCodec & codec);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
     ASTPtr makeTextIndexTokenizer();
