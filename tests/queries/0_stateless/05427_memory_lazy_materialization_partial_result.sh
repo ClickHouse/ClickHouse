@@ -13,9 +13,9 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_memory_lazy_partial SELECT number, toString(number) FROM numbers(1000000)
     SETTINGS max_threads = 1, max_block_size = 1000, max_insert_threads = 1;"
 
-SETTINGS="max_threads = 1, use_top_k_dynamic_filtering = 0,
+SETTINGS="max_threads = 1, max_block_size = 1000, use_top_k_dynamic_filtering = 0,
           query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000,
-          query_plan_execute_functions_after_sorting = 0"
+          query_plan_execute_functions_after_sorting = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0"
 
 QUERY="SELECT payload FROM t_memory_lazy_partial ORDER BY k + sleepEachRow(0.0001) LIMIT 5"
 
