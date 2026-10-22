@@ -932,11 +932,9 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             getData(hash_joins[0])->rows_to_join += getData(hash_joins[i])->rows_to_join;
             getData(hash_joins[0])->keys_to_join += getData(hash_joins[i])->keys_to_join;
 
-            /// The merged slot 0 now holds slot i's stored columns; if those were compressed
-            /// (`enable_join_in_memory_compression`), slot 0 must decompress them at probe time even
-            /// when slot 0 itself did not compress, so propagate the flag.
-            if (hash_joins[i]->data->haveCompressed())
-                hash_joins[0]->data->setHaveCompressed(true);
+            /// Slot 0's `allocated_size` now includes slot i's compressed blocks.
+            hash_joins[0]->data->in_memory_compression_stats.source_bytes += hash_joins[i]->data->in_memory_compression_stats.source_bytes;
+            hash_joins[0]->data->in_memory_compression_stats.stored_bytes += hash_joins[i]->data->in_memory_compression_stats.stored_bytes;
 
             getData(hash_joins[i])->allocated_size = 0;
             getData(hash_joins[i])->rows_to_join = 0;
@@ -968,6 +966,19 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
     for (const auto & hash_join : hash_joins)
         hash_join->data->all_values_unique = all_values_unique;
+
+    /// Synchronize all `HashJoin`s on the `have_compressed` flag. The slots share one `StoredColumnsIndex`
+    /// (and, with a two-level map, the merged map references the stored blocks of every slot), so a slot
+    /// that did not compress anything itself can still reach the blocks another slot compressed
+    /// (`enable_join_in_memory_compression`): every slot must then decompress at probe time and must not
+    /// build the emit table over the shared index, which would contain `ColumnCompressed` placeholders.
+    bool have_compressed = false;
+    for (const auto & hash_join : hash_joins)
+        have_compressed |= hash_join->data->haveCompressed();
+
+    if (have_compressed)
+        for (const auto & hash_join : hash_joins)
+            hash_join->data->setHaveCompressed(true);
 
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.

@@ -973,19 +973,26 @@ namespace
 /// A column is kept in compressed form only when compression shrinks its data by at least 10%;
 /// otherwise it is just shrunk to fit. This keeps barely- or in-compressible columns directly readable,
 /// so they incur no probe-time decompression cost (and `have_compressed` stays false if nothing helped).
-ColumnPtr compressColumnIfWorthwhile(const ColumnPtr & column, bool & compressed_any)
+/// `stats` accumulates the data size of the columns and their stored footprint, see `HashJoin::InMemoryCompressionStats`.
+ColumnPtr compressColumnIfWorthwhile(const ColumnPtr & column, bool & compressed_any, HashJoin::InMemoryCompressionStats & stats)
 {
     auto compressed = column->compress(/*force_compression=*/true);
     /// `byteSize` is the actual data size; comparing the compressed footprint against it (rather than
     /// against the possibly over-allocated `allocatedBytes`) measures real data compressibility, since
     /// `cloneResized` already reclaims over-allocation for free.
-    if (compressed->allocatedBytes() * 10 <= column->byteSize() * 9)
+    const size_t source_bytes = column->byteSize();
+    ColumnPtr result;
+    if (compressed->allocatedBytes() * 10 <= source_bytes * 9)
     {
         compressed_any = true;
         ProfileEvents::increment(ProfileEvents::JoinInMemoryCompressedColumns);
-        return compressed;
+        result = std::move(compressed);
     }
-    return column->cloneResized(column->size());
+    else
+        result = column->cloneResized(column->size());
+    stats.source_bytes += source_bytes;
+    stats.stored_bytes += result->allocatedBytes();
+    return result;
 }
 }
 
@@ -1084,7 +1091,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             for (size_t i = 0; i < block_to_save.columns(); ++i)
             {
                 auto & elem = block_to_save.getByPosition(i);
-                elem.column = compressColumnIfWorthwhile(elem.column, have_compressed);
+                elem.column = compressColumnIfWorthwhile(elem.column, have_compressed, in_memory_compression_stats);
             }
         }
 
@@ -1387,7 +1394,7 @@ void HashJoin::compactStoredBlocks(bool compress)
         try
         {
             for (auto & column : stored_columns.columns)
-                column = compress ? compressColumnIfWorthwhile(column, have_compressed) : column->cloneResized(column->size());
+                column = compress ? compressColumnIfWorthwhile(column, have_compressed, in_memory_compression_stats) : column->cloneResized(column->size());
 
             /// `cloneResized` and `compress` replace each column with a new object.
             /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
@@ -1429,6 +1436,15 @@ void HashJoin::compactStoredBlocks(bool compress)
 
         doDebugAsserts();
     }
+}
+
+size_t HashJoin::getAvgJoinedBytesPerRow() const
+{
+    size_t bytes = data->allocated_size;
+    if (in_memory_compression_stats.stored_bytes)
+        bytes = static_cast<size_t>(static_cast<double>(bytes) * static_cast<double>(in_memory_compression_stats.source_bytes)
+            / static_cast<double>(in_memory_compression_stats.stored_bytes));
+    return bytes / std::max<size_t>(1, data->rows_to_join);
 }
 
 void HashJoin::startInMemoryCompression()

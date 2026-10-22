@@ -689,10 +689,22 @@ public:
     /// so they must be decompressed before reading at probe time.
     bool haveCompressed() const { return have_compressed; }
 
-    /// Used when stored columns from one `HashJoin` are moved into another (e.g. `ConcurrentHashJoin`'s
-    /// two-level slot merge into slot 0): if any source join had compressed blocks, the destination must
-    /// treat its stored blocks as possibly compressed too, otherwise the probe reads `ColumnCompressed`
-    /// as an ordinary column.
+    /// The data size of the stored columns that went through `enable_join_in_memory_compression` and their stored
+    /// footprint after it, compressed or not. Their ratio converts the compressed `allocated_size` back to the
+    /// size of the data, which the output block size estimates (`max_joined_block_size_bytes`) are about.
+    struct InMemoryCompressionStats
+    {
+        size_t source_bytes = 0;
+        size_t stored_bytes = 0;
+    };
+
+    /// The average size of the data of a stored right-side row, as it is after decompression.
+    size_t getAvgJoinedBytesPerRow() const;
+
+    /// Used when one `HashJoin` can reach the stored columns of another (`ConcurrentHashJoin`'s slots share
+    /// one `StoredColumnsIndex` and, with a two-level map, the merged map): if any of them had compressed
+    /// blocks, all must treat their stored blocks as possibly compressed too, otherwise the probe reads
+    /// `ColumnCompressed` as an ordinary column.
     void setHaveCompressed(bool value) { have_compressed = value; }
 
     /// Returns a decompressed view of the given stored (compressed) `StoredBlock`. Every call
@@ -742,6 +754,7 @@ private:
     /// True when some stored right-side columns are kept in compressed form
     /// (by `enable_join_in_memory_compression`); see `haveCompressed`.
     bool have_compressed = false;
+    InMemoryCompressionStats in_memory_compression_stats;
 
     /// The stored size after which `enable_join_in_memory_compression` starts compressing the stored
     /// blocks. Unset when the setting is off.
