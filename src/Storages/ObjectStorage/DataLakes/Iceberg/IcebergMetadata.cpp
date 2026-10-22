@@ -1553,6 +1553,12 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
                 /// A negative count comes from a corrupted manifest, as in `totalRows`.
                 if (data_file->parsed_entry->record_count < 0)
                 {
+                    LOG_WARNING(
+                        log,
+                        "Data file '{}' of manifest '{}' has a negative record count {}, so the read gets no row estimate",
+                        data_file->parsed_entry->file_path_key.serialize(),
+                        manifest_list_entry.manifest_file_path,
+                        data_file->parsed_entry->record_count);
                     has_negative_record_count = true;
                     return false;
                 }
