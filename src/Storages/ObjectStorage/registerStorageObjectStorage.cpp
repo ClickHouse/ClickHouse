@@ -56,20 +56,23 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
+    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
+    // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
+    // on server startup.
+    const auto global_context = args.getContext();
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
-        Settings settings = context->getSettingsCopy();
+        Settings settings = global_context->getSettingsCopy();
 
         // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
-        format_settings = getFormatSettings(context, settings);
+        format_settings = getFormatSettings(global_context, settings);
     }
     else
     {
-        format_settings = getFormatSettings(context);
+        format_settings = getFormatSettings(global_context);
     }
 
     ASTPtr partition_by;
@@ -1500,6 +1503,7 @@ When using the `Iceberg` table engine in ClickHouse, the system needs to locate 
 
 3. **Default Search**:
 * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the most recent file {#most-recent-file}
 
@@ -1858,6 +1862,27 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
 declares `primary-key` therefore throws.
+
+## Tables with deletion vectors {#deletion-vectors}
+
+Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
+contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
+deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
+
+A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
+it can be read again.
+
+An incremental read stops at the first unconsumed snapshot with deletion vectors and stays there even after a full
+compaction, because every snapshot up to that compaction lists the same deletion vectors. The cursor is not advanced.
+The read resumes once Paimon expires those snapshots, or once they are abandoned by moving the cursor to the snapshot of
+the full compaction, which drops every snapshot not yet consumed up to it (see
+[When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+Either way, the rows that those deletion vectors removed stay in what the incremental read has already delivered.
 
 ## Settings {#settings}
 
