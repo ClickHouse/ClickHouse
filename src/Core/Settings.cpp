@@ -760,6 +760,12 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(Bool, s3_use_idempotency_id, true, R"(
+Put a unique idempotency id into the user-defined metadata (the `x-amz-meta-clickhouse-idempotency-id` header) of every object uploaded to S3. When a write is retried after its response was lost, the id lets ClickHouse recognize that the object was written by the earlier attempt of the same write and treat the write as successful instead of failing it.
+
+Disable it for S3-compatible storages that reject user-defined object metadata. Such writes lose the recovery of lost responses. Writes into the tables of a `DataLakeCatalog` database with `catalog_type = 's3tables'` (Amazon S3 Tables) don't put the id unless this setting is explicitly enabled in the query, because S3 Tables doesn't support user-defined object metadata.
+)", 0, \
+        {"26.11", true, true, "New setting to disable the idempotency id in the metadata of objects uploaded to S3."}) \
     DECLARE(Bool, s3_validate_etag_on_read, true, R"(
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
@@ -3800,19 +3806,6 @@ start using external aggregation.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
-    DECLARE(UInt64, min_bytes_before_external_group_by, 0, R"(
-The minimum size in bytes of the aggregation state of one thread before external `GROUP BY` writes it to disk.
-
-When the memory of the query is over `max_bytes_before_external_group_by` or `max_bytes_ratio_before_external_group_by` because of other operators, for example a hash join that holds a large table, each thread would otherwise write every block it aggregates to disk as a separate small file. Reading many small files back costs more memory than the writes saved. With this setting a thread keeps aggregating until its own state reaches the given size, and only then writes it out as one file.
-
-The memory used above the threshold is bounded by this value multiplied by the number of threads.
-
-Possible values:
-
-- A positive integer, the size in bytes.
-- `0` — no minimum, the state is written as soon as the threshold is reached.
-)", 0, \
-        {"26.11", 0, 0, "New setting: the minimum size of the aggregation state of one thread before external `GROUP BY` writes it to disk, so that a query that is already over the threshold does not write every block as a separate file."}) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
 The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
@@ -3908,8 +3901,7 @@ server or user memory limit, the ratio has no effect.
 `max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
 use `max_bytes_before_external_set`, leaving room for additional memory usage.
 )", 0, \
-        {"26.11", 0., 0.5, "Enabled spilling of the set of `IN` with a subquery to disk by default, at half of the available server or user memory."}, \
-        {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+        {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
     DECLARE(UInt64, max_bytes_for_external_set_bloom_filter, 128_MiB, R"(
 Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
 filter lets lookups of values that are not in the set skip reading the disk. It does not speed up lookups
@@ -3936,7 +3928,7 @@ The filter counts towards the memory usage of the query, such as `max_memory_usa
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
     DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
 Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
 lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
@@ -3949,7 +3941,7 @@ The budget applies per set. The cache counts towards the memory usage of the que
 
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
-        {"26.11", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
@@ -9660,7 +9652,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
 Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas = 1`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`. With `enable_parallel_replicas = 2` parallel replicas are forced and the automatic mode is not applied.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
-)", EXPERIMENTAL, \
+)", 0, \
         {"25.12", 0, 0, "New setting"}) \
     DECLARE(Bool, automatic_parallel_replicas_remember_boundary, true, R"(
 Lets automatic parallel replicas remember, per query plan, where the replicas' share of the work ends, so that a
@@ -9686,7 +9678,7 @@ Set to 1 to accept any amount of duplicated reading, which restores the behaviou
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
-)", EXPERIMENTAL, \
+)", 0, \
         {"26.1", 0, 1_MiB, "Better default value derived from testing results"}, \
         {"25.12", 0, 0, "New setting"}) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
@@ -9765,6 +9757,8 @@ If true, ClickHouse will use parallel replicas algorithm also for non-replicated
 )", 0) \
     DECLARE(UInt64, parallel_replicas_min_number_of_rows_per_replica, 0, R"(
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
+
+Ignored when `automatic_parallel_replicas_mode` is enabled: the automatic mode decides with its own cost model.
 )", 0) \
     DECLARE(Bool, parallel_replicas_prefer_local_join, true, R"(
 If true, and `JOIN` can be executed with parallel replicas algorithm, and every storage of the `JOIN` part that would otherwise be materialized into a temporary table can be read by each replica on its own, local `JOIN` will be used instead of `GLOBAL JOIN`. That part is the right one, except for a `RIGHT JOIN`, where it is the left one and where every storage has to be eligible for parallel replicas rather than merely `*MergeTree`. A storage under the materialized side of a nested `GLOBAL JOIN`, or under a `GLOBAL IN`, does not count, because the initiator materializes those itself.
@@ -10593,6 +10587,10 @@ Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptD
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to gate the experimental XGBoost integration (the `XGBOOST` dictionary layout and the `predictXGBoost` function)."}) \
+    DECLARE(Bool, enable_elasticsearch, false, R"(
+Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
@@ -10699,9 +10697,6 @@ Allows defining columns with [statistics](/reference/engines/table-engines/merge
 )", 0, allow_experimental_statistics, \
         {"26.3", false, true, "Column statistics are now GA. This also applies to the alias `allow_experimental_statistics`."}, \
         {"24.6", false, false, "The setting was renamed. The previous name is `allow_experimental_statistic`. At the time the setting was named `allow_experimental_statistics`, which is now an alias of it."}) \
-    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0, \
-        {"26.2", false, true, "Enable statistics cache"}, \
-        {"25.11", 0, 0, "New setting"}) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
@@ -11280,6 +11275,9 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false, \
         {"26.9", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."}, \
         {"26.6", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."}) \
+    MAKE_OBSOLETE(M, Bool, use_statistics_cache, true, \
+        {"26.2", false, true, "Enable statistics cache"}, \
+        {"25.11", 0, 0, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false, \
         {"26.9", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"}) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false, \

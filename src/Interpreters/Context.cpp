@@ -56,6 +56,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
@@ -672,6 +673,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
+    mutable StatisticsCachePtr statistics_cache TSA_GUARDED_BY(mutex);              /// Cache of column statistics of data parts.
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
@@ -1478,6 +1480,15 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
+/// An entry of `ContextData::scalars`. `from_client` is true when the block arrived from the client
+/// over the wire (`Context::addClientScalar`) rather than being computed by the server, so that
+/// `Context::hasComputedScalar` can keep such a block out of the analyzer's scalar-subquery cache.
+struct ScalarEntry
+{
+    Block block;
+    bool from_client = false;
+};
+
 ContextData::ContextData()
 {
     settings = std::make_unique<Settings>();
@@ -1545,6 +1556,7 @@ ContextData::ContextData(const ContextData &o) :
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
+    is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -2937,7 +2949,10 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
 Scalars Context::getScalars() const
 {
     std::lock_guard lock(mutex);
-    return scalars;
+    Scalars res;
+    for (const auto & [name, entry] : scalars)
+        res.emplace(name, entry.block);
+    return res;
 }
 
 
@@ -2952,7 +2967,7 @@ Block Context::getScalar(const String & name) const
         // often, so 'bad arguments' for now.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
-    return it->second;
+    return it->second.block;
 }
 
 std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
@@ -3106,7 +3121,18 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
-    scalars[name] = block;
+    /// A server-computed value overrides any client-supplied one of the same name and is trusted.
+    scalars[name] = ScalarEntry{block, /*from_client=*/ false};
+}
+
+
+void Context::addClientScalar(const String & name, const Block & block)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    scalars[name] = ScalarEntry{block, /*from_client=*/ true};
 }
 
 
@@ -3127,6 +3153,16 @@ bool Context::hasScalar(const String & name) const
 
     std::lock_guard lock(mutex);
     return scalars.contains(name);
+}
+
+bool Context::hasComputedScalar(const String & name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    auto it = scalars.find(name);
+    return it != scalars.end() && !it->second.from_client;
 }
 
 void Context::addQueryAccessInfo(
@@ -5308,6 +5344,38 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
     return shared->primary_index_cache;
 }
 
+void Context::setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->statistics_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics cache has been already created.");
+
+    shared->statistics_cache = std::make_shared<StatisticsCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->statistics_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics cache was not created yet.");
+
+    size_t size = config.getUInt64("statistics_cache_size", DEFAULT_STATISTICS_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->statistics_cache->setMaxSizeInBytes(size);
+}
+
+StatisticsCachePtr Context::getStatisticsCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->statistics_cache;
+}
+
 SystemAllocatedMemoryHolderPtr Context::getSystemAllocatedMemoryHolder() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5350,6 +5418,15 @@ std::shared_ptr<std::unordered_set<std::string>> Context::getUsersToIgnoreEarlyM
 void Context::clearPrimaryIndexCache() const
 {
     PrimaryIndexCachePtr cache = getPrimaryIndexCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::clearStatisticsCache() const
+{
+    StatisticsCachePtr cache = getStatisticsCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -5945,6 +6022,9 @@ void Context::clearCaches() const
 
     if (shared->primary_index_cache)
         shared->primary_index_cache->clear();
+
+    if (shared->statistics_cache)
+        shared->statistics_cache->clear();
 
     if (shared->index_uncompressed_cache)
         shared->index_uncompressed_cache->clear();

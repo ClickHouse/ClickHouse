@@ -113,6 +113,8 @@
     M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
+    M(StatisticsCacheHits, "Number of times the statistics of a column of a data part have been found in the statistics cache.", ValueType::Number) \
+    M(StatisticsCacheMisses, "Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
@@ -902,6 +904,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
     \
+    M(ElasticsearchPointInTimeCloseFailures, "Number of failed attempts to close an Elasticsearch point in time.", ValueType::Number) \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).", ValueType::Number) \
     \
     M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.", ValueType::Microseconds) \
@@ -1783,7 +1786,7 @@ The server successfully detected this situation and will download merged part fr
     M(SetsSpilledToDisk, "Number of `IN` sets that spilled to disk, while they were built from their subquery or while the query used them.", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
-    M(LoadedStatistics, "Number of data parts for which column statistics were loaded", ValueType::Number) \
+    M(LoadedStatistics, "Number of data parts whose column statistics were collected for the selectivity estimator, either from the statistics cache or from the part itself", ValueType::Number) \
     M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
     M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \
