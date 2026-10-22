@@ -479,7 +479,7 @@ private:
     /// Fibonacci hashing of the block number: deterministic and well spread.
     static size_t offsetInBlock(size_t block_idx, size_t block_size)
     {
-        return ((block_idx * 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
+        return (common::mulIgnoreOverflow(block_idx, 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
     }
 
     /// Encodes one value as the specification describes, then decodes it back. The result is an
@@ -529,7 +529,7 @@ private:
 
         size_t bit_width = 0;
         if (num_encodable > 0)
-            bit_width = std::bit_width(static_cast<UInt64>(static_cast<Exact>(max) - static_cast<Exact>(min)));
+            bit_width = std::bit_width(static_cast<UInt64>(common::subIgnoreOverflow(static_cast<Exact>(max), static_cast<Exact>(min))));
         return sample.size() * bit_width + num_exceptions * (sizeof(UInt16) + sizeof(T)) * 8;
     }
 
