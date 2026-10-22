@@ -17,11 +17,10 @@
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <base/EnumReflection.h>
-#include <base/demangle.h>
 #include <base/errnoToString.h>
+#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/StackTrace.h>
-#include <Common/SymbolIndex.h>
 
 
 namespace DB
@@ -30,43 +29,28 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
 {
 
-/// Frames in the main object may arrive here already reduced to physical file offsets (see run()),
-/// and SymbolIndex::findSymbol accepts either representation.
-std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
+/// Formatted by `StackTrace`, so the trace is printed with the same rules as any other one.
+std::string formatTrace(const std::vector<UInt64> & trace)
 {
-    std::string result;
-    const bool show_addresses = StackTrace::showAddresses();
+    FramePointers frame_pointers{};
+    const size_t size = std::min(trace.size(), frame_pointers.size());
+    for (size_t i = 0; i < size; ++i)
+        frame_pointers[i] = reinterpret_cast<void *>(trace[i]);
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    const SymbolIndex & symbol_index = SymbolIndex::instance();
-#endif
-
-    for (size_t frame = 0; frame < trace.size(); ++frame)
-    {
-        std::string_view name = "?";
-
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-        DemangleResult demangled;
-        if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
-        {
-            demangled = tryDemangle(symbol->name);
-            name = demangled ? std::string_view(demangled.get()) : std::string_view(symbol->name);
-        }
-#endif
-
-        if (show_addresses)
-            result += fmt::format("{}{}. 0x{:x} {}", frame ? "\n" : "", frame, trace[frame], name);
-        else
-            result += fmt::format("{}{}. {}", frame ? "\n" : "", frame, name);
-    }
-
+    std::string result = StackTrace::toString(frame_pointers.data(), 0, size);
+    if (result.ends_with('\n'))
+        result.pop_back();
     return result;
 }
+
+/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker.
+constexpr char FLUSH_MARKER = 2;
 
 }
 
@@ -183,17 +167,20 @@ void TraceCollector::run()
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    const auto * object = SymbolIndex::instance().thisObject();
-#endif
-
     try
     {
         while (true)
         {
-            char is_last = 0;
-            readChar(is_last, in);
-            if (is_last)
+            char message_type = 0;
+            readChar(message_type, in);
+            if (message_type == FLUSH_MARKER)
+            {
+                std::lock_guard lock(TraceSender::flush_mutex);
+                ++TraceSender::flush_completed;
+                TraceSender::flush_cv.notify_all();
+                continue;
+            }
+            if (message_type)
                 break;
 
             std::string query_id;
@@ -212,15 +199,8 @@ void TraceCollector::run()
             {
                 uintptr_t addr = 0;
                 readPODBinary(addr, in);
-
-                /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
-                uintptr_t offset = 0;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-                if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
-                    offset = uintptr_t(object->address_begin);
-#endif
-
-                trace.emplace_back(static_cast<UInt64>(addr) - offset);
+                /// Runtime addresses: `TraceLogElement::appendToBlock` converts them for storage.
+                trace.emplace_back(static_cast<UInt64>(addr));
             }
 
             TraceType trace_type = {};
@@ -267,7 +247,7 @@ void TraceCollector::run()
                         ? std::string_view("none")
                         : magic_enum::enum_name(static_cast<VariableContext>(memory_blocked_context)),
                     ReadableSize(total_memory_tracker.get()),
-                    symbolizeNormalizedTrace(trace));
+                    formatTrace(trace));
             }
 
             if (auto trace_log = getTraceLog())
@@ -315,6 +295,24 @@ void TraceCollector::run()
         tryLogCurrentException("TraceCollector");
         throw;
     }
+}
+
+void TraceCollector::flush()
+{
+    std::unique_lock lock(TraceSender::flush_mutex);
+    {
+        TraceSender::in_flight.fetch_add(1);
+        SCOPE_EXIT(TraceSender::in_flight.fetch_sub(1));
+        /// A full pipe drops the marker like it drops traces, then there is nothing to wait for.
+        if (!TraceSender::isCollecting() || ::write(TraceSender::pipe.fds_rw[1], &FLUSH_MARKER, 1) != 1)
+            return;
+    }
+
+    /// The markers reach the pipe in the order of their numbers, and the collector reads the pipe in order.
+    const UInt64 marker = ++TraceSender::flush_requested;
+    constexpr auto timeout = std::chrono::seconds(180);
+    if (!TraceSender::flush_cv.wait_for(lock, timeout, [&] { return TraceSender::flush_completed >= marker; }))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while waiting for the trace collector", timeout.count());
 }
 
 }

@@ -1,0 +1,55 @@
+--- system.iceberg_metadata_log_entries schema ---
+database	String
+table	String
+timestamp	DateTime64(3)
+file	String
+latest_snapshot_id	Nullable(UInt64)
+latest_schema_id	Nullable(Int32)
+latest_sequence_number	Nullable(Int64)
+--- empty table ---
+Row 1:
+──────
+table:                        t0
+file_ends_with_metadata_json: 1
+latest_snapshot_id_is_null:   1
+latest_schema_id:             ᴺᵁᴸᴸ
+latest_sequence_number:       ᴺᵁᴸᴸ
+--- after two inserts ---
+Row 1:
+──────
+table:                        t0
+file_ends_with_metadata_json: 1
+latest_snapshot_id_is_null:   0
+latest_schema_id:             0
+latest_sequence_number:       1
+
+Row 2:
+──────
+table:                        t0
+file_ends_with_metadata_json: 1
+latest_snapshot_id_is_null:   0
+latest_schema_id:             0
+latest_sequence_number:       2
+--- after the delete ---
+Row 1:
+──────
+table:                      t0
+latest_snapshot_id_is_null: 0
+latest_schema_id:           0
+latest_sequence_number:     1
+
+Row 2:
+──────
+table:                      t0
+latest_snapshot_id_is_null: 0
+latest_schema_id:           0
+latest_sequence_number:     2
+
+Row 3:
+──────
+table:                      t0
+latest_snapshot_id_is_null: 0
+latest_schema_id:           0
+latest_sequence_number:     3
+--- latest snapshots are the snapshots of system.iceberg_history ---
+3	3

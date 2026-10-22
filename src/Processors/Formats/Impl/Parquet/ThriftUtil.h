@@ -1,6 +1,9 @@
 #pragma once
 
+#include <base/types.h>
 #include <generated/parquet_types.h> // in contrib/arrow/cpp/src/ , generated from parquet.thrift
+
+#include <memory>
 
 namespace DB
 {
@@ -12,6 +15,40 @@ namespace DB::Parquet
 
 /// Namespace with structs generated from parquet.thrift
 namespace parq = parquet::format;
+
+/// Parquet file footer whose column chunks are parsed on demand, see deserializeColumnChunks.
+struct FileFooter
+{
+    /// All of FileMetaData except `row_groups[i].columns`, which are empty.
+    parq::FileMetaData metadata;
+    /// Serialized FileMetaData.
+    std::string serialized;
+    /// For each row group: where each serialized ColumnChunk starts in `serialized`, then where the last one ends.
+    std::vector<std::vector<UInt32>> column_chunk_offsets;
+
+    size_t numColumnChunks(size_t row_group_idx) const;
+};
+
+/// One Parquet column's chunks in every row group of a file.
+struct FileColumnChunks
+{
+    /// [row group]; default-constructed where the row group has no such chunk.
+    std::vector<parq::ColumnChunk> chunks;
+    /// What `chunks` allocates, for ParquetMetadataCache's weight.
+    size_t memory_bytes = 0;
+};
+using FileColumnChunksPtr = std::shared_ptr<const FileColumnChunks>;
+
+/// Like deserializeThriftStruct<parq::FileMetaData>, but skips the elements of `RowGroup::columns`
+/// and records their offsets in `column_chunk_offsets` (see FileFooter).
+void deserializeFileMetaDataWithoutColumnChunks(
+    parq::FileMetaData & out, const char * buf, size_t limit, std::vector<std::vector<UInt32>> & column_chunk_offsets);
+
+/// Parses the column chunks `column_indices` (sorted, unique) of every row group:
+/// `out[k].chunks[i]` is column chunk `column_indices[k]` of row group `i`.
+void deserializeColumnChunks(
+    const char * buf, size_t limit, const std::vector<std::vector<UInt32>> & column_chunk_offsets,
+    const std::vector<size_t> & column_indices, std::vector<FileColumnChunks> & out);
 
 /// All templates are explicitly instantiated, feel free to add more types.
 

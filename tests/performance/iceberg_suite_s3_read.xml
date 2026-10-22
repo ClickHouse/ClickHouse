@@ -1,0 +1,17 @@
+<test requires_s3="1" requires_s3_read_dataset="1">
+    <settings>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+    </settings>
+    <!-- Shared read workload over the immutable tpch_ice10_s3 dataset. -->
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>tpch_ice10_s3</value></values>
+        </substitution>
+        <substitution>
+            <name>table_function</name>
+            <values><value>icebergS3(perf_s3_data, filename = 'tpch_ice_sf10/lineitem/')</value></values>
+        </substitution>
+    </substitutions>
+    <include file="iceberg_suite_shared_read.xml.inc"/>
+</test>

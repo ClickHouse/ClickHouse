@@ -11,6 +11,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -81,17 +83,17 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObject>(*this);
 
         for (const auto & [path, state] : typed_path_states)
-            new_state->typed_path_states[path] = state ? state->clone() : nullptr;
+            new_state->typed_path_states[path] = state ? state->clone(context) : nullptr;
 
         for (const auto & [path, state] : dynamic_path_states)
-            new_state->dynamic_path_states[path] = state ? state->clone() : nullptr;
+            new_state->dynamic_path_states[path] = state ? state->clone(context) : nullptr;
 
-        new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
+        new_state->shared_data_state = shared_data_state ? shared_data_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -267,6 +269,20 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     settings.path.pop_back();
+
+    /// Verify that all typed paths, dynamic paths and shared data has consistent sizes
+    size_t expected_size = column_object.getSharedDataPtr()->size();
+    for (const auto & [path, path_column] : typed_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of typed path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    for (const auto & [path, path_column] : dynamic_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
 }
 
 size_t SerializationSubObject::allocatedBytes() const
