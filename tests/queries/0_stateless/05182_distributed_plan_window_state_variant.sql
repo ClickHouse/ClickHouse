@@ -129,6 +129,14 @@ SELECT round(contingencyMerge(s), 6)
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0;
 
+-- The -Tuple combinator nests one window state per element in its own state.
+SELECT '-- contingencyTupleMerge of the window state: distributed then local';
+SELECT round(contingencyTupleMerge(s).1, 6)
+FROM (SELECT contingencyTupleState(tuple(b), tuple(c)) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
+SELECT round(contingencyTupleMerge(s).1, 6)
+FROM (SELECT contingencyTupleState(tuple(b), tuple(c)) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0;
+
 SELECT '-- lambda capture of the window state: distributed then local';
 SELECT round(contingencyMerge(arrayElement(arrayMap(x -> s, [1]), 1)), 6)
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
@@ -147,6 +155,13 @@ SELECT '-- lambda with the window state as argument and capture: distributed the
 SELECT round(contingencyMerge(arrayFirst(x -> finalizeAggregation(s) >= 0, [s])), 6)
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
 SELECT round(contingencyMerge(arrayFirst(x -> finalizeAggregation(s) >= 0, [s])), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0;
+
+SELECT '-- lambda capturing a lambda over the window state: distributed then local';
+SELECT round(contingencyMerge(arrayElement(arrayElement(arrayMap(x -> arrayMap(y -> s, [x]), [1]), 1), 1)), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
+SELECT round(contingencyMerge(arrayElement(arrayElement(arrayMap(x -> arrayMap(y -> s, [x]), [1]), 1), 1)), 6)
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0;
 
@@ -169,6 +184,16 @@ SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_byt
     max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
 SELECT sum(cityHash64(v, round(finalizeAggregation(a.1), 6)))
 FROM (SELECT v, tuple(contingencyState(b, c) OVER (PARTITION BY p ORDER BY v), v) AS a FROM t_window_state_variant_gather ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+
+SELECT '-- contingencyTuple window state through an external sort: spilled then not spilled';
+SELECT sum(cityHash64(v, round(finalizeAggregation(s).1, 6)))
+FROM (SELECT v, contingencyTupleState(tuple(b), tuple(c)) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 1000,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+SELECT sum(cityHash64(v, round(finalizeAggregation(s).1, 6)))
+FROM (SELECT v, contingencyTupleState(tuple(b), tuple(c)) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather ORDER BY v DESC)
 SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
     max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
 

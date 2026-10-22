@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/TypeTree.h>
@@ -589,17 +590,38 @@ ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataType
     return relabelled_column;
 }
 
+namespace
+{
+
+/// Unlike `hasAggregateFunctionType`, also looks into the argument and return types of a lambda.
+bool hasAggregateStateInType(const DataTypePtr & type)
+{
+    const auto * function_type = typeid_cast<const DataTypeFunction *>(type.get());
+    if (!function_type)
+        return hasAggregateFunctionType(type);
+
+    const auto & argument_types = function_type->getArgumentTypes();
+    const auto & return_type = function_type->getReturnType();
+    if (!return_type || std::ranges::any_of(argument_types, [](const auto & argument_type) { return !argument_type; }))
+        return false;
+
+    return hasAggregateStateInType(return_type) || std::ranges::any_of(argument_types, hasAggregateStateInType);
+}
+
+}
+
 bool differsOnlyByAggregateStateVariant(const DataTypePtr & from, const DataTypePtr & to)
 {
     if (to->equals(*from))
         return false;
 
-    if (!hasAggregateFunctionType(from) || !hasAggregateFunctionType(to))
+    if (!hasAggregateStateInType(from) || !hasAggregateStateInType(to))
         return false;
 
-    /// `equalsIgnoringVariant` compares only a top-level state; a nested one is compared by its encoding.
-    if (const auto * to_aggregate = typeid_cast<const DataTypeAggregateFunction *>(to.get()))
-        return to_aggregate->equalsIgnoringVariant(*from);
+    /// `equalsIgnoringVariant` ignores only the top-level variant, not one of a state nested in it (e.g. by `-Tuple`).
+    if (const auto * to_aggregate = typeid_cast<const DataTypeAggregateFunction *>(to.get());
+        to_aggregate && to_aggregate->equalsIgnoringVariant(*from))
+        return true;
 
     return encodeDataType(from) == encodeDataType(to);
 }

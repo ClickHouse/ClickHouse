@@ -27,6 +27,9 @@ Variant shape distributes
 -- contingencyMerge of the window state: distributed then local
 0.075652
 0.075652
+-- contingencyTupleMerge of the window state: distributed then local
+0.075652
+0.075652
 -- lambda capture of the window state: distributed then local
 0.075652
 0.075652
@@ -36,10 +39,16 @@ Variant shape distributes
 -- lambda with the window state as argument and capture: distributed then local
 0.075652
 0.075652
+-- lambda capturing a lambda over the window state: distributed then local
+0.075652
+0.075652
 -- array of window states through an external sort: spilled then not spilled
 16564983051024262348
 16564983051024262348
 -- tuple of window states through an external sort: spilled then not spilled
+4873130676055992815
+4873130676055992815
+-- contingencyTuple window state through an external sort: spilled then not spilled
 4873130676055992815
 4873130676055992815
 -- arrayJoin over the window state, not lowered: distributed then local
