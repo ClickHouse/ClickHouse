@@ -2,7 +2,7 @@
 # Tags: no-parallel-replicas
 # no-parallel-replicas: the query condition cache is populated per replica
 
-# The query condition cache serves a condition whose time bounds changed since it was cached (issue #78502):
+# The query condition cache serves a condition whose time bounds changed since it was cached (issues #78502, #115504):
 # a granule recorded as not matching an earlier variant of the condition is skipped unless the primary key
 # shows that it may have rows admitted by the new bounds but not by the earlier ones.
 
@@ -104,6 +104,16 @@ ${CLICKHOUSE_CLIENT} --query "
 scenarios "prewhere" ", optimize_move_to_prewhere = 1"
 
 # Disabled: the shifted bounds do not use the entries of the earlier ones.
-run "disabled" "time >= $(bound 100006) AND time <= $(bound 900006) AND num = 1" ", use_query_condition_cache_for_changed_time_bounds = 0" 98 98
+run "disabled" "time >= $(bound 100006) AND time <= $(bound 900006) AND num = 1" ", use_query_condition_cache_for_time_conditions = 0" 98 98
+
+# A window relative to the current time moves on both sides with every query.
+${CLICKHOUSE_CLIENT} --query "
+    TRUNCATE TABLE tab;
+    INSERT INTO tab SELECT now64(3, 'UTC') - toIntervalMillisecond(number), number IN (500000, 500001)
+    FROM numbers(1000000)
+    SETTINGS max_insert_threads = 1, max_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0;
+"
+run "now prime" "time >= now64(3, 'UTC') - INTERVAL 900 SECOND AND time <= now64(3, 'UTC') - INTERVAL 100 SECOND AND num = 1" "" 80 100
+run "now moved" "time >= now64(3, 'UTC') - INTERVAL 900 SECOND AND time <= now64(3, 'UTC') - INTERVAL 100 SECOND AND num = 1" "" 1 12
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE tab"

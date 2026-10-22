@@ -28,7 +28,6 @@ namespace Setting
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_time_conditions;
-    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
@@ -139,7 +138,6 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
     result.use_query_condition_cache_for_time_conditions = settings[Setting::use_query_condition_cache_for_time_conditions];
-    result.query_condition_cache_time_condition_grid_factor = static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]);
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.enable_columns_cache_reads = settings[Setting::enable_reads_from_columns_cache];
     result.enable_columns_cache_writes = settings[Setting::enable_writes_to_columns_cache];

@@ -21,3 +21,5 @@ prewhere before matches: result 0, same as without cache 1, granules as expected
 prewhere including matches: result 2, same as without cache 1, granules as expected 1
 prewhere other condition: result 799999, same as without cache 1, granules as expected 1
 disabled: result 2, same as without cache 1, granules as expected 1
+now prime: result 2, same as without cache 1, granules as expected 1
+now moved: result 2, same as without cache 1, granules as expected 1

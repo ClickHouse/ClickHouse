@@ -3,14 +3,10 @@
 # no-parallel: drops the (instance-wide) query condition cache
 # no-parallel-replicas: the query condition cache is populated per replica
 
-# Tests deriving deterministic conditions from conditions involving the current time for the query
-# condition cache (issue #115504): a condition like `time >= now() - INTERVAL 100 DAY` is cached
-# under the hash of a derived condition with the folded current-time constant rounded onto a time
-# grid, instead of not being cached at all.
-#
-# The tests with a grid-aligned constant (`time >= today() - 100`) run in a retry loop: the cache
-# key intentionally rotates once per grid cell (once per day here), so a test that straddles
-# midnight can lose the cache entry between the priming query and the probing query.
+# Tests the query condition cache for conditions involving the current time (issue #115504): a
+# condition like `time >= now() - INTERVAL 100 DAY` is cached under its own hash, which includes the
+# value of the folded current-time constant, and a later query with a later value reuses the entries:
+# its condition is narrower. The time column is not in the primary key here, which is not needed then.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -64,33 +60,19 @@ function scenario()
     echo "${entries} ${hits}"
 }
 
-function scenario_with_retries()
+function print_scenario()
 {
-    local name="$1"
-    # Retried in case the priming and the probing query straddle a midnight (see above).
-    for _ in 1 2 3; do
-        result=$(scenario "$name" "$2" "$3")
-        if [ "${result}" == "1 1" ]; then
-            break
-        fi
-    done
-    echo "${name}: ${result}"
+    echo "$1: $(scenario "$@")"
 }
 
-# A grid-aligned constant: the derived condition is the same for reads and writes, so the very next
-# query can already use the cache to skip the granules that hold only old rows.
-scenario_with_retries "aligned, PREWHERE" "time >= today() - 100" "true"
-scenario_with_retries "aligned, WHERE" "time >= today() - 100" "false"
+# A constant that stays the same for a day: the next query has the same condition (or a narrower one
+# after midnight), so it uses the cache to skip the granules that hold only old rows.
+print_scenario "day, PREWHERE" "time >= today() - 100" "true"
+print_scenario "day, WHERE" "time >= today() - 100" "false"
 
-# A non-aligned constant: entries are written (under the condition rounded up), but they only serve
-# queries in the next grid cell (the next day), so no hit is expected here. Only check that the
-# condition is cached at all.
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT sum(x) FROM tab WHERE time >= now() - INTERVAL 100 DAY
-    SETTINGS ${settings} FORMAT Null"
-echo -n "non-aligned, entries cached: "
-${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.query_condition_cache"
+# A constant that changes with every second: the next query has a narrower condition.
+print_scenario "second, PREWHERE" "time >= now() - INTERVAL 100 DAY" "true"
+print_scenario "second, WHERE" "time >= now() - INTERVAL 100 DAY" "false"
 
 # With the setting disabled, conditions involving the current time are not cached at all.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
