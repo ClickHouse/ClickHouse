@@ -457,7 +457,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) هو مساحة عمل مكتبية مفتوحة المصدر للعمل بـ SQL على Windows وmacOS وLinux، ومرخّص بموجب Apache 2.0. ويأتي دعم ClickHouse من plugin رسمي يُثبَّت من داخل التطبيق، ويتواصل مع واجهة HTTP (`8123`، أو `8443` with TLS) عبر عميل الـ `clickhouse` المكتوب بلغة Rust.
+  [Tabularis](https://github.com/TabularisDB/tabularis) هو مساحة عمل مكتبية مفتوحة المصدر للعمل بـ SQL على Windows وmacOS وLinux، ومرخّص بموجب Apache 2.0. ويأتي دعم ClickHouse من plugin رسمي يُثبَّت من داخل التطبيق، ويتواصل مع واجهة HTTP (`8123`، أو `8443` مع تفعيل TLS) عبر عميل الـ `clickhouse` المكتوب بلغة Rust.
 
   الميزات:
 
@@ -471,14 +471,14 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DBine">
-  [DBine](https://github.com/addlayer-io/dbine) هو مدير قواعد بيانات مكتبي مجاني ومفتوح المصدر (MIT) لأنظمة Windows وmacOS وLinux. يتصل بـ ClickHouse عبر واجهة HTTP (`8123`، أو `8443` مع تفعيل TLS)، إلى جانب أكثر من 130 قاعدة بيانات وخدمة سحابية في النافذة نفسها.
+  [DBine](https://github.com/addlayer-io/dbine) هو مدير قواعد بيانات مكتبي مجاني ومفتوح المصدر (Apache 2.0) لأنظمة Windows وmacOS وLinux. يتصل بـ ClickHouse عبر واجهة HTTP (`8123`، أو `8443` مع تفعيل TLS)، إلى جانب أكثر من 130 قاعدة بيانات وخدمة سحابية في النافذة نفسها.
 
   الميزات:
 
   * محرر SQL يدعم لهجة ClickHouse، مع الإكمال التلقائي لأسماء الجداول والأعمدة، وإمكانية إلغاء الاستعلامات باستخدام `KILL QUERY`.
   * استعراض قواعد البيانات والجداول والعروض والأعمدة، مع شبكات لعرض النتائج ورسوم بيانية وإمكانية التصدير إلى CSV وJSON وXLSX وSQL.
-  * مصمم جداول يدعم `ENGINE` و`ORDER BY` و`PARTITION BY` وTTL والمرمِّزات؛ وتُحوَّل تعديلات الخلايا إلى عمليات `ALTER TABLE ... UPDATE` تراجعها قبل تشغيلها.
-  * خطط تنفيذ الاستعلامات عبر `EXPLAIN json = 1, indexes = 1`، وقائمة بالعمليات الجارية من `system.processes`، وأداة لتحليل الأداء مبنية على `system.query_log`.
+  * مصمم جداول يدعم `ENGINE` و`ORDER BY` و`PARTITION BY` وTTL والمرمِّزات؛ وتُحوَّل تعديلات الخلايا إلى عمليات `ALTER TABLE ... UPDATE` تراجعها قبل تشغيلها.
+  * خطط الاستعلام عبر `EXPLAIN json = 1, indexes = 1`، وقائمة بالعمليات الجارية من `system.processes`، وأداة لتحليل الأداء مبنية على `system.query_log`.
   * مقارنة المخططات ومقارنة البيانات، ودفاتر ملاحظات تستعلم من عدة قواعد بيانات وتدمج نتائجها باستخدام DuckDB.
   * أنفاق SSH، وجلب كلمات المرور من أدوات إدارة الأسرار، واتصالات للقراءة فقط، وخادم MCP، ومساعد ذكاء اصطناعي يقترح الاستعلامات ولا ينفّذ شيئًا قبل موافقتك.
 
