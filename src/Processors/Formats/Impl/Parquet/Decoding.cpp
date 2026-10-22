@@ -2484,6 +2484,10 @@ Int96Converter::Int96Converter()
 
 void Int96Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
+    const bool saturate = overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
+    const Int64 min_ticks = minTicksForDateTime64(1'000'000'000);
+    const Int64 max_ticks = maxTicksForDateTime64(1'000'000'000);
+
     std::span<char> to_span = col.insertRawUninitialized(num_values);
     Int64 * to = reinterpret_cast<Int64 *>(to_span.data());
     for (size_t i = 0; i < num_values; ++i)
@@ -2515,7 +2519,13 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         overflow |= common::addOverflow(x, nanos, x);
 
         if (overflow)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+        {
+            if (!saturate)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+            x = julian_day < 2440588l ? min_ticks : max_ticks;
+        }
+        else if (saturate)
+            x = std::clamp(x, min_ticks, max_ticks);
 
         to[i] = x;
     }
