@@ -39,15 +39,18 @@ def repo_from_pr_url(pr_url):
     return ""
 
 
+def robot_token(robot_name):
+    return Secret.Config(
+        name=robot_name, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
+    ).get_value()
+
+
 def gh_auth_with_robot_token(gh_config_dir, robot_name):
     """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
     print(f"Using robot: {robot_name}")
-    token = Secret.Config(
-        name=robot_name, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
-    ).get_value()
     subprocess.run(
         ["gh", "auth", "login", "--with-token"],
-        input=token,
+        input=robot_token(robot_name),
         text=True,
         check=True,
         env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},

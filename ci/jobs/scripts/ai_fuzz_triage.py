@@ -5,8 +5,8 @@ After a fuzz-style job (AST Fuzzer, BuzzHouse, Stress test) fails, an AI agent
 inspects the failure evidence and judges it, and this script files or references
 a tracking issue. A failure that an open, independent issue already tracks (see
 below) is linked to it with no agent run at all. A second, separately budgeted
-agent run reduces a minimal reproducer, only for a `related` verdict or a newly
-filed issue. Behaviour depends on the run kind:
+agent run reduces a minimal reproducer, only for a `related` or `uncertain`
+verdict or an issue that has no reproducer yet. Behaviour depends on the run kind:
 
 PR runs - the agent judges whether the failure was introduced by the PR:
   - `related`   -> the job stays red; the agent's reasoning and (best-effort)
@@ -24,9 +24,11 @@ run gets its own issue too (`other_signatures`); a failure with none is left to
 the report, which says it is not tracked.
 
 The agent reads logs a PR controls, so it runs with no credentials: no GitHub
-token, an OpenAI key only behind a local proxy (`_ModelProxy`), and a sandbox
-with no network that can write only `TRIAGE_DIR`. It returns JSON drafts; every
-GitHub read or write, and all deduplication, happens here in Python.
+token (the one `actions/checkout` leaves in the git config is unset first,
+`_drop_checkout_credentials`), an OpenAI key only behind a local proxy
+(`_ModelProxy`), and a sandbox with no network that can write only `TRIAGE_DIR`.
+It returns JSON drafts; every GitHub read or write, and all deduplication,
+happens here in Python.
 
 Fail-close: the downgrade to OK happens only on PR runs, on an explicit
 `unrelated` verdict whose GitHub issue is verified to be open in this repository
@@ -73,9 +75,9 @@ from typing import NamedTuple
 from ci.jobs.scripts.agent import (
     AGENT_MODEL,
     ROBOT_NAMES,
-    gh_auth_with_robot_token,
     openai_api_key,
     repo_from_pr_url,
+    robot_token,
 )
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -136,6 +138,8 @@ ISSUE_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$")
 PR_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/pull/\d+$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 MAX_ISSUE_TITLE_CHARS = 200
+# Opens the comment `_post_repro` adds; an issue with one needs no other reproducer.
+REPRO_COMMENT_PREFIX = "Reduced reproducer, reproduced with the tested build by AI triage:"
 MAX_ISSUE_BODY_CHARS = 20000
 
 # Agents that already analyse a failing job on their own PRs. A second pass adds
@@ -185,10 +189,12 @@ STACK_DIGEST_LINE_RE = re.compile(
 )
 FOUND_BY_LINE_RE = re.compile(r"^Found by [^\n]*? in CI: (\S+)\r?$", re.MULTILINE)
 # A post-merge run that hits an issue it did not file records its branch, so an issue first filed by a PR
-# run, or on another branch, can still prove the failure exists on that branch: `<branch>: <UTC time> <report>`.
+# run, or on another branch, can still prove the failure exists on that branch:
+# `<branch>: <UTC time> <report> [<stack digest>]`. The digest says which stack was seen, since one issue
+# tracks every stack sharing its fingerprint.
 OBSERVED_ON_FIELD = "Fuzz observed on"
 OBSERVED_ON_LINE_RE = re.compile(
-    rf"^{OBSERVED_ON_FIELD} (\S+): (\d{{4}}-\d\d-\d\dT\d\d:\d\d:\d\dZ) \S+\r?$",
+    rf"^{OBSERVED_ON_FIELD} (\S+): (\d{{4}}-\d\d-\d\dT\d\d:\d\d:\d\dZ) \S+(?: ([0-9a-f]{{16}}))?\r?$",
     re.MULTILINE,
 )
 MACHINE_LINE_RE = re.compile(
@@ -277,13 +283,21 @@ def stack_digest(failures):
 
 
 def _issue_stack_digest(issue):
+    """The digest of the stack the issue was filed for, or "" when it records none."""
     found = STACK_DIGEST_LINE_RE.findall(issue.get("body") or "")
     return found[0] if len(found) == 1 else ""
 
 
+def _issue_stack_digests(issue):
+    """The digests of every stack the issue records: the one it was filed for and the observed ones."""
+    observed = {d for _, _, d in OBSERVED_ON_LINE_RE.findall(issue.get("body") or "")}
+    return (observed | {_issue_stack_digest(issue)}) - {""}
+
+
 def _records_other_stack(issue, digest):
-    """Whether `issue` records a stack digest other than `digest`: another bug sharing the fingerprint."""
-    return bool(digest) and _issue_stack_digest(issue) not in ("", digest)
+    """Whether `issue` records stack digests, none of them `digest`: possibly another bug sharing the fingerprint."""
+    digests = _issue_stack_digests(issue)
+    return bool(digest) and bool(digests) and digest not in digests
 
 
 def _tracked_failures(failures):
@@ -379,14 +393,17 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
   evidence: do not look for one here. Judge from the code and the logs alone.
 """
     if occurrences.older and not occurrences.regression:
-        # An issue with this failure's stack digest never gets here: `known_issue_verdict` takes it.
+        # An issue in `exact` gets here only next to failures it does not cover (`known_issue_verdict`).
         issues = ""
         for url in occurrences.older:
-            stack = (
-                "records another stack"
-                if url in occurrences.mismatched
-                else "records no stack digest"
-            )
+            if url in occurrences.exact:
+                stack = f"saw this stack on `{occurrences.branch}` before this {change}"
+            elif url in occurrences.same_stack_later:
+                stack = f"records this stack, but not seen on `{occurrences.branch}` before this {change}"
+            elif url in occurrences.mismatched:
+                stack = "records other stacks"
+            else:
+                stack = "records no stack digest"
             issues += f"  - {url}, text in `{_known_issue_file(url).resolve()}` ({stack})\n"
         return (
             f"- Possible earlier occurrences: these open issues carry this failure's\n"
@@ -480,7 +497,7 @@ pre-existing bug:
 """
 
 
-def _issue_task(pr_mode, fingerprint, signature):
+def _issue_task(pr_mode, fingerprint, signature, job_kind):
     if not fingerprint:
         # Without a dedup key every job would file its own issue, or point at
         # an unrelated one, so the failure is left to the job report.
@@ -503,7 +520,7 @@ that one, even when you judge another failure more interesting; the job files
 the others itself. This job looks up the issues carrying the fingerprint and
 files a new one only when none tracks it, from your draft. Fill in:
 
-- `issue_title`: short signature, e.g. `Fuzzer: Logical error: '<assertion>' in <function>`.
+- `issue_title`: short signature, e.g. `{job_kind}: Logical error: '<assertion>' in <function>`.
 - `issue_body`: markdown with what failed, the error/stack excerpt (trimmed),
   and the raw failing query from the logs (a later step adds a reduced
   reproducer when it finds one). Use full GitHub URLs when linking anything.
@@ -567,7 +584,7 @@ You are triaging a failed `{job_kind}` CI job {run_kind}.
   it is needed. Read the code and the logs, and finish within {timeout_sec // 60} minutes.
 
 {_relatedness_task(info, pr_mode, fingerprint, occurrences, history_available)}
-{_issue_task(pr_mode, fingerprint, _tracked_signature(failures))}
+{_issue_task(pr_mode, fingerprint, _tracked_signature(failures), job_kind)}
 ## Task 3 - verdict file (MANDATORY)
 
 Write a single JSON object to `{VERDICT_FILE.resolve()}`:
@@ -901,6 +918,10 @@ def _remaining_sec(deadline):
     return remaining
 
 
+# `{robot name: token}`, each fetched once. Kept in memory, never in a gh config the agent could read.
+_ROBOT_TOKENS = {}
+
+
 def _robot_gh(*args, deadline=None):
     """Run a `gh` command as a robot and return its stdout.
 
@@ -909,11 +930,19 @@ def _robot_gh(*args, deadline=None):
     Raises on any failure.
     """
     timeout = 120 if deadline is None else min(120, _remaining_sec(deadline))
+    robot_name = random.choice(ROBOT_NAMES)
+    if robot_name not in _ROBOT_TOKENS:
+        print(f"AI fuzz triage: using robot {robot_name}")
+        _ROBOT_TOKENS[robot_name] = robot_token(robot_name)
+    # An empty config dir, so a stale `GH_CONFIG_DIR` of the job cannot get in the way.
     with tempfile.TemporaryDirectory() as gh_config_dir:
-        gh_auth_with_robot_token(gh_config_dir, random.choice(ROBOT_NAMES))
         return subprocess.run(
             ["gh", *args],
-            env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
+            env={
+                **os.environ,
+                "GH_CONFIG_DIR": gh_config_dir,
+                "GH_TOKEN": _ROBOT_TOKENS[robot_name],
+            },
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -942,14 +971,17 @@ class Occurrences(NamedTuple):
 
     older: list  # `independent_occurrences`
     fixed: list  # `fixed_occurrences`
-    # Among `older`, the issues whose stack digest matches this failure's: only they stand in for the agent.
+    # Among `older`, the issues that saw this failure's stack on `branch` before the change: only they
+    # stand in for the agent.
     exact: list = []
-    # Among `older`, the issues that record another stack digest: likely another bug sharing the fingerprint.
+    # Among `older`, the issues that record only other stack digests: possibly another bug sharing the fingerprint.
     mismatched: list = []
     # `{url: body}` of `older`, written to disk for the agent, which cannot reach GitHub.
     bodies: dict = {}
     # The branch `older` was observed on: the PR's target, or the branch of a post-merge run.
     branch: str = ""
+    # Among `older`, the issues that record this stack too, but did not see it on `branch` before the change.
+    same_stack_later: list = []
 
     @property
     def regression(self):
@@ -957,19 +989,18 @@ class Occurrences(NamedTuple):
         return bool(self.fixed) and not set(self.older) - set(self.mismatched)
 
 
-def fixed_occurrences(issues, fingerprint, digest):
+def fixed_occurrences(issues, fingerprint):
     """URLs of the closed issues with this fingerprint: the bug was fixed once.
 
     A closed issue says nothing about whether the failure predates the change;
-    the change may be what brought it back. One recording another stack is another
-    bug sharing the fingerprint, so its fix says nothing about this failure.
+    the change may be what brought it back. One recording another stack digest
+    counts too: like `_tracking_issues`, it may be the same bug reached another way.
     """
     return sorted(
         issue["url"]
         for issue in issues
         if (issue.get("state") or "").upper() == "CLOSED"
         and _tracks_fingerprint(issue, fingerprint)
-        and not _records_other_stack(issue, digest)
     )
 
 
@@ -988,19 +1019,26 @@ def _issue_branch(issue):
     return _report_branch(found[0]) if len(found) == 1 else ""
 
 
-def _branch_observations(issue):
+def _branch_observations(issue, digest=None):
     """`{branch: earliest time}` of the post-merge runs that hit the issue's failure.
 
     The run that filed it counts unless it was a PR run, which records that run's verdict
     rather than an observation; the runs that reused it later add `OBSERVED_ON_FIELD` lines.
+    With `digest`, only the runs that hit that stack count.
     """
     body = issue.get("body") or ""
-    observed = {}
+    runs = []
     filed_on = _issue_branch(issue)
     if filed_on and not FOUND_WHILE_TESTING_RE.search(body):
-        observed[filed_on] = _parse_github_time(issue["createdAt"])
-    for branch, when in OBSERVED_ON_LINE_RE.findall(body):
-        when = _parse_github_time(when)
+        runs.append(
+            (filed_on, _parse_github_time(issue["createdAt"]), _issue_stack_digest(issue))
+        )
+    for branch, when, seen in OBSERVED_ON_LINE_RE.findall(body):
+        runs.append((branch, _parse_github_time(when), seen))
+    observed = {}
+    for branch, when, seen in runs:
+        if digest is not None and seen != digest:
+            continue
         if branch not in observed or when < observed[branch]:
             observed[branch] = when
     return observed
@@ -1081,10 +1119,19 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         branch = info.base_branch if pr_mode else info.git_branch
         older = independent_occurrences(issues, fingerprint, cutoff, branch)
         older_issues = [issue for issue in issues if issue["url"] in older]
+        # This stack itself must have been seen on the branch before the change, not just the issue.
         exact = sorted(
             issue["url"]
             for issue in older_issues
-            if digest and _issue_stack_digest(issue) == digest
+            if digest
+            and _branch_observations(issue, digest).get(branch, cutoff) < cutoff
+        )
+        same_stack_later = sorted(
+            issue["url"]
+            for issue in older_issues
+            if digest
+            and issue["url"] not in exact
+            and digest in _issue_stack_digests(issue)
         )
         mismatched = sorted(
             issue["url"]
@@ -1094,11 +1141,12 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
         bodies = {issue["url"]: issue.get("body") or "" for issue in older_issues}
         return Occurrences(
             older,
-            fixed_occurrences(issues, fingerprint, digest),
+            fixed_occurrences(issues, fingerprint),
             exact,
             mismatched,
             bodies,
             branch,
+            same_stack_later,
         )
     except Exception as e:  # noqa: BLE001 - no lookup means no evidence, never more
         print(f"WARNING: AI fuzz triage: cannot look up prior occurrences: {e}")
@@ -1148,6 +1196,54 @@ def _fetch_recent_history(sha, deadline):
     except (OSError, subprocess.SubprocessError) as e:
         print(f"WARNING: AI fuzz triage: cannot fetch recent history: {e}")
         return False
+
+
+def _checkout_credential_headers():
+    """`(origin, key)` of the HTTP extra headers in the checkout's git config, includes followed.
+
+    `actions/checkout` keeps the job's token in one, in `.git/config` or (v6) a file it includes.
+    """
+    listed = subprocess.run(
+        [
+            "git",
+            "config",
+            "--local",
+            "--includes",
+            "--show-origin",
+            "--get-regexp",
+            r"^http\..*\.extraheader$",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if listed.returncode == 1:  # No such key.
+        return []
+    listed.check_returncode()
+    headers = []
+    for line in listed.stdout.splitlines():
+        origin, _, entry = line.partition("\t")
+        headers.append((origin, entry.split(" ", 1)[0]))
+    return headers
+
+
+def _drop_checkout_credentials():
+    """Unset the job token `actions/checkout` left in the git config before any agent run.
+
+    The agent can read every file, and what it drafts is published. Raises if one is left.
+    """
+    for origin, key in _checkout_credential_headers():
+        if origin.startswith("file:"):
+            subprocess.run(
+                ["git", "config", "--file", origin[len("file:") :], "--unset-all", key],
+                capture_output=True,
+                timeout=60,
+            )
+    left = _checkout_credential_headers()
+    if left:
+        raise RuntimeError(
+            f"cannot unset the git credentials in {sorted({o for o, _ in left})}"
+        )
 
 
 def _verify_issue_marker(issue_url, fingerprint, repo_name):
@@ -1293,21 +1389,26 @@ def _fingerprint_issues(repo_name, fingerprint, deadline):
     return sorted(by_url.values(), key=lambda i: i["number"])
 
 
+def _issue_comments(issue_url, deadline):
+    """The bodies of the comments on `issue_url`."""
+    output = _robot_gh("issue", "view", issue_url, "--json", "comments", deadline=deadline)
+    return [c.get("body") or "" for c in json.loads(output).get("comments") or []]
+
+
+def _has_repro(comments):
+    return any(body.startswith(REPRO_COMMENT_PREFIX) for body in comments)
+
+
 def _comment_once(repo_name, issue, job_kind, found_in, deadline):
-    """Link this job from `issue`: one comment per job kind, not one per job."""
-    output = _robot_gh(
-        "issue",
-        "view",
-        str(issue["number"]),
-        "--repo",
-        repo_name,
-        "--json",
-        "comments",
-        deadline=deadline,
-    )
-    comments = json.loads(output).get("comments") or []
-    if any(job_kind in (c.get("body") or "") for c in comments):
-        return
+    """Link this job from `issue`: one comment per job kind, not one per job.
+
+    Returns the comments the issue had before.
+    """
+    comments = _issue_comments(issue["url"], deadline)
+    # Only this job's own comment: any other may name the job kind in passing.
+    prefix = f"Also hit by {job_kind} in CI: "
+    if any(body.startswith(prefix) for body in comments):
+        return comments
     _robot_gh(
         "issue",
         "comment",
@@ -1315,13 +1416,14 @@ def _comment_once(repo_name, issue, job_kind, found_in, deadline):
         "--repo",
         repo_name,
         "--body",
-        f"Also hit by {job_kind} in CI: {found_in}",
+        f"{prefix}{found_in}",
         deadline=deadline,
     )
+    return comments
 
 
-def _record_observation(repo_name, issue, found_in, deadline):
-    """Add this post-merge run's branch to `issue`, unless an earlier observation already has it.
+def _record_observation(repo_name, issue, found_in, digest, deadline):
+    """Add this post-merge run's branch and stack to `issue`, unless an earlier observation has both.
 
     The body is read again rather than taken from the lookup, whose search results can lag
     behind an earlier edit. Runs under `_issue_lock`, so no other job edits it meanwhile.
@@ -1340,10 +1442,11 @@ def _record_observation(repo_name, issue, found_in, deadline):
         deadline=deadline,
     )
     current = json.loads(output)
-    if branch in _branch_observations(current):
+    if branch in _branch_observations(current, digest or None):
         return
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = f"{(current.get('body') or '').rstrip()}\n{OBSERVED_ON_FIELD} {branch}: {now} {found_in}"
+    line = f"{OBSERVED_ON_FIELD} {branch}: {now} {found_in} {digest}".rstrip()
+    body = f"{(current.get('body') or '').rstrip()}\n{line}"
     _robot_gh(
         "issue",
         "edit",
@@ -1367,7 +1470,7 @@ def _issue_text(
     # Not the agent's `signature`: it may name another failure of the job.
     title = (
         " ".join(verdict["issue_title"].split())
-        or f"Fuzzer: {_tracked_signature(failures)}"
+        or f"{job_kind}: {_tracked_signature(failures)}"
     )
     draft = verdict["issue_body"].strip()[:MAX_ISSUE_BODY_CHARS]
     reported = _failures_section(failures)
@@ -1486,53 +1589,60 @@ def _track_issue(
         )
 
 
-def _tracking_issues(issues, digest):
-    """The open issues with the `fuzz` label among `_fingerprint_issues` that may track this failure.
+def _stack_rank(issue, digest):
+    """0 for an issue recording `digest`, 1 for one recording none, 2 for one recording another."""
+    if digest and _issue_stack_digest(issue) == digest:
+        return 0
+    return 2 if _records_other_stack(issue, digest) else 1
 
-    One recording another stack digest tracks another bug that shares the fingerprint, so it is
-    left out. One recording `digest` comes before one recording none, oldest first within each.
+
+def _tracking_issues(issues, digest):
+    """The open issues with the `fuzz` label among `_fingerprint_issues`, best stack match first.
+
+    The digest covers the call path and the build's inlining, so one recording another digest may
+    be the same bug reached another way: it still tracks the failure, after the closer matches.
+    Oldest first within each `_stack_rank`.
     """
     candidates = [
         i
         for i in issues
-        if (i.get("state") or "").upper() == "OPEN"
-        and _has_fuzz_label(i)
-        and not _records_other_stack(i, digest)
+        if (i.get("state") or "").upper() == "OPEN" and _has_fuzz_label(i)
     ]
-    return sorted(
-        candidates, key=lambda i: not (digest and _issue_stack_digest(i) == digest)
-    )
+    return sorted(candidates, key=lambda i: _stack_rank(i, digest))
 
 
 def _find_or_file_issue(
     repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url, deadline
 ):
-    """An open issue with the `fuzz` label tracks `fingerprint` and this stack.
+    """An open issue with the `fuzz` label tracks `fingerprint`, whatever stack it records.
 
     A closed one is a fixed bug that came back, and an unlabelled one is out of the
-    lookup's reach, so either gets a comment and a new issue that links it. One that
-    records another stack is another bug: the new issue neither comments on nor links it.
+    lookup's reach, so either gets a comment and a new issue that links it.
     `pr_url` is empty on post-merge runs.
     """
     digest = stack_digest(failures)
     issues = _fingerprint_issues(repo_name, fingerprint, deadline)
     tracking = _tracking_issues(issues, digest)
     if tracking:
-        _comment_once(repo_name, tracking[0], job_kind, found_in, deadline)
+        comments = _comment_once(repo_name, tracking[0], job_kind, found_in, deadline)
         if not pr_url:
             try:
-                _record_observation(repo_name, tracking[0], found_in, deadline)
+                _record_observation(repo_name, tracking[0], found_in, digest, deadline)
             except Exception as e:  # noqa: BLE001 - only later lookups lose this evidence
                 print(f"WARNING: AI fuzz triage: cannot record the observation: {e}")
         return {
             "issue_url": tracking[0]["url"],
             "issue_created": False,
             "label_applied": True,
+            "issue_has_repro": _has_repro(comments),
         }
-    same_stack = [i for i in issues if not _records_other_stack(i, digest)]
-    related = same_stack[-1]["url"] if same_stack else ""
-    if same_stack:
-        _comment_once(repo_name, same_stack[-1], job_kind, found_in, deadline)
+    # The newest of the closest stack match.
+    previous = min(
+        issues, key=lambda i: (_stack_rank(i, digest), -i["number"]), default=None
+    )
+    related = previous["url"] if previous else ""
+    if previous:
+        _comment_once(repo_name, previous, job_kind, found_in, deadline)
     title, body = _issue_text(
         verdict,
         failures,
@@ -1594,13 +1704,16 @@ def _track_other_signatures(repo_name, failures, job_kind, found_in, deadline):
 
 
 def _post_repro(issue_url, repro, deadline):
+    """Post `repro` to `issue_url`, unless a sibling job posted one meanwhile."""
+    if _has_repro(_issue_comments(issue_url, deadline)):
+        return
     fence = "````" if "```" in repro else "```"
     _robot_gh(
         "issue",
         "comment",
         issue_url,
         "--body",
-        f"Reduced reproducer, reproduced with the tested build by AI triage:\n\n"
+        f"{REPRO_COMMENT_PREFIX}\n\n"
         f"{fence}\n{repro[:MAX_ISSUE_BODY_CHARS]}\n{fence}\n",
         deadline=deadline,
     )
@@ -1812,7 +1925,8 @@ def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
 
     Such an issue settles relatedness without an agent: the failure predates the
     change. It vouches only for the failures its fingerprint covers, and only when it
-    records the same qualified stack: the fingerprint alone can be shared by two bugs.
+    saw the same qualified stack on the branch before the change: the fingerprint
+    alone can be shared by two bugs.
     """
     if uncovered or not occurrences or not occurrences.exact:
         return None
@@ -1821,9 +1935,9 @@ def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
     return {
         "verdict": "unrelated",
         "reasoning": (
-            f"Known issue: {issue_url} is open, carries this failure's fingerprint "
-            f"and stack, and records a post-merge run on `{occurrences.branch}` before this "
-            f"{change}, so the failure predates the {change}. No agent was run."
+            f"Known issue: {issue_url} is open, carries this failure's fingerprint, "
+            f"and records a post-merge run on `{occurrences.branch}` that hit this stack "
+            f"before this {change}, so the failure predates the {change}. No agent was run."
         ),
         "signature": _tracked_signature(failures),
         "issue_url": issue_url,
@@ -1836,8 +1950,27 @@ def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
 
 
 def _needs_repro(verdict):
-    """Someone reads a reproducer only on a red verdict or in a new issue."""
-    return verdict["verdict"] == "related" or bool(verdict.get("issue_created"))
+    """Someone reads a reproducer only on a red verdict or in an issue that has none.
+
+    `uncertain` counts as red: a human has to decide, and a reproducer helps most there.
+    """
+    return (
+        verdict["verdict"] in ("related", "uncertain")
+        or bool(verdict.get("issue_created"))
+        or verdict.get("issue_has_repro") is False
+    )
+
+
+def _should_post_repro(verdict):
+    """Whether the reproducer goes to the issue: a new one, or a reused one that has none."""
+    return (
+        bool(verdict.get("issue_url"))
+        and verdict.get("repro_status") == "reproduced"
+        and (
+            bool(verdict.get("issue_created"))
+            or verdict.get("issue_has_repro") is False
+        )
+    )
 
 
 def _reproduce(
@@ -1920,7 +2053,15 @@ def triage_and_apply(
             if fingerprint
             else Occurrences([], [])
         )
-        print(f"AI fuzz triage: prior occurrences {occurrences}")
+        # Not the tuple itself: its `bodies` would dump whole issues into the log.
+        if occurrences is None:
+            print("AI fuzz triage: prior occurrences unknown")
+        else:
+            print(
+                f"AI fuzz triage: prior occurrences on `{occurrences.branch}`: "
+                f"older {occurrences.older}, fixed {occurrences.fixed}, "
+                f"exact {occurrences.exact}, mismatched {occurrences.mismatched}"
+            )
         verdict = known_issue_verdict(failures, uncovered, occurrences, pr_mode)
         if verdict:
             print(f"AI fuzz triage: known issue {verdict['issue_url']}, no agent run")
@@ -1932,6 +2073,8 @@ def triage_and_apply(
             history_available = not pr_mode and _fetch_recent_history(
                 info.sha, deadline
             )
+            # After the fetch, which a private repository needs them for.
+            _drop_checkout_credentials()
             _write_known_issues(occurrences)
             verdict_timeout = min(VERDICT_TIMEOUT_SEC, int(_remaining_sec(deadline)))
             prompt = _build_prompt(
@@ -1993,9 +2136,7 @@ def triage_and_apply(
                         deadline,
                     )
                 )
-                if verdict.get("issue_created") and verdict["repro_status"] == (
-                    "reproduced"
-                ):
+                if _should_post_repro(verdict):
                     try:
                         _post_repro(verdict["issue_url"], verdict["repro"], deadline)
                     except Exception as e:  # noqa: BLE001 - the report still has it
