@@ -1567,7 +1567,9 @@ std::optional<TTLShiftedColumn> tryAnalyzeTTLShift(const ASTPtr & node)
     if (!result)
         return {};
 
-    const Int64 shift = is_minus ? -interval->offset_seconds : interval->offset_seconds;
+    Int64 shift = interval->offset_seconds;
+    if (is_minus && common::subOverflow(Int64(0), interval->offset_seconds, shift))
+        return {};
     if (common::addOverflow(result->offset_seconds, shift, result->offset_seconds))
         return {};
 
