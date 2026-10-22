@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -142,6 +143,29 @@ public:
                     adjusted_null_map[i] = 1;
             }
         }
+        else if (probe_which.isDecimal() && which.isInteger())
+        {
+            /// Accurate casts to integers discard the fractional part of a `Decimal` probe.
+            /// Check the original value: an integer-to-`Decimal` round trip does not support wide integers.
+            ColumnPtr original_value = castColumnAccurateOrNull(
+                arguments[1], dispatch_probe_type)->convertToFullColumnIfConst();
+            const auto & nullable_original_value = assert_cast<const ColumnNullable &>(*original_value);
+            const IColumn & original_nested_column = nullable_original_value.getNestedColumn();
+
+            adjusted_null_map.resize(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                adjusted_null_map[i] = (*null_map)[i];
+            null_map = &adjusted_null_map;
+
+            if (probe_which.isDecimal32())
+                rejectFractionalDecimalProbes<Decimal32>(original_nested_column, adjusted_null_map);
+            else if (probe_which.isDecimal64())
+                rejectFractionalDecimalProbes<Decimal64>(original_nested_column, adjusted_null_map);
+            else if (probe_which.isDecimal128())
+                rejectFractionalDecimalProbes<Decimal128>(original_nested_column, adjusted_null_map);
+            else if (probe_which.isDecimal256())
+                rejectFractionalDecimalProbes<Decimal256>(original_nested_column, adjusted_null_map);
+        }
 
         if (which.isUInt8())
             executeNumericType<UInt8>(casted_arguments, input_rows_count, vec_to);
@@ -204,6 +228,18 @@ public:
     }
 
 private:
+    template <typename T>
+    static void rejectFractionalDecimalProbes(const IColumn & column, NullMap & null_map)
+    {
+        const auto & decimal_column = assert_cast<const ColumnDecimal<T> &>(column);
+        const auto & values = decimal_column.getData();
+        const UInt32 scale = decimal_column.getScale();
+
+        for (size_t i = 0; i < null_map.size(); ++i)
+            if (null_map[i] == 0 && DecimalUtils::getFractionalPart(values[i], scale) != 0)
+                null_map[i] = 1;
+    }
+
     struct BloomFilterStateInfo
     {
         DataTypePtr value_type;
