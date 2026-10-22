@@ -75,6 +75,12 @@ $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE
 $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME"
 $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' < "$STDIN_DATA_FILE_NAME"
 
+# The calling shell may have already consumed a prefix of regular-file stdin.
+# Adding --queries-file must not reset the inferred table's input offset to zero.
+echo "SELECT 'init' FROM system.one;" > "$TEMP_SQL_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=read -q 'SELECT count(), sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count(), sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+
 # --copy is a format-conversion shortcut, not a second query mode for --queries-file.
 $CLICKHOUSE_LOCAL --copy --queries-file="$TEMP_SQL_FILE_NAME" --input-format CSV < "$STDIN_DATA_FILE_NAME" 2>&1 | grep -o 'BAD_ARGUMENTS'
 

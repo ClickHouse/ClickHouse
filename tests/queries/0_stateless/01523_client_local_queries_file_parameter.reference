@@ -32,6 +32,9 @@ second query
 42
 6
 3
+2	5
+init
+2	5
 BAD_ARGUMENTS
 file error stopped query
 second file stopped query

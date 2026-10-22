@@ -157,6 +157,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
@@ -560,7 +561,8 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     bool use_table_fd,
     int table_fd,
     const struct stat & file_stat,
-    ContextPtr context)
+    ContextPtr context,
+    bool preserve_fd_offset)
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
@@ -609,7 +611,19 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+        {
+            auto reader = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+            if (preserve_fd_offset)
+            {
+                /// Schema inference must start at the inherited file position, even when pread is
+                /// used to keep the descriptor available to queries from --queries-file.
+                const off_t offset = ::lseek(table_fd, 0, SEEK_CUR);
+                if (offset < 0)
+                    throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot get current position of file descriptor {}", table_fd);
+                reader->seek(offset, SEEK_SET);
+            }
+            res = std::move(reader);
+        }
         else
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, read_buffer_size);
 
@@ -736,7 +750,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     bool use_table_fd,
     int table_fd,
     const String & compression_method,
-    ContextPtr context)
+    ContextPtr context,
+    bool preserve_fd_offset = false)
 {
     CompressionMethod method = {};
     if (use_table_fd)
@@ -744,7 +759,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     else
         method = chooseCompressionMethod(current_path, compression_method);
 
-    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
+    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context, preserve_fd_offset);
 
     const auto & file_settings = context->getSettingsRef();
     int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
@@ -1278,7 +1293,7 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     auto file_stat = getFileStat("", true, table_fd, getName());
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
-    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, /*preserve_fd_offset=*/true);
     auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
