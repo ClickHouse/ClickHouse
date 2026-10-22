@@ -4704,7 +4704,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)

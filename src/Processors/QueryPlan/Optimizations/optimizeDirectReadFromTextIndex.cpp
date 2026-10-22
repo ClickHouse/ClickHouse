@@ -242,8 +242,8 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         if (!index.index->isTextIndex())
             continue;
 
-        /// Text indices have no per-part built-against-type record, so pass the updated columns as both
-        /// the all-updated and value-updated sets: any on-the-fly change disables the index (no relaxation).
+        /// The set is query-wide, so no per-part type record can relax a type change: pass it as both sets,
+        /// so any on-the-fly change disables the index.
         if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns, updated_columns); !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
