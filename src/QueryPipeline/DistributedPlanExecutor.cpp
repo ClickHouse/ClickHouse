@@ -123,6 +123,7 @@ namespace FailPoints
     extern const char distributed_plan_status_check_reenqueue_fault[];
     extern const char distributed_plan_record_failure_while_starting_tasks[];
     extern const char distributed_plan_task_start_fails_after_send[];
+    extern const char distributed_plan_local_start_stage_throws_after_task_start[];
     extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
 
@@ -1246,6 +1247,10 @@ protected:
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
+            fiu_do_on(FailPoints::distributed_plan_local_start_stage_throws_after_task_start,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected exception while starting the local tasks of a stage");
+            });
         }
     }
 
