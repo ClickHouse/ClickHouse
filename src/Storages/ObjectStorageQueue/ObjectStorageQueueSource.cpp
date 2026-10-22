@@ -2094,6 +2094,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 parser_shared_resources,
                 nullptr,
                 /* need_only_count */ false,
+                /* top_k_query_condition_cache_key */ nullptr,
                 iterator_consumed);
 
             if (!reader)
