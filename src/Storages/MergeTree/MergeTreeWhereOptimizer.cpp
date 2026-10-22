@@ -119,8 +119,21 @@ bool typeContainsFloat(const DataTypePtr & type)
 
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
 /// over a float sorting key column can tell apart rows of one dedup group and drop its winner
-NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
 {
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+
+    /// `Graphite` merges adjacent rows of one path into one row with a rounded time.
+    /// A path filter can make rows adjacent unless the path is the first sorting key column.
+    const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
+    if (data && data->merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        const auto & path = data->merging_params.graphite_params.path_column_name;
+        if (sorting_key.column_names.empty() || sorting_key.column_names.front() != path)
+            return {};
+        return {path};
+    }
+
     NameSet names;
     for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
         if (!typeContainsFloat(sorting_key.data_types[i]))
@@ -143,7 +156,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey())}
+    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot)}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
