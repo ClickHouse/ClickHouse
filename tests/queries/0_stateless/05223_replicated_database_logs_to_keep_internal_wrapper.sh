@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A definition the user supplies now is validated the same way whether the statement is executed
 # directly or through a wrapper that runs it as an internal query, such as `PARALLEL WITH`. Keying
 # the compatibility clamp on `internal` alone let such a `CREATE` through: the metadata file then held
-# the value as written while the database used `UINT32_MAX` in memory and in Keeper.
+# the value as written while the database used the clamped maximum in memory and in Keeper.
 #
 # The partner statement has neither input nor output, which is what `PARALLEL WITH` requires.
 #

@@ -96,11 +96,9 @@ ClickStack은 OpenTelemetry와 기본적으로 통합되어 있으며, 모든 �
 
 ClickStack은 완전히 오픈 소스이며 어디에나 배포할 수 있습니다. 스키마(schema)는 유연하고 사용자가 수정할 수 있으며, UI는 변경 없이도 사용자 정의 스키마에 맞게 구성할 수 있도록 설계되었습니다. collector, ClickHouse, UI를 포함한 모든 구성 요소는 수집, 쿼리 또는 저장 요구 사항을 충족할 수 있도록 각각 독립적으로 확장할 수 있습니다.
 
-<div id="architectural-overview">
-  ## 아키텍처 개요
-</div>
+## 아키텍처 개요 {#architectural-overview}
 
-ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구성 요소를 자가 관리하는 **ClickStack Open Source**와 ClickHouse 및 HyperDX UI를 ClickHouse Cloud에서 호스팅하고 운영하는 **Managed ClickStack** 사이에는 중요한 아키텍처 차이가 있습니다. 두 모델 모두 핵심 구성 요소는 같지만, 각 구성 요소의 호스팅, 스케일링, 보안을 누가 책임지는지는 다릅니다.
+ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구성 요소가 자가 관리형인 **ClickStack Open Source**와 ClickHouse 및 HyperDX UI를 ClickHouse Cloud에서 호스팅하고 운영하는 **Managed ClickStack** 사이에는 중요한 아키텍처 차이가 있습니다. 두 모델 모두 핵심 구성 요소는 같지만, 각 구성 요소의 호스팅, 스케일링, 보안을 누가 책임지는지는 다릅니다.
 
 <Tabs>
   <Tab title="Managed ClickStack">
@@ -115,7 +113,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
     1. **ClickStack UI (HyperDX)**
        HyperDX UI는 ClickHouse Cloud에 완전히 통합되어 있으며 서비스의 일부로 관리됩니다. 로그 검색, 트레이스 탐색, 대시보드, 알림, 텔레메트리 유형 간 상관관계 분석 기능을 제공하며, 인증과 접근 제어가 통합되어 있습니다.
 
-    2. **OpenTelemetry collector (self-managed)**
+    2. **OpenTelemetry collector (자가 관리형)**
        사용자는 애플리케이션과 인프라에서 텔레메트리 데이터를 수신하는 OpenTelemetry Collector를 실행합니다. 이 collector는 OTLP를 통해 데이터를 ClickHouse Cloud로 전달합니다. 표준을 준수하는 어떤 OpenTelemetry Collector든 사용할 수 있지만, ClickHouse 수집에 맞게 사전 구성되고 최적화되어 있으며 ClickStack 스키마와 즉시 함께 사용할 수 있는 **ClickStack 배포판**을 강력히 권장합니다.
 
     3. **ClickHouse Cloud**
@@ -125,7 +123,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     * **스토리지와 독립적으로 자동 스케일링되는 컴퓨트**
     * 객체 스토리지를 기반으로 하는 **저비용의 사실상 무제한 보존**
-    * ClickHouse Cloud Warehouses를 사용하는 **읽기와 쓰기의 독립적 격리**
+    * ClickHouse Cloud Warehouses를 사용하는 **[읽기와 쓰기의 독립적 격리](/ko/clickstack/managing/isolating-read-write)**
     * **통합 인증 및 접근 제어**
     * **자동 백업**
     * **보안 및 컴플라이언스 기능**

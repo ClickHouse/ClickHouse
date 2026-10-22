@@ -133,7 +133,11 @@ public:
         String model(arguments[model_arg_index].column->getDataAt(0));
 
         auto provider = createAIProvider(
-            params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+            getContext(),
+            params.collection.provider,
+            params.collection.endpoint,
+            params.collection.api_key,
+            params.collection.api_version);
         if (!provider->supportsEmbeddings())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "AI provider '{}' does not support embeddings", params.collection.provider);
@@ -194,8 +198,10 @@ public:
 
         FunctionBaseAI::EmbeddingResult embedding_result;
         FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
-            timeouts, embedding_result);
+            *provider, model, dimensions, getName(),
+            getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
+            inputs, max_batch_size, max_retries,
+            retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
 
         const auto & embeddings = embedding_result.embeddings;
 

@@ -6,7 +6,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
@@ -66,7 +65,7 @@ public:
         bool seekable = false;
     };
 
-    using OutStreamCallback = std::function<void(std::ostream &)>;
+    using OutStreamCallback = std::function<void(WriteBuffer &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
 
@@ -142,20 +141,8 @@ private:
         std::optional<size_t> end;
     };
 
-    struct CallResult
-    {
-        HTTPSessionPtr session;
-        std::istream * response_stream = nullptr;
-
-        CallResult(HTTPSessionPtr && session_, std::istream & response_stream_)
-            : session(session_)
-            , response_stream(&response_stream_)
-        {}
-        CallResult(CallResult &&) = default;
-        CallResult & operator= (CallResult &&) = default;
-
-        std::unique_ptr<ReadBuffer> transformToReadBuffer(size_t buf_size) &&;
-    };
+    /// The body of the response, which keeps the session it reads from alive.
+    using CallResult = std::unique_ptr<HTTPResponseReadBuffer>;
 
     const HTTPConnectionGroupType connection_group;
     const Poco::URI initial_uri;
@@ -184,6 +171,9 @@ private:
 
     Poco::URI current_uri;
     size_t redirects = 0;
+    /// Set when a `303 See Other` redirect has rewritten the request to `GET`: `current_uri` then points to a
+    /// resource that has to be requested with `GET` and without the original request body, also on retries.
+    bool rewritten_to_get_by_redirect = false;
 
     std::string content_encoding;
     std::unique_ptr<ReadBuffer> impl;
@@ -207,7 +197,7 @@ private:
 
     bool withPartialContent() const;
 
-    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
+    void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const;
 
     void doWithRetries(
         std::function<void()> && callable,
@@ -227,13 +217,14 @@ private:
     /// catch block.
     void rethrowIfReadInterrupted() const;
 
-    CallResult  callImpl(
+    CallResult callImpl(
         Poco::Net::HTTPResponse & response,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
-        bool allow_redirects) const;
+        bool allow_redirects,
+        bool with_request_body = true) const;
 
-    CallResult  callWithRedirects(
+    CallResult callWithRedirects(
         Poco::Net::HTTPResponse & response,
         const String & method_,
         const std::optional<HTTPRange> & range);
