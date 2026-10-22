@@ -397,7 +397,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.MACOS_ARM_SMALL,
                 requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
             )
-            for i in range(1, 16)
+            for i in range(1, 21)
         ]
     )
     # The clang-tidy build does not link anything, so its object files are split
