@@ -63,3 +63,7 @@ rows: 1000
 Expect ~100: the default 1% of 10000 rows for a condition that is not a range, once (true 5000).
 Join: t[no_stats~100] ⋈ dim[5]
 rows: 5000
+--- T8: k = k, right above the read
+Expect ~10000: the rows of every file, imprecise, as the read has a filter of its own.
+Join: t[no_stats~10000] ⋈ dim[5]
+rows: 10000

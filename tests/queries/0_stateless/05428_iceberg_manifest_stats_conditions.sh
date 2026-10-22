@@ -14,6 +14,7 @@
 # - T5: a filter above a `LIMIT` stays out of the read, and is still estimated, then capped by the `LIMIT`.
 # - T6: a row policy prunes and is estimated.
 # - T7: a filter right above the read is also the read's own filter, and is counted once.
+# - T8: an always-true `k = k` is not estimated, but the read still holds it as its own filter, so the rows are imprecise.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -145,6 +146,10 @@ labels t_rp v 't.v >= 0' ${ON}
 echo '--- T7: k % 2 = 0, right above the read'
 echo 'Expect ~100: the default 1% of 10000 rows for a condition that is not a range, once (true 5000).'
 labels t v 't.k % 2 = 0' ${ON}
+
+echo '--- T8: k = k, right above the read'
+echo 'Expect ~10000: the rows of every file, imprecise, as the read has a filter of its own.'
+labels t v 't.k = t.k' ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"
 rm -rf "${LAKE}"
