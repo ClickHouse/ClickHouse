@@ -7,7 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
-#include <WindowFunctions/General/WindowFunctionState.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -76,18 +76,23 @@ struct NonNegativeDerivativeParams
     }
 };
 
-class WindowFunctionNonNegativeDerivative final : public WindowFunctionState<NonNegativeDerivativeState>
+class WindowFunctionNonNegativeDerivative final : public IGeneralWindowFunction
 {
 public:
     WindowFunctionNonNegativeDerivative(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunctionState(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , params(name_, argument_types_, parameters_)
     {
     }
 
+    size_t sizeOfState() const override { return sizeof(NonNegativeDerivativeState); }
+    size_t alignOfState() const override { return alignof(NonNegativeDerivativeState); }
+    void createState(char * place) const override { new (place) NonNegativeDerivativeState(); }
+    void resetPartition(char * place) const override { new (place) NonNegativeDerivativeState(); }
+
     void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        NonNegativeDerivativeState & state = stateAt(place);
+        NonNegativeDerivativeState & state = *reinterpret_cast<NonNegativeDerivativeState *>(place);
         const Float64 interval_duration = params.interval_specified
             ? params.interval_length * arguments.at(NonNegativeDerivativeParams::ARGUMENT_INTERVAL, bounds.row[0]).getFloat64()
             : 1;

@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
-#include <WindowFunctions/General/WindowFunctionState.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -35,11 +35,11 @@ Int64 checkedBuckets(UInt64 value)
     return value;
 }
 
-class WindowFunctionNtile final : public WindowFunctionState<NtileState>
+class WindowFunctionNtile final : public IGeneralWindowFunction
 {
 public:
     WindowFunctionNtile(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunctionState(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
         if (argument_types.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly one argument", name_);
@@ -53,6 +53,11 @@ public:
     {
         return WindowFunctionRequirements{.frame = false, .partition = true, .order_by = true};
     }
+
+    size_t sizeOfState() const override { return sizeof(NtileState); }
+    size_t alignOfState() const override { return alignof(NtileState); }
+    void createState(char * place) const override { new (place) NtileState(); }
+    void resetPartition(char * place) const override { new (place) NtileState(); }
 
     std::optional<WindowFrame> getDefaultFrame() const override
     {
@@ -70,7 +75,7 @@ public:
 
     void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        NtileState & state = stateAt(place);
+        NtileState & state = *reinterpret_cast<NtileState *>(place);
         if (state.buckets == 0)
             state.buckets = checkedBuckets(arguments.at(0, bounds.row[0]).getUInt());
 

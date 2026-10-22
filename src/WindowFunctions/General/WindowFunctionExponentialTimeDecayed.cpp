@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
-#include <WindowFunctions/General/WindowFunctionState.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -79,19 +79,24 @@ bool framesOverlap(Int64 covered_start, Int64 covered_end, Int64 start, Int64 en
     return covered_start <= start && start < covered_end && covered_end <= end;
 }
 
-class WindowFunctionExponentialTimeDecayedSum final : public WindowFunctionState<DecayedSumState>
+class WindowFunctionExponentialTimeDecayedSum final : public IGeneralWindowFunction
 {
 public:
     WindowFunctionExponentialTimeDecayedSum(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunctionState(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         checkValueAndTimeArguments(name_, argument_types);
     }
 
+    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    void createState(char * place) const override { new (place) DecayedSumState(); }
+    void resetPartition(char * place) const override { new (place) DecayedSumState(); }
+
     void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        DecayedSumState & state = stateAt(place);
+        DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (size_t i = 0; i < bounds.rows; ++i)
         {
@@ -165,11 +170,11 @@ private:
     const Float64 decay_length;
 };
 
-class WindowFunctionExponentialTimeDecayedCount final : public WindowFunctionState<DecayedSumState>
+class WindowFunctionExponentialTimeDecayedCount final : public IGeneralWindowFunction
 {
 public:
     WindowFunctionExponentialTimeDecayedCount(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunctionState(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 1)
@@ -178,9 +183,14 @@ public:
         checkTimeArgument(argument_types, 0);
     }
 
+    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    void createState(char * place) const override { new (place) DecayedSumState(); }
+    void resetPartition(char * place) const override { new (place) DecayedSumState(); }
+
     void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        DecayedSumState & state = stateAt(place);
+        DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (size_t i = 0; i < bounds.rows; ++i)
         {
@@ -216,19 +226,24 @@ private:
     const Float64 decay_length;
 };
 
-class WindowFunctionExponentialTimeDecayedAvg final : public WindowFunctionState<DecayedAvgState>
+class WindowFunctionExponentialTimeDecayedAvg final : public IGeneralWindowFunction
 {
 public:
     WindowFunctionExponentialTimeDecayedAvg(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunctionState(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         checkValueAndTimeArguments(name_, argument_types);
     }
 
+    size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
+    size_t alignOfState() const override { return alignof(DecayedAvgState); }
+    void createState(char * place) const override { new (place) DecayedAvgState(); }
+    void resetPartition(char * place) const override { new (place) DecayedAvgState(); }
+
     void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        DecayedAvgState & state = stateAt(place);
+        DecayedAvgState & state = *reinterpret_cast<DecayedAvgState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (size_t i = 0; i < bounds.rows; ++i)
         {
