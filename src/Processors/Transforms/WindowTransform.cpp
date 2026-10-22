@@ -243,8 +243,7 @@ void WindowTransform::computeReadyRows()
         peers.advanceCurrentRow(blocks, partition.bounds());
     }
 
-    if (input_is_finished)
-        flushBatch();
+    flushBatch();
 }
 
 void WindowTransform::appendCurrentRow()
@@ -253,10 +252,7 @@ void WindowTransform::appendCurrentRow()
     const FrameBounds & current_frame = frame.bounds();
     const PeersBounds & current_peers = peers.bounds();
     if (bounds.rows == 0)
-    {
         batch_start = current.location;
-        batch_frame_start = current_frame.start.location;
-    }
 
     bounds.row.push_back(current.row_index_in_partition);
     bounds.frame_start.push_back(current_frame.start.row_index_in_partition);
@@ -264,7 +260,7 @@ void WindowTransform::appendCurrentRow()
     bounds.peers_start.push_back(current_peers.start.row_index_in_partition);
     bounds.peers_end.push_back(current_peers.end.row_index_in_partition);
     bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
-    if (partition.bounds().fully_visible && bounds.partition_end.size() == bounds.rows)
+    if (partition.bounds().fully_visible)
         bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
     ++bounds.rows;
 }
@@ -398,11 +394,9 @@ void WindowTransform::work()
 
 void WindowTransform::releaseUnusedBlocks()
 {
-    /// A block is dropped once it is output and the previous frame start, the current row and the frame start of the
-    /// first row of a waiting batch have left it. The previous frame start is never after the current one, and the
-    /// frame can start after the current row.
-    const int64_t batch_block = bounds.rows != 0 ? batch_frame_start.block : peers.current().location.block;
-    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block, batch_block});
+    /// A block is dropped once it is output and both the previous frame start and the current row have left it.
+    /// The previous frame start is never after the current one, and the frame can start after the current row.
+    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block});
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 }

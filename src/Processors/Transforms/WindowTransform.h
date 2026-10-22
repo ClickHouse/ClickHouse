@@ -95,7 +95,6 @@ private:
     /// The batch being collected, starting at `batch_start`.
     WindowBounds bounds;
     RowNumber batch_start;
-    RowNumber batch_frame_start;
 
     /// Aggregates only.
     std::vector<WindowFunctionWorkspace> workspaces;
