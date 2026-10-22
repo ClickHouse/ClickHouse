@@ -21,6 +21,8 @@ namespace DB
 {
 
 struct Settings;
+class IStorage;
+struct StorageInMemoryMetadata;
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
@@ -87,6 +89,12 @@ std::optional<UInt128> computeAdditionalFiltersModificationHash(ContextPtr conte
 /// they actually read. Returns nullopt if the table cannot be resolved, the user may not read it, or it
 /// cannot report whether it changed.
 std::optional<UInt128> computeTableModificationHashForConsistency(const StorageID & table_id, ContextPtr context);
+
+/// Whether a read of `storage` can evaluate a column expression of `metadata` - an `ALIAS`, or the
+/// `DEFAULT` / `MATERIALIZED` expression of a column that some data does not store - whose result can
+/// change while the table stays the same: a non-deterministic function, a dictionary, or another table.
+/// The modification hash of such a table cannot vouch for the rows read from it.
+bool columnExpressionsMayChangeWithoutTable(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;

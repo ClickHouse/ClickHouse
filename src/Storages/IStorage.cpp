@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -545,6 +546,13 @@ std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr
         if (!canComputeModificationHash(context, storage_id.database_name, storage_id.table_name, metadata->getColumns()))
             return {};
     }
+
+    /// A column expression evaluated by the read can change the rows without changing the table. Checked
+    /// here rather than by each consumer, so that every probe - the query cache, the local and remote shards
+    /// of `Distributed` (through `system.tables.modification_hash`) - applies it.
+    if (columnExpressionsMayChangeWithoutTable(*storage, *metadata, context))
+        return {};
+
     auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
     return storage->getModificationHash(snapshot, context);
 }

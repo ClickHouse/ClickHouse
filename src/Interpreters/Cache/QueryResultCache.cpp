@@ -458,6 +458,43 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 /// `StorageMaterializedView` hashes its target table), so that the same value also appears in
 /// `system.tables.modification_hash` and is seen by wrapper engines (`Merge`, `Distributed`). Engines
 /// that do not override `getModificationHash` (e.g. `WindowView`, `LiveView`) yield nullopt (fail closed).
+bool columnExpressionsMayChangeWithoutTable(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    /// A `DEFAULT` / `MATERIALIZED` expression is evaluated by a read only for the parts that do not store
+    /// the column (e.g. after `ALTER TABLE ... ADD COLUMN`). For `MergeTree` the active parts tell whether
+    /// any of them lacks it; the parts can change after this check, but that changes the hash of the table
+    /// as well. Other storages are assumed to evaluate the expression.
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage);
+    std::optional<MergeTreeData::DataPartsVector> parts;
+    auto is_stored_in_every_part = [&](const String & column_name)
+    {
+        if (!merge_tree)
+            return false;
+        if (!parts)
+            parts = merge_tree->getDataPartsVectorForInternalUsage();
+        return std::ranges::all_of(*parts, [&](const auto & part) { return part->getColumnPosition(column_name).has_value(); });
+    };
+
+    for (const auto & column : metadata.getColumns())
+    {
+        if (!column.default_desc.expression)
+            continue;
+        if (column.default_desc.kind != ColumnDefaultKind::Alias && is_stored_in_every_part(column.name))
+            continue;
+        /// The expression is not part of the query, so a dictionary, the clock or another table it reads
+        /// would not be seen by the query walk. Fail closed on such an expression: the hash of this table
+        /// does not cover their changes.
+        if (astContainsNonDeterministicFunctions(column.default_desc.expression, context, /*check_niladic_identifiers=*/ true))
+            return true;
+        CollectReferencedTablesMatcher::Data expression_tables;
+        ASTPtr expression = column.default_desc.expression->clone();
+        CollectReferencedTablesVisitor(expression_tables).visit(expression);
+        if (expression_tables.cannot_verify || !expression_tables.table_ids.empty())
+            return true;
+    }
+    return false;
+}
+
 std::optional<UInt128> computeTableModificationHashForConsistency(const StorageID & table_id, ContextPtr context)
 {
     /// Resolve through the context so that an unqualified name picks the same table the query will
@@ -495,22 +532,9 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
     if (!canComputeModificationHash(context, resolved_id.database_name, resolved_id.table_name, metadata->getColumns()))
         return {};
 
-    /// An `ALIAS` column is expanded into its expression only by the analyzer, after the query walk, so
-    /// `SELECT y FROM t` with `y ALIAS dictGet(...)` or `y ALIAS now64()` reads a dictionary or the clock
-    /// although neither appears in the query. Fail closed on such an expression, and on one that reads
-    /// other tables, whose changes the hash of this table does not cover.
-    for (const auto & column : metadata->getColumns())
-    {
-        if (column.default_desc.kind != ColumnDefaultKind::Alias || !column.default_desc.expression)
-            continue;
-        if (astContainsNonDeterministicFunctions(column.default_desc.expression, context, /*check_niladic_identifiers=*/ true))
-            return {};
-        CollectReferencedTablesMatcher::Data alias_tables;
-        ASTPtr expression = column.default_desc.expression->clone();
-        CollectReferencedTablesVisitor(alias_tables).visit(expression);
-        if (alias_tables.cannot_verify || !alias_tables.table_ids.empty())
-            return {};
-    }
+    /// The expressions of the columns that a read can evaluate (`ALIAS`, and `DEFAULT` / `MATERIALIZED`
+    /// of the columns missing in old parts) are checked by `getModificationHashWithRefreshedMetadata`
+    /// below, the entry point shared with the probes of the wrapper engines.
 
     /// A row policy filters what the current user reads from the table without the table itself
     /// changing, so an unchanged table hash is not proof that the result is unchanged: an
@@ -887,10 +911,10 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
 }
 
 /// Hashes the dependencies of the given filters, applying the same rules as to the query itself (fail
-/// closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...). The filters come in the
-/// order of the settings map, which carries no meaning, so their hashes are sorted (keeping multiplicity)
-/// the same way as the per-table hashes: reordering the entries of an otherwise identical
-/// `additional_table_filters` must not move the hash.
+/// closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...). Their hashes are sorted
+/// (keeping multiplicity) the same way as the per-table hashes: they only capture the state of the tables
+/// the filters read. The order of the entries, which decides the first one matching a table, is captured
+/// by the settings themselves (the caller's cache key, or `updateHashWithRowAffectingSettings`).
 static std::optional<std::vector<UInt128>> computeFiltersModificationHashes(const ASTs & filter_asts, const ContextPtr & context)
 {
     std::vector<UInt128> filter_hashes;

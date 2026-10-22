@@ -996,7 +996,8 @@ private:
 /// deterministically see "changed" on the first use of such a table through a wrapper, and
 /// `system.tables.modification_hash` would change after the first ordinary read of it.
 ///
-/// Returns nullopt when the metadata update fails or the storage cannot tell whether it changed.
+/// Returns nullopt when the metadata update fails, the storage cannot tell whether it changed, or a read
+/// can evaluate a column expression that changes without the table (see `columnExpressionsMayChangeWithoutTable`).
 std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr & storage, const ContextPtr & context);
 
 /// Marks the current scope as `system.tables.modification_hash` introspection.
