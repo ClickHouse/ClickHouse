@@ -4227,7 +4227,6 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
                 auto & indexes_data = indexes->getData();
                 indexes_data.reserve(row_subgroup.filter.rows_pass);
                 size_t i = 0;
-                /// 64 rows at a time, as `ColumnVector::filter` does: a branch per passing row, not a mispredicted branch per row.
                 for (; i + 64 <= mask.size(); i += 64)
                 {
                     for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
