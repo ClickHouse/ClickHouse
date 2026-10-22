@@ -455,7 +455,10 @@ namespace
                 /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
+                if (validate_current_database)
+                    global_context_copy->setCurrentDatabase(current_database);
+                else
+                    global_context_copy->setCurrentDatabaseUnchecked(current_database);
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
                 if (!literal || (literal->value.getType() != Field::Types::String))
