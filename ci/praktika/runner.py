@@ -277,7 +277,7 @@ class Runner:
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
-        # source env file to write data into fs (workflow config json, workflow status json)
+        # source env file to write data into the filesystem (workflow config json, workflow status json)
         Shell.check(f". {Settings.ENV_SETUP_SCRIPT}", verbose=True, strict=True)
 
         # parse the same env script and apply envs from python so that this process sees them
@@ -828,7 +828,7 @@ class Runner:
                 host_metrics = host_metrics_collector.stop()
 
                 # When running Docker containers as root (non-rootless mode), any files
-                # created by the job will be owned by root.  Fix ownership here, before
+                # created by the job will be owned by root. Fix ownership here, before
                 # reading the result file or writing the host-side result, so that the
                 # host user can open them without a PermissionError.
                 if job.run_in_docker and not no_docker and from_root:
