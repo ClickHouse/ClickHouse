@@ -1020,6 +1020,8 @@ void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) cons
         && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
             || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
         checkSessionMayUseServerIdentity(*object_storage, query_context);
+
+    configuration->checkCanBeDropped(object_storage, query_context, /* catalog_purges_files */ catalog != nullptr);
 }
 
 void StorageObjectStorage::drop()
