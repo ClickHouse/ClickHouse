@@ -1,10 +1,12 @@
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/TableNameOrQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -32,9 +34,9 @@ using ConfigurationFields = std::unordered_map<std::string_view, String Elastics
 namespace
 {
 
-constexpr auto USAGE = "Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...]) "
-                        "or Elasticsearch(named_collection[, key = value, ...]). "
-                        "Allowed keys: url, index, user, password, bearer_token, api_key, query";
+constexpr auto USAGE = "Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...]) "
+                        "or Elasticsearch(named_collection[, query('...')][, key = value, ...]). "
+                        "Allowed keys: url, index, user, password, bearer_token, api_key; a named collection also accepts query";
 
 const ConfigurationFields & configurationFields()
 {
@@ -46,7 +48,6 @@ const ConfigurationFields & configurationFields()
         {"password", &ElasticsearchConfiguration::password},
         {"bearer_token", &ElasticsearchConfiguration::bearer_token},
         {"api_key", &ElasticsearchConfiguration::api_key},
-        {"query", &ElasticsearchConfiguration::query},
     };
     return fields;
 }
@@ -65,6 +66,8 @@ ElasticsearchConfiguration fromNamedCollection(const NamedCollection & collectio
         if (collection.has(name))
             configuration.*member = collection.get<String>(name);
     }
+    if (collection.has("query"))
+        configuration.query = collection.get<String>("query");
     return configuration;
 }
 
@@ -158,11 +161,19 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
         for (auto it = std::next(args.begin()); it != args.end(); ++it)
         {
             const auto * equals_function = (*it)->as<ASTFunction>();
-            if (!equals_function || equals_function->name != "equals" || !equals_function->arguments
-                || equals_function->arguments->children.size() != 2)
-                continue;
-            auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(equals_function->arguments->children[0], context);
-            auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
+            String key;
+            if (equals_function && equals_function->name == "query")
+            {
+                key = "query";
+            }
+            else
+            {
+                if (!equals_function || equals_function->name != "equals" || !equals_function->arguments
+                    || equals_function->arguments->children.size() != 2)
+                    continue;
+                auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(equals_function->arguments->children[0], context);
+                key = checkAndGetLiteralArgument<String>(literal_key, "key");
+            }
             if (!override_keys.emplace(key).second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch argument '{}' is specified more than once", key);
         }
@@ -172,6 +183,11 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
     {
         configuration = fromNamedCollection(*named_collection);
         configuration.named_collection_name = args.front()->as<ASTIdentifier &>().name();
+        for (auto it = std::next(args.begin()); it != args.end(); ++it)
+        {
+            if (auto dsl_query = tryGetQueryFunctionArgument(*it, context))
+                configuration.query = std::move(*dsl_query);
+        }
     }
     else
     {
@@ -183,7 +199,13 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
         std::unordered_set<std::string_view> provided;
         for (auto & arg : args)
         {
-            if (const auto * equals_function = arg->as<ASTFunction>(); equals_function && equals_function->name == "equals")
+            if (auto dsl_query = tryGetQueryFunctionArgument(arg, context))
+            {
+                if (!provided.emplace("query").second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch argument 'query' is specified more than once");
+                configuration.query = std::move(*dsl_query);
+            }
+            else if (const auto * equals_function = arg->as<ASTFunction>(); equals_function && equals_function->name == "equals")
             {
                 auto [key, value] = getKeyValueFromAST(arg, context);
                 auto it = fields.find(key);
@@ -197,6 +219,9 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
             }
             else
             {
+                if (provided.contains("query"))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "Positional arguments for Elasticsearch must precede query('...'): {}", USAGE);
                 if (positional.size() >= 4)
                     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many positional arguments for Elasticsearch: {}", USAGE);
                 arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -223,6 +248,24 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
     validate(configuration, context);
 
     return configuration;
+}
+
+SecretArgumentsSpec elasticsearchSecretArguments()
+{
+    return {.positional_secret_slots = {3}, .secret_keys = {"password", "bearer_token", "api_key"}, .custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        /// `query(...)` is counted as a positional argument, so a positional argument after it is not in its slot.
+        const auto positional = finder.classifyPositionalArguments();
+        auto query_it = std::ranges::find_if(positional, [&finder](size_t index)
+        {
+            const auto function = finder.function->arguments->at(index)->getFunction();
+            return function && function->name() == "query";
+        });
+        if (query_it == positional.end())
+            return;
+        for (auto it = std::next(query_it); it != positional.end(); ++it)
+            finder.markSecretArgument(*it);
+    }};
 }
 
 HTTPHeaderEntries ElasticsearchConfiguration::authorizationHeaders() const

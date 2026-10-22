@@ -1,0 +1,6 @@
+Elasticsearch(\'http://localhost:1\', \'idx\', \'u\', \'[HIDDEN]\', query(\'{"term": {"level": "error"}}\'))
+CREATE TABLE default.es_query_persisted
+(
+    `document` JSON
+) AS elasticsearch('http://localhost:1', 'idx', query(concat('{', '}')))
+SELECT * FROM elasticsearch('http://localhost:1', 'idx', 'u', '[HIDDEN]', '[HIDDEN]')
