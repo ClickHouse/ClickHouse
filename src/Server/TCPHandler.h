@@ -30,6 +30,7 @@
 
 #include <Client/IServerConnection.h>
 #include <Server/IServer.h>
+#include <Server/ConnectionRegistry.h>
 
 
 namespace CurrentMetrics
@@ -268,6 +269,11 @@ private:
     /// For tracking connection lifetime and query count
     UInt64 query_count = 0;
     Stopwatch connection_timer;
+    /// The time when the server accepted the socket. The server constructs the handler at that time.
+    const time_t connected_time = std::time(nullptr);
+
+    /// The registration in `ConnectionRegistry` (`system.connections`). `runImpl` makes it after a successful authentication.
+    ConnectionHandle connection_handle;
 
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
@@ -368,6 +374,11 @@ private:
     void logQueryDuration(QueryState & state);
 
     bool connectionLimitReached();
+
+    /// Registers the connection in `ConnectionRegistry` if it is not registered and `collect_connection_metrics` is `true`.
+    /// The handler calls this function after authentication and before each query.
+    /// Thus, if the setting changes to `true` at runtime, an open connection shows on its next query.
+    void registerConnectionIfNeeded();
 
     Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
     /// `getClientAddress(session->getClientInfo())` that falls back to the peer address instead of throwing on a
