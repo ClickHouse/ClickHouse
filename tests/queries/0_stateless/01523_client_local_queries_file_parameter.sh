@@ -9,7 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TEMP_SQL_FILE_NAME="01523_client_local_queries_file_parameter_tmp_$$.sql"
 SECOND_SQL_FILE_NAME="${TEMP_SQL_FILE_NAME}.second"
 STDIN_DATA_FILE_NAME="${TEMP_SQL_FILE_NAME}.data"
-trap 'rm -f "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME" "$STDIN_DATA_FILE_NAME"' EXIT
+SPACED_SQL_FILE_NAME="${TEMP_SQL_FILE_NAME}.space name.sql"
+trap 'rm -f "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME" "$STDIN_DATA_FILE_NAME" "$SPACED_SQL_FILE_NAME"' EXIT
 echo "SELECT 1;" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_CLIENT --queries-file="$TEMP_SQL_FILE_NAME" 2>&1
 
@@ -47,6 +48,26 @@ $CLICKHOUSE_LOCAL -q 'SELECT sum(x) FROM state_01523' --queries-file="$TEMP_SQL_
 echo "SELECT 'first file';" > "$TEMP_SQL_FILE_NAME"
 echo "SELECT 'second file';" > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL -q "SELECT 'first query';" --queries-file="$TEMP_SQL_FILE_NAME" -q "SELECT 'second query';" --queries-file="$SECOND_SQL_FILE_NAME" < /dev/null
+
+# A single --queries-file flag accepts multiple paths; SET remains visible to -q.
+printf '%s\n' 'SET max_threads = 2;' 'CREATE FUNCTION f_more_01523 AS (x) -> x * 3;' > "$TEMP_SQL_FILE_NAME"
+echo 'SELECT f_more_01523(7) FROM system.one;' > "$SECOND_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL -q "SELECT getSetting('max_threads'), f_more_01523(8) FROM system.one" \
+    --queries-file "$TEMP_SQL_FILE_NAME" "$SECOND_SQL_FILE_NAME" < /dev/null
+
+# Whitespace in a query-file path must not disturb command-line query execution.
+echo "SELECT 'spaced path';" > "$SPACED_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL -q "SELECT 'after spaced path'" --queries-file="$SPACED_SQL_FILE_NAME" < /dev/null
+
+# A missing query file must fail instead of silently running the trailing query.
+MISSING_SQL_FILE_NAME="${TEMP_SQL_FILE_NAME}.missing"
+if output=$($CLICKHOUSE_LOCAL --queries-file="$MISSING_SQL_FILE_NAME" -q 'SELECT 126899 FROM system.one' < /dev/null 2>&1); then
+    echo 'missing query file unexpectedly succeeded'
+elif [[ "$output" == *"$MISSING_SQL_FILE_NAME"* ]] && ! grep -Fxq '126899' <<< "$output"; then
+    echo 'missing query file stopped query'
+else
+    echo 'unexpected missing-file output'
+fi
 
 # Redirected stdin must not become an implicit table until after query files finish.
 printf '1,2\n3,4\n5,6\n' > "$STDIN_DATA_FILE_NAME"
