@@ -949,10 +949,12 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
             *aggregating_step, exchange_scatter_node.step->getOutputHeader(), /*memory_efficient_merge=*/false,
             /*produce_results_in_bucket_order=*/false, /*memory_bound_merging=*/false);
         merge_node.children = {&exchange_scatter_node};
+        merge_node.cost_estimation = std::exchange(node.cost_estimation, std::nullopt);
 
         QueryPlan::Node gather_node;
         gather_node.step = std::make_unique<GatherExchangeStep>(merge_node.step->getOutputHeader(), bucket_count);
         gather_node.children = {&merge_node};
+        gather_node.cost_estimation = merge_node.cost_estimation;
         node = std::move(gather_node);
     }
     else if (strategy == Shuffle)
@@ -1402,6 +1404,7 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                 if (shuffle->getKeys().empty() && shuffle->getResultBucketCount() == shuffle->getSourceBucketCount())
                 {
                     frame.node->step = std::move(frame.node->children[0]->step);
+                    frame.node->cost_estimation = frame.node->children[0]->cost_estimation;
                     frame.node->children = std::move(frame.node->children[0]->children);
                 }
             }
