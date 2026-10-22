@@ -21,7 +21,9 @@ OPTIMIZE TABLE tab FINAL;
 -- Uppercase `TEXT` must get the whole-part granularity default (100000000), same as lowercase `text`.
 SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
--- Prewarming the mark cache must not throw on the whole-part text index.
+-- Prewarming the mark cache must not throw on the whole-part text index. Before the fix this threw
+-- (marks expected 25, marks read 1): CANNOT_READ_ALL_DATA with compressed marks (.cmrk2), or
+-- CORRUPTED_DATA ("Bad size of marks file") with uncompressed marks (.mrk2).
 SYSTEM PREWARM MARK CACHE tab;
 
 -- The index must not change the result: the count using the index equals the full-scan count.
