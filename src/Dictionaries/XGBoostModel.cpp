@@ -126,11 +126,6 @@ void XGBoostModel::startTraining(const Block & header, const String & target_col
     /// layout definition is reported without paying for a scan of the whole training table.
     training_params = sanitizeTrainingParams(hps);
 
-    /// `gbtree` is the default booster of XGBoost.
-    const auto booster_param = training_params.find("booster");
-    serialize_predictions
-        = booster_param != training_params.end() && booster_param->second != "gbtree" && booster_param->second != "dart";
-
     /// Record the training schema: `target_column_` is the label, every other column of `header` a feature.
     if (!header.has(target_column_))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Target column '{}' is not present in the training data", target_column_);
@@ -301,10 +296,6 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
 
     String config = sanitizePredictParams(params);
 
-    std::unique_lock lock(predict_mutex, std::defer_lock);
-    if (serialize_predictions)
-        lock.lock();
-
     throwOnError(
         XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result),
         "XGBoosterPredictFromDMatrix");
@@ -366,6 +357,19 @@ UnorderedMapWithMemoryTracking<String, String> XGBoostModel::sanitizeTrainingPar
                 "dictionary does not accept, because it predicts exactly one Float64 per row. Use a regression objective, or "
                 "'binary:logistic' for two-class classification",
                 value);
+
+        /// Debug verbosity turns on the timing monitors of XGBoost, which a booster updates without locking, and
+        /// for `gblinear` also on prediction, which runs concurrently. The verbosity of XGBoost is per thread, so
+        /// a thread that once trained a model with debug verbosity would keep it for the queries it runs later.
+        if (key == "verbosity")
+        {
+            UInt64 parsed_verbosity = 0;
+            if (!tryParse(parsed_verbosity, value) || parsed_verbosity > 2)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Parameter 'verbosity' must be 0 (silent), 1 (warning) or 2 (info), got '{}'. Debug verbosity is not supported",
+                    value);
+        }
 
         // If we found num_iterations, record this value and do not add it to the final map
         if (key == "num_iterations")

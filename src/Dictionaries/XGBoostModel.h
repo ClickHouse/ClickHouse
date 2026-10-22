@@ -11,8 +11,6 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <mutex>
-
 namespace DB
 {
 
@@ -50,9 +48,10 @@ public:
     /// Predict on a batch of feature rows. Returns a Float64 column of predictions with one element per
     /// row of `batch`.
     ///
-    /// Can be called concurrently from many threads after `finalizeTraining`. For the `gbtree` and `dart` boosters
-    /// XGBoost prediction is thread-safe, and `XGBoosterPredictFromDMatrix` returns its result in a thread-local
-    /// buffer, so the calls run in parallel. Other boosters are not thread-safe and the calls are serialized.
+    /// Can be called concurrently from many threads after `finalizeTraining`: XGBoost prediction is thread-safe
+    /// for a trained booster, and `XGBoosterPredictFromDMatrix` returns its result in a thread-local buffer.
+    /// `gblinear` is not covered by the guarantee of XGBoost only because of its timing monitor, which is active
+    /// with debug verbosity, so `sanitizeTrainingParams` rejects that verbosity.
     ColumnPtr predict(const Block & batch, const PredictParameters & params);
 
     /// Names of the feature columns, in the order the model was trained on. Used by the dictionary to bind
@@ -94,12 +93,6 @@ private:
     VectorWithMemoryTracking<float> flattened_features;
     /// Vector of labels.
     VectorWithMemoryTracking<float> labels;
-
-    /// Whether `predict` runs XGBoost under `predict_mutex`. XGBoost guarantees thread-safe prediction only for the
-    /// `gbtree` and `dart` boosters: `gblinear`, for example, updates its timing monitor in `PredictBatch` without
-    /// locking when debug logging is enabled. Decided by `startTraining` and constant once the model is trained.
-    bool serialize_predictions = true;
-    std::mutex predict_mutex;
 };
 
 }

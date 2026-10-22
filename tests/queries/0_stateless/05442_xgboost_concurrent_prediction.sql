@@ -4,9 +4,7 @@
 -- replicas fails with `Dictionary (model_05442_xgb) not found` on the others.
 
 -- `predictXGBoost` runs on many threads at once against the same model, and every row gets the same
--- prediction as when the model is used by a single thread. The `gbtree` model predicts in parallel; the
--- `gblinear` one, trained with `verbosity 3`, which turns on its timing monitor, is not thread-safe in
--- XGBoost, so its predictions are serialized.
+-- prediction as when the model is used by a single thread, for the `gbtree` and the `gblinear` boosters.
 
 SET enable_xgboost = 1;
 
@@ -29,7 +27,7 @@ SYSTEM RELOAD DICTIONARY model_05442_xgb;
 CREATE DICTIONARY model_05442_linear (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2)
 SOURCE(CLICKHOUSE(TABLE 'training_05442'))
-LAYOUT(XGBOOST(num_iterations 10 booster 'gblinear' verbosity 3))
+LAYOUT(XGBOOST(num_iterations 10 booster 'gblinear'))
 LIFETIME(0);
 
 SYSTEM RELOAD DICTIONARY model_05442_linear;
