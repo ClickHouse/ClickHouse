@@ -579,6 +579,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_split_filter", trueOrFalseSetting},
        {"query_plan_top_k_through_join", trueOrFalseSetting},
        {"query_plan_try_use_vector_search", trueOrFalseSetting},
+       {"query_plan_window_top_k_prefilter", trueOrFalseSetting},
        {"read_in_order_use_buffering", trueOrFalseSetting},
        {"read_in_order_use_virtual_row", trueOrFalseSetting},
        {"read_in_order_use_virtual_row_per_block", trueOrFalseSetting},
