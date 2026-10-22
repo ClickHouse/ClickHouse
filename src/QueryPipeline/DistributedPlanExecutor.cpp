@@ -244,8 +244,7 @@ public:
     {
     }
 
-    /// The header the producer announces for the chunks it queues; a `Chunk` itself carries columns
-    /// only. Set before the sink is constructed, so it is in place before any chunk can be queued.
+    /// The header of the queued chunks. Set before the sink is constructed, so before any chunk is queued.
     void setProducerHeader(SharedHeader header)
     {
         std::lock_guard lock(mutex);
@@ -560,9 +559,7 @@ private:
             return getPort().getHeader().empty() ? std::chrono::milliseconds(1) : std::chrono::milliseconds(10);
         }
 
-        /// An aggregate state's representation (Aggregation vs Window) survives in neither header, and the
-        /// producer's header is built independently of this source's, so the two can disagree on it. Bring
-        /// the columns to the representation this source announces, or a consumer reads one layout as the other.
+        /// The producer's header is built independently of this source's and may carry the other state variant.
         void convertAggregateStateVariants(Chunk & chunk)
         {
             if (!positions_to_convert)
@@ -572,8 +569,7 @@ private:
                 return;
 
             const auto & header = getPort().getHeader();
-            /// `detachColumns` resets the row count, so read it before detaching. The chunk infos are
-            /// a separate member and are left untouched.
+            /// `detachColumns` resets the row count, so read it before detaching.
             const size_t num_rows = chunk.getNumRows();
             auto columns = chunk.detachColumns();
             for (size_t position : *positions_to_convert)
@@ -586,8 +582,7 @@ private:
             chunk.setColumns(std::move(columns), num_rows);
         }
 
-        /// Both headers are fixed for the lifetime of the exchange, so the set is resolved once. It is
-        /// empty for every stream whose announced types already agree.
+        /// Both headers are fixed for the lifetime of the exchange, so the set is resolved once.
         void resolvePositionsToConvert()
         {
             positions_to_convert.emplace();

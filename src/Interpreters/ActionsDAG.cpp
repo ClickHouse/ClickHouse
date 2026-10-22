@@ -5565,8 +5565,7 @@ ActionsDAG ActionsDAG::deserialize(
             if (!node.children.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized input can't have children");
 
-            /// The type encoding omits the aggregate state variant, so it is taken from the actual input
-            /// column when the name binds to exactly one; the types derived from an input follow it.
+            /// The type encoding omits the aggregate state variant; take it from the actual input column.
             if (auto it = actual_input_types.find(node.result_name); it != actual_input_types.end() && it->second.first == 1)
                 adopt_state_variant(node, it->second.second);
         }
@@ -5592,8 +5591,7 @@ ActionsDAG ActionsDAG::deserialize(
             auto is_lambda = [](const Node * child)
             { return typeid_cast<const DataTypeFunction *>(child->result_type.get()) != nullptr; };
 
-            /// A lambda is built for the wire types of its arguments, so the other arguments of a higher-order
-            /// function whose state variant was adopted are cast back to their wire types for this function.
+            /// A lambda is built for the wire types of its arguments, so adopted arguments are cast back for it.
             if (!(column_flags & 4) && std::ranges::any_of(node.children, is_lambda))
             {
                 std::unordered_map<const Node *, const Node *> casts;

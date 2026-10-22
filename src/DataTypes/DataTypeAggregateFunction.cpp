@@ -597,9 +597,7 @@ bool differsOnlyByAggregateStateVariant(const DataTypePtr & from, const DataType
     if (!hasAggregateFunctionType(from) || !hasAggregateFunctionType(to))
         return false;
 
-    /// A state at the top level compares by its normalized state type, which additionally tolerates
-    /// equivalent spellings of the argument types. `equalsIgnoringVariant` is a method on the outer
-    /// type, so a state nested in a container can only be compared through the encoding.
+    /// `equalsIgnoringVariant` compares only a top-level state; a nested one is compared by its encoding.
     if (const auto * to_aggregate = typeid_cast<const DataTypeAggregateFunction *>(to.get()))
         return to_aggregate->equalsIgnoringVariant(*from);
 

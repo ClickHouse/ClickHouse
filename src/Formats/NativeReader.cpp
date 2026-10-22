@@ -280,8 +280,6 @@ Block NativeReader::read()
                     /// This can happen when external sort spills blocks to disk: the header carries the Window variant from the query plan,
                     /// but `NativeReader` deserializes the type name and resolves it via `AggregateFunctionFactory`, which always produces the
                     /// Aggregation variant.
-                    /// The state may also be nested in a container type, which the announced type
-                    /// does not distinguish either.
                     bool convertible_agg_variant = differsOnlyByAggregateStateVariant(column.type, header_column.type);
 
                     if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
