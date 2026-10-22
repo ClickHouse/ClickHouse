@@ -58,6 +58,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , add_minmax_index_for_block_offset_column(other.add_minmax_index_for_block_offset_column)
     , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
+    , lookup_indices(other.lookup_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
     , minmax_count_projection(
@@ -94,6 +95,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     add_minmax_index_for_block_offset_column = other.add_minmax_index_for_block_offset_column;
     escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
+    lookup_indices = other.lookup_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
     if (other.minmax_count_projection)
@@ -274,6 +276,11 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
     secondary_indices = std::move(secondary_indices_);
 }
 
+void StorageInMemoryMetadata::setLookupIndices(IndicesDescription lookup_indices_)
+{
+    lookup_indices = std::move(lookup_indices_);
+}
+
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
 {
     constraints = std::move(constraints_);
@@ -349,6 +356,16 @@ const IndicesDescription & StorageInMemoryMetadata::getSecondaryIndices() const
 bool StorageInMemoryMetadata::hasSecondaryIndices() const
 {
     return !secondary_indices.empty();
+}
+
+const IndicesDescription & StorageInMemoryMetadata::getLookupIndices() const
+{
+    return lookup_indices;
+}
+
+bool StorageInMemoryMetadata::hasLookupIndices() const
+{
+    return !lookup_indices.empty();
 }
 
 const ConstraintsDescription & StorageInMemoryMetadata::getConstraints() const
@@ -1024,6 +1041,10 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
+            const String implicit_index_name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name;
+            if (lookup_indices.has(implicit_index_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add implicit index {} because a lookup index uses this reserved index name", implicit_index_name);
+
             try
             {
                 /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
@@ -1077,6 +1098,9 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
         static const MergeTreeSettings default_settings;
         MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+
+        if (lookup_indices.has(index.name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add implicit index {} because a lookup index uses this reserved index name", index.name);
 
         secondary_indices.push_back(std::move(index));
     };
