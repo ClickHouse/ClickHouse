@@ -4525,6 +4525,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
                 && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
+            /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+            /// a scale-0 decimal compares the same and is not stepped.
+            if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
+                && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
+            {
+                if (const_value.getType() == Field::Types::Int64)
+                    const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
+                else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
+                    const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<UInt64>()), 0);
+            }
+
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
                 if (const_value.getType() == Field::Types::String)
