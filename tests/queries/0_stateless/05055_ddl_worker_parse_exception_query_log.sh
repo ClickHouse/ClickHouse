@@ -57,17 +57,27 @@ fi
 grep -qF "TOO_DEEP_RECURSION" <<< "${worker_error}"
 echo "worker parse limit enforced"
 
+# `DDLTaskBase::parseQueryFromEntry` now rejects the entry before `executeQuery` is reached.
+# Exercise its exception logging with a secondary query, whose text size is also unlimited.
+# Query-level settings let the client parse first, then send the lower limits to the server.
+secondary_query="SELECT ${deep_expression/x/number} FROM numbers(1)
+    SETTINGS max_query_size = ${QUERY_SIZE_LIMIT}, max_parser_depth = ${PARSER_DEPTH_LIMIT}"
+if secondary_error=$(${CLICKHOUSE_CLIENT} \
+    --query_id="${QUERY_ID}_secondary" \
+    --query_kind=secondary_query \
+    --query "${secondary_query}" 2>&1); then
+    echo "The secondary query parse failure was expected" >&2
+    exit 1
+fi
+
+grep -qF "TOO_DEEP_AST" <<< "${secondary_error}"
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT count() > 0 AND countIf(notEmpty(query) AND position(query, 'CREATE TABLE') > 0) = count()
+    SELECT count() > 0 AND countIf(startsWith(query, 'SELECT array(') AND length(query) = ${QUERY_SIZE_LIMIT}) = count()
     FROM system.query_log
     WHERE type = 'ExceptionBeforeStart'
-        AND initial_query_id = '${QUERY_ID}'
-        AND initial_query_id IN
-        (
-            SELECT query_id
-            FROM system.query_log
-            WHERE current_database = currentDatabase() AND query_id = '${QUERY_ID}'
-        )
-        AND position(exception, 'TOO_DEEP_RECURSION') > 0
+        AND query_id = '${QUERY_ID}_secondary'
+        AND current_database = currentDatabase()
+        AND position(exception, 'TOO_DEEP_AST') > 0
 "
