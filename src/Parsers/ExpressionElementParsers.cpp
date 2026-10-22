@@ -47,8 +47,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-
-#include <algorithm>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 

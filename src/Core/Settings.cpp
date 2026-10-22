@@ -9944,7 +9944,8 @@ A dotted table path such as `db.ns.table` is always parsed as table `ns.table` o
 the quoted name ``db.`ns.table` ``; this does not depend on the setting. When the setting is enabled, the
 analyzer additionally:
 - resolves a two-part name `a.b` in a table expression both as table `b` of database `a` and as table `a.b`
-  of the current database, and fails with `AMBIGUOUS_IDENTIFIER` when both exist;
+  of the current database, and fails with `AMBIGUOUS_IDENTIFIER` when both exist. Database `a` must exist in
+  both cases; when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists;
 - lets a column qualifier span the parts of such a table name, so `ns.table.column` and
   `db.ns.table.column` refer to a column of table `ns.table`.
 )", EXPERIMENTAL, \

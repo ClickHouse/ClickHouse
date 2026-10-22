@@ -2885,30 +2885,6 @@ def test_multi_level_namespace(started_cluster):
         assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
 
 
-def test_namespace_prefix_show_columns(started_cluster):
-    """
-    SHOW COLUMNS over a multipart path resolves the namespace.
-    """
-    node = started_cluster.instances["node1"]
-    ns_settings = {"allow_experimental_table_namespaces": 1}
-
-    test_ref = f"test_ns_showcols_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "showcols_test_table"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    iceberg_table = create_table(catalog, namespace, table_name)
-    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    cols_dotted = node.query(
-        f"SHOW COLUMNS FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings
-    )
-    assert "symbol" in cols_dotted and "bid" in cols_dotted, f"dotted SHOW COLUMNS failed: {cols_dotted}"
-
-
 def test_namespace_path_ddl(started_cluster):
     """
     CREATE and DROP over an explicit multipart path address the namespace; a

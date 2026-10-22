@@ -2183,8 +2183,9 @@ SELECT * FROM catalog_name.`namespace.table`;
 
 You can also spell out every part with dots:
 
-- `db.ns.table` (three or more parts) always means the table path `ns.table`
-  inside database `db`.
+- `db.ns.table` (three or more parts) is parsed as the table path `ns.table`
+  inside database `db`; with `allow_experimental_table_namespaces` enabled it is
+  then subject to the same two-part rule as `a.b` below, with `a` = `db`.
 - With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
   table expression is resolved both as table `b` of database `a` and as table
   `a.b` of the current database. Database `a` must
