@@ -6,6 +6,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/IDisk.h>
 #include <base/types.h>
@@ -140,7 +141,22 @@ String DiskWithPath::validatePathAndGetAsRelative(const String & path)
     /// If path is absolute we should keep it as relative inside disk, so disk will look like
     /// an ordinary filesystem with root. `relative_path` strips the whole root: the `/` on POSIX,
     /// and on Windows also a drive (`C:/`) or a UNC prefix (`//server/`), which `substr(1)` would not.
-    return pathToGenericString(pathFromString(lexically_normal_path).relative_path());
+    const auto fs_path = pathFromString(lexically_normal_path);
+
+    /// Stripping a root name loses which drive or share the path is on, and a disk has one root only:
+    /// the built-in `local` disk is rooted at `/`, which is the root of the current drive. A path on
+    /// another drive or share would silently name the same relative path on the current drive, so it
+    /// is refused. Drive letters and server names are case-insensitive. On POSIX the root name is always empty.
+    const String root_name = pathToGenericString(fs_path.root_name());
+    const String current_root_name = pathToGenericString(fs::current_path().root_name());
+    if (!std::ranges::equal(root_name, current_root_name, [](char a, char b) { return toLowerIfAlphaASCII(a) == toLowerIfAlphaASCII(b); }))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Path {} is not on the drive of the current directory ({}), which is the only one a disk can address",
+            path,
+            current_root_name);
+
+    return pathToGenericString(fs_path.relative_path());
 }
 
 String DiskWithPath::normalizePathAndGetAsRelative(const String & messyPath)
