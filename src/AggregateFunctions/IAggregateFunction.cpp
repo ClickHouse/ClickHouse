@@ -178,6 +178,23 @@ void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place
     insertResultInto(place, to, arena);
 }
 
+void IAggregateFunction::addBatchSparseSinglePlace(
+    size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+    const auto * values = &column_sparse.getValuesColumn();
+    const auto & offsets = column_sparse.getOffsetsData();
+
+    auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+    auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+    size_t num_defaults = (row_end - row_begin) - (to - from);
+    if (from < to)
+        addBatchSinglePlace(from, to, place, &values, arena, -1);
+    if (num_defaults > 0)
+        addManyDefaults(place, &values, num_defaults, arena);
+}
+
 void IAggregateFunction::predictValues(
     ConstAggregateDataPtr __restrict /* place */,
     IColumn & /*to*/,

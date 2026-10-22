@@ -97,6 +97,19 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             },
         },
         {
+            # The keys of the set are unique and incompressible on disk (the hashes of random strings), so its
+            # runs occupy real disk space.
+            "query": "SELECT count() FROM numbers(10) WHERE toString(number) IN (SELECT randomPrintableASCII(96) FROM numbers(1024 * 1024))",
+            "settings": {
+                "max_bytes_before_external_set": "6M",
+                "max_bytes_ratio_before_external_set": 0,
+                # The spill triggers on the tracked query memory, so the thread-local untracked buffers must
+                # be flushed; a single thread keeps the runs a predictable few MB.
+                "max_untracked_memory": 0,
+                "max_threads": 1,
+            },
+        },
+        {
             "query": "SELECT * FROM numbers(10 * 1024 * 1024) t1 JOIN numbers(10 * 1024 * 1024) t2 USING number",
             "settings": {
                 "max_bytes_in_join": "4M",

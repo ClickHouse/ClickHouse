@@ -15,4 +15,6 @@ Granules: 1/2
 1
 -- Nullable(String) path, cast to String
 Granules: 2/2
+Name: index_document_typename
+Granules: 1/2
 1
