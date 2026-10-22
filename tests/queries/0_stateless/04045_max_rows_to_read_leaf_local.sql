@@ -1,6 +1,9 @@
 -- max_rows_to_read_leaf should not apply to local (non-distributed) queries
 -- See https://github.com/ClickHouse/ClickHouse/issues/99268
 
+-- parallel replicas make a query distributed, so they are enabled only where the test asks for them
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_leaf_limit;
 CREATE TABLE t_leaf_limit (number UInt32) ENGINE = MergeTree ORDER BY number;
 INSERT INTO t_leaf_limit SELECT number FROM numbers(10000000);
