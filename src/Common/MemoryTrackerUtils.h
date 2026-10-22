@@ -25,6 +25,9 @@ Int64 getCurrentQueryMemoryUsage();
 /// The current query deliberately leaves memory to something that outlives it (e.g. the data of an in-memory table).
 void setCurrentQueryMemoryDriftExpected();
 
+/// `size` bytes the current query allocated now belong to the server, see `MemoryTracker::handOverToServer`.
+void handOverCurrentQueryMemoryToServer(Int64 size);
+
 /// The tracker of the user the current thread's memory is charged to, or `nullptr`.
 MemoryTracker * getCurrentUserMemoryTracker();
 
