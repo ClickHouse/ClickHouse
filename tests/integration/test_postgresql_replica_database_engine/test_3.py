@@ -3939,10 +3939,12 @@ def test_attach_table_snapshot_interrupted_with_tables_list(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
-def test_attach_table_keeps_transaction_committed_at_snapshot_position(started_cluster):
-    # A transaction that writes before `ATTACH TABLE` creates the temporary replication slot and commits while
-    # the slot waits for it is not in the snapshot, although its change precedes the snapshot position in WAL.
-    # It must be applied from the replication stream, because it commits at the snapshot position.
+def test_attach_table_keeps_transaction_committed_after_snapshot_position(started_cluster):
+    # A transaction that writes before the snapshot position of an attached table and commits after it is not in
+    # the snapshot, so its changes must be applied from the replication stream, although they precede the snapshot
+    # position in WAL. PostgreSQL builds the snapshot of a new replication slot in steps: it waits for the
+    # transactions running when it starts (`first`), then for the ones running after them (`second`). A transaction
+    # that starts in between (`third`) is decoded in full instead, and is not waited for.
     table_a = "commit_position_a"
     table_b = "commit_position_b"
     mat_db = "commit_position_database"
@@ -3963,33 +3965,52 @@ def test_attach_table_keeps_transaction_committed_at_snapshot_position(started_c
     )
     check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
 
-    # The table is published before the transaction writes, so that its change is in the replication stream.
+    # The table is published before the transactions write, so that their changes are in the replication stream.
     cursor = pg_manager.get_db_cursor()
     publication = get_single_publication(cursor)
     cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY {table_b}')
 
-    writer = get_postgres_conn(
-        ip=started_cluster.postgres_ip,
-        port=started_cluster.postgres_port,
-        database=True,
-        auto_commit=False,
-    )
-    writer_cursor = writer.cursor()
-    writer_cursor.execute(f"INSERT INTO {table_b} VALUES (10, 10)")
+    def begin_writing(key):
+        conn = get_postgres_conn(
+            ip=started_cluster.postgres_ip,
+            port=started_cluster.postgres_port,
+            database=True,
+            auto_commit=False,
+        )
+        conn_cursor = conn.cursor()
+        conn_cursor.execute(f"INSERT INTO {table_b} VALUES ({key}, {key})")
+        conn_cursor.execute("SELECT txid_current()")
+        return conn, conn_cursor.fetchone()[0]
 
+    def wait_until_waited_for(xid):
+        for _ in range(60):
+            cursor.execute(
+                f"SELECT count(*) FROM pg_locks WHERE locktype = 'transactionid' "
+                f"AND transactionid::text = '{xid}' AND NOT granted"
+            )
+            if cursor.fetchone()[0] > 0:
+                return
+            time.sleep(1)
+        raise AssertionError(f"transaction {xid} is not waited for")
+
+    first, first_xid = begin_writing(10)
     attach_thread = threading.Thread(
         target=lambda: instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
     )
     attach_thread.start()
-    # The temporary replication slot cannot export its snapshot until the open transaction ends.
-    wait_for_replication_slot(cursor, expected_count=2)
-    writer.commit()
-    writer.close()
+    wait_until_waited_for(first_xid)
+    second, second_xid = begin_writing(11)
+    first.commit()
+    wait_until_waited_for(second_xid)
+    third, _ = begin_writing(12)
+    second.commit()
     attach_thread.join()
+    third.commit()
+    for conn in (first, second, third):
+        conn.close()
 
-    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(11, 19) AS i")
     check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
-    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+    assert 13 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
 
     pg_manager.drop_materialized_db(mat_db)
 
