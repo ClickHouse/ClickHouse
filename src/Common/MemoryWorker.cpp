@@ -572,6 +572,7 @@ Int64 MemoryWorker::getJemallocAllocated()
 MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 {
     MemoryUsage usage;
+    [[maybe_unused]] bool jemalloc_stats_refreshed = false;
 
     switch (source)
     {
@@ -587,6 +588,7 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
             epoch_mib.setValue(0);
+            jemalloc_stats_refreshed = true;
             usage.resident = resident_mib.getValue();
             break;
 #else
@@ -605,6 +607,17 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// sanitizer overhead (redzones, quarantine), but RSS does, so use sanitizer allocator bytes.
     /// RSS is still checked against the hard limit via `MemoryTracker::updateRSS`.
     usage.allocated = __sanitizer_get_current_allocated_bytes();
+#elif USE_JEMALLOC
+    /// Every allocation of `Allocator` goes through jemalloc, and `stats.allocated` counts the bytes
+    /// handed out to the application even if their pages are not touched yet, while the resident
+    /// memory does not include such pages. Correcting the tracker down to the resident memory alone
+    /// would forget memory that is allocated but not yet used and admit allocations past
+    /// `max_server_memory_usage` until the process is killed by the OOM killer. Correcting it down to
+    /// `stats.allocated` still removes the drift: bytes counted in the tracker without any allocation
+    /// behind them.
+    if (!jemalloc_stats_refreshed)
+        epoch_mib.setValue(0);
+    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue());
 #else
     usage.allocated = usage.resident;
 #endif
