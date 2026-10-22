@@ -120,6 +120,34 @@ auto expandAtomGroups(Elements && elements)
     return std::views::all(std::forward<Elements>(elements)) | std::views::transform(atoms_of) | std::views::join;
 }
 
+/// Calls `apply(atom, positive)` for every atom of `rpn`; `positive` is false for an atom under an odd number of `NOT`s.
+template <typename Elements, typename Apply>
+void forEachAtomWithPolarity(Elements & rpn, Apply && apply)
+{
+    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
+    std::vector<bool> positive_stack = {true};
+    for (auto it = rpn.rbegin(); it != rpn.rend(); ++it)
+    {
+        auto & element = *it;
+        chassert(!positive_stack.empty());
+        bool positive = positive_stack.back();
+        positive_stack.pop_back();
+
+        if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+            positive_stack.push_back(!positive);
+        else if (element.function == KeyCondition::RPNElement::FUNCTION_AND || element.function == KeyCondition::RPNElement::FUNCTION_OR)
+            positive_stack.insert(positive_stack.end(), {positive, positive});
+        else
+        {
+            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
+            for (auto & atom : expandAtomGroups(std::span(&element, 1)))
+                apply(atom, positive);
+        }
+    }
+
+    chassert(positive_stack.empty());
+}
+
 }
 
 
@@ -1857,30 +1885,11 @@ bool KeyCondition::hasUnknownAtoms() const
 KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
 {
     KeyCondition result = *this;
-
-    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
-    std::vector<bool> positive_stack = {true};
-    for (auto it = result.rpn.rbegin(); it != result.rpn.rend(); ++it)
+    forEachAtomWithPolarity(result.rpn, [](RPNElement & atom, bool positive)
     {
-        RPNElement & element = *it;
-        chassert(!positive_stack.empty());
-        bool positive = positive_stack.back();
-        positive_stack.pop_back();
-
-        if (element.function == RPNElement::FUNCTION_NOT)
-            positive_stack.push_back(!positive);
-        else if (element.function == RPNElement::FUNCTION_AND || element.function == RPNElement::FUNCTION_OR)
-            positive_stack.insert(positive_stack.end(), {positive, positive});
-        else
-        {
-            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
-            for (auto & atom : expandAtomGroups(std::span<RPNElement>(&element, 1)))
-                if (atom.function == RPNElement::FUNCTION_UNKNOWN)
-                    atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
-        }
-    }
-
-    chassert(positive_stack.empty());
+        if (atom.function == RPNElement::FUNCTION_UNKNOWN)
+            atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+    });
     return result;
 }
 
@@ -3620,8 +3629,7 @@ bool KeyCondition::setElementsContainNaN(const Columns & set_columns, const SetA
 /// representation of the set element type carries the same semantics as the key type. Counter-examples
 /// (see `03916_has_to_in`): `DateTime` stores seconds while `Date` stores days, so
 /// `has([toDateTime(...)], date_key)` is false at runtime while the cast maps the element onto the
-/// matching `Date`; a `String` element never equals an `Enum` value even when it names one of its
-/// labels; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
+/// matching `Date`; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
 /// prunes rows that satisfy the predicate under `notHas`. Allow only pairs where the raw comparison
 /// provably matches the cast:
 ///   - identical types (after stripping `Nullable` and `LowCardinality`);
@@ -5835,6 +5843,17 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
         && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
+    /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+    /// a scale-0 decimal compares the same and is not stepped.
+    if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
+        && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
+    {
+        if (const_value.getType() == Field::Types::Int64)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
+        else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<UInt64>()), 0);
+    }
+
     if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
     {
         if (const_value.getType() == Field::Types::String)
@@ -7086,12 +7105,14 @@ BoolMask KeyCondition::checkInRange(
 /// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
 /// monotonic (value fits in the target type), the Field value doesn't change.
 /// Similarly for Int8/16/32/64 (all stored as Int64).
+/// `DateTime` is a number of seconds stored as UInt32 (UInt64 in Field), so `toUnixTimestamp(DateTime)`
+/// and casts between `DateTime` and unsigned integers don't change the Field value either.
 /// In such cases we can skip the expensive function application (which creates columns and executes
 /// the function via the full column execution machinery) and just keep the original Field value.
 ///
-/// IMPORTANT: This must only return true for pure type conversion functions (_CAST, toUInt*, toInt*),
+/// IMPORTANT: This must only return true for pure type conversion functions (see `is_cast`),
 /// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
-static bool functionIsIntegerCastPreservingFieldRepresentation(
+static bool functionIsCastPreservingFieldRepresentation(
     const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     /// Only type conversion functions preserve Field values across integer type boundaries.
@@ -7099,7 +7120,8 @@ static bool functionIsIntegerCastPreservingFieldRepresentation(
     const auto & name = func->getName();
     bool is_cast = (name == "_CAST" || name == "CAST"
         || name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64"
-        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64");
+        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64"
+        || name == "toDateTime" || name == "toUnixTimestamp");
 
     if (!is_cast)
         return false;
@@ -7108,23 +7130,17 @@ static bool functionIsIntegerCastPreservingFieldRepresentation(
     if (from_type->isNullable() || to_type->isNullable())
         return false;
 
-    auto from_id = from_type->getTypeId();
-    auto to_id = to_type->getTypeId();
+    WhichDataType from(from_type);
+    WhichDataType to(to_type);
 
-    auto is_unsigned_int = [](TypeIndex id)
-    {
-        return id == TypeIndex::UInt8 || id == TypeIndex::UInt16 || id == TypeIndex::UInt32 || id == TypeIndex::UInt64;
-    };
+    /// `Date`, `Date32` and `DateTime64` must not be added here: `toDateTime(Date)`, `toUnixTimestamp(Date)`
+    /// and `toUnixTimestamp(DateTime64)` change the value, and this check only looks at the name and the types.
+    auto is_uint_or_datetime = [](WhichDataType which) { return which.isNativeUInt() || which.isDateTime(); };
 
-    auto is_signed_int = [](TypeIndex id)
-    {
-        return id == TypeIndex::Int8 || id == TypeIndex::Int16 || id == TypeIndex::Int32 || id == TypeIndex::Int64;
-    };
-
-    /// Check that both types are in the same integer family before calling
+    /// Check that both types are in the same family before calling
     /// getSizeOfValueInMemory, which throws for variable-length types like String.
-    bool same_family = (is_unsigned_int(from_id) && is_unsigned_int(to_id))
-        || (is_signed_int(from_id) && is_signed_int(to_id));
+    bool same_family = (is_uint_or_datetime(from) && is_uint_or_datetime(to))
+        || (from.isNativeInt() && to.isNativeInt());
 
     if (!same_family)
         return false;
@@ -7196,7 +7212,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
             bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
-                && functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
+                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type);
 
             if (!skip_apply)
             {
@@ -8824,13 +8840,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                           std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
-    for (auto & rpn_element : expandAtomGroups(rpn))
+    forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
+        /// A lookup can only rule out the positive form of an atom (`x = c` of `x != c`), and a row group is skipped
+        /// only when the whole condition cannot be true, so it is useless for an atom whose positive form ends up inverted.
+        const bool negated = rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET;
+        if (negated == positive)
+            return;
+
         if (!rpn_element.monotonic_functions_chain.empty())
         {
             /// We could apply the inverse functions to get the key value when possible.
             /// This is currently not implemented.
-            continue;
+            return;
         }
 
         KeyCondition::BloomFilterData::HashesForColumns hashes;
@@ -8841,14 +8864,14 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
             // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
             if (rpn_element.range.left != rpn_element.range.right)
             {
-                continue;
+                return;
             }
 
             auto hashed_value = hash_one(rpn_element.getKeyColumn(), rpn_element.range.left);
 
             if (!hashed_value)
             {
-                continue;
+                return;
             }
 
             hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
@@ -8906,12 +8929,12 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
             if (hashes.empty())
             {
-                continue;
+                return;
             }
 
             rpn_element.bloom_filter_data = {std::move(hashes), std::move(key_columns_for_element)};
         }
-    }
+    });
 }
 
 bool KeyCondition::mayBeTrueInRange(

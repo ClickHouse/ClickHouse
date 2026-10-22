@@ -21,7 +21,7 @@ function thread_insert()
 {
     set -eu
     val=1
-    while true; do
+    while clickhouse_test_time_left; do
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
@@ -208,7 +208,7 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -eu
-    while true; do
+    while clickhouse_test_time_left; do
         output=$(
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
