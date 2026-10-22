@@ -832,7 +832,7 @@ void StorageView::updateReferencedTables(const ASTCreateQuery & create, ContextP
     StorageInMemoryMetadata new_metadata = *metadata;
     new_metadata.setSelectQuery(getViewSelectQuery(create));
     if (!is_parameterized_view && create.columns_list && create.columns_list->columns)
-        new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, local_context, LoadingStrictnessLevel::ATTACH));
+        new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list, local_context, LoadingStrictnessLevel::ATTACH));
     setInMemoryMetadata(new_metadata);
 }
 

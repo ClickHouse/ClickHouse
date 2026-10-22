@@ -1110,7 +1110,7 @@ void StorageMaterializedView::updateReferencedTables(const ASTCreateQuery & crea
     if (create.refresh_strategy)
         new_metadata.setRefresh(create.refresh_strategy->clone());
     if (create.columns_list && create.columns_list->columns)
-        new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, local_context, LoadingStrictnessLevel::ATTACH));
+        new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list, local_context, LoadingStrictnessLevel::ATTACH));
     setInMemoryMetadata(new_metadata);
 
     if (!has_inner_table)
