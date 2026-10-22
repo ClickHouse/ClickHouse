@@ -1337,6 +1337,7 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ALTER TABLE ... MODIFY COMMENT](/reference/statements/alter/comment)  | Adds, modifies, or removes comments to the table, regardless if it was set before or not. |
 | [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
+| [ALTER HANDLER](/reference/statements/create/handler#alter-handler) | Modifies a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler). |
 
 ## Combining actions in one `ALTER` {#combining-actions}
 
@@ -3611,10 +3612,6 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
     documentation["ALTER TABLE ... APPLY PATCHES"] =
     {
         .description = R"DOCS_MD(
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge/>
-
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 ```

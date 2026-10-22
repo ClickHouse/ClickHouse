@@ -27,6 +27,7 @@
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -52,6 +53,7 @@ namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergManifestFileIteratorCreateMicroseconds;
 };
 
 namespace DB::Iceberg
@@ -264,6 +266,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Int32 table_snapshot_schema_id_,
     const std::atomic<bool> * stop_flag_)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFileIteratorCreateMicroseconds);
+
     insertRowToLogTable(
         context_,
         [&] { return manifest_file_deserializer_->getMetadataContent(); },
@@ -559,6 +563,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                     type_id == DB::TypeIndex::Tuple || type_id == DB::TypeIndex::Map || type_id == DB::TypeIndex::Array
                     || type_id == DB::TypeIndex::Variant)
                     continue;
+
+                if (DB::removeNullable(column_type)->getTypeId() == DB::TypeIndex::UUID)
+                {
+                    if (auto point = deserializeUUIDPointFromBinaryRepr(left_str, right_str))
+                        hyperrectangles.emplace(column_id, DB::Range(*point));
+                    continue;
+                }
 
                 auto left = deserializeFieldFromBinaryRepr(left_str, column_type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
