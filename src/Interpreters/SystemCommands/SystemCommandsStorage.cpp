@@ -167,6 +167,7 @@ void StorageCommands::syncMerges()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto & merge_tree = getMergeTreeWithManualSelector(table, table_id, "SYNC MERGES");
 
+    getContext()->onQueryExecutionStarted();
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
@@ -224,6 +225,7 @@ void StorageCommands::loadOrUnloadPrimaryKeysImpl(bool load)
         if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
         {
             LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
+            getContext()->onQueryExecutionStarted();
             load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
         }
         else
@@ -237,6 +239,7 @@ void StorageCommands::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
+        getContext()->onQueryExecutionStarted();
         for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
@@ -264,7 +267,10 @@ void StorageCommands::flushDistributed(ASTSystemQuery & query)
     /// otherwise destroy the table while flushClusterNodesAllData is still running.
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(table.get()))
+    {
+        getContext()->onQueryExecutionStarted();
         storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -283,6 +289,7 @@ void StorageCommands::flushObjectStorageQueue(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
 
+    context->onQueryExecutionStarted();
     queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
@@ -375,6 +382,7 @@ void registerSystemCommandsStorage(SystemCommandFactory & factory)
 
         /// We wait 2 times here because a background blob cleanup round may already be running
         /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
+        context.getContext()->onQueryExecutionStarted();
         object_disk->waitBlobsCleanup();
         object_disk->waitBlobsCleanup();
     });
@@ -382,6 +390,7 @@ void registerSystemCommandsStorage(SystemCommandFactory & factory)
     factory.registerSimpleCommand(Type::FLUSH_LOGS, AccessType::SYSTEM_FLUSH_LOGS, [](ASTSystemQuery & query, SystemCommandContext & context)
     {
         auto system_logs = context.getContext()->getSystemLogs();
+        context.getContext()->onQueryExecutionStarted();
         system_logs.flush(query.tables);
     });
 
@@ -399,6 +408,7 @@ void registerSystemCommandsStorage(SystemCommandFactory & factory)
             context.getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
         }
 
+        context.getContext()->onQueryExecutionStarted();
         queue->flush(tables);
     });
 
@@ -408,6 +418,7 @@ void registerSystemCommandsStorage(SystemCommandFactory & factory)
         [](ASTSystemQuery & query, SystemCommandContext & context)
         {
             context.getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
+            context.getContext()->onQueryExecutionStarted();
             /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
             return Unfreezer(context.getContext()).systemUnfreeze(query.backup_name);
         });

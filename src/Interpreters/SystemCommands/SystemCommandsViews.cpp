@@ -242,7 +242,9 @@ void registerSystemCommandsViews(SystemCommandFactory & factory)
 
     register_command(Type::WAIT_VIEW, [](ASTSystemQuery &, ViewCommands & commands)
     {
-        for (const auto & task : commands.getRefreshTasks())
+        auto tasks = commands.getRefreshTasks();
+        commands.getContext()->onQueryExecutionStarted();
+        for (const auto & task : tasks)
             task->wait(commands.getContext());
     });
 

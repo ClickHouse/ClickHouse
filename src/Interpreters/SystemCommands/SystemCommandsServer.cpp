@@ -229,6 +229,7 @@ void registerSystemCommandsServer(SystemCommandFactory & factory)
 
     register_local_command(Type::WAIT_FAILPOINT, AccessType::SYSTEM_FAILPOINT, [](ASTSystemQuery & query, SystemCommandContext & context)
     {
+        context.getContext()->onQueryExecutionStarted();
         if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
         {
             LOG_TRACE(context.log, "Waiting for failpoint {} to pause", query.fail_point_name);

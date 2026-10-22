@@ -66,13 +66,12 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 
 void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
 {
-    if (query.database)
-    {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
-        return;
-    }
+    std::string resolved_name = query.database
+        ? loader.resolveDictionaryName(QualifiedTableName{query.getDatabase(), query.getTable()}, context)
+        : loader.resolveDictionaryName(query.getTable(), context);
 
-    loader.reloadDictionary(query.getTable(), context);
+    context->onQueryExecutionStarted();
+    loader.loadOrReload(resolved_name);
 }
 
 void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
@@ -102,6 +101,7 @@ void registerSystemCommandsReload(SystemCommandFactory & factory)
 
     factory.registerSimpleCommand(Type::RELOAD_DICTIONARIES, AccessType::SYSTEM_RELOAD_DICTIONARY, [](ASTSystemQuery &, SystemCommandContext & context)
     {
+        context.getContext()->onQueryExecutionStarted();
         executeCommandsAndThrowIfError({
             [&] { context.system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
             [&] { context.system_context->getEmbeddedDictionaries().reload(); }

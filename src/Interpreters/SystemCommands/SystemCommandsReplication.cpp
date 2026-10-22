@@ -101,6 +101,7 @@ void ReplicationCommands::restoreReplica()
 
     const auto & settings = getContext()->getSettingsRef();
 
+    getContext()->onQueryExecutionStarted();
     table_replicated_ptr->restoreMetadataInZooKeeper(
         ZooKeeperRetriesInfo{
             settings[Setting::keeper_max_retries],
@@ -123,6 +124,7 @@ void ReplicationCommands::restoreDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
 
+    getContext()->onQueryExecutionStarted();
     replicated_db->restoreDatabaseInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
@@ -182,6 +184,7 @@ StoragePtr ReplicationCommands::doRestartReplica(const StorageID & replica, bool
             table->is_being_restarted = false;
     });
     table->is_being_restarted = true;
+    getContext()->onQueryExecutionStarted();
     table->flushAndShutdown();
 
     /// The definition re-attached below was read back from this server's own metadata, so it must be
@@ -407,6 +410,7 @@ void ReplicationCommands::waitLoadingParts()
     if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
     {
         LOG_TRACE(log, "Waiting for loading of parts of table {}", table_id.getFullTableName());
+        getContext()->onQueryExecutionStarted();
         merge_tree->waitForOutdatedPartsToBeLoaded();
         LOG_TRACE(log, "Finished waiting for loading of parts of table {}", table_id.getFullTableName());
     }
@@ -423,7 +427,10 @@ void ReplicationCommands::waitQueryRunner()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     if (auto * query_runner = dynamic_cast<StorageQueryRunner *>(table.get()))
+    {
+        getContext()->onQueryExecutionStarted();
         query_runner->waitForQueriesToFinish(getContext()->getProcessListElement());
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command WAIT QUERY RUNNER is supported only for QueryRunner table, but got: {}", table->getName());
@@ -441,6 +448,7 @@ void ReplicationCommands::syncReplicatedDatabase(ASTSystemQuery & query)
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
+        getContext()->onQueryExecutionStarted();
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds(), query.sync_replica_mode))
         {
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
@@ -457,6 +465,7 @@ void ReplicationCommands::syncTransactionLog()
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+    getContext()->onQueryExecutionStarted();
     TransactionManager::instance().sync();
 }
 
@@ -484,6 +493,7 @@ bool trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const s
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
+        context_->onQueryExecutionStarted();
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
