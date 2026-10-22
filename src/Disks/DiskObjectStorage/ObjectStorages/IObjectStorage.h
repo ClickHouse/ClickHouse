@@ -133,8 +133,12 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     bool is_size_known = true;
     /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
-    /// False only for the skip_object_metadata placeholder.
+    /// False for the skip_object_metadata placeholder and for metadata made by `fromTableRecords`.
     bool is_fetched = true;
+    /// Made without a request from the records of a table whose files are never overwritten; a known size is exact.
+    bool is_from_table_records = false;
+    /// Content identity for the caches when `etag` is unusable; set only if every reader may share the cached bytes.
+    String immutable_content_id{};
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
@@ -158,6 +162,17 @@ struct ObjectMetadata
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+
+    std::optional<String> getContentCacheToken() const
+    {
+        if (isEtagUsableAsCacheKey())
+            return etag;
+        if (!immutable_content_id.empty())
+            return immutable_content_id;
+        return std::nullopt;
+    }
+
+    static ObjectMetadata fromTableRecords(std::optional<UInt64> size, String immutable_content_id = {});
 };
 
 struct DataLakeObjectMetadata;

@@ -3,6 +3,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/SecretString.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Parsers/IAST_fwd.h>
 #include <base/types.h>
@@ -36,5 +37,7 @@ struct ElasticsearchConfiguration
 
     static ElasticsearchConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
 };
+
+SecretArgumentsSpec elasticsearchSecretArguments();
 
 }

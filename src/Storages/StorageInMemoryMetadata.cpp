@@ -191,8 +191,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
     new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
     /// The analyze mode must reach every join the report walker can reach, including the joins of
-    /// this view's inner query.
+    /// this view's inner query. So must the mark of the automatic mode's plan with parallel replicas.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
+    new_context->setIsAutomaticParallelReplicasProbe(context->isAutomaticParallelReplicasProbe());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());

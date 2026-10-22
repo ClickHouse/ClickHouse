@@ -62,6 +62,8 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
+        /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
+        std::optional<time_t> response_date;
         bool seekable = false;
     };
 
@@ -296,6 +298,10 @@ public:
     const std::string & getCompressionMethod() const;
 
     std::optional<time_t> tryGetLastModificationTime();
+
+    /// The `Date` of the response which the file metadata came from, if the metadata is already known.
+    /// Does not send any request.
+    std::optional<time_t> tryGetResponseDateOfFileInfo() const { return file_info ? file_info->response_date : std::nullopt; }
 
     bool hasNotFoundURL() const { return has_not_found_url; }
 
