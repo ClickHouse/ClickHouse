@@ -522,7 +522,7 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
         auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
-        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
+        auto metadata_object = DB::Iceberg::getMetadataObjectParsed(
             metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
         return std::make_shared<FieldTypes>(getCurrentSchemaFieldTypes(metadata_object));
     });
