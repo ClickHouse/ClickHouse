@@ -3,6 +3,7 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -5482,13 +5483,37 @@ ActionsDAG ActionsDAG::deserialize(
     DeserializedSetsRegistry & registry,
     const ContextPtr & context,
     size_t max_type_complexity,
-    size_t nesting_depth)
+    size_t nesting_depth,
+    const SharedHeaders & actual_input_headers)
 {
     /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
     /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
     /// schema transforms deserialized with the global context).
 
     checkActionsDAGDeserializationDepth(nesting_depth);
+
+    std::unordered_map<std::string_view, std::pair<size_t, DataTypePtr>> actual_input_types;
+    for (const auto & header : actual_input_headers)
+    {
+        if (!header)
+            continue;
+
+        for (const auto & column : *header)
+        {
+            auto & [count, type] = actual_input_types[column.name];
+            ++count;
+            type = column.type;
+        }
+    }
+
+    auto adopt_state_variant = [](Node & node, const DataTypePtr & actual_type)
+    {
+        if (node.column || !actual_type || !differsOnlyByAggregateStateVariant(actual_type, node.result_type))
+            return false;
+
+        node.result_type = actual_type;
+        return true;
+    };
 
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
@@ -5537,6 +5562,11 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (!node.children.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized input can't have children");
+
+            /// The type encoding omits the aggregate state variant, so it is taken from the actual input
+            /// column when the name binds to exactly one; the types derived from an input follow it.
+            if (auto it = actual_input_types.find(node.result_name); it != actual_input_types.end() && it->second.first == 1)
+                adopt_state_variant(node, it->second.second);
         }
         else if (node.type == ActionType::COLUMN)
         {
@@ -5549,6 +5579,8 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias must have one children");
+
+            adopt_state_variant(node, node.children.front()->result_type);
         }
         else if (node.type == ActionType::FUNCTION)
         {
@@ -5600,7 +5632,7 @@ ActionsDAG ActionsDAG::deserialize(
                 if (const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_type.get()))
                     rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
 
-                if (!lhs_type->equals(*rhs_type))
+                if (!lhs_type->equals(*rhs_type) && !adopt_state_variant(node, node.function_base->getResultType()))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
                         function_name,
@@ -5613,6 +5645,9 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join must have one children");
+
+            if (auto array_type = getArrayJoinDataType(node.children.front()->result_type))
+                adopt_state_variant(node, array_type->getNestedType());
         }
         else
         {

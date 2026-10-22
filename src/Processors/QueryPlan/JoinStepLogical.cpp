@@ -2992,7 +2992,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         if (num_dags != 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        actions_dag = ActionsDAG::deserialize(
+            ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, /*nesting_depth=*/ 0, ctx.input_headers);
     }
     auto id_to_node = actions_dag.getIdToNode();
 

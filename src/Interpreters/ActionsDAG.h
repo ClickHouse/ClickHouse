@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
@@ -190,12 +191,14 @@ public:
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
     /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    /// `actual_input_headers` are the headers of the streams the DAG is executed over, if known.
     static ActionsDAG deserialize(
         ReadBuffer & in,
         DeserializedSetsRegistry & registry,
         const ContextPtr & context,
         size_t max_type_complexity = 0,
-        size_t nesting_depth = 0);
+        size_t nesting_depth = 0,
+        const SharedHeaders & actual_input_headers = {});
 
     static Node createAlias(const Node & child, std::string alias);
 
