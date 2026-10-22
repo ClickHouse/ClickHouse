@@ -9149,7 +9149,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzz(ast->children);
     }
 
-    if (auto * query_with_output = typeid_cast<ASTQueryWithOutput *>(ast.get()))
+    if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
     {
         if (query_with_output->out_file)
         {

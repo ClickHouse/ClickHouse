@@ -2743,7 +2743,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// `FORMAT Null` would make every side an empty vector (vacuous pass) and
     /// `FORMAT Pretty`/`JSONEachRow` would compare serializer output instead of
     /// row values. Skip such queries — the oracle only reasons about rows.
-    if (const auto * with_output = query_ast->as<ASTQueryWithOutput>())
+    if (const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(query_ast.get()))
     {
         if (with_output->format_ast || with_output->out_file)
         {
