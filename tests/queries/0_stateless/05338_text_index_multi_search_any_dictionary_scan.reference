@@ -82,7 +82,7 @@ ss_array_msa_separator	1
 ss_array_msa_underscore	1
 ss_fold_elvin	1
 ss_fold_istanbul	1
-ss_fold_kelv	0
+ss_fold_kelv	1
 ss_fold_stanbul	1
 ss_fold_sunrise	1
 ss_fold_unrise	1

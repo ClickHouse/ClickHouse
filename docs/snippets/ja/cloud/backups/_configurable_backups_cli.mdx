@@ -54,7 +54,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## 保持期間と頻度の変更 {#change-retention-and-frequency}
 
-`backup-config update` は、コンソールのフォームと同じ設定 (保持期間 (`--backup-retention-period-hours`) 、頻度 (`--backup-period-hours`) 、開始時刻 (`--backup-start-time`) ) を受け取り、適用後の構成を出力します。省略したフラグの値は現在の設定のまま維持されます:
+`backup-config update` は、コンソールのフォームと同じ設定 (保持期間 (`--backup-retention-period-hours`) 、頻度 (`--backup-period-hours`) 、開始時刻 (`--backup-start-time`) ) を受け取り、適用後の設定を出力します。省略したフラグの値は現在の設定のまま維持されます:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -69,6 +69,8 @@ clickhousectl cloud service backup-config update "$CH_ID" \
   "backupRetentionPeriodInHours": 48.0
 }
 ```
+
+頻度によって、最新の復元ポイントが最悪の場合にどれだけ古くなるか (RPO) が決まります。保持期間はバックアップデータを保持する長さを決めるもので、最新の復元ポイントが新しくなるわけではありません。たとえば、保持期間が24時間、頻度が48時間の場合、最新の復元ポイントが作成されたのは約48時間前ということもあります。
 
 変更は即座に反映されます。設定を読み出して確認してください:
 
