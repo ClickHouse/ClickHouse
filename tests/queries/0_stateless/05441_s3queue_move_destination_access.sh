@@ -23,6 +23,7 @@ user_create="s3queue_move_create_${db}"
 keeper_path="/s3queue_move_destination_access_${db}"
 src="http://localhost:11111/test/${db}_move_src/"
 dst="http://localhost:11111/test/${db}_move_dst/"
+backup="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 keys="after_processing_move_access_key_id = 'clickhouse', after_processing_move_secret_access_key = 'clickhouse'"
 azure_connection_string="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
 
@@ -31,6 +32,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster SYNC;
+    DROP TABLE IF EXISTS ${db}.t_backup SYNC;
     DROP TABLE IF EXISTS ${db}.mv SYNC;
     DROP ROW POLICY IF EXISTS p_${db} ON ${db}.t;
     DROP USER IF EXISTS ${user_alter}, ${user_create};
@@ -208,6 +210,24 @@ $CLICKHOUSE_CLIENT --user "${user_create}" --distributed_ddl_entry_format_versio
     -- { serverError ACCESS_DENIED }
 "
 
+echo "-- RESTORE of a queue with a destination, without WRITE on S3"
+
+# The restored definition comes from the backup, and the table is created by an internal query,
+# so the restore has to authorize the destination before it creates anything.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${db}.t_backup (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_backup', after_processing = 'move',
+        after_processing_move_uri = '${dst}', ${keys}
+"
+$CLICKHOUSE_CLIENT -q "BACKUP TABLE ${db}.t_backup TO ${backup} FORMAT Null"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.t_backup SYNC"
+$CLICKHOUSE_CLIENT -q "GRANT READ ON DISK TO ${user_create}"
+$CLICKHOUSE_CLIENT --user "${user_create}" -q "
+    RESTORE TABLE ${db}.t_backup FROM ${backup} SETTINGS structure_only = 1 FORMAT Null
+    -- { serverError ACCESS_DENIED }
+"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 't_backup'"
+
 echo "-- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3"
 
 # The same queries succeed with the grant, so `WRITE` on `S3` was the only missing one.
@@ -222,12 +242,16 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
         after_processing_move_uri = '${dst}', ${keys}
     AS SELECT 1::UInt8 AS x
 " && echo "materialized view with WRITE on S3: created"
+$CLICKHOUSE_CLIENT --user "${user_create}" -q "
+    RESTORE TABLE ${db}.t_backup FROM ${backup} SETTINGS structure_only = 1 FORMAT Null
+" && echo "RESTORE with WRITE on S3: restored"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
     DROP TABLE IF EXISTS ${db}.t_as_cluster SYNC;
+    DROP TABLE IF EXISTS ${db}.t_backup SYNC;
     DROP TABLE IF EXISTS ${db}.mv SYNC;
     DROP ROW POLICY IF EXISTS p_${db} ON ${db}.t;
     DROP USER IF EXISTS ${user_alter}, ${user_create};

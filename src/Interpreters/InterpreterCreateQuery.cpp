@@ -4147,21 +4147,7 @@ void InterpreterCreateQuery::checkQueueMoveDestinationAccess(const ASTCreateQuer
     if (internal)
         return;
 
-    auto check_storage = [this](const ASTStorage & storage)
-    {
-        if (storage.engine && storage.settings && (storage.engine->name == "S3Queue" || storage.engine->name == "AzureQueue"))
-            checkObjectStorageQueueMoveDestinationAccess(storage.settings->changes, getContext());
-    };
-
-    if (create.storage)
-        check_storage(*create.storage);
-
-    /// Inner engines of materialized views and `TimeSeries` tables.
-    if (create.targets)
-    {
-        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
-            check_storage(*inner_engine);
-    }
+    checkObjectStorageQueueMoveDestinationAccess(create, getContext());
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

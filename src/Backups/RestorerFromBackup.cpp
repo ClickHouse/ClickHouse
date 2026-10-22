@@ -26,6 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -402,6 +403,12 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The definition comes from the backup, and the table is created by an internal query that checks
+                /// nothing, so the move destination of a queue engine is authorized here, as for `CREATE`.
+                /// A queue engine replaced by `Null` has no move.
+                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
+                    checkObjectStorageQueueMoveDestinationAccess(create, context);
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)

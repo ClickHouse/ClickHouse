@@ -6,6 +6,7 @@
 namespace DB
 {
 
+class ASTCreateQuery;
 class RemoteHostFilter;
 
 /// The move destination of an `S3Queue` or `AzureQueue` table is the same data flow as
@@ -26,6 +27,10 @@ bool hasObjectStorageQueueMoveDestination(const SettingsChanges & changes);
 /// Throws `ACCESS_DENIED` if the current user has no unfiltered `WRITE` grant on the source of a move destination in the changes.
 /// It uses only the names and the values of the changes, so the table does not have to exist on this host.
 void checkObjectStorageQueueMoveDestinationAccess(const SettingsChanges & changes, const ContextPtr & context);
+
+/// The same for each `S3Queue` and `AzureQueue` engine of a definition: the engine of the table and the inner engines
+/// of a materialized view or a `TimeSeries` table. Used by `CREATE` and by `RESTORE`, whose definition comes from a backup.
+void checkObjectStorageQueueMoveDestinationAccess(const ASTCreateQuery & create, const ContextPtr & context);
 
 /// Throws `UNACCEPTABLE_URL` if `remote_url_allow_hosts` does not allow the destination of a move to another S3 bucket.
 /// The move builds its client directly, so the destination never passes `StorageS3Configuration::check`.
