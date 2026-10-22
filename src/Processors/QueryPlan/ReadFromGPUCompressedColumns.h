@@ -7,15 +7,18 @@
 
 #include <Core/SettingsEnums.h>
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageSnapshot.h>
 
 namespace DB
 {
 
-/** Reads the columns of whole `MergeTree` parts as the compressed blocks they are stored in and
-  * has the device expand and aggregate them, so that the host neither decompresses nor sends the
-  * values at full width.
+/** Reads the columns of `MergeTree` parts as the compressed blocks they are stored in and has the
+  * device expand and aggregate them, so that the host neither decompresses nor sends the values at
+  * full width. A keyed aggregation reads the ranges of marks the indexes left of a part, whole
+  * compressed blocks from the one each range starts in, and the device leaves the rows outside the
+  * range out of the blocks it expands.
   *
   * Without keys, each column of each part is reduced on its own and the step emits one row per
   * part, in the read's own header; the aggregation above it folds those rows. With keys, every
@@ -64,6 +67,13 @@ public:
         String description;
     };
 
+    /// A part to read: the ranges of its marks, or every row where there are none.
+    struct PartToRead
+    {
+        DataPartPtr part;
+        MarkRanges ranges;
+    };
+
     /// A `WHERE` the device evaluates before it groups a row, over columns read along with the
     /// keys and the values.
     struct DeviceFilter
@@ -81,7 +91,7 @@ public:
         std::vector<DerivedColumn> derived_,
         std::vector<AggregateToCompute> aggregates_,
         std::optional<DeviceFilter> filter_,
-        DataPartsVector parts_,
+        std::vector<PartToRead> parts_,
         StorageSnapshotPtr storage_snapshot_,
         ContextPtr context_,
         size_t batch_bytes_,
@@ -108,7 +118,7 @@ private:
     std::vector<AggregateToCompute> aggregates;
     std::optional<DeviceFilter> filter;
     std::optional<GroupFilter> group_filter;
-    DataPartsVector parts;
+    std::vector<PartToRead> parts;
 
     StorageSnapshotPtr storage_snapshot;
 

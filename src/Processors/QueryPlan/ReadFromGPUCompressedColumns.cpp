@@ -64,7 +64,7 @@ struct SharedState
     std::vector<AggregateToCompute> aggregates;
     std::optional<DeviceFilter> filter;
     std::optional<ReadFromGPUCompressedColumns::GroupFilter> group_filter;
-    DataPartsVector parts;
+    std::vector<ReadFromGPUCompressedColumns::PartToRead> parts;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     ReadSettings read_settings;
@@ -155,8 +155,9 @@ DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
 size_t automaticReaders(const SharedState & state)
 {
     const size_t expanding_readers = std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
-    for (const auto & part : state.parts)
+    for (const auto & part_to_read : state.parts)
     {
+        const DataPartPtr & part = part_to_read.part;
         for (const auto & key : state.keys)
         {
             if (!expandsOnDevice(*part, key.name, state.decompression, state.device_decompression_max_ratio))
@@ -258,7 +259,9 @@ protected:
 
         checkNotCancelled();
 
-        const DataPartPtr & part = state->parts[part_idx];
+        /// Without keys, every row of each part is read.
+        const DataPartPtr & part = state->parts[part_idx].part;
+        chassert(state->parts[part_idx].ranges.empty());
 
         MutableColumns result_columns = getPort().getHeader().cloneEmptyColumns();
         chassert(result_columns.size() == state->columns.size());
@@ -622,10 +625,20 @@ private:
     /// bytes all are.
     struct ColumnReader
     {
-        ColumnReader(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device)
+        ColumnReader(
+            const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device, bool in_ranges)
             : is_variable(isString(*column.type))
             , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
         {
+            if (in_ranges)
+            {
+                if (is_variable)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of varying width is read in ranges of marks for the GPU", column.name);
+                marks = MergeTreeCompressedBlockReader::loadMarks(part, column, read_settings);
+                compressed_bytes_of_part = part.getColumnSize(column.name).data_compressed;
+                rows_of_part = part.rows_count;
+            }
+
             if (on_device)
             {
                 blocks.emplace(part, column, read_settings);
@@ -662,6 +675,36 @@ private:
         size_t variable_rows_read = 0;
         bool sizes_done = false;
         bool bytes_done = false;
+
+        /// Of a read in ranges of marks: where each granule starts, and, of the range being read, the bytes of its rows
+        /// and the bytes before them in the block it starts in, which are left out.
+        MergeTreeMarksGetterPtr marks;
+        std::optional<size_t> range_bytes;
+        size_t bytes_to_skip = 0;
+        size_t compressed_bytes_of_part = 0;
+        size_t rows_of_part = 0;
+
+        /// From the first block of the range, of the file of its compressed blocks, or from its first row, of the
+        /// values the host expands.
+        void startRange(const MarkRange & range, size_t num_rows)
+        {
+            const MarkInCompressedFile mark = marks->getMark(range.begin, 0);
+            bytes_read = 0;
+            staged_bytes = 0;
+            done = false;
+            range_bytes = num_rows * element_size;
+            if (blocks)
+            {
+                blocks->seekToBlock(mark.offset_in_compressed_file);
+                bytes_to_skip = mark.offset_in_decompressed_block;
+                expected_bytes = rows_of_part == 0 ? 0 : compressed_bytes_of_part * num_rows / rows_of_part + 1;
+            }
+            else
+            {
+                raw->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+                expected_bytes = *range_bytes;
+            }
+        }
 
         size_t rowsRead() const { return is_variable ? variable_rows_read : bytes_read / element_size; }
         size_t remainingBytes() const { return expected_bytes > staged_bytes ? expected_bytes - staged_bytes : 0; }
@@ -749,7 +792,7 @@ private:
                         const size_t part_idx = state->next_part.fetch_add(1);
                         if (part_idx >= state->parts.size())
                             break;
-                        readPart(reader_index, *state->parts[part_idx]);
+                        readPart(reader_index, state->parts[part_idx]);
                     }
                 }
                 catch (...)
@@ -772,9 +815,12 @@ private:
     /// Reads the part's columns a block at a time, always the column that is furthest behind in
     /// rows, so that the columns arrive on the device within a block of each other and what waits
     /// there for the others is at most a block per column. The columns go to the accumulator in
-    /// its order: the keys, the values, then the columns of the filter.
-    void readPart(size_t reader_index, const IMergeTreeDataPart & part)
+    /// its order: the keys, the values, then the columns of the filter. A part with ranges of marks
+    /// is read a range at a time, each as a part of its own to the accumulator.
+    void readPart(size_t reader_index, const ReadFromGPUCompressedColumns::PartToRead & part_to_read)
     {
+        const IMergeTreeDataPart & part = *part_to_read.part;
+        const bool in_ranges = !part_to_read.ranges.empty();
         const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
 
         std::vector<std::unique_ptr<ColumnReader>> readers;
@@ -787,12 +833,36 @@ private:
         };
 
         for (const auto & key : state->keys)
-            readers.push_back(std::make_unique<ColumnReader>(part, key, state->read_settings, on_device(key.name)));
+            readers.push_back(std::make_unique<ColumnReader>(part, key, state->read_settings, on_device(key.name), in_ranges));
         for (const auto & column : state->columns)
-            readers.push_back(std::make_unique<ColumnReader>(part, column.column, state->read_settings, on_device(column.column.name)));
+            readers.push_back(std::make_unique<ColumnReader>(part, column.column, state->read_settings, on_device(column.column.name), in_ranges));
         for (const auto & column : filter_columns)
-            readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name)));
+            readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name), in_ranges));
 
+        if (!in_ranges)
+        {
+            readRows(reader_index, part, readers, part.rows_count);
+        }
+        else
+        {
+            for (const MarkRange & range : part_to_read.ranges)
+            {
+                const size_t num_rows = part.index_granularity->getRowsCountInRange(range);
+                if (num_rows == 0)
+                    continue;
+                for (auto & reader : readers)
+                    reader->startRange(range, num_rows);
+                readRows(reader_index, part, readers, num_rows);
+            }
+        }
+
+        if (adaptive_ratio)
+            adaptive_ratio->update(accumulator.waits());
+    }
+
+    /// The `num_rows` rows of every column from where its reader is: every row of the part, or a range of it.
+    void readRows(size_t reader_index, const IMergeTreeDataPart & part, std::vector<std::unique_ptr<ColumnReader>> & readers, size_t num_rows)
+    {
         /// The offsets of a column of values of varying width start from the 0 its first row starts at.
         for (size_t i = 0; i < readers.size(); ++i)
         {
@@ -821,19 +891,23 @@ private:
             }
             else if (column.raw)
             {
-                /// Every value is staged, and the buffer holds exactly them. Growing it only to learn
-                /// that the file has ended would copy it; a byte past the end is counted instead, so
-                /// the check below reports it.
                 if (column.remainingBytes() == 0)
                 {
-                    char past_end;
-                    column.bytes_read += column.raw->readBig(&past_end, 1);
+                    /// A range ends where its rows do. Of a whole part, every value is staged, and the buffer holds
+                    /// exactly them. Growing it only to learn that the file has ended would copy it; a byte past the
+                    /// end is counted instead, so the check below reports it.
+                    if (!column.range_bytes)
+                    {
+                        char past_end;
+                        column.bytes_read += column.raw->readBig(&past_end, 1);
+                    }
                     column.finishBytes();
                     continue;
                 }
 
                 const std::span<char> room = accumulator.reserveRawBytes(reader_index, behind, raw_piece_bytes, column.remainingBytes());
-                const size_t read = column.raw->readBig(room.data(), room.size());
+                const size_t read = column.raw->readBig(
+                    room.data(), column.range_bytes ? std::min(room.size(), column.remainingBytes()) : room.size());
                 accumulator.commitRawBytes(reader_index, behind, read);
                 if (read == 0)
                 {
@@ -855,18 +929,35 @@ private:
                     continue;
                 }
 
-                const GPU::GPUCodec codec = codecOrThrow(*column.blocks->methodByte(), std::to_string(behind), part);
-                accumulator.addCompressedBlock(
-                    reader_index,
-                    behind,
-                    codec,
-                    std::string_view(block->payload, block->compressed_bytes),
-                    block->decompressed_bytes,
-                    column.remainingBytes());
-                column.bytes_read += block->decompressed_bytes;
-                column.staged_bytes += block->compressed_bytes;
+                /// Of a range, the rows before it in its first block and after it in its last are left out.
+                size_t skipped = 0;
+                size_t kept = block->decompressed_bytes;
+                if (column.range_bytes)
+                {
+                    skipped = std::min(column.bytes_to_skip, block->decompressed_bytes);
+                    column.bytes_to_skip -= skipped;
+                    kept = std::min(block->decompressed_bytes - skipped, *column.range_bytes - column.bytes_read);
+                }
+
+                if (kept != 0)
+                {
+                    const GPU::GPUCodec codec = codecOrThrow(*column.blocks->methodByte(), std::to_string(behind), part);
+                    accumulator.addCompressedBlock(
+                        reader_index,
+                        behind,
+                        codec,
+                        std::string_view(block->payload, block->compressed_bytes),
+                        block->decompressed_bytes,
+                        column.remainingBytes(),
+                        skipped,
+                        kept);
+                    column.staged_bytes += block->compressed_bytes;
+                }
+                column.bytes_read += kept;
                 if (column.is_variable)
                     column.countVariableRowsRead();
+                if (column.range_bytes && column.bytes_read == *column.range_bytes)
+                    column.finishBytes();
             }
 
             checkNotCancelled();
@@ -876,7 +967,7 @@ private:
         {
             if (readers[i]->is_variable)
             {
-                if (readers[i]->rows_sized != part.rows_count || readers[i]->variable_rows_read != part.rows_count
+                if (readers[i]->rows_sized != num_rows || readers[i]->variable_rows_read != num_rows
                     || readers[i]->bytes_read != readers[i]->last_end)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -886,25 +977,22 @@ private:
                         readers[i]->rows_sized,
                         readers[i]->last_end,
                         readers[i]->bytes_read,
-                        part.rows_count);
+                        num_rows);
                 continue;
             }
 
-            if (readers[i]->bytes_read != part.rows_count * readers[i]->element_size)
+            if (readers[i]->bytes_read != num_rows * readers[i]->element_size)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Column {} of part {} holds {} bytes, where the part has {} rows of {} bytes",
+                    "Column {} of part {} holds {} bytes, where {} rows of {} bytes are read",
                     i,
                     part.name,
                     readers[i]->bytes_read,
-                    part.rows_count,
+                    num_rows,
                     readers[i]->element_size);
         }
 
-        accumulator.finishPart(reader_index, part.rows_count);
-
-        if (adaptive_ratio)
-            adaptive_ratio->update(accumulator.waits());
+        accumulator.finishPart(reader_index, num_rows);
     }
 
     void checkNotCancelled() const
@@ -939,7 +1027,7 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     std::vector<DerivedColumn> derived_,
     std::vector<AggregateToCompute> aggregates_,
     std::optional<DeviceFilter> filter_,
-    DataPartsVector parts_,
+    std::vector<PartToRead> parts_,
     StorageSnapshotPtr storage_snapshot_,
     ContextPtr context_,
     size_t batch_bytes_,
@@ -1012,6 +1100,8 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
 void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_settings) const
 {
     format_settings.out << format_settings.detail_prefix << "Parts: " << parts.size() << "\n";
+    if (const size_t ranged = std::ranges::count_if(parts, [](const auto & part) { return !part.ranges.empty(); }))
+        format_settings.out << format_settings.detail_prefix << "Parts read in ranges of marks: " << ranged << "\n";
     if (!keys.empty())
     {
         format_settings.out << format_settings.detail_prefix << "Keys: ";
@@ -1053,6 +1143,7 @@ void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_setti
 void ReadFromGPUCompressedColumns::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Parts", parts.size());
+    map.add("Parts Read In Ranges", std::ranges::count_if(parts, [](const auto & part) { return !part.ranges.empty(); }));
 
     if (!keys.empty())
     {

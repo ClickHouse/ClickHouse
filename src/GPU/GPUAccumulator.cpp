@@ -576,7 +576,14 @@ GroupByGPUAccumulator::Reader & GroupByGPUAccumulator::readerOrThrow(size_t read
 }
 
 void GroupByGPUAccumulator::addCompressedBlock(
-    size_t reader_index, size_t column_index, GPUCodec codec, std::string_view payload, size_t decompressed_bytes, size_t expected_bytes)
+    size_t reader_index,
+    size_t column_index,
+    GPUCodec codec,
+    std::string_view payload,
+    size_t decompressed_bytes,
+    size_t expected_bytes,
+    size_t skipped_bytes,
+    std::optional<size_t> kept_bytes)
 {
     Reader & reader = readerOrThrow(reader_index);
 
@@ -588,8 +595,20 @@ void GroupByGPUAccumulator::addCompressedBlock(
 
     StagedColumn & column = reader.staging[column_index];
 
-    if (column.raw || (!column.blocks.empty() && (column.decompressed_bytes + decompressed_bytes > compressed_stage_bytes || column.codec != codec)))
+    const size_t kept = kept_bytes.value_or(decompressed_bytes - std::min(skipped_bytes, decompressed_bytes));
+    if (skipped_bytes + kept > decompressed_bytes)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "{} bytes kept after {} skipped of a block of {} for the GPU", kept, skipped_bytes, decompressed_bytes);
+
+    /// A piece skips bytes before its first block only.
+    if (column.raw || column.cut || (!column.blocks.empty() && skipped_bytes != 0)
+        || (!column.blocks.empty() && (column.decompressed_bytes + decompressed_bytes > compressed_stage_bytes || column.codec != codec)))
         handOff(reader_index, column_index);
+
+    if (column.blocks.empty())
+        column.skipped_bytes = skipped_bytes;
+    column.kept_bytes += kept;
+    column.cut = skipped_bytes + kept != decompressed_bytes;
 
     if (column.blocks.empty())
         column.staged.reserve(std::min(compressed_stage_bytes, std::max(expected_bytes, payload.size())));
@@ -650,6 +669,8 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
         work.codec = *column.codec;
     work.staged = std::move(column.staged);
     work.blocks = std::move(column.blocks);
+    work.skipped_bytes = column.skipped_bytes;
+    work.kept_bytes = column.kept_bytes;
 
     Stopwatch watch;
     try
@@ -674,6 +695,9 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
     column.codec.reset();
     column.raw = false;
     column.decompressed_bytes = 0;
+    column.skipped_bytes = 0;
+    column.kept_bytes = 0;
+    column.cut = false;
 
     enqueue(std::move(work));
 }
@@ -980,9 +1004,15 @@ void GroupByGPUAccumulator::finishExpansion()
     {
         const size_t bytes = decompressedBytesOf(work.blocks);
         DeviceFixedColumnBuffer & column = readers[work.reader].device_columns[work.column_index];
-        checkCuda(
-            cudaMemcpyAsync(column.grow(bytes), expanded.data() + at, bytes, cudaMemcpyDeviceToDevice, GPUResources::get().compute.get()),
-            "Cannot append expanded bytes to a device column");
+        if (work.kept_bytes != 0)
+            checkCuda(
+                cudaMemcpyAsync(
+                    column.grow(work.kept_bytes),
+                    expanded.data() + at + work.skipped_bytes,
+                    work.kept_bytes,
+                    cudaMemcpyDeviceToDevice,
+                    GPUResources::get().compute.get()),
+                "Cannot append expanded bytes to a device column");
         at += bytes;
         compressed_bytes += work.on_device.size();
     }

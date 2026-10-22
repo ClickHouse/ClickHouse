@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 
 #include <optional>
 
@@ -34,6 +35,17 @@ public:
         const NameAndTypePair & column,
         const ReadSettings & read_settings,
         const ISerialization::SubstreamPath & substream_path = {});
+
+    /// The marks of the stream, through the mark cache: where each granule of the part starts in the file and in the
+    /// block it starts in.
+    static MergeTreeMarksGetterPtr loadMarks(
+        const IMergeTreeDataPart & part,
+        const NameAndTypePair & column,
+        const ReadSettings & read_settings,
+        const ISerialization::SubstreamPath & substream_path = {});
+
+    /// The next block is the one at `offset_in_compressed_file` of the file, which must be where a block starts.
+    void seekToBlock(size_t offset_in_compressed_file);
 
     std::optional<Block> next();
 

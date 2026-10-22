@@ -542,7 +542,7 @@ bool readIsOfWholeParts(const ReadFromMergeTree & reading)
 {
     /// A row-level filter drops rows, and a filtered part's result is not the result over its
     /// whole column. A filter pushed into the read as `filter_actions_dag` only prunes what is
-    /// read, which `matchWholeParts` sees; a `PREWHERE` is `matchPrewhere`'s to take or refuse.
+    /// read, which `matchParts` sees; a `PREWHERE` is `matchPrewhere`'s to take or refuse.
     /// Each of the last two has a deferred form that a lazy `FINAL` plan leaves behind.
     if (reading.getRowLevelFilter())
         GPU_COMPRESSED_REFUSE("a row-level filter in the read");
@@ -653,8 +653,16 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
     return true;
 }
 
-std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading, const ReadColumns & columns)
+/// The parts to read, each whole or in the ranges of marks the indexes left of it: in ranges only for a keyed
+/// aggregation without columns of varying width, which a part's every row needs the same from.
+std::optional<std::vector<ReadFromGPUCompressedColumns::PartToRead>> matchParts(
+    const ReadFromMergeTree & reading, const RangesInDataParts & parts_with_ranges, const ReadColumns & columns)
 {
+    const auto is_variable = [](const NameAndTypePair & column) { return GPU::isStringKey(*column.type); };
+    const bool fixed_width = std::ranges::none_of(columns.keys, is_variable)
+        && std::ranges::none_of(columns.columns, [&](const auto & column) { return is_variable(column.column); });
+    const bool ranges_allowed = !columns.keys.empty() && fixed_width;
+
     const MergeTreeData::MutationsSnapshotPtr & mutations = reading.getMutationsSnapshot();
 
     if (!mutations)
@@ -669,10 +677,10 @@ std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading
 
     const Block & read_header = *reading.getOutputHeader();
 
-    DataPartsVector parts;
-    parts.reserve(reading.getParts().size());
+    std::vector<ReadFromGPUCompressedColumns::PartToRead> parts;
+    parts.reserve(parts_with_ranges.size());
 
-    for (const auto & part_with_ranges : reading.getParts())
+    for (const auto & part_with_ranges : parts_with_ranges)
     {
         const DataPartPtr & part = part_with_ranges.data_part;
         if (!part)
@@ -681,8 +689,9 @@ std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading
         if (part->isProjectionPart() || part_with_ranges.parent_part)
             GPU_COMPRESSED_REFUSE("a projection part");
 
-        if (part_with_ranges.getRowsCount() != part->rows_count)
-            GPU_COMPRESSED_REFUSE("a part of which less than every row is read");
+        const bool whole = part_with_ranges.getRowsCount() == part->rows_count;
+        if (!whole && !ranges_allowed)
+            GPU_COMPRESSED_REFUSE("a part of which less than every row is read, of an aggregation without keys or of strings");
 
         if (part->hasLightweightDelete())
             GPU_COMPRESSED_REFUSE("a part with a lightweight delete mask");
@@ -743,7 +752,7 @@ std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading
                 GPU_COMPRESSED_REFUSE("a part that keeps the sizes of an aggregated string inline rather than in a stream of their own");
         }
 
-        parts.push_back(part);
+        parts.push_back({.part = part, .ranges = whole ? MarkRanges{} : part_with_ranges.ranges});
     }
 
     return parts;
@@ -836,7 +845,8 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!reading->getAnalyzedResult())
         reading->setAnalyzedResult(reading->selectRangesToRead());
 
-    const auto analysis = reading->getAnalyzedResult();
+    /// The device reads the ranges itself, where the skip indexes that the read applies to the granules it reads are not.
+    const auto analysis = reading->selectRangesToReadApplyingSkipIndexes();
     if (!analysis)
         GPU_COMPRESSED_REFUSE("the read has no analyzed result");
 
@@ -849,20 +859,18 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (analysis->readFromProjection())
         GPU_COMPRESSED_REFUSE("the read is from a projection");
 
-    if (analysis->total_marks_pk != analysis->selected_marks_pk)
-        GPU_COMPRESSED_REFUSE("the primary key pruned marks");
-
     if (analysis->sampling.use_sampling || analysis->sampling.read_nothing)
         GPU_COMPRESSED_REFUSE("the read is sampled");
 
-    auto parts = matchWholeParts(*reading, *columns);
+    auto parts = matchParts(*reading, analysis->parts_with_ranges, *columns);
     if (!parts)
         return false;
 
     LOG_DEBUG(
         getLogger("GPUCompressedColumns"),
-        "Aggregating compressed columns on the device: {} whole parts, {} keys, {} columns{}",
+        "Aggregating compressed columns on the device: {} parts, {} of them in ranges of marks, {} keys, {} columns{}",
         parts->size(),
+        std::ranges::count_if(*parts, [](const auto & part) { return !part.ranges.empty(); }),
         columns->keys.size(),
         columns->columns.size(),
         filter->filter ? ", a PREWHERE over " + std::to_string(filter->filter->columns.size()) + " columns" : "");
