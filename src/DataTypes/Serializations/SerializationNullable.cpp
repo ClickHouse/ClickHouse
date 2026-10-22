@@ -52,11 +52,11 @@ struct DeserializeBinaryBulkStateNullableWithCompactNullMap : public ISerializat
     ISerialization::DeserializeBinaryBulkStatePtr null_map_state;
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateNullableWithCompactNullMap>();
-        new_state->null_map_state = null_map_state ? null_map_state->clone() : nullptr;
-        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
+        new_state->null_map_state = null_map_state ? null_map_state->clone(context) : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone(context) : nullptr;
         return new_state;
     }
 };

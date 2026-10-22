@@ -37,7 +37,7 @@ public:
         size_t remaining_rows_in_granule = 0;
         GranuleFormat granule_format = NO_NULLS;
 
-        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
         {
             return std::make_shared<DeserializeBinaryBulkStateCompactNullMap>(*this);
         }

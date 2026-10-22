@@ -1076,12 +1076,17 @@ ColumnPtr ColumnNullable::compress(bool force_compression) const
     ColumnPtr null_map_compressed = map ? map->compress(force_compression) : nullptr;
 
     size_t byte_size = nested_column->byteSize() + (map ? map->byteSize() : 0);
+    /// Without a null map, the column can be decompressed only as a whole.
+    Columns parts;
+    if (null_map_compressed)
+        parts = {nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
             return ColumnNullable::create(my_nested_column->decompress(), my_null_map ? my_null_map->decompress() : nullptr);
-        });
+        },
+        std::move(parts));
 }
 
 
@@ -1457,6 +1462,18 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
         return makeNullable(column);
 
     return column;
+}
+
+void materializeNullMapsRecursively(const IColumn & column)
+{
+    auto materialize = [](const IColumn & subcolumn)
+    {
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&subcolumn))
+            nullable->materializeNullMap();
+    };
+
+    materialize(column);
+    column.forEachSubcolumnRecursively(materialize);
 }
 
 ColumnPtr removeNullable(const ColumnPtr & column)

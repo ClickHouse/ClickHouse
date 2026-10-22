@@ -17,10 +17,14 @@ private:
     /// If true, the null map is serialized with `SerializationCompactNullMap`.
     bool compact_null_map;
 
+    /// Cached `nested->supportsPooling`, see `SerializationArray`.
+    bool nested_supports_pooling;
+
     explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false, bool compact_null_map_ = false)
         : nested(nested_)
         , use_default_null_map(use_default_null_map_)
         , compact_null_map(compact_null_map_)
+        , nested_supports_pooling(nested->supportsPooling())
     {
     }
 
@@ -31,7 +35,7 @@ public:
     /// Whether a resolved subcolumn is really the null map, which its name alone cannot tell.
     static bool isNullMapSubcolumn(const SubstreamPath & path);
 
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    bool supportsPooling() const override { return nested_supports_pooling; }
 
     const SerializationPtr & getNested() const { return nested; }
     bool isCompactNullMap() const { return compact_null_map; }

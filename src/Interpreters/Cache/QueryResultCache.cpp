@@ -23,6 +23,7 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -837,6 +838,11 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+void QueryResultCacheWriter::markResultIncomplete()
+{
+    result_is_incomplete = true;
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -853,6 +859,12 @@ void QueryResultCacheWriter::finalizeWrite()
     std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
+
+    if (result_is_incomplete)
+    {
+        LOG_TRACE(logger, "Skipped insert because the query result is incomplete (a consumer stopped reading it before the end), query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {
@@ -975,6 +987,22 @@ void QueryResultCacheWriter::finalizeWrite()
         }
         query_result->chunks = std::move(compressed_chunks);
     }
+
+    /// The readers share the uncompressed columns of the entry and may create a missing null map lazily, which would change
+    /// the weight of the entry after it was accounted, so create the null maps now. Compressed columns are decompressed
+    /// into new columns on every read.
+    auto materialize_null_maps = [](const Chunk & chunk)
+    {
+        for (const auto & column : chunk.getColumns())
+            materializeNullMapsRecursively(*column);
+    };
+    if (!key.is_compressed)
+        for (const auto & chunk : query_result->chunks)
+            materialize_null_maps(chunk);
+    if (query_result->totals.has_value())
+        materialize_null_maps(*query_result->totals);
+    if (query_result->extremes.has_value())
+        materialize_null_maps(*query_result->extremes);
 
     /// Check more reasons why the entry must not be cached.
 
