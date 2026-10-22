@@ -716,6 +716,8 @@ static bool writeConsolidatedManifestFile(
                         stats.value_counts.emplace_back(field_id, *col_info.rows_count);
                     if (col_info.nulls_count.has_value())
                         stats.null_value_counts.emplace_back(field_id, *col_info.nulls_count);
+                    if (col_info.nans_count.has_value())
+                        stats.nan_value_counts.emplace_back(field_id, *col_info.nans_count);
                 }
                 for (const auto & [field_id, bounds] : data_file->parsed_entry->value_bounds)
                 {

@@ -652,6 +652,7 @@ void generateManifestFile(
             set_fields(stats.column_sizes, Iceberg::f_column_sizes, [](Int32, Int64 value) { return value; });
             set_fields(stats.value_counts, Iceberg::f_value_counts, [](Int32, Int64 value) { return value; });
             set_fields(stats.null_value_counts, Iceberg::f_null_value_counts, [](Int32, Int64 value) { return value; });
+            set_fields(stats.nan_value_counts, Iceberg::f_nan_value_counts, [](Int32, Int64 value) { return value; });
             set_fields(stats.lower_bounds, Iceberg::f_lower_bounds, to_bytes);
             set_fields(stats.upper_bounds, Iceberg::f_upper_bounds, to_bytes);
         }

@@ -603,6 +603,19 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                         right_str, column_type, false, /*compensate_rounding=*/false);
                 }
 
+                /// A NaN bound does not bound the other values of the column.
+                if (left->isNaN() || right->isNaN())
+                {
+                    LOG_DEBUG(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a NaN bound for column id {} of data file '{}'; "
+                        "skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
+                    continue;
+                }
+
                 /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
                 /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
                 /// right where swapping or clamping them would prune on a value nothing vouches for.
