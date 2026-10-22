@@ -3,8 +3,6 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Core/Field.h>
-#include <Core/Names.h>
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
@@ -130,22 +128,9 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
-    /// Query parameters make sense only for the Values format, where the data may contain expressions.
-    virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
-
-    virtual void needOnlyCount() { need_only_count = true; }
+    void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
-
-    /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
-    /// which returned rows, the best value of the sort column among these rows, in the query's order.
-    /// A bucket whose best value is beyond the final threshold holds no row of the result.
-    virtual std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
-    /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
-    /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
-    virtual bool isTopKFilterApplied() const { return false; }
-    /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
-    virtual bool isMinMaxFromStatisticsApplied() const { return false; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

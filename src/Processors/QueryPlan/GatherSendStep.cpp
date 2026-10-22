@@ -70,14 +70,10 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* filter_column_name */ std::nullopt,
                 /* blocks_are_granules_size */ false));
     }
-
-    /// A serializer on every stream; the sink takes packets only. After the merge above one stream is
-    /// left, and its serializer is the only one.
-    pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+    else
     {
-        return settings.exchange_lookup->createSerializer(header, exchange_id);
-    });
-    pipeline.resize(1);
+        pipeline.resize(1);
+    }
 
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
@@ -108,7 +104,7 @@ void GatherSendStep::serialize(Serialization & ctx) const
 
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(*maintain_sort_description, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ctx)
@@ -124,7 +120,7 @@ std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ct
         if (has_maintain_sort_description)
         {
             maintain_sort_description.emplace();
-            deserializeSortDescription(*maintain_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
+            deserializeSortDescription(*maintain_sort_description, ctx.in);
         }
     }
 

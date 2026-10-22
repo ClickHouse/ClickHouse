@@ -78,7 +78,6 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
     column_indexes_by_names.initFromBlock(getPort().getHeader());
-    format_reader->setDataTypes(data_types);
 }
 
 template <typename FormatReaderImpl>
@@ -278,8 +277,7 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                     data_types[*column_index],
                     serializations[*column_index],
                     is_last_file_column,
-                    column_mapping->names_of_columns[file_column],
-                    *column_index);
+                    column_mapping->names_of_columns[file_column]);
             else
                 format_reader->skipField(file_column);
         }
@@ -309,8 +307,7 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                     data_types[*column_index],
                     serializations[*column_index],
                     is_last_file_column,
-                    column_mapping->names_of_columns[file_column],
-                    *column_index);
+                    column_mapping->names_of_columns[file_column]);
             else
                 format_reader->skipField(file_column);
         }
@@ -370,7 +367,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDeserializeField(cons
     {
         format_reader->checkNullValueForNonNullable(type);
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        format_reader->readField(column, type, serializations[*index], is_last_file_column, column_mapping->names_of_columns[file_column], *index);
+        format_reader->readField(column, type, serializations[*index], is_last_file_column, column_mapping->names_of_columns[file_column]);
     }
     else
     {

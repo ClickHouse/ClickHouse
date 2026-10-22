@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 集約関数の名前には接尾辞を付加できます。これにより、集約関数の動作が変わります。
 
-## -If {#-if}
+<div id="-if">
+  ## -If
+</div>
 
 接尾辞 -If は、任意の集約関数名の末尾に追加できます。この場合、集約関数は追加の引数として条件 (Uint8 型) を受け取ります。集約関数が処理するのは、その条件を満たす行だけです。条件が一度も満たされなかった場合は、デフォルト値 (通常は 0 または空文字列) を返します。
 
@@ -16,7 +18,9 @@ doc_type: 'reference'
 
 条件付き集約関数を使うと、サブクエリや `JOIN` を使わずに、複数の条件に対する集約を一度に計算できます。たとえば、条件付き集約関数はセグメント比較機能の実装に使用できます。
 
-## -Array {#-array}
+<div id="-array">
+  ## -Array
+</div>
 
 -Array 接尾辞は、任意の 集約関数 に追加できます。この場合、集約関数 は &#39;T&#39; 型の引数ではなく、&#39;Array(T)&#39; 型 (配列) の引数を受け取ります。集約関数 が複数の引数を受け取る場合、それらは同じ長さの配列である必要があります。配列を処理する場合、集約関数 はすべての配列要素に対して、元の 集約関数 と同様に動作します。
 
@@ -26,7 +30,9 @@ doc_type: 'reference'
 
 -If と -Array は組み合わせて使用できます。ただし、&#39;Array&#39; を先に、その後に &#39;If&#39; を付ける必要があります。例: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`。この順序では、&#39;cond&#39; 引数は配列になりません。
 
-## -Map {#-map}
+<div id="-map">
+  ## -Map
+</div>
 
 -Map 接尾辞は、任意の集約関数に追加できます。これにより、Map 型を引数として受け取り、指定した集約関数を使って map の各キーの値を個別に集約する集約関数が作成されます。結果も Map 型になります。
 
@@ -60,7 +66,9 @@ GROUP BY timeslot;
 └─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## -SimpleState {#-simplestate}
+<div id="-simplestate">
+  ## -SimpleState
+</div>
 
 この コンビネータ を適用すると、集約関数 は同じ値を返しますが、型が異なります。これは [SimpleAggregateFunction(...)](/ja/reference/data-types/simpleaggregatefunction) であり、[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) テーブルで使用できるようにテーブルに格納できます。
 
@@ -90,7 +98,9 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 └──────────────────────────────────────┴───┘
 ```
 
-## -State {#-state}
+<div id="-state">
+  ## -State
+</div>
 
 この コンビネータ を適用すると、集約関数 は結果の値 (たとえば [uniq](/ja/reference/functions/aggregate-functions/uniq) 関数における一意な値の数) ではなく、aggregation の中間 state を返します (`uniq` の場合、これは一意な値の数を計算するための hash table です) 。これは `AggregateFunction(...)` で、後続の処理に使用したり、あとで aggregation を完了できるように table に保存したりできます。
 
@@ -106,19 +116,27 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 * [-Merge](#-merge) コンビネータ。
 * [-MergeState](#-mergestate) コンビネータ。
 
-## -Merge {#-merge}
+<div id="-merge">
+  ## -Merge
+</div>
 
 このコンビネータを適用すると、集約関数は中間的な集約状態を引数として受け取り、それらの状態を結合して集約を完了し、結果の値を返します。
 
-## -MergeState {#-mergestate}
+<div id="-mergestate">
+  ## -MergeState
+</div>
 
 -Merge コンビネータと同じ方法で、中間の集約状態をマージします。ただし、結果の値は返さず、-State コンビネータと同様に中間の集約状態を返します。
 
-## -ForEach {#-foreach}
+<div id="-foreach">
+  ## -ForEach
+</div>
 
 テーブル向けの集約関数を、対応する配列要素ごとに集約し、結果を配列で返す配列向けの集約関数に変換します。たとえば、配列 `[1, 2]`、`[3, 4, 5]`、`[6, 7]` に対する `sumForEach` は、対応する配列要素同士を加算した結果として `[10, 13, 5]` を返します。
 
-## -Tuple {#-tuple}
+<div id="-tuple">
+  ## -Tuple
+</div>
 
 `-Tuple` 接尾辞は、任意の集約関数に追加できます。結合後の関数は、元の集約関数の各引数に対応して、`Tuple` 型の引数を1つ受け取ります。すべてのタプルは、同じ数の要素を持っている必要があります。集約は各要素の位置ごとに独立して適用され、各 `Tuple` から対応する要素を受け取り、結果として `Tuple` を返します。
 
@@ -218,12 +236,16 @@ FROM
 
 `-Tuple` は、`-If` などの他の集約関数コンビネータと組み合わせることができます。例: `sumTupleIf(tuple_column, cond)`。
 
-## -Distinct {#-distinct}
+<div id="-distinct">
+  ## -Distinct
+</div>
 
 引数の一意な組み合わせごとに、集計は1回だけ行われます。重複する値は無視されます。
 例: `sum(DISTINCT x)` (または `sumDistinct(x)`) 、`groupArray(DISTINCT x)` (または `groupArrayDistinct(x)`) 、`corrStable(DISTINCT x, y)` (または `corrStableDistinct(x, y)`) などです。
 
-## -OrDefault {#-ordefault}
+<div id="-ordefault">
+  ## -OrDefault
+</div>
 
 集約関数の動作を変更します。
 
@@ -275,7 +297,9 @@ FROM
 └───────────────────────────────────┘
 ```
 
-## -OrNull {#-ornull}
+<div id="-ornull">
+  ## -OrNull
+</div>
 
 集約関数の動作を変更します。
 
@@ -330,7 +354,9 @@ FROM
 └────────────────────────────────┘
 ```
 
-## -Resample {#-resample}
+<div id="-resample">
+  ## -Resample
+</div>
 
 データをグループに分け、それぞれのグループごとに個別に集約できます。グループは、1つのカラムの値をインターバルごとに分割して作成されます。
 
@@ -341,10 +367,10 @@ FROM
 **引数**
 
 * `start` — `resampling_key` の値に対して必要な全インターバルの開始値。
-* `stop` — `resampling_key` の値に対して必要な全インターバルの終了値。全インターバルには `stop` の値は含まれません `[start, stop)`。`start` より大きい必要があります。部分インターバルを 1 つも含まない範囲の場合は例外をスローします。
+* `stop` — `resampling_key` の値に対して必要な全インターバルの終了値。全インターバルには `stop` の値は含まれません `[start, stop)`。
 * `step` — 全インターバルを部分インターバルに分割する際のステップ。`aggFunction` は各部分インターバルに対して独立して実行されます。
 * `resampling_key` — その値を使用してデータをインターバルに分割するカラム。
-* `aggFunction_params` — `aggFunction` のパラメータ。
+* `aggFunction_params` — `aggFunction` のパラメーター。
 
 **戻り値**
 
@@ -398,16 +424,22 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-## -ArgMin {#-argmin}
+<div id="-argmin">
+  ## -ArgMin
+</div>
 
 接尾辞 -ArgMin は、任意の集約関数名の末尾に追加できます。この場合、集約関数は追加の引数を受け取り、その引数には比較可能な任意の式を指定する必要があります。集約関数は、指定された追加の式に対して最小値を持つ行だけを処理します。
 
 例: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` などです。
 
-## -ArgMax {#-argmax}
+<div id="-argmax">
+  ## -ArgMax
+</div>
 
 接尾辞 -ArgMin に似ていますが、指定した追加の式で最大値を持つ行のみを処理します。
 
-## 関連コンテンツ {#related-content}
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
 
 * ブログ: [ClickHouseで集約コンビネータを使う](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

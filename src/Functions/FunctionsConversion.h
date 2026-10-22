@@ -48,7 +48,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
@@ -57,7 +56,6 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
@@ -71,7 +69,6 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -79,7 +76,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <base/wide_integer_to_string.h>
 
 
 namespace DB
@@ -138,9 +134,6 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
-    /// `format_settings` has too many members to hash one by one; this hashes the session settings it
-    /// was derived from instead (see `getFormatSettingsHash`).
-    const UInt64 format_settings_hash;
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
@@ -157,33 +150,7 @@ struct FunctionConvertSettings
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
-        , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
     {
-    }
-
-    /** The settings a conversion captured decide the values it produces, while its name and the
-      * types it was resolved for do not mention them, so whatever keys an expression by a hash has
-      * to see them: without this, two sessions that differ only in `precise_float_parsing` build the
-      * same key and one serves the other its granule-skip verdicts.
-      *
-      * Every member is hashed: the captured settings one by one, and `format_settings` through the hash
-      * of the session settings it was derived from, which covers each member the text (de)serialization
-      * of a converted value can read. A setting added to this struct has to be added here too.
-      */
-    void updateHash(SipHash & hash) const
-    {
-        hash.update(date_time_overflow_behavior);
-        hash.update(precise_float_parsing);
-        hash.update(cast_ipv4_ipv6_default_on_conversion_error);
-        hash.update(cast_string_to_variant_use_inference);
-        hash.update(cast_string_to_dynamic_use_inference);
-        hash.update(input_format_ipv4_default_on_conversion_error);
-        hash.update(input_format_ipv6_default_on_conversion_error);
-        hash.update(check_conversion_from_numbers_to_enum);
-        hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
-        hash.update(cast_keep_nullable);
-        hash.update(cast_string_to_date_time_mode);
-        hash.update(format_settings_hash);
     }
 };
 
@@ -197,22 +164,6 @@ namespace detail
   */
 
 UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column);
-
-
-/** Renders the source value of an out-of-range conversion for the exception message.
-  * `fmt` cannot format `BFloat16` and refuses to format `UInt8` (which is `char8_t`) as a number,
-  * and a cast of a wide integer to `Int64` would wrap around and report a different value.
-  */
-template <typename FromType>
-auto conversionSourceForMessage(const FromType & from)
-{
-    if constexpr (std::is_same_v<FromType, BFloat16>)
-        return static_cast<Float32>(from);
-    else if constexpr (std::is_same_v<FromType, UInt8>)
-        return static_cast<UInt16>(from);
-    else
-        return from;
-}
 
 
 /** Conversion of Date to DateTime: adding 00:00:00 time component.
@@ -362,8 +313,13 @@ struct ToDateTransformFromSecondsOrDays
 
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
-            if (accurate::greaterOp(from, MAX_DATETIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", conversionSourceForMessage(from));
+            if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+            {
+                if constexpr (is_floating_point<FromType>)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+                else
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+            }
         }
 
         if constexpr (is_signed_v<FromType>)
@@ -371,8 +327,10 @@ struct ToDateTransformFromSecondsOrDays
             {
                 if constexpr (!overflow_throw)
                     return 0;
+                else if constexpr (is_floating_point<FromType>)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
                 else
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", conversionSourceForMessage(from));
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
             }
 
         /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
@@ -424,14 +382,26 @@ struct ToDate32TransformFromSecondsOrDays
             if (is_nan || from < DATE_LUT_MIN_EXTEND_DAY_NUM)
             {
                 if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", conversionSourceForMessage(from));
+                {
+                    /// A float-to-integer cast of a NaN or of a value outside the range of `Int64` is undefined
+                    /// behavior, so format floating-point sources directly.
+                    if constexpr (is_floating_point<FromType>)
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+                    else
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                }
                 return DATE_LUT_MIN_EXTEND_DAY_NUM;
             }
         }
 
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
-            if (accurate::greaterOp(from, MAX_DATE32_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", conversionSourceForMessage(from));
+            if (from > MAX_DATE32_TIMESTAMP) [[unlikely]]
+            {
+                if constexpr (is_floating_point<FromType>)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+                else
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+            }
 
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from > DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -447,7 +417,7 @@ struct ToDate32TransformFromSecondsOrDays
                 /// Compare in the source domain: `toDate32` also accepts UInt128 / UInt256, and narrowing a value
                 /// above INT64_MAX to DateLUTImpl::Time first wraps around, which would map it near the epoch
                 /// instead of saturating at the upper boundary of Date32.
-                if (accurate::greaterOp(from, MAX_DATE32_TIMESTAMP))
+                if (from > MAX_DATE32_TIMESTAMP)
                     return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP));
                 return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(from));
             }
@@ -468,7 +438,7 @@ struct ToDateTimeTransform64
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
         /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
@@ -489,7 +459,7 @@ struct ToDateTimeTransformSigned
         if (from < 0)
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
             else
                 return 0;
         }
@@ -512,8 +482,8 @@ struct ToDateTimeTransform64Signed
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < 0 || accurate::greaterOp(from, MAX_DATETIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", conversionSourceForMessage(from));
+            if (from < 0 || from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
         if (from < 0)
@@ -529,53 +499,7 @@ struct ToDateTimeTransform64Signed
                 return static_cast<ToType>(MAX_DATETIME_TIMESTAMP);
         }
 
-        if constexpr (is_big_int_v<FromType>)
-        {
-            /// Compared in the source domain: casting a 128- or 256-bit value to `time_t` first
-            /// truncates it, and a value far above the range would pass the clamp as a small timestamp.
-            if (from > FromType(MAX_DATETIME_TIMESTAMP))
-                return static_cast<ToType>(MAX_DATETIME_TIMESTAMP);
-            return static_cast<ToType>(static_cast<time_t>(from));
-        }
-        else
-            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
-    }
-};
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransformFromTime64
-{
-    static constexpr auto name = "toDate";
-
-    static UInt16 execute(Int64 seconds, const DateLUTImpl &)
-    {
-        /// `Time64` has no timezone. Preserve the historical Parquet `TIME` conversion,
-        /// which used a `DateTime64` value in UTC before converting to `Date`.
-        return ToDateImpl<date_time_overflow_behavior>::execute(seconds, DateLUT::instance("UTC"));
-    }
-};
-
-struct ToDate32TransformFromTime64
-{
-    static constexpr auto name = "toDate32";
-
-    static Int32 execute(Int64 seconds, const DateLUTImpl &)
-    {
-        return ToDate32Impl::execute(seconds, DateLUT::instance("UTC"));
-    }
-};
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTimeTransformFromTime
-{
-    static constexpr auto name = "toDateTime";
-
-    /// `Time` is a timezone-unaware count of seconds of a clock reading. Reinterpret the value as
-    /// seconds since the epoch - the same convention as the `Time64` path - instead of letting the
-    /// `Int32` overload of `ToDateTimeImpl` read it as a day number.
-    static UInt32 execute(Int32 seconds, const DateLUTImpl &)
-    {
-        return ToDateTimeImpl<date_time_overflow_behavior>::execute(static_cast<Int64>(seconds), DateLUT::instance("UTC"));
+        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
 
@@ -617,7 +541,7 @@ struct ToTimeTransformFromDateTime
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
         return static_cast<ToType>(std::min(time_t(local_seconds), time_t(MAX_TIME_TIMESTAMP)));
@@ -635,7 +559,7 @@ struct ToTimeTransform64
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
         /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
@@ -662,7 +586,7 @@ struct ToTimeTransform64Signed
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
         if constexpr (is_floating_point<FromType>)
@@ -696,34 +620,31 @@ struct ToDateTime64TransformUnsigned
     static constexpr auto name = "toDateTime64";
 
     const DateTime64::NativeType scale_multiplier;
-    /// The upper bound is scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
-    /// The source is a count of whole seconds, so that is the bound an unrepresentable value is detected
-    /// against, while saturation goes to the greatest value of the target - the last representable tick.
-    /// Both are computed once here rather than for every row: the bound involves an integer division.
-    const time_t max_whole;
-    const DateTime64::NativeType max_ticks;
 
     ToDateTime64TransformUnsigned(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
-        , max_whole(maxWholeSecondsForDateTime64(scale_multiplier))
-        , max_ticks(maxTicksForDateTime64(scale_multiplier))
     {}
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
-        /// `Int64::max` (e.g. `18446744073709551615`) would first be converted to a negative `time_t` and
-        /// produce a pre-epoch value instead of saturating.
-        if (accurate::greaterOp(from, max_whole)) [[unlikely]]
+        /// The upper bound is scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", conversionSourceForMessage(from));
+            if (from > max_whole) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
             else
-                return max_ticks;
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
-        /// The value is within the bound, so the narrowing cast is well defined (a wide integer has no implicit
-        /// conversion to `Int64` anyway) and the product cannot overflow, which makes a checked multiplication redundant.
-        return static_cast<time_t>(from) * scale_multiplier;
+        else
+        {
+            /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
+            /// `Int64::max` (e.g. `18446744073709551615`) is first converted to a negative `time_t` by `std::min<time_t>`
+            /// and the clamp returns a pre-epoch value instead of saturating to `max_whole`.
+            if (accurate::greaterOp(from, max_whole))
+                return maxTicksForDateTime64(scale_multiplier);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
+        }
     }
 };
 
@@ -733,36 +654,27 @@ struct ToDateTime64TransformSigned
     static constexpr auto name = "toDateTime64";
 
     const DateTime64::NativeType scale_multiplier;
-    /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
-    /// The source is a count of whole seconds, so that is the bound an unrepresentable value is detected
-    /// against, while saturation goes to the extreme value of the target - the last representable tick.
-    /// All of them are computed once here rather than for every row: the bounds involve an integer division.
-    const time_t min_whole;
-    const time_t max_whole;
-    const DateTime64::NativeType min_ticks;
-    const DateTime64::NativeType max_ticks;
 
     ToDateTime64TransformSigned(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
-        , min_whole(minWholeSecondsForDateTime64(scale_multiplier))
-        , max_whole(maxWholeSecondsForDateTime64(scale_multiplier))
-        , min_ticks(minTicksForDateTime64(scale_multiplier))
-        , max_ticks(maxTicksForDateTime64(scale_multiplier))
     {}
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        const bool below = accurate::lessOp(from, min_whole);
-        const bool above = accurate::greaterOp(from, max_whole);
-        if (below || above) [[unlikely]]
+        /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+        const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", conversionSourceForMessage(from));
-            else
-                return below ? min_ticks : max_ticks;
+            if (from < min_whole || from > max_whole) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        /// Within `[min_whole, max_whole]` the product fits the `Int64` ticks by construction of the bounds.
-        return static_cast<time_t>(from) * scale_multiplier;
+        if (from > max_whole)
+            return maxTicksForDateTime64(scale_multiplier);
+        if (from < min_whole)
+            return minTicksForDateTime64(scale_multiplier);
+
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -772,56 +684,32 @@ struct ToDateTime64TransformFloat
     static constexpr auto name = "toDateTime64";
 
     const UInt32 scale;
-    const DateTime64::NativeType scale_multiplier;
-    /// The representable window in ticks, in the domain of the source: a floating-point source can land inside
-    /// the last representable second, so a whole-seconds bound would reject a representable value. Clamping to
-    /// the calendar-wide [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] window instead would still let
-    /// precision 8/9 inputs overflow the Int64 in convertToDecimal and surface DECIMAL_OVERFLOW rather than
-    /// saturating, so the bounds have to be scale-dependent.
-    const Int64 min_ticks;
-    const Int64 max_ticks;
-    const FromType min_ticks_in_source_domain;
-    const FromType max_ticks_in_source_domain;
 
     ToDateTime64TransformFloat(UInt32 scale_) /// NOLINT
         : scale(scale_)
-        , scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
-        , min_ticks(minTicksForDateTime64(scale_multiplier))
-        , max_ticks(maxTicksForDateTime64(scale_multiplier))
-        , min_ticks_in_source_domain(floatBoundNotBelow<FromType>(min_ticks))
-        , max_ticks_in_source_domain(floatBoundNotAbove<FromType>(max_ticks))
     {}
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// Compare in the tick domain, the same way convertToDecimal computes the result below. Every comparison
-        /// with a NaN is false, so a NaN falls through to convertToDecimal, which reports it as before.
-        const FromType ticks = from * static_cast<FromType>(scale_multiplier);
-        const bool below = ticks < min_ticks_in_source_domain;
-        const bool above = ticks > max_ticks_in_source_domain;
-
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (below || above) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", conversionSourceForMessage(from));
+            if (from < minWholeSecondsForDateTime64(scale_multiplier) || from > maxWholeSecondsForDateTime64(scale_multiplier)) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        if (below)
-            return min_ticks;
-        if (above)
+        /// The fractional part is kept, so the bounds have to be compared in ticks rather than whole seconds,
+        /// otherwise the whole last second saturates. `NaN` has no sign and still reports through convertToDecimal.
+        const Int64 min_ticks = minTicksForDateTime64(scale_multiplier);
+        const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
+        DateTime64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeDateTime64>(from, scale, result) && result.value >= min_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
             return max_ticks;
-        if (isNaN(ticks)) [[unlikely]]
-            /// Not representable at all; convertToDecimal reports it, as it did before this check existed.
-            return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
-        /// Both bounds are inside the Int64, so the truncating cast is well defined; it truncates towards zero,
-        /// exactly like convertToDecimal.
-        return static_cast<DateTime64::NativeType>(ticks);
-    }
-
-    /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
-    DateTime64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
-    {
-        return execute(static_cast<FromType>(from), time_zone);
+        if (from < 0)
+            return min_ticks;
+        return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
 
@@ -868,12 +756,10 @@ struct ToDateTime64Transform
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Timestamp value {} is out of bounds of type DateTime64 with this precision", dt);
         }
-        /// The source is a whole day, so the bound is in whole seconds, while saturation goes to the extreme
-        /// value of the target - the last representable tick.
-        if (dt < min_whole)
-            return minTicksForDateTime64(scale_multiplier);
         if (dt > max_whole)
             return maxTicksForDateTime64(scale_multiplier);
+        if (dt < min_whole)
+            return minTicksForDateTime64(scale_multiplier);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -902,7 +788,7 @@ struct ToTime64TransformUnsigned
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
         /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
@@ -928,18 +814,17 @@ struct ToTime64TransformSigned
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", conversionSourceForMessage(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
         /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
         /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
         /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        /// The source is a count of whole seconds, so that is the bound, while saturation goes to the extreme
-        /// value of the target - the last representable tick.
-        if (accurate::lessOp(from, -static_cast<Int64>(MAX_TIME_TIMESTAMP)))
-            return -maxTicksForTime64(scale_multiplier);
-        if (accurate::greaterOp(from, MAX_TIME_TIMESTAMP))
+        /// Compare in the source type: narrowing a wide integer first would flip the sign of a huge value
+        if (from > MAX_TIME_TIMESTAMP)
             return maxTicksForTime64(scale_multiplier);
+        if (from < -MAX_TIME_TIMESTAMP)
+            return minTicksForTime64(scale_multiplier);
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<Int64>(from), 0, scale_multiplier);
     }
 };
@@ -950,54 +835,30 @@ struct ToTime64TransformFloat
     static constexpr auto name = "toTime64";
 
     const UInt32 scale;
-    const Time64::NativeType scale_multiplier;
-    /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64 bounds would
-    /// let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying decimal, producing Time64
-    /// values that display correctly but compare as different from the saturated maximum. The bound is expressed
-    /// in ticks rather than in whole seconds, because a floating-point source can land inside the last
-    /// representable second: `999:59:59.5` is a perfectly good Time64(1) value.
-    const Int64 max_ticks;
-    const FromType min_ticks_in_source_domain;
-    const FromType max_ticks_in_source_domain;
 
     ToTime64TransformFloat(UInt32 scale_) /// NOLINT
         : scale(scale_)
-        , scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
-        , max_ticks(maxTicksForTime64(scale_multiplier))
-        , min_ticks_in_source_domain(floatBoundNotBelow<FromType>(-max_ticks))
-        , max_ticks_in_source_domain(floatBoundNotAbove<FromType>(max_ticks))
     {}
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// Compare in the tick domain, the same way convertToDecimal computes the result below. Every comparison
-        /// with a NaN is false, so a NaN falls through to convertToDecimal, which reports it as before.
-        const FromType ticks = from * static_cast<FromType>(scale_multiplier);
-        const bool below = ticks < min_ticks_in_source_domain;
-        const bool above = ticks > max_ticks_in_source_domain;
-
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (below || above) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", conversionSourceForMessage(from));
+            if (from < -static_cast<Int64>(MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        if (below)
-            return -max_ticks;
-        if (above)
+        /// Time64 is much narrower than DateTime64, so the value needs its own range, compared in ticks so that
+        /// the fractional part survives. `NaN` has no sign and still reports through convertToDecimal.
+        const Int64 max_ticks = maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
+        Time64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeTime64>(from, scale, result) && result.value >= -max_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
             return max_ticks;
-        if (isNaN(ticks)) [[unlikely]]
-            /// Not representable at all; convertToDecimal reports it, as it did before this check existed.
-            return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
-        /// Both bounds are inside the Int64, so the truncating cast is well defined; it truncates towards zero,
-        /// exactly like convertToDecimal.
-        return static_cast<Time64::NativeType>(ticks);
-    }
-
-    /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
-    Time64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
-    {
-        return execute(static_cast<FromType>(from), time_zone);
+        if (from < 0)
+            return -max_ticks;
+        return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
 
@@ -1417,6 +1278,16 @@ enum class ConvertFromStringParsingMode : uint8_t
     Basic,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
     BestEffortUS
+};
+
+struct AccurateConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
+};
+
+struct AccurateOrNullConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
 };
 
 template <typename FromDataType, typename ToDataType, typename Name,
@@ -2029,30 +1900,6 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
 
         return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
     }
-    else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-    {
-        using ToFieldType = typename ToDataType::FieldType;
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            ToFieldType result;
-            bool convert_result = false;
-
-            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), result);
-            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
-
-            if (!convert_result)
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
-
-            vec_to[i] = result;
-        }
-
-        return std::forward<ColTo>(col_to);
-    }
     else
     {
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -2220,18 +2067,6 @@ template <typename FromDataType, typename ToDataType, typename Name,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ConvertImpl
 {
-    /// The scale of a `DateTime64` / `Time64` result, which its numeric transforms are constructed from.
-    /// A plain conversion passes the scale itself as the additions, while `accurateCast` and `accurateCastOrNull`
-    /// pass their strategy additions, which carry the scale.
-    template <typename Additions>
-    static UInt32 targetScale(const Additions & additions)
-    {
-        if constexpr (is_any_of<Additions, AccurateConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>)
-            return additions.scale;
-        else
-            return additions;
-    }
-
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
@@ -2300,11 +2135,9 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeFloat32>
             || std::is_same_v<FromDataType, DataTypeFloat64>
             || std::is_same_v<FromDataType, DataTypeBFloat16>
-            || std::is_same_v<FromDataType, DataTypeEnum8>
-            || std::is_same_v<FromDataType, DataTypeEnum16>
             ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -2323,12 +2156,12 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeBFloat16>
             ) && std::is_same_v<ToDataType, DataTypeDate32>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         /// Conversion of any number to Time. `Time` is a signed count of seconds of a clock reading, capped to
@@ -2338,47 +2171,36 @@ struct ConvertImpl
         else if constexpr (IsDataTypeNumber<FromDataType> && std::is_same_v<ToDataType, DataTypeTime>)
         {
             if constexpr (is_signed_v<typename FromDataType::FieldType> || is_floating_point<typename FromDataType::FieldType>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
-        /// Special case of converting Int8, Int16, Int32, (U)Int64, (U)Int128 or (U)Int256 (and also, for
-        /// convenience, Float32, Float64, BFloat16) to DateTime. Without the wide integers here the
-        /// conversion would fall through to the generic numeric path, which narrows to `UInt32` modulo
-        /// 2^32 instead of saturating - and the monotonicity `toDateTime` claims would not hold.
-        /// `Enum8`/`Enum16` are stored as `Int8`/`Int16`, so they take the same saturating transform.
+        /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64, BFloat16) to DateTime.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
-                || std::is_same_v<FromDataType, DataTypeInt32>
-                || std::is_same_v<FromDataType, DataTypeEnum8>
-                || std::is_same_v<FromDataType, DataTypeEnum16>)
+                || std::is_same_v<FromDataType, DataTypeInt32>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeUInt64>
-                || std::is_same_v<FromDataType, DataTypeUInt128>
-                || std::is_same_v<FromDataType, DataTypeUInt256>)
+        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt64>
-                || std::is_same_v<FromDataType, DataTypeInt128>
-                || std::is_same_v<FromDataType, DataTypeInt256>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>
                 || std::is_same_v<FromDataType, DataTypeBFloat16>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -2391,48 +2213,42 @@ struct ConvertImpl
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, targetScale(additions));
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, targetScale(additions));
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
         }
-        /// Every unsigned carrier goes through the saturating transforms, not only the wide ones: without this
-        /// `UInt32` skips them for `Time64` and stores an out-of-range value raw, and the narrow types would
-        /// report the overflow mode differently from their signed counterparts. `UInt8` and `UInt16` cannot
-        /// exceed either target, so for them the transform is only a (free) pass-through.
-        else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt8>
-                || std::is_same_v<FromDataType, DataTypeUInt16>
-                || std::is_same_v<FromDataType, DataTypeUInt32>
-                || std::is_same_v<FromDataType, DataTypeUInt64>
+        /// Without this UInt32 skips the saturating transform and stores an out-of-range value raw. UInt8 and
+        /// UInt16 cannot exceed MAX_TIME_TIMESTAMP, so they have nothing to saturate and keep the generic path.
+        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt32> && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt64>
                 || std::is_same_v<FromDataType, DataTypeUInt128>
                 || std::is_same_v<FromDataType, DataTypeUInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, targetScale(additions));
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, targetScale(additions));
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeBFloat16>
-                || std::is_same_v<FromDataType, DataTypeFloat32>
+                std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            /// `BFloat16` is a `Float32` truncated to its top 16 bits, so every `BFloat16` value is exactly
-            /// representable in a `Float32`; the transform computes in that carrier, whose arithmetic and bounds
-            /// are exact enough for the tick domain, instead of in the 8-bit mantissa of the source.
-            using FloatCarrierDataType = std::conditional_t<std::is_same_v<FromDataType, DataTypeBFloat16>, DataTypeFloat32, FromDataType>;
-            using FloatCarrierType = typename FloatCarrierDataType::FieldType;
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FloatCarrierDataType, FloatCarrierType, date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, targetScale(additions));
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FloatCarrierDataType, FloatCarrierType, date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, targetScale(additions));
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                    arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
@@ -2453,168 +2269,6 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
-            && std::is_same_v<ToDataType, DataTypeTime>)
-        {
-            /// Time64 -> Time: drop the sub-second part. Both are timezone-unaware seconds-of-day, so
-            /// no timezone offset is applied (that would silently shift values, cf. issue #104038).
-            /// `TransformTime64` floors towards negative infinity (`-00:00:00.5` -> `-00:00:01`);
-            /// `ToTimeTransform64Signed` clamps to the `Time` range honoring `date_time_overflow_behavior`.
-            using TimeTransform = TransformTime64<ToTimeTransform64Signed<Int64, Int32, date_time_overflow_behavior>>;
-            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
-            return DateTimeTransformImpl<FromDataType, ToDataType, TimeTransform, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, TimeTransform(from_scale));
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
-            && std::is_same_v<ToDataType, DataTypeDateTime>)
-        {
-            /// Time64 -> DateTime: reinterpret the whole-second part as seconds-since-epoch (1970-01-01),
-            /// timezone-independent, matching the established Parquet `TIME` -> `DateTime` convention.
-            /// `TransformTime64` floors towards negative infinity; `ToDateTimeImpl` applies the
-            /// `DateTime` range handling honoring `date_time_overflow_behavior`.
-            using DateTimeTransform = TransformTime64<ToDateTimeImpl<date_time_overflow_behavior>>;
-            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
-            return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
-            && std::is_same_v<ToDataType, DataTypeDateTime>)
-        {
-            /// Keep `Time` consistent with the scale-zero `Time64` path: the whole-second value is
-            /// reinterpreted as seconds since the epoch, honoring `date_time_overflow_behavior`.
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformFromTime<date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
-            && std::is_same_v<ToDataType, DataTypeDate>)
-        {
-            /// Keep `Time` consistent with the scale-zero `Time64` path: both represent
-            /// timezone-unaware seconds since the epoch for this conversion.
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromTime64<date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
-            && std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromTime64, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
-            && std::is_same_v<ToDataType, DataTypeDate>)
-        {
-            using DateTransform = TransformTime64<ToDateTransformFromTime64<date_time_overflow_behavior>>;
-            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
-            return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, DateTransform(from_scale));
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
-            && std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            using DateTransform = TransformTime64<ToDate32TransformFromTime64>;
-            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
-            return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, DateTransform(from_scale));
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
-            && std::is_same_v<ToDataType, DataTypeTime64>)
-        {
-            using ToFieldType = typename ToDataType::FieldType;
-            using ColVecFrom = typename FromDataType::ColumnType;
-            using ColVecTo = typename ToDataType::ColumnType;
-
-            const auto * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
-            UInt32 scale = 0;
-            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
-                || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                scale = additions.scale;
-            else
-                scale = additions;
-
-            auto col_to = ColVecTo::create(0, scale);
-            const auto & vec_from = col_from->getData();
-            auto & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
-
-            const auto can_convert_exactly = [&](const auto & value)
-            {
-                if (col_from->getScale() <= col_to->getScale())
-                    return true;
-
-                const auto divisor = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_from->getScale() - col_to->getScale());
-                return value.value % divisor == 0;
-            };
-
-            /// A `Time64` value is not necessarily inside the clock window: arithmetic such as
-            /// `addSeconds(toTime64('00:00:00', 0), 4000000)` can produce one beyond 999:59:59. Check the window of the
-            /// target like the numeric and `Decimal` sources do, so that such a value is rejected by the accurate casts
-            /// and follows `date_time_overflow_behavior` otherwise, instead of being rescaled as is.
-            const Int64 to_scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_to->getScale());
-            const Int64 max_ticks = maxTicksForTime64(to_scale_multiplier);
-            const Int64 min_ticks = minTicksForTime64(to_scale_multiplier);
-
-            const auto try_convert = [&](const auto & value, ToFieldType & result)
-            {
-                return tryConvertDecimals<FromDataType, ToDataType>(value, col_from->getScale(), col_to->getScale(), result)
-                    && result.value >= min_ticks && result.value <= max_ticks;
-            };
-
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-            {
-                auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
-                auto & vec_null_map_to = col_null_map_to->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    ToFieldType result;
-                    if (can_convert_exactly(vec_from[i]) && try_convert(vec_from[i], result))
-                    {
-                        vec_to[i] = result;
-                    }
-                    else
-                    {
-                        /// The value under a NULL must still be initialized: the nested column is
-                        /// read as a whole (serialization, further conversions), so leaving the
-                        /// element untouched would use uninitialized memory.
-                        vec_to[i] = static_cast<ToFieldType>(0);
-                        vec_null_map_to[i] = true;
-                    }
-                }
-                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-            }
-            else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-            {
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    ToFieldType result;
-                    if (!can_convert_exactly(vec_from[i]) || !try_convert(vec_from[i], result))
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
-                    vec_to[i] = result;
-                }
-            }
-            else
-            {
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    ToFieldType result;
-                    if (try_convert(vec_from[i], result))
-                    {
-                        vec_to[i] = result;
-                    }
-                    else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                    {
-                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                            "Value {} is out of bounds of type {} with scale {}",
-                            vec_from[i].value, ToDataType::family_name, col_to->getScale());
-                    }
-                    else
-                    {
-                        /// Both the `saturate` and the (default) `ignore` mode clamp instead of failing.
-                        vec_to[i] = static_cast<ToFieldType>(vec_from[i].value > 0 ? max_ticks : min_ticks);
-                    }
-                }
-            }
-
-            return col_to;
-        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
@@ -2623,7 +2277,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform<date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, targetScale(additions));
+                arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of Time to DateTime64: treat seconds since midnight as seconds since 1970-01-01
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
@@ -2675,39 +2329,20 @@ struct ConvertImpl
             const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
             time_zone = &from_type.getTimeZone();
 
-            const auto can_convert_exactly = [&](const auto & value)
-            {
-                if (col_from->getScale() <= col_to->getScale())
-                    return true;
-
-                const auto divisor = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_from->getScale() - col_to->getScale());
-                return value.value % divisor == 0;
-            };
-
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
 
-                /// The projection to the seconds of the local day always fits the target, so the only way for
-                /// the conversion to be inexact is a reduction of the scale that drops a part of the fraction.
-                /// The accurate casts reject such a value (as NULL or as an exception) instead of truncating it.
-                if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                // accurateCastOrNull keeps the representability gate: is the rescaled value in range?
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
-                    if (!can_convert_exactly(vec_from[i]))
+                    ToFieldType result;
+                    if (!tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
                     {
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                        {
-                            vec_to[i] = static_cast<ToFieldType>(0);
-                            (*vec_null_map_to)[i] = true;
-                            continue;
-                        }
-                        else
-                        {
-                            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                static_cast<double>(vec_from[i]), ToDataType::family_name);
-                        }
+                        vec_to[i] = static_cast<ToFieldType>(0);
+                        (*vec_null_map_to)[i] = true;
+                        continue;
                     }
                 }
 
@@ -2775,21 +2410,12 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            const auto can_convert_exactly = [&](const auto & value)
-            {
-                if (col_from->getScale() <= col_to->getScale())
-                    return true;
-
-                const auto divisor = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_from->getScale() - col_to->getScale());
-                return value.value % divisor == 0;
-            };
-
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
                     ToFieldType result;
-                    if (can_convert_exactly(vec_from[i]) && tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
                         vec_to[i] = result;
                     else
                     {
@@ -2797,101 +2423,9 @@ struct ConvertImpl
                         (*vec_null_map_to)[i] = true;
                     }
                 }
-                else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                {
-                    ToFieldType result;
-                    if (!can_convert_exactly(vec_from[i]) || !tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
-                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
-                    vec_to[i] = result;
-                }
                 else
                 {
                     vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-                }
-            }
-
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-            else
-                return col_to;
-        }
-        /// Conversion of a `Decimal` (including the rescaling of a `DateTime64`) to `DateTime64` or `Time64`.
-        /// Both of these carry their value in `Int64` ticks, so a source outside the window of the target - a
-        /// `Decimal64` counting more seconds than `Time64` can hold, or a scale-0 `DateTime64` in the year 2299
-        /// that has no scale-9 representation - cannot be converted. Plain `convertDecimals` reports that as
-        /// `DECIMAL_OVERFLOW`, which neither honours `date_time_overflow_behavior` nor lets `accurateCastOrNull`
-        /// report the value as `NULL`, so these conversions follow the same rules as the numeric ones here: the
-        /// accurate casts reject an unrepresentable value, and the overflow modes throw or clamp to the extreme
-        /// representable tick of the target.
-        else if constexpr ((std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
-                        && ((IsDataTypeDecimal<FromDataType> && !IsDataTypeDateOrDateTimeOrTime<FromDataType>)
-                            || (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDateTime64>)))
-        {
-            using ToFieldType = typename ToDataType::FieldType;
-            using ColVecFrom = typename FromDataType::ColumnType;
-            using ColVecTo = typename ToDataType::ColumnType;
-
-            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
-
-            UInt32 scale = 0;
-            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
-                        || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                scale = additions.scale;
-            else
-                scale = additions;
-
-            auto col_to = ColVecTo::create(0, scale);
-            const auto & vec_from = col_from->getData();
-            auto & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
-
-            ColumnUInt8::MutablePtr col_null_map_to;
-            ColumnUInt8::Container * vec_null_map_to = nullptr;
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-            {
-                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
-                vec_null_map_to = &col_null_map_to->getData();
-            }
-
-            const Int64 to_scale_multiplier = DecimalUtils::scaleMultiplier<typename ToDataType::FieldType::NativeType>(col_to->getScale());
-            const Int64 max_ticks = std::is_same_v<ToDataType, DataTypeTime64>
-                ? maxTicksForTime64(to_scale_multiplier) : maxTicksForDateTime64(to_scale_multiplier);
-            const Int64 min_ticks = std::is_same_v<ToDataType, DataTypeTime64>
-                ? minTicksForTime64(to_scale_multiplier) : minTicksForDateTime64(to_scale_multiplier);
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                ToFieldType result{};
-                /// `tryConvertDecimals` only reports an overflow of the `Int64` ticks, while the target also has a
-                /// calendar (or clock) window inside them: a `Decimal64(3)` of 10^12 seconds rescales without
-                /// overflowing yet is no `DateTime64`, so the window is checked here as well.
-                if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result)
-                    && result.value >= min_ticks && result.value <= max_ticks)
-                {
-                    vec_to[i] = result;
-                    continue;
-                }
-
-                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                {
-                    vec_to[i] = static_cast<ToFieldType>(0);
-                    (*vec_null_map_to)[i] = true;
-                }
-                else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                        vec_from[i].value, ToDataType::family_name);
-                }
-                else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                {
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Value {} is out of bounds of type {} with scale {}",
-                        vec_from[i].value, ToDataType::family_name, col_to->getScale());
-                }
-                else
-                {
-                    /// Both the `saturate` and the (default) `ignore` mode clamp instead of failing.
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i].value > 0 ? max_ticks : min_ticks);
                 }
             }
 
@@ -2927,7 +2461,7 @@ struct ConvertImpl
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
                 if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
-                    if (time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()); time_zone_column)
+                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
                     {
                         auto non_null_args = createBlockWithNestedColumns(arguments);
                         time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
@@ -3227,8 +2761,8 @@ struct ConvertImpl
 
             Int64 conversion_factor = 1;
 
-            int from_position = from.toBinary();
-            int to_position = to.toBinary(); /// Positions of each interval according to granularity map
+            int from_position = static_cast<int>(from.kind);
+            int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
 
             bool is_const = isColumnConst(*arguments[0].column);
             size_t calc_num_rows = is_const ? 1 : input_rows_count;
@@ -3614,41 +3148,6 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
 #endif
 
-/// Whether rendering a value of this type as text maps distinct values onto the same string:
-///
-/// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
-///   instants have the same local wall-clock representation;
-/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
-///   tables compare floating-point keys bitwise and keep distinct payloads apart;
-/// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
-///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
-/// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
-///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
-/// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
-///
-/// An unknown type is assumed to collapse, so that an undecidable case is never claimed to be injective.
-inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const FormatSettings & format_settings)
-{
-    if (!type)
-        return true;
-
-    bool collapses = false;
-    auto check = [&](const IDataType & nested)
-    {
-        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
-            collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
-        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
-            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
-        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
-            collapses = true;
-        else if (isUInt8(nested) && nested.getName() == "Bool")
-            collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
-    };
-
-    forEachInTypeTree(*type, check);
-    return collapses;
-}
-
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert final : public IFunction
 {
@@ -3685,26 +3184,9 @@ public:
         return name;
     }
 
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
-
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
-    {
-        if constexpr (std::is_same_v<Name, NameToString>)
-        {
-            /// Only the single-argument form is claimed. A caller that passes no arguments gets no
-            /// claim, because the answer depends on them, and the multi-argument forms are rendered
-            /// in the time zone given by the second argument - `toString(dt, 'Europe/Amsterdam')`
-            /// folds even for a fixed-offset `dt`, and `toString(x, NULL)` maps every row to `NULL`.
-            if (sample_columns.size() != 1)
-                return false;
-
-            return !renderingCollapsesDistinctValues(sample_columns.front().type, settings.format_settings);
-        }
-        else
-            return false;
-    }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
@@ -3841,8 +3323,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// A NULL input converts to NULL only when the target is Nullable.
-    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -3977,32 +3457,8 @@ public:
 
                 ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
                 auto temporary_result_type = removeNullable(result_type);
-
-                /// The string behind a NULL row is arbitrary, and parsing it to DateTime64 or Time64 may throw.
-                WhichDataType which_result(temporary_result_type);
-                if (result_null_map && (which_result.isDateTime64() || which_result.isTime64())
-                    && isStringOrFixedString(removeNullable(arguments[0].type)))
-                {
-                    const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
-                    size_t rows_without_nulls = input_rows_count - countBytesInFilter(null_map_data.data(), 0, input_rows_count);
-                    if (rows_without_nulls == 0)
-                        return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
-
-                    if (rows_without_nulls < input_rows_count)
-                    {
-                        IColumn::Filter filter_mask(input_rows_count);
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                            filter_mask[i] = !null_map_data[i];
-                        for (auto & column : temporary_columns)
-                            column.column = column.column->filter(filter_mask, rows_without_nulls);
-
-                        auto res = IColumn::mutate(executeInternal(temporary_columns, temporary_result_type, rows_without_nulls, /*to_nullable=*/ true));
-                        res->expand(filter_mask, /*inverted=*/ false);
-                        return wrapInNullable(std::move(res), std::move(result_null_map));
-                    }
-                }
-
                 ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
+
                 return wrapInNullable(res, std::move(result_null_map));
             }
             else
@@ -4060,19 +3516,6 @@ public:
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return Monotonic::get(type, left, right);
-    }
-
-    bool hasInformationAboutPreimage() const override
-    {
-        return std::is_same_v<ToDataType, DataTypeDate>;
-    }
-
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
-    {
-        if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
-            return Monotonic::getPreimage(type, point);
-
-        return IFunction::getPreimage(type, point);
     }
 
 private:
@@ -4164,11 +3607,7 @@ private:
                         break;
                 }
             }
-            /// `Enum8`/`Enum16` are stored as `Int8`/`Int16` and take the same transforms in `ConvertImpl`,
-            /// so they must honour `date_time_overflow_behavior` the same way.
             else if constexpr ((IsDataTypeNumber<LeftDataType>
-                                || std::is_same_v<LeftDataType, DataTypeEnum8>
-                                || std::is_same_v<LeftDataType, DataTypeEnum16>
                                 || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)&&IsDataTypeDateOrDateTimeOrTime<RightDataType>)
             {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
@@ -4347,8 +3786,6 @@ public:
         return name;
     }
 
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
-
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -4394,16 +3831,9 @@ public:
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-            {
-                if (to_time64 || scale != 0)
-                    res = std::make_shared<DataTypeTime64>(scale);
-                else
-                    res = std::make_shared<DataTypeTime>();
-            }
-            else if (to_datetime64 || scale != 0)
-                res = std::make_shared<DataTypeDateTime64>(scale, timezone);
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
             else
-                res = std::make_shared<DataTypeDateTime>(timezone);
+                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -4618,7 +4048,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (!to_datetime64 && scale == 0)
+                if (scale == 0)
                 {
                     result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4641,7 +4071,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (!to_time64 && scale == 0)
+                if (scale == 0)
                 {
                     result_column = executeInternal<DataTypeTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4935,139 +4365,10 @@ struct ToNumberMonotonicity
     }
 };
 
-/** At the default `date_time_overflow_behavior = 'ignore'` a `Date`, `Date32` or `DateTime64` argument
-  * is narrowed to the result type by a plain cast, so a value the result type cannot represent wraps
-  * around. A wrapping conversion is not monotonic, and index analysis must not be told otherwise:
-  * it would prune granules that do contain matching rows, and count granules that do not.
-  *
-  * Returns whether the whole range converts without wrapping, given the closed window of whole
-  * seconds since the epoch the result type can represent. An unbounded or unrecognized bound cannot
-  * be proven to fit.
-  *
-  * The conversions go through the time zone: `toDate` takes the local calendar day of a `DateTime64`
-  * instant, and `toDateTime` takes the instant of local midnight of a `Date` or `Date32` day, so the
-  * instant that wraps differs between time zones (`2106-02-07` still fits `DateTime` in `UTC` but not
-  * in `America/Hermosillo`; a late `2149-06-06` instant is already `2149-06-07` in `Pacific/Kiritimati`
-  * and does not fit `Date`). The time zone is not known here, but every offset is smaller than a day
-  * in magnitude, so the window is shrunk by a whole day on each side: that is enough for any time zone
-  * and only costs pruning for a range that touches the very edges of the result type. The comparisons
-  * are strict on top of that, which covers the truncation of a decimal bound below.
-  *
-  * A range that may wrap is reported as monotonic only where the conversion is defined, which is
-  * weaker than `is_monotonic`: it still lets `KeyCondition` push a comparison constant through a
-  * sorting or partition key expression such as `PARTITION BY toDate(ts)`, where an unrepresentable
-  * constant is rejected by the dedicated guards in `applyFunctionChainToColumn`, while it stops
-  * `applyMonotonicFunctionsChainToRange` from mapping a key range through a wrapping conversion.
-  * Other argument types cannot wrap here and are always accepted: `DateTime` is narrower than every
-  * result type by design, and a numeric argument goes through a saturating conversion instead.
-  */
-inline bool dateTimeConversionRangeCannotWrap(
-    const IDataType & type, const Field & left, const Field & right, Int128 min_seconds, Int128 max_seconds)
-{
-    WhichDataType which(type);
-    const bool counts_days = which.isDateOrDate32();
-    if (!counts_days && !which.isDateTime64())
-        return true;
-
-    /// A range that starts at `+inf` or ends at `-inf` holds no finite value (for a `Nullable` key it is
-    /// a run of `NULL`s, which are stored last and stand for `+inf`), so there is nothing to wrap.
-    if (left.isPositiveInfinity() || right.isNegativeInfinity())
-        return true;
-
-    auto to_seconds = [&](const Field & bound) -> std::optional<Int128>
-    {
-        switch (bound.getType())
-        {
-            case Field::Types::UInt64:
-            case Field::Types::Int64:
-            case Field::Types::Float64:
-            case Field::Types::Decimal32:
-            case Field::Types::Decimal64:
-            case Field::Types::Decimal128:
-            case Field::Types::Decimal256:
-                break;
-            default:
-                /// Includes `Null`, which stands for an unbounded side of the range.
-                return {};
-        }
-
-        /// The visitor divides a decimal by its scale, so a `DateTime64` bound arrives as whole
-        /// seconds; a `Date` or `Date32` bound is a day number.
-        const Int128 value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), bound);
-        return counts_days ? value * DATE_SECONDS_PER_DAY : value;
-    };
-
-    const auto left_seconds = to_seconds(left);
-    const auto right_seconds = to_seconds(right);
-    if (!left_seconds || !right_seconds)
-        return false;
-
-    /// A time zone offset is smaller than a day in magnitude, see above.
-    constexpr Int128 time_zone_slack = DATE_SECONDS_PER_DAY;
-    return *left_seconds > min_seconds + time_zone_slack && *right_seconds < max_seconds - time_zone_slack;
-}
-
-/** `toUnixTimestamp` rides on `ToNumberMonotonicity` for most of its arguments, but its `Date` and `Date32`
-  * arms are not a cast of the day number: they multiply the day number by the number of seconds in a day and
-  * wrap the product around the result type (see `convertToUnixTimestampFromDate`). The conversion is therefore
-  * monotonic only over the days whose product fits, and a range reaching beyond them is reordered.
-  */
-template <typename T>
-struct ToUnixTimestampMonotonicity
-{
-    static bool has() { return true; }
-
-    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
-    {
-        const IDataType * inner_type = &type;
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(inner_type))
-            inner_type = low_cardinality->getDictionaryType().get();
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(inner_type))
-            inner_type = nullable->getNestedType().get();
-
-        if (!WhichDataType(*inner_type).isDateOrDate32())
-            return ToNumberMonotonicity<T>::get(type, left, right);
-
-        /// An unbounded side of the range reaches the days where the product wraps around.
-        if (left.isNull() || right.isNull())
-            return {};
-
-        auto day_number_of = [](const Field & field) -> std::optional<Int64>
-        {
-            if (field.getType() == Field::Types::UInt64)
-                return static_cast<Int64>(field.safeGet<UInt64>());
-            if (field.getType() == Field::Types::Int64)
-                return field.safeGet<Int64>();
-            return {};
-        };
-
-        const auto left_day = day_number_of(left);
-        const auto right_day = day_number_of(right);
-        if (!left_day || !right_day)
-            return {};
-
-        /// A negative day number wraps to the top of the result type, and so does a day whose product
-        /// exceeds it. In between the multiplication is an order-preserving bijection.
-        static constexpr Int64 max_day_number = static_cast<Int64>(std::numeric_limits<T>::max()) / DATE_SECONDS_PER_DAY;
-
-        if (*left_day < 0 || *right_day > max_day_number)
-            return {};
-
-        return { .is_monotonic = true, .is_strict = true };
-    }
-};
-
 template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
-
-    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
-    {
-        /// The helper only accepts `DateTime`: with `date_time_overflow_behavior=ignore` a
-        /// `DateTime64` or `Date32` source can wrap and have several disjoint preimages.
-        return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
-    }
 
     static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field & left, const Field & right)
     {
@@ -5078,12 +4379,6 @@ struct ToDateMonotonicity
             type_without_wrappers = nullable_type->getNestedType().get();
         const IDataType & type = *type_without_wrappers;
         auto which = WhichDataType(type);
-        /// Converting Time/Time64 to Date drops at zero. Negative values are converted through
-        /// a signed day number and wrap when represented as Date, so this conversion is not
-        /// monotonic with the default date_time_overflow_behavior = 'ignore'.
-        if (std::is_same_v<T, DataTypeDate> && which.isTimeOrTime64())
-            return {};
-
         if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
             || which.isUInt16())
         {
@@ -5093,16 +4388,6 @@ struct ToDateMonotonicity
             if (std::is_same_v<T, DataTypeDate32> && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isUInt8()
                 || which.isUInt16()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            /// `Date` holds day numbers up to `DATE_LUT_MAX_DAY_NUM`; a `Date32` or `DateTime64`
-            /// argument outside that window wraps. `Date32` is wide enough for every argument type
-            /// reaching this point, so only the `Date` result needs the check.
-            if constexpr (std::is_same_v<T, DataTypeDate>)
-            {
-                if (!dateTimeConversionRangeCannotWrap(
-                        type, left, right, 0, (Int128(DATE_LUT_MAX_DAY_NUM) + 1) * DATE_SECONDS_PER_DAY - 1))
-                    return {.is_always_monotonic_where_defined = true};
-            }
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
@@ -5130,7 +4415,7 @@ struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field &, const Field &)
     {
         const IDataType * type_without_wrappers = &type_with_wrappers;
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_without_wrappers))
@@ -5141,52 +4426,7 @@ struct ToDateTimeMonotonicity
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
-
-            /// Rescaling a day number to seconds wraps the `UInt32` result outside a bounded window, and
-            /// this trait cannot read `date_time_overflow_behavior`, so the window must hold for the
-            /// wrapping default. `Date32` also needs a floor: its raw day 0 is negative ahead of UTC.
-            if constexpr (std::is_same_v<T, DataTypeDateTime>)
-            {
-                if (which.isDateOrDate32())
-                {
-                    const Int64 min_day_num = which.isDate32() ? 1 : 0;
-
-                    /// An absent or non-integer bound is outside the window: the range may then hold any day.
-                    auto is_within_window = [&](const Field & bound)
-                    {
-                        if (bound.getType() == Field::Types::UInt64)
-                        {
-                            const UInt64 day_num = bound.safeGet<UInt64>();
-                            return day_num <= static_cast<UInt64>(MAX_DATETIME_DAY_NUM)
-                                && static_cast<Int64>(day_num) >= min_day_num;
-                        }
-                        if (bound.getType() == Field::Types::Int64)
-                        {
-                            const Int64 day_num = bound.safeGet<Int64>();
-                            return day_num >= min_day_num && day_num <= static_cast<Int64>(MAX_DATETIME_DAY_NUM);
-                        }
-                        return false;
-                    };
-
-                    if (!is_within_window(left) || !is_within_window(right))
-                        return {};
-
-                    /// Not strict: a timezone may skip a civil day, mapping two day numbers to one instant.
-                    return {.is_monotonic = true};
-                }
-            }
-
-            /// `DateTime` holds whole seconds up to the `UInt32` maximum; a `DateTime64` argument outside that
-            /// window wraps. `DateTime64` is wide enough for every argument type reaching this point, so only
-            /// the `DateTime` result needs the check.
-            if constexpr (std::is_same_v<T, DataTypeDateTime>)
-            {
-                if (!dateTimeConversionRangeCannotWrap(
-                        type, left, right, 0, Int128(std::numeric_limits<UInt32>::max())))
-                    return {.is_always_monotonic_where_defined = true};
-            }
-
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
                 || which.isUInt32()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
@@ -5197,14 +4437,6 @@ struct ToDateTimeMonotonicity
             /// Converting from other types (integers, DateTime, etc.) extracts the time-of-day
             /// component using toTime, which is not monotonic.
             if ((std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>) && !which.isTimeOrTime64())
-                return {};
-
-            /// Converting Time/Time64 to DateTime reinterprets seconds-of-day as seconds since
-            /// the epoch, and Time/Time64 values can be negative. With the default
-            /// date_time_overflow_behavior = 'ignore', negative values wrap to the end of the
-            /// DateTime range (e.g. -1 becomes 2106-02-07 06:28:15), so the conversion is not
-            /// monotonic across zero.
-            if (std::is_same_v<T, DataTypeDateTime> && which.isTimeOrTime64())
                 return {};
 
             return {.is_monotonic = true, .is_always_monotonic = true};
@@ -5346,7 +4578,7 @@ extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotoni
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToUnixTimestampMonotonicity<UInt32>>;
+extern template class FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 extern template class FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
@@ -5387,7 +4619,7 @@ using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonoton
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToUnixTimestampMonotonicity<UInt32>>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
@@ -5727,9 +4959,6 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// A NULL input converts to NULL only when the target is Nullable; otherwise the conversion
-    /// throws rather than returning a NULL, so it must not be treated as propagating.
-    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     /// CAST(Nothing, T) -> T
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -5777,8 +5006,6 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }
-
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

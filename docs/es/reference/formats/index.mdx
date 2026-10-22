@@ -11,7 +11,9 @@ import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupporte
 ClickHouse admite la mayoría de los formatos de datos de texto y binarios conocidos. Esto permite una integración sencilla en casi cualquier
 pipeline de datos para aprovechar las ventajas de ClickHouse.
 
-## Formatos de entrada {#input-formats}
+<div id="input-formats">
+  ## Formatos de entrada
+</div>
 
 Los formatos de entrada se usan para:
 
@@ -34,14 +36,18 @@ Para profundizar en los resultados y las buenas prácticas,
 lee el [análisis completo del benchmark](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
 Para ver los resultados completos de las pruebas, explora el dashboard en línea [FastFormats](https://fastformats.clickhouse.com/).
 
-## Formatos de salida {#output-formats}
+<div id="output-formats">
+  ## Formatos de salida
+</div>
 
 Los formatos de salida compatibles se usan para:
 
 * Organizar los resultados de una consulta `SELECT`
 * Realizar operaciones `INSERT` en tablas basadas en archivos
 
-## Resumen de formatos {#formats-overview}
+<div id="formats-overview">
+  ## Resumen de formatos
+</div>
 
 Los formatos compatibles son:
 
@@ -144,15 +150,14 @@ Los formatos compatibles son:
 | [DWARF](/es/reference/formats/DWARF)                                                                                               | ✔       | ✗      |
 | [Markdown](/es/reference/formats/Markdown)                                                                                         | ✗       | ✔      |
 | [Form](/es/reference/formats/Form)                                                                                                 | ✔       | ✗      |
-| [PNG](/es/reference/formats/PNG)                                                                                                   | ✗       | ✔      |
-| [Puffin](/es/reference/formats/Puffin/Puffin)                                                                                      | ✔       | ✗      |
-| [PuffinMetadata](/es/reference/formats/Puffin/PuffinMetadata)                                                                      | ✔       | ✗      |
 
 Puede controlar algunos parámetros de procesamiento de formatos mediante la configuración de ClickHouse. Para obtener más información, consulte la sección [Configuración](/es/reference/settings/formats).
 
 Los ajustes adicionales específicos de JSON se documentan en la página [ajustes del formato JSON](/es/reference/formats/JSON/format-settings).
 
-## Esquema de formato {#formatschema}
+<div id="formatschema">
+  ## Esquema de formato
+</div>
 
 El nombre del archivo que contiene el esquema de formato se establece mediante la opción `format_schema`.
 Es necesario establecer esta opción cuando se utiliza uno de los formatos `Cap'n Proto` o `Protobuf`.
@@ -169,7 +174,9 @@ Si introduce o exporta datos mediante la [interfaz HTTP](/es/concepts/features/i
 debe estar ubicado en el directorio especificado en [format&#95;schema&#95;path](/es/reference/settings/server-settings/settings/format#format_schema_path)
 de la configuración del servidor.
 
-## Ignorar errores {#skippingerrors}
+<div id="skippingerrors">
+  ## Ignorar errores
+</div>
 
 Algunos formatos, como `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` y `Protobuf`, pueden omitir una fila incorrecta si se produce un error de análisis y continuar analizando desde el comienzo de la siguiente fila. Consulte los ajustes [input&#95;format&#95;allow&#95;errors&#95;num](/es/reference/settings/formats/input-format#input_format_allow_errors_num) e
 [input&#95;format&#95;allow&#95;errors&#95;ratio](/es/reference/settings/formats/input-format#input_format_allow_errors_ratio).

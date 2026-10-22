@@ -46,6 +46,4 @@ private:
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
 CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 
-void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from);
-
 }

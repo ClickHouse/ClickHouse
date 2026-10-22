@@ -192,12 +192,18 @@ void ConstantJoin::updatePeakAllocatedSizeIfNeeded()
     peak_allocated_size = std::max(peak_allocated_size, allocated_size + selected_right_row_size);
 }
 
-bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, JoinBuildContext context)
+bool ConstantJoin::addBlockToJoin(const Block & source_block, bool check_limits)
+{
+    return addBlockToJoin(source_block, source_block.rows(), check_limits);
+}
+
+bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, bool check_limits)
 {
     const bool select_right_row_mode = plan.right_rows_to_join == OutputPlan::RightRowsToJoin::SelectedRowOnly;
 
-    chassert(!source_block.columns() || num_rows == source_block.rows());
-    const size_t rows = num_rows;
+    size_t rows = source_block.rows();
+    if (rows == 0 && num_rows != 0 && !source_block.columns())
+        rows = num_rows;
 
     total_rows_to_join += rows;
 
@@ -256,7 +262,7 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, J
 
     storeRightBlock(std::move(block_to_save), rows);
 
-    if (!context.joinChecksLimits())
+    if (!check_limits)
         return true;
 
     return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);

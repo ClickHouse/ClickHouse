@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- no-parallel: enables a global failpoint
 
 -- Regression test: a BACKUP ... TO Memory(...) that fails before finalization (before the `.backup`

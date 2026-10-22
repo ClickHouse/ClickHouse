@@ -17,8 +17,8 @@ ASTPtr timeSeriesTimestampToAST(DateTime64 timestamp, const DataTypePtr & timest
 /// The function assumes that `duration` uses the same decimal scale as `timestamp_data_type`.
 ASTPtr timeSeriesDurationToAST(Decimal64 duration, const DataTypePtr & timestamp_data_type);
 
-/// Converts a scalar value to SQL (a Float64 literal).
-ASTPtr timeSeriesScalarToAST(Float64 value);
+/// Converts a scalar value to SQL.
+ASTPtr timeSeriesScalarToAST(Float64 value, const DataTypePtr & scalar_data_type);
 
 /// Makes an AST casting an expression representing a timestamp to a specified `timestamp_data_type`.
 ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type);
@@ -26,7 +26,7 @@ ASTPtr timeSeriesTimestampASTCast(ASTPtr && ast, const DataTypePtr & timestamp_d
 /// Makes an AST casting an expression representing a duration to the duration data type corresponding to a specified `timestamp_data_type`.
 ASTPtr timeSeriesDurationASTCast(ASTPtr && ast, const DataTypePtr & timestamp_data_type);
 
-/// Makes an AST casting an expression representing a scalar value to Float64.
-ASTPtr timeSeriesScalarASTCast(ASTPtr && ast);
+/// Makes an AST casting an expression representing a scalar value to a specified `scalar_data_type`.
+ASTPtr timeSeriesScalarASTCast(ASTPtr && ast, const DataTypePtr & scalar_data_type);
 
 }

@@ -14,7 +14,9 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## prefer_column_name_to_alias {#prefer_column_name_to_alias}
+<div id="prefer_column_name_to_alias">
+  ## prefer_column_name_to_alias
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,22 +26,6 @@ Possíveis valores:
 
 * 0 — O nome da coluna é substituído pelo alias.
 * 1 — O nome da coluna não é substituído pelo alias.
-
-Se o nome da coluna for ambíguo entre as tabelas unidas por join e existir um alias com o mesmo nome, o alias é utilizado:
-
-```sql
-SET prefer_column_name_to_alias = 1;
-SELECT t1.id + 10 AS id, id AS x
-FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
-```
-
-```text
-┌─id─┬──x─┐
-│ 11 │ 11 │
-└────┴────┘
-```
-
-Aqui, `id` em `id AS x` é uma coluna tanto de `t1` quanto de `t3`, portanto é resolvido para o alias `t1.id + 10`.
 
 **Exemplo**
 
@@ -74,7 +60,9 @@ Resultado:
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
+<div id="prefer_external_sort_block_bytes">
+  ## prefer_external_sort_block_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -82,7 +70,9 @@ Resultado:
 
 Prioriza o número máximo de bytes por bloco na ordenação externa, reduzindo o uso de memória durante a mesclagem.
 
-## prefer_global_in_and_join {#prefer_global_in_and_join}
+<div id="prefer_global_in_and_join">
+  ## prefer_global_in_and_join
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +95,9 @@ Outro caso de uso de `prefer_global_in_and_join` é acessar tabelas criadas por 
 
 * [Subconsultas distribuídas](/pt-BR/reference/statements/in#distributed-subqueries) para mais informações sobre como usar `GLOBAL IN`/`GLOBAL JOIN`
 
-## prefer_localhost_replica {#prefer_localhost_replica}
+<div id="prefer_localhost_replica">
+  ## prefer_localhost_replica
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,22 +114,9 @@ Valores possíveis:
   Se ela for usada em um cluster com um único shard e várias réplicas, desativar esta configuração terá efeitos negativos.
 </Note>
 
-## prefer_optimize_projection {#prefer_optimize_projection}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração: escolhe uma projeção utilizável independentemente do seu custo estimado, como `force_optimize_projection`, mas sem fazer a consulta falhar quando nenhuma projeção é usada."}]}]} />
-
-Faz com que a otimização por projeções prefira [projeções](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#projections) em vez da tabela em consultas `SELECT`, quando a otimização por projeções está habilitada (veja a configuração [optimize&#95;use&#95;projections](/pt-BR/reference/settings/session-settings/optimize-use#optimize_use_projections)).
-
-Quando habilitada, uma projeção capaz de atender à consulta é utilizada mesmo que exija a leitura de mais marcas do que a própria tabela, assim como ocorre com [force&#95;optimize&#95;projection](/pt-BR/reference/settings/session-settings/force-optimize#force_optimize_projection), mas a consulta não falha quando nenhuma projeção pode ser usada.
-
-Valores possíveis:
-
-* 0 — As projeções são escolhidas pelo seu custo estimado.
-* 1 — Uma projeção utilizável é escolhida independentemente do seu custo estimado.
-
-## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
+<div id="prefer_warmed_unmerged_parts_seconds">
+  ## prefer_warmed_unmerged_parts_seconds
+</div>
 
 <CloudOnlyBadge />
 

@@ -214,10 +214,8 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When called with a single argument, concat delegates to toString, so the claim has to be
-        /// the one toString makes: it depends on the argument type, because rendering a date-time in a
-        /// time zone that has a UTC offset transition maps two distinct instants onto one string.
-        return arguments.size() == 1 && to_string->isInjective(arguments);
+        /// When called with a single argument, concat delegates to toString which is injective.
+        return arguments.size() == 1;
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -313,17 +311,13 @@ Can be used for optimization of `GROUP BY`.
     FunctionDocumentation::Examples examples_injective = {
     {
         "Group by optimization",
+        "SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)",
         R"(
-CREATE TABLE key_val (key1 String, key2 String, value UInt32) ENGINE = Memory;
-INSERT INTO key_val VALUES ('Hello, ', 'World!', 1), ('Hello, ', 'World!', 2), ('Hello, ', 'World', 3);
-
-SELECT concatAssumeInjective(key1, key2) AS key, sum(value) FROM key_val GROUP BY key ORDER BY key;
-        )",
-        R"(
-┌─key───────────┬─sum(value)─┐
-│ Hello, World  │          3 │
-│ Hello, World! │          3 │
-└───────────────┴────────────┘
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
         )"
     }
     };

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: uses a PAUSEABLE failpoint whose channel is global to the server, so concurrent
 # test instances would interfere with each other's ENABLE/DISABLE/WAIT sequence.
 

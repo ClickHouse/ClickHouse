@@ -1,5 +1,0 @@
-0	1
-0	1
-0	1
-0	1
-INSERT INTO t_05233 SELECT x\nFROM eval(\'SELECT 5 AS x\')

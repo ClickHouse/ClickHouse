@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
@@ -70,11 +65,8 @@ public:
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }
 
-    /// Names of the recorded columns, in serialization order.
-    std::vector<String> getColumnNames() const;
-
     /// Check that we have substreams for all columns and they have the same order as in provided list.
-    void validateColumns(const std::vector<String> & columns, int error_code = ErrorCodes::LOGICAL_ERROR) const;
+    void validateColumns(const std::vector<String> & columns) const;
 
     /// Check that all substream names have valid prefixes matching their column names.
     /// Every substream for a column must start with escapeForFileName(column_name) (or

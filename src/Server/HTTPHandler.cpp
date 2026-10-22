@@ -4,7 +4,6 @@
 #include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -780,12 +779,7 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        /// The frames are the same self-describing format as the native protocol's, so the codec comes from
-        /// the same setting. It must not come from the default codec for table data: that one is chosen for
-        /// how data sits on disk, and tying the two together silently changes, on every such change, what
-        /// each `compress=1` client has to be able to decode.
-        used_output.out_compressed_holder
-            = std::make_shared<CompressedWriteBuffer>(*used_output.out, chooseNetworkCompressionCodec(&settings));
+        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
         used_output.out = used_output.out_compressed_holder;
     }
@@ -1657,11 +1651,9 @@ DynamicQueryHandler::DynamicQueryHandler(
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
     const std::string & url_prefix_,
-    HTTPPathHintsPtr path_hints_,
-    bool parse_http_path_)
+    HTTPPathHintsPtr path_hints_)
     : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
-    , parse_http_path(parse_http_path_)
 {
 }
 
@@ -1939,12 +1931,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
-    {
-        /// A rule without `url_prefix` is matched by its own `url`, which is not a `database/table.format` path.
-        const bool parse_http_path = !url_prefix.empty();
-        return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, query_param_name, http_response_headers_override, url_prefix, nullptr, parse_http_path);
-    };
+    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
