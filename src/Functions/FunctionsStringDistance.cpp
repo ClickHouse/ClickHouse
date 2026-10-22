@@ -602,22 +602,27 @@ struct ByteEditDistanceImpl
     using WorkingType = UInt32;
     using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
 
-    static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    /// If `max_length` is set, it gets the length of the longer string, counted as for the distance.
+    static ResultType process(
+        const char * __restrict haystack,
+        size_t haystack_size,
+        const char * __restrict needle,
+        size_t needle_size,
+        size_t * max_length = nullptr)
     {
         /// The distance to an empty string is the length of the other string: its size in bytes,
         /// or its number of code points for the UTF8 variant (validated as in the general case).
         if (haystack_size == 0 || needle_size == 0)
         {
+            size_t length = haystack_size + needle_size;
             if constexpr (is_utf8)
             {
-                size_t length = 0;
+                length = 0;
                 parseUTF8String(haystack_size ? haystack : needle, haystack_size + needle_size, [&](UInt32) { ++length; });
-                return length;
             }
-            else
-            {
-                return haystack_size + needle_size;
-            }
+            if (max_length)
+                *max_length = length;
+            return length;
         }
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
@@ -648,6 +653,8 @@ struct ByteEditDistanceImpl
                 std::swap(needle, haystack);
             }
         }
+        if (max_length)
+            *max_length = haystack_size;
 
         auto dispatchMyers = [&]<typename F>()
         {
@@ -709,39 +716,21 @@ struct ByteEditDistanceRatioImpl
 
     static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
-        /// Safety threshold against DoS, as for editDistance.
-        if (haystack_size > max_string_size || needle_size > max_string_size)
+        /// Safety threshold against DoS, as for editDistance. It protects the distance computation, which does not run
+        /// when one string is empty.
+        if (haystack_size != 0 && needle_size != 0 && (haystack_size > max_string_size || needle_size > max_string_size))
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function editDistanceRatio, should be at most {}",
                 max_string_size);
 
-        size_t haystack_length = haystack_size;
-        size_t needle_length = needle_size;
-        if constexpr (is_utf8)
-        {
-            haystack_length = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(haystack), haystack_size);
-            needle_length = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(needle), needle_size);
-        }
-
-        const size_t max_length = std::max(haystack_length, needle_length);
+        /// The length comes from the same parse as the distance, so they count the same symbols: a byte from 0x80 to 0xBF
+        /// without a lead byte is one symbol in both. A non-empty string against an empty one gives 0.
+        size_t max_length = 0;
+        const UInt64 distance = ByteEditDistanceImpl<is_utf8>::process(haystack, haystack_size, needle, needle_size, &max_length);
         if (max_length == 0)
             return 1;
 
-        /// A non-empty string has nothing in common with an empty one. The UTF-8 is still validated, as in the general case.
-        if (haystack_length == 0 || needle_length == 0)
-        {
-            if constexpr (is_utf8)
-            {
-                if (haystack_length)
-                    parseUTF8String(haystack, haystack_size, [](UInt32) {});
-                else
-                    parseUTF8String(needle, needle_size, [](UInt32) {});
-            }
-            return 0;
-        }
-
-        const UInt64 distance = ByteEditDistanceImpl<is_utf8>::process(haystack, haystack_size, needle, needle_size);
         return 1 - static_cast<Float64>(distance) / static_cast<Float64>(max_length);
     }
 };
@@ -811,8 +800,9 @@ struct ByteStringSimilarityRatioImpl
 
     static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
-        /// Safety threshold against DoS, as for editDistance.
-        if (haystack_size > max_string_size || needle_size > max_string_size)
+        /// Safety threshold against DoS, as for editDistance. It protects the LCS computation, which does not run
+        /// when one string is empty.
+        if (haystack_size != 0 && needle_size != 0 && (haystack_size > max_string_size || needle_size > max_string_size))
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function stringSimilarityRatio, should be at most {}",
@@ -1396,7 +1386,7 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     FunctionDocumentation::Description description_edit_ratio = R"(
 Calculates the normalized [edit distance](https://en.wikipedia.org/wiki/Edit_distance) similarity between two byte strings:
 `1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
-Returns a value between `0` (nothing in common) and `1` (equal strings). Two empty strings are equal.
+Returns a value between `0` (the edit distance equals the length of the longer string, as for `'ab'` and `'ba'`) and `1` (equal strings). Two empty strings are equal.
 )";
     FunctionDocumentation::Syntax syntax_edit_ratio = "editDistanceRatio(s1, s2)";
     FunctionDocumentation::Arguments arguments_edit_ratio = {

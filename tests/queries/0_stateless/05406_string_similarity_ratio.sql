@@ -27,3 +27,14 @@ SELECT editDistanceRatioUTF8('\xC3', 'a'); -- { serverError BAD_ARGUMENTS }
 SELECT editDistanceRatioUTF8('', '\xC3'); -- { serverError BAD_ARGUMENTS }
 SELECT stringSimilarityRatio(repeat('a', 70000), 'a'); -- { serverError TOO_LARGE_STRING_SIZE }
 SELECT editDistanceRatio(repeat('a', 70000), 'a'); -- { serverError TOO_LARGE_STRING_SIZE }
+
+-- A byte from 0x80 to 0xBF without a lead byte does not throw: it is one symbol, as in editDistanceUTF8
+SELECT editDistanceRatioUTF8('a\xB0', 'b');
+SELECT stringSimilarityRatioUTF8('\x80', 'a');
+SELECT stringSimilarityRatioUTF8('', '\x80');
+SELECT editDistanceRatioUTF8('\x80', 'a');
+SELECT editDistanceRatioUTF8('', '\x80');
+
+-- The size limit protects the computation, which does not run when one string is empty
+SELECT editDistanceRatio(repeat('a', 70000), '');
+SELECT stringSimilarityRatio(repeat('a', 70000), '');
