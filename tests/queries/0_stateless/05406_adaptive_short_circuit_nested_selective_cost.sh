@@ -26,7 +26,16 @@ QUERY="SELECT sum(if(ok, and(b, compareSubstrings(s1, s2, 0, 0, 256)), 0)) FROM 
 ${CLICKHOUSE_CLIENT} --query "$QUERY SETTINGS $SETTINGS, enable_adaptive_short_circuit_lazy_execution = 0"
 
 # The result must not change, and `compareSubstrings` must stay lazy.
-${CLICKHOUSE_CLIENT} --send_logs_level trace --query "$QUERY SETTINGS $SETTINGS, enable_adaptive_short_circuit_lazy_execution = 1" 2> "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
-grep -c "Lazy execution is not beneficial for compareSubstrings" "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
+# The decision is based on wall-clock measurements of a few hundred rows per round, so on a heavily loaded
+# machine an unlucky run can still look non-beneficial. Retry a few times: with the wrong cost model (costing
+# the eager alternative over the rows passed to the nearest lazy ancestor) the switch happens in every run.
+for _ in {1..5}
+do
+    result=$(${CLICKHOUSE_CLIENT} --send_logs_level trace --query "$QUERY SETTINGS $SETTINGS, enable_adaptive_short_circuit_lazy_execution = 1" 2> "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log")
+    switches=$(grep -c "Lazy execution is not beneficial for compareSubstrings" "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.log")
+    [ "$switches" = "0" ] && break
+done
+echo "$result"
+echo "$switches"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_nested_selective"
