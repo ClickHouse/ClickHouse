@@ -47,6 +47,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -62,6 +63,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <memory>
 #include <unordered_set>
@@ -71,6 +73,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool async_insert;
     extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsBool distributed_foreground_insert;
@@ -80,7 +83,6 @@ namespace Setting
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsMaxThreads max_insert_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsUInt64Auto insert_quorum;
@@ -101,7 +103,6 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -138,7 +139,7 @@ namespace ErrorCodes
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_,
-    bool is_initial_insert_)
+    bool is_initial_insert_, bool positional_arguments_already_resolved_)
     : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
@@ -147,15 +148,17 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , no_destination(no_destination_)
     , async_insert(async_insert_)
     , is_initial_insert(is_initial_insert_)
+    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
+    {
+        quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_ROWS);
         quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_BYTES);
+    }
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = getMaxThreadsForAvailableMemory(
-        std::max<size_t>(1, settings[Setting::max_threads]),
-        settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_threads = getEffectiveMaxThreads(settings);
     max_insert_threads = getMaxThreadsForAvailableMemory(
         std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
         settings[Setting::max_insert_threads_min_free_memory_per_thread]);
@@ -174,7 +177,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1)
+                .positionalArgumentsAlreadyResolved(positional_arguments_already_resolved);
             auto header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
 
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
@@ -199,7 +203,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
+    /// The insert path reads engine facts the proxy of an unloaded table cannot answer.
+    return resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, current_context));
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -486,7 +491,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
+    /// Not only on the initiator: a follower or a `*Cluster` worker executing a forwarded INSERT would otherwise
+    /// start a coordinated read in a materialized view, and nothing coordinates it.
+    if (context->canUseTaskBasedParallelReplicas())
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
@@ -771,7 +778,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 
     QueryPipelineBuilder pipeline = [&]()
     {
-        auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+        auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1)
+            .positionalArgumentsAlreadyResolved(positional_arguments_already_resolved);
         InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
         return interpreter_select_analyzer.buildQueryPipeline();
     }();
@@ -852,8 +860,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         return {};
 
     /// Create a context with automatic_parallel_replicas_mode disabled upfront.
-    /// INSERT SELECT should use parallel replicas regardless of automatic mode,
-    /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
+    /// INSERT SELECT should use parallel replicas regardless of automatic mode.
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
 
@@ -874,11 +881,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
-    /// Pinning it on the context above is not enough: the nested interpreter re-applies the SELECT's own
+    /// Pinning them on the context above is not enough: the nested interpreter re-applies the SELECT's own
     /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
-    /// bringing the plan-based implementation back for the plans built below. `execute` restores
+    /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
+    /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    static constexpr std::array settings_overridden_for_this_path{
+        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
@@ -887,8 +896,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
-        && settings[Setting::parallel_replicas_prefer_local_replica])
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_prefer_local_replica])
     {
         /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
         /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
@@ -930,7 +938,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
+    /// Not only on the initiator: a follower or a `*Cluster` worker executing a forwarded INSERT would otherwise
+    /// start a coordinated read in a materialized view, and nothing coordinates it.
+    if (context->canUseTaskBasedParallelReplicas())
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
@@ -1244,7 +1254,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (query.table_id.empty())
         return {};
 
-    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
@@ -1256,9 +1266,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         if (auto * sq = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             select_query = sq;
+            const size_t max_expanded_ast_elements = local_context->getSettingsRef()[Setting::max_expanded_ast_elements];
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0), max_expanded_ast_elements);
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0), max_expanded_ast_elements);
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)
@@ -1308,7 +1319,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// structure and format arguments are added so that the nodes do not infer the schema again.
     {
         auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
-        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
+        /// The query is forwarded to the nodes of `src_cluster`, which is the source storage's own cluster.
+        src_storage_cluster->updateQueryToSendIfNeeded(
+            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName());
     }
 
     String query_str;
@@ -1663,7 +1676,8 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
             /* no_squash */false,
             /* no_destination */false,
             /* async_insert */false,
-            is_initial_insert);
+            is_initial_insert,
+            args.options.positional_arguments_already_resolved);
     };
     factory.registerInterpreter("InterpreterInsertQuery", create_fn);
 }

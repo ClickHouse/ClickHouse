@@ -97,6 +97,16 @@ public:
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
     virtual DataTypePtr getNormalizedStateType() const;
 
+    /// State type for a pass-through combinator - one that stores nested states inside its own state
+    /// and forwards `isVersioned` / `getDefaultVersion` to the nested function (`-If`, `-Array`,
+    /// `-ForEach`, `-Map`, `-ArgMin` / `-ArgMax`, `-OrNull` / `-OrDefault`, `-Resample`, `-Distinct`,
+    /// and the implicit adaptor for `Nullable` arguments).
+    /// If the nested function spells its current state version out in its state type, the combinator's
+    /// state type must spell the same version: a fresh state column otherwise falls back to the legacy
+    /// default version on local serialization round trips of the column (`groupArray` over the states,
+    /// sorting, views), losing the information the newer version carries.
+    DataTypePtr getStateTypeWithVersionOf(const IAggregateFunction & nested) const;
+
     /// Identifies the state representation variant used by this function.
     /// The default is Aggregation (normal GROUP BY implementation).
     virtual AggregateFunctionStateVariant getStateVariant() const
@@ -330,6 +340,14 @@ public:
       */
     virtual bool isState() const { return false; }
 
+    /** How the finalized value of a merged state relates to the finalized values of the states
+      * being merged; see the `MergedValueBound` enum. A function may declare a bound only if the
+      * relation holds exactly for any set of states and any data, and its `insertResultInto` does
+      * not modify the state (the values of partial states are peeked before they are merged).
+      * The safe default is `Unknown`, which excludes the function from the threshold merge.
+      */
+    virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
+
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
@@ -401,7 +419,7 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        Arena * arena) const = 0;
+        Arena * arena) const;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -429,6 +447,17 @@ public:
         const UInt64 * offsets,
         Arena * arena) const = 0;
 
+    /** Row `i` of [row_begin, row_end) goes to the state at `place + (i - row_begin) * place_stride`.
+      * Used by -ForEach, whose nested states for one array are consecutive.
+      */
+    virtual void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
+
     /** The case when the aggregation key is UInt8
       * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
       */
@@ -450,6 +479,18 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena) const = 0;
+
+    /** The same devirtualized loop, but the states stay usable afterwards (`insertResultInto`
+      * guarantees it) - for peeking the values of live states, e.g. by the top-K threshold
+      * merge, which ranks partial states by value before deciding which ones to merge.
+      */
+    virtual void insertResultIntoBatchWithoutDestroying(
+        size_t row_begin,
+        size_t row_end,
+        const AggregateDataPtr * places,
         size_t place_offset,
         IColumn & to,
         Arena * arena) const = 0;
@@ -502,16 +543,6 @@ public:
 
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
-
-    /// Whether DataTypeAggregateFunction::getName() should print parameters with ::Type
-    /// suffixes so the type name round-trips losslessly. Default false.
-    virtual bool shouldPrintParametersWithTypes() const
-    {
-        /// Combinators propagate the wrapped function's answer.
-        if (auto nested = getNestedFunction())
-            return nested->shouldPrintParametersWithTypes();
-        return false;
-    }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -811,27 +842,6 @@ public:
         }
     }
 
-    void addBatchSparseSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        const auto & offsets = column_sparse.getOffsetsData();
-
-        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
-        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
-
-        size_t num_defaults = (row_end - row_begin) - (to - from);
-        if (from < to)
-            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
-        if (num_defaults > 0)
-            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
-    }
-
     void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -877,6 +887,18 @@ public:
         }
     }
 
+    void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
     void addBatchLookupTable8(
         size_t row_begin,
         size_t row_end,
@@ -915,6 +937,18 @@ public:
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
+    }
+
+    void insertResultIntoBatchWithoutDestroying(
+        size_t row_begin,
+        size_t row_end,
+        const AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+            static_cast<const Derived *>(this)->insertResultInto(places[i] + place_offset, to, arena);
     }
 
     void insertResultIntoBatch(

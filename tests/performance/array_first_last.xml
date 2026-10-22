@@ -44,11 +44,15 @@
         FROM numbers(500000)
     </fill_query>
 
+    <!--
+        nested_values rows have 31 elements: with a power-of-two row size every row is read at the same few offsets
+        within a memory page, and which offsets depends on where the column is allocated in each server.
+    -->
     <fill_query>
         INSERT INTO array_first_last_complex
         SELECT
             arrayMap(x -&gt; (x, x), range(32)),
-            arrayMap(x -&gt; [x, x], range(32))
+            arrayMap(x -&gt; [x, x], range(31))
         FROM numbers(250000)
     </fill_query>
 

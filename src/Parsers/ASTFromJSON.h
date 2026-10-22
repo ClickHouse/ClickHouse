@@ -28,11 +28,11 @@ void countJSONDeserializationElement();
 /// an untrusted array length cannot force a large allocation before the per-element budget check runs.
 size_t getJSONDeserializationRemainingElements();
 
-/// Returns true when the buffer [begin, end) starts with a `SET` token (case-insensitive,
-/// followed by whitespace or end-of-input). Used as an escape hatch when
-/// `dialect = clickhouse_json` is active so users can still send `SET dialect = ...`
-/// queries in plain SQL to switch back to another dialect, instead of being locked
-/// into JSON-only input.
-bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size);
+/// Returns true when the buffer [begin, end) begins with a valid SQL `SET` query. Used as an
+/// escape hatch when a non-ClickHouse dialect is active so users can still send
+/// `SET dialect = ...` queries in plain SQL to switch back to another dialect.
+/// The probe runs a full `ParserSetQuery`, so it takes the same `max_parser_depth` and
+/// `max_parser_backtracks` limits as the real parse that follows it.
+bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks);
 
 }

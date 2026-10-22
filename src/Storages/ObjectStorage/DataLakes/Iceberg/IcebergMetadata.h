@@ -54,11 +54,21 @@ struct IcebergFileRecord
     std::optional<UInt64> first_row_id;
 };
 
+struct IcebergMetadataLogEntry
+{
+    DateTime64 timestamp{};
+    String file;
+    std::optional<Int64> latest_snapshot_id;
+    std::optional<Int32> latest_schema_id;
+    std::optional<Int64> latest_sequence_number;
+};
+
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
     using IcebergFiles = std::vector<IcebergFileRecord>;
+    using IcebergMetadataLogEntries = std::vector<IcebergMetadataLogEntry>;
 
     static constexpr auto name = "Iceberg";
 
@@ -68,7 +78,8 @@ public:
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
         Iceberg::PersistentTableComponents && persistent_components_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata_ = std::nullopt);
 
     ~IcebergMetadata() override;
 
@@ -107,6 +118,8 @@ public:
 
     bool supportsUpdate() const override { return true; }
 
+    void update(const ContextPtr & context) override;
+
     void setExplicitMetadataFilePath(const String & path) override;
 
     bool supportsWrites() const override { return true; }
@@ -115,6 +128,7 @@ public:
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
     IcebergHistory getHistory(ContextPtr local_context) const;
+    IcebergMetadataLogEntries getMetadataLogEntries(ContextPtr local_context) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
@@ -124,7 +138,7 @@ public:
         ContextPtr local_context) const;
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
-    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
+    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) const override;
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
@@ -147,7 +161,11 @@ public:
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
+    bool optimize(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
     bool optimizeManifestFiles(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
@@ -206,7 +224,11 @@ public:
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
         const ContextPtr & context,
-        bool force_fetch_latest_metadata = false) const;
+        bool force_fetch_latest_metadata = false,
+        bool ignore_metadata_pointer_overrides = false) const;
+
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const;
 
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {
@@ -214,7 +236,7 @@ public:
     }
 
 private:
-    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
+    static std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
         IcebergMetadataFilesCachePtr cache_ptr,
@@ -247,11 +269,18 @@ private:
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
 
+    mutable std::mutex cached_latest_metadata_mutex;
+    mutable std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata TSA_GUARDED_BY(cached_latest_metadata_mutex);
+
+    Iceberg::MetadataFileWithInfo fetchLatestMetadata(
+        const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_metadata_pointer_overrides) const;
+
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
 
-    void alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context);
+    void alterPartitionDropImpl(
+        const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id);
 };
 }
 

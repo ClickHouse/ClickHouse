@@ -1,12 +1,12 @@
-SET enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
--- Lock deltas measure one local planner, without additional parallel-replica candidate plans.
+SET enable_analyzer = 1, optimize_move_to_prewhere = 1;
+-- Statistics-load counts measure one local planner, without additional parallel-replica candidate plans.
 SET enable_parallel_replicas = 0;
-SET use_statistics_cache = 0, use_query_cache = 0, use_query_condition_cache = 0;
+SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;
 
 CREATE TABLE prewhere_statistics_pruned_parts (p UInt32, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval = 0;
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
 INSERT INTO prewhere_statistics_pruned_parts
 SELECT intDiv(number, 10), intDiv(number, 10) * 100 + number % 10 FROM numbers(40);
@@ -24,13 +24,13 @@ SETTINGS use_statistics = 1, use_statistics_for_part_pruning = 0, log_comment = 
 
 SYSTEM FLUSH LOGS query_log;
 
--- An uncached statistics-estimator load takes one shared parts lock per part.
+-- The statistics estimator increments `LoadedStatistics` once per part whose statistics it collects.
 SELECT
-    maxIf(locks, log_comment = '05183_pruned_on') - maxIf(locks, log_comment = '05183_pruned_off') = 1,
-    maxIf(locks, log_comment = '05183_all_on') - maxIf(locks, log_comment = '05183_all_off') = 4
+    maxIf(stats, log_comment = '05183_pruned_on') = 1,
+    maxIf(stats, log_comment = '05183_all_on') = 4
 FROM
 (
-    SELECT log_comment, toInt64(ProfileEvents['SharedPartsLocks']) AS locks
+    SELECT log_comment, toInt64(ProfileEvents['LoadedStatistics']) AS stats
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '05183_')

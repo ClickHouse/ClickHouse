@@ -3,8 +3,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -40,19 +38,16 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     /// The query can be followed by a chain of pipe operators, e.g.: FROM t |> WHERE x |> LIMIT 1.
     if (pos->type == TokenType::PipeOperator)
-        return parsePipeOperators(pos, node, expected);
+        return ParserPipeOperators().parse(pos, node, expected);
 
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserSelectWithUnionQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementUnion(StatementFactory & factory)
-{
-    factory.registerStatement("UNION",
+    documentation["UNION"] =
     {
         .description = R"DOCS_MD(
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
@@ -131,9 +126,9 @@ SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "INTERSECT", "EXCEPT", "DISTINCT", "JOIN"},
-    });
+    };
 
-    factory.registerStatement("INTERSECT",
+    documentation["INTERSECT"] =
     {
         .description = R"DOCS_MD(
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
@@ -286,9 +281,9 @@ SELECT column1 [, column2] FROM table2 [WHERE condition]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "UNION", "EXCEPT", "IN"},
-    });
+    };
 
-    factory.registerStatement("EXCEPT",
+    documentation["EXCEPT"] =
     {
         .description = R"DOCS_MD(
 > The `EXCEPT` clause returns only those rows that result from the first query without the second.
@@ -496,7 +491,9 @@ SELECT column1 [, column2] FROM table2 [WHERE condition]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "UNION", "INTERSECT", "EXCEPT modifier"},
-    });
+    };
+
+    return documentation;
 }
 
 }
