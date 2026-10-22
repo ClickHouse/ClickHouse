@@ -44,9 +44,8 @@ void WriteBufferFromEncryptedFile::finalFlushBefore()
 
 void WriteBufferFromEncryptedFile::preFinalize()
 {
-    /// Forward to the underlying buffer so it can start its upload now: callers prefinalize many files
-    /// before finalizing any of them, which lets object storage upload them in parallel.
     next();
+
     out->preFinalize();
 }
 
