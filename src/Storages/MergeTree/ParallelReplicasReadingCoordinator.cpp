@@ -37,7 +37,7 @@ size_t roundDownToMultiple(size_t num, size_t multiple)
 }
 
 /// A replica returns a part with its own patch parts and on-the-fly mutations applied, so it may read a snapshot part
-/// only if its overlay is known to equal the snapshot replica's (replicas older than protocol 9 do not send it).
+/// only if its overlay is known to equal the snapshot replica's (replicas older than protocol 10 do not send it).
 bool canReadWithSnapshotOverlay(bool snapshot_known, UInt64 snapshot_hash, bool announced_known, UInt64 announced_hash)
 {
     return snapshot_known && announced_known && snapshot_hash == announced_hash;
@@ -224,7 +224,7 @@ public:
     /// spurious `false` only costs one exact scan, and a spurious `true` only misses an early
     /// release and falls back to the previous behaviour. The default is deliberately the latter.
     virtual bool mayHaveUnassignedRanges() const { return true; }
-    virtual bool initializedWithEmptyRanges() const { return false; }
+    virtual bool initializedWithEmptyRanges() const = 0;
     /// The working set of parts for this stream — what the coordinator will actually serve in
     /// handleRequest. Captured from the first announcement (in the snapshot-pinned topology that
     /// is the initiator's own pre-split parts list, so this is exactly the per-split assignment)
@@ -1023,6 +1023,13 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
     bool isReadingCompleted() const override;
 
+    /// An in-order stream whose announcement carried no parts is as empty as a `Default` one. Saying
+    /// otherwise - the base class answers `false` for anything that does not override this - makes a
+    /// fragment whose streams were all pruned away look like it still had ranges to hand out, and the
+    /// release of the replicas that got nothing then trips over its own "someone must have been used"
+    /// check.
+    bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
+
     RangesInDataPartsDescription getRegisteredParts() const override
     {
         RangesInDataPartsDescription result;
@@ -1320,6 +1327,8 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     }
 
     const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
+    /// A `Default` mode replica discards the parts list unless it asked for the analyzed ranges.
+    const bool needs_parts = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
@@ -1335,6 +1344,9 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     /// of any future per-stream coordinator that may post-process its input.
     if (first_announcement_for_stream)
         stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
+
+    if (!needs_parts)
+        return response;
 
     if (auto it = stream_to_registered_parts.find(response.stream_id); it != stream_to_registered_parts.end())
         response.parts = it->second;

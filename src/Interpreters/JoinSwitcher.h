@@ -32,7 +32,7 @@ public:
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
     /// @returns false, if join-on-disk disk limit exceeded
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
 
     void checkTypesOfKeys(const Block & block) const override
     {
@@ -115,7 +115,7 @@ private:
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.
-    bool switchJoin();
+    bool switchJoin(JoinBuildContext context);
 };
 
 }

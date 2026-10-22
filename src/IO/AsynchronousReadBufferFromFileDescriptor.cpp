@@ -65,6 +65,11 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
     if (prefetch_future.valid())
         return;
 
+    /// Nothing to prefetch at a known EOF: nextImpl reports EOF without submitting. An O_DIRECT
+    /// read starting there returns EINVAL on some kernels/filesystems instead of 0.
+    if (isNextReadAtOrPastKnownEOF())
+        return;
+
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
@@ -119,6 +124,12 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     }
     else
     {
+        /// Same guard as ReadBufferFromFileDescriptor::readImpl: with a known size, never submit
+        /// a read that starts at or past EOF. Some kernels/filesystems reject such O_DIRECT reads
+        /// with EINVAL instead of returning 0 (see #33372).
+        if (isNextReadAtOrPastKnownEOF())
+            return false;
+
         /// No pending request. Do synchronous read.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousReadWaitMicroseconds);
         /// * If prefetch() was never called, internal_buffer may point to existing_memory, so we want
@@ -138,8 +149,17 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     size_t bytes_read = result.size - result.offset;
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
+    /// The local read throttler exists to keep the load on the block device within the configured
+    /// budget, so the data that was copied from the OS page cache must not consume its tokens.
+    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
+    /// the amount of work regardless of where the data came from, and still account it.
     if (throttler)
-        throttler->throttle(result.size);
+    {
+        if (result.from_os_page_cache)
+            throttler->throttleOSPageCacheRead(result.size);
+        else
+            throttler->throttle(result.size);
+    }
 
     if (bytes_read)
     {
