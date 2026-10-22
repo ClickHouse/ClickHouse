@@ -265,13 +265,13 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
         state.table_state = std::move(table_state);
     }
 
-    auto metadata_object = getMetadataJSONObject(
+    auto metadata_object = deepCopy(getMetadataJSONObject(
         state.table_state.metadata_file_path,
         object_storage,
         components.metadata_cache,
         context,
         log,
-        components.table_uuid);
+        components.table_uuid));
 
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
     if (format_version != 2)
