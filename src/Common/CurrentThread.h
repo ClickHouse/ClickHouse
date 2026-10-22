@@ -9,6 +9,7 @@
 #include <Common/FiberLocal.h>
 #include <Common/Scheduler/ResourceLink.h>
 
+#include <exception>
 #include <memory>
 #include <string_view>
 
@@ -115,6 +116,11 @@ public:
     /// Throws the real cancellation cause of the current query (`TIMEOUT_EXCEEDED`, or an exception
     /// stored by `QueryStatus::cancelQuery`) if it has been cancelled. No-op otherwise.
     static void checkIfNotCancelled();
+
+    /// Returns true for an explicit query cancellation code or an exception propagated by
+    /// `QueryStatus`, including query timeouts. Tracking provenance preserves an unrelated
+    /// error if cancellation races with exception unwinding.
+    static bool isQueryCancellationException(const std::exception_ptr & exception);
 
     // For IO Scheduling
     static void attachReadResource(ResourceLink link);

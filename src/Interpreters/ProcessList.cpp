@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -20,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <mutex>
 
@@ -77,6 +79,12 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char query_status_cancel_with_injected_exception[];
 }
 
 
@@ -618,6 +626,15 @@ void QueryStatus::ExecutorHolder::remove()
 
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
+    if (reason == CancelReason::CANCELLED_BY_USER && !exception)
+    {
+        fiu_do_on(FailPoints::query_status_cancel_with_injected_exception,
+        {
+            exception = std::make_exception_ptr(
+                Exception(ErrorCodes::FAULT_INJECTED, "Injected query cancellation exception"));
+        });
+    }
+
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
 
@@ -630,6 +647,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         cancel_reason = reason;
         /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
         cancellation_exception = exception ? copyMutableException(exception) : nullptr;
+        if (exception && reason != CancelReason::TIMEOUT)
+            cancellation_exception_instances.push_back(exception);
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -669,11 +688,15 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
                 additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
-                throw Exception(
+            {
+                auto exception = std::make_exception_ptr(Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED,
                     "Timeout exceeded: {}maximum: {:.3f} ms",
                     additional_error_part,
-                    static_cast<double>(max_execution_time_us) / 1000);
+                    static_cast<double>(max_execution_time_us) / 1000));
+                cancellation_exception_instances.push_back(exception);
+                std::rethrow_exception(exception);
+            }
             throwQueryWasCancelled();
         }
     }
@@ -720,7 +743,11 @@ void QueryStatus::throwQueryWasCancelled() const
 {
     /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
-        std::rethrow_exception(copyMutableException(cancellation_exception));
+    {
+        auto exception = copyMutableException(cancellation_exception);
+        cancellation_exception_instances.push_back(exception);
+        std::rethrow_exception(exception);
+    }
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
@@ -730,6 +757,19 @@ void QueryStatus::throwIfKilled()
     if (!is_killed.load())
         return;
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), 0);
+}
+
+bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
+{
+    std::lock_guard lock(cancel_mutex);
+    if (!is_killed)
+        return false;
+
+    for (const auto & cancellation_exception_instance : cancellation_exception_instances)
+        if (cancellation_exception_instance == exception)
+            return true;
+
+    return false;
 }
 
 CancelReason QueryStatus::getCancelReason() const

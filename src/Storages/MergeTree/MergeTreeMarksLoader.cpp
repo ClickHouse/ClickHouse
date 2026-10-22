@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -356,10 +357,12 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         }
     }
 
+    CurrentThread::checkIfNotCancelled();
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+            CurrentThread::checkIfNotCancelled();
 
             /// Test-only: hold the task until the loader is destroyed, so a test can make the destructor win
             /// the race against the thread pool deterministically. The wait is bounded so that a query which

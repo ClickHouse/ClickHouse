@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -12649,6 +12650,8 @@ MergeTreeData::Transaction::~Transaction()
 
 void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
+    QueryCancellationBlockerInThread cancellation_blocker;
+
     if (!isEmpty())
     {
         for (const auto & part : precommitted_parts)
