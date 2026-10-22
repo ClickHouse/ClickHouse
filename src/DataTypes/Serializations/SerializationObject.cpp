@@ -56,7 +56,7 @@ void throwIfInvalidNumberOfBuckets(size_t num_buckets)
 }
 
 SerializationObject::SerializationObject(
-    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+    const DataTypeObject::TypedPathsMap & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & shared_typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,

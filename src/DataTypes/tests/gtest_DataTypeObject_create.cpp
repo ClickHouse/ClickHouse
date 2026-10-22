@@ -283,7 +283,7 @@ TEST(DataTypeObject, SubcolumnLookupPrefersTypedPath)
 
     auto prefixed_name_collision = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"^`obj`", factory.get("JSON(x UInt8)")}});
+        DataTypeObject::TypedPathsMap{{"^`obj`", factory.get("JSON(x UInt8)")}});
     expectSubcolumnType(*prefixed_name_collision, "^`obj`.x", "UInt8");
 }
 
@@ -292,7 +292,7 @@ TEST(DataTypeObject, SubcolumnLookupUsesCanonicalPathNames)
     auto nested_type = DataTypeFactory::instance().get("JSON(x UInt8)");
     auto object = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{
+        DataTypeObject::TypedPathsMap{
             {"escaped.dot", nested_type},
             {R"(back\slash)", nested_type},
             {"back`tick", nested_type},
@@ -313,7 +313,7 @@ TEST(DataTypeObject, SubcolumnLookupDefersToCustomSerialization)
 {
     auto object = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"a", DataTypeFactory::instance().get("UInt8")}});
+        DataTypeObject::TypedPathsMap{{"a", DataTypeFactory::instance().get("UInt8")}});
     auto serialization = object->getDefaultSerialization();
     object->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, std::move(serialization)));
 
@@ -326,4 +326,13 @@ TEST(DataTypeObject, SubcolumnsThroughContainers)
     expectSubcolumnType(*factory.get("Array(JSON(x UInt8))"), "x", "Array(UInt8)");
     expectSubcolumnType(*factory.get("Tuple(j JSON(x UInt8))"), "j.x", "UInt8");
     expectSubcolumnType(*factory.get("Dynamic"), "JSON.x", "Dynamic");
+}
+
+/// A clone keeps the SHARED marks of the typed paths: they are part of the type, not of the children.
+TEST(DataTypeObject, CloneWithChildrenKeepsSharedPaths)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=3, SHARED a UInt64, b String, SHARED c Array(UInt8), SKIP d)");
+    auto clone = type->cloneWithChildren(type->getChildren());
+    EXPECT_EQ(clone->getName(), type->getName());
+    EXPECT_TRUE(clone->equals(*type));
 }

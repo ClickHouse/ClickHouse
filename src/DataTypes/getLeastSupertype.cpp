@@ -619,7 +619,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// - typed paths: intersection by path name with type promotion
             /// - paths to skip / path regexps to skip: intersection using sorted sets
             /// - max_dynamic_paths / max_dynamic_types: take the maximum
-            std::unordered_map<String, DataTypePtr> merged_typed_paths = first.getTypedPaths();
+            auto merged_typed_paths = first.getTypedPaths();
             std::unordered_set<String> merged_shared_typed_paths = first.getSharedTypedPaths();
             std::set<String> merged_paths_to_skip(first.getPathsToSkip().begin(), first.getPathsToSkip().end());
             std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
@@ -635,7 +635,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
                 /// Typed paths intersection with type promotion.
                 const auto & current_typed_paths = current.getTypedPaths();
-                std::unordered_map<String, DataTypePtr> new_merged;
+                DataTypeObject::TypedPathsMap new_merged;
                 for (auto & [path, type] : merged_typed_paths)
                 {
                     auto it = current_typed_paths.find(path);

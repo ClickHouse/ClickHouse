@@ -835,7 +835,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             if (typed_paths_size > DataTypeObject::MAX_TYPED_PATHS)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, DataTypeObject::MAX_TYPED_PATHS);
 
-            std::unordered_map<String, DataTypePtr> typed_paths;
+            DataTypeObject::TypedPathsMap typed_paths;
             std::unordered_set<String> shared_typed_paths;
             for (size_t i = 0; i != typed_paths_size; ++i)
             {

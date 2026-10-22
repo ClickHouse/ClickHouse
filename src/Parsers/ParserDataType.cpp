@@ -205,30 +205,32 @@ private:
         /// is the keyword of `SHARED some.path Type`.
         bool shared = false;
         Pos begin = pos;
-        bool plain_path = compound_identifier_parser.parse(pos, identifier, expected) && type_parser.parse(pos, type, expected)
-            && (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket);
+        bool has_identifier = compound_identifier_parser.parse(pos, identifier, expected);
+        Pos after_identifier = pos;
+        bool has_type = has_identifier && type_parser.parse(pos, type, expected);
+        Pos after_type = pos;
+        bool plain_path = has_type && (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket);
         if (!plain_path)
         {
             pos = begin;
-            identifier = nullptr;
-            type = nullptr;
-            if (ParserKeyword(Keyword::SHARED).ignore(pos) && compound_identifier_parser.parse(pos, identifier, expected)
-                && type_parser.parse(pos, type, expected))
+            ASTPtr shared_identifier;
+            ASTPtr shared_type;
+            if (ParserKeyword(Keyword::SHARED).ignore(pos) && compound_identifier_parser.parse(pos, shared_identifier, expected)
+                && type_parser.parse(pos, shared_type, expected))
             {
                 shared = true;
-            }
-            else
-            {
-                pos = begin;
-                identifier = nullptr;
-                type = nullptr;
+                identifier = std::move(shared_identifier);
+                type = std::move(shared_type);
             }
         }
 
         if (!shared && !plain_path)
         {
-            if (!compound_identifier_parser.parse(pos, identifier, expected))
+            /// The first reading stands: parsing the type again from the same position would double the work of
+            /// every nesting level of a malformed type.
+            if (!has_identifier)
                 return false;
+            pos = after_identifier;
 
             /// some_parameter=N
             if (pos->type == TokenType::Equals)
@@ -245,8 +247,9 @@ private:
                 return true;
             }
 
-            if (!type_parser.parse(pos, type, expected))
+            if (!has_type)
                 return false;
+            pos = after_type;
         }
 
         auto name_and_type = make_intrusive<ASTObjectTypedPathArgument>();

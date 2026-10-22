@@ -310,7 +310,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     const auto * type_object = typeid_cast<const DataTypeObject *>(type.get());
     if (type_object && fuzz_rand() % 4 != 0)
     {
-        std::unordered_map<String, DataTypePtr> typed_paths = type_object->getTypedPaths();
+        auto typed_paths = type_object->getTypedPaths();
         for (auto & [path, path_type] : typed_paths)
             path_type = fuzzDataType(path_type);
         try
@@ -474,7 +474,7 @@ std::vector<String> QueryFuzzer::fuzzObjectPathRegexpsToSkip(std::vector<String>
 }
 
 DataTypePtr QueryFuzzer::makeRandomObject(
-    std::unordered_map<String, DataTypePtr> typed_paths,
+    DataTypeObject::TypedPathsMap typed_paths,
     std::unordered_set<String> paths_to_skip,
     std::vector<String> path_regexps_to_skip,
     std::optional<size_t> source_max_dynamic_paths,

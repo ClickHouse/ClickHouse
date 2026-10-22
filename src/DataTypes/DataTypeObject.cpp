@@ -72,7 +72,7 @@ String DataTypeObject::getCombinedSubcolumnName(const String & key)
 
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
-    std::unordered_map<String, DataTypePtr> typed_paths_,
+    TypedPathsMap typed_paths_,
     std::unordered_set<String> paths_to_skip_,
     std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
@@ -346,13 +346,13 @@ MutableColumnPtr DataTypeObject::createColumn() const
 
 DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) const
 {
-    std::unordered_map<String, DataTypePtr> new_typed_paths;
+    TypedPathsMap new_typed_paths;
     new_typed_paths.reserve(sorted_typed_paths.size());
     for (size_t i = 0; i < sorted_typed_paths.size(); ++i)
         new_typed_paths.emplace(sorted_typed_paths[i].first, new_children[i]);
 
     return std::make_shared<DataTypeObject>(
-        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_paths);
 }
 
 namespace
@@ -634,7 +634,7 @@ SerializationPtr createSharedTypedPathSerialization(
 /// the sub-object subcolumn (^) and the combined subcolumn (@) branches.
 std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const String & prefix,
-    const std::unordered_map<String, DataTypePtr> & typed_paths,
+    const DataTypeObject::TypedPathsMap & typed_paths,
     const std::unordered_set<String> & shared_typed_paths,
     const std::unordered_map<String, SerializationPtr> & all_typed_paths_serializations,
     const SerializationObjectTypedSharedData::SharedTypedPaths & all_shared_typed_paths,
@@ -646,7 +646,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const DataTypePtr & dynamic_type,
     const SerializationPtr & dynamic_serialization)
 {
-    std::unordered_map<String, DataTypePtr> typed_sub_paths;
+    DataTypeObject::TypedPathsMap typed_sub_paths;
     std::unordered_set<String> shared_typed_sub_paths;
     std::unordered_map<String, SerializationPtr> typed_sub_paths_serializations;
     for (const auto & [path, type] : typed_paths)
@@ -706,6 +706,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
 
     String path = split.path;
     String path_subcolumn;
+    /// The remainder resolved against the path's type: the prefix loop resolves it, the other cases resolve it below.
+    std::unique_ptr<SubcolumnInfo> nested_info;
     auto typed_it = typed_paths.find(path);
     if (typed_it != typed_paths.end())
     {
@@ -721,13 +723,16 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
         /// whose remainder is a subcolumn of its type; a name no typed path resolves stays a dynamic path.
         for (auto [typed_path, _] : Nested::getAllColumnAndSubcolumnPairs(split.path) | std::views::reverse)
         {
-            auto candidate = typed_paths.find(String(typed_path));
+            auto candidate = typed_paths.find(typed_path);
             if (candidate == typed_paths.end())
                 continue;
 
             String candidate_subcolumn(subcolumn_name.substr(typed_path.size() + 1));
             auto candidate_data = SubstreamData(typed_paths_serializations.at(candidate->first)).withType(candidate->second);
-            if (!IDataType::getSubcolumnInfo(candidate_subcolumn, candidate_data, initial_array_level, false))
+            if (data.column)
+                candidate_data.column = extractLiteralColumn(assert_cast<const ColumnObject &>(*data.column), candidate->first, max_dynamic_types);
+            nested_info = IDataType::getSubcolumnInfo(candidate_subcolumn, candidate_data, initial_array_level, false);
+            if (!nested_info)
                 continue;
 
             typed_it = candidate;
@@ -892,7 +897,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        auto nested_info = DB::IDataType::getSubcolumnInfo(path_subcolumn, res->data, initial_array_level, throw_if_null);
+        if (!nested_info)
+            nested_info = DB::IDataType::getSubcolumnInfo(path_subcolumn, res->data, initial_array_level, throw_if_null);
         if (!nested_info)
             return nullptr;
 
@@ -927,7 +933,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeObject>(schema_format);
 
-    std::unordered_map<String, DataTypePtr> typed_paths;
+    DataTypeObject::TypedPathsMap typed_paths;
     std::unordered_set<String> shared_typed_paths;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> path_regexps_to_skip;
@@ -1063,7 +1069,7 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
     const String prefix = path + ".";
 
     /// Build sub-object type: collect typed paths that start with prefix, with their SHARED marks.
-    std::unordered_map<String, DataTypePtr> typed_sub_paths;
+    TypedPathsMap typed_sub_paths;
     std::unordered_set<String> shared_typed_sub_paths;
     for (const auto & [p, type] : typed_paths)
     {

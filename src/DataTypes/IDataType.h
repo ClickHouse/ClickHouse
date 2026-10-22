@@ -136,7 +136,7 @@ public:
         size_t initial_array_level = 0);
 
     /// Names of the subcolumns the type declares but resolves dynamically, which the stream enumeration does not
-    /// emit: the SHARED paths of JSON and the subcolumns under them. forEachSubcolumn asks every type it reaches,
+    /// emit: the typed paths of JSON and the subcolumns under them. forEachSubcolumn asks every type it reaches,
     /// at that type's array level, resolves each name as a query does and lists it with the static ones. A type
     /// whose nested type is not a named subcolumn, Array or Nullable, delegates to it.
     using SubcolumnNameCallback = std::function<void(const String &)>;

@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnObject.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectTypedSharedData.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -70,7 +71,7 @@ public:
     };
 
     SerializationObject(
-        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const DataTypeObject::TypedPathsMap & typed_paths_types_,
         const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
         const std::unordered_set<String> & shared_typed_paths_,
         const std::unordered_set<String> & paths_to_skip_,
@@ -167,7 +168,7 @@ private:
 protected:
     bool shouldSkipPath(const String & path) const;
 
-    std::unordered_map<String, DataTypePtr> typed_paths_types;
+    DataTypeObject::TypedPathsMap typed_paths_types;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
