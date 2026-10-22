@@ -1128,16 +1128,22 @@ void LocalServer::cleanup()
 }
 
 
+bool LocalServer::hasExplicitTableInput()
+{
+    const auto & client_config = getClientConfiguration();
+    return client_config.has("table-structure")
+        || client_config.has("table-file")
+        || client_config.has("table-data-format");
+}
+
+
 std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 {
     /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
     /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
-    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
+    /// Without command-line queries, stdin might contain SQL rather than table data.
 
-    if (!getClientConfiguration().has("table-structure")
-        && !getClientConfiguration().has("table-file")
-        && !getClientConfiguration().has("table-data-format")
-        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
+    if (!hasExplicitTableInput() && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd)))
         return {};
 
     auto table_name = getClientConfiguration().getString("table-name", "table");
@@ -1316,20 +1322,52 @@ void LocalServer::connect()
 }
 
 
-bool LocalServer::executeInitialTableQuery(const String & initial_query)
+void LocalServer::executeInitialTableQuery(const String & initial_query, bool preserve_stdin_for_query_files)
 {
-    /// The initial CREATE is hidden from query timing output.
+    /// The generated CREATE should not appear in query timing output.
     const bool print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
     getClientConfiguration().setBool("print-time-to-stderr", false);
     SCOPE_EXIT({ getClientConfiguration().setBool("print-time-to-stderr", print_time_to_stderr); });
-    return processQueryText(initial_query);
+
+    if (preserve_stdin_for_query_files)
+    {
+        /// Schema inference must not advance stdin before query files read it.
+        /// Positional reads preserve the shared descriptor; restore the user's
+        /// read method before running their queries.
+        const Settings original_settings = client_context->getSettingsCopy();
+        SCOPE_EXIT({ client_context->setSettings(original_settings); });
+        client_context->setSetting("storage_file_read_method", String{"pread"});
+        processQueryText(initial_query);
+    }
+    else
+        processQueryText(initial_query);
 }
 
-bool LocalServer::beforeExecutingCommandLineQueries()
+void LocalServer::connectAndInitializeInputTable()
+{
+    auto [table_name, initial_query] = getInitialCreateTableQuery();
+
+    /// Implicit stdin selection is only for --query, not preceding query files.
+    /// Explicit input-table options keep their existing behavior in both phases.
+    const bool defer_implicit_stdin_table_activation = !table_name.empty()
+        && !queries.empty() && !queries_files.empty() && !hasExplicitTableInput();
+
+    if (defer_implicit_stdin_table_activation)
+        implicit_stdin_table_to_activate = table_name;
+    else if (!table_name.empty())
+        client_context->setSetting("implicit_table_at_top_level", table_name);
+
+    connect();
+
+    /// Initialize before query-file settings (such as readonly or dialect) take effect.
+    if (!table_name.empty())
+        executeInitialTableQuery(initial_query, defer_implicit_stdin_table_activation);
+}
+
+void LocalServer::beforeExecutingCommandLineQueries()
 {
     if (implicit_stdin_table_to_activate)
         client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
-    return true;
 }
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
@@ -1439,40 +1477,7 @@ try
         std::cerr << std::endl;
     }
 
-    auto [table_name, initial_query] = getInitialCreateTableQuery();
-
-    /// Create the inferred stdin table before query files can change session settings.
-    /// Delay implicit_table_at_top_level until --query, so file SELECTs do not
-    /// implicitly read from stdin. Explicit input tables retain their behavior.
-    const auto & client_config = getClientConfiguration();
-    const bool has_explicit_table_input = client_config.has("table-structure")
-        || client_config.has("table-file")
-        || client_config.has("table-data-format");
-    const bool defer_implicit_stdin_table_activation = !table_name.empty() && !queries.empty() && !queries_files.empty()
-        && !has_explicit_table_input;
-
-    if (defer_implicit_stdin_table_activation)
-        implicit_stdin_table_to_activate = table_name;
-    else if (!table_name.empty())
-        client_context->setSetting("implicit_table_at_top_level", table_name);
-
-    connect();
-
-    if (!table_name.empty())
-    {
-        if (defer_implicit_stdin_table_activation)
-        {
-            /// Schema inference must not advance stdin before query files execute.
-            /// Use positional reads for the inferred table, then restore the user's
-            /// read method for file queries. The inferred table keeps its read buffer.
-            const Settings original_settings = client_context->getSettingsCopy();
-            SCOPE_EXIT({ client_context->setSettings(original_settings); });
-            client_context->setSetting("storage_file_read_method", String{"pread"});
-            executeInitialTableQuery(initial_query);
-        }
-        else
-            executeInitialTableQuery(initial_query);
-    }
+    connectAndInitializeInputTable();
 
 #if USE_FUZZING_MODE
     runLibFuzzer();

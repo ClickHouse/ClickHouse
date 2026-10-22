@@ -120,8 +120,9 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
-    /// Called after query files succeed and before processing command-line --query arguments.
-    virtual bool beforeExecutingCommandLineQueries() { return true; }
+    /// Called only when both query files and --query are present, after all files succeed.
+    /// Subclasses may prepare state for the command-line queries.
+    virtual void beforeExecutingCommandLineQueries() {}
 
     char * argv0 = nullptr;
     String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")

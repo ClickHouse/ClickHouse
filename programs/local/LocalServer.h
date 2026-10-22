@@ -67,7 +67,7 @@ protected:
                         const std::vector<Arguments> &, const std::vector<Arguments> &) override;
 
     void processConfig() override;
-    bool beforeExecutingCommandLineQueries() override;
+    void beforeExecutingCommandLineQueries() override;
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) override;
 
     void updateLoggerLevel(const String & logs_level) override;
@@ -82,8 +82,10 @@ private:
       * With --queries-file and --query together, inferred stdin tables are created early,
       * but implicit SELECTs use the table only after query files have finished.
       */
+    bool hasExplicitTableInput();
     std::pair<std::string, std::string> getInitialCreateTableQuery();
-    bool executeInitialTableQuery(const String & initial_query);
+    void connectAndInitializeInputTable();
+    void executeInitialTableQuery(const String & initial_query, bool preserve_stdin_for_query_files);
 
     void tryInitPath();
     void setupUsers();

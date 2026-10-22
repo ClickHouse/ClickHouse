@@ -5399,8 +5399,7 @@ void ClientBase::runNonInteractive()
 
         /// clickhouse-local runs all query files before --query regardless of argument order.
         /// clickhouse-client still rejects this combination in Client::processConfig().
-        if (!beforeExecutingCommandLineQueries())
-            return;
+        beforeExecutingCommandLineQueries();
     }
 
     if (buzz_house)
