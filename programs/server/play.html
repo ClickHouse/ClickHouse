@@ -8069,17 +8069,17 @@ class QueryResultElement extends HTMLElement
         });
     }
 
-    /// Where a JavaScript asset that ships with the server lives. The server serves these from
-    /// the site root, but a page opened straight from disk has no site root - `/js/...` there
-    /// points at the root of the filesystem - so resolve the name against the document instead,
-    /// which finds the copy sitting next to `play.html` in the source tree. The site-root path is
-    /// kept for http(s), where the page is also served under `/play/` and a document-relative URL
-    /// would resolve to `/play/js/...`, which the server does not serve.
+    /// Where a JavaScript asset that ships with the server lives. The server serves these under
+    /// `js/` next to its built-in pages, which is the address this page was served from without the
+    /// route name (`defaultServerAddress`): that keeps the path prefix of a reverse proxy exposing the
+    /// server as `https://proxy.example/clickhouse/`, which a root-absolute `/js/...` would bypass, and
+    /// it does not depend on a suffix of the route (`/play/`), where a document-relative URL would
+    /// resolve to `/play/js/...`. A page opened straight from disk has no server, so the name is
+    /// resolved against the document instead, which finds the copy sitting next to `play.html` in
+    /// the source tree.
     static _assetURL(name)
     {
-        return location.protocol === 'file:'
-            ? new URL('js/' + name, document.baseURI).href
-            : '/js/' + name;
+        return new URL('js/' + name, location.protocol === 'file:' ? document.baseURI : defaultServerAddress()).href;
     }
 
     async _getViz()

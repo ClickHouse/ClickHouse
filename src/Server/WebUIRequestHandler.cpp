@@ -15,6 +15,8 @@
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <algorithm>
+
 
 /// Embedded HTML pages
 constexpr unsigned char resource_play_html[] =
@@ -94,6 +96,30 @@ constexpr unsigned char resource_katex_css[] =
 namespace DB
 {
 
+String relativeServerRootURL(const HTTPServerRequest & request)
+{
+    std::string_view path = request.getURI();
+    path = path.substr(0, path.find_first_of("?#"));
+
+    /// An absolute-form request target (`GET http://host/docs HTTP/1.1`): skip the scheme and the authority.
+    if (!path.starts_with('/'))
+    {
+        size_t authority = path.find("://");
+        size_t path_start = authority == std::string_view::npos ? std::string_view::npos : path.find('/', authority + 3);
+        path = path_start == std::string_view::npos ? std::string_view("/") : path.substr(path_start);
+    }
+
+    /// Every `/` after the first one is a directory level of the page to climb out of.
+    size_t depth = std::count(path.begin(), path.end(), '/');
+    if (depth <= 1)
+        return "./";
+
+    String url;
+    for (size_t i = 1; i < depth; ++i)
+        url += "../";
+    return url;
+}
+
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
                    std::unordered_map<String, String> http_response_headers_override = {})
 {
@@ -157,11 +183,14 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     /// Note: we can embed the JavaScript file inline to the HTML,
     /// but we don't do it to keep the "view-source" perfectly readable.
 
+    /// The links are relative to the page, so that they keep the path prefix of a reverse proxy.
+    const String root = relativeServerRootURL(request);
+
     static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
-    RE2::Replace(&html, uplot_url, "/js/uplot.js");
+    RE2::Replace(&html, uplot_url, root + "js/uplot.js");
 
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
-    RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
+    RE2::Replace(&html, lz_string_url, root + "js/lz-string.js");
 
     handle(request, response, html, http_response_headers_override);
 }
@@ -234,14 +263,17 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     /// The original CDN links are kept in the source so the page also works when opened as a
     /// local file (file://) against a remote server, mirroring the `dashboard.html` handling.
 
+    /// The links are relative to the page, so that they keep the path prefix of a reverse proxy.
+    const String root = relativeServerRootURL(request);
+
     static re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js)";
-    RE2::Replace(&html, marked_url, "/js/marked.min.js");
+    RE2::Replace(&html, marked_url, root + "js/marked.min.js");
 
     static re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js)";
-    RE2::Replace(&html, katex_js_url, "/js/katex.min.js");
+    RE2::Replace(&html, katex_js_url, root + "js/katex.min.js");
 
     static re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css)";
-    RE2::Replace(&html, katex_css_url, "/js/katex.min.css");
+    RE2::Replace(&html, katex_css_url, root + "js/katex.min.css");
 
     handle(request, response, html, http_response_headers_override);
 }

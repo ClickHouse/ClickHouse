@@ -1,0 +1,23 @@
+docs /clickhouse/js/katex.min.css 200
+docs /clickhouse/js/marked.min.js 200
+docs /clickhouse/js/katex.min.js 200
+docs/ /clickhouse/js/katex.min.css 200
+docs/ /clickhouse/js/marked.min.js 200
+docs/ /clickhouse/js/katex.min.js 200
+docs/a/b?x=/y /clickhouse/js/katex.min.css 200
+docs/a/b?x=/y /clickhouse/js/marked.min.js 200
+docs/a/b?x=/y /clickhouse/js/katex.min.js 200
+dashboard /clickhouse/js/uplot.js 200
+dashboard /clickhouse/js/lz-string.js 200
+dashboard/ /clickhouse/js/uplot.js 200
+dashboard/ /clickhouse/js/lz-string.js 200
+webterminal /clickhouse/js/xterm.min.css 200
+webterminal /clickhouse/js/xterm.min.js 200
+webterminal /clickhouse/js/addon-fit.min.js 200
+webterminal /clickhouse/js/addon-web-links.min.js 200
+webterminal/ /clickhouse/js/xterm.min.css 200
+webterminal/ /clickhouse/js/xterm.min.js 200
+webterminal/ /clickhouse/js/addon-fit.min.js 200
+webterminal/ /clickhouse/js/addon-web-links.min.js 200
+play relative
+processors-profile relative

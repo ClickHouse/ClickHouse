@@ -11,6 +11,13 @@ namespace DB
 
 class IServer;
 
+/// The root of the server as a URL relative to the requested page, e.g. `./` for `/docs` and `../` for
+/// `/docs/`: the embedded JavaScript and CSS files that the built-in pages reference live under
+/// `<root>js/`. A root-absolute `/js/...` would bypass the path prefix of a reverse proxy that exposes
+/// the server as `https://proxy.example/clickhouse/`, while a relative URL resolves under that prefix,
+/// and to the same `/js/...` when there is no proxy.
+String relativeServerRootURL(const HTTPServerRequest & request);
+
 /// Response with HTML page that allows to send queries and show results in browser.
 
 class PlayWebUIRequestHandler : public HTTPRequestHandler
