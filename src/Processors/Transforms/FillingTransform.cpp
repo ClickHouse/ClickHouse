@@ -9,6 +9,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorScale.h>
@@ -572,8 +573,11 @@ void FillingTransform::initColumns(
     Columns non_const_columns;
     non_const_columns.reserve(input_columns.size());
 
+    /// Also materialize non-native LowCardinality columns (automatic LowCardinality serialization):
+    /// with a single stream read in order no sorting transform is installed before this one, and
+    /// `INTERPOLATE` inserts the previous row into a column created from the declared type.
     for (const auto & column : input_columns)
-        non_const_columns.push_back(column->convertToFullIfWrapped());
+        non_const_columns.push_back(recursiveRemoveNonNativeLowCardinality(column->convertToFullIfWrapped()));
 
     for (const auto & column : non_const_columns)
         output_columns.push_back(column->cloneEmpty());
