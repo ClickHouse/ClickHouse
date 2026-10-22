@@ -113,9 +113,6 @@
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse/AMQP-CPP
-[submodule "contrib/cassandra"]
-	path = contrib/cassandra
-	url = https://github.com/ClickHouse/cpp-driver
 [submodule "contrib/libuv"]
 	path = contrib/libuv
 	url = https://github.com/ClickHouse/libuv
@@ -188,9 +185,6 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse/sysroot
-[submodule "contrib/nlp-data"]
-	path = contrib/nlp-data
-	url = https://github.com/ClickHouse/nlp-data
 [submodule "contrib/hive-metastore"]
 	path = contrib/hive-metastore
 	url = https://github.com/ClickHouse/hive-metastore
@@ -392,7 +386,7 @@
 	url = https://github.com/ClickHouse/musl
 [submodule "contrib/zmij"]
 	path = contrib/zmij
-	url = https://github.com/vitaut/zmij.git
+	url = https://github.com/ClickHouse/zmij.git
 [submodule "contrib/sql-console"]
 	path = contrib/sql-console
 	url = https://github.com/ClickHouse/clickhouse-sql-console.git
@@ -438,6 +432,9 @@
 [submodule "contrib/substrait"]
 	path = contrib/substrait
 	url = https://github.com/substrait-io/substrait.git
+[submodule "contrib/optimized-routines"]
+	path = contrib/optimized-routines
+	url = https://github.com/ARM-software/optimized-routines
 [submodule "contrib/cudf"]
 	path = contrib/cudf
 	url = https://github.com/rapidsai/cudf.git

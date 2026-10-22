@@ -18360,10 +18360,13 @@ document.addEventListener('keydown', event => {
     }
 });
 
-/// The "Format" button in the bottom right corner of the editor: sends the editor's text to the server
-/// as the `q` parameter of `SELECT formatQuery({q:String})` and replaces the text with the result.
-/// The query text goes in the request body (as a `multipart/form-data` field, next to the `query`
-/// field itself), so a long query does not bloat the URL.
+/// The "Format" button in the bottom right corner of the editor: splits the editor's text into
+/// statements (with `splitAllQueries`), sends each one to the server as the `q<N>` parameter of
+/// `SELECT formatQuery({q0:String}), formatQuery({q1:String}), ...`, and replaces every statement in
+/// place with its formatted text. Everything outside the statements - the `;` delimiters, the
+/// whitespace and the comments between them - is kept as is. The statements go in the request body
+/// (as `multipart/form-data` fields, next to the `query` field itself), so long queries do not bloat
+/// the URL.
 const format_button = document.getElementById('format-query');
 
 /// Keep the button to the left of the editor's vertical scrollbar, if there is one. The scrollbar
@@ -18394,15 +18397,32 @@ format_button.addEventListener('click', async (e) => {
     const tab_id = activeTabId;
     const cell = activeCell(getActiveTab());
     const generation = connectionGeneration;
-    const body = new FormData();
-    body.append('query', 'SELECT formatQuery({q:String}) AS formatted');
-    /// The server reads the value of a query parameter in the escaped (`TabSeparated`) form, where
-    /// a raw line feed or tab would end the value.
-    body.append('param_q', original.replace(/[\\\n\t\r]/g,
-        (c) => ({ '\\': '\\\\', '\n': '\\n', '\t': '\\t', '\r': '\\r' })[c]));
 
-    /// An error (e.g. a syntax error in the query) is shown in the result pane, as for the other queries.
     format_button.classList.add('busy');
+    /// `start` and `end` of each statement span its significant tokens: from the first one to the
+    /// last one before the `;`, so the delimiter and the surrounding comments are not sent.
+    const statements = await splitAllQueries(original);
+
+    /// The first click loads the lexer, so the split can take a while: the connection, the tab or
+    /// the text could have changed meanwhile. Check before the request, so that the text is never
+    /// sent with the credentials of a connection selected after the click.
+    if (statements.length === 0 || generation !== connectionGeneration
+        || activeTabId !== tab_id || activeCell(getActiveTab()) !== cell || query_area.value !== original) {
+        format_button.classList.remove('busy');
+        return;
+    }
+
+    const body = new FormData();
+    body.append('query', 'SELECT ' + statements.map((_, i) => `formatQuery({q${i}:String}) AS f${i}`).join(', '));
+    statements.forEach((statement, i) => {
+        /// The server reads the value of a query parameter in the escaped (`TabSeparated`) form,
+        /// where a raw line feed or tab would end the value.
+        body.append(`param_q${i}`, original.substring(statement.start, statement.end).replace(/[\\\n\t\r]/g,
+            (c) => ({ '\\': '\\\\', '\n': '\\n', '\t': '\\t', '\r': '\\r' })[c]));
+    });
+
+    /// An error (e.g. a syntax error in one of the statements) is shown in the result pane, as for
+    /// the other queries, and the editor is left unchanged.
     /// The formatting query is a request with the live credentials (see `dropAutofilledStalePassword`).
     dropAutofilledStalePassword();
     const json = await auxiliaryQuery(url_elem.value, user_elem.value, password_elem.value, body,
@@ -18419,7 +18439,15 @@ format_button.addEventListener('click', async (e) => {
     /// text that is no longer in the editor.
     if (activeTabId !== tab_id || activeCell(getActiveTab()) !== cell || query_area.value !== original) return;
 
-    const formatted = json.data[0].formatted;
+    /// Assemble the new text from the formatted statements and the original text between them.
+    const row = json.data[0];
+    let formatted = '';
+    let prev_end = 0;
+    statements.forEach((statement, i) => {
+        formatted += original.substring(prev_end, statement.start) + row[`f${i}`];
+        prev_end = statement.end;
+    });
+    formatted += original.substring(prev_end);
     if (formatted === original) return;
 
     /// Replace the text via a selection + `execCommand`, so that the change can be undone with
@@ -18812,7 +18840,9 @@ function tokenizeSync(query) {
         previous_end = end;
 
         const token_bytes = new Uint8Array(buffer, begin, end - begin);
-        let token = new TextDecoder().decode(token_bytes);
+        /// `ignoreBOM` keeps a leading `U+FEFF` (which the lexer reads as whitespace) in the token:
+        /// the callers compute offsets into the original text from the token lengths.
+        let token = new TextDecoder('utf-8', { ignoreBOM: true }).decode(token_bytes);
 
         result.push({type: token_type, significant: exports.clickhouse_lexer_token_is_significant(token_type), token: token});
     }
@@ -19752,6 +19782,17 @@ async function splitAllQueries(text) {
             has_significant = true;
             statement_tokens.push(elem);
         }
+    }
+
+    /// The lexer stops at the first error (e.g. an unterminated string literal or comment), so the
+    /// tokens may cover only a prefix of the text. The unlexed remainder belongs to the last query:
+    /// it is sent to the server as is, which reports the error, instead of silently being dropped.
+    if (current_offset < text.length) {
+        if (!has_significant) {
+            first_significant_offset = current_offset;
+        }
+        last_significant_end = text.length;
+        has_significant = true;
     }
 
     /// Last query (no trailing semicolon)
