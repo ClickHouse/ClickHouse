@@ -1182,6 +1182,14 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
+bool MergeTreeData::hasBucketedMapSerialization() const
+{
+    /// Inserted parts use the zero-level setting, merged parts the other one.
+    auto settings = getSettings();
+    return (*settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_BUCKETS
+        || (*settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts] == MergeTreeMapSerializationVersion::WITH_BUCKETS;
+}
+
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
     if (expr.hasArrayJoin())

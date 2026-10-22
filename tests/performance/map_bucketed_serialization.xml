@@ -1,6 +1,6 @@
 <test>
     <!-- Benchmarks single-key and multi-key lookups on Map columns stored with bucketed
-         serialization (map_serialization_version = 'with_buckets', the default).
+         serialization (map_serialization_version = 'with_buckets').
          Three tables with 100, 1000 and 10000 unique keys test how the bucket count
          (determined automatically from statistics) reduces the data read per lookup.
          Maps with fewer than map_buckets_min_avg_size=32 keys use a single bucket,
@@ -12,13 +12,13 @@
     </settings>
 
     <create_query>
-        CREATE TABLE map_100_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+        CREATE TABLE map_100_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
     </create_query>
     <create_query>
-        CREATE TABLE map_1000_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+        CREATE TABLE map_1000_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
     </create_query>
     <create_query>
-        CREATE TABLE map_10000_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+        CREATE TABLE map_10000_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
     </create_query>
 
     <fill_query>

@@ -1151,8 +1151,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
                 query_info.prewhere_info,
                 actions_settings,
                 prewhere_steps,
-                /*force_short_circuit_execution*/ false,
-                &storage_snapshot->metadata->getColumns()))
+                /*force_short_circuit_execution*/ false))
         {
             for (const auto & step : prewhere_steps.steps)
             {
