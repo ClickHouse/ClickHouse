@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
+#include <algorithm>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -513,6 +514,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     , format(format_)
     , row_format(row_format_)
     , homogeneous_escaping_rule(getHomogeneousEscapingRule(row_format_))
+    , all_placeholders_are_named(std::ranges::none_of(row_format_.column_names, [](const String & name) { return name.empty(); }))
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
     , default_csv_delimiter(format_settings_.csv.delimiter)
 {

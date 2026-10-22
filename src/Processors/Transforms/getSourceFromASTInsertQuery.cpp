@@ -1242,6 +1242,20 @@ String getInsertDataSchemaMismatchDescription(
         /// and stays compatible) — the reliable "text where a number is expected" signal this diagnostic
         /// exists to surface — and a nested/complex column (`Array`, `Tuple`, `Map`), which genuinely
         /// cannot be built from a single scalar string (except in the whole-text formats, see below).
+        /// Value inference of the text formats also promotes a string token to a date or a date with
+        /// time (`input_format_try_infer_dates` / `input_format_try_infer_datetimes`), while the parser
+        /// still hands the same string to the deserializer of the destination type. So, as for an
+        /// inferred `String` below, such a value may be valid for a scalar destination that shares no
+        /// supertype with the inferred type, e.g. `"2020-01-01"` for `Enum8('2020-01-01' = 1)` or for a
+        /// `FixedString(10)` column. Keep a numeric, `Bool`, `UUID`, `IPv4`, `IPv6` or nested destination
+        /// a mismatch: a date-shaped string is not a valid value there. The formats that store typed values keep the
+        /// actual on-wire kind (e.g. a BSON datetime), so the inferred type is not widened from text there.
+        if ((which_inferred.isDateOrDate32() || which_inferred.isDateTime() || which_inferred.isDateTime64())
+            && !format_stores_typed_numeric_values && !expected_is_nested && !isBool(expected_unwrapped)
+            && !which_expected.isObject() && !which_expected.isUUID() && !which_expected.isIPv4() && !which_expected.isIPv6()
+            && !(which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat() || which_expected.isDecimal()))
+            return true;
+
         if (which_inferred.isString())
         {
             /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers
@@ -1463,6 +1477,30 @@ String getInsertDataSchemaMismatchDescription(
                            inferred_map->getValueType(),
                            expected_map->getValueType(),
                            nested_evidence(evidence, {SampledValueStep::Kind::MapValues}));
+        }
+
+        /// The binary formats that store typed values read a `Tuple` destination from both a stored
+        /// array and a stored document (`BSONEachRowRowInputFormat::readTuple`), while their schema
+        /// readers canonicalize a homogeneous array to `Array` and a homogeneous document to `Map`.
+        /// The arity and the keys of such a value are unknown at the type level, so only compare its
+        /// element type against every element of the destination `Tuple`, without value-level evidence.
+        if (format_stores_typed_numeric_values)
+        {
+            if (const auto * expected_tuple = typeid_cast<const DataTypeTuple *>(expected_unwrapped.get()))
+            {
+                DataTypePtr inferred_element_type;
+                if (const auto * inferred_array = typeid_cast<const DataTypeArray *>(inferred_unwrapped.get()))
+                    inferred_element_type = inferred_array->getNestedType();
+                else if (const auto * inferred_map = typeid_cast<const DataTypeMap *>(inferred_unwrapped.get()))
+                    inferred_element_type = inferred_map->getValueType();
+
+                if (inferred_element_type)
+                    return std::all_of(
+                        expected_tuple->getElements().begin(),
+                        expected_tuple->getElements().end(),
+                        [&](const DataTypePtr & expected_element)
+                        { return types_are_compatible(inferred_element_type, expected_element, SampledValueEvidence{}); });
+            }
         }
 
         return false;

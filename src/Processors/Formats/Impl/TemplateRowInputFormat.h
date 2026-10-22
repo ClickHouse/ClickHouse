@@ -140,12 +140,22 @@ private:
             : BoolValueIntoNumericColumn::None;
     }
 
+    /// `TemplateRowInputFormat` resolves every named placeholder against the destination columns
+    /// (`format_idx_to_column_idx`), so the placeholders may be reordered relative to the destination
+    /// and omitted destination columns are filled with defaults. The schema reader names the inferred
+    /// columns after the placeholders, so comparing them by name mirrors the parser. A row format with
+    /// a placeholder without a name (`${:CSV}`, which the parser skips) cannot be represented by the
+    /// inferred schema, so then no conclusion is drawn from it.
+    bool mapsColumnsByName() const override { return all_placeholders_are_named; }
+    bool schemaDescribesParsedData() const override { return all_placeholders_are_named; }
+
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;
     const std::optional<FormatSettings::EscapingRule> homogeneous_escaping_rule;
+    const bool all_placeholders_are_named;
     TemplateFormatReader format_reader;
     bool first_row = true;
     JSONInferenceInfo json_inference_info;

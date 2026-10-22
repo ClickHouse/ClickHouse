@@ -1,0 +1,19 @@
+-- Template: the parser maps placeholders by name, so a reordered row format is valid
+explanation missing
+inserted
+-- Template: a destination column omitted from the row format is filled with defaults
+explanation missing
+inserted
+-- Template: a genuine mismatch in a named placeholder is still reported
+explanation present
+-- BSONEachRow: a BSON array is a valid value for an unnamed Tuple column
+explanation missing
+-- BSONEachRow: a BSON document is a valid value for a named Tuple column
+explanation missing
+-- BSONEachRow: a BSON array of arrays for a Tuple of numbers is still a mismatch
+explanation present
+-- JSONEachRow: a date-shaped string is a valid value for an Enum with such a label
+explanation missing
+inserted
+-- JSONEachRow: a date-shaped string for a numeric column is still a mismatch
+explanation present
