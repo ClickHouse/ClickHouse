@@ -8,7 +8,7 @@
 namespace DB
 {
 
-PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan)
+PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan, bool only_built_child_plans)
 {
     PlanAnalysisSnapshot snapshot;
 
@@ -43,9 +43,8 @@ PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const QueryPlan & plan)
             to_visit.push_back(child);
         }
 
-        /// Only the child plans the step has already built, so that taking this snapshot cannot
-        /// make a `ReadFromMerge` build one it would otherwise never have built.
-        for (auto * child_plan : step.getBuiltChildPlans())
+        for (auto * child_plan :
+            only_built_child_plans ? step.getBuiltChildPlans() : step.getChildPlans(/*for_explain=*/ false))
         {
             if (!child_plan || !child_plan->isInitialized())
                 continue;

@@ -303,9 +303,9 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
 
     for (const auto & proc : processors)
     {
-        const auto * step = proc->getQueryPlanStep();
+        const auto & step_id = proc->getStepUniqID();
 
-        if (!step)
+        if (step_id.empty())
             continue;
 
         const size_t group = proc->getQueryPlanStepGroup();
@@ -313,14 +313,14 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
         if (group_elapsed == 0)
             continue;
 
-        const auto step_group_key = std::make_pair(proc->getStepUniqID(), group);
+        const auto step_group_key = std::make_pair(step_id, group);
         auto & group_stats = stats_by_step_group[step_group_key];
         group_stats.sum_elapsed_ns += group_elapsed;
         ++group_stats.total_num_processors;
         elapsed_per_step_group[step_group_key].insert(group_elapsed);
 
         if (group_stats.wall_clock_time_ns == 0)
-            if (const auto * clock = step_profiler.findClockForStep(proc->getStepUniqID(), group))
+            if (const auto * clock = step_profiler.findClockForStep(step_id, group))
                 group_stats.wall_clock_time_ns = clock->getStepWallTime();
     }
 
@@ -394,7 +394,12 @@ StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const IQ
     context.execution_query_time_ns = execution_query_time_ns;
     context.max_num_threads_per_query = max_num_threads_per_query;
 
-    if (const auto inputs_it = plan_snapshot.inputs.find(step_id); inputs_it != plan_snapshot.inputs.end())
+    /// The snapshot was taken by the same walk over the same plan that produced the steps being
+    /// analysed here, so every one of them has inputs. Without them the step would be shaped as a
+    /// plain single-stage step -- no stages, no join -- and say nothing about itself, quietly.
+    const auto inputs_it = plan_snapshot.inputs.find(step_id);
+    chassert(inputs_it != plan_snapshot.inputs.end(), "a step is being analysed that the plan snapshot does not know");
+    if (inputs_it != plan_snapshot.inputs.end())
         context.inputs = inputs_it->second;
 
     if (const auto step_stats_it = stats_by_step.find(step_id); step_stats_it != stats_by_step.end())

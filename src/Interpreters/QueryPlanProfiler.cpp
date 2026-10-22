@@ -121,7 +121,7 @@ void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const Prett
         /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
         captured = capturePlan(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 
-        plan_snapshot = PlanAnalysisSnapshot::capture(plan);
+        plan_snapshot = PlanAnalysisSnapshot::capture(plan, /*only_built_child_plans=*/ true);
 
         /// Takes a clock per step of the plan, so it has to be built while the plan is here.
         step_profiler = std::make_shared<StepProfiler>(plan, /*collect_work_intervals_=*/ false, /*only_built_child_plans=*/ true);

@@ -28,9 +28,14 @@ struct PlanAnalysisSnapshot
     std::unordered_map<String, StepReporter> reporters;
     std::unordered_map<String, StepAnalysisInputs> inputs;
 
-    /// Walks the plan, including the child plans its steps have already built. Never asks a step to
-    /// build one: observing a plan must not change the work the query does.
-    static PlanAnalysisSnapshot capture(const QueryPlan & plan);
+    /// Walks the plan and the child plans its steps own.
+    ///
+    /// `only_built_child_plans` keeps the walk from asking a step to build one it does not already
+    /// hold, which is what the logged plan needs: capturing a plan must not change the work the
+    /// query does. `EXPLAIN ANALYZE` passes false, because the walk it later analyses -- the one
+    /// `explainPlan` makes -- does build them, and a step it reaches without a snapshot entry would
+    /// be shaped as a plain step and report nothing.
+    static PlanAnalysisSnapshot capture(const QueryPlan & plan, bool only_built_child_plans);
 };
 
 }
