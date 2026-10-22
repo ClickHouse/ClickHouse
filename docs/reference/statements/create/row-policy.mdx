@@ -250,6 +250,13 @@ The same check runs in these cases:
 - `CREATE TABLE` and `ATTACH TABLE` with a full definition, if a policy for the table already exists.
 - `RENAME TABLE` and `EXCHANGE TABLES`, if a policy for the new name exists.
 
+The check does not run in these cases, so a policy can still apply to such a table without the setting:
+
+- A table which the database did not load yet when a policy on `ON db.*` is created, for example during the
+  asynchronous loading of tables after the server starts.
+- A table which is created or renamed after the policy on a table which reads it, for example the target of an `Alias` table.
+- `RENAME DATABASE`, if a policy for the new database name or for a table in it exists.
+
 Policies which were created before the upgrade keep working. On these engines the policy is always applied before `FINAL`, regardless of
 `apply_row_policy_after_final`, so at least
 `FINAL` does not merge hidden rows into the result of a query.
