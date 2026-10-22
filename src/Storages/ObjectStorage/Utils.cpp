@@ -20,6 +20,11 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
 
+#include "config.h"
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
+
 namespace DB
 {
 
@@ -429,4 +434,14 @@ bool isDeltaLakeChangeDataFeedRead(const StorageObjectStorageConfiguration & con
 {
     return configuration.isDeltaLakeConfiguration() && deltaLakeChangeDataFeedSettingsSet(settings);
 }
+
+void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (object_storage.getType() == ObjectStorageType::Azure)
+        object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
+            context->shouldRestrictUserQueryS3Credentials());
+#endif
+}
+
 }

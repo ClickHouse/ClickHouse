@@ -10,6 +10,7 @@
 #include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <Common/CoverageCollection.h>
 #include <base/sleep.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -594,34 +595,23 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
 /// the two are comparable and the printed value survives ASLR of a position-independent executable.
 ///
 /// This is the raw fallback that has to come out even when symbolization later fails, so it must not
-/// depend on the symbol index being buildable: if it has not been built yet (a fault at startup, or in
-/// the thread that was building it), the runtime address is printed as is, which `addr2line` can still
-/// use together with the load address from the core dump or the memory map. A daemon builds the index
-/// during initialization for its build id, so a server always gets the ASLR-independent form here.
+/// depend on the symbol index being buildable. Without the index (a fault at startup, in the thread that
+/// was building it, or in a program that is not a daemon) only addresses in the main executable resolve.
+/// An address that does not resolve to a loaded object has no such form and is not printed.
 static void writeResolvedAddress(const void * addr, WriteBuffer & out)
 {
-    const auto maybe_resolved = StackTrace::tryResolveAddress(addr);
-    if (!maybe_resolved)
+    const auto resolved = StackTrace::tryResolveAddress(addr);
+    if (!resolved.address)
     {
-        writePointerHex(addr, out);
+        writeString("<unknown>", out);
         return;
     }
 
-    const auto & resolved = *maybe_resolved;
     writePointerHex(resolved.address, out);
-
-    switch (resolved.kind)
+    if (resolved.kind == StackTrace::AddressKind::OtherObject)
     {
-        case StackTrace::AddressKind::OtherObject:
-            writeString(" in ", out);
-            writeString(resolved.object, out);
-            break;
-        case StackTrace::AddressKind::UnknownMapping:
-            writeString(" in <unknown>", out);
-            break;
-        case StackTrace::AddressKind::MainObject:
-        case StackTrace::AddressKind::Unsupported:
-            break;
+        writeString(" in ", out);
+        writeString(resolved.object, out);
     }
 }
 
@@ -647,7 +637,8 @@ try
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
               VERSION_STRING, VERSION_OFFICIAL, build_id_if_already_known(), GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig,
-              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
+              /// `si_pid` and `si_uid` are set only for signals sent by a process; for a fault they overlap `si_addr`.
+              info.si_code > 0 || info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 
     std::string signal_description = "Unknown signal";
 
@@ -838,6 +829,11 @@ try
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)
         thread_ptr->onFatalError();
+
+#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
+    /// The process dies right after this, which loses the coverage since the last flush.
+    flushCoverageToFilesOnExit();
+#endif
 
     HandledSignals::instance().fatal_error_printed.test_and_set();
 }
