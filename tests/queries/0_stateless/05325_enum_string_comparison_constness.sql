@@ -29,6 +29,10 @@ DROP TABLE IF EXISTS t_enum_number_name;
 CREATE TABLE t_enum_number_name (e Enum8('z' = 1, 'a' = 2, '1' = 3)) ENGINE = MergeTree ORDER BY e PARTITION BY e SETTINGS index_granularity = 1;
 INSERT INTO t_enum_number_name VALUES ('z'), ('a'), ('1');
 
+DROP TABLE IF EXISTS t_enum_number_chain;
+CREATE TABLE t_enum_number_chain (x Enum8('z' = 1, 'a' = 2, '1' = 3), e Enum8('z' = 1, 'a' = 2, '1' = 3)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+INSERT INTO t_enum_number_chain VALUES ('z', 'a');
+
 SET optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
 
 SELECT 'a' < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), materialize('a') < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)');
@@ -80,6 +84,7 @@ SELECT countIf(materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' =
 SELECT count() FROM numbers(2) WHERE materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT count() FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT arraySort(groupArray(e)) FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_enum_number_chain WHERE x < e AND e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
 
 -- equality keeps the primary key of a string column
 SELECT s FROM t_string_key WHERE isNotDistinctFrom(s, CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)')) SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 0;
@@ -94,3 +99,4 @@ DROP TABLE t_string_key;
 DROP TABLE t_string_derived_key;
 DROP TABLE t_tuple_key;
 DROP TABLE t_enum_number_name;
+DROP TABLE t_enum_number_chain;

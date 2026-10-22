@@ -2279,9 +2279,11 @@ private:
 
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
         Field converted;
+        /// An ordering of a string and an `Enum` reads the string as `CAST` does, without the format settings.
         if (isStringOrFixedString(constant_type) && !isStringOrFixedString(other_type))
             converted = tryConvertFieldToType(
-                constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+                constant_node->getValue(), *other_type, constant_type.get(),
+                isEnum(other_type) && function_name != "equals" && function_name != "notEquals" ? FormatSettings{} : getFormatSettings(getContext()));
         else if (isLowerScaleTimePoint(constant_type, other_type))
             converted = tryConvertFieldToTypeExact(constant_node->getValue(), *other_type, constant_type.get());
         if (converted.isNull())
