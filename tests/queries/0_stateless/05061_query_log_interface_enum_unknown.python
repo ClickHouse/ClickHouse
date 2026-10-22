@@ -34,7 +34,7 @@ INTERFACE_HTTP = 2
 # already remapped a named value that `03258_refreshable_mv_misc` and `04306_create_handler_http`
 # pin. 200 narrows to -56, keeping the negative `Int8` class armed. Adding an enumerator to either
 # enum moves that field's `*_LOW` byte: it is the next value that enum would allocate.
-INTERFACE_UNMAPPED_LOW = 11
+INTERFACE_UNMAPPED_LOW = 12
 HTTP_METHOD_UNMAPPED_LOW = 7
 UNMAPPED_HIGH_BIT = 200
 
