@@ -366,6 +366,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
+    , comparison_format_settings(getJSONComparisonFormatSettings(context_))
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , json_argument_types(std::move(json_argument_types_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
@@ -1006,7 +1007,7 @@ static ColumnPtr createColumnFromConstantArray(
 }
 
 
-static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
+bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 {
     if (!parent)
         return true;
@@ -1246,7 +1247,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        if (!isJSONPathFilterSafe(key_type, value_field, value_type))
+        if (!isJSONPathFilterSafe(key_type, value_field, value_type, comparison_format_settings))
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;

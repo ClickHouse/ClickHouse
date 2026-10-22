@@ -1,0 +1,29 @@
+has(JSONAllPaths(j), 'a')	[1]	[1]	1/8
+has(JSONAllPaths(j), 'b.c')	[2]	[2]	1/8
+has(JSONAllPaths(j), 'b')	[]	[]	0/8
+has(JSONAllPaths(j), 'd')	[3]	[3]	1/8
+has(JSONAllPaths(j), 'e')	[]	[]	0/8
+has(JSONAllPaths(j), 'g')	[6]	[6]	1/8
+has(JSONAllPaths(j), 'k.l')	[8]	[8]	1/8
+has(JSONAllPaths(j), 'zz')	[]	[]	0/8
+has(JSONAllPaths(j), 'typed')	[1,2,3,4,5,6,7,8]	[1,2,3,4,5,6,7,8]	not used
+NOT has(JSONAllPaths(j), 'a')	[2,3,4,5,6,7,8]	[2,3,4,5,6,7,8]	8/8
+has(JSONAllPaths(j), 'a') OR has(JSONAllPaths(j), 'zz')	[1]	[1]	1/8
+hasAny(JSONAllPaths(j), ['a', 'k.l'])	[1,8]	[1,8]	2/8
+hasAny(JSONAllPaths(j), ['a', 'typed'])	[1,2,3,4,5,6,7,8]	[1,2,3,4,5,6,7,8]	not used
+hasAll(JSONAllPaths(j), ['i', 'k.l'])	[8]	[8]	1/8
+hasAll(JSONAllPaths(j), ['i', 'typed'])	[8]	[8]	1/8
+indexOf(JSONAllPaths(j), 'a') > 0	[1]	[1]	1/8
+indexOf(JSONAllPaths(j), 'k.l') = 2	[8]	[8]	1/8
+indexOf(JSONAllPaths(j), 'a') = 0	[2,3,4,5,6,7,8]	[2,3,4,5,6,7,8]	not used
+arrayJoin(JSONAllPaths(j)) = 'b.c'	[2]	[2]	1/8
+JSONAllPaths(j) IN (['a'], ['b.c'])	[]	[]	2/8
+isNotNull(j.a)	[1]	[1]	1/8
+j.b.c IS NOT NULL	[2]	[2]	1/8
+isNotNull(j.a.:Int64)	[1]	[1]	1/8
+isNotNull(j.zz)	[]	[]	0/8
+j.b.c.:String IN ('x', 'y')	[2]	[2]	1/8
+j.a::Int64 IN (1, 2)	[1]	[1]	1/8
+j.a::Int64 IN (0, 1)	[1,2,3,4,5,6,7,8]	[1,2,3,4,5,6,7,8]	not used
+j.d::Array(Int64) = [1, 2]	[3]	[3]	1/8
+j.b.c = 'x'	[2]	[2]	1/8
