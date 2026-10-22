@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
+#include <Storages/IStorage_fwd.h>
 #include <base/defines.h>
 
 #include <atomic>
@@ -9,7 +9,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -24,16 +23,25 @@ class DeferredRefreshErrors
 {
 public:
     /// Runs `refresh_table`; its exception is kept for `table` in the query of `context` instead of being thrown.
-    void refresh(const ContextPtr & context, const StorageID & table, const std::function<void()> & refresh_table);
+    void refresh(const ContextPtr & context, const StoragePtr & table, const std::function<void()> & refresh_table);
 
     /// Rethrows the exception kept for `table` in the query of `context`, if any.
-    void rethrow(const ContextPtr & context, const StorageID & table) const;
+    void rethrow(const ContextPtr & context, const StoragePtr & table) const;
 
 private:
+    /// Matches the same storage object, which a `RENAME` keeps, or a table with the same `StorageID::getShortName`,
+    /// for a database that creates a new storage object on every lookup.
+    struct KeptError
+    {
+        std::weak_ptr<const IStorage> storage;
+        String short_name;
+        std::exception_ptr error;
+    };
+
     struct QueryErrors
     {
         std::weak_ptr<const QueryStatus> query;
-        std::unordered_map<StorageID, std::exception_ptr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> errors;
+        std::vector<KeptError> errors;
     };
 
     /// Called on every access, so the errors of a finished query are released by the next access.

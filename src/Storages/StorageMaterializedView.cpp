@@ -515,7 +515,7 @@ void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr q
     if (auto target = tryGetTargetTable())
     {
         /// An unreachable target must not fail `DESCRIBE`.
-        target_refresh_errors.refresh(query_context, target->getStorageID(), [&]
+        target_refresh_errors.refresh(query_context, target, [&]
         {
             auto view_metadata = getInMemoryMetadataPtr(query_context, false);
             resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(view_metadata->getSQLSecurityOverriddenContext(query_context));
@@ -545,7 +545,7 @@ void StorageMaterializedView::readImpl(
         lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         /// Not refreshed again, the planner checked the snapshot of `updateExternalDynamicMetadataIfExists`.
         /// Another query can still make a newer schema visible in between; that race is not handled here.
-        target_refresh_errors.rethrow(local_context, storage->getStorageID());
+        target_refresh_errors.rethrow(local_context, storage);
     }
     else
     {

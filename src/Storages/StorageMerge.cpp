@@ -729,7 +729,7 @@ void StorageMerge::updateExternalDynamicMetadataIfExists(ContextPtr query_contex
                 return false;
 
             /// An unreachable child must not fail `DESCRIBE` or a query that skips it by `_table`.
-            child_refresh_errors.refresh(query_context, id, [&]
+            child_refresh_errors.refresh(query_context, table, [&]
             {
                 resolveStorageProxyLoading(table)->updateExternalDynamicMetadataIfExists(query_context);
             });
@@ -1237,7 +1237,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 if (merge.refresh_children_in_read)
                     resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
                 else
-                    merge.child_refresh_errors.rethrow(context, storage->getStorageID());
+                    merge.child_refresh_errors.rethrow(context, storage);
                 storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
             }
 

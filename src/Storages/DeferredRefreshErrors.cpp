@@ -1,6 +1,7 @@
 #include <Storages/DeferredRefreshErrors.h>
 
 #include <Interpreters/Context.h>
+#include <Storages/IStorage.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -40,7 +41,7 @@ void DeferredRefreshErrors::removeFinishedQueries() const
     has_queries = !queries.empty();
 }
 
-void DeferredRefreshErrors::refresh(const ContextPtr & context, const StorageID & table, const std::function<void()> & refresh_table)
+void DeferredRefreshErrors::refresh(const ContextPtr & context, const StoragePtr & table, const std::function<void()> & refresh_table)
 {
     std::shared_ptr<const QueryStatus> query = context->getProcessListElementSafe();
     if (!query)
@@ -67,7 +68,7 @@ void DeferredRefreshErrors::refresh(const ContextPtr & context, const StorageID 
         auto it = std::ranges::find_if(queries, [&](const QueryErrors & errors) { return errors.query.lock() == query; });
         if (it == queries.end())
             it = queries.insert(queries.end(), QueryErrors{query, {}});
-        it->errors.emplace(table, std::current_exception());
+        it->errors.push_back({table, table->getStorageID().getShortName(), std::current_exception()});
         has_queries = true;
         return;
     }
@@ -79,12 +80,13 @@ void DeferredRefreshErrors::refresh(const ContextPtr & context, const StorageID 
     }
 }
 
-void DeferredRefreshErrors::rethrow(const ContextPtr & context, const StorageID & table) const
+void DeferredRefreshErrors::rethrow(const ContextPtr & context, const StoragePtr & table) const
 {
     std::shared_ptr<const QueryStatus> query = context->getProcessListElementSafe();
     if (!query || !has_queries)
         return;
 
+    const String short_name = table->getStorageID().getShortName();
     std::exception_ptr error;
     {
         std::lock_guard lock(mutex);
@@ -93,8 +95,9 @@ void DeferredRefreshErrors::rethrow(const ContextPtr & context, const StorageID 
         {
             if (errors.query.lock() != query)
                 continue;
-            if (auto it = errors.errors.find(table); it != errors.errors.end())
-                error = it->second;
+            for (const auto & kept : errors.errors)
+                if (kept.storage.lock() == table || kept.short_name == short_name)
+                    error = kept.error;
         }
     }
 
