@@ -190,6 +190,15 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
 }
 
+DataTypePtr IMergeTreeReader::getColumnTypeBeforeConversions(size_t pos, const DataTypePtr & requested_type) const
+{
+    /// A column a pending mutation drops is not read from the part: it is filled from the current metadata in the
+    /// requested type (e.g. `DROP COLUMN c UInt64` then `ADD COLUMN c UInt32` before the part is rewritten).
+    if (isColumnDroppedByPendingMutation(pos))
+        return requested_type;
+    return columns_to_read[pos].type;
+}
+
 bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
 {
     return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
@@ -682,26 +691,10 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             if (res_columns[pos] == nullptr)
                 continue;
 
-            /** A column a pending mutation drops is not read from the part: the readers skip it and the
-              * value comes from the current metadata - the column's default, in the requested type - so
-              * the type the part carries says nothing about what is in `res_columns`. Converting from
-              * that type builds the conversion for the part's type and hands it a column of another
-              * one, which raises `Illegal column ... of first argument of function ...`.
-              *
-              * That is reachable whenever the dropped name is taken by a new column of a different type
-              * before the drop's mutation has rewritten the part:
-              *
-              *     ALTER TABLE t DROP COLUMN c;               -- c UInt64 still in the part
-              *     ALTER TABLE t ADD COLUMN c UInt32;         -- new column, absent from the part
-              *     SELECT c FROM t;                           -- read as UInt32, not converted from UInt64
-              */
-            if (isColumnDroppedByPendingMutation(pos))
+            auto type_before_conversions = getColumnTypeBeforeConversions(pos, name_and_type->type);
+            if (type_before_conversions->equals(*name_and_type->type))
                 continue;
-
-            const auto & column_in_part = columns_to_read[pos];
-            if (column_in_part.type->equals(*name_and_type->type))
-                continue;
-            copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
+            copy_block.insert({res_columns[pos], type_before_conversions, name_and_type->name});
         }
 
         if (copy_block.empty())

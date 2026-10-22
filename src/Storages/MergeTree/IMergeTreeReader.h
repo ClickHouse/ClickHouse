@@ -96,6 +96,9 @@ public:
     /// before `performRequiredConversions` is applied.
     const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
 
+    /// The type the column at @pos of `getColumns()` (requested as @requested_type) has before `performRequiredConversions`.
+    DataTypePtr getColumnTypeBeforeConversions(size_t pos, const DataTypePtr & requested_type) const;
+
     /// Columns for which only a part of the streams is read (e.g. only the offsets of an array
     /// whose data is missing from the part). Such columns are not fully populated until
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.

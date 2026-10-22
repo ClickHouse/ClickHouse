@@ -447,12 +447,73 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
 
-    auto apply_patches = [&](ColumnForPatch::Order order)
+    const auto & reader_columns = merge_tree_reader->getColumns();
+    const bool has_skip_set = prewhere_info && !prewhere_info->perform_alter_conversions;
+
+    /// Positions of the columns this step leaves in their on-disk type (see the comment before the conversions).
+    std::vector<bool> left_unconverted;
+    if (has_skip_set)
+    {
+        const auto & skip = prewhere_info->columns_overwritten_by_chain;
+        left_unconverted.reserve(reader_columns.size());
+
+        for (const auto & name_and_type : reader_columns)
+        {
+            const auto name_in_storage = name_and_type.getNameInStorage();
+            left_unconverted.push_back(skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage));
+        }
+    }
+
+    /// Before conversions the read columns have the types they have in the part, not the requested ones.
+    Block header_before_conversions;
+    if (!patch_readers.empty())
+    {
+        header_before_conversions = result_header;
+        size_t pos = 0;
+        for (const auto & name_and_type : reader_columns)
+        {
+            header_before_conversions.getByPosition(pos).type = merge_tree_reader->getColumnTypeBeforeConversions(pos, name_and_type.type);
+            ++pos;
+        }
+
+        /// A patch is applied before conversions only into a column of its own type,
+        /// otherwise it is cast straight to the requested type after conversions.
+        for (size_t i = 0; i < patch_readers.size(); ++i)
+        {
+            auto & columns_for_patch = columns_for_patches[i];
+            auto it = columns_for_patch.begin();
+            while (it != columns_for_patch.end())
+            {
+                auto column_it = it++;
+                if (column_it->order != ColumnForPatch::Order::BeforeConversions)
+                    continue;
+
+                pos = result_header.getPositionByName(column_it->column_name);
+                const auto & type_before_conversions = header_before_conversions.getByPosition(pos).type;
+
+                /// Both orders are the same for a column that is not converted.
+                if (type_before_conversions->equals(*result_header.getByPosition(pos).type))
+                    continue;
+
+                auto type_in_patch = patch_readers[i]->getColumnTypeInPatch(column_it->column_name);
+                if (!type_in_patch || type_in_patch->equals(*type_before_conversions))
+                    continue;
+
+                /// The chain overwrites such a column before reading it, so its patch is not applied at this step.
+                if (has_skip_set && left_unconverted[pos])
+                    it = columns_for_patch.erase(column_it);
+                else
+                    column_it->order = ColumnForPatch::Order::AfterConversions;
+            }
+        }
+    }
+
+    auto apply_patches = [&](const Block & header, ColumnForPatch::Order order)
     {
         /// Apply patches without min version for new columns because
         /// if column is read on this step, it is not used by previous steps.
         applyPatches(
-            result_header,
+            header,
             read_columns,
             result.patch_versions_block,
             /*min_version=*/ {},
@@ -462,7 +523,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             result.columns_for_patches);
     };
 
-    apply_patches(ColumnForPatch::Order::BeforeConversions);
+    apply_patches(header_before_conversions, ColumnForPatch::Order::BeforeConversions);
 
     /// Apply alter conversions for columns read by this step.
     ///
@@ -495,50 +556,41 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// `UPDATE a = materialize(a)`), that action expects it in the post-`MODIFY` type, so it
     /// must still be converted. `columns_consumed_by_chain_actions` holds exactly those
     /// columns; keep them out of the skip set so the conversion still runs.
-    if (!prewhere_info || prewhere_info->perform_alter_conversions)
+    if (!has_skip_set)
     {
         merge_tree_reader->performRequiredConversions(read_columns);
     }
     else
     {
-        const auto & reader_columns = merge_tree_reader->getColumns();
-        const auto & skip = prewhere_info->columns_overwritten_by_chain;
-
         /// Skip conversion for overwritten columns, EXCEPT those a mutation step consumes
         /// before any step overwrites them (`columns_consumed_by_chain_actions`): those must
         /// arrive in the post-`MODIFY` type their consuming action was built against.
         Columns saved(read_columns.size());
-        size_t pos = 0;
-        for (const auto & name_and_type : reader_columns)
+        for (size_t pos = 0; pos < left_unconverted.size(); ++pos)
         {
-            const auto name_in_storage = name_and_type.getNameInStorage();
-            if (skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage))
+            if (left_unconverted[pos])
             {
                 saved[pos] = read_columns[pos];
                 read_columns[pos] = nullptr;
             }
-            ++pos;
         }
 
         merge_tree_reader->performRequiredConversions(read_columns);
 
-        pos = 0;
-        for (const auto & name_and_type : reader_columns)
+        for (size_t pos = 0; pos < left_unconverted.size(); ++pos)
         {
-            const auto name_in_storage = name_and_type.getNameInStorage();
-            if (skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage))
+            if (left_unconverted[pos])
                 read_columns[pos] = std::move(saved[pos]);
-            ++pos;
         }
     }
 
-    apply_patches(ColumnForPatch::Order::AfterConversions);
+    apply_patches(result_header, ColumnForPatch::Order::AfterConversions);
 
     /// If some columns absent in part, then evaluate default values
     if (should_evaluate_missing_defaults)
         evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
 
-    apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
+    apply_patches(result_header, ColumnForPatch::Order::AfterEvaluatingDefaults);
 }
 
 void MergeTreeReadersChain::evaluateMissingDefaults(
