@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <algorithm>
 
 
@@ -41,7 +42,7 @@ ASTPtr transformGroupASTForBinaryOperator(
         {
             /// on() means we ignore all tags.
             metric_name_dropped = true;
-            return makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"));
+            return timeSeriesNoTagsGroupToAST();
         }
         else
         {

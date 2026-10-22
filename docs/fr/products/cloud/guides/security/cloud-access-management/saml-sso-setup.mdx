@@ -19,15 +19,11 @@ Nous prenons en charge le SSO initié par le fournisseur de services, plusieurs 
 
 Les clients qui activent les intégrations SAML peuvent également définir le rôle par défaut qui sera attribué aux nouveaux utilisateurs et ajuster les paramètres d’expiration de session.
 
-<div id="before-you-begin">
-  ## Avant de commencer
-</div>
+## Avant de commencer {#before-you-begin}
 
 Vous aurez besoin de droits d’administrateur dans votre IdP, de la possibilité d’ajouter un enregistrement TXT aux paramètres DNS de votre domaine, ainsi que du rôle **Admin** dans votre organisation ClickHouse Cloud. Nous vous recommandons également de configurer un **lien direct vers votre organisation**, en plus de votre connexion SAML, afin de simplifier le processus de connexion. Chaque IdP gère cela différemment. Lisez la suite pour savoir comment procéder avec votre IdP.
 
-<div id="how-it-works">
-  ## Fonctionnement
-</div>
+## Fonctionnement {#how-it-works}
 
 Une fois SAML SSO configuré, les utilisateurs se connectent via un flux initié par le fournisseur de services :
 
@@ -38,11 +34,11 @@ Une fois SAML SSO configuré, les utilisateurs se connectent via un flux initié
 
 Le reste de ce guide porte sur cette configuration ponctuelle.
 
-<div id="how-to-configure-your-idp">
-  ## Configurer votre IdP
-</div>
+## Configurer votre IdP {#how-to-configure-your-idp}
 
-<Steps>
+Si SAML est déjà activé et que vous avez besoin d&#39;un accès administrateur, consultez [Configurer votre utilisateur administrateur](#configure-your-admin-user) ou [Dépannage](#troubleshooting).
+
+<Steps titleSize="h3">
   <Step title="Accéder aux paramètres de l’organisation" id="access-organization-settings">
     Cliquez sur le nom de votre organisation dans l’angle inférieur gauche, puis sélectionnez Détails de l’organisation.
   </Step>
@@ -62,7 +58,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
     * [Duo](#duo)
 
     <Tip>
-      ClickHouse ne prend pas en charge l’authentification initiée par le fournisseur d’identité. Pour permettre à vos utilisateurs d’accéder facilement à ClickHouse Cloud, configurez un signet pour eux à l’aide de ce format d’URL de connexion : `https://console.clickhouse.cloud/?connection={orgId}`, où `{orgID}` correspond à votre Organization ID sur la page Organization details.
+      ClickHouse ne prend pas en charge l’authentification initiée par le fournisseur d’identité. Pour permettre à vos utilisateurs d’accéder facilement à ClickHouse Cloud, configurez un signet pour eux à l’aide de ce format d’URL de connexion : `https://console.clickhouse.cloud/?connection={orgId}`, où `{orgID}` correspond à votre Organization ID sur la page Organization details.
     </Tip>
 
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Créer une application dans le fournisseur d’identité" force />
@@ -84,7 +80,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
     Créez un enregistrement TXT auprès de votre fournisseur DNS. Copiez `TXT record name` dans le champ Name de l’enregistrement TXT chez votre fournisseur DNS. Copiez `Value` dans le champ Content chez votre fournisseur DNS. Cliquez sur `Verify and Finish` pour terminer l’opération.
 
     <Note>
-      La mise à jour et la vérification de l’enregistrement DNS peuvent prendre plusieurs minutes. Vous pouvez quitter la page de configuration et y revenir plus tard pour terminer l’opération sans devoir recommencer. La valeur de vérification est valide pendant 48 heures à compter de sa génération initiale.
+      La mise à jour et la vérification de l’enregistrement DNS peuvent prendre plusieurs minutes. Vous pouvez quitter la page de configuration et y revenir plus tard pour terminer l’opération sans devoir recommencer. La valeur de vérification est valide pendant 48 heures à compter de sa génération initiale.
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="Vérifiez votre domaine" force />
@@ -99,12 +95,12 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
       Les utilisateurs configurés avec une autre méthode d’authentification seront conservés jusqu’à ce qu’un administrateur de votre organization les supprime.
     </Note>
 
-    Pour attribuer votre premier utilisateur Admin via SAML :
+    Pour attribuer votre premier utilisateur Admin via SAML :
 
     1. Déconnectez-vous de [ClickHouse Cloud](https://console.clickhouse.cloud).
     2. Dans votre fournisseur d’identité, attribuez l’utilisateur Admin aux applications ClickHouse.
     3. Demandez à l’utilisateur de se connecter via https://console.clickhouse.cloud/?connection={orgId} (URL de raccourci). Cela peut se faire via un favori que vous avez créé aux étapes précédentes. L’utilisateur n’apparaîtra pas dans ClickHouse Cloud avant sa première connexion.
-    4. Si le rôle SAML par défaut n’est pas `Admin`, l’utilisateur devra peut-être se déconnecter, puis se reconnecter avec sa méthode d’authentification d’origine pour mettre à jour le rôle du nouvel utilisateur SAML.
+    4. Si le rôle SAML par défaut n’est pas Admin, l’utilisateur devra peut-être se déconnecter, puis se reconnecter avec sa méthode d’authentification d’origine pour mettre à jour le rôle du nouvel utilisateur SAML.
        * Pour les comptes e-mail + mot de passe, utilisez `https://console.clickhouse.cloud/?with=email`.
        * Pour les connexions via un fournisseur social, cliquez sur le bouton approprié (**Continuer avec Google** ou **Continuer avec Microsoft**)
 
@@ -124,15 +120,13 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   </Step>
 </Steps>
 
-<div id="configure-idp">
-  ### Configurer votre fournisseur d’identité
-</div>
+### Configurer votre fournisseur d’identité {#configure-idp}
 
 <Tabs>
   <Tab title="Okta" id="okta">
     Vous allez configurer deux App Integrations dans Okta pour chaque organisation ClickHouse : une application SAML et un signet pour contenir votre lien direct.
 
-    #### Créer un groupe pour gérer l’accès
+#### Créer un groupe pour gérer l’accès {#okta-create-group}
 
     1. Connectez-vous à votre instance Okta en tant qu’**Administrator**.
     2. Sélectionnez **Groups** dans le menu de gauche.
@@ -142,7 +136,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
     6. Cliquez sur le nom du groupe que vous avez créé.
     7. Cliquez sur **Assign people** pour attribuer les utilisateurs auxquels vous souhaitez donner accès à cette organisation ClickHouse.
 
-    #### Créer une application de signet pour permettre aux utilisateurs de se connecter facilement
+#### Créer une application de signet pour permettre aux utilisateurs de se connecter facilement {#okta-bookmark-app}
 
     1. Sélectionnez **Applications** dans le menu de gauche, puis la sous-rubrique **Applications**.
     2. Cliquez sur **Browse App Catalog**.
@@ -152,7 +146,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
     6. Saisissez l’URL suivante : `https://console.clickhouse.cloud/?connection={organizationid}`
     7. Accédez à l’onglet **Assignments** et ajoutez le groupe que vous avez créé ci-dessus.
 
-    #### Créer une application SAML pour permettre la connexion
+#### Créer une application SAML pour permettre la connexion {#okta-saml-app}
 
     1. Sélectionnez **Applications** dans le menu de gauche, puis la sous-rubrique **Applications**.
 
@@ -193,7 +187,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   <Tab title="Google" id="google">
     Vous devez configurer une application SAML dans Google pour chaque organisation et fournir à vos utilisateurs le lien direct (`https://console.clickhouse.cloud/?connection={organizationId}`) à ajouter à leurs favoris si vous utilisez le multi-org SSO.
 
-    #### Créer une application Web Google
+#### Créer une application Web Google {#google-web-app}
 
     1. Accédez à votre console d&#39;administration Google (admin.google.com).
 
@@ -237,7 +231,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   <Tab title="Azure (Microsoft)" id="azure">
     Azure (Microsoft) SAML peut également être appelé Azure Active Directory (AD) ou Microsoft Entra.
 
-    #### Créer une application d’entreprise Azure
+#### Créer une application d’entreprise Azure {#azure-enterprise-app}
 
     Vous allez configurer une intégration d’application avec une URL de connexion distincte pour chaque organisation.
 
@@ -283,7 +277,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   </Tab>
 
   <Tab title="Duo" id="duo">
-    #### Créez un fournisseur de services SAML générique pour Duo
+#### Créez un fournisseur de services SAML générique pour Duo {#duo-saml-provider}
 
     1. Suivez les instructions de [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic).
 
@@ -305,45 +299,52 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## Dépannage
-</div>
+## Dépannage {#troubleshooting}
 
 <AccordionGroup>
-  <Accordion title="Il peut y avoir une erreur de configuration du système ou une interruption de service">
-    **Cause :** connexion initiée par le fournisseur d&#39;identité, ce qui n&#39;est pas pris en charge.
+  <Accordion title="Les permissions d’admin sont absentes après la connexion SAML">
+    **Cause :** votre nouveau compte SAML reçoit le rôle SAML par défaut configuré. Si ce rôle n&#39;est pas **Admin**, le compte ne disposera pas des permissions d’admin, même si votre compte d&#39;origine a le rôle **Admin**. ClickHouse Cloud n&#39;associe pas automatiquement les comptes SAML et non SAML.
 
-    **Fix :** utilisez le lien direct `https://console.clickhouse.cloud/?connection={organizationid}`. Suivez les instructions ci-dessus correspondant à votre fournisseur d&#39;identité pour en faire la méthode de connexion par défaut pour vos utilisateurs.
+    **Fix :** connectez-vous une première fois via SAML afin que le nouvel utilisateur apparaisse dans ClickHouse Cloud. Déconnectez-vous ensuite, puis connectez-vous avec votre compte administrateur d&#39;origine pour affecter le rôle **Admin** à l&#39;utilisateur SAML :
+
+    * Pour les comptes avec e-mail et mot de passe, utilisez [le lien de connexion par e-mail](https://console.clickhouse.cloud/?with=email) afin de contourner la redirection SAML automatique. Le `email` de `?with=email` est une valeur littérale, et non un caractère de substitution à remplacer par votre adresse e-mail.
+    * Pour les comptes Google ou Microsoft, sélectionnez **Continue with Google** ou **Continue with Microsoft**.
+
+    Déconnectez-vous, puis reconnectez-vous via SAML pour vérifier l&#39;accès administrateur avant de supprimer votre compte administrateur d&#39;origine. Consultez [Configurer votre utilisateur administrateur](#configure-your-admin-user) pour la procédure complète.
+  </Accordion>
+
+  <Accordion title="Il peut y avoir une erreur de configuration du système ou une interruption de service">
+    **Cause :** connexion initiée par le fournisseur d&#39;identité, ce qui n&#39;est pas pris en charge.
+
+    **Fix :** utilisez le lien direct `https://console.clickhouse.cloud/?connection={organizationid}`. Suivez les instructions ci-dessus correspondant à votre fournisseur d&#39;identité pour en faire la méthode de connexion par défaut pour vos utilisateurs.
   </Accordion>
 
   <Accordion title="Vous êtes redirigé vers votre fournisseur d'identité, puis renvoyé vers la page de connexion">
-    **Cause :** le fournisseur d&#39;identité n&#39;a pas de mappage pour l&#39;attribut d&#39;e-mail.
+    **Cause :** le fournisseur d&#39;identité n&#39;a pas de mappage pour l&#39;attribut d&#39;e-mail.
 
-    **Fix :** suivez les instructions ci-dessus correspondant à votre fournisseur d&#39;identité pour configurer l&#39;attribut d&#39;e-mail de l&#39;utilisateur, puis reconnectez-vous.
+    **Fix :** suivez les instructions ci-dessus correspondant à votre fournisseur d&#39;identité pour configurer l&#39;attribut d&#39;e-mail de l&#39;utilisateur, puis reconnectez-vous.
   </Accordion>
 
   <Accordion title="L'utilisateur n'est pas affecté à cette application">
-    **Cause :** l&#39;utilisateur n&#39;a pas été affecté à l&#39;application ClickHouse dans le fournisseur d&#39;identité.
+    **Cause :** l&#39;utilisateur n&#39;a pas été affecté à l&#39;application ClickHouse dans le fournisseur d&#39;identité.
 
-    **Fix :** affectez l&#39;utilisateur à l&#39;application dans le fournisseur d&#39;identité, puis reconnectez-vous.
+    **Fix :** affectez l&#39;utilisateur à l&#39;application dans le fournisseur d&#39;identité, puis reconnectez-vous.
   </Accordion>
 
   <Accordion title="Vous arrivez toujours dans la même organisation avec plusieurs orgs SAML">
-    **Cause :** vous êtes toujours connecté à la première organisation.
+    **Cause :** vous êtes toujours connecté à la première organisation.
 
-    **Fix :** déconnectez-vous, puis connectez-vous à l&#39;autre organisation.
+    **Fix :** déconnectez-vous, puis connectez-vous à l&#39;autre organisation.
   </Accordion>
 
   <Accordion title="L'URL affiche brièvement un accès refusé">
-    **Cause :** votre domaine d&#39;e-mail ne correspond pas au domaine configuré.
+    **Cause :** votre domaine d&#39;e-mail ne correspond pas au domaine configuré.
 
-    **Fix :** contactez l&#39;assistance pour obtenir de l&#39;aide afin de résoudre cette erreur.
+    **Fix :** contactez l&#39;assistance pour obtenir de l&#39;aide afin de résoudre cette erreur.
   </Accordion>
 </AccordionGroup>
 
-<div id="faq">
-  ## FAQ
-</div>
+## FAQ {#faq}
 
 <AccordionGroup>
   <Accordion title="ClickHouse Cloud prend-il en charge la connexion initiée par le fournisseur d’identité ?">
@@ -365,9 +366,7 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   </Accordion>
 </AccordionGroup>
 
-<div id="next-steps">
-  ## Étapes suivantes
-</div>
+## Étapes suivantes {#next-steps}
 
 * [Manage cloud users](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — gérez les autorisations et limitez l’accès aux seules connexions SAML.
 * provisionnement SCIM — automatisez le provisionnement des utilisateurs et des groupes avec [Okta](/fr/products/cloud/guides/security/cloud-access-management/scim-setup) ou [Microsoft Entra ID](/fr/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
