@@ -926,7 +926,8 @@ void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
         evaluation_state.markKeySetDropped();
 }
 
-static constexpr UInt64 RUNTIME_FILTER_STATE_VERSION = 1;
+/// Version 2: the bloom filter is blocked (`RuntimeBloomFilter`) and hashes the short keys with a mixer.
+static constexpr UInt64 RUNTIME_FILTER_STATE_VERSION = 2;
 
 void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
 {
