@@ -27,7 +27,7 @@
             },
             {
               "expanded": false,
-              "group": "Análisis en tiempo real",
+              "group": "Analítica en tiempo real",
               "pages": [
                 "es/get-started/quickstarts/create-your-first-materialized-view",
                 "es/get-started/quickstarts/create-your-first-projection"
@@ -35,7 +35,7 @@
             },
             {
               "expanded": false,
-              "group": "Almacenamiento de datos",
+              "group": "Almacenamiento de datos para analítica",
               "pages": [
                 "es/get-started/quickstarts/connect-your-iceberg-catalog",
                 "es/get-started/quickstarts/mutations"
