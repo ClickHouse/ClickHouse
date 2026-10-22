@@ -977,6 +977,7 @@ WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
         AND toDate('{day}') - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
+    AND workflow_name = 'MasterCI'
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100
 FORMAT JSONEachRow"""
@@ -1059,7 +1060,7 @@ def fetch_run_day(pr_number: int, pr_sha: str, perf_arch: str) -> Optional[str]:
     out = play_query(
         "SELECT toString(toDate(max(event_time))) FROM query_metrics_v2 "
         f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
-        f"AND pr_number = {pr_number} FORMAT TSV",
+        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') FORMAT TSV",
         "find the run date",
     )
     if not out:
@@ -1105,7 +1106,7 @@ def fetch_reference_sha(
         # another run (a master-track run uses pr_number = 0) would otherwise
         # be eligible, and "newest row wins" would then hand back a baseline
         # from a different comparison than the report being checked.
-        f"AND pr_number = {pr_number} "
+        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') "
         "GROUP BY old_sha ORDER BY max(event_time) DESC FORMAT TSV"
     )
     try:
@@ -1745,12 +1746,15 @@ def rebuild_table(h: ServerHandle, source: str, destination: str) -> None:
     log(f"{h.name}: rebuilding {destination} from {source}")
     populate_query(h, f"DROP TABLE IF EXISTS {target} SYNC")
     populate_query(h, f"CREATE TABLE {target} AS {source}")
+    populate_query(h, f"ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600")
+    populate_query(h, f"ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1")
     populate_query(
         h,
         f"INSERT INTO {target} SELECT * FROM {source} "
         f"SETTINGS {POPULATE_INSERT_SETTINGS}",
     )
-    populate_query(h, f"OPTIMIZE TABLE {target} FINAL")
+    populate_query(h, f"OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1")
+    populate_query(h, f"ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity")
     if target != destination:
         old = f"{destination}_old"
         populate_query(h, f"DROP TABLE IF EXISTS {old} SYNC")

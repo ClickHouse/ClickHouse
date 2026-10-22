@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/likePatternToRegexp.h>
+#include <Common/re2.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -146,6 +147,16 @@ namespace ErrorCodes
 extern const int TOO_DEEP_RECURSION;
 }
 
+const Strings & aggregateCombinatorSuffixes()
+{
+    static const Strings suffixes = {
+        "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
+        "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
+        "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
+    };
+    return suffixes;
+}
+
 namespace
 {
 
@@ -156,30 +167,49 @@ constexpr size_t AST_FUZZER_PART_TYPE_CAP = 1000;
 /// connection argument of cluster()/clusterAllReplicas(), the Distributed engine, and
 /// self-referential remote/cluster wrapping. Includes multi-shard, replica and deliberately
 /// unavailable/misconfigured topologies to exercise failover and skip-unavailable-shard paths.
-const std::unordered_set<String> distributed_cluster_names = {
-    "test_shard_localhost",
-    "test_cluster_two_shards",
-    "test_cluster_two_shards_localhost",
-    "test_cluster_two_shards_internal_replication",
-    "test_cluster_one_shard_two_replicas",
-    "test_cluster_one_shard_three_replicas_localhost",
-    "test_cluster_two_shard_three_replicas_localhost",
-    "test_cluster_five_shards_localhost",
-    "parallel_replicas",
-    "test_unavailable_shard",
-    "test_cluster_1_shard_3_replicas_1_unavailable",
-    "test_cluster_multiple_nodes_all_unavailable",
-    "test_cluster_with_incorrect_pw",
-};
+const std::unordered_set<String> & distributedClusterNames()
+{
+    static const std::unordered_set<String> distributed_cluster_names = {
+        "test_shard_localhost",
+        "test_cluster_two_shards",
+        "test_cluster_two_shards_localhost",
+        "test_cluster_two_shards_internal_replication",
+        "test_cluster_one_shard_two_replicas",
+        "test_cluster_one_shard_three_replicas_localhost",
+        "test_cluster_two_shard_three_replicas_localhost",
+        "test_cluster_five_shards_localhost",
+        "parallel_replicas",
+        "test_unavailable_shard",
+        "test_cluster_1_shard_3_replicas_1_unavailable",
+        "test_cluster_multiple_nodes_all_unavailable",
+        "test_cluster_with_incorrect_pw",
+    };
+    return distributed_cluster_names;
+}
 
 /// Non-cryptographic hash functions (→ integer), shared with the swapFuncs group below. Used to fuzz
 /// Distributed sharding-key expressions. All accept an integer argument except the CRC* family, which
 /// take a String.
-const std::unordered_set<String> noncrypto_hash_functions = {
-    "cityHash64", "CRC32",       "CRC32IEEE",      "CRC64ECMA",      "farmHash64",     "halfMD5",           "intHash32",
-    "intHash64",  "metroHash64", "murmurHash2_32", "murmurHash2_64", "murmurHash3_32", "murmurHash3_64",    "sipHash64",
-    "wyHash64",   "xxHash32",    "xxHash64",       "xxHash64Spark",  "xxh3",           "farmFingerprint64", "gccMurmurHash",
-};
+const std::unordered_set<String> & noncryptoHashFunctions()
+{
+    static const std::unordered_set<String> noncrypto_hash_functions = {
+        "cityHash64", "CRC32",       "CRC32IEEE",      "CRC64ECMA",      "farmHash64",     "halfMD5",           "intHash32",
+        "intHash64",  "metroHash64", "murmurHash2_32", "murmurHash2_64", "murmurHash3_32", "murmurHash3_64",    "sipHash64",
+        "wyHash64",   "xxHash32",    "xxHash64",       "xxHash64Spark",  "xxh3",           "farmFingerprint64", "gccMurmurHash",
+    };
+    return noncrypto_hash_functions;
+}
+
+/// Column-name-like globs, shared with the `LIKE` clause of SHOW/TRUNCATE. The escaped and
+/// re2-metacharacter entries reach the quoting and escape branches of `likePatternToRegexp`; a
+/// trailing backslash is absent because it throws there instead of reaching the server.
+const Strings & likePatterns()
+{
+    static const Strings like_patterns
+        = {"%", "c%", "%a%", "_", "col%", "%1", "a_c", "%_%", "ID%", "a.c%", "%(c)%", "%[c]%",
+           "%c+%", "^c$", "{c}%", "\\%c", "c\\_", "%\\\\%", "\\d%"};
+    return like_patterns;
+}
 
 /// Configures a regexp column matcher with a random column-name-like glob pattern, storing the
 /// regexp the parser would produce (ILIKE/case-insensitive prepends `(?i)`). With `as_like` it
@@ -189,8 +219,21 @@ const std::unordered_set<String> noncrypto_hash_functions = {
 template <typename Matcher, typename Rng>
 void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
 {
-    static const Strings like_patterns = {"%", "c%", "%a%", "_", "col%", "%1", "a_c", "%_%", "ID%"};
-    const String & pattern = like_patterns[rng() % like_patterns.size()];
+    /// `COLUMNS('re')` takes a real regexp, so that form also gets constructs no glob can express.
+    /// Nothing turns `format_as_asterisk_like` back on, so the glob can stay empty.
+    static const Strings matcher_regexps
+        = {"^c", "c$", "c0|c1", "^(c|col)[0-9]*$", "[[:digit:]]", "(?i)^C", "(?s).", "^$", "\\bc"};
+
+    if (!as_like && rng() % 2 == 0)
+    {
+        matcher.setPattern(matcher_regexps[rng() % matcher_regexps.size()]);
+        matcher.format_as_asterisk_like = false;
+        matcher.asterisk_like_case_insensitive = false;
+        matcher.asterisk_like_pattern.clear();
+        return;
+    }
+
+    const String & pattern = likePatterns()[rng() % likePatterns().size()];
     const bool case_insensitive = rng() % 2 == 0;
 
     matcher.setPattern(case_insensitive ? "(?i)" + likePatternToRegexp(pattern) : likePatternToRegexp(pattern));
@@ -201,81 +244,89 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
 
 }
 
-static const Strings insert_formats = {
-    "Values",
-    "CSV",
-    "TSV",
-    "TabSeparated",
-    "TabSeparatedRaw",
-    "TSKV",
-    "JSON",
-    "JSONCompact",
-    "JSONColumns",
-    "JSONColumnsWithMetadata",
-    "JSONEachRow",
-    "JSONStringsEachRow",
-    "JSONLines",
-    "JSONCompactEachRow",
-    "JSONCompactStringsEachRow",
-    "JSONObjectEachRow",
-    "JSONCompactColumns",
-    "BSONEachRow",
-    "Native",
-    "RowBinary",
-    "MsgPack",
-    "LineAsString",
-    "RawBLOB",
-    "Parquet",
-    "Arrow",
-    "ArrowStream",
-    "ORC",
-    "Avro",
-    "AvroConfluent",
-    "CustomSeparated",
-};
+static const Strings & insertFormats()
+{
+    static const Strings insert_formats = {
+        "Values",
+        "CSV",
+        "TSV",
+        "TabSeparated",
+        "TabSeparatedRaw",
+        "TSKV",
+        "JSON",
+        "JSONCompact",
+        "JSONColumns",
+        "JSONColumnsWithMetadata",
+        "JSONEachRow",
+        "JSONStringsEachRow",
+        "JSONLines",
+        "JSONCompactEachRow",
+        "JSONCompactStringsEachRow",
+        "JSONObjectEachRow",
+        "JSONCompactColumns",
+        "BSONEachRow",
+        "Native",
+        "RowBinary",
+        "MsgPack",
+        "LineAsString",
+        "RawBLOB",
+        "Parquet",
+        "Arrow",
+        "ArrowStream",
+        "ORC",
+        "Avro",
+        "AvroConfluent",
+        "CustomSeparated",
+    };
+    return insert_formats;
+}
 
-static const Strings data_formats = {
-    "Values",
-    "CSV",
-    "TSV",
-    "TabSeparated",
-    "TabSeparatedRaw",
-    "TSKV",
-    "JSON",
-    "JSONCompact",
-    "JSONColumns",
-    "JSONColumnsWithMetadata",
-    "JSONEachRow",
-    "JSONStringsEachRow",
-    "JSONLines",
-    "JSONCompactEachRow",
-    "JSONCompactStringsEachRow",
-    "JSONObjectEachRow",
-    "JSONCompactColumns",
-    "JSONEachRowWithProgress",
-    "JSONCompactEachRowWithProgress",
-    "BSONEachRow",
-    "Native",
-    "RowBinary",
-    "MsgPack",
-    "LineAsString",
-    "RawBLOB",
-    "Parquet",
-    "Arrow",
-    "ArrowStream",
-    "ORC",
-    "Avro",
-    "AvroConfluent",
-    "CustomSeparated",
-    "Markdown",
-    "Pretty",
-    "PrettyCompact",
-    "Vertical",
-    "SQLInsert",
-    "XML",
-    "Npy",
-    "Null",
-};
+static const Strings & dataFormats()
+{
+    static const Strings data_formats = {
+        "Values",
+        "CSV",
+        "TSV",
+        "TabSeparated",
+        "TabSeparatedRaw",
+        "TSKV",
+        "JSON",
+        "JSONCompact",
+        "JSONColumns",
+        "JSONColumnsWithMetadata",
+        "JSONEachRow",
+        "JSONStringsEachRow",
+        "JSONLines",
+        "JSONCompactEachRow",
+        "JSONCompactStringsEachRow",
+        "JSONObjectEachRow",
+        "JSONCompactColumns",
+        "JSONEachRowWithProgress",
+        "JSONCompactEachRowWithProgress",
+        "BSONEachRow",
+        "Native",
+        "RowBinary",
+        "MsgPack",
+        "LineAsString",
+        "RawBLOB",
+        "Parquet",
+        "Arrow",
+        "ArrowStream",
+        "ORC",
+        "Avro",
+        "AvroConfluent",
+        "CustomSeparated",
+        "Markdown",
+        "Pretty",
+        "PrettyCompact",
+        "Vertical",
+        "SQLInsert",
+        "XML",
+        "Npy",
+        "Null",
+    };
+    return data_formats;
+}
 
 template <typename T>
 static String decimalFieldToString(const Field & f)
@@ -669,16 +720,28 @@ Field QueryFuzzer::fuzzField(Field field)
                 break;
             case 6:
             case 7:
-                /// For LIKE strings
+                /// For LIKE strings: flip the wildcards, and sometimes escape one or leave a
+                /// trailing backslash, the one escape sequence a LIKE pattern rejects.
                 if (str.size() < 128)
                 {
-                    for (auto & c : str)
+                    String res;
+                    for (char c : str)
                     {
                         if ((c == '_' || c == '%') && ((fuzz_rand() % 2) == 0))
                         {
                             c = (c == '_') ? '%' : '_';
                         }
+                        if ((c == '_' || c == '%') && fuzz_rand() % 4 == 0)
+                        {
+                            res += '\\';
+                        }
+                        res += c;
                     }
+                    if (fuzz_rand() % 8 == 0)
+                    {
+                        res += '\\';
+                    }
+                    str = std::move(res);
                 }
                 break;
             case 8:
@@ -928,8 +991,21 @@ ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
         switch (fuzz_rand() % 3)
         {
             case 0: {
-                static const Strings except_regexps = {"c.*", ".*", "^c", "[0-9]", "col.*"};
-                except->setPattern(except_regexps[fuzz_rand() % except_regexps.size()]);
+                /// Applied unanchored with `PartialMatch`: `''` erases every column, `^$` none. All
+                /// compile - one that does not throws at analysis, losing the `APPLY` and `REPLACE`
+                /// attached beside it as well.
+                static const Strings except_regexps
+                    = {"c.*", ".*", "^c", "[0-9]", "col.*", "", "^$", "1$", "^_",
+                       "(?i)C.*", "\\d+", "[[:alpha:]]", "a'b", "\\\\"};
+                /// Half the time anchor on a column that is really there, so the transformer removes
+                /// something. The name is escaped because the pool holds formatted expressions too.
+                const auto * ident = column_like.empty()
+                    ? nullptr
+                    : typeid_cast<const ASTIdentifier *>(column_like[fuzz_rand() % column_like.size()].second.get());
+                if (ident && fuzz_rand() % 2 == 0)
+                    except->setPattern("^" + re2::RE2::QuoteMeta(ident->shortName()) + "$");
+                else
+                    except->setPattern(except_regexps[fuzz_rand() % except_regexps.size()]);
                 break;
             }
             case 1: except->children.push_back(make_intrusive<ASTIdentifier>(random_column_name())); break;
@@ -1046,48 +1122,65 @@ ASTPtr QueryFuzzer::makeFuzzedAsteriskLikeMatcher()
 /// Virtual columns of every engine family: MergeTree, object storage, data lakes, `File` / `URL`,
 /// `Distributed`, queue engines and MaterializedPostgreSQL. They take read paths regular columns
 /// don't, and a name the queried storage doesn't expose only costs an UNKNOWN_IDENTIFIER.
-static const Strings virtual_columns
-    = {"_block_number",
-       "_block_offset",
-       "_change_type",
-       "_commit_timestamp",
-       "_commit_version",
-       "_data_lake_snapshot_version",
-       "_database",
-       "_disk_name",
-       "_error",
-       "_etag",
-       "_file",
-       "_key",
-       "_offset",
-       "_part",
-       "_part_data_version",
-       "_part_granule_offset",
-       "_part_index",
-       "_part_offset",
-       "_part_starting_offset",
-       "_part_uuid",
-       "_partition",
-       "_partition_id",
-       "_partition_value",
-       "_path",
-       "_raw_message",
-       "_row_exists",
-       "_row_number",
-       "_sample_factor",
-       "_shard_num",
-       "_sign",
-       "_size",
-       "_table",
-       "_time",
-       "_timestamp",
-       "_timestamp_ms",
-       "_topic",
-       "_version"};
+static const Strings & virtualColumns()
+{
+    static const Strings virtual_columns
+        = {"_block_number",
+           "_block_offset",
+           "_change_type",
+           "_commit_timestamp",
+           "_commit_version",
+           "_data_lake_snapshot_version",
+           "_database",
+           "_disk_name",
+           "_error",
+           "_etag",
+           "_file",
+           "_key",
+           "_offset",
+           "_part",
+           "_part_data_version",
+           "_part_granule_offset",
+           "_part_index",
+           "_part_offset",
+           "_part_starting_offset",
+           "_part_uuid",
+           "_partition",
+           "_partition_id",
+           "_partition_value",
+           "_path",
+           "_raw_message",
+           "_row_exists",
+           "_row_number",
+           "_sample_factor",
+           "_shard_num",
+           "_sign",
+           "_size",
+           "_table",
+           "_time",
+           "_timestamp",
+           "_timestamp_ms",
+           "_topic",
+           "_version"};
+    return virtual_columns;
+}
+
+/// Part names as `MergeTreePartInfo::fromPartName` expects them, plus one that fails to parse.
+/// `getPartNameFromAST` reads them off a string literal, so every consumer takes the same shape.
+static const Strings & partNames()
+{
+    static const Strings part_names = {"all_1_1_0", "all_0_0_0", "20000101_1_1_0", "invalid_part"};
+    return part_names;
+}
+
+ASTPtr QueryFuzzer::makeFuzzedPartName()
+{
+    return make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, partNames()));
+}
 
 ASTPtr QueryFuzzer::makeFuzzedVirtualColumn()
 {
-    const String & name = pickRandomly(fuzz_rand, virtual_columns);
+    const String & name = pickRandomly(fuzz_rand, virtualColumns());
 
     /// Occasionally qualify it (`t._part`), which resolves through a different code path.
     if (fuzz_rand() % 8 == 0 && !table_like.empty())
@@ -1429,9 +1522,9 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         }
     }
 
-    /// Swap between MergeTree variants that require no mandatory extra columns.
-    /// CollapsingMergeTree/VersionedCollapsingMergeTree require a sign column and
-    /// GraphiteMergeTree requires a config name, so those are excluded.
+    /// Swap between MergeTree variants that need no mandatory extra columns. The Collapsing ones do,
+    /// so `swapEngineToCollapsing` handles them; GraphiteMergeTree additionally wants a server-config
+    /// rollup section and four specifically named columns, which a corpus table essentially never has.
     if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
     {
         static const Strings safe_mergetree_engines = {
@@ -1467,7 +1560,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         /// Swap the named cluster (first argument) — only Distributed's first argument is a
         /// cluster name; Remote's is an addresses expression, so leave it untouched.
         if (is_distributed && !args.empty() && fuzz_rand() % 5 == 0)
-            args[0] = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+            args[0] = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributedClusterNames())));
 
         /// Add / replace / drop the optional sharding key (fourth argument). A positional
         /// user/password (Remote(addresses, db, table, 'user'[, 'password'[, sharding_key]])) is a
@@ -1498,7 +1591,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
                     default: {
                         /// A non-cryptographic hash function (from swapFuncs) over an argument of the
                         /// type it expects: CRC* take a String, the rest an integer.
-                        const String & hashfn = pickRandomly(fuzz_rand, noncrypto_hash_functions);
+                        const String & hashfn = pickRandomly(fuzz_rand, noncryptoHashFunctions());
                         ASTPtr arg;
                         if (startsWith(hashfn, "CRC"))
                             arg = make_intrusive<ASTLiteral>(String("shard_key"));
@@ -1515,6 +1608,50 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
             }
             /// else: the fourth argument is a positional credential — leave it untouched
         }
+        return;
+    }
+
+    auto fuzz_setting = [&](const String & name, Field value)
+    {
+        if (!storage.settings)
+        {
+            auto new_settings = make_intrusive<ASTSetQuery>();
+            new_settings->is_standalone = false;
+            storage.set(storage.settings, new_settings);
+        }
+        storage.settings->changes.emplace_back(name, std::move(value));
+    };
+
+    /// `TimeSeries` keeps its own settings, so it never reaches the MergeTree block below.
+    if (engine_name == "TimeSeries")
+    {
+        /// Only `use_all_tags_column_to_generate_id` defaults to false, so draw both ways.
+        static const Strings timeseries_bool_settings
+            = {"aggregate_min_time_and_max_time",
+               "filter_by_min_time_and_max_time",
+               "store_min_time_and_max_time",
+               "use_all_tags_column_to_generate_id"};
+
+        for (const auto & name : timeseries_bool_settings)
+            if (fuzz_rand() % 20 == 0)
+                fuzz_setting(name, UInt64(fuzz_rand() % 2));
+
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("samples_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("tags_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+
+        /// Writing `recent_samples_index_granularity` at all is rejected once the recent-samples
+        /// table is off, so only offer it while the TTL stays non-zero.
+        bool recent_samples_disabled = false;
+        if (fuzz_rand() % 20 == 0)
+        {
+            recent_samples_disabled = fuzz_rand() % 4 == 0;
+            fuzz_setting("recent_samples_ttl_seconds", UInt64(recent_samples_disabled ? 0 : fuzz_rand() % 345600 + 1));
+        }
+        if (!recent_samples_disabled && fuzz_rand() % 20 == 0)
+            fuzz_setting("recent_samples_index_granularity", UInt64(1) << (fuzz_rand() % 16));
+
         return;
     }
 
@@ -1546,17 +1683,6 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
            "ttl_only_drop_parts",
            "use_const_adaptive_granularity",
            "use_primary_key_cache"};
-
-    auto fuzz_setting = [&](const String & name, Field value)
-    {
-        if (!storage.settings)
-        {
-            auto new_settings = make_intrusive<ASTSetQuery>();
-            new_settings->is_standalone = false;
-            storage.set(storage.settings, new_settings);
-        }
-        storage.settings->changes.emplace_back(name, std::move(value));
-    };
 
     for (const auto & name : hot_bool_settings)
         if (fuzz_rand() % 20 == 0)
@@ -1618,7 +1744,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         fuzz_setting("materialize_projections_on_insert", UInt64(fuzz_rand() % 2));
 }
 
-void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
+void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental)
 {
     /// Fuzz the refresh period; occasionally switch it to a calendar (months) interval.
     /// EVERY forbids mixing calendar and clock units, so set exactly one of the two.
@@ -1646,9 +1772,11 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
         strategy.set(strategy.spread, std::move(spread));
     }
 
-    /// Fuzz the refresh mode
-    if (fuzz_rand() % 10 == 0)
-        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % 3);
+    /// Fuzz the refresh mode. `AppendIncremental` is the last of the three, so dropping it leaves
+    /// `Replace` and `AppendFull`. Where the caller cannot introduce it, one that is already there is
+    /// kept rather than rewritten: only transitions into it are suppressed.
+    if (fuzz_rand() % 10 == 0 && (allow_incremental || strategy.mode != RefreshMode::AppendIncremental))
+        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % (allow_incremental ? 3 : 2));
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
@@ -1692,6 +1820,71 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
     }
 }
 
+/// Swap a MergeTree-family engine for `CollapsingMergeTree(sign)` or
+/// `VersionedCollapsingMergeTree(sign, version)`. Both name columns of a specific type, so this
+/// lives here rather than in `fuzzTableStorage`, which never sees the column list.
+void QueryFuzzer::swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list)
+{
+    if (!storage.engine || !columns_list)
+        return;
+
+    auto & engine_name = storage.engine->name;
+    /// Plain MergeTree-family engines only: `Replicated` is already stripped by `fuzzTableStorage`,
+    /// and `Shared` is left alone - both are Keeper-backed and out of scope here.
+    if (!endsWith(engine_name, "MergeTree") || startsWith(engine_name, "Shared") || fuzz_rand() % 30 != 0)
+        return;
+
+    auto & columns = columns_list->children;
+    Strings sign_candidates;
+    Strings version_candidates;
+    for (const auto & column_ast : columns)
+    {
+        const auto * column = column_ast->as<ASTColumnDeclaration>();
+        if (!column)
+            continue;
+        const auto column_type = column->getType();
+        if (!column_type)
+            continue;
+        /// tryGet, not get: by now the column types have been through `fuzzColumnDeclarationList`.
+        const auto type = DataTypeFactory::instance().tryGet(column_type);
+        if (!type)
+            continue;
+        /// `MergeTreeData` requires the sign to be plain `Int8` - `Nullable(Int8)` and `UInt8` are both
+        /// rejected - so match the type exactly the way it does.
+        if (typeid_cast<const DataTypeInt8 *>(type.get()))
+            sign_candidates.push_back(column->name);
+        if (type->canBeUsedAsVersion())
+            version_candidates.push_back(column->name);
+    }
+
+    if (sign_candidates.empty())
+        return;
+
+    const String sign_column = pickRandomly(fuzz_rand, sign_candidates);
+    /// `Int8` can serve as a version too, so the chosen sign column is usually a version candidate
+    /// as well - but naming it twice is rejected outright ("The version and sign column cannot be
+    /// the same"), which would turn every such CREATE into a guaranteed no-op.
+    std::erase(version_candidates, sign_column);
+
+    auto arguments = make_intrusive<ASTExpressionList>();
+    arguments->children.push_back(make_intrusive<ASTIdentifier>(sign_column));
+    if (!version_candidates.empty() && fuzz_rand() % 2 == 0)
+    {
+        engine_name = "VersionedCollapsingMergeTree";
+        arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, version_candidates)));
+    }
+    else
+    {
+        engine_name = "CollapsingMergeTree";
+    }
+
+    auto * engine = storage.engine;
+    if (engine->arguments)
+        engine->replace(engine->arguments, std::move(arguments));
+    else
+        engine->set(engine->arguments, std::move(arguments));
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -1717,6 +1910,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     else if (create.storage)
     {
         fuzzTableStorage(*create.storage);
+        swapEngineToCollapsing(*create.storage, create.columns_list ? create.columns_list->columns : nullptr);
     }
 
     /// Fuzz the view targets: MV `TO`, window-view `INNER`, and TimeSeries `SAMPLES`/`TAGS`/`METRICS`.
@@ -1736,9 +1930,15 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             create.targets->removeTarget(kind);
         }
 
-        for (auto * inner_storage : create.targets->getInnerEngines())
-            if (inner_storage)
+        /// Iterate kinds rather than `getInnerEngines`, which yields no kind: the Collapsing swap
+        /// needs each inner engine paired with that target's own column list to find a sign column.
+        for (auto kind : create.targets->getKinds())
+            if (auto * inner_storage = create.targets->getInnerEngine(kind))
+            {
                 fuzzTableStorage(*inner_storage);
+                auto * inner_cols = create.targets->getInnerColumns(kind);
+                swapEngineToCollapsing(*inner_storage, inner_cols ? inner_cols->columns : nullptr);
+            }
 
         for (auto kind : create.targets->getKinds())
             if (auto * inner_cols = create.targets->getInnerColumns(kind))
@@ -1772,8 +1972,10 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (fuzz_rand() % 20 == 0)
             create.is_populate = !create.is_populate;
 
+        /// An incremental view starts from a fresh cursor, so a replacement would replay the source
+        /// into the target it shares with the view it replaces, and is refused outright.
         if (create.refresh_strategy)
-            fuzzRefreshStrategy(*create.refresh_strategy);
+            fuzzRefreshStrategy(*create.refresh_strategy, !create.create_or_replace && !create.replace_view);
     }
 
     /// Fuzz SQL SECURITY type for ordinary and materialized views
@@ -2264,7 +2466,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                 /// Distributed(cluster, db, table) reads from a configured cluster.
                 new_engine = makeASTFunction(
                     "Distributed",
-                    make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names))),
+                    make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributedClusterNames()))),
                     db_arg,
                     table_arg);
                 break;
@@ -2306,7 +2508,11 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
-static const Strings stat_types = {"tdigest", "countmin", "basic", "uniq", "uniq_v2", "nullcount"};
+static const Strings & statTypes()
+{
+    static const Strings stat_types = {"tdigest", "countmin", "basic", "uniq", "uniq_v2", "nullcount"};
+    return stat_types;
+}
 
 void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
 {
@@ -2440,7 +2646,7 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
             for (auto & type_ast : stats_decl->types->children)
             {
                 if (auto * fn = type_ast->as<ASTFunction>(); fn && fuzz_rand() % 5 == 0)
-                    fn->name = pickRandomly(fuzz_rand, stat_types);
+                    fn->name = pickRandomly(fuzz_rand, statTypes());
             }
         }
     }
@@ -2511,63 +2717,88 @@ void QueryFuzzer::fuzzColumnDeclarationList(ASTExpressionList & columns)
 
 /// String case, validity and normalization functions (string → string or UInt8).
 /// Used both as a swap group and to wrap text index pre/postprocessor expressions.
-static const std::unordered_set<String> string_case_functions
-    = {"upper",
-       "lower",
-       "lowerUTF8",
-       "upperUTF8",
-       "initcap",
-       "initcapUTF8",
-       "reverse",
-       "reverseUTF8",
-       "isValidASCII",
-       "isValidUTF8",
-       "toValidUTF8",
-       "normalizeUTF8NFC",
-       "normalizeUTF8NFD",
-       "normalizeUTF8NFKC",
-       "normalizeUTF8NFKD",
-       "caseFoldUTF8",
-       "removeDiacriticsUTF8",
-       "soundex"};
+static const std::unordered_set<String> & stringCaseFunctions()
+{
+    static const std::unordered_set<String> string_case_functions
+        = {"upper",
+           "lower",
+           "lowerUTF8",
+           "upperUTF8",
+           "initcap",
+           "initcapUTF8",
+           "reverse",
+           "reverseUTF8",
+           "isValidASCII",
+           "isValidUTF8",
+           "toValidUTF8",
+           "normalizeUTF8NFC",
+           "normalizeUTF8NFD",
+           "normalizeUTF8NFKC",
+           "normalizeUTF8NFKD",
+           "caseFoldUTF8",
+           "removeDiacriticsUTF8",
+           "soundex"};
+    return string_case_functions;
+}
 
 /// Every name `TokenizerFactory` registers, aliases included; `SELECT name FROM system.tokenizers`
 /// lists them. `chinese`, `icu` and `japanese` are conditionally compiled, so a build without one
 /// answers `Unknown tokenizer` (Code 36) - a plain rejection, like any other expected error here.
-static const Strings text_index_tokenizers
-    = {"array",
-       "asciiCJK",
-       "chinese",
-       "icu",
-       "japanese",
-       "keyword",
-       "ngrambf_v1",
-       "ngrams",
-       "sparseGrams",
-       "sparse_grams",
-       "splitByNonAlpha",
-       "splitByRegexp",
-       "splitByString",
-       "tokenbf_v1",
-       "unicodeWord",
-       "unicode_word"};
+static const Strings & textIndexTokenizers()
+{
+    static const Strings text_index_tokenizers
+        = {"array",
+           "asciiCJK",
+           "chinese",
+           "icu",
+           "japanese",
+           "keyValuePairs",
+           "keyword",
+           "ngrambf_v1",
+           "ngrams",
+           "sparseGrams",
+           "sparse_grams",
+           "splitByNonAlpha",
+           "splitByRegexp",
+           "splitByString",
+           "tokenbf_v1",
+           "unicodeWord",
+           "unicode_word"};
+    return text_index_tokenizers;
+}
 /// Non-empty separators for the splitByString tokenizer (empty ones are rejected).
-static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
+static const Strings & tokenizerSeparators()
+{
+    static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
+    return tokenizer_separators;
+}
 /// Separator patterns for splitByRegexp, whose regexp is mandatory and must be non-empty. `|` and
 /// `a*` can match the empty string, which `nextRegexpMatch` reports as "no separator" instead of
 /// looping, and `(` does not compile - both are rejections worth reaching.
-static const Strings tokenizer_regexps = {"\\s+", "[,;]", "[^a-zA-Z0-9]+", "-+", "\\d", "|", "a*", "("};
+static const Strings & tokenizerRegexps()
+{
+    static const Strings tokenizer_regexps = {"\\s+", "[,;]", "[^a-zA-Z0-9]+", "-+", "\\d", "|", "a*", "("};
+    return tokenizer_regexps;
+}
 /// `icu` is the one tokenizer with a mandatory argument. ICU accepts any well-formed tag,
 /// including one naming no real locale, so `xx_YY` is a valid value rather than a bad one.
-static const Strings tokenizer_icu_locales = {"en", "de", "zh", "ja", "ru", "en_US", "ja_JP", "xx_YY"};
-static const Strings tokenizer_chinese_granularities = {"coarse_grained", "fine_grained"};
+static const Strings & tokenizerIcuLocales()
+{
+    static const Strings tokenizer_icu_locales = {"en", "de", "zh", "ja", "ru", "en_US", "ja_JP", "xx_YY"};
+    return tokenizer_icu_locales;
+}
+static const Strings & tokenizerChineseGranularities()
+{
+    static const Strings tokenizer_chinese_granularities = {"coarse_grained", "fine_grained"};
+    return tokenizer_chinese_granularities;
+}
 
 /// Build a value for the `tokenizer` parameter of a text index. The argument shapes are keyed by
 /// name, so a tokenizer added to the list above without one is simply emitted bare - which every
 /// tokenizer except `icu` accepts, since the parameter count is only an upper bound.
 ASTPtr QueryFuzzer::makeTextIndexTokenizer()
 {
-    const String name = pickRandomly(fuzz_rand, text_index_tokenizers);
+    const String name = pickRandomly(fuzz_rand, textIndexTokenizers());
 
     auto args = make_intrusive<ASTExpressionList>();
     if (name == "ngrams" || name == "ngrambf_v1")
@@ -2591,20 +2822,20 @@ ASTPtr QueryFuzzer::makeTextIndexTokenizer()
         Array separators;
         const size_t num_separators = fuzz_rand() % 3 + 1;
         for (size_t i = 0; i < num_separators; ++i)
-            separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
+            separators.push_back(pickRandomly(fuzz_rand, tokenizerSeparators()));
         args->children.push_back(make_intrusive<ASTLiteral>(std::move(separators)));
     }
     else if (name == "splitByRegexp")
     {
-        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_regexps)));
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizerRegexps())));
     }
     else if (name == "icu")
     {
-        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_icu_locales)));
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizerIcuLocales())));
     }
     else if (name == "chinese")
     {
-        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_chinese_granularities)));
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizerChineseGranularities())));
     }
 
     /// Prefer the bare string form half the time, and always for the tokenizers taking no
@@ -2698,7 +2929,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                         Array separators;
                         const size_t num_separators = fuzz_rand() % 3 + 1;
                         for (size_t i = 0; i < num_separators; ++i)
-                            separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
+                            separators.push_back(pickRandomly(fuzz_rand, tokenizerSeparators()));
                         tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(std::move(separators));
                     }
                     else if (
@@ -2706,7 +2937,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                         && fuzz_rand() % 5 == 0)
                     {
                         /// Re-roll the separator pattern
-                        tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_regexps));
+                        tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizerRegexps()));
                     }
                 }
             }
@@ -2739,7 +2970,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                 /// in the group exercise the String -> String type validation.
                 if (fuzz_rand() % 5 == 0)
                 {
-                    auto wrapped = makeASTFunction(pickRandomly(fuzz_rand, string_case_functions), value_ast);
+                    auto wrapped = makeASTFunction(pickRandomly(fuzz_rand, stringCaseFunctions()), value_ast);
                     value_ast = wrapped;
                 }
             }
@@ -2769,7 +3000,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                 index_type->arguments->children.push_back(makeASTFunction(
                     "equals",
                     make_intrusive<ASTIdentifier>(name),
-                    makeASTFunction(pickRandomly(fuzz_rand, string_case_functions), expression->clone())));
+                    makeASTFunction(pickRandomly(fuzz_rand, stringCaseFunctions()), expression->clone())));
         };
         add_missing_processor("preprocessor");
         add_missing_processor("postprocessor");
@@ -3074,124 +3305,132 @@ void QueryFuzzer::fuzzProjectionDeclarationList(ASTExpressionList & projections)
         [&](ASTProjectionDeclaration & projection, ASTPtr &) { fuzzProjectionDeclaration(projection); });
 }
 
-static const std::map<size_t, Strings> swapAggrs
-    = {{1,
-        {"any",
-         "anyHeavy",
-         "anyLast",
-         "anyRespectNulls",
-         "approx_top_k",
-         "avg",
-         "count",
-         "deltaSum",
-         "distinctDynamicTypes",
-         "distinctJSONPaths",
-         "distinctJSONPathsAndTypes",
-         "entropy",
-         "estimateCompressionRatio",
-         "first_value",
-         "groupArray",
-         "groupArrayIntersect",
-         "groupArrayMovingAvg",
-         "groupArrayMovingSum",
-         "groupBitAnd",
-         "groupBitOr",
-         "groupBitXor",
-         "groupBitmap",
-         "groupBitmapAnd",
-         "groupBitmapOr",
-         "groupBitmapXor",
-         "groupConcat",
-         "groupUniqArray",
-         "kurtPop",
-         "kurtSamp",
-         "last_value",
-         "max",
-         "median",
-         "min",
-         "quantile",
-         "quantileBFloat16",
-         "quantileExact",
-         "quantileExactExclusive",
-         "quantileExactHigh",
-         "quantileExactInclusive",
-         "quantileExactLow",
-         "quantileTDigest",
-         "quantileTiming",
-         "singleValueOrNull",
-         "skewPop",
-         "skewSamp",
-         "stddevPop",
-         "stddevPopStable",
-         "stddevSamp",
-         "stddevSampStable",
-         "sum",
-         "sumCount",
-         "sumKahan",
-         "sumWithOverflow",
-         "topK",
-         "uniq",
-         "uniqCombined",
-         "uniqCombined64",
-         "uniqExact",
-         "uniqHLL12",
-         "uniqTheta",
-         "uniqUpTo",
-         "varPop",
-         "varPopStable",
-         "varSamp",
-         "varSampStable"}},
-       {2,
-        {"analysisOfVariance",
-         "approx_top_sum",
-         "argMax",
-         "argMin",
-         "avgWeighted",
-         "boundingRatio",
-         "contingency",
-         "corr",
-         "corrMatrix",
-         "corrStable",
-         "covarPop",
-         "covarPopMatrix",
-         "covarPopStable",
-         "covarSamp",
-         "covarSampMatrix",
-         "covarSampStable",
-         "cramersV",
-         "cramersVBiasCorrected",
-         "deltaSumTimestamp",
-         "groupArrayInsertAt",
-         "intervalLengthSum",
-         "kolmogorovSmirnovTest",
-         "mannWhitneyUTest",
-         "maxIntersections",
-         "maxIntersectionsPosition",
-         "maxMappedArrays",
-         "mergedJSONPatch",
-         "minMappedArrays",
-         "quantileBFloat16Weighted",
-         "quantileDeterministic",
-         "quantileExactWeighted",
-         "quantileExactWeightedInterpolated",
-         "quantileInterpolatedWeighted",
-         "quantilePrometheusHistogram",
-         "quantileTDigestWeighted",
-         "quantileTimingWeighted",
-         "quantileWeighted",
-         "rankCorr",
-         "simpleLinearRegression",
-         "studentTTest",
-         "studentTTestOneSample",
-         "sumMappedArrays",
-         "sumMapWithOverflow",
-         "theilsU",
-         "topKWeighted",
-         "uniq",
-         "welchTTest"}}};
-
 const std::map<size_t, Strings> & QueryFuzzer::swapAggregateNames()
 {
+    static const std::map<size_t, Strings> swapAggrs
+        = {{1,
+            {"any",
+             "anyHeavy",
+             "anyLast",
+             "anyRespectNulls",
+             "approx_top_k",
+             "avg",
+             "count",
+             "deltaSum",
+             "distinctDynamicTypes",
+             "distinctJSONPaths",
+             "distinctJSONPathsAndTypes",
+             "entropy",
+             "estimateCompressionRatio",
+             "first_value",
+             "groupArray",
+             "groupArrayIntersect",
+             "groupArrayMovingAvg",
+             "groupArrayMovingSum",
+             "groupBitAnd",
+             "groupBitOr",
+             "groupBitXor",
+             "groupBitmap",
+             "groupBitmapAnd",
+             "groupBitmapOr",
+             "groupBitmapXor",
+             "groupConcat",
+             "groupUniqArray",
+             "kurtPop",
+             "kurtSamp",
+             "last_value",
+             "max",
+             "median",
+             "min",
+             "quantile",
+             "quantileBFloat16",
+             "quantileExact",
+             "quantileExactExclusive",
+             "quantileExactHigh",
+             "quantileExactInclusive",
+             "quantileExactLow",
+             "quantileTDigest",
+             "quantileTiming",
+             "singleValueOrNull",
+             "skewPop",
+             "skewSamp",
+             "stddevPop",
+             "stddevPopStable",
+             "stddevSamp",
+             "stddevSampStable",
+             "sum",
+             "sumCount",
+             "sumKahan",
+             "sumWithOverflow",
+             "topK",
+             "uniq",
+             "uniqCombined",
+             "uniqCombined64",
+             "uniqExact",
+             "uniqHLL12",
+             "uniqTheta",
+             "uniqUpTo",
+             "varPop",
+             "varPopStable",
+             "varSamp",
+             "varSampStable"}},
+           {2,
+            {"analysisOfVariance",
+             "approx_top_sum",
+             "argMax",
+             "argMin",
+             "avgWeighted",
+             "boundingRatio",
+             "contingency",
+             "corr",
+             "corrMatrix",
+             "corrStable",
+             "covarPop",
+             "covarPopMatrix",
+             "covarPopStable",
+             "covarSamp",
+             "covarSampMatrix",
+             "covarSampStable",
+             "cramersV",
+             "cramersVBiasCorrected",
+             "deltaSumTimestamp",
+             "groupArrayInsertAt",
+             "intervalLengthSum",
+             "kolmogorovSmirnovTest",
+             "mannWhitneyUTest",
+             "maxIntersections",
+             "maxIntersectionsPosition",
+             "maxMappedArrays",
+             "mergedJSONPatch",
+             "minMappedArrays",
+             "quantileBFloat16Weighted",
+             "quantileDeterministic",
+             "quantileExactWeighted",
+             "quantileExactWeightedInterpolated",
+             "quantileInterpolatedWeighted",
+             "quantilePrometheusHistogram",
+             "quantileTDigestWeighted",
+             "quantileTimingWeighted",
+             "quantileWeighted",
+             "rankCorr",
+             "regr_avgx",
+             "regr_avgy",
+             "regr_count",
+             "regr_intercept",
+             "regr_r2",
+             "regr_slope",
+             "regr_sxx",
+             "regr_sxy",
+             "regr_syy",
+             "simpleLinearRegression",
+             "studentTTest",
+             "studentTTestOneSample",
+             "sumMappedArrays",
+             "sumMapWithOverflow",
+             "theilsU",
+             "topKWeighted",
+             "uniq",
+             "welchTTest"}}};
     return swapAggrs;
 }
 
@@ -3294,7 +3533,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
         /// TimeSeries table functions (db, table → time-series views)
-        {"timeSeriesMetricFamilies", "timeSeriesSamples", "timeSeriesTags"},
+        {"timeSeriesMetricFamilies", "timeSeriesSamples", "timeSeriesTags", "timeSeriesTimeRanges"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -3335,14 +3574,32 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
     if (is_remote)
         args.front() = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(fn.name == "remoteSecure"));
     else
-        args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+        args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributedClusterNames())));
 }
 
-/// Interesting regexps for merge() argument fuzzing. `table_regexps` includes the empty pattern (an
-/// empty regexp matches all tables); `nonempty_regexps` omits it because REGEXP() rejects an empty string.
-static const std::vector<String> merge_databases = {"default", "system", "information_schema"};
-static const std::vector<String> nonempty_regexps = {".*", ".+", "^", "t.*", ".*[0-9].*", "^system$"};
-static const std::vector<String> table_regexps = {".*", ".+", "^", "", "t.*", ".*[0-9].*"};
+/// Interesting regexps for merge() argument fuzzing. merge() matches them with
+/// `OptimizedRegularExpression`, so they cover all four of its `match` paths.
+static const std::vector<String> & mergeDatabases()
+{
+    static const std::vector<String> merge_databases = {"default", "system", "information_schema"};
+    return merge_databases;
+}
+static const std::vector<String> & nonemptyRegexps()
+{
+    static const std::vector<String> nonempty_regexps
+        = {".*", ".+", "^", "t.*", ".*[0-9].*", "^system$", "system", "(?i)SYSTEM", "^sys", "em$",
+           "^(system|default)$", "(?m)^system$", "sys.*em", "^\\w+$", "("};
+    return nonempty_regexps;
+}
+/// The same list plus the empty pattern, which matches every table; `nonemptyRegexps` omits it
+/// because a database `REGEXP('')` is rejected.
+static const std::vector<String> & tableRegexps()
+{
+    static const std::vector<String> table_regexps
+        = {".*", ".+", "^", "", "t.*", ".*[0-9].*", "^system$", "system", "(?i)SYSTEM", "^sys", "em$",
+           "^(system|default)$", "(?m)^system$", "sys.*em", "^\\w+$", "("};
+    return table_regexps;
+}
 
 /// Fuzz the merge() table function arguments: merge(['db_name_or_regexp',] 'tables_regexp').
 /// Rewrites the table regexp and fuzzes/toggles the optional database (plain name or REGEXP('...')).
@@ -3356,13 +3613,13 @@ void QueryFuzzer::fuzzMergeFunctionArguments(ASTFunction & fn)
     auto make_database_argument = [&]() -> ASTPtr
     {
         if (fuzz_rand() % 2 == 0)
-            return make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, merge_databases)));
+            return make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, mergeDatabases())));
         /// REGEXP('pattern') is interpreted as a database regexp by merge().
-        return makeASTFunction("REGEXP", make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, nonempty_regexps))));
+        return makeASTFunction("REGEXP", make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, nonemptyRegexps()))));
     };
 
     /// The tables_regexp is always the last argument.
-    args.back() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, table_regexps)));
+    args.back() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, tableRegexps())));
 
     if (args.size() == 1 && fuzz_rand() % 2 == 0)
         /// Promote to the 2-argument form by prepending a database matcher.
@@ -3375,6 +3632,16 @@ void QueryFuzzer::fuzzMergeFunctionArguments(ASTFunction & fn)
         else
             args.front() = make_database_argument();
     }
+}
+
+/// A `LIKE` clause pattern for SHOW/TRUNCATE. These reach the server as query text rather than
+/// through `likePatternToRegexp`, so they can also carry the trailing backslash it rejects.
+String QueryFuzzer::makeFuzzedLikePattern()
+{
+    String res = pickRandomly(fuzz_rand, likePatterns());
+    if (fuzz_rand() % 8 == 0)
+        res += '\\';
+    return res;
 }
 
 /// A brace expansion of 1..4 items — a {m..n} range or an {a,b,...} enumeration. Shared by the remote
@@ -3453,7 +3720,7 @@ void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
         default:
             /// cluster() and clusterAllReplicas() share the same signature.
             fn_name = fuzz_rand() % 2 == 0 ? "cluster" : "clusterAllReplicas";
-            connection = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+            connection = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributedClusterNames())));
             break;
     }
 
@@ -3513,9 +3780,9 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         switch (fuzz_rand() % 6)
         {
             case 0: db_arg = makeASTFunction("REGEXP", make_intrusive<ASTLiteral>("^" + table_id.database_name + "$")); break;
-            case 1: db_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, merge_databases))); break;
+            case 1: db_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, mergeDatabases()))); break;
             case 2:
-                db_arg = makeASTFunction("REGEXP", make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, nonempty_regexps))));
+                db_arg = makeASTFunction("REGEXP", make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, nonemptyRegexps()))));
                 break;
             default: db_arg = make_intrusive<ASTLiteral>(table_id.database_name);
         }
@@ -3524,7 +3791,7 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
     ASTPtr table_arg;
     switch (fuzz_rand() % 8)
     {
-        case 0: table_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, table_regexps))); break;
+        case 0: table_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, tableRegexps()))); break;
         case 1: table_arg = make_intrusive<ASTLiteral>(table_name); break;
         case 2: table_arg = make_intrusive<ASTLiteral>("^" + table_name); break;
         default: table_arg = make_intrusive<ASTLiteral>("^" + table_name + "$"); break;
@@ -3757,18 +4024,22 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 
 /// Introspection wrappers accepting an argument of any type: they force full serialization
 /// or type walks of the wrapped expression and never fail on type grounds.
-static const Strings any_type_wrappers
-    = {"byteSize",
-       "blockSerializedSize",
-       "dumpColumnStructure",
-       "toColumnTypeName",
-       "toTypeName",
-       "getTypeSerializationStreams",
-       "defaultValueOfArgumentType",
-       "visibleWidth",
-       "isConstant",
-       "identity",
-       "ignore"};
+static const Strings & anyTypeWrappers()
+{
+    static const Strings any_type_wrappers
+        = {"byteSize",
+           "blockSerializedSize",
+           "dumpColumnStructure",
+           "toColumnTypeName",
+           "toTypeName",
+           "getTypeSerializationStreams",
+           "defaultValueOfArgumentType",
+           "visibleWidth",
+           "isConstant",
+           "identity",
+           "ignore"};
+    return any_type_wrappers;
+}
 
 ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
@@ -3861,7 +4132,7 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 
     if (fuzz_rand() % 100 == 0)
     {
-        String wrapper = pickRandomly(fuzz_rand, any_type_wrappers);
+        String wrapper = pickRandomly(fuzz_rand, anyTypeWrappers());
         /// A constant String argument of `getTypeSerializationStreams` is parsed as a type name
         if (wrapper == "getTypeSerializationStreams" && type == Field::Types::Which::String)
             wrapper = "toTypeName";
@@ -4094,7 +4365,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
             {
                 /// Wrap child in an introspection function accepting any argument type,
                 /// forcing serialization or type walks of the whole expression.
-                new_child = makeASTFunction(pickRandomly(fuzz_rand, any_type_wrappers), child);
+                new_child = makeASTFunction(pickRandomly(fuzz_rand, anyTypeWrappers()), child);
             }
             else if (fuzz_rand() % 1000 == 0 && current_ast_depth < 80)
             {
@@ -4189,8 +4460,12 @@ void QueryFuzzer::checkIterationLimit()
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST complexity limit exceeded while fuzzing ({})", iteration_count);
 }
 
-static const std::unordered_set<String> comparison_comparators
-    = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isDistinctFrom", "isNotDistinctFrom"};
+static const std::unordered_set<String> & comparisonComparators()
+{
+    static const std::unordered_set<String> comparison_comparators
+        = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isDistinctFrom", "isNotDistinctFrom"};
+    return comparison_comparators;
+}
 
 ASTPtr QueryFuzzer::fuzzPredicate(const ASTPtr & pred, const int negProb)
 {
@@ -4220,10 +4495,10 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
         }
         else if (!alias.empty())
         {
-            ASTIdentifier * id = nullptr;
+            ASTIdentifier * id = typeid_cast<ASTIdentifier *>(exp.get());
             const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty() && !id->isParam())
+            if (next_action == 0 && id && !id->name_parts.empty() && !id->isParam())
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else.
                 /// Skip parameterized identifiers: their empty placeholder parts would trip
@@ -4259,9 +4534,22 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
     return id && !id->name_parts.empty() && !id->isParam();
 };
 
-/// Only the round-trippable infix IN spellings. The null* family (nullIn/notNullIn/...) formats as
-/// plain IN and reparses as in/notIn, so it would silently lose the mutation.
-static const Strings in_variants = {"in", "notIn", "globalIn", "globalNotIn"};
+/// The whole IN family, for nodes built here: `makeASTFunction` leaves `is_operator` unset, so every
+/// spelling formats as `f(x, y)` and reparses intact. The null* ones do not skip a NULL left operand,
+/// so they return 0/1 where plain IN returns NULL.
+static const Strings & inVariants()
+{
+    static const Strings in_variants = {"in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn"};
+    return in_variants;
+}
+
+/// Only the spellings that survive renaming a node that came from infix `x IN y`: the null* family
+/// formats back as plain IN and reparses as in/notIn, so it would silently lose the mutation.
+static const Strings & inInfixVariants()
+{
+    static const Strings in_infix_variants = {"in", "notIn", "globalIn", "globalNotIn"};
+    return in_infix_variants;
+}
 
 ASTPtr QueryFuzzer::generatePredicate()
 {
@@ -4304,7 +4592,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                     /// col IN (subquery) using any IN-family operator, or EXISTS (subquery)
                     static const Strings subquery_variants = []
                     {
-                        Strings res = in_variants;
+                        Strings res = inVariants();
                         res.emplace_back("exists");
                         return res;
                     }();
@@ -4318,6 +4606,15 @@ ASTPtr QueryFuzzer::generatePredicate()
                                 next_condition = makeASTFunction(variant, entry.second->clone());
                             else
                                 next_condition = makeASTFunction(variant, expression_1, entry.second->clone());
+                            break;
+                        }
+                        const auto * table_expr = typeid_cast<ASTTableExpression *>(entry.second.get());
+                        if (table_expr && table_expr->database_and_table_name)
+                        {
+                            next_condition = makeASTFunction(
+                                inVariants()[fuzz_rand() % inVariants().size()],
+                                expression_1,
+                                table_expr->database_and_table_name->clone());
                             break;
                         }
                     }
@@ -4341,7 +4638,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                         std::advance(rand_col, fuzz_rand() % column_like.size());
                         set_func->arguments->children.push_back(rand_col->second->clone());
                     }
-                    next_condition = makeASTFunction(in_variants[fuzz_rand() % in_variants.size()], expression_1, set_func);
+                    next_condition = makeASTFunction(inVariants()[fuzz_rand() % inVariants().size()], expression_1, set_func);
                 }
                 else if (nprob == 3 && !column_like.empty())
                 {
@@ -4386,7 +4683,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                     }
                     /// Run mostly equality conditions
                     next_condition = makeASTFunction(
-                        ((fuzz_rand() % 10) < 2) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
+                        ((fuzz_rand() % 10) < 2) ? pickRandomly(fuzz_rand, comparisonComparators()) : String("equals"),
                         expression_1,
                         expression_2);
                 }
@@ -4748,7 +5045,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 }
                 /// Run mostly equi-joins
                 ASTPtr next_condition = makeASTFunction(
-                    ((fuzz_rand() % 10) < 3) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
+                    ((fuzz_rand() % 10) < 3) ? pickRandomly(fuzz_rand, comparisonComparators()) : String("equals"),
                     expression_1,
                     expression_2);
                 next_condition = fuzzPredicate(next_condition, 30);
@@ -4796,23 +5093,31 @@ ASTPtr QueryFuzzer::addArrayJoinClause()
 
 /// Higher-order array functions that accept a lambda or function name as first argument.
 /// Shared between swapFuncs and the HOF fuzzing logic below.
-static const std::unordered_set<String> higher_order_array_funcs = {
-    "arraySort",        "arrayReverseSort", "arrayPartialSort",  "arrayPartialReverseSort",
-    "arrayFilter",      "arrayMap",         "arrayCount",        "arrayExists",
-    "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
-    "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
-    "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
-};
+static const std::unordered_set<String> & higherOrderArrayFuncs()
+{
+    static const std::unordered_set<String> higher_order_array_funcs = {
+        "arraySort",        "arrayReverseSort", "arrayPartialSort",  "arrayPartialReverseSort",
+        "arrayFilter",      "arrayMap",         "arrayCount",        "arrayExists",
+        "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
+        "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
+        "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
+    };
+    return higher_order_array_funcs;
+}
 
 /// Higher-order map functions (same idea, for Map-typed arguments).
-static const std::unordered_set<String> higher_order_map_funcs = {
-    "mapFilter",
-    "mapApply",
-    "mapExists",
-    "mapAll",
-    "mapSort",
-    "mapReverseSort",
-};
+static const std::unordered_set<String> & higherOrderMapFuncs()
+{
+    static const std::unordered_set<String> higher_order_map_funcs = {
+        "mapFilter",
+        "mapApply",
+        "mapExists",
+        "mapAll",
+        "mapSort",
+        "mapReverseSort",
+    };
+    return higher_order_map_funcs;
+}
 
 /// Every function that accepts a leading lambda or function name, for the HOF fuzzing logic below.
 /// Deliberately separate from the two sets above: those are also swapFuncs groups, which answer
@@ -4820,884 +5125,984 @@ static const std::unordered_set<String> higher_order_map_funcs = {
 /// Conflating them would force a function into a single swap group just to be lambda-eligible.
 /// The extra entries here are the `FunctionArrayMapped` reductions and transforms, which keep
 /// their own swapFuncs groups (array scalar reductions, array transforms, map partial sorting).
-static const std::unordered_set<String> lambda_accepting_funcs = []
+static const std::unordered_set<String> & lambdaAcceptingFuncs()
 {
-    std::unordered_set<String> res = higher_order_array_funcs;
-    res.insert(higher_order_map_funcs.begin(), higher_order_map_funcs.end());
-    res.insert({
-        "arraySum",
-        "arrayAvg",
-        "arrayMin",
-        "arrayMax",
-        "arrayProduct",
-        "arrayCompact",
-        "arrayCumSum",
-        "arrayCumSumNonNegative",
-        "arrayDifference",
-        "mapPartialSort",
-        "mapPartialReverseSort",
-    });
-    return res;
-}();
+    static const std::unordered_set<String> lambda_accepting_funcs = []
+    {
+        std::unordered_set<String> res = higherOrderArrayFuncs();
+        res.insert(higherOrderMapFuncs().begin(), higherOrderMapFuncs().end());
+        res.insert({
+            "arraySum",
+            "arrayAvg",
+            "arrayMin",
+            "arrayMinIndex",
+            "arrayMax",
+            "arrayMaxIndex",
+            "arrayProduct",
+            "arrayCompact",
+            "arrayCumSum",
+            "arrayCumSumNonNegative",
+            "arrayDifference",
+            "mapPartialSort",
+            "mapPartialReverseSort",
+        });
+        return res;
+    }();
+    return lambda_accepting_funcs;
+}
 
-static const std::vector<std::unordered_set<String>> & swapFuncs
-    = { /// String pattern matching operators
-        {"ilike", "like", "match", "notILike", "notLike"},
-        /// Set membership operators (the shared IN family list)
-        std::unordered_set<String>(in_variants.begin(), in_variants.end()),
-        /// Null predicate and conversion functions
-        {"assumeNotNull", "isNotNull", "isNull", "isNullable", "isZeroOrNull", "toNullable"},
-        /// Value selection / clamping / null-coalescing
-        {"clamp", "coalesce", "firstNonDefault", "greatest", "ifNull", "least", "nullIf"},
-        /// Comparison operators
-        comparison_comparators,
-        /// Arithmetic and string operators
-        {"concat",
-         "concatAssumeInjective",
-         "divide",
-         "divideOrNull",
-         "intDiv",
-         "intDivOrZero",
-         "intDivOrNull",
-         "minus",
-         "modulo",
-         "moduloOrZero",
-         "moduloOrNull",
-         "moduloLegacy",
-         "positiveModulo",
-         "positiveModuloOrNull",
-         "multiply",
-         "plus",
-         "max2",
-         "min2"},
-        /// Decimal-precision arithmetic (a, b, result_scale → Decimal)
-        {"multiplyDecimal", "divideDecimal"},
-        /// Date/time component extractors and truncators (date/datetime → numeric or date)
-        {"toDayOfMonth",
-         "toDayOfWeek",
-         "toDayOfYear",
-         "toDaysSinceYearZero",
-         "toHour",
-         "toISOWeek",
-         "toISOYear",
-         "toLastDayOfMonth",
-         "toLastDayOfWeek",
-         "toMillisecond",
-         "toMinute",
-         "toMonday",
-         "toMonth",
-         "toQuarter",
-         "toRelativeDayNum",
-         "toRelativeHourNum",
-         "toRelativeMinuteNum",
-         "toRelativeMonthNum",
-         "toRelativeQuarterNum",
-         "toRelativeSecondNum",
-         "toRelativeWeekNum",
-         "toRelativeYearNum",
-         "toSecond",
-         "toStartOfDay",
-         "toStartOfFifteenMinutes",
-         "toStartOfFiveMinutes",
-         "toStartOfHour",
-         "toStartOfISOYear",
-         "toStartOfMicrosecond",
-         "toStartOfMillisecond",
-         "toStartOfMinute",
-         "toStartOfMonth",
-         "toStartOfNanosecond",
-         "toStartOfQuarter",
-         "toStartOfSecond",
-         "toStartOfTenMinutes",
-         "toStartOfWeek",
-         "toStartOfYear",
-         "toUnixTimestamp",
-         "toWeek",
-         "toYear",
-         "toYearWeek",
-         "toYYYYMM",
-         "toYYYYMMDD",
-         "toYYYYMMDDhhmmss"},
-        /// Interval constructors (number → Interval)
-        {"toIntervalDay",
-         "toIntervalHour",
-         "toIntervalMicrosecond",
-         "toIntervalMillisecond",
-         "toIntervalMinute",
-         "toIntervalMonth",
-         "toIntervalNanosecond",
-         "toIntervalQuarter",
-         "toIntervalSecond",
-         "toIntervalWeek",
-         "toIntervalYear"},
-        /// Unix timestamp at sub-second precision (datetime64 → Int64)
-        {"toUnixTimestamp64Micro", "toUnixTimestamp64Milli", "toUnixTimestamp64Nano", "toUnixTimestamp64Second"},
-        /// Unix timestamp to DateTime64 (Int64 → DateTime64)
-        {"fromUnixTimestamp64Micro", "fromUnixTimestamp64Milli", "fromUnixTimestamp64Nano", "fromUnixTimestamp64Second"},
-        /// Date/time difference functions (unit, t1, t2 → Int64)
-        {"dateDiff", "date_diff", "age"},
-        /// Date/time formatters (datetime [, format] → String)
-        {"formatDateTime", "formatDateTimeInJodaSyntax"},
-        /// Date/time parsers (string [, format] → DateTime / DateTime64)
-        {"parseDateTime",
-         "parseDateTime64",
-         "parseDateTime64OrNull",
-         "parseDateTime64OrZero",
-         "parseDateTimeOrNull",
-         "parseDateTimeOrZero",
-         "parseDateTimeInJodaSyntax",
-         "parseDateTimeInJodaSyntaxOrNull",
-         "parseDateTimeInJodaSyntaxOrZero",
-         "parseDateTime64InJodaSyntax",
-         "parseDateTime64InJodaSyntaxOrNull",
-         "parseDateTime64InJodaSyntaxOrZero"},
-        /// Day-count → Date (integer arg)
-        {"fromDaysSinceYearZero", "fromModifiedJulianDay", "fromModifiedJulianDayOrNull"},
-        /// String → day-count (String/FixedString arg)
-        {"toModifiedJulianDay", "toModifiedJulianDayOrNull"},
-        /// Unix-time → DateTime
-        {"fromUnixTime", "fromUnixTimeInJodaSyntax"},
-        /// Date arithmetic: add/subtract intervals (date/datetime, number → datetime)
-        {"addDays",         "addHours",       "addInterval",         "addMicroseconds",  "addMilliseconds",      "addMinutes",
-         "addMonths",       "addNanoseconds", "addQuarters",         "addSeconds",       "addTupleOfIntervals",  "addWeeks",
-         "addYears",        "subtractDays",   "subtractHours",       "subtractInterval", "subtractMicroseconds", "subtractMilliseconds",
-         "subtractMinutes", "subtractMonths", "subtractNanoseconds", "subtractQuarters", "subtractSeconds",      "subtractTupleOfIntervals",
-         "subtractWeeks",   "subtractYears"},
-        /// Decimal type casts (value, precision, scale → Decimal; bare, OrNull, OrZero, OrDefault variants)
-        {"toDecimal32",
-         "toDecimal32OrNull",
-         "toDecimal32OrZero",
-         "toDecimal32OrDefault",
-         "toDecimal64",
-         "toDecimal64OrNull",
-         "toDecimal64OrZero",
-         "toDecimal64OrDefault",
-         "toDecimal128",
-         "toDecimal128OrNull",
-         "toDecimal128OrZero",
-         "toDecimal128OrDefault",
-         "toDecimal256",
-         "toDecimal256OrNull",
-         "toDecimal256OrZero",
-         "toDecimal256OrDefault"},
-        /// Integer type casts (bare, OrNull, OrZero, and OrDefault variants)
-        {"toInt8",          "toInt8OrNull",       "toInt8OrZero",   "toInt8OrDefault",   "toInt16",         "toInt16OrNull",
-         "toInt16OrZero",   "toInt16OrDefault",   "toInt32",        "toInt32OrNull",     "toInt32OrZero",   "toInt32OrDefault",
-         "toInt64",         "toInt64OrNull",      "toInt64OrZero",  "toInt64OrDefault",  "toInt128",        "toInt128OrNull",
-         "toInt128OrZero",  "toInt128OrDefault",  "toInt256",       "toInt256OrNull",    "toInt256OrZero",  "toInt256OrDefault",
-         "toUInt8",         "toUInt8OrNull",      "toUInt8OrZero",  "toUInt8OrDefault",  "toUInt16",        "toUInt16OrNull",
-         "toUInt16OrZero",  "toUInt16OrDefault",  "toUInt32",       "toUInt32OrNull",    "toUInt32OrZero",  "toUInt32OrDefault",
-         "toUInt64",        "toUInt64OrNull",     "toUInt64OrZero", "toUInt64OrDefault", "toUInt128",       "toUInt128OrNull",
-         "toUInt128OrZero", "toUInt128OrDefault", "toUInt256",      "toUInt256OrNull",   "toUInt256OrZero", "toUInt256OrDefault"},
-        /// Floating-point type casts (bare, OrNull, OrZero, and OrDefault variants)
-        {"toBFloat16",
-         "toBFloat16OrNull",
-         "toBFloat16OrZero",
-         "toFloat32",
-         "toFloat32OrNull",
-         "toFloat32OrZero",
-         "toFloat32OrDefault",
-         "toFloat64",
-         "toFloat64OrNull",
-         "toFloat64OrZero",
-         "toFloat64OrDefault",
-         "toBool"},
-        /// Explicit target-type casts (value, type name[, default] → that type)
-        {"reinterpret", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault"},
-        /// Value plus a scale/unit argument (value, scale or unit → String/Interval)
-        {"toDecimalString", "toInterval"},
-        /// Row formatting (format name, columns... → String)
-        {"formatRow", "formatRowNoNewline"},
-        /// Byte reinterpretation casts (single value → type with the same bytes)
-        {"reinterpretAsUInt8",
-         "reinterpretAsUInt16",
-         "reinterpretAsUInt32",
-         "reinterpretAsUInt64",
-         "reinterpretAsUInt128",
-         "reinterpretAsUInt256",
-         "reinterpretAsInt8",
-         "reinterpretAsInt16",
-         "reinterpretAsInt32",
-         "reinterpretAsInt64",
-         "reinterpretAsInt128",
-         "reinterpretAsInt256",
-         "reinterpretAsFloat32",
-         "reinterpretAsFloat64",
-         "reinterpretAsDate",
-         "reinterpretAsDateTime",
-         "reinterpretAsString",
-         "reinterpretAsFixedString",
-         "reinterpretAsUUID"},
-        /// Date/datetime type casts
-        {"toDate",
-         "toDate32",
-         "toDateTime",
-         "toDateTime32",
-         "toDateTime64",
-         "toTime",
-         "toTime64",
-         "toDateOrNull",
-         "toDateOrZero",
-         "toDateOrDefault",
-         "toDate32OrNull",
-         "toDate32OrZero",
-         "toDate32OrDefault",
-         "toDateTimeOrNull",
-         "toDateTimeOrZero",
-         "toDateTimeOrDefault",
-         "toDateTime64OrNull",
-         "toDateTime64OrZero",
-         "toDateTime64OrDefault",
-         "toTimeOrNull",
-         "toTimeOrZero",
-         "toTimeOrDefault",
-         "toTime64OrDefault",
-         "toTime64OrNull",
-         "toTime64OrZero"},
-        /// Rounding functions (number → number)
-        {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
-        /// Bitwise binary operators and bit predicates (integer, integer[, ...] → integer/UInt8)
-        {"bitAnd", "bitOr", "bitXor", "bitHammingDistance", "bitTest", "bitTestAll", "bitTestAny"},
-        /// Bit shift and rotate operators (value, N → value)
-        {"bitShiftLeft", "bitShiftRight", "bitRotateLeft", "bitRotateRight"},
-        /// String case, validity and normalization functions (string → string or UInt8)
-        string_case_functions,
-        /// String left/right extraction and padding
-        {"right", "rightPad", "rightPadUTF8", "rightUTF8", "left", "leftPad", "leftPadUTF8", "leftUTF8"},
-        /// Whitespace trimming
-        {"trim", "trimBoth", "trimLeft", "trimRight"},
-        /// Emptiness and length predicates (String, Array, or Map → UInt8/UInt64; all single-arg)
-        {"empty", "notEmpty", "length", "lengthUTF8"},
-        /// Array/string containment checks
-        {"has",
-         "notHas",
-         "hasAll",
-         "hasAny",
-         "hasToken",
-         "hasTokenCaseInsensitive",
-         "hasTokenCaseInsensitiveOrNull",
-         "hasTokenOrNull",
-         "hasPhrase",
-         "hasAnyToken",
-         "hasAnyTokens",
-         "hasAllToken",
-         "hasAllTokens"},
-        /// Map containment checks
-        {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
-        /// Prefix/suffix predicates (string, string → UInt8)
-        {"startsWith",
-         "startsWithUTF8",
-         "startsWithCaseInsensitive",
-         "startsWithCaseInsensitiveUTF8",
-         "endsWith",
-         "endsWithUTF8",
-         "endsWithCaseInsensitive",
-         "endsWithCaseInsensitiveUTF8",
-         "extract",
-         "extractAll"},
-        /// Vector distance metrics
-        {"cosineDistance", "L1Distance", "L2Distance", "L2SquaredDistance", "LinfDistance"},
-        /// QBit transposed distance metrics (shared signature within the family)
-        {"cosineDistanceTransposed", "L2DistanceTransposed", "dotProductTransposed"},
-        /// QBit transposed-quantized distance metrics (shared signature within the family)
-        {"cosineDistanceTransposedQuantized", "L2DistanceTransposedQuantized", "dotProductTransposedQuantized"},
-        /// Vector norms (single array → Float64)
-        {"L1Norm", "L2Norm", "L2SquaredNorm", "LinfNorm"},
-        /// Vector normalization (single array → array)
-        {"L1Normalize", "L2Normalize", "LinfNormalize"},
-        /// Lp vector functions taking the extra `p` degree argument
-        {"LpNorm", "LpNormalize"},
-        /// Array pair reductions (two arrays -> scalar/array)
-        {"arrayDotProduct", "arrayNormalizedGini", "hasSubstr"},
-        /// Array top/bottom-K selection (array, k -> array)
-        {"arrayTopK", "arrayBottomK"},
-        /// Ranked array enumeration (array[, depth...] -> array)
-        {"arrayEnumerateDenseRanked", "arrayEnumerateUniqRanked"},
-        /// Array construction from a length and a value (n, value -> Array)
-        {"arrayWithConstant", "range"},
-        /// Array scalar reductions (array → scalar)
-        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayAutocorrelation"},
-        /// Array transform functions (array → array, no lambda)
-        {"arrayReverse",
-         "arrayShuffle",
-         "arrayPartialShuffle",
-         "arrayEnumerateDense",
-         "arrayExcept",
-         "arrayRemove",
-         "arrayResize",
-         "emptyArrayToSingle",
-         "arrayDistinct",
-         "arrayCompact",
-         "arrayFlatten",
-         "arrayConcat",
-         "arrayIntersect",
-         "arrayPopFront",
-         "arrayPopBack",
-         "arrayPushFront",
-         "arrayPushBack",
-         "arrayRotateLeft",
-         "arrayRotateRight",
-         "arraySlice",
-         "arrayZip",
-         "arrayEnumerate",
-         "arrayEnumerateUniq",
-         "arrayCumSum",
-         "arrayCumSumNonNegative",
-         "arrayDifference",
-         "arrayTranspose",
-         "arrayJaccardIndex",
-         "arrayRandomSample",
-         "arrayShingles",
-         "arrayShiftLeft",
-         "arrayShiftRight",
-         "arrayUnion",
-         "arraySymmetricDifference",
-         "arrayZipUnaligned"},
-        /// URL hierarchy generators (url → Array(String))
-        {"URLHierarchy", "URLPathHierarchy", "extractURLParameters", "extractURLParameterNames"},
-        /// Unary trig functions, logarithms, exponentials and roots (number → Float64)
-        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh", "atan",
-         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",   "exp2",
-         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "tgamma",  "sigmoid"},
-        /// Binary math functions (number, number → Float64)
-        {"atan2", "hypot", "power"},
-        /// Non-cryptographic hash functions (→ UInt32/UInt64)
-        noncrypto_hash_functions,
-        /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
-        {"sipHash128", "sipHash128Reference", "murmurHash3_128", "xxh3_128"},
-        /// Cryptographic hashes (string → FixedString)
-        {"MD4", "MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512_256", "BLAKE3", "RIPEMD160", "keccak256"},
-        /// String-oriented non-cryptographic hashes (single String → integer)
-        {"URLHash", "hiveHash", "javaHash", "javaHashUTF16LE", "kafkaMurmurHash", "icebergHash"},
-        /// SimHash text fingerprints (string[, size] → UInt64)
-        {"ngramSimHash",
-         "ngramSimHashUTF8",
-         "ngramSimHashCaseInsensitive",
-         "ngramSimHashCaseInsensitiveUTF8",
-         "wordShingleSimHash",
-         "wordShingleSimHashUTF8",
-         "wordShingleSimHashCaseInsensitive",
-         "wordShingleSimHashCaseInsensitiveUTF8"},
-        /// MinHash text fingerprints (string[, size, hashnum] → Tuple(UInt64, UInt64))
-        {"ngramMinHash",
-         "ngramMinHashUTF8",
-         "ngramMinHashCaseInsensitive",
-         "ngramMinHashCaseInsensitiveUTF8",
-         "wordShingleMinHash",
-         "wordShingleMinHashUTF8",
-         "wordShingleMinHashCaseInsensitive",
-         "wordShingleMinHashCaseInsensitiveUTF8"},
-        /// MinHashArg text fingerprints (string[, size, hashnum] → Tuple(Array, Array))
-        {"ngramMinHashArg",
-         "ngramMinHashArgUTF8",
-         "ngramMinHashArgCaseInsensitive",
-         "ngramMinHashArgCaseInsensitiveUTF8",
-         "wordShingleMinHashArg",
-         "wordShingleMinHashArgUTF8",
-         "wordShingleMinHashArgCaseInsensitive",
-         "wordShingleMinHashArgCaseInsensitiveUTF8"},
-        /// String position search (haystack, needle → UInt64)
-        {"position", "positionCaseInsensitive", "positionUTF8", "positionCaseInsensitiveUTF8", "locate"},
-        /// Subsequence containment checks (haystack, needle → UInt8)
-        {"hasSubsequence", "hasSubsequenceUTF8", "hasSubsequenceCaseInsensitive", "hasSubsequenceCaseInsensitiveUTF8"},
-        /// String character translation (str, from, to → String)
-        {"translate", "translateUTF8", "regexpQuoteMeta"},
-        /// URL component extractors (url → String or UInt16)
-        {"domain",
-         "domainWithoutWWW",
-         "domainWithoutWWWRFC",
-         "topLevelDomain",
-         "topLevelDomainRFC",
-         "protocol",
-         "port",
-         "path",
-         "queryString",
-         "queryStringAndFragment",
-         "fragment",
-         "firstSignificantSubdomain",
-         "firstSignificantSubdomainRFC",
-         "cutToFirstSignificantSubdomain",
-         "cutToFirstSignificantSubdomainRFC",
-         "cutToFirstSignificantSubdomainWithWWW",
-         "cutToFirstSignificantSubdomainWithWWWRFC",
-         "domainRFC",
-         "netloc",
-         "pathFull",
-         "portRFC"},
-        /// URL component extractors taking a custom TLD list (url, tld_list_name -> String)
-        {"cutToFirstSignificantSubdomainCustom",
-         "cutToFirstSignificantSubdomainCustomRFC",
-         "cutToFirstSignificantSubdomainCustomWithWWW",
-         "cutToFirstSignificantSubdomainCustomWithWWWRFC",
-         "firstSignificantSubdomainCustom",
-         "firstSignificantSubdomainCustomRFC"},
-        /// URL query-parameter access (url, parameter name -> String)
-        {"extractURLParameter", "cutURLParameter"},
-        /// URL strip functions (url → url with component removed)
-        {"cutFragment", "cutQueryString", "cutQueryStringAndFragment", "cutWWW"},
-        /// Float classification (arity mismatch intentional: ifNotFinite takes (x, alternative))
-        {"isNaN", "isInfinite", "isFinite", "ifNotFinite"},
-        /// Map accessors (map → array)
-        {"mapKeys", "mapValues"},
-        /// Numeric map arithmetic (map, map → map, element-wise). `mapUpdate` and `mapConcat` take
-        /// the same two-map shape but merge instead of adding.
-        {"mapAdd", "mapSubtract", "mapUpdate", "mapConcat"},
-        /// Map filtering by pattern (map, pattern → map)
-        {"mapExtractKeyLike", "mapExtractValueLike"},
-        /// Two-array map builders (key array, value array[, extra] → map)
-        {"mapFromArrays", "mapPopulateSeries"},
-        /// Key-value text parsers (String → Map)
-        {"extractKeyValuePairs", "extractKeyValuePairsWithEscaping"},
-        /// Map partial sorting (shared signature: limit, map → map)
-        {"mapPartialSort", "mapPartialReverseSort"},
-        /// Higher-order map functions (lambda, map → map or UInt8)
-        higher_order_map_funcs,
-        /// Binary encoding (bytes → encoded String)
-        {"hex", "bin", "base58Encode", "base64Encode", "base64URLEncode"},
-        /// Binary decoding (encoded String → bytes)
-        {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
-        /// Integer bitmask expansion (single number → array/list of set bits)
-        {"bitPositionsToArray", "bitmaskToArray", "bitmaskToList"},
-        /// Space-filling curve decoders (tuple_size, code → tuple)
-        {"hilbertDecode", "mortonDecode"},
-        /// Space-filling curve encoders (variadic numbers → UInt64)
-        {"hilbertEncode", "mortonEncode"},
-        /// Variadic encoders returning String
-        {"char", "sqidEncode", "bech32Encode"},
-        /// Single-String decoders returning a structured value
-        {"bech32Decode", "sqidDecode"},
-        /// NumericIndexedVector pointwise operations (two vectors, or vector and scalar → vector)
-        {"numericIndexedVectorPointwiseAdd",
-         "numericIndexedVectorPointwiseSubtract",
-         "numericIndexedVectorPointwiseMultiply",
-         "numericIndexedVectorPointwiseDivide",
-         "numericIndexedVectorPointwiseEqual",
-         "numericIndexedVectorPointwiseNotEqual",
-         "numericIndexedVectorPointwiseLess",
-         "numericIndexedVectorPointwiseLessEqual",
-         "numericIndexedVectorPointwiseGreater",
-         "numericIndexedVectorPointwiseGreaterEqual"},
-        /// NumericIndexedVector single-vector accessors (vector → scalar/Map/String)
-        {"numericIndexedVectorAllValueSum",
-         "numericIndexedVectorCardinality",
-         "numericIndexedVectorShortDebugString",
-         "numericIndexedVectorToMap"},
-        /// Sign/magnitude
-        {"abs", "sign", "negate", "byteSwap"},
-        /// JSONExtract* family (json, path → typed value)
-        {"JSONExtract",
-         "JSONExtractArrayRaw",
-         "JSONExtractArrayRawCaseInsensitive",
-         "JSONExtractBool",
-         "JSONExtractBoolCaseInsensitive",
-         "JSONExtractCaseInsensitive",
-         "JSONExtractFloat",
-         "JSONExtractFloatCaseInsensitive",
-         "JSONExtractInt",
-         "JSONExtractIntCaseInsensitive",
-         "JSONExtractRaw",
-         "JSONExtractRawCaseInsensitive",
-         "JSONExtractString",
-         "JSONExtractStringCaseInsensitive",
-         "JSONExtractUInt",
-         "JSONExtractUIntCaseInsensitive"},
-        /// JSON predicates / metadata (json[, path] → scalar)
-        {"JSONHas", "JSONLength", "JSONType", "JSONKey", "isValidJSON", "JSONArrayLength"},
-        /// JSON-typed column path/value introspection (JSON column -> Array/Map)
-        {"JSONAllPaths",
-         "JSONAllPathsWithTypes",
-         "JSONAllValues",
-         "JSONDynamicPaths",
-         "JSONDynamicPathsWithTypes",
-         "JSONSharedDataPaths",
-         "JSONSharedDataPathsWithTypes"},
-        /// Value -> JSON text (single value -> String)
-        {"toJSONString", "prettyPrintJSON"},
-        /// Dynamic column introspection (Dynamic -> String/UInt8)
-        {"dynamicType", "isDynamicElementInSharedData"},
-        /// JSON keys / keys-and-values extractors (json[, path] → Array(...) / Map(...))
-        {"JSONExtractKeys",
-         "JSONExtractKeysCaseInsensitive",
-         "JSONExtractKeysAndValues",
-         "JSONExtractKeysAndValuesCaseInsensitive",
-         "JSONExtractKeysAndValuesRaw",
-         "JSONExtractKeysAndValuesRawCaseInsensitive"},
-        /// SQL/JSON standard functions
-        {"JSON_EXISTS", "JSON_VALUE", "JSON_QUERY"},
-        /// simpleJSON* family (json, path → typed value, no schema)
-        {"simpleJSONHas",
-         "simpleJSONExtractBool",
-         "simpleJSONExtractFloat",
-         "simpleJSONExtractInt",
-         "simpleJSONExtractRaw",
-         "simpleJSONExtractString",
-         "simpleJSONExtractUInt"},
-        /// String substring extraction (str, offset[, length] → String)
-        {"substring", "substringUTF8", "mid", "substr", "bitSlice"},
-        /// String replacement (str, pattern, replacement → String); overlay* replace by position
-        /// instead of by pattern but share the three-argument shape
-        {"replaceAll", "replaceOne", "replaceRegexpAll", "replaceRegexpOne", "overlay", "overlayUTF8"},
-        /// Format-string interpolation (format/pattern, args... → String)
-        {"format", "printf"},
-        /// String splitting / tokenizing (str[, sep or tokenizer] → Array(String)). `tokenizeQuery`
-        /// lexes SQL and returns Array(Tuple(...)) instead; it is here because this is the only way
-        /// the fuzzer ever calls it, and the group already swaps across mismatched arities anyway.
-        {"splitByChar",
-         "splitByString",
-         "splitByRegexp",
-         "splitByWhitespace",
-         "splitByNonAlpha",
-         "alphaTokens",
-         "tokenizeQuery",
-         "tokens",
-         "tokensForLikePattern"},
-        /// Two-argument String→Array extractors (str, pattern/separator)
-        {"extractAllGroupsVertical", "extractAllGroupsHorizontal", "extractGroups", "reverseBySeparator"},
-        /// Substring occurrence count (haystack, needle → UInt64); swapping `countMatches`
-        /// in exercises regex compilation of needles that were meant as plain substrings.
-        {"countMatches",
-         "countMatchesCaseInsensitive",
-         "countSubstrings",
-         "countSubstringsCaseInsensitive",
-         "countSubstringsCaseInsensitiveUTF8"},
-        /// Multi-pattern search / match (haystack, [needles or patterns] → UInt8/UInt64/Array).
-        /// multiMatch* treat the array as regexps and multiSearch* as plain substrings, so swapping
-        /// between them exercises regex compilation of literals and vice versa.
-        {"multiSearchAny",
-         "multiSearchAnyUTF8",
-         "multiSearchAnyCaseInsensitive",
-         "multiSearchAnyCaseInsensitiveUTF8",
-         "multiSearchFirstIndex",
-         "multiSearchFirstIndexUTF8",
-         "multiSearchFirstIndexCaseInsensitive",
-         "multiSearchFirstIndexCaseInsensitiveUTF8",
-         "multiSearchFirstPosition",
-         "multiSearchFirstPositionUTF8",
-         "multiSearchFirstPositionCaseInsensitive",
-         "multiSearchFirstPositionCaseInsensitiveUTF8",
-         "multiSearchAllPositions",
-         "multiSearchAllPositionsUTF8",
-         "multiSearchAllPositionsCaseInsensitive",
-         "multiSearchAllPositionsCaseInsensitiveUTF8",
-         "multiMatchAny",
-         "multiMatchAnyIndex",
-         "multiMatchAllIndices",
-         "highlight"},
-        /// Fuzzy multi-pattern match (haystack, edit distance, [patterns] → UInt8/UInt64/Array)
-        {"multiFuzzyMatchAny", "multiFuzzyMatchAnyIndex", "multiFuzzyMatchAllIndices"},
-        /// Integer GCD / LCM
-        {"gcd", "lcm"},
-        /// Time-series group/id single-argument accessors (group or id → Map/Array/String)
-        {"timeSeriesGroupToTags",
-         "timeSeriesGroupToSamplingKey",
-         "timeSeriesIdToGroup",
-         "timeSeriesIdToTags",
-         "timeSeriesExtractTag",
-         "timeSeriesTagsToGroup"},
-        /// Time-series tag removal (group, tag(s) → group)
-        {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept"},
-        /// Time-series tag copying (dest_group, src_group, tag(s) → group)
-        {"timeSeriesCopyTag", "timeSeriesCopyTags"},
-        /// Series analysis over a numeric array (array[, extra params] → Array/number)
-        {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
-        /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
-        {"tumble", "tumbleStart", "tumbleEnd"},
-        /// Hopping time windows (time_attr, hop_interval, window_interval[, timezone] → Tuple/DateTime)
-        {"hop", "hopStart", "hopEnd"},
-        /// Bitwise unary (integer → integer)
-        {"bitNot", "bitCount"},
-        /// Bitmap binary operations (Bitmap, Bitmap → Bitmap)
-        {"bitmapAnd", "bitmapOr", "bitmapXor", "bitmapAndnot"},
-        /// Bitmap ↔ Array conversion (single-arg)
-        {"bitmapBuild", "bitmapToArray"},
-        /// IP address type casts (String → IPv4/IPv6)
-        {"toIPv4", "toIPv4OrNull", "toIPv4OrZero", "toIPv4OrDefault"},
-        {"toIPv6", "toIPv6OrNull", "toIPv6OrZero", "toIPv6OrDefault"},
-        /// IP value → text conversions (single IP/numeric argument → String)
-        {"IPv4NumToString", "IPv4NumToStringClassC", "IPv6NumToString", "IPv4ToIPv6"},
-        /// Text → IP numeric conversions (single String argument; bare, OrNull and OrDefault variants)
-        {"IPv4StringToNum",
-         "IPv4StringToNumOrNull",
-         "IPv4StringToNumOrDefault",
-         "IPv6StringToNum",
-         "IPv6StringToNumOrNull",
-         "IPv6StringToNumOrDefault"},
-        /// Best-effort datetime parsers (string → DateTime/DateTime64; all accept 1 arg)
-        {"parseDateTimeBestEffort",
-         "parseDateTimeBestEffortOrNull",
-         "parseDateTimeBestEffortOrZero",
-         "parseDateTimeBestEffortUS",
-         "parseDateTimeBestEffortUSOrNull",
-         "parseDateTimeBestEffortUSOrZero",
-         "parseDateTime32BestEffort",
-         "parseDateTime32BestEffortOrNull",
-         "parseDateTime32BestEffortOrZero",
-         "parseDateTime64BestEffort",
-         "parseDateTime64BestEffortUS",
-         "parseDateTime64BestEffortOrNull",
-         "parseDateTime64BestEffortOrZero",
-         "parseDateTime64BestEffortUSOrNull",
-         "parseDateTime64BestEffortUSOrZero"},
-        /// Logical binary operators (same variadic Boolean signature)
-        {"and", "or", "xor"},
-        /// Conditional branching (if: 3 args; multiIf: 2n+1 args; caseWithExpression: subject + 2n+1 args — errors on mismatch are fine)
-        {"if", "multiIf", "caseWithExpression"},
-        /// Array higher-order functions ([lambda,] array → array or scalar)
-        higher_order_array_funcs,
-        /// Window ranking functions (no arguments, window clause required)
-        {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
-        /// Window lag/lead functions (expr[, offset[, default]])
-        {"lag", "lagInFrame", "lead", "leadInFrame"},
-        /// Array search / index (array, value → UInt64)
-        {"indexOf", "countEqual", "indexOfAssumeSorted"},
-        /// Human-readable formatting (number → String)
-        {"formatReadableSize", "formatReadableQuantity", "formatReadableTimeDelta", "formatReadableDecimalSize"},
-        /// Bitmap scalar reductions (Bitmap → UInt64)
-        {"bitmapCardinality", "bitmapMin", "bitmapMax"},
-        /// Bitmap membership tests (Bitmap, Bitmap → UInt8)
-        {"bitmapContains", "bitmapHasAny", "bitmapHasAll"},
-        /// UUID type casts (String → UUID, with error-handling variants)
-        {"toUUID", "toUUIDOrDefault", "toUUIDOrNull", "toUUIDOrZero"},
-        /// String/type conversion (arity mismatch for toFixedString is intentional)
-        {"toString", "toFixedString", "toStringCutToZero"},
-        /// Type name introspection (any → String)
-        {"toTypeName", "toColumnTypeName"},
-        /// URL percent-encoding (String → String)
-        {"encodeURLComponent", "encodeURLFormComponent", "decodeURLComponent", "decodeURLFormComponent"},
-        /// XML encoding (String → String)
-        {"encodeXMLComponent", "decodeXMLComponent"},
-        /// Text classification (arity mismatch is intentional: naiveBayesClassifier takes (model, text), the rest take (text))
-        {"naiveBayesClassifier",
-         "naiveBayesClassifierWithProb",
-         "naiveBayesClassifierWithAllProbs",
-         "detectCharset",
-         "detectLanguage",
-         "detectLanguageUnknown",
-         "detectLanguageMixed",
-         "detectTonality"},
-        /// Word-level NLP (language/extension + word)
-        {"stem", "lemmatize", "synonyms"},
-        /// AI functions over (text, const String arg, [params]): instruction / condition / language / model
-        {"aiEmbed", "aiExtract", "aiFilter", "aiTranslate"},
-        /// AI functions over (text, const Array(String) categories, [params])
-        {"aiClassify", "aiRedact"},
-        /// AI functions with their own arity (prompt alone, and a text pair): the mismatch is
-        /// intentional, it fuzzes the hand-written variadic validation these functions all use
-        {"aiGenerate", "aiSimilarity"},
-        /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
-        {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
-        /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)
-        {"geoToUTM", "geoToMGRS"},
-        /// Consistent hash functions (value, num_buckets → Int32)
-        {"jumpConsistentHash", "kostikConsistentHash"},
-        /// Keyed SipHash functions (key_tuple, value... → hash)
-        {"sipHash64Keyed", "sipHash128Keyed", "sipHash128ReferenceKeyed"},
-        /// Bitmap binary cardinality (Bitmap, Bitmap → UInt64)
-        {"bitmapAndCardinality", "bitmapOrCardinality", "bitmapXorCardinality", "bitmapAndnotCardinality"},
-        /// Bitmap three-argument transforms (Bitmap, arg, arg → Bitmap)
-        {"bitmapSubsetInRange", "bitmapSubsetLimit", "subBitmap", "bitmapTransform"},
-        /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
-        {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus", "tupleConcat"},
-        /// Tuple-scalar arithmetic (Tuple, Number → Tuple)
-        {"tupleMultiplyByNumber",
-         "tupleDivideByNumber",
-         "tupleModuloByNumber",
-         "tupleIntDivByNumber",
-         "tupleIntDivOrZeroByNumber",
-         "tuplePositiveModuloByNumber"},
-        /// Tuple pair reductions (Tuple, Tuple → number)
-        {"dotProduct", "tupleHammingDistance"},
-        /// Single-tuple transforms (Tuple → Tuple/Array). `untuple` expands into several columns,
-        /// so swapping it in also exercises rejection outside a top-level SELECT expression.
-        {"tupleNegate", "flattenTuple", "tupleNames", "tupleToNameValuePairs", "untuple"},
-        /// Snowflake ID → date-time (UInt64 → DateTime/DateTime64)
-        {"snowflakeIDToDateTime", "snowflakeIDToDateTime64", "UUIDv7ToDateTime"},
-        /// Date-time → Snowflake ID / UUIDv7 (DateTime/DateTime64 → UInt64/UUID)
-        {"dateTimeToSnowflakeID", "dateTime64ToSnowflakeID", "dateTimeToUUIDv7"},
-        /// UUID binary/text conversion (UUID or String[, variant] → String/FixedString)
-        {"UUIDStringToNum", "UUIDNumToString", "UUIDToNum"},
-        /// Random ID generators (optional dummy expression → UUID/UInt64)
-        {"generateUUIDv4", "generateUUIDv7", "generateSnowflakeID"},
-        /// IP CIDR range functions (IP, UInt8 → Tuple)
-        {"IPv4CIDRToRange", "IPv6CIDRToRange"},
-        /// IP string predicates (→ UInt8); arity mismatch is intentional:
-        /// isIPAddressInRange takes (address, prefix), the rest take (address)
-        {"isIPv4String", "isIPv6String", "isIPAddressInRange"},
-        /// Geobase region lookups (region id[, geobase or language] -> id/name/number/Array);
-        /// regionIn is included despite taking (lhs, rhs) - it shares the two-argument shape
-        {"regionToName",
-         "regionToCity",
-         "regionToArea",
-         "regionToDistrict",
-         "regionToCountry",
-         "regionToContinent",
-         "regionToTopContinent",
-         "regionToPopulation",
-         "regionHierarchy",
-         "regionIn"},
-        /// Optimizer barriers (any → same value): change what the planner may fold,
-        /// eliminate or use for index analysis without changing the result shape
-        {"identity", "indexHint", "materialize"},
-        /// Encryption functions (mode, data, key[, iv]); `encrypt` → `decrypt` feeds
-        /// plaintext into ciphertext validation, `tryDecrypt` adds the nullable path
-        {"aes_decrypt_mysql", "aes_encrypt_mysql", "decrypt", "encrypt", "tryDecrypt"},
-        /// String distance / similarity metrics (String, String → number)
-        {"byteHammingDistance",
-         "damerauLevenshteinDistance",
-         "editDistance",
-         "editDistanceUTF8",
-         "jaroSimilarity",
-         "jaroWinklerSimilarity",
-         "stringJaccardIndex",
-         "stringJaccardIndexUTF8"},
-        /// N-gram distance / search (haystack, needle → Float32)
-        {"ngramDistance",
-         "ngramDistanceCaseInsensitive",
-         "ngramDistanceCaseInsensitiveUTF8",
-         "ngramDistanceUTF8",
-         "ngramSearch",
-         "ngramSearchCaseInsensitive",
-         "ngramSearchCaseInsensitiveUTF8",
-         "ngramSearchUTF8"},
-        /// Punycode / IDNA conversions (String → String); encode ↔ decode swaps hit
-        /// malformed-input error paths, `try*` variants the null paths
-        {"idnaDecode", "idnaEncode", "punycodeDecode", "punycodeEncode", "tryIdnaEncode", "tryPunycodeDecode"},
-        /// Readable size / duration parsers (String → number; bare, OrNull and OrZero variants)
-        {"parseReadableSize", "parseReadableSizeOrNull", "parseReadableSizeOrZero", "parseTimeDelta"},
-        /// Polygon scalar predicates and measures (polygon(s) → number/UInt8),
-        /// Cartesian ↔ Spherical pairs. The unprefixed `area`/`perimeter` functions are the
-        /// generic-geometry equivalents of the `polygonArea`/`polygonPerimeter` ones.
-        {"areaCartesian",
-         "areaSpherical",
-         "perimeterCartesian",
-         "perimeterSpherical",
-         "wkt",
-         "polygonConvexHullCartesian",
-         "polygonAreaCartesian",
-         "polygonAreaSpherical",
-         "polygonPerimeterCartesian",
-         "polygonPerimeterSpherical",
-         "polygonsDistanceCartesian",
-         "polygonsDistanceSpherical",
-         "polygonsEqualsCartesian",
-         "polygonsIntersectCartesian",
-         "polygonsIntersectSpherical",
-         "polygonsWithinCartesian",
-         "polygonsWithinSpherical"},
-        /// WKT/WKB geometry parsers (single String → geometry)
-        {"readWKTPoint",
-         "readWKTRing",
-         "readWKTLineString",
-         "readWKTMultiLineString",
-         "readWKTPolygon",
-         "readWKTMultiPolygon",
-         "readWKTMultiPoint",
-         "readWKBPoint",
-         "readWKBLineString",
-         "readWKBMultiLineString",
-         "readWKBPolygon",
-         "readWKBMultiPolygon",
-         "readWKBMultiPoint"},
-        /// Polygon set operations (polygon, polygon → polygon), Cartesian ↔ Spherical pairs
-        {"polygonsIntersectionCartesian",
-         "polygonsIntersectionSpherical",
-         "polygonsSymDifferenceCartesian",
-         "polygonsSymDifferenceSpherical",
-         "polygonsUnionCartesian",
-         "polygonsUnionSpherical"},
-        /// H3 per-resolution metrics (resolution UInt8 → number)
-        {"h3EdgeAngle", "h3EdgeLengthKm", "h3EdgeLengthM", "h3HexAreaKm2", "h3HexAreaM2", "h3NumHexagons"},
-        /// H3 per-cell metrics and predicates (h3 index UInt64 → number/String)
-        {"h3CellAreaM2",
-         "h3CellAreaRads2",
-         "h3GetResolution",
-         "h3IsValid",
-         "h3IsPentagon",
-         "h3IsResClassIII",
-         "h3GetBaseCell",
-         "h3ToString",
-         "h3ExactEdgeLengthKm",
-         "h3ExactEdgeLengthM",
-         "h3ExactEdgeLengthRads",
-         "h3UnidirectionalEdgeIsValid",
-         "h3GetOriginIndexFromUnidirectionalEdge",
-         "h3GetDestinationIndexFromUnidirectionalEdge"},
-        /// H3 single-cell composite accessors (h3 index UInt64 → Array/Tuple)
-        {"h3ToGeo",
-         "h3ToGeoBoundary",
-         "h3GetFaces",
-         "h3GetIndexesFromUnidirectionalEdge",
-         "h3GetUnidirectionalEdgesFromHexagon",
-         "h3GetUnidirectionalEdgeBoundary"},
-        /// H3 hierarchy and ring traversal (h3 index, resolution or k → index/Array)
-        {"h3ToParent", "h3ToCenterChild", "h3ToChildren", "h3kRing", "h3HexRing"},
-        /// Cell-pair relations (two cell indexes → number/Array)
-        {"h3IndexesAreNeighbors", "h3Distance", "h3Line", "h3GetUnidirectionalEdge", "s2CellsIntersect"},
-        /// H3 point distances (lat1, lon1, lat2, lon2 → Float64)
-        {"h3PointDistKm", "h3PointDistM", "h3PointDistRads"},
-        /// H3 polygon-to-cells (geometry, resolution[, flags] → Array)
-        {"h3PolygonToCells", "h3PolygonToCellsWithContainment"},
-        /// Coordinate encoders (longitude/latitude plus optional resolution/precision → index/String)
-        {"geoToH3", "geohashEncode", "geoToS2"},
-        /// Single-String geo decoders (String → Tuple/index)
-        {"geohashDecode", "stringToH3"},
-        /// S2 single-cell accessors (s2 index → Tuple/Array)
-        {"s2ToGeo", "s2GetNeighbors"},
-        /// S2 cap/rect predicates and extension (three index/degree arguments → UInt8/Tuple)
-        {"s2CapContains", "s2RectAdd", "s2RectContains"},
-        /// S2 cap/rect combinations (two index/radius pairs → Tuple)
-        {"s2CapUnion", "s2RectIntersection", "s2RectUnion"},
-        /// Session introspection constants (no arguments → String)
-        {"currentDatabase", "currentUser", "hostName", "serverUUID"},
-        /// Session profile / role introspection (no arguments → Array(String))
-        {"currentProfiles", "currentRoles", "defaultProfiles", "defaultRoles", "enabledProfiles", "enabledRoles"},
-        /// Block introspection (no arguments → number); breaks assumptions about
-        /// block boundaries, sparse blocks and virtual columns
-        {"blockNumber", "blockSize", "rowNumberInAllBlocks", "rowNumberInBlock"},
-        /// Dictionary attribute accessors (dict, attr, key → value); the typed variants
-        /// additionally validate the attribute type, `dictGetAll` requires a regexp tree layout
-        {"dictGet",
-         "dictGetAll",
-         "dictGetDate",
-         "dictGetDateTime",
-         "dictGetFloat32",
-         "dictGetFloat64",
-         "dictGetIPv4",
-         "dictGetIPv6",
-         "dictGetInt16",
-         "dictGetInt32",
-         "dictGetInt64",
-         "dictGetInt8",
-         "dictGetOrNull",
-         "dictGetString",
-         "dictGetUInt16",
-         "dictGetUInt32",
-         "dictGetUInt64",
-         "dictGetUInt8",
-         "dictGetUUID"},
-        /// Same accessors with an explicit fallback (dict, attr, key, default → value)
-        {"dictGetDateOrDefault",
-         "dictGetDateTimeOrDefault",
-         "dictGetFloat32OrDefault",
-         "dictGetFloat64OrDefault",
-         "dictGetIPv4OrDefault",
-         "dictGetIPv6OrDefault",
-         "dictGetInt16OrDefault",
-         "dictGetInt32OrDefault",
-         "dictGetInt64OrDefault",
-         "dictGetInt8OrDefault",
-         "dictGetOrDefault",
-         "dictGetStringOrDefault",
-         "dictGetUInt16OrDefault",
-         "dictGetUInt32OrDefault",
-         "dictGetUInt64OrDefault",
-         "dictGetUInt8OrDefault",
-         "dictGetUUIDOrDefault"},
-        /// Dictionary key probes and hierarchy walks (dict, key[, level/ancestor key]);
-        /// the hierarchy functions additionally require a hierarchical layout
-        {"dictGetChildren", "dictGetDescendants", "dictGetHierarchy", "dictGetRoot", "dictHas", "dictIsIn"},
-        /// Geometry intersection: Cartesian vs Spherical point model, identical (geom1, geom2) signature
-        {"geometryIntersectCartesian", "geometryIntersectSpherical"}};
+static const std::vector<std::unordered_set<String>> & swapFuncs()
+{
+    static const std::vector<std::unordered_set<String>> swapFuncs
+        = { /// String pattern matching operators
+            {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"},
+            /// Set membership operators (renames an existing node, so only the infix-safe spellings)
+            std::unordered_set<String>(inInfixVariants().begin(), inInfixVariants().end()),
+            /// Their IgnoreSet variants; only the lambda injection below reaches these, never the rename
+            {"inIgnoreSet",
+             "notInIgnoreSet",
+             "globalInIgnoreSet",
+             "globalNotInIgnoreSet",
+             "nullInIgnoreSet",
+             "notNullInIgnoreSet",
+             "globalNullInIgnoreSet",
+             "globalNotNullInIgnoreSet"},
+            /// Null predicate and conversion functions
+            {"assumeNotNull", "isNotNull", "isNull", "isNullable", "isZeroOrNull", "toNullable"},
+            /// Value selection / clamping / null-coalescing
+            {"clamp", "coalesce", "firstNonDefault", "greatest", "ifNull", "least", "nullIf"},
+            /// Comparison operators
+            comparisonComparators(),
+            /// Arithmetic and string operators
+            {"concat",
+             "concatAssumeInjective",
+             "divide",
+             "divideOrNull",
+             "intDiv",
+             "intDivOrZero",
+             "intDivOrNull",
+             "minus",
+             "modulo",
+             "moduloOrZero",
+             "moduloOrNull",
+             "moduloLegacy",
+             "positiveModulo",
+             "positiveModuloOrNull",
+             "multiply",
+             "plus",
+             "max2",
+             "min2"},
+            /// Decimal-precision arithmetic (a, b, result_scale → Decimal)
+            {"multiplyDecimal", "divideDecimal"},
+            /// Date/time component extractors and truncators (date/datetime → numeric or date)
+            {"monthName",
+             "toDayOfMonth",
+             "toDayOfWeek",
+             "toDayOfYear",
+             "toDaysInMonth",
+             "toDaysSinceYearZero",
+             "toHour",
+             "toISOWeek",
+             "toISOYear",
+             "toLastDayOfMonth",
+             "toLastDayOfWeek",
+             "toMicrosecond",
+             "toMillisecond",
+             "toMinute",
+             "toMonday",
+             "toMonth",
+             "toMonthNumSinceEpoch",
+             "toNanosecond",
+             "toQuarter",
+             "toRelativeDayNum",
+             "toRelativeHourNum",
+             "toRelativeMinuteNum",
+             "toRelativeMonthNum",
+             "toRelativeQuarterNum",
+             "toRelativeSecondNum",
+             "toRelativeWeekNum",
+             "toRelativeYearNum",
+             "toSecond",
+             "toStartOfDay",
+             "toStartOfFifteenMinutes",
+             "toStartOfFiveMinutes",
+             "toStartOfHour",
+             "toStartOfISOYear",
+             "toStartOfMicrosecond",
+             "toStartOfMillisecond",
+             "toStartOfMinute",
+             "toStartOfMonth",
+             "toStartOfNanosecond",
+             "toStartOfQuarter",
+             "toStartOfSecond",
+             "toStartOfTenMinutes",
+             "toStartOfWeek",
+             "toStartOfYear",
+             "toUnixTimestamp",
+             "toWeek",
+             "toYear",
+             "toYearNumSinceEpoch",
+             "toYearWeek",
+             "toYYYYMM",
+             "toYYYYMMDD",
+             "toYYYYMMDDhhmmss"},
+            /// Interval constructors (number → Interval)
+            {"toIntervalDay",
+             "toIntervalHour",
+             "toIntervalMicrosecond",
+             "toIntervalMillisecond",
+             "toIntervalMinute",
+             "toIntervalMonth",
+             "toIntervalNanosecond",
+             "toIntervalQuarter",
+             "toIntervalSecond",
+             "toIntervalWeek",
+             "toIntervalYear"},
+            /// Unix timestamp at sub-second precision (datetime64 → Int64)
+            {"toUnixTimestamp64Micro", "toUnixTimestamp64Milli", "toUnixTimestamp64Nano", "toUnixTimestamp64Second"},
+            /// Unix timestamp to DateTime64 (Int64 → DateTime64)
+            {"fromUnixTimestamp64Micro", "fromUnixTimestamp64Milli", "fromUnixTimestamp64Nano", "fromUnixTimestamp64Second"},
+            /// Date/time difference functions (unit, t1, t2 → Int64)
+            {"dateDiff", "date_diff", "age"},
+            /// Date/time formatters (datetime [, format] → String)
+            {"formatDateTime", "formatDateTimeInJodaSyntax"},
+            /// Date/time parsers (string [, format] → DateTime / DateTime64)
+            {"parseDateTime",
+             "parseDateTime64",
+             "parseDateTime64OrNull",
+             "parseDateTime64OrZero",
+             "parseDateTimeOrNull",
+             "parseDateTimeOrZero",
+             "parseDateTimeInJodaSyntax",
+             "parseDateTimeInJodaSyntaxOrNull",
+             "parseDateTimeInJodaSyntaxOrZero",
+             "parseDateTime64InJodaSyntax",
+             "parseDateTime64InJodaSyntaxOrNull",
+             "parseDateTime64InJodaSyntaxOrZero"},
+            /// Day-count → Date (integer arg)
+            {"fromDaysSinceYearZero", "fromModifiedJulianDay", "fromModifiedJulianDayOrNull"},
+            /// String → day-count (String/FixedString arg)
+            {"toModifiedJulianDay", "toModifiedJulianDayOrNull"},
+            /// Unix-time → DateTime
+            {"fromUnixTime", "fromUnixTimeInJodaSyntax"},
+            /// Date arithmetic: add/subtract intervals (date/datetime, number → datetime)
+            {"addDays",         "addHours",       "addInterval",         "addMicroseconds",  "addMilliseconds",      "addMinutes",
+             "addMonths",       "addNanoseconds", "addQuarters",         "addSeconds",       "addTupleOfIntervals",  "addWeeks",
+             "addYears",        "subtractDays",   "subtractHours",       "subtractInterval", "subtractMicroseconds", "subtractMilliseconds",
+             "subtractMinutes", "subtractMonths", "subtractNanoseconds", "subtractQuarters", "subtractSeconds",      "subtractTupleOfIntervals",
+             "subtractWeeks",   "subtractYears"},
+            /// Decimal type casts (value, precision, scale → Decimal; bare, OrNull, OrZero, OrDefault variants)
+            {"toDecimal32",
+             "toDecimal32OrNull",
+             "toDecimal32OrZero",
+             "toDecimal32OrDefault",
+             "toDecimal64",
+             "toDecimal64OrNull",
+             "toDecimal64OrZero",
+             "toDecimal64OrDefault",
+             "toDecimal128",
+             "toDecimal128OrNull",
+             "toDecimal128OrZero",
+             "toDecimal128OrDefault",
+             "toDecimal256",
+             "toDecimal256OrNull",
+             "toDecimal256OrZero",
+             "toDecimal256OrDefault"},
+            /// Integer type casts (bare, OrNull, OrZero, and OrDefault variants)
+            {"toInt8",          "toInt8OrNull",       "toInt8OrZero",   "toInt8OrDefault",   "toInt16",         "toInt16OrNull",
+             "toInt16OrZero",   "toInt16OrDefault",   "toInt32",        "toInt32OrNull",     "toInt32OrZero",   "toInt32OrDefault",
+             "toInt64",         "toInt64OrNull",      "toInt64OrZero",  "toInt64OrDefault",  "toInt128",        "toInt128OrNull",
+             "toInt128OrZero",  "toInt128OrDefault",  "toInt256",       "toInt256OrNull",    "toInt256OrZero",  "toInt256OrDefault",
+             "toUInt8",         "toUInt8OrNull",      "toUInt8OrZero",  "toUInt8OrDefault",  "toUInt16",        "toUInt16OrNull",
+             "toUInt16OrZero",  "toUInt16OrDefault",  "toUInt32",       "toUInt32OrNull",    "toUInt32OrZero",  "toUInt32OrDefault",
+             "toUInt64",        "toUInt64OrNull",     "toUInt64OrZero", "toUInt64OrDefault", "toUInt128",       "toUInt128OrNull",
+             "toUInt128OrZero", "toUInt128OrDefault", "toUInt256",      "toUInt256OrNull",   "toUInt256OrZero", "toUInt256OrDefault"},
+            /// Floating-point type casts (bare, OrNull, OrZero, and OrDefault variants)
+            {"toBFloat16",
+             "toBFloat16OrNull",
+             "toBFloat16OrZero",
+             "toFloat32",
+             "toFloat32OrNull",
+             "toFloat32OrZero",
+             "toFloat32OrDefault",
+             "toFloat64",
+             "toFloat64OrNull",
+             "toFloat64OrZero",
+             "toFloat64OrDefault",
+             "toBool"},
+            /// Explicit target-type casts (value, type name[, default] → that type)
+            {"reinterpret", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault"},
+            /// Value plus a scale/unit argument (value, scale or unit → String/Interval)
+            {"toDecimalString", "toInterval"},
+            /// Row formatting (format name, columns... → String)
+            {"formatRow", "formatRowNoNewline"},
+            /// Byte reinterpretation casts (single value → type with the same bytes)
+            {"reinterpretAsUInt8",
+             "reinterpretAsUInt16",
+             "reinterpretAsUInt32",
+             "reinterpretAsUInt64",
+             "reinterpretAsUInt128",
+             "reinterpretAsUInt256",
+             "reinterpretAsInt8",
+             "reinterpretAsInt16",
+             "reinterpretAsInt32",
+             "reinterpretAsInt64",
+             "reinterpretAsInt128",
+             "reinterpretAsInt256",
+             "reinterpretAsFloat32",
+             "reinterpretAsFloat64",
+             "reinterpretAsDate",
+             "reinterpretAsDateTime",
+             "reinterpretAsString",
+             "reinterpretAsFixedString",
+             "reinterpretAsUUID"},
+            /// Date/datetime type casts
+            {"toDate",
+             "toDate32",
+             "toDateTime",
+             "toDateTime32",
+             "toDateTime64",
+             "toTime",
+             "toTime64",
+             "toDateOrNull",
+             "toDateOrZero",
+             "toDateOrDefault",
+             "toDate32OrNull",
+             "toDate32OrZero",
+             "toDate32OrDefault",
+             "toDateTimeOrNull",
+             "toDateTimeOrZero",
+             "toDateTimeOrDefault",
+             "toDateTime64OrNull",
+             "toDateTime64OrZero",
+             "toDateTime64OrDefault",
+             "toTimeOrNull",
+             "toTimeOrZero",
+             "toTimeOrDefault",
+             "toTime64OrDefault",
+             "toTime64OrNull",
+             "toTime64OrZero"},
+            /// Rounding functions (number → number)
+            {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
+            /// Bitwise binary operators and bit predicates (integer, integer[, ...] → integer/UInt8)
+            {"bitAnd", "bitOr", "bitXor", "bitHammingDistance", "bitTest", "bitTestAll", "bitTestAny"},
+            /// Bit shift and rotate operators (value, N → value)
+            {"bitShiftLeft", "bitShiftRight", "bitRotateLeft", "bitRotateRight"},
+            /// String case, validity and normalization functions (string → string or UInt8)
+            stringCaseFunctions(),
+            /// String left/right extraction and padding
+            {"right", "rightPad", "rightPadUTF8", "rightUTF8", "left", "leftPad", "leftPadUTF8", "leftUTF8"},
+            /// Whitespace trimming
+            {"trim", "trimBoth", "trimLeft", "trimRight"},
+            /// Emptiness and length predicates (String, Array, or Map → UInt8/UInt64; all single-arg)
+            {"empty", "notEmpty", "length", "lengthUTF8"},
+            /// Array/string containment checks
+            {"has",
+             "notHas",
+             "hasAll",
+             "hasAny",
+             "hasToken",
+             "hasTokenCaseInsensitive",
+             "hasTokenCaseInsensitiveOrNull",
+             "hasTokenOrNull",
+             "hasPhrase",
+             "hasAnyToken",
+             "hasAnyTokens",
+             "hasAllToken",
+             "hasAllTokens"},
+            /// Map containment checks
+            {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
+            /// Prefix/suffix predicates (string, string → UInt8)
+            {"startsWith",
+             "startsWithUTF8",
+             "startsWithCaseInsensitive",
+             "startsWithCaseInsensitiveUTF8",
+             "endsWith",
+             "endsWithUTF8",
+             "endsWithCaseInsensitive",
+             "endsWithCaseInsensitiveUTF8",
+             "extract",
+             "extractAll"},
+            /// Vector distance metrics
+            {"cosineDistance", "L1Distance", "L2Distance", "L2SquaredDistance", "LinfDistance"},
+            /// QBit transposed distance metrics (shared signature within the family)
+            {"cosineDistanceTransposed", "L2DistanceTransposed", "dotProductTransposed"},
+            /// QBit transposed-quantized distance metrics (shared signature within the family)
+            {"cosineDistanceTransposedQuantized", "L2DistanceTransposedQuantized", "dotProductTransposedQuantized"},
+            /// Vector norms (single array → Float64)
+            {"L1Norm", "L2Norm", "L2SquaredNorm", "LinfNorm"},
+            /// Vector normalization (single array → array)
+            {"L1Normalize", "L2Normalize", "LinfNormalize"},
+            /// Lp vector functions taking the extra `p` degree argument
+            {"LpNorm", "LpNormalize"},
+            /// Array pair reductions (two arrays -> scalar/array)
+            {"arrayDotProduct", "arrayNormalizedGini", "hasSubstr"},
+            /// Array top/bottom-K selection (array, k -> array)
+            {"arrayTopK", "arrayBottomK"},
+            /// Ranked array enumeration (array[, depth...] -> array)
+            {"arrayEnumerateDenseRanked", "arrayEnumerateUniqRanked"},
+            /// Array construction from a length and a value (n, value -> Array)
+            {"arrayWithConstant", "range"},
+            /// Array scalar reductions (array → scalar)
+            {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayFlattenedLength", "arrayAutocorrelation"},
+            /// Array transform functions (array → array, no lambda)
+            {"arrayReverse",
+             "arrayShuffle",
+             "arrayPartialShuffle",
+             "arrayEnumerateDense",
+             "arrayExcept",
+             "arrayRemove",
+             "arrayResize",
+             "emptyArrayToSingle",
+             "arrayDistinct",
+             "arrayCompact",
+             "arrayFlatten",
+             "arrayConcat",
+             "arrayIntersect",
+             "arrayPopFront",
+             "arrayPopBack",
+             "arrayPushFront",
+             "arrayPushBack",
+             "arrayRotateLeft",
+             "arrayRotateRight",
+             "arraySlice",
+             "arrayZip",
+             "arrayEnumerate",
+             "arrayEnumerateUniq",
+             "arrayCumSum",
+             "arrayCumSumNonNegative",
+             "arrayDifference",
+             "arrayTranspose",
+             "arrayJaccardIndex",
+             "arrayRandomSample",
+             "arrayShingles",
+             "arrayShiftLeft",
+             "arrayShiftRight",
+             "arrayUnion",
+             "arraySymmetricDifference",
+             "arrayZipUnaligned"},
+            /// URL hierarchy generators (url → Array(String))
+            {"URLHierarchy", "URLPathHierarchy", "extractURLParameters", "extractURLParameterNames"},
+            /// Unary trig functions, logarithms, exponentials and roots (number → Float64)
+            {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh", "atan",
+             "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",   "exp2",
+             "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "tgamma",  "sigmoid"},
+            /// Binary math functions (number, number → Float64)
+            {"atan2", "hypot", "power"},
+            /// Non-cryptographic hash functions (→ UInt32/UInt64)
+            noncryptoHashFunctions(),
+            /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
+            {"sipHash128", "sipHash128Reference", "murmurHash3_128", "xxh3_128"},
+            /// Cryptographic hashes (string → FixedString)
+            {"MD4", "MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512_256", "BLAKE3", "RIPEMD160", "keccak256"},
+            /// String-oriented non-cryptographic hashes (single String → integer)
+            {"URLHash", "hiveHash", "javaHash", "javaHashUTF16LE", "kafkaMurmurHash", "icebergHash"},
+            /// SimHash text fingerprints (string[, size] → UInt64)
+            {"ngramSimHash",
+             "ngramSimHashUTF8",
+             "ngramSimHashCaseInsensitive",
+             "ngramSimHashCaseInsensitiveUTF8",
+             "wordShingleSimHash",
+             "wordShingleSimHashUTF8",
+             "wordShingleSimHashCaseInsensitive",
+             "wordShingleSimHashCaseInsensitiveUTF8"},
+            /// MinHash text fingerprints (string[, size, hashnum] → Tuple(UInt64, UInt64))
+            {"ngramMinHash",
+             "ngramMinHashUTF8",
+             "ngramMinHashCaseInsensitive",
+             "ngramMinHashCaseInsensitiveUTF8",
+             "wordShingleMinHash",
+             "wordShingleMinHashUTF8",
+             "wordShingleMinHashCaseInsensitive",
+             "wordShingleMinHashCaseInsensitiveUTF8"},
+            /// MinHashArg text fingerprints (string[, size, hashnum] → Tuple(Array, Array))
+            {"ngramMinHashArg",
+             "ngramMinHashArgUTF8",
+             "ngramMinHashArgCaseInsensitive",
+             "ngramMinHashArgCaseInsensitiveUTF8",
+             "wordShingleMinHashArg",
+             "wordShingleMinHashArgUTF8",
+             "wordShingleMinHashArgCaseInsensitive",
+             "wordShingleMinHashArgCaseInsensitiveUTF8"},
+            /// String position search (haystack, needle → UInt64)
+            {"position", "positionCaseInsensitive", "positionUTF8", "positionCaseInsensitiveUTF8", "locate"},
+            /// Subsequence containment checks (haystack, needle → UInt8)
+            {"hasSubsequence", "hasSubsequenceUTF8", "hasSubsequenceCaseInsensitive", "hasSubsequenceCaseInsensitiveUTF8"},
+            /// String character translation (str, from, to → String)
+            {"translate", "translateUTF8", "regexpQuoteMeta"},
+            /// URL component extractors (url → String or UInt16)
+            {"domain",
+             "domainWithoutWWW",
+             "domainWithoutWWWRFC",
+             "topLevelDomain",
+             "topLevelDomainRFC",
+             "protocol",
+             "port",
+             "path",
+             "queryString",
+             "queryStringAndFragment",
+             "fragment",
+             "firstSignificantSubdomain",
+             "firstSignificantSubdomainRFC",
+             "cutToFirstSignificantSubdomain",
+             "cutToFirstSignificantSubdomainRFC",
+             "cutToFirstSignificantSubdomainWithWWW",
+             "cutToFirstSignificantSubdomainWithWWWRFC",
+             "domainRFC",
+             "netloc",
+             "pathFull",
+             "portRFC"},
+            /// URL component extractors taking a custom TLD list (url, tld_list_name -> String)
+            {"cutToFirstSignificantSubdomainCustom",
+             "cutToFirstSignificantSubdomainCustomRFC",
+             "cutToFirstSignificantSubdomainCustomWithWWW",
+             "cutToFirstSignificantSubdomainCustomWithWWWRFC",
+             "firstSignificantSubdomainCustom",
+             "firstSignificantSubdomainCustomRFC"},
+            /// URL query-parameter access (url, parameter name -> String)
+            {"extractURLParameter", "cutURLParameter"},
+            /// URL strip functions (url → url with component removed)
+            {"cutFragment", "cutQueryString", "cutQueryStringAndFragment", "cutWWW"},
+            /// Float classification (arity mismatch intentional: ifNotFinite takes (x, alternative))
+            {"isNaN", "isInfinite", "isFinite", "ifNotFinite"},
+            /// Map accessors (map → array)
+            {"mapKeys", "mapValues"},
+            /// Numeric map arithmetic (map, map → map, element-wise). `mapUpdate` and `mapConcat` take
+            /// the same two-map shape but merge instead of adding.
+            {"mapAdd", "mapSubtract", "mapUpdate", "mapConcat"},
+            /// Map filtering by pattern (map, pattern → map)
+            {"mapExtractKeyLike", "mapExtractValueLike"},
+            /// Two-array map builders (key array, value array[, extra] → map)
+            {"mapFromArrays", "mapPopulateSeries"},
+            /// Key-value text parsers (String → Map)
+            {"extractKeyValuePairs", "extractKeyValuePairsWithEscaping"},
+            /// Map partial sorting (shared signature: limit, map → map)
+            {"mapPartialSort", "mapPartialReverseSort"},
+            /// Higher-order map functions (lambda, map → map or UInt8)
+            higherOrderMapFuncs(),
+            /// Binary encoding (bytes → encoded String)
+            {"hex", "bin", "base32Encode", "base58Encode", "base64Encode", "base64URLEncode"},
+            /// Binary decoding (encoded String → bytes)
+            {"unhex",
+             "unbin",
+             "base32Decode",
+             "tryBase32Decode",
+             "base58Decode",
+             "tryBase58Decode",
+             "base64Decode",
+             "base64URLDecode",
+             "tryBase64Decode",
+             "tryBase64URLDecode"},
+            /// Integer bitmask expansion (single number → array/list of set bits)
+            {"bitPositionsToArray", "bitmaskToArray", "bitmaskToList"},
+            /// Space-filling curve decoders (tuple_size, code → tuple)
+            {"hilbertDecode", "mortonDecode"},
+            /// Space-filling curve encoders (variadic numbers → UInt64)
+            {"hilbertEncode", "mortonEncode"},
+            /// Variadic encoders returning String
+            {"char", "sqidEncode", "bech32Encode"},
+            /// Single-String decoders returning a structured value
+            {"bech32Decode", "sqidDecode"},
+            /// NumericIndexedVector pointwise operations (two vectors, or vector and scalar → vector)
+            {"numericIndexedVectorPointwiseAdd",
+             "numericIndexedVectorPointwiseSubtract",
+             "numericIndexedVectorPointwiseMultiply",
+             "numericIndexedVectorPointwiseDivide",
+             "numericIndexedVectorPointwiseEqual",
+             "numericIndexedVectorPointwiseNotEqual",
+             "numericIndexedVectorPointwiseLess",
+             "numericIndexedVectorPointwiseLessEqual",
+             "numericIndexedVectorPointwiseGreater",
+             "numericIndexedVectorPointwiseGreaterEqual"},
+            /// NumericIndexedVector single-vector accessors (vector → scalar/Map/String)
+            {"numericIndexedVectorAllValueSum",
+             "numericIndexedVectorCardinality",
+             "numericIndexedVectorShortDebugString",
+             "numericIndexedVectorToMap"},
+            /// Sign/magnitude
+            {"abs", "sign", "negate", "byteSwap"},
+            /// JSONExtract* family (json, path → typed value)
+            {"JSONExtract",
+             "JSONExtractArrayRaw",
+             "JSONExtractArrayRawCaseInsensitive",
+             "JSONExtractBool",
+             "JSONExtractBoolCaseInsensitive",
+             "JSONExtractCaseInsensitive",
+             "JSONExtractFloat",
+             "JSONExtractFloatCaseInsensitive",
+             "JSONExtractInt",
+             "JSONExtractIntCaseInsensitive",
+             "JSONExtractRaw",
+             "JSONExtractRawCaseInsensitive",
+             "JSONExtractString",
+             "JSONExtractStringCaseInsensitive",
+             "JSONExtractUInt",
+             "JSONExtractUIntCaseInsensitive"},
+            /// JSON predicates / metadata (json[, path] → scalar)
+            {"JSONHas", "JSONLength", "JSONType", "JSONKey", "isValidJSON", "JSONArrayLength"},
+            /// JSON-typed column path/value introspection (JSON column -> Array/Map)
+            {"JSONAllPaths",
+             "JSONAllPathsWithTypes",
+             "JSONAllValues",
+             "JSONDynamicPaths",
+             "JSONDynamicPathsWithTypes",
+             "JSONSharedDataPaths",
+             "JSONSharedDataPathsWithTypes"},
+            /// Value -> JSON text (single value -> String)
+            {"toJSONString", "prettyPrintJSON"},
+            /// Dynamic column introspection (Dynamic -> String/UInt8)
+            {"dynamicType", "isDynamicElementInSharedData"},
+            /// JSON keys / keys-and-values extractors (json[, path] → Array(...) / Map(...))
+            {"JSONExtractKeys",
+             "JSONExtractKeysCaseInsensitive",
+             "JSONExtractKeysAndValues",
+             "JSONExtractKeysAndValuesCaseInsensitive",
+             "JSONExtractKeysAndValuesRaw",
+             "JSONExtractKeysAndValuesRawCaseInsensitive"},
+            /// SQL/JSON standard functions
+            {"JSON_EXISTS", "JSON_VALUE", "JSON_QUERY"},
+            /// simpleJSON* family (json, path → typed value, no schema)
+            {"simpleJSONHas",
+             "simpleJSONExtractBool",
+             "simpleJSONExtractFloat",
+             "simpleJSONExtractInt",
+             "simpleJSONExtractRaw",
+             "simpleJSONExtractString",
+             "simpleJSONExtractUInt"},
+            /// String substring extraction (str, offset[, length] → String)
+            {"substring", "substringUTF8", "mid", "substr", "bitSlice"},
+            /// String replacement (str, pattern, replacement → String); overlay* replace by position
+            /// instead of by pattern but share the three-argument shape
+            {"replaceAll", "replaceOne", "replaceRegexpAll", "replaceRegexpOne", "overlay", "overlayUTF8"},
+            /// Format-string interpolation (format/pattern, args... → String)
+            {"format", "printf"},
+            /// String splitting / tokenizing (str[, sep or tokenizer] → Array(String)). `tokenizeQuery`
+            /// lexes SQL and returns Array(Tuple(...)) instead; it is here because this is the only way
+            /// the fuzzer ever calls it, and the group already swaps across mismatched arities anyway.
+            {"splitByChar",
+             "splitByString",
+             "splitByRegexp",
+             "splitByWhitespace",
+             "splitByNonAlpha",
+             "alphaTokens",
+             "tokenizeQuery",
+             "tokens",
+             "tokensForLikePattern"},
+            /// Two-argument String→Array extractors (str, pattern/separator)
+            {"extractAllGroupsVertical", "extractAllGroupsHorizontal", "extractGroups", "reverseBySeparator"},
+            /// Substring occurrence count (haystack, needle → UInt64); swapping `countMatches`
+            /// in exercises regex compilation of needles that were meant as plain substrings.
+            {"countMatches",
+             "countMatchesCaseInsensitive",
+             "countSubstrings",
+             "countSubstringsCaseInsensitive",
+             "countSubstringsCaseInsensitiveUTF8"},
+            /// Multi-pattern search / match (haystack, [needles or patterns] → UInt8/UInt64/Array).
+            /// multiMatch* treat the array as regexps and multiSearch* as plain substrings, so swapping
+            /// between them exercises regex compilation of literals and vice versa.
+            {"multiSearchAny",
+             "multiSearchAnyUTF8",
+             "multiSearchAnyCaseInsensitive",
+             "multiSearchAnyCaseInsensitiveUTF8",
+             "multiSearchFirstIndex",
+             "multiSearchFirstIndexUTF8",
+             "multiSearchFirstIndexCaseInsensitive",
+             "multiSearchFirstIndexCaseInsensitiveUTF8",
+             "multiSearchFirstPosition",
+             "multiSearchFirstPositionUTF8",
+             "multiSearchFirstPositionCaseInsensitive",
+             "multiSearchFirstPositionCaseInsensitiveUTF8",
+             "multiSearchAllPositions",
+             "multiSearchAllPositionsUTF8",
+             "multiSearchAllPositionsCaseInsensitive",
+             "multiSearchAllPositionsCaseInsensitiveUTF8",
+             "multiMatchAny",
+             "multiMatchAnyIndex",
+             "multiMatchAllIndices",
+             "highlight"},
+            /// Fuzzy multi-pattern match (haystack, edit distance, [patterns] → UInt8/UInt64/Array)
+            {"multiFuzzyMatchAny", "multiFuzzyMatchAnyIndex", "multiFuzzyMatchAllIndices"},
+            /// Integer GCD / LCM
+            {"gcd", "lcm"},
+            /// Time-series group/id single-argument accessors (group or id → Map/Array/String).
+            /// `timeSeriesTagsGroupToTags` and `timeSeriesIdToTagsGroup` are aliases of two of these.
+            {"timeSeriesGroupToTags",
+             "timeSeriesGroupToSamplingKey",
+             "timeSeriesIdToGroup",
+             "timeSeriesIdToTags",
+             "timeSeriesExtractTag",
+             "timeSeriesTagsToGroup",
+             "timeSeriesTagsGroupToTags",
+             "timeSeriesIdToTagsGroup"},
+            /// Time-series tag removal (group, tag(s) → group)
+            {"timeSeriesRemoveTag", "timeSeriesRemoveTags", "timeSeriesRemoveAllTagsExcept"},
+            /// Time-series tag copying (dest_group, src_group, tag(s) → group)
+            {"timeSeriesCopyTag", "timeSeriesCopyTags"},
+            /// Time-series grid aggregates: all take the same four parameters (start_timestamp,
+            /// end_timestamp, step, window) and the same samples arguments, so only the name differs.
+            /// `timeSeriesPredictLinearToGrid` is deliberately absent: it takes a fifth parameter.
+            {"timeSeriesAvgToGrid",
+             "timeSeriesChangesToGrid",
+             "timeSeriesCountToGrid",
+             "timeSeriesDeltaToGrid",
+             "timeSeriesDerivToGrid",
+             "timeSeriesIncreaseToGrid",
+             "timeSeriesInstantDeltaToGrid",
+             "timeSeriesInstantRateToGrid",
+             "timeSeriesLastToGrid",
+             "timeSeriesMaxToGrid",
+             "timeSeriesMinToGrid",
+             "timeSeriesRateToGrid",
+             "timeSeriesResampleToGridWithStaleness",
+             "timeSeriesResetsToGrid",
+             "timeSeriesSumToGrid",
+             "timeSeriesTimestampOfMaxToGrid",
+             "timeSeriesTimestampOfMinToGrid"},
+            /// Time-series top-k masks over a grid ((k)(key, values) → Array masks)
+            {"timeSeriesTopKMasks", "timeSeriesBottomKMasks", "timeSeriesLimitKMasks"},
+            /// Time-series aggregates over sample pairs (timestamp, value → samples)
+            {"timeSeriesGroupArray", "timeSeriesLastTwoSamples"},
+            /// Series analysis over a numeric array (array[, extra params] → Array/number)
+            {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
+            /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
+            {"tumble", "tumbleStart", "tumbleEnd"},
+            /// Hopping time windows (time_attr, hop_interval, window_interval[, timezone] → Tuple/DateTime)
+            {"hop", "hopStart", "hopEnd"},
+            /// Bitwise unary (integer → integer)
+            {"bitNot", "bitCount"},
+            /// Bitmap binary operations (Bitmap, Bitmap → Bitmap)
+            {"bitmapAnd", "bitmapOr", "bitmapXor", "bitmapAndnot"},
+            /// Bitmap ↔ Array conversion (single-arg)
+            {"bitmapBuild", "bitmapToArray"},
+            /// IP address type casts (String → IPv4/IPv6)
+            {"toIPv4", "toIPv4OrNull", "toIPv4OrZero", "toIPv4OrDefault"},
+            {"toIPv6", "toIPv6OrNull", "toIPv6OrZero", "toIPv6OrDefault"},
+            /// IP value → text conversions (single IP/numeric argument → String)
+            {"IPv4NumToString", "IPv4NumToStringClassC", "IPv6NumToString", "IPv4ToIPv6"},
+            /// Text → IP numeric conversions (single String argument; bare, OrNull and OrDefault variants)
+            {"IPv4StringToNum",
+             "IPv4StringToNumOrNull",
+             "IPv4StringToNumOrDefault",
+             "IPv6StringToNum",
+             "IPv6StringToNumOrNull",
+             "IPv6StringToNumOrDefault"},
+            /// Best-effort datetime parsers (string → DateTime/DateTime64; all accept 1 arg)
+            {"parseDateTimeBestEffort",
+             "parseDateTimeBestEffortOrNull",
+             "parseDateTimeBestEffortOrZero",
+             "parseDateTimeBestEffortUS",
+             "parseDateTimeBestEffortUSOrNull",
+             "parseDateTimeBestEffortUSOrZero",
+             "parseDateTime32BestEffort",
+             "parseDateTime32BestEffortOrNull",
+             "parseDateTime32BestEffortOrZero",
+             "parseDateTime64BestEffort",
+             "parseDateTime64BestEffortUS",
+             "parseDateTime64BestEffortOrNull",
+             "parseDateTime64BestEffortOrZero",
+             "parseDateTime64BestEffortUSOrNull",
+             "parseDateTime64BestEffortUSOrZero"},
+            /// Logical binary operators (same variadic Boolean signature)
+            {"and", "or", "xor"},
+            /// Conditional branching (if: 3 args; multiIf: 2n+1 args; caseWithExpression: subject + 2n+1 args — errors on mismatch are fine)
+            {"if", "multiIf", "caseWithExpression"},
+            /// Array higher-order functions ([lambda,] array → array or scalar)
+            higherOrderArrayFuncs(),
+            /// Window ranking functions (no arguments, window clause required)
+            {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
+            /// Window lag/lead functions (expr[, offset[, default]])
+            {"lag", "lagInFrame", "lead", "leadInFrame"},
+            /// Array search / index (array, value → UInt64)
+            {"indexOf", "countEqual", "indexOfAssumeSorted"},
+            /// Human-readable formatting (number → String)
+            {"formatReadableSize", "formatReadableQuantity", "formatReadableTimeDelta", "formatReadableDecimalSize"},
+            /// Bitmap scalar reductions (Bitmap → UInt64)
+            {"bitmapCardinality", "bitmapMin", "bitmapMax"},
+            /// Bitmap membership tests (Bitmap, Bitmap → UInt8)
+            {"bitmapContains", "bitmapHasAny", "bitmapHasAll"},
+            /// UUID type casts (String → UUID, with error-handling variants)
+            {"toUUID", "toUUIDOrDefault", "toUUIDOrNull", "toUUIDOrZero"},
+            /// String/type conversion (arity mismatch for toFixedString is intentional)
+            {"toString", "toFixedString", "toStringCutToZero"},
+            /// Type name introspection (any → String)
+            {"toTypeName", "toColumnTypeName"},
+            /// URL percent-encoding (String → String)
+            {"encodeURLComponent", "encodeURLFormComponent", "decodeURLComponent", "decodeURLFormComponent"},
+            /// XML encoding (String → String)
+            {"encodeXMLComponent", "decodeXMLComponent"},
+            /// Text classification (arity mismatch is intentional: naiveBayesClassifier takes (model, text), the rest take (text))
+            {"naiveBayesClassifier",
+             "naiveBayesClassifierWithProb",
+             "naiveBayesClassifierWithAllProbs",
+             "detectLanguage",
+             "detectLanguageMixed"},
+            /// Word-level NLP (language/extension + word)
+            {"stem", "lemmatize", "synonyms"},
+            /// AI functions over (text, const String arg, [params]): instruction / condition / language / model
+            {"aiEmbed", "aiExtract", "aiFilter", "aiTranslate"},
+            /// AI functions over (text, const Array(String) categories, [params])
+            {"aiClassify", "aiRedact"},
+            /// AI functions with their own arity (prompt alone, and a text pair): the mismatch is
+            /// intentional, it fuzzes the hand-written variadic validation these functions all use
+            {"aiGenerate", "aiSimilarity"},
+            /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
+            {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
+            /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)
+            {"geoToUTM", "geoToMGRS"},
+            /// Consistent hash functions (value, num_buckets → Int32)
+            {"jumpConsistentHash", "kostikConsistentHash"},
+            /// Keyed SipHash functions (key_tuple, value... → hash)
+            {"sipHash64Keyed", "sipHash128Keyed", "sipHash128ReferenceKeyed"},
+            /// Bitmap binary cardinality (Bitmap, Bitmap → UInt64)
+            {"bitmapAndCardinality", "bitmapOrCardinality", "bitmapXorCardinality", "bitmapAndnotCardinality"},
+            /// Bitmap three-argument transforms (Bitmap, arg, arg → Bitmap)
+            {"bitmapSubsetInRange", "bitmapSubsetLimit", "subBitmap", "bitmapTransform"},
+            /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
+            {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus", "tupleConcat"},
+            /// Tuple-scalar arithmetic (Tuple, Number → Tuple)
+            {"tupleMultiplyByNumber",
+             "tupleDivideByNumber",
+             "tupleModuloByNumber",
+             "tupleIntDivByNumber",
+             "tupleIntDivOrZeroByNumber",
+             "tuplePositiveModuloByNumber"},
+            /// Tuple pair reductions (Tuple, Tuple → number)
+            {"dotProduct", "tupleHammingDistance"},
+            /// Single-tuple transforms (Tuple → Tuple/Array). `untuple` expands into several columns,
+            /// so swapping it in also exercises rejection outside a top-level SELECT expression.
+            {"tupleNegate", "flattenTuple", "tupleNames", "tupleToNameValuePairs", "untuple"},
+            /// Snowflake ID → date-time (UInt64 → DateTime/DateTime64)
+            {"snowflakeIDToDateTime", "snowflakeIDToDateTime64", "UUIDv7ToDateTime"},
+            /// Date-time → Snowflake ID / UUIDv7 (DateTime/DateTime64 → UInt64/UUID)
+            {"dateTimeToSnowflakeID", "dateTime64ToSnowflakeID", "dateTimeToUUIDv7"},
+            /// UUID binary/text conversion (UUID or String[, variant] → String/FixedString)
+            {"UUIDStringToNum", "UUIDNumToString", "UUIDToNum"},
+            /// Random ID generators (optional dummy expression → UUID/UInt64)
+            {"generateUUIDv4", "generateUUIDv7", "generateSnowflakeID"},
+            /// IP CIDR range functions (IP, UInt8 → Tuple)
+            {"IPv4CIDRToRange", "IPv6CIDRToRange"},
+            /// IP string predicates (→ UInt8); arity mismatch is intentional:
+            /// isIPAddressInRange takes (address, prefix), the rest take (address)
+            {"isIPv4String", "isIPv6String", "isIPAddressInRange"},
+            /// Geobase region lookups (region id[, geobase or language] -> id/name/number/Array);
+            /// regionIn is included despite taking (lhs, rhs) - it shares the two-argument shape
+            {"regionToName",
+             "regionToCity",
+             "regionToArea",
+             "regionToDistrict",
+             "regionToCountry",
+             "regionToContinent",
+             "regionToTopContinent",
+             "regionToPopulation",
+             "regionHierarchy",
+             "regionIn"},
+            /// Optimizer barriers (any → same value): change what the planner may fold,
+            /// eliminate or use for index analysis without changing the result shape
+            {"identity", "indexHint", "materialize"},
+            /// Encryption functions (mode, data, key[, iv]); `encrypt` → `decrypt` feeds
+            /// plaintext into ciphertext validation, `tryDecrypt` adds the nullable path
+            {"aes_decrypt_mysql", "aes_encrypt_mysql", "decrypt", "encrypt", "tryDecrypt"},
+            /// String distance / similarity metrics (String, String → number)
+            {"byteHammingDistance",
+             "damerauLevenshteinDistance",
+             "editDistance",
+             "editDistanceUTF8",
+             "jaroSimilarity",
+             "jaroWinklerSimilarity",
+             "stringJaccardIndex",
+             "stringJaccardIndexUTF8"},
+            /// N-gram distance / search (haystack, needle → Float32)
+            {"ngramDistance",
+             "ngramDistanceCaseInsensitive",
+             "ngramDistanceCaseInsensitiveUTF8",
+             "ngramDistanceUTF8",
+             "ngramSearch",
+             "ngramSearchCaseInsensitive",
+             "ngramSearchCaseInsensitiveUTF8",
+             "ngramSearchUTF8"},
+            /// Punycode / IDNA conversions (String → String); encode ↔ decode swaps hit
+            /// malformed-input error paths, `try*` variants the null paths
+            {"idnaDecode", "idnaEncode", "punycodeDecode", "punycodeEncode", "tryIdnaEncode", "tryPunycodeDecode"},
+            /// Readable size / duration parsers (String → number; bare, OrNull and OrZero variants)
+            {"parseReadableSize", "parseReadableSizeOrNull", "parseReadableSizeOrZero", "parseTimeDelta"},
+            /// Polygon scalar predicates and measures (polygon(s) → number/UInt8),
+            /// Cartesian ↔ Spherical pairs. The unprefixed `area`/`perimeter` functions are the
+            /// generic-geometry equivalents of the `polygonArea`/`polygonPerimeter` ones.
+            {"areaCartesian",
+             "areaSpherical",
+             "perimeterCartesian",
+             "perimeterSpherical",
+             "wkt",
+             "polygonConvexHullCartesian",
+             "polygonAreaCartesian",
+             "polygonAreaSpherical",
+             "polygonPerimeterCartesian",
+             "polygonPerimeterSpherical",
+             "polygonsDistanceCartesian",
+             "polygonsDistanceSpherical",
+             "polygonsEqualsCartesian",
+             "polygonsIntersectCartesian",
+             "polygonsIntersectSpherical",
+             "polygonsWithinCartesian",
+             "polygonsWithinSpherical"},
+            /// WKT/WKB geometry parsers (single String → geometry)
+            {"readWKTPoint",
+             "readWKTRing",
+             "readWKTLineString",
+             "readWKTMultiLineString",
+             "readWKTPolygon",
+             "readWKTMultiPolygon",
+             "readWKTMultiPoint",
+             "readWKBPoint",
+             "readWKBLineString",
+             "readWKBMultiLineString",
+             "readWKBPolygon",
+             "readWKBMultiPolygon",
+             "readWKBMultiPoint"},
+            /// Polygon set operations (polygon, polygon → polygon), Cartesian ↔ Spherical pairs
+            {"polygonsIntersectionCartesian",
+             "polygonsIntersectionSpherical",
+             "polygonsSymDifferenceCartesian",
+             "polygonsSymDifferenceSpherical",
+             "polygonsUnionCartesian",
+             "polygonsUnionSpherical"},
+            /// H3 per-resolution metrics (resolution UInt8 → number)
+            {"h3EdgeAngle", "h3EdgeLengthKm", "h3EdgeLengthM", "h3HexAreaKm2", "h3HexAreaM2", "h3NumHexagons"},
+            /// H3 per-cell metrics and predicates (h3 index UInt64 → number/String)
+            {"h3CellAreaM2",
+             "h3CellAreaRads2",
+             "h3GetResolution",
+             "h3IsValid",
+             "h3IsPentagon",
+             "h3IsResClassIII",
+             "h3GetBaseCell",
+             "h3ToString",
+             "h3ExactEdgeLengthKm",
+             "h3ExactEdgeLengthM",
+             "h3ExactEdgeLengthRads",
+             "h3UnidirectionalEdgeIsValid",
+             "h3GetOriginIndexFromUnidirectionalEdge",
+             "h3GetDestinationIndexFromUnidirectionalEdge"},
+            /// H3 single-cell composite accessors (h3 index UInt64 → Array/Tuple)
+            {"h3ToGeo",
+             "h3ToGeoBoundary",
+             "h3GetFaces",
+             "h3GetIndexesFromUnidirectionalEdge",
+             "h3GetUnidirectionalEdgesFromHexagon",
+             "h3GetUnidirectionalEdgeBoundary"},
+            /// H3 hierarchy and ring traversal (h3 index, resolution or k → index/Array)
+            {"h3ToParent", "h3ToCenterChild", "h3ToChildren", "h3kRing", "h3HexRing"},
+            /// Cell-pair relations (two cell indexes → number/Array)
+            {"h3IndexesAreNeighbors", "h3Distance", "h3Line", "h3GetUnidirectionalEdge", "s2CellsIntersect"},
+            /// H3 point distances (lat1, lon1, lat2, lon2 → Float64)
+            {"h3PointDistKm", "h3PointDistM", "h3PointDistRads"},
+            /// H3 polygon-to-cells (geometry, resolution[, flags] → Array)
+            {"h3PolygonToCells", "h3PolygonToCellsWithContainment"},
+            /// Coordinate encoders (longitude/latitude plus optional resolution/precision → index/String)
+            {"geoToH3", "geohashEncode", "geoToS2"},
+            /// Single-String geo decoders (String → Tuple/index)
+            {"geohashDecode", "stringToH3"},
+            /// S2 single-cell accessors (s2 index → Tuple/Array)
+            {"s2ToGeo", "s2GetNeighbors"},
+            /// S2 cap/rect predicates and extension (three index/degree arguments → UInt8/Tuple)
+            {"s2CapContains", "s2RectAdd", "s2RectContains"},
+            /// S2 cap/rect combinations (two index/radius pairs → Tuple)
+            {"s2CapUnion", "s2RectIntersection", "s2RectUnion"},
+            /// Session introspection constants (no arguments → String)
+            {"currentDatabase", "currentUser", "hostName", "serverUUID"},
+            /// Session profile / role introspection (no arguments → Array(String))
+            {"currentProfiles", "currentRoles", "defaultProfiles", "defaultRoles", "enabledProfiles", "enabledRoles"},
+            /// Block introspection (no arguments → number); breaks assumptions about
+            /// block boundaries, sparse blocks and virtual columns
+            {"blockNumber", "blockSize", "rowNumberInAllBlocks", "rowNumberInBlock"},
+            /// Dictionary attribute accessors (dict, attr, key → value); the typed variants
+            /// additionally validate the attribute type, `dictGetAll` requires a regexp tree layout
+            {"dictGet",
+             "dictGetAll",
+             "dictGetDate",
+             "dictGetDateTime",
+             "dictGetFloat32",
+             "dictGetFloat64",
+             "dictGetIPv4",
+             "dictGetIPv6",
+             "dictGetInt16",
+             "dictGetInt32",
+             "dictGetInt64",
+             "dictGetInt8",
+             "dictGetOrNull",
+             "dictGetString",
+             "dictGetUInt16",
+             "dictGetUInt32",
+             "dictGetUInt64",
+             "dictGetUInt8",
+             "dictGetUUID"},
+            /// Same accessors with an explicit fallback (dict, attr, key, default → value)
+            {"dictGetDateOrDefault",
+             "dictGetDateTimeOrDefault",
+             "dictGetFloat32OrDefault",
+             "dictGetFloat64OrDefault",
+             "dictGetIPv4OrDefault",
+             "dictGetIPv6OrDefault",
+             "dictGetInt16OrDefault",
+             "dictGetInt32OrDefault",
+             "dictGetInt64OrDefault",
+             "dictGetInt8OrDefault",
+             "dictGetOrDefault",
+             "dictGetStringOrDefault",
+             "dictGetUInt16OrDefault",
+             "dictGetUInt32OrDefault",
+             "dictGetUInt64OrDefault",
+             "dictGetUInt8OrDefault",
+             "dictGetUUIDOrDefault"},
+            /// Dictionary key probes and hierarchy walks (dict, key[, level/ancestor key]);
+            /// the hierarchy functions additionally require a hierarchical layout
+            {"dictGetChildren", "dictGetDescendants", "dictGetHierarchy", "dictGetRoot", "dictHas", "dictIsIn"},
+            /// Geometry intersection: Cartesian vs Spherical point model, identical (geom1, geom2) signature
+            {"geometryIntersectCartesian", "geometryIntersectSpherical"},
+            /// Empty array constructors (no arguments); every swap changes only the element type
+            {"emptyArrayDate",
+             "emptyArrayDateTime",
+             "emptyArrayFloat32",
+             "emptyArrayFloat64",
+             "emptyArrayInt16",
+             "emptyArrayInt32",
+             "emptyArrayInt64",
+             "emptyArrayInt8",
+             "emptyArrayString",
+             "emptyArrayUInt16",
+             "emptyArrayUInt32",
+             "emptyArrayUInt64",
+             "emptyArrayUInt8"},
+            /// Parser and formatter over a query string (query → text/JSON). The seeded ones
+            /// (fuzzQuery, obfuscateQueryWithSeed) are left out: they take two arguments and are random
+            {"formatQuery",
+             "formatQueryOrNull",
+             "formatQuerySingleLine",
+             "formatQuerySingleLineOrNull",
+             "highlightQuery",
+             "normalizeQuery",
+             "normalizeQueryKeepNames",
+             "obfuscateQuery",
+             "parseQueryToJSON"},
+            /// Iceberg partition transforms over a date/time (date → integer)
+            {"icebergDay", "icebergHour", "icebergMonth", "icebergYear"},
+            /// Iceberg partition transforms taking a width (value, n → bucket/truncated value)
+            {"icebergBucket", "icebergTruncate"},
+            /// Packed-decimal date/time constructors (integer → Date/DateTime)
+            {"YYYYMMDDToDate", "YYYYMMDDToDate32", "YYYYMMDDhhmmssToDateTime", "YYYYMMDDhhmmssToDateTime64"},
+            /// Colour space conversions (tuple of three components → tuple of three components)
+            {"colorOKLABToSRGB", "colorOKLCHToSRGB", "colorSRGBToOKLAB", "colorSRGBToOKLCH"},
+            /// Primality tests: exact vs Miller-Rabin
+            {"isPrime", "isProbablePrime"},
+            /// Substring up to the nth delimiter (s, delimiter, count); distinct from the `substring`
+            /// group above, whose second argument is an offset rather than a delimiter
+            {"substringIndex", "substringIndexUTF8"},
+            /// Byte-distribution measures over a string (String → number)
+            {"stringBytesEntropy", "stringBytesUniq"},
+            /// Area under the ROC or precision-recall curve (scores, labels)
+            {"arrayAUC", "arrayAUCPR", "arrayPRAUC", "arrayROCAUC"}};
+    return swapFuncs;
+}
 
 /// Rewrite a lightweight `DELETE FROM` / `UPDATE` into the equivalent `ALTER TABLE` mutation,
 /// feeding the same payload through the other pipeline; the trailing query `SETTINGS` clause is
@@ -6198,7 +6603,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (nargs < 3 && fuzz_rand() % 30 == 0)
                 {
                     /// Replace aggregate function
-                    const Strings & commonAggrs = swapAggrs.at(nargs);
+                    const Strings & commonAggrs = swapAggregateNames().at(nargs);
 
                     for (const auto & entry : commonAggrs)
                     {
@@ -6226,7 +6631,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 20 == 0)
                 {
                     /// Add or remove a single aggregate combinator suffix.
-                    /// Deliberately a subset of `aggregate_combinator_suffixes`
+                    /// Deliberately a subset of `aggregateCombinatorSuffixes`
                     /// (QueryFuzzer.h): each entry here has matching
                     /// argument-fixup logic below (`If` appends a condition,
                     /// `ArgMin`/`ArgMax` a key, `Tuple` wraps arguments), and
@@ -6315,7 +6720,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         else if (fuzz_rand() % 30 == 0)
         {
             /// Swap function name
-            for (const auto & entry : swapFuncs)
+            for (const auto & entry : swapFuncs())
             {
                 if (entry.contains(fn->name))
                 {
@@ -6352,14 +6757,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             auto * first_arg = fn->arguments->children[0]->as<ASTFunction>();
             if (first_arg && first_arg->name == "lambda")
             {
-                const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
+                const auto & group = swapFuncs()[fuzz_rand() % swapFuncs().size()];
                 fn->arguments->children[0] = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group));
             }
             else if (
-                lambda_accepting_funcs.contains(fn->name) && !(first_arg && first_arg->name == "lambda")
+                lambdaAcceptingFuncs().contains(fn->name) && !(first_arg && first_arg->name == "lambda")
                 && !fn->arguments->children[0]->as<ASTIdentifier>())
             {
-                const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
+                const auto & group = swapFuncs()[fuzz_rand() % swapFuncs().size()];
                 fn->arguments->children.insert(
                     fn->arguments->children.begin(), make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group)));
             }
@@ -6498,14 +6903,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (select->tables().get())
         {
-            ASTPtr arr_join;
-            ASTPtr new_join;
             const int next_action = fuzz_rand() % 30;
 
             /// Add a join or remove a table only when tables in FROM are already present
-            if (next_action == 0 && !select->refTables()->children.empty() && (new_join = addJoinClause()))
+            if (next_action == 0 && !select->refTables()->children.empty())
             {
-                select->refTables()->children.emplace_back(new_join);
+                if (ASTPtr new_join = addJoinClause())
+                    select->refTables()->children.emplace_back(new_join);
             }
             else if (next_action == 1 && select->refTables()->children.size() > 1)
             {
@@ -6547,9 +6951,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
             /// Add array join
-            if (fuzz_rand() % 30 == 0 && !select->refTables()->children.empty() && (arr_join = addArrayJoinClause()))
+            if (fuzz_rand() % 30 == 0 && !select->refTables()->children.empty())
             {
-                select->refTables()->children.emplace_back(arr_join);
+                if (ASTPtr arr_join = addArrayJoinClause())
+                    select->refTables()->children.emplace_back(arr_join);
             }
         }
         if (select->groupBy().get())
@@ -6823,6 +7228,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
             select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, makeLimitExpression(val));
         }
+
+        /// Fuzz LIMIT AFTER and LIMIT UNTIL clauses.
+        if (select->limitAfter() && fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
+            select->limit_after_all = false;
+        }
+        else if (fuzz_rand() % 200 == 0)
+        {
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::LIMIT_AFTER);
+        }
+        if (select->limitAfter() && fuzz_rand() % 20 == 0)
+            select->limit_after_all = !select->limit_after_all;
+        if (select->limitUntil() && fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
+        }
+        else if (fuzz_rand() % 200 == 0)
+        {
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::LIMIT_UNTIL);
+        }
+
         /// Fuzz LIMIT BY offset/length
         if (select->limitBy())
         {
@@ -7064,6 +7491,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     drop_query->not_like = !drop_query->not_like;
                 if (fuzz_rand() % 20 == 0)
                     drop_query->case_insensitive_like = !drop_query->case_insensitive_like;
+                if (fuzz_rand() % 20 == 0)
+                    drop_query->like = makeFuzzedLikePattern();
             }
         }
         /// Multi-table DROP t1, t2: remove, duplicate or shuffle entries (table identifiers
@@ -7133,7 +7562,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            insert_query->format = insert_formats[fuzz_rand() % insert_formats.size()];
+            insert_query->format = insertFormats()[fuzz_rand() % insertFormats().size()];
         }
         /// Occasionally drop inline SETTINGS
         if (insert_query->settings_ast && fuzz_rand() % 100 == 0)
@@ -7276,6 +7705,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         };
 
+        /// `part` picks the payload grammar: `ParserPartition` for PARTITION, a string part name
+        /// for PART. The formatter only swaps the keyword, so turning the flag on must install a
+        /// name too; off needs nothing, since a part name is already a partition expression.
+        auto flipPartFlag = [&]
+        {
+            if (!alter_cmd->partition)
+                return;
+            if (!alter_cmd->part)
+                replaceCommandMember(alter_cmd->partition, makeFuzzedPartName());
+            alter_cmd->part = !alter_cmd->part;
+        };
+
         switch (alter_cmd->type)
         {
             case ASTAlterCommand::DELETE:
@@ -7381,23 +7822,33 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
                 if (fuzz_rand() % 20 == 0)
-                    alter_cmd->part = !alter_cmd->part;
+                    flipPartFlag();
                 break;
             case ASTAlterCommand::MOVE_PARTITION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
                 if (fuzz_rand() % 20 == 0)
-                    alter_cmd->part = !alter_cmd->part;
-                /// Cycle move destination type between DISK, VOLUME, TABLE
+                    flipPartFlag();
+                /// Cycle move destination type. `TO TABLE` needs a destination table to render.
                 if (fuzz_rand() % 10 == 0)
                 {
-                    static const DataDestinationType dest_types[] = {
+                    static constexpr DataDestinationType dest_types[] = {
                         DataDestinationType::DISK,
                         DataDestinationType::VOLUME,
+                        DataDestinationType::SHARD,
                         DataDestinationType::TABLE,
                     };
-                    alter_cmd->move_destination_type = dest_types[fuzz_rand() % 3];
+                    const DataDestinationType picked = dest_types[fuzz_rand() % std::size(dest_types)];
+                    if (picked != DataDestinationType::TABLE || !alter_cmd->to_table.empty())
+                        alter_cmd->move_destination_type = picked;
                 }
+                /// `TO SHARD` parses only after MOVE PART and `TO TABLE` only after MOVE PARTITION,
+                /// so the flag follows the destination: either mutation above can otherwise leave a
+                /// pair that no grammar branch accepts.
+                if (alter_cmd->move_destination_type == DataDestinationType::SHARD && !alter_cmd->part)
+                    flipPartFlag();
+                else if (alter_cmd->move_destination_type == DataDestinationType::TABLE && alter_cmd->part)
+                    flipPartFlag();
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
             case ASTAlterCommand::MODIFY_CONSTRAINT:
@@ -7504,10 +7955,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                         lit->value = fuzzField(lit->value);
                 break;
             case ASTAlterCommand::MODIFY_REFRESH:
-                /// The refresh member is an ASTRefreshStrategy — fuzz it the same way as at CREATE.
+                /// The refresh member is an ASTRefreshStrategy — fuzz it the same way as at CREATE,
+                /// except that `checkAlterIsPossible` refuses any change of mode, so an ALTER can
+                /// never introduce `INCREMENTAL` on a view that was not created with it.
                 if (alter_cmd->refresh)
                     if (auto * strategy = alter_cmd->refresh->as<ASTRefreshStrategy>())
-                        fuzzRefreshStrategy(*strategy);
+                        fuzzRefreshStrategy(*strategy, false);
                 break;
             /// MODIFY_QUERY: the new SELECT body is an owned child, so the recursive
             /// fuzz(alter_cmd->children) at the end of this branch mutates it directly.
@@ -7564,11 +8017,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// The parser requires PARTS after DRY RUN, so always synthesize a missing list
         if (optimize_query->dry_run && !optimize_query->parts_list)
         {
-            static const Strings part_names = {"all_1_1_0", "all_0_0_0", "20000101_1_1_0", "invalid_part"};
             auto list = make_intrusive<ASTExpressionList>();
             const size_t nparts = 1 + fuzz_rand() % 2;
             for (size_t i = 0; i < nparts; ++i)
-                list->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, part_names)));
+                list->children.push_back(makeFuzzedPartName());
             optimize_query->parts_list = list;
             optimize_query->children.push_back(optimize_query->parts_list);
         }
@@ -8178,7 +8630,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (stats_decl->types)
             for (auto & type_ast : stats_decl->types->children)
                 if (auto * afn = type_ast->as<ASTFunction>(); afn && fuzz_rand() % 5 == 0)
-                    afn->name = pickRandomly(fuzz_rand, stat_types);
+                    afn->name = pickRandomly(fuzz_rand, statTypes());
         fuzz(stats_decl->children);
     }
     else if (auto * constraint = typeid_cast<ASTConstraintDeclaration *>(ast.get()))
@@ -8189,19 +8641,43 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                                                                                            : ASTConstraintDeclaration::Type::CHECK;
         fuzz(constraint->children);
     }
-    else if (auto * hypo_index = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
+    else if (auto * hypo_object = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
     {
-        fuzzTableName(*hypo_index);
-        /// CREATE/DROP HYPOTHETICAL INDEX: mutate the embedded index declaration
-        /// like a regular skipping index and toggle the IF [NOT] EXISTS flags.
-        if (hypo_index->index_decl)
-            if (auto * idx = hypo_index->index_decl->as<ASTIndexDeclaration>())
+        fuzzTableName(*hypo_object);
+        /// CREATE/DROP HYPOTHETICAL INDEX and CREATE/DROP HYPOTHETICAL PROJECTION: mutate the
+        /// embedded declaration exactly like the table-level one it mirrors, and toggle the
+        /// IF [NOT] EXISTS flags.
+        if (hypo_object->index_decl)
+            if (auto * idx = hypo_object->index_decl->as<ASTIndexDeclaration>())
                 fuzzIndexDeclaration(*idx);
+        if (hypo_object->projection_decl)
+            if (auto * proj = hypo_object->projection_decl->as<ASTProjectionDeclaration>())
+                fuzzProjectionDeclaration(*proj);
+        /// `object_kind` only selects the keyword for a DROP, so it is always free to flip there.
+        /// A CREATE also prints the matching declaration, and only one of the two is ever set,
+        /// so flipping it would make the formatter assert on the missing one.
+        if (hypo_object->kind != ASTHypotheticalObjectQuery::Create && fuzz_rand() % 20 == 0)
+            hypo_object->object_kind = hypo_object->object_kind == ASTHypotheticalObjectQuery::Index
+                ? ASTHypotheticalObjectQuery::Projection
+                : ASTHypotheticalObjectQuery::Index;
+        /// Swap a CREATE for the DROP of the same object and back. `DropAll` is left alone: it
+        /// keeps neither a name nor a declaration, so nothing could turn it back into the others.
         if (fuzz_rand() % 20 == 0)
-            hypo_index->if_not_exists = !hypo_index->if_not_exists;
+        {
+            const bool has_decl = hypo_object->object_kind == ASTHypotheticalObjectQuery::Projection
+                ? hypo_object->projection_decl != nullptr
+                : hypo_object->index_decl != nullptr;
+
+            if (hypo_object->kind == ASTHypotheticalObjectQuery::Create)
+                hypo_object->kind = ASTHypotheticalObjectQuery::Drop;
+            else if (hypo_object->kind == ASTHypotheticalObjectQuery::Drop && has_decl)
+                hypo_object->kind = ASTHypotheticalObjectQuery::Create;
+        }
         if (fuzz_rand() % 20 == 0)
-            hypo_index->if_exists = !hypo_index->if_exists;
-        fuzz(hypo_index->children);
+            hypo_object->if_not_exists = !hypo_object->if_not_exists;
+        if (fuzz_rand() % 20 == 0)
+            hypo_object->if_exists = !hypo_object->if_exists;
+        fuzz(hypo_object->children);
     }
     else if (dynamic_cast<ASTDataType *>(ast.get()))
     {
@@ -8250,6 +8726,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             show_tables->case_insensitive_like = !show_tables->case_insensitive_like;
         if (fuzz_rand() % 20 == 0 && !show_tables->like.empty())
             show_tables->like.clear();
+        else if (fuzz_rand() % 20 == 0)
+            show_tables->like = makeFuzzedLikePattern();
         fuzz(show_tables->children);
     }
     else if (auto * show_columns = typeid_cast<ASTShowColumnsQuery *>(ast.get()))
@@ -8264,6 +8742,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             show_columns->case_insensitive_like = !show_columns->case_insensitive_like;
         if (fuzz_rand() % 20 == 0 && !show_columns->like.empty())
             show_columns->like.clear();
+        else if (fuzz_rand() % 20 == 0)
+            show_columns->like = makeFuzzedLikePattern();
         fuzz(show_columns->children);
     }
     else if (auto * show_indexes = typeid_cast<ASTShowIndexesQuery *>(ast.get()))
@@ -8278,6 +8758,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             show_functions->case_insensitive_like = !show_functions->case_insensitive_like;
         if (fuzz_rand() % 20 == 0 && !show_functions->like.empty())
             show_functions->like.clear();
+        else if (fuzz_rand() % 20 == 0)
+            show_functions->like = makeFuzzedLikePattern();
     }
     else if (auto * partition = typeid_cast<ASTPartition *>(ast.get()))
     {
@@ -8700,7 +9182,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 if (fuzz_rand() % 10 == 0)
                 {
-                    auto fmt = make_intrusive<ASTIdentifier>(data_formats[fuzz_rand() % data_formats.size()]);
+                    auto fmt = make_intrusive<ASTIdentifier>(dataFormats()[fuzz_rand() % dataFormats().size()]);
                     query_with_output->set(query_with_output->format_ast, fmt);
                 }
             }

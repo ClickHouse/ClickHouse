@@ -97,6 +97,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -178,10 +183,16 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
-        ssize_t) const override
+        ssize_t if_argument_pos) const override
     {
         if (only_null_condition)
             return;
+        /// The nested function takes a single condition, so the condition of an enclosing combinator is applied row by row.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionHelper<AggregateFunctionIf>::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
         nested_func->addBatchSinglePlace(row_begin, row_end, place, columns, arena, num_arguments - 1);
     }
 
@@ -212,6 +223,7 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -292,6 +304,16 @@ public:
         const Array & params, const AggregateFunctionProperties & properties) const override;
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    /// Only the `Subadditive` bound survives the filtering: a group whose rows all fail the
+    /// condition has an untouched nested state, whose value is 0 for the subadditive functions
+    /// (`count`, `uniqExact`) - consistent with the bound - but is a bogus default for an extremum.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if (nested_func->getMergedValueBound() == MergedValueBound::Subadditive)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
 
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
