@@ -316,11 +316,11 @@ struct EntityChange
     }
 };
 
-/// Returns `changes` ordered for execution.
+/// Returns `changes` ordered for execution. `new_entities` are all entities after the changes.
 /// Every intemediate state during execution will be consistent (i.e. all references will be valid)
 /// NOTE: It does not validate changes, any problem will be detected during execution.
 /// NOTE: There will be no error if valid order does not exist.
-std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityChange> & changes)
+std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityChange> & changes, const WorkloadEntities & new_entities)
 {
     std::map<WorkloadEntityKey, const EntityChange *> change_by_key;
     for (const auto & change : changes)
@@ -343,6 +343,41 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             });
     }
 
+    // Returns the nearest changed workload above `key` in `new_entities`, skipping unchanged workloads. The result is
+    // memoized for the unchanged workloads of the walk, so every workload is walked over once.
+    std::map<WorkloadEntityKey, std::optional<WorkloadEntityKey>> nearest_changed_above;
+    auto nearest_changed_ancestor = [&](const WorkloadEntityKey & key)
+    {
+        std::vector<WorkloadEntityKey> unchanged_path;
+        std::optional<WorkloadEntityKey> result;
+        WorkloadEntityKey current = key;
+        while (true)
+        {
+            auto it = new_entities.find(current);
+            if (it == new_entities.end())
+                break;
+            auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(it->second.get());
+            if (!workload || !workload->hasParent())
+                break;
+            WorkloadEntityKey parent{WorkloadEntityType::Workload, workload->getWorkloadParent()};
+            if (change_by_key.contains(parent))
+            {
+                result = parent;
+                break;
+            }
+            if (auto memo = nearest_changed_above.find(parent); memo != nearest_changed_above.end())
+            {
+                result = memo->second;
+                break;
+            }
+            unchanged_path.push_back(parent);
+            current = parent;
+        }
+        for (const auto & unchanged : unchanged_path)
+            nearest_changed_above[unchanged] = result;
+        return result;
+    };
+
     // Construct DAG of dependencies between changes. Key is entity. Value is set of entities that should be changed first.
     Dependencies dependencies;
     for (const auto & change : changes)
@@ -361,14 +396,17 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created or updated after all changed entities it references. For an updated
-                // parent this keeps the hierarchy acyclic while workloads are moved: every new ancestor of a workload
-                // already has its new parent when the workload is attached to it.
+                // Rule 2: Entity can only be created or updated after all changed entities it references
                 for (const auto & target : new_targets[change.key])
                 {
                     if (change_by_key.contains(target))
                         dependencies[change.key].insert(target);
                 }
+
+                // Rule 3: A workload is changed after its nearest changed ancestor in the new hierarchy, so all its new
+                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic
+                if (auto ancestor = nearest_changed_ancestor(change.key))
+                    dependencies[change.key].insert(*ancestor);
             }
         }
     }
@@ -768,7 +806,7 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
 
     // Sort `changes` to respect consistency of references
     std::vector<Event> tx;
-    for (const auto & change : topologicallySortedChanges(changes))
+    for (const auto & change : topologicallySortedChanges(changes, new_visible_entities))
     {
         for (auto & event : change.toEvents())
         {

@@ -2942,6 +2942,11 @@ TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
     t.loadConfig("CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
+
+    // An unchanged workload between the moved ones
+    t.loadConfig("CREATE WORKLOAD a; CREATE WORKLOAD b IN a; CREATE WORKLOAD c IN b");
+    t.loadConfig("CREATE WORKLOAD b; CREATE WORKLOAD c IN b; CREATE WORKLOAD a IN c");
+    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
 }
 
 // A load (configuration, Keeper, disk) rejects conflicts and broken references as a whole and keeps the previous
