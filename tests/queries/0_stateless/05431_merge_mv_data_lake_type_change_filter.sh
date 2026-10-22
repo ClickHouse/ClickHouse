@@ -125,3 +125,12 @@ DROP TABLE cyc8_m1;
 DROP TABLE cyc8_m2;
 DROP TABLE cyc8_m3;
 "
+
+# The deadline is checked between the children's refreshes, as between their plans: a query past it refreshes none.
+$CLIENT -m -q "
+CREATE TABLE t_merge9 (k Int64) ENGINE = Merge(currentDatabase(), '^t_lake[1-5]\$');
+SELECT sum(k) FROM t_merge9 SETTINGS max_execution_time = 0.000001, timeout_overflow_mode = 'throw', log_comment = '05431_deadline'; -- { serverError TIMEOUT_EXCEEDED }
+SYSTEM FLUSH LOGS query_log;
+SELECT 'metadata parses past the deadline', ProfileEvents['IcebergMetadataJSONParses'] FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05431_deadline' AND type != 'QueryStart';
+"

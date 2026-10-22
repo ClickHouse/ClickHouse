@@ -720,10 +720,15 @@ void StorageMerge::updateExternalDynamicMetadataIfExists(ContextPtr query_contex
 
     /// The planner checks pushed-down filters against the children's metadata, so a data lake child takes its new snapshot here, not in `read`.
     const auto & access = query_context->getAccess();
+    QueryStatusPtr query_status = query_context->getProcessListElementSafe();
     try
     {
         traverseTablesUntilImpl(query_context, this, database_name_or_regexp, [&](const StoragePtr & table)
         {
+            /// A child left unrefreshed by `timeout_overflow_mode = 'break'` is not read: `createChildrenPlans` stops at the same check.
+            if (query_status && !query_status->checkTimeLimit())
+                return true;
+
             const auto id = table->getStorageID();
             if (!access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
                 return false;

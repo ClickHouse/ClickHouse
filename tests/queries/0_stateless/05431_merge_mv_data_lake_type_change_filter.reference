@@ -7,3 +7,4 @@ broken child skipped by _table	1	2
 k	Int32					
 k	Int32					
 k	Int32					
+metadata parses past the deadline	0
