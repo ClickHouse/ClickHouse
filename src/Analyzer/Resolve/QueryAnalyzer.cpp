@@ -946,16 +946,6 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         return;
     if (positional_arguments_already_resolved)
         return;
-    const bool is_view_inner = scope.context->isViewInnerQuery();
-    if (!is_view_inner)
-    {
-        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
-        /// already resolved positional arguments in the outer query. View-inner contexts are
-        /// exempt because views are expanded on the local node and were never resolved by the
-        /// initiator.
-        if (scope.context->isPositionalArgumentsAlreadyResolved())
-            return;
-    }
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -5482,11 +5472,21 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
         ready_columns.push_back(sort_node->as<SortNode &>().getExpression());
 
+    /// `FillingTransform` pairs each executed `INTERPOLATE` output with one destination column of its
+    /// input header, by position, so a column may be an `INTERPOLATE` output at most once.
+    NameSet interpolate_column_names;
+
     for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
+
+        if (!interpolate_column_names.emplace(column_to_interpolate_name).second)
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Column '{}' can't be an INTERPOLATE output more than once. In scope {}",
+                column_to_interpolate_name,
+                scope.scope_node->formatASTForErrorMessage());
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 

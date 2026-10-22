@@ -156,7 +156,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
-        context);
+        context,
+        /*keep_inferred_source_metadata=*/ true);
 
     res->startup();
     return res;
