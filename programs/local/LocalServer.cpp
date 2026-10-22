@@ -337,6 +337,10 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
 
 void LocalServer::processError(std::string_view query) const
 {
+    /// The reader of the output went away, e.g. `clickhouse-local -q '...' | head -1`: stop quietly.
+    if (stdout_is_broken)
+        return;
+
     /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
     /// the exception is reported here rather than rethrown - rethrowing it would end the run.
     if (is_interactive || ignore_error)
@@ -1452,6 +1456,9 @@ try
 }
 catch (DB::Exception & e)
 {
+    if (stdout_is_broken)
+        return Application::EXIT_OK;
+
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
@@ -1459,6 +1466,9 @@ catch (DB::Exception & e)
 }
 catch (...)
 {
+    if (stdout_is_broken)
+        return Application::EXIT_OK;
+
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;

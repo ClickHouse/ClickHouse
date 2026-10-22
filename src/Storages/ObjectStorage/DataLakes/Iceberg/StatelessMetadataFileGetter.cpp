@@ -158,6 +158,8 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
 
         RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
+        /// `manifest_length` is not always exact, so the manifest is read to the end without a size.
+        manifest_object_info.metadata = ObjectMetadata::fromTableRecords(std::nullopt);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
