@@ -111,3 +111,17 @@ SELECT count(), sum(k) FROM t_merge7; -- { serverError INCORRECT_DATA }
 SELECT count(), sum(k) FROM mv7; -- { serverError INCORRECT_DATA }
 SELECT count(), sum(k) FROM mv7_definer; -- { serverError INCORRECT_DATA }
 "
+
+# A read of `Merge` tables that read each other fails with `TOO_DEEP_RECURSION`, as any cycle does, without walking
+# every path through them first, and their `DESCRIBE` still works.
+$CLIENT -m -q "
+CREATE TABLE cyc8 (k Int32) ENGINE = Memory;
+CREATE TABLE cyc8_m1 (k Int32) ENGINE = Merge(currentDatabase(), '^cyc8');
+CREATE TABLE cyc8_m2 (k Int32) ENGINE = Merge(currentDatabase(), '^cyc8');
+CREATE TABLE cyc8_m3 (k Int32) ENGINE = Merge(currentDatabase(), '^cyc8');
+DESCRIBE TABLE cyc8_m1;
+SELECT count() FROM cyc8_m1; -- { serverError TOO_DEEP_RECURSION }
+DROP TABLE cyc8_m1;
+DROP TABLE cyc8_m2;
+DROP TABLE cyc8_m3;
+"

@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <new>
@@ -19,6 +20,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int ABORTED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 /// A broken invariant, a memory limit, a deadline or a cancellation belongs to the query, not to the table.
@@ -49,6 +51,11 @@ void DeferredRefreshErrors::refresh(const ContextPtr & context, const StoragePtr
         return;
     }
 
+    /// Above one while the tables being refreshed refresh other tables, e.g. `Merge` tables that read each other.
+    static thread_local size_t nesting = 0;
+    ++nesting;
+    SCOPE_EXIT({ --nesting; });
+
     try
     {
         refresh_table();
@@ -59,7 +66,10 @@ void DeferredRefreshErrors::refresh(const ContextPtr & context, const StoragePtr
     }
     catch (...)
     {
-        if (isQueryOuterGuardError(getCurrentExceptionCode()))
+        /// Tables that read each other recurse until the stack overflows. Keeping that error at every level would walk
+        /// every path through them, so only the outermost refresh keeps it.
+        const int code = getCurrentExceptionCode();
+        if (isQueryOuterGuardError(code) || (code == ErrorCodes::TOO_DEEP_RECURSION && nesting > 1))
             throw;
 
         std::lock_guard lock(mutex);
