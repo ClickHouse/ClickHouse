@@ -18,154 +18,144 @@ void test_find_first_not(const std::string & haystack, std::size_t expected_pos)
 }
 
 
+namespace
+{
+
+/// Keep dispatch boundaries in one place for deterministic and randomized coverage.
+constexpr auto compile_time_sizes = std::to_array<size_t>({
+    0, 1,
+    15, 16, 17,
+    31, 32, 33,
+    47, 48, 49,
+    63, 64, 65,
+    95, 96,
+    127, 128, 129,
+    255, 256,
+    511, 512, 513,
+    767, 768, 769,
+    1023, 1024, 1025,
+    1039, 1040, 1041,
+    1055, 1056, 1057,
+    1087, 1088, 1089,
+    1119, 1120, 1121,
+    1151, 1152, 1153,
+    1536, 1537,
+});
+constexpr auto compile_time_positions = std::to_array<size_t>({
+    0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 127, 128, 255, 256,
+    511, 512, 543, 544, 575, 576, 607, 608, 639, 640, 767, 1023, 1119, 1120,
+});
+
+template <bool positive, char... symbols>
+void expect_first_match(const char * begin, const char * end, const char * expected)
+{
+    const char * expected_or_null = expected == end ? nullptr : expected;
+    if constexpr (positive)
+    {
+        EXPECT_EQ(find_first_symbols<symbols...>(begin, end), expected);
+        EXPECT_EQ(find_first_symbols_or_null<symbols...>(begin, end), expected_or_null);
+    }
+    else
+    {
+        EXPECT_EQ(find_first_not_symbols<symbols...>(begin, end), expected);
+        EXPECT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), expected_or_null);
+    }
+}
+
 template <char... symbols>
-static void test_compile_time_boundaries()
+void expect_matches_scalar(std::string_view haystack)
+{
+    const std::array<char, sizeof...(symbols)> needles {symbols...};
+    const char * begin = haystack.data();
+    const char * end = begin + haystack.size();
+    const char * first_symbol = end;
+    const char * first_not_symbol = end;
+
+    for (const char * pos = begin; pos < end; ++pos)
+    {
+        const bool matches = std::find(needles.begin(), needles.end(), *pos) != needles.end();
+        if (matches && first_symbol == end)
+            first_symbol = pos;
+        if (!matches && first_not_symbol == end)
+            first_not_symbol = pos;
+    }
+
+    expect_first_match<true, symbols...>(begin, end, first_symbol);
+    expect_first_match<false, symbols...>(begin, end, first_not_symbol);
+}
+
+template <char... symbols>
+void test_compile_time_boundaries()
 {
     const std::array<char, sizeof...(symbols)> needles {symbols...};
     char non_needle = 'a';
     while (std::find(needles.begin(), needles.end(), non_needle) != needles.end())
         ++non_needle;
     const bool contains_null = std::find(needles.begin(), needles.end(), '\0') != needles.end();
-    const std::array<size_t, 45> sizes {
-        0, 1,
-        15, 16, 17,
-        31, 32, 33,
-        47, 48, 49,
-        63, 64, 65,
-        127, 128, 129,
-        255, 256,
-        511, 512, 513,
-        767, 768, 769,
-        1023, 1024, 1025,
-        1039, 1040, 1041,
-        1055, 1056, 1057,
-        1087, 1088, 1089,
-        1119, 1120, 1121,
-        1151, 1152, 1153,
-        1536, 1537,
-    };
-    const std::array<size_t, 31> positions {
-        0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 127, 128, 255, 256,
-        511, 512, 543, 544, 575, 576, 607, 608, 639, 640, 767, 1023, 1119, 1120,
-    };
 
-    for (const size_t size : sizes)
+    for (const size_t size : compile_time_sizes)
     {
+        SCOPED_TRACE("size: " + std::to_string(size));
         std::string haystack(size, non_needle);
-        const char * begin = haystack.data();
-        const char * end = begin + haystack.size();
-
-        ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end) << "size: " << size;
-        ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), nullptr) << "size: " << size;
-
+        expect_matches_scalar<symbols...>(haystack);
         if (size == 0)
-        {
-            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end);
-            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), nullptr);
             continue;
-        }
 
         if (size >= 32 && !contains_null)
         {
             haystack.back() = '\0';
-            ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end);
-            ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), nullptr);
-            haystack.assign(size, non_needle);
-            begin = haystack.data();
-            end = begin + haystack.size();
+            expect_matches_scalar<symbols...>(haystack);
         }
 
-        for (const size_t position : positions)
+        for (const size_t position : compile_time_positions)
         {
             if (position >= size)
                 continue;
-
             haystack.assign(size, non_needle);
             haystack[position] = needles[position % needles.size()];
-            begin = haystack.data();
-            end = begin + haystack.size();
-
-            ASSERT_EQ(find_first_symbols<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
-            ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
+            expect_matches_scalar<symbols...>(haystack);
         }
 
         if (size >= 1024)
         {
             haystack.assign(size, non_needle);
             haystack.back() = needles[0];
-            begin = haystack.data();
-            end = begin + haystack.size();
-            ASSERT_EQ(find_first_symbols<symbols...>(begin, end), end - 1) << "size: " << size;
-            ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), end - 1) << "size: " << size;
+            expect_matches_scalar<symbols...>(haystack);
         }
 
         haystack.assign(size, needles[0]);
-        begin = haystack.data();
-        end = begin + haystack.size();
-        ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end) << "size: " << size;
-        ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), nullptr) << "size: " << size;
-
+        expect_matches_scalar<symbols...>(haystack);
         if (size >= 32 && !contains_null)
         {
             haystack.back() = '\0';
-            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + size - 1) << "size: " << size;
-            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + size - 1) << "size: " << size;
-            haystack.assign(size, needles[0]);
-            begin = haystack.data();
-            end = begin + haystack.size();
+            expect_matches_scalar<symbols...>(haystack);
         }
 
-        for (const size_t position : positions)
+        for (const size_t position : compile_time_positions)
         {
             if (position >= size)
                 continue;
-
+            haystack.assign(size, needles[0]);
             haystack[position] = non_needle;
-            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
-            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + position) << "size: " << size << ", position: " << position;
-            haystack[position] = needles[0];
+            expect_matches_scalar<symbols...>(haystack);
         }
 
         if (size >= 1024)
         {
             haystack.assign(size, needles[0]);
             haystack.back() = non_needle;
-            begin = haystack.data();
-            end = begin + haystack.size();
-            ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), end - 1) << "size: " << size;
-            ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), end - 1) << "size: " << size;
+            expect_matches_scalar<symbols...>(haystack);
         }
     }
 }
 
 template <char... symbols>
-static void test_compile_time_randomized()
+void test_compile_time_randomized()
 {
-    const std::array<char, sizeof...(symbols)> needles {symbols...};
-    constexpr std::array<size_t, 47> sizes {
-        0, 1,
-        15, 16, 17,
-        31, 32, 33,
-        47, 48, 49,
-        63, 64, 65,
-        95, 96,
-        127, 128, 129,
-        255, 256,
-        511, 512, 513,
-        767, 768, 769,
-        1023, 1024, 1025,
-        1039, 1040, 1041,
-        1055, 1056, 1057,
-        1087, 1088, 1089,
-        1119, 1120, 1121,
-        1151, 1152, 1153,
-        1536, 1537,
-    };
     std::uint32_t state = 0x12345678;
-
     for (size_t iteration = 0; iteration < 64; ++iteration)
     {
-        for (const size_t size : sizes)
+        for (const size_t size : compile_time_sizes)
         {
             std::string haystack(size, '\0');
             for (char & byte : haystack)
@@ -173,30 +163,12 @@ static void test_compile_time_randomized()
                 state = state * 1664525u + 1013904223u;
                 byte = static_cast<char>(state >> 24);
             }
-
-            const char * begin = haystack.data();
-            const char * end = begin + haystack.size();
-            const auto expected = [&](const bool positive)
-            {
-                for (size_t i = 0; i < haystack.size(); ++i)
-                {
-                    const bool is_needle = std::find(needles.begin(), needles.end(), haystack[i]) != needles.end();
-                    if (is_needle == positive)
-                        return begin + i;
-                }
-                return end;
-            };
-
-            const char * expected_symbols = expected(true);
-            const char * expected_not_symbols = expected(false);
-            EXPECT_EQ(find_first_symbols<symbols...>(begin, end), expected_symbols);
-            EXPECT_EQ(find_first_symbols_or_null<symbols...>(begin, end), expected_symbols == end ? nullptr : expected_symbols);
-            EXPECT_EQ(find_first_not_symbols<symbols...>(begin, end), expected_not_symbols);
-            EXPECT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), expected_not_symbols == end ? nullptr : expected_not_symbols);
+            expect_matches_scalar<symbols...>(haystack);
         }
     }
 }
 
+} // namespace
 
 TEST(FindSymbols, CompileTimeBoundaries)
 {
@@ -231,23 +203,16 @@ static void test_compile_time_match_order()
             char * begin = haystack.data() + alignment;
             const char * end = begin + 1153;
 
-            /// Exercise every lane after the SSE prefix, with a second match
-            /// in a later vector. The combined mask must not reorder matches.
+            /// A second match in a later vector must not change the first match.
             for (size_t position = 512; position < 640; ++position)
             {
                 const char match = positive ? needles[position % needles.size()] : 'x';
                 begin[position] = match;
                 begin[position + 32] = match;
                 if (positive)
-                {
-                    ASSERT_EQ(find_first_symbols<symbols...>(begin, end), begin + position);
-                    ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), begin + position);
-                }
+                    expect_first_match<true, symbols...>(begin, end, begin + position);
                 else
-                {
-                    ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + position);
-                    ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + position);
-                }
+                    expect_first_match<false, symbols...>(begin, end, begin + position);
                 begin[position] = fill;
                 begin[position + 32] = fill;
             }
