@@ -201,6 +201,14 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
+# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
+# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
+if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
+endif()
+
 # Force `rustix` to use its libc backend under sanitizers.
 # On Linux `rustix` defaults to the `linux_raw` backend, which issues `mmap`, `munmap` and
 # other syscalls directly via the `syscall` instruction, bypassing libc. The sanitizers
