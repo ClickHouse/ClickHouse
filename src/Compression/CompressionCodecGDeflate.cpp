@@ -5,6 +5,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/registerCompressionCodecs.h>
+#include <DataTypes/IDataType.h>
 #include <GPU/GPUGDeflate.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
@@ -17,8 +18,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-CompressionCodecGDeflate::CompressionCodecGDeflate(int algorithm_)
+CompressionCodecGDeflate::CompressionCodecGDeflate(int algorithm_, UInt8 element_size_, bool is_signed_)
     : algorithm(algorithm_)
+    , element_size(element_size_)
+    , is_signed(is_signed_)
 {
 }
 
@@ -44,7 +47,7 @@ UInt32 CompressionCodecGDeflate::getMaxCompressedDataSize(UInt32 uncompressed_si
 
 UInt32 CompressionCodecGDeflate::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    return static_cast<UInt32>(GPU::gdeflateCompress(source, source_size, dest, algorithm));
+    return static_cast<UInt32>(GPU::gdeflateCompress(source, source_size, dest, algorithm, element_size, is_signed));
 }
 
 UInt32 CompressionCodecGDeflate::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
@@ -53,10 +56,31 @@ UInt32 CompressionCodecGDeflate::doDecompressData(const char * source, UInt32 so
     return uncompressed_size;
 }
 
+namespace
+{
+
+/// The integers whose chunks the codec packs: their size and whether they are signed, or 0 for a column of anything else.
+std::pair<UInt8, bool> getPackedTypeInfo(const IDataType * column_type)
+{
+    if (!column_type)
+        return {0, false};
+
+    WhichDataType which(column_type);
+    if (!(which.isInt() || which.isUInt() || which.isDecimal() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()))
+        return {0, false};
+
+    const size_t size = column_type->getSizeOfValueInMemory();
+    if (size == 1 || size == 2 || size == 4 || size == 8)
+        return {static_cast<UInt8>(size), !column_type->isValueRepresentedByUnsignedInteger()};
+    return {0, false};
+}
+
+}
+
 void registerCodecGDeflate(CompressionCodecFactory & factory)
 {
     const UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::GDeflate);
-    factory.registerCompressionCodec("GDeflate", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("GDeflate", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         int algorithm = CompressionCodecGDeflate::DEFAULT_ALGORITHM;
         if (arguments && !arguments->children.empty())
@@ -78,7 +102,8 @@ void registerCodecGDeflate(CompressionCodecFactory & factory)
                     value);
             algorithm = static_cast<int>(value);
         }
-        return std::make_shared<CompressionCodecGDeflate>(algorithm);
+        const auto [element_size, is_signed] = getPackedTypeInfo(column_type);
+        return std::make_shared<CompressionCodecGDeflate>(algorithm, element_size, is_signed);
     });
 }
 

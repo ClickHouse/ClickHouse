@@ -111,10 +111,12 @@ for mode in device host; do
     compare_with_cpu "SELECT s, t, sum(v), min(b) FROM gpu_group_by_strings GROUP BY s, t ORDER BY s, t $SETTINGS, gpu_aggregation_batch_bytes = 65536"
 done
 
-# A float is not reduced by a `GROUP BY` by strings on the device, and neither is a read with a
-# `PREWHERE` for it: both are aggregated on the CPU.
-device_step "SELECT s, sum(toFloat64(v)) FROM gpu_group_by_strings GROUP BY s" cpu
-device_step "SELECT s, sum(v) FROM gpu_group_by_strings WHERE k = 3 GROUP BY s" blocks
+# A sum of a computed float is grouped on the device from the blocks the pipeline reads, as only a stored
+# `Float64` is read from the compressed columns, and a filter on a column is applied on the device to the
+# compressed columns it reads.
+device_step "SELECT s, sum(toFloat64(v)) FROM gpu_group_by_strings GROUP BY s" blocks
+device_step "SELECT s, sum(v) FROM gpu_group_by_strings WHERE k = 3 GROUP BY s" compressed
+compare_with_cpu "SELECT s, sum(v), count() FROM gpu_group_by_strings WHERE k = 3 GROUP BY s ORDER BY s"
 
 # `device` expands the strings' bytes on the device and `host` does not, as `GPUDecompressionBytes`
 # counts what the device expanded.

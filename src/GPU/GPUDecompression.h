@@ -21,6 +21,15 @@ struct CompressedBlock
     size_t offset = 0;
     size_t compressed_bytes = 0;
     size_t decompressed_bytes = 0;
+
+    /// Of a chunk of integers that its codec packed before compressing them, see `GPU::GDeflateChunk`: what nvcomp
+    /// expands it to, and how the packed integers make the `decompressed_bytes`. `packed_bits` is 0 for any other block.
+    size_t packed_bytes = 0;
+    uint32_t packed_bits = 0;
+    uint32_t element_size = 0;
+    uint64_t reference = 0;
+
+    size_t expandedBytes() const { return packed_bits ? packed_bytes : decompressed_bytes; }
 };
 
 size_t decompressedBytesOf(std::span<const CompressedBlock> blocks);
@@ -57,6 +66,10 @@ private:
     DeviceBuffer device_arguments{GPUResources::get().decompression};
     DeviceBuffer device_results{GPUResources::get().decompression};
     DeviceBuffer device_temp{GPUResources::get().decompression};
+    /// What nvcomp expands packed chunks to, and where their integers go.
+    DeviceBuffer device_packed{GPUResources::get().decompression};
+    PinnedBuffer host_packed_chunks;
+    DeviceBuffer device_packed_chunks{GPUResources::get().decompression};
 
     EventPtr destination_ready = createEvent();
     EventPtr expanded = createEvent();

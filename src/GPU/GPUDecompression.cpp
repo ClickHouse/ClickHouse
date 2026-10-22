@@ -7,6 +7,7 @@
 
 #include <Common/Exception.h>
 
+#include <GPU/BitUnpack.cuh>
 #include <GPU/GPUGDeflate.h>
 
 #include <nvcomp/gdeflate.h>
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -139,9 +141,17 @@ void stageCompressedBlock(
     const size_t start = staged.size();
     if (codec == GPUCodec::GDEFLATE)
     {
-        forEachGDeflateChunk(payload, decompressed_bytes, [&](size_t offset, size_t compressed, size_t decompressed)
+        forEachGDeflateChunk(payload, decompressed_bytes, [&](const GDeflateChunk & chunk)
         {
-            blocks.push_back({.offset = start + offset, .compressed_bytes = compressed, .decompressed_bytes = decompressed});
+            blocks.push_back({
+                .offset = start + chunk.offset,
+                .compressed_bytes = chunk.compressed_bytes,
+                .decompressed_bytes = chunk.decompressed_bytes,
+                .packed_bytes = chunk.expanded_bytes,
+                .packed_bits = chunk.packed_bits,
+                .element_size = chunk.element_size,
+                .reference = chunk.reference,
+            });
         });
     }
     else
@@ -240,8 +250,8 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         for (const CompressedBlock & block : piece.blocks)
         {
             piece_compressed = std::max(piece_compressed, block.offset + block.compressed_bytes);
-            decompressed_total += block.decompressed_bytes;
-            max_decompressed = std::max(max_decompressed, block.decompressed_bytes);
+            decompressed_total += block.expandedBytes();
+            max_decompressed = std::max(max_decompressed, block.expandedBytes());
         }
 
         if (piece_compressed > piece.compressed_bytes)
@@ -276,6 +286,20 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
     size_t * compressed_bytes = arrayAt<size_t>(arguments, offset, num_blocks);
     size_t * decompressed_bytes = arrayAt<size_t>(arguments, offset, num_blocks);
 
+    /// Packed chunks expand into `device_packed`, each with 8 bytes to spare that `unpackChunks` reads past them, and their
+    /// integers are unpacked into the destination after.
+    size_t packed_total = 0;
+    for (const CompressedPiece & piece : pieces)
+        for (const CompressedBlock & block : piece.blocks)
+            if (block.packed_bits)
+                packed_total += (block.packed_bytes + 15) / 8 * 8;
+    device_packed.clear();
+    char * const packed_base = packed_total ? device_packed.grow(packed_total) : nullptr;
+
+    std::vector<PackedChunk> packed_chunks;
+    size_t max_packed_count = 0;
+    size_t packed_at = 0;
+
     size_t block_index = 0;
     size_t at = 0;
     for (const CompressedPiece & piece : pieces)
@@ -283,10 +307,28 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         for (const CompressedBlock & block : piece.blocks)
         {
             compressed_ptrs[block_index] = piece.device_compressed + block.offset;
-            value_ptrs[block_index] = destination + at;
             compressed_bytes[block_index] = block.compressed_bytes;
-            decompressed_bytes[block_index] = block.decompressed_bytes;
-            expected_bytes.push_back(block.decompressed_bytes);
+            decompressed_bytes[block_index] = block.expandedBytes();
+            expected_bytes.push_back(block.expandedBytes());
+            if (block.packed_bits)
+            {
+                value_ptrs[block_index] = packed_base + packed_at;
+                const auto count = static_cast<uint32_t>(block.decompressed_bytes / block.element_size);
+                packed_chunks.push_back({
+                    .source = reinterpret_cast<const unsigned char *>(packed_base + packed_at),
+                    .destination = reinterpret_cast<unsigned char *>(destination + at),
+                    .count = count,
+                    .bits = block.packed_bits,
+                    .element_size = block.element_size,
+                    .reference = block.reference,
+                });
+                max_packed_count = std::max<size_t>(max_packed_count, count);
+                packed_at += (block.packed_bytes + 15) / 8 * 8;
+            }
+            else
+            {
+                value_ptrs[block_index] = destination + at;
+            }
             at += block.decompressed_bytes;
             ++block_index;
         }
@@ -322,6 +364,19 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         host_results.clear();
         char * const results = growBy(host_results, results_bytes);
 
+        if (!packed_chunks.empty())
+        {
+            /// Zeroes in the 8 spare bytes of every chunk past what nvcomp writes, so that what `unpackChunks` reads
+            /// there is defined, then the integers.
+            checkCuda(cudaMemsetAsync(packed_base, 0, packed_total, stream.get()), "Cannot clear the packed chunks");
+            host_packed_chunks.clear();
+            appendHostBytes(
+                host_packed_chunks,
+                std::string_view(reinterpret_cast<const char *>(packed_chunks.data()), packed_chunks.size() * sizeof(PackedChunk)));
+            device_packed_chunks.clear();
+            device_packed_chunks.append(bytesOf(host_packed_chunks));
+        }
+
         checkNvcomp(
             decompressAsync(
                 codec,
@@ -336,6 +391,10 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
                 d_statuses,
                 stream),
             "Cannot decompress on the device");
+
+        if (!packed_chunks.empty())
+            unpackChunks(
+                reinterpret_cast<const PackedChunk *>(device_packed_chunks.data()), packed_chunks.size(), max_packed_count, stream);
 
         checkCuda(
             cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream.get()),
