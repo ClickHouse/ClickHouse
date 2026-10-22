@@ -116,6 +116,8 @@ public:
 
     void prepareForDrop(ContextPtr query_context) override;
 
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
