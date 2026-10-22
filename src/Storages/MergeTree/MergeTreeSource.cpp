@@ -157,6 +157,14 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
+void MergeTreeSource::cancel(CancelReason reason) noexcept
+{
+    if (reason == CancelReason::PartialResult && keep_reading_on_partial_result)
+        return;
+
+    ISource::cancel(reason);
+}
+
 void MergeTreeSource::onCancel() noexcept
 {
     processor->cancel();
