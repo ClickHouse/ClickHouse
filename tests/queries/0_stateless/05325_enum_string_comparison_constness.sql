@@ -17,6 +17,10 @@ DROP TABLE IF EXISTS t_enum_name_key;
 CREATE TABLE t_enum_name_key (e Enum8('z' = 1, 'a' = 2, 'm' = 3)) ENGINE = MergeTree ORDER BY toString(e) SETTINGS index_granularity = 1;
 INSERT INTO t_enum_name_key VALUES ('z'), ('a'), ('m');
 
+DROP TABLE IF EXISTS t_tuple_key;
+CREATE TABLE t_tuple_key (t Tuple(String)) ENGINE = MergeTree ORDER BY tuple(t) SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+INSERT INTO t_tuple_key VALUES (('z')), (('a')), (('3'));
+
 DROP TABLE IF EXISTS t_string_derived_key;
 CREATE TABLE t_string_derived_key (s String) ENGINE = MergeTree ORDER BY (toString(s), s) SETTINGS index_granularity = 1;
 INSERT INTO t_string_derived_key VALUES ('z'), ('a'), ('m');
@@ -59,6 +63,7 @@ SELECT if(s = 'q', NULL, tuple(s)) < tuple(e) FROM values('e Enum8(''z'' = 1, ''
 
 -- the redundant comparison folding keeps the Enum order in a tuple element
 SELECT count() FROM values('s String, k UInt8', ('z', 1)) WHERE (s, k) < (CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)'), 0) AND (s, k) > ('z', 0) SETTINGS optimize_and_compare_chain = 0;
+SELECT arraySort(groupArray(t.1)) FROM t_tuple_key WHERE t < tuple(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)')) SETTINGS optimize_use_implicit_projections = 0;
 
 SELECT e < 'q' FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
@@ -68,3 +73,4 @@ DROP TABLE t_enum_chain;
 DROP TABLE t_enum_name_key;
 DROP TABLE t_string_key;
 DROP TABLE t_string_derived_key;
+DROP TABLE t_tuple_key;
