@@ -256,6 +256,67 @@ def test_on_cluster_table_engine_unique_replication_consumer(started_cluster):
     assert publications_before == count_publications()
 
 
+def test_on_cluster_create_as_gets_server_uuid_of_each_replica(started_cluster):
+    # `CREATE TABLE ... ON CLUSTER ... AS src` copies the engine settings of `src`, including the stored
+    # `materialized_postgresql_unique_replication_consumer_server_uuid`, on the initiator. Each replica must
+    # still use its own server UUID, otherwise all replicas would share one replication slot and publication.
+    table = "test_table_create_as"
+    pg_manager.create_postgres_table(table)
+    node1.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 50)"
+    )
+
+    slots_before = count_replication_slots()
+    publications_before = count_publications()
+
+    node1.query(
+        f"""
+        CREATE TABLE default.{table}_src (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """
+    )
+    node1.query(
+        f"CREATE TABLE default.{table} ON CLUSTER test_cluster AS default.{table}_src"
+    )
+
+    for node in [node1, node2]:
+        server_uuid = node.query("SELECT serverUUID()").strip()
+        assert (
+            f"materialized_postgresql_unique_replication_consumer_server_uuid = \\'{server_uuid}\\'"
+            in node.query(f"SHOW CREATE TABLE default.{table}")
+        )
+
+    # The source table and each replica of the copy own their own replication slot and publication.
+    assert slots_before + 3 == count_replication_slots()
+    assert publications_before + 3 == count_publications()
+
+    node1.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(1000, 1000)"
+    )
+    check_tables_are_synchronized(node1, table, materialized_database="default")
+    check_tables_are_synchronized(node2, table, materialized_database="default")
+    assert 1050 == int(node1.query(f"SELECT count() FROM default.{table}"))
+    assert 1050 == int(node2.query(f"SELECT count() FROM default.{table}"))
+
+    node1.query(f"DROP TABLE default.{table} ON CLUSTER test_cluster SYNC")
+    node1.query(f"DROP TABLE default.{table}_src SYNC")
+    for _ in range(30):
+        if (
+            count_replication_slots() == slots_before
+            and count_publications() == publications_before
+        ):
+            break
+        time.sleep(1)
+    assert slots_before == count_replication_slots()
+    assert publications_before == count_publications()
+
+
 def test_definition_without_setting_keeps_legacy_identity(started_cluster):
     # A definition without `materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid`,
     # as stored by older versions, keeps using the bare ClickHouse UUID as the replication slot name,

@@ -102,7 +102,7 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
 
 void MaterializedPostgreSQLSettings::applyDefaultsForNewOrExistingObject(ASTStorage & storage_def, bool is_attach)
 {
-    auto add_to_definition = [&](const String & name, Field value)
+    auto set_in_definition = [&](const String & name, Field value)
     {
         if (!storage_def.settings)
         {
@@ -110,7 +110,12 @@ void MaterializedPostgreSQLSettings::applyDefaultsForNewOrExistingObject(ASTStor
             settings_ast->is_standalone = false;
             storage_def.set(storage_def.settings, settings_ast);
         }
-        storage_def.settings->changes.emplace_back(name, std::move(value));
+        auto & changes = storage_def.settings->changes;
+        if (auto it = std::find_if(changes.begin(), changes.end(), [&](const auto & change) { return change.name == name; });
+            it != changes.end())
+            it->value = std::move(value);
+        else
+            changes.emplace_back(name, std::move(value));
     };
 
     /// The setting changes the names of the replication slot and the publication on the PostgreSQL side.
@@ -125,7 +130,7 @@ void MaterializedPostgreSQLSettings::applyDefaultsForNewOrExistingObject(ASTStor
         }
         else
         {
-            add_to_definition("materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid", Field(true));
+            set_in_definition("materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid", Field(true));
             mixed_with_server_uuid = true;
         }
     }
@@ -136,11 +141,14 @@ void MaterializedPostgreSQLSettings::applyDefaultsForNewOrExistingObject(ASTStor
     /// `ServerUUID` is regenerated if the `uuid` file in the server data directory is lost. The replication slot and
     /// the publication of an existing object must not change in that case: a new replication slot would reload
     /// the snapshot into the existing nested tables. So the server UUID is written into the definition as well.
+    /// A new object always gets the UUID of the server where it is created, even if the definition already has one:
+    /// it may be copied from another object, e.g. by `CREATE TABLE ... ON CLUSTER ... AS src`, which is normalized
+    /// on the initiator, and then all replicas would use the same replication slot and publication.
     auto & server_uuid = (*this)[MaterializedPostgreSQLSetting::materialized_postgresql_unique_replication_consumer_server_uuid];
-    if (server_uuid.value.empty())
+    if (!is_attach || server_uuid.value.empty())
     {
         server_uuid = toString(ServerUUID::get());
-        add_to_definition("materialized_postgresql_unique_replication_consumer_server_uuid", Field(server_uuid.value));
+        set_in_definition("materialized_postgresql_unique_replication_consumer_server_uuid", Field(server_uuid.value));
     }
     else
     {
