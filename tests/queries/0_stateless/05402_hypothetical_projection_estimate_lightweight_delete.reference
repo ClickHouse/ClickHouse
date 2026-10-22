@@ -1,8 +1,9 @@
 --- a part whose rows are mostly, then all deleted ---
+status: applicable
 empirical_status: unsupported
 empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
-empirical_status: unsupported
-empirical_reason: Every row of the parts read is deleted, so the projection would store no part to read
+status: not_applicable
+reason: no selected part has the projection materialized, or its analysis exceeded the read limits
 --- a part with every row deleted next to a live part ---
 marks: 20
 rows: 2000

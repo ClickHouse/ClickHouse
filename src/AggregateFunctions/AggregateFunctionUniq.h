@@ -302,9 +302,8 @@ struct AggregateFunctionUniqTraits
     {
         if constexpr (std::is_same_v<T, std::string_view>)
         {
-            SipHash hash;
-            hash.update(x.data(), x.size());
-            return hash.get128();
+            /// The strings come from the padded `ColumnString` and `ColumnFixedString`.
+            return sipHash128Padded(x.data(), x.size());
         }
         else if constexpr (std::is_same_v<T, IPv6>)
         {
@@ -733,6 +732,17 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
+
+    /// `uniqExact` counts an exact set union: at least the largest and at most the sum of the
+    /// partial counts. The bound is not declared for the estimating variants (`uniq`,
+    /// `uniqHLL12`): their estimates are only approximately subadditive.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return MergedValueBound::Subadditive;
+        else
+            return MergedValueBound::Unknown;
+    }
 };
 
 
@@ -868,6 +878,15 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+    }
+
+    /// See `AggregateFunctionUniq::getMergedValueBound`.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return MergedValueBound::Subadditive;
+        else
+            return MergedValueBound::Unknown;
     }
 };
 

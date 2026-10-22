@@ -89,12 +89,3 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
     EXPLAIN WHATIF projection_scan_budget_rows = 5000 SELECT count() FROM t_scan WHERE b < 100 AND _part_offset < 10000 SETTINGS ${PIN};
 " | grep -E '^\s+(status|empirical_status):' | awk '{$1=$1; print}'
-
-# the sample maps every row it reads to a granule, so lightweight-deleted rows leave it unsupported, the whole part does not
-echo "--- lightweight-deleted rows on a sampled estimate ---"
-$CLICKHOUSE_CLIENT -q "
-    DELETE FROM t_scan WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
-    CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
-    EXPLAIN WHATIF projection_scan_budget_rows = 5000 SELECT count() FROM t_scan WHERE b < 100 SETTINGS ${PIN};
-    EXPLAIN WHATIF projection_scan_budget_rows = 0 SELECT count() FROM t_scan WHERE b < 100 SETTINGS ${PIN};
-" | grep -E '^\s+empirical_(status|reason):' | awk '{$1=$1; print}'

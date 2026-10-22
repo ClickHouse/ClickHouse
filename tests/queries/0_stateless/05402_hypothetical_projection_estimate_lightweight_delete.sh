@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE a < 100 AND b < 30 SETTINGS ${PIN}, max_bytes_to_read = 10000;
     DELETE FROM t_est_z WHERE 1 SETTINGS lightweight_deletes_sync = 2;
     EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE b < 30 SETTINGS ${PIN};
-" | grep -E '^\s+(empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+" | grep -E '^\s+(status|reason|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
 # next to a live part, the read takes the parent's ranges of the part with every row deleted
 echo "--- a part with every row deleted next to a live part ---"

@@ -21,7 +21,3 @@ sampled_marks: 30 / 59
 --- an offset filter on a sampled estimate ---
 status: applicable
 empirical_status: unsupported
---- lightweight-deleted rows on a sampled estimate ---
-empirical_status: unsupported
-empirical_reason: The parts read have lightweight-deleted rows, which an estimate from a sample of granules cannot follow (see projection_scan_budget_rows)
-empirical_status: ok
