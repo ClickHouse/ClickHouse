@@ -43,6 +43,10 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageGenerateRandom.h>
 
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
+
 using namespace DB;
 namespace po = boost::program_options;
 
@@ -807,7 +811,7 @@ struct Operation
                 else
                     arg.type->insertDefaultInto(*mutable_column);
                 ColumnPtr column = std::move(mutable_column);
-                column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+                column = column->convertToFullIfWrapped();
 
                 auto serialization = arg.type->getDefaultSerialization();
                 serialization->serializeTextQuoted(*column, /*row_num=*/ 0, buf, FormatSettings());
@@ -914,7 +918,7 @@ struct Operation
                     /// Wrap the column value in array.
                     DataTypePtr array_type = std::make_shared<DataTypeArray>(arg.type);
                     array_type_name = array_type->getName();
-                    ColumnPtr column = arg.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+                    ColumnPtr column = arg.column->convertToFullIfWrapped();
                     MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
                     MutableColumnPtr offsets_column = ColumnArray::ColumnOffsets::create();
                     offsets_column->insert(UInt64(mutable_column->size()));
@@ -1168,6 +1172,24 @@ bool isDefaultOrDummyAt(const IColumn & column, size_t n)
     return column.isDefaultAt(n);
 }
 
+#if defined(ADDRESS_SANITIZER)
+/// ASan frees fake frames leaked by exceptions only at the next fake-frame allocation after `__asan_handle_no_return`,
+/// and only those below it. Called from the worker loop, this frees the frames of all previous iterations.
+NO_INLINE void allocateAsanFakeFrame()
+{
+    char anchor = 0;
+    __asan_address_is_poisoned(&anchor);
+}
+
+ALWAYS_INLINE void collectAsanFakeStackGarbage()
+{
+    __asan_handle_no_return();
+    allocateAsanFakeFrame();
+}
+#else
+void collectAsanFakeStackGarbage() {}
+#endif
+
 }
 
 struct FunctionsStressTestThread;
@@ -1309,6 +1331,8 @@ struct FunctionsStressTestThread
 
         while (!thread_should_stop.load(std::memory_order_relaxed))
         {
+            collectAsanFakeStackGarbage();
+
             /// Pick random function, biased toward less-tested functions.
             /// Pick two random candidates and choose the one with fewer iterations.
             size_t a = thread_local_rng() % testable_functions.size();
@@ -1995,7 +2019,7 @@ struct FunctionsStressTestThread
 
             /// Avoid insertRangeFrom between columns of different constness (if the function is
             /// being weird and returning different constness for different rows).
-            row_result = row_result->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+            row_result = row_result->convertToFullIfWrapped();
             if (!mutable_result)
             {
                 chassert(mutable_valid_args.empty());
