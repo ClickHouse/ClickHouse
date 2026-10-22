@@ -74,7 +74,9 @@ CREATE TABLE tab_reuse
     INDEX idx(str) TYPE text(tokenizer = array)
 )
 ENGINE = ReplacingMergeTree(version) ORDER BY id
-SETTINGS index_granularity = 8; -- 8-row marks, so one part holds enough marks to be cut into many read tasks
+SETTINGS index_granularity = 8, merge_max_block_size = 8192;
+-- 8-row marks, so one part holds enough marks to be cut into many read tasks. A compact part aligns its marks
+-- to the merge blocks, so a small randomized `merge_max_block_size` can leave it fewer than 512 marks.
 
 INSERT INTO tab_reuse SELECT number, 1, ['foo', 'bar', 'baz', 'foo'][number % 4 + 1] FROM numbers(4096);
 INSERT INTO tab_reuse VALUES (0, 2, 'foo_updated');
