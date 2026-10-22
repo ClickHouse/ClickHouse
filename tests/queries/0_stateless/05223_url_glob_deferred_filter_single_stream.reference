@@ -1,0 +1,7 @@
+--- one stream while the filter is deferred, not one per buffered address
+URL
+--- and the early survivors are read without asking the generator past the limit
+5
+--- the deferred filter still selects exactly the matching addresses
+5
+7

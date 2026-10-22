@@ -8,26 +8,20 @@ doc_type: 'reference'
 
 Un utilitaire offrant des opérations de type système de fichiers sur les disques ClickHouse. Il peut fonctionner en mode interactif ou non interactif.
 
-<div id="program-wide-options">
-  ## Options globales du programme
-</div>
+## Options globales du programme {#program-wide-options}
 
-* `--config-file, -C` -- chemin vers la config ClickHouse ; valeur par défaut : `/etc/clickhouse-server/config.xml`.
+* `--config-file, -C` -- chemin vers la config ClickHouse. Par défaut, le premier fichier existant parmi `/etc/clickhouse-server/config.xml`, `/etc/clickhouse-server/config.yaml` et `/etc/clickhouse-server/config.yml` est utilisé.
 * `--save-logs` -- consigner la progression des commandes invoquées dans `/var/log/clickhouse-server/clickhouse-disks.log`.
 * `--log-level` -- [type](/fr/reference/settings/server-settings/settings/other#logger) d’événements à consigner ; valeur par défaut : `none`.
 * `--disk` -- disque à utiliser pour les commandes `mkdir, move, read, write, remove`. Valeur par défaut : `default`.
 * `--query, -q` -- requête unique pouvant être exécutée sans lancer le mode interactif
 * `--help, -h` -- afficher toutes les options et commandes avec leur description
 
-<div id="lazy-initialization">
-  ## Initialisation différée
-</div>
+## Initialisation différée {#lazy-initialization}
 
 Tous les disques disponibles dans la configuration sont initialisés de manière différée. Cela signifie que l&#39;objet correspondant à un disque n&#39;est initialisé que lorsque ce disque est utilisé dans une commande. Cela permet de rendre l&#39;utilitaire plus robuste et d&#39;éviter de solliciter des disques décrits dans la configuration mais non utilisés par l&#39;utilisateur, qui pourraient échouer lors de l&#39;initialisation. Cependant, un disque doit être initialisé au démarrage de clickhouse-disks. Ce disque est spécifié à l&#39;aide du paramètre `--disk` en ligne de commande (valeur par défaut : `default`).
 
-<div id="default-disks">
-  ## Disques par défaut
-</div>
+## Disques par défaut {#default-disks}
 
 Après le lancement, deux disques non spécifiés dans la configuration sont disponibles pour l’initialisation.
 
@@ -35,17 +29,13 @@ Après le lancement, deux disques non spécifiés dans la configuration sont dis
 
 2. **Disque `default`** : ce disque est monté sur le système de fichiers local dans le répertoire spécifié par le paramètre `clickhouse/path` de la configuration (la valeur par défaut est `/var/lib/clickhouse`). Son chemin initial est défini sur `/`.
 
-<div id="clickhouse-disks-state">
-  ## État de clickhouse-disks
-</div>
+## État de clickhouse-disks {#clickhouse-disks-state}
 
 Pour chaque disque ajouté, l’utilitaire stocke le répertoire courant (comme dans un système de fichiers classique). L’utilisateur peut modifier le répertoire courant et basculer d’un disque à l’autre.
 
 L’état est indiqué dans une invite &quot;`disk_name`:`path_name`&quot;
 
-<div id="commands">
-  ## Commandes
-</div>
+## Commandes {#commands}
 
 Dans ce fichier de documentation, tous les arguments positionnels obligatoires sont notés `<parameter>`, et les arguments nommés sont notés `[--parameter value]`. Tous les paramètres positionnels peuvent également être indiqués sous forme de paramètres nommés avec le nom correspondant.
 

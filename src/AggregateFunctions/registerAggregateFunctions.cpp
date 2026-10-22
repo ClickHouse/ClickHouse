@@ -1,4 +1,5 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -102,10 +103,7 @@ void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & fa
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory);
 
-void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -122,7 +120,6 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
-void registerWindowFunctions(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -221,10 +218,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctDynamicTypes(factory);
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
         registerAggregateFunctionMergedJSONPatch(factory);
-        registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
-        registerAggregateFunctionTimeseriesGroupArray(factory);
-        registerAggregateFunctionTimeSeriesTopKMasks(factory);
 
         registerWindowFunctions(factory);
     }

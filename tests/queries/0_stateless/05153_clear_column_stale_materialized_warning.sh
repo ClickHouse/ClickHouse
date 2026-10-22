@@ -37,11 +37,14 @@ SELECT x, m1, m2 FROM t_stale_warning;
 
 # The interpreter runs inside the background mutate task, so its warning never reaches the client
 # that issued the ALTER. The logger name carries the table, which isolates the rows well enough.
+# The time bound keeps the scan under the \`max_rows_to_read\` limit of the test profile: in a long
+# parallel run \`system.text_log\` grows past it, and the logger name alone does not use the key.
 ${CLICKHOUSE_CLIENT} -q "
 SYSTEM FLUSH LOGS text_log;
 SELECT 'warned about m2', count() >= 1
 FROM system.text_log
-WHERE logger_name = 'MutationsInterpreter(${CLICKHOUSE_DATABASE}.t_stale_warning)'
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 600 SECOND
+  AND logger_name = 'MutationsInterpreter(${CLICKHOUSE_DATABASE}.t_stale_warning)'
   AND level = 'Warning'
   AND message LIKE 'MATERIALIZED column \'m2\' depends on both EPHEMERAL and regular%';
 

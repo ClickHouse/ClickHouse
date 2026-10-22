@@ -27,7 +27,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ErrnoException.h>
 
-#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -69,9 +68,6 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-#ifdef OS_LINUX
-    extern const int FILE_DOESNT_EXIST;
-#endif
     extern const int LOGICAL_ERROR;
 }
 
@@ -147,18 +143,22 @@ void signalHandler(int, siginfo_t * info, void * context)
         return;
 
 #ifdef OS_DARWIN
-    /// Re-verify after acquiring the latch. This closes the race window where
-    /// expected_responding_thread or sequence_num could change between the
-    /// pre-check above and latch acquisition (e.g. if this handler was delayed
-    /// past the wait timeout and the main thread moved on to another thread).
-    if (reinterpret_cast<uintptr_t>(pthread_self()) != expected_responding_thread.load(std::memory_order_acquire))
+    /// Load before the check below: a number loaded after it could already belong to the next thread.
+    int notification_num = sequence_num.load(std::memory_order_acquire);
+#endif
+
+    /// Re-check under the latch: a handler delayed past the reader's timeout must not overwrite the next thread's data.
+#ifdef OS_LINUX
+    const bool still_expected = notification_num == sequence_num.load(std::memory_order_acquire);
+#else
+    const bool still_expected = reinterpret_cast<uintptr_t>(pthread_self()) == expected_responding_thread.load(std::memory_order_acquire);
+#endif
+    if (!still_expected)
     {
         signal_latch.store(false, std::memory_order_release);
         errno = saved_errno;
         return;
     }
-    int notification_num = sequence_num.load(std::memory_order_acquire);
-#endif
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -267,10 +267,10 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
             readEscapedStringUntilEOL(thread_name, comm);
             comm.close();
         }
-        catch (const Exception & e)
+        catch (const ErrnoException & e)
         {
             /// Ignore TOCTOU error
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            if (e.getErrno() == ENOENT || e.getErrno() == ESRCH)
                 continue;
             throw;
         }
@@ -335,10 +335,10 @@ bool isSignalBlocked(UInt64 tid, int signal)
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
-    catch (const Exception & e)
+    catch (const ErrnoException & e)
     {
         /// Ignore TOCTOU error
-        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+        if (e.getErrno() != ENOENT && e.getErrno() != ESRCH)
             throw;
     }
 
@@ -442,9 +442,6 @@ public:
 protected:
     Chunk generate() override
     {
-#ifdef OS_LINUX
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
-#endif
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -574,19 +571,7 @@ protected:
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                        {
-                            const void * virtual_addr = frame_pointers[i];
-#ifdef OS_LINUX
-                            const auto * object = symbol_index.findObject(virtual_addr);
-                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
-#else
-                            /// On macOS, SymbolIndex uses absolute virtual addresses for symbols,
-                            /// so we store virtual addresses directly in the trace column.
-                            uintptr_t physical_addr = uintptr_t(virtual_addr);
-#endif
-                            arr.emplace_back(physical_addr);
-                        }
+                            arr.emplace_back(StackTrace::resolveAddressForStorage(frame_pointers[i]));
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);
@@ -749,7 +734,8 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
+            "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());

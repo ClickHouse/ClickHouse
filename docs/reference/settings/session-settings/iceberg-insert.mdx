@@ -15,11 +15,16 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
-<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+<SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "New setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "New setting."}]}]}/>
 
 Max bytes of iceberg parquet data file on insert operation.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Note that ClickHouse compares the limit against the
+uncompressed size of the data written into the file so far, while the Iceberg property targets the size of the
+resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file independently of its size.
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="lightweight_delete_mode">
-  ## lightweight_delete_mode
-</div>
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -29,9 +27,14 @@ Valores posibles:
 * `lightweight_update` - ejecutar la actualización ligera si es posible; de lo contrario, ejecutar `ALTER UPDATE`.
 * `lightweight_update_force` - ejecutar la actualización ligera si es posible; de lo contrario, generar una excepción.
 
-<div id="lightweight_deletes_sync">
-  ## lightweight_deletes_sync
-</div>
+En `DELETE FROM ... ON CLUSTER`, cada host que ejecuta la operación toma el modo de su propia configuración, por lo que
+los hosts cuyos perfiles definen valores predeterminados distintos pueden ejecutar la eliminación en modos diferentes. Un segmento
+replicado se ejecuta en una sola réplica, así que en ese caso es la configuración de dicha réplica la que determina el modo. Si se establece
+en la sesión de la consulta iniciadora, este valor tiene prioridad, ya que la entrada de DDL distribuido incluye los cambios de
+sesión a partir de `distributed_ddl_entry_format_version` 2, requisito que cumple el valor predeterminado.
+Un host que aplica restricciones a esta configuración reajusta el valor dentro de sus límites.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -41,12 +44,12 @@ Igual que [`mutations_sync`](/es/reference/settings/session-settings/mutations#m
 
 Valores posibles:
 
-| Valor | Descripción                                                                                                                                                  |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `0`   | Las mutaciones se ejecutan de forma asíncrona.                                                                                                               |
-| `1`   | La consulta espera a que las eliminaciones ligeras finalicen en el servidor actual.                                                                          |
-| `2`   | La consulta espera a que las eliminaciones ligeras finalicen en todas las réplicas (si existen).                                                             |
-| `3`   | La consulta espera solo a las réplicas activas. Solo se admite para `SharedMergeTree`. En `ReplicatedMergeTree`, se comporta igual que `mutations_sync = 2`. |
+| Valor | Descripción                                                                                                                            |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`   | Las mutaciones se ejecutan de forma asíncrona.                                                                                         |
+| `1`   | La consulta espera a que las eliminaciones ligeras finalicen en el servidor actual.                                                    |
+| `2`   | La consulta espera a que las eliminaciones ligeras finalicen en todas las réplicas (si existen).                                       |
+| `3`   | La consulta espera solo a las réplicas activas. Las réplicas inactivas aplican las eliminaciones ligeras cuando pasan a estar activas. |
 
 **Véase también**
 

@@ -1,6 +1,3 @@
--- Tags: no-darwin, no-old-analyzer
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- A step with a per-block or non-deterministic function (`rowNumberInAllBlocks` here) must run
 -- on a single node: split across N nodes each one counts its own stream from zero, so a filter
@@ -20,7 +17,7 @@ INSERT INTO t_nondet SELECT number, number * 2 FROM numbers(100000);
 
 SELECT '-- rowNumberInAllBlocks filter runs on a single node';
 SELECT count() FROM (SELECT * FROM t_nondet WHERE rowNumberInAllBlocks() < 1000)
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- Baseline without Cascades';
 SELECT count() FROM (SELECT * FROM t_nondet WHERE rowNumberInAllBlocks() < 1000)
