@@ -35,6 +35,18 @@ SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') > 0, countIf(explain 
 FROM (EXPLAIN description = 0 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 1))
 SETTINGS parallel_replicas_plan_based = 1;
 
+-- The same for a subquery that builds an `IN` set: it has its own context too, and its own planner,
+-- so the implementation has to reach it before the set is built.
+SELECT '-- query-based, IN set';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0, countIf(explain ILIKE '%ReadFromParallelReplicas%') = 0
+FROM (EXPLAIN description = 0 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 1))
+SETTINGS parallel_replicas_plan_based = 0;
+
+SELECT '-- plan-based, IN set';
+SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') > 0, countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') = 0
+FROM (EXPLAIN description = 0 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 0))
+SETTINGS parallel_replicas_plan_based = 1;
+
 SELECT '-- results';
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 1)
 SETTINGS parallel_replicas_plan_based = 0;

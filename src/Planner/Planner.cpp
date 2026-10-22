@@ -2921,6 +2921,10 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
+    /// Before the sets and the materialized CTEs are collected: they are planned by their own planners,
+    /// from the context each subquery carries.
+    setParallelReplicasImplementationForSubqueries(query_tree, settings[Setting::parallel_replicas_plan_based]);
+
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 

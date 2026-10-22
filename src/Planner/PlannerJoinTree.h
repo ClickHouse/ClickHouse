@@ -37,6 +37,10 @@ struct JoinTreeQueryPlan
 /// It has to run before the parallel-replicas compatibility checks of `Planner::buildPlanForQueryNode`:
 /// those checks throw with `enable_parallel_replicas = 2`, and a query for which parallel replicas are
 /// already meant to be off must not surface a parallel-replicas-only exception.
+/// Give every subquery of `node` the implementation of parallel replicas the query is planned with, so
+/// one query does not execute with both.
+void setParallelReplicasImplementationForSubqueries(const QueryTreeNodePtr & node, bool plan_based);
+
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context);
 
 /// Build JOIN TREE query plan for query node
