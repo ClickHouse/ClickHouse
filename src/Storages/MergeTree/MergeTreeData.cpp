@@ -1292,6 +1292,15 @@ void MergeTreeData::checkProperties(
     /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
+        /// Whether the part writer compresses the stream with a lossy codec.
+        auto is_lossy_stream = [](const ISerialization::SubstreamPath & substream_path, const ColumnDescription & column)
+        {
+            if (!ISerialization::isSpecialCompressionAllowed(substream_path))
+                return false;
+            auto codec = getSubstreamCodecDescription(substream_path, column);
+            return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+        };
+
         Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
         const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
         key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
@@ -1310,10 +1319,8 @@ void MergeTreeData::checkProperties(
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
-                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-                    return;
-                if (auto codec = getSubstreamCodecDescription(substream_path, *column))
-                    is_lossy = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+                if (!is_lossy)
+                    is_lossy = is_lossy_stream(substream_path, *column);
             };
             /// The serialization of a subcolumn enumerates its streams with the full path from the column, as the writer does.
             const auto & type_in_storage = written_column->getTypeInStorage();
@@ -1327,6 +1334,25 @@ void MergeTreeData::checkProperties(
                     "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
                     "with a lossy codec",
                     backQuoteIfNeed(name));
+        }
+
+        /// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
+        for (const auto & column : new_metadata.columns)
+        {
+            if (!column.codec && column.subcolumn_codecs.empty())
+                continue;
+
+            bool is_lossy = false;
+            ISerialization::StreamCallback callback = [&](const auto & substream_path)
+            {
+                if (!is_lossy && ISerialization::isLowCardinalityDictionarySubcolumn(substream_path))
+                    is_lossy = is_lossy_stream(substream_path, column);
+            };
+            column.type->getDefaultSerialization()->enumerateStreams(callback, column.type);
+
+            if (is_lossy)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
         }
     }
 
