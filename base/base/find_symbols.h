@@ -1,9 +1,11 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
 #include <array>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
 #include <string_view>
 
 #if defined(__SSE2__)
@@ -77,7 +79,7 @@ using UInt8x32 = uint8_t __attribute__((vector_size(32)));
 inline UInt8x32 load_avx2_bytes(const char * pos)
 {
     UInt8x32 bytes;
-    memcpy(&bytes, pos, sizeof(bytes));
+    std::memcpy(&bytes, pos, sizeof(bytes));
     return bytes;
 }
 
@@ -102,6 +104,8 @@ inline bool avx2_all(UInt8x32 matches)
     return lanes[0] == all_ones && lanes[1] == all_ones && lanes[2] == all_ones && lanes[3] == all_ones;
 }
 
+/// Equality produces 0xff per matching byte. Scan the lanes in memory order
+/// and convert the first set bit to a byte offset.
 inline size_t avx2_first(UInt8x32 matches)
 {
     const auto lanes = std::bit_cast<std::array<uint64_t, 4>>(matches);
@@ -460,6 +464,7 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
         if (static_cast<size_t>(end - begin) >= avx2_threshold) [[unlikely]]
         {
             constexpr size_t prefix_size = 512;
+            static_assert(prefix_size % 16 == 0); /// The prefix uses 16-byte SSE2 loads.
             const char * const prefix_end = begin + prefix_size;
 
 #if defined(__clang__)
