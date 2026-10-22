@@ -223,16 +223,22 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
 namespace
 {
 
+/// Levels blocked by `MemoryTrackerBlockerInThread` do not count allocations, so watch the first one that does.
+MemoryTracker * getCountingMemoryTracker()
+{
+    auto * memory_tracker = CurrentThread::getMemoryTracker();
+    while (memory_tracker && MemoryTrackerBlockerInThread::isBlocked(memory_tracker->level))
+        memory_tracker = memory_tracker->getParent();
+    return memory_tracker;
+}
+
 /// Copying a state may allocate with `operator new`, which the memory tracker counts but does not refuse.
 class StateCopyMemoryLimitChecker
 {
 public:
     StateCopyMemoryLimitChecker()
-        : memory_tracker(CurrentThread::getMemoryTracker())
+        : memory_tracker(getCountingMemoryTracker())
     {
-        /// Levels blocked by `MemoryTrackerBlockerInThread` do not count allocations, so watch the first one that does.
-        while (memory_tracker && MemoryTrackerBlockerInThread::isBlocked(memory_tracker->level))
-            memory_tracker = memory_tracker->getParent();
         if (memory_tracker)
             memory_at_last_check = memory_tracker->get();
     }
@@ -253,6 +259,24 @@ private:
     MemoryTracker * memory_tracker;
     Int64 memory_at_last_check = 0;
 };
+
+/// Compares with the previous call on this thread, to also see the copies made between calls, e.g. by merges into the new state.
+void checkMemoryLimitIfMovedSincePreviousCall()
+{
+    thread_local const MemoryTracker * previous_memory_tracker = nullptr;
+    thread_local Int64 previous_memory = 0;
+
+    const auto * memory_tracker = getCountingMemoryTracker();
+    if (!memory_tracker)
+        return;
+    Int64 memory = memory_tracker->get();
+    if (memory_tracker != previous_memory_tracker || memory != previous_memory)
+    {
+        previous_memory_tracker = memory_tracker;
+        previous_memory = memory;
+        CurrentMemoryTracker::check();
+    }
+}
 
 }
 
@@ -641,6 +665,8 @@ void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
+    /// Before the copy, so that a refusal leaves the column unchanged.
+    checkMemoryLimitIfMovedSincePreviousCall();
     /// ensureOwnership() will execute in insertDefault()
     insertDefault();
     insertMergeFrom(place);

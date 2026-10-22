@@ -7,6 +7,9 @@
 -- `materialize` repeats one state, and `finalizeAggregation` makes the column own all of them.
 SELECT finalizeAggregation(materialize(initializeAggregation('argMaxState', 1, toFixedString('\0', 1048577)))) FROM numbers(300) SETTINGS max_memory_usage = '100M', max_block_size = 65536 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
+-- Adding states copies the left one into every row, then merges the right one into the copy.
+SELECT materialize(initializeAggregation('argMaxState', 0, tuple(''))) + initializeAggregation('argMaxState', 1, tuple(repeat('x', 1000000))) FROM numbers(300) SETTINGS max_memory_usage = '100M', max_block_size = 65536 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
+
 -- With an explicit default, every row outside the frame gets its own copy of the default state.
 SELECT lagInFrame(s, 1000, s) OVER () FROM (SELECT initializeAggregation('anyLastState', toNullable(toFixedString('\0', 1048577))) AS s FROM numbers(300)) SETTINGS max_memory_usage = '100M', max_block_size = 65536 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
