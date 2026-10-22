@@ -268,6 +268,8 @@ private:
     /// Set by `checkCanBeDropped`: the external files the dropping user is allowed to delete.
     mutable std::mutex external_files_drop_authorized_mutex;
     mutable std::unordered_set<String> external_files_drop_authorized TSA_GUARDED_BY(external_files_drop_authorized_mutex);
+    /// The dropping session's `s3_allow_server_credentials_in_user_queries`, applied to the clients that delete those files.
+    mutable bool external_files_drop_allow_server_credentials TSA_GUARDED_BY(external_files_drop_authorized_mutex) = false;
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     MultiVersion<String> explicit_metadata_file_path;

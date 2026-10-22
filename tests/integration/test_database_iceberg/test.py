@@ -1902,6 +1902,39 @@ def test_drop_table_purge_requires_write_grant_on_deleted_external_file(started_
     catalog.drop_table(f"{root_namespace}.{table_name}")
 
 
+def test_drop_table_purge_checks_catalog_head_of_cached_table(started_cluster):
+    # A cached table checks the files of the catalog head that the purge deletes, not of the head it was cached at.
+    node = started_cluster.instances["node2"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_purge_cached_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    external_key = f"{test_ref}_external/data.parquet"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"allow_experimental_iceberg_compaction": 1}
+    )
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+    assert node.query(f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    buffer = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+    _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+    catalog.load_table(f"{root_namespace}.{table_name}").add_files([f"s3://warehouse-rest/{external_key}"])
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+    error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
+    assert "Not enough privileges to drop the Iceberg table" in error, error
+    assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+    node.query(f"DROP USER {user}")
+    catalog.drop_table(f"{root_namespace}.{table_name}")
+
+
 def test_drop_table_purge_query_setting(started_cluster):
     # node1 has `iceberg_delete_data_on_drop` disabled in its profile.
     node = started_cluster.instances["node1"]

@@ -13,6 +13,7 @@ from .external_paths_utils import (
     create_and_upload_table,
     ALL_ROWS,
     _create_iceberg_s3_table,
+    external_bucket,
     _download_table_for_relocation,
     _external_data_files_in_another_bucket,
     _external_data_files_in_the_same_bucket,
@@ -38,6 +39,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.d/users.xml",
                 "configs/users.d/iceberg_delete_data_on_drop.xml",
+                "configs/users.d/allow_server_credentials.xml",
             ],
             with_minio=True,
             stay_alive=True,
@@ -154,6 +156,39 @@ def test_delete_data_on_drop_requires_write_grant_on_external_files(started_clus
 
     assert count_objects(f"{base_path}/") == 0
     assert count_objects(external_prefix) == 0
+
+    instance.query(f"DROP USER {user}")
+
+
+def test_delete_data_on_drop_keeps_server_credentials_restriction(started_cluster):
+    # The default profile allows server credentials, but the dropping user may not use them for the external endpoint.
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_drop_server_creds_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+    data_bucket = external_bucket(started_cluster)
+    endpoint = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+
+    create_and_upload_table(started_cluster, TABLE_NAME)
+    base_path = relocate_data_files_to_bucket(started_cluster, TABLE_NAME, data_bucket, endpoint=endpoint)
+    external_prefix = f"{base_path}/data/"
+
+    def count_objects(bucket, prefix):
+        return sum(1 for _ in started_cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True))
+
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+    assert count_objects(data_bucket, external_prefix) > 0
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user} SETTINGS s3_allow_server_credentials_in_user_queries = 0")
+    instance.query(f"GRANT DROP TABLE ON {TABLE_NAME} TO {user}")
+    instance.query(f"GRANT WRITE ON S3('{endpoint}/{data_bucket}/{external_prefix}.*') TO {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+
+    assert count_objects(started_cluster.minio_bucket, f"{base_path}/") == 0
+    assert count_objects(data_bucket, external_prefix) > 0
+    log = instance.grep_in_log("not allowed to use the server's own credentials")
+    assert any(base_path in line and "Cannot enumerate the files" in line for line in log.splitlines()), log
 
     instance.query(f"DROP USER {user}")
 
