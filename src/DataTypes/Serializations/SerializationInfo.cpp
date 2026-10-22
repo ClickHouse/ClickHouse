@@ -102,8 +102,9 @@ void SerializationInfo::Data::add(const Data & other)
     /// The default value of `exact_num_defaults` is false and would otherwise pin
     /// the merged result to non exact even when every input is exact.
     bool was_empty = (num_rows == 0);
-    num_rows += other.num_rows;
-    num_defaults += other.num_defaults;
+    /// The counts are modular, like in `remove`.
+    num_rows = common::addIgnoreOverflow(num_rows, other.num_rows);
+    num_defaults = common::addIgnoreOverflow(num_defaults, other.num_defaults);
     exact_num_defaults = was_empty ? other.exact_num_defaults : (exact_num_defaults && other.exact_num_defaults);
 }
 
