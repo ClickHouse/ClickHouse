@@ -5773,9 +5773,9 @@ void checkDefaultsOfSortingKeyColumns(
     const auto & old_columns = old_metadata.columns;
     const auto & new_columns = new_metadata.columns;
 
-    auto name_in_storage = [&](const String & name)
+    auto name_in_storage = [&](const String & name, const ColumnsDescription & columns)
     {
-        const auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
         return column ? column->getNameInStorage() : name;
     };
 
@@ -5800,7 +5800,7 @@ void checkDefaultsOfSortingKeyColumns(
     auto add_stored_in_every_part = [&](const Names & names)
     {
         for (const auto & name : names)
-            stored_in_every_part.insert(name_in_storage(name));
+            stored_in_every_part.insert(name_in_storage(name, new_columns));
     };
     add_stored_in_every_part(new_metadata.getColumnsRequiredForPrimaryKey());
     add_stored_in_every_part(new_metadata.getColumnsRequiredForPartitionKey());
@@ -5809,32 +5809,55 @@ void checkDefaultsOfSortingKeyColumns(
 
     /// Rows with equal values of the sorting key elements before a column are adjacent in a part, and for the
     /// identifiers among those elements collected here equal means identical.
-    std::unordered_map<String, NameSet> identifiers_before;
-    if (const auto & sorting_key_ast = new_metadata.sorting_key.expression_list_ast)
+    auto collect_identifiers_before = [&](const StorageInMemoryMetadata & metadata)
     {
+        std::unordered_map<String, NameSet> identifiers_before;
+        const auto & sorting_key_ast = metadata.sorting_key.expression_list_ast;
+        if (!sorting_key_ast)
+            return identifiers_before;
+
         NameSet identifiers;
         for (const auto & element : sorting_key_ast->children)
         {
             IdentifierNameSet element_names;
             element->collectIdentifierNames(element_names);
             for (const auto & name : element_names)
-                identifiers_before.try_emplace(name_in_storage(name), identifiers);
+                identifiers_before.try_emplace(name_in_storage(name, metadata.columns), identifiers);
 
             const auto * identifier = element->as<ASTIdentifier>();
             if (!identifier)
                 continue;
 
-            const auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier->name());
+            const auto column = metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier->name());
             if (column && !comparisonCanMergeDistinctValues(*column->type)
                 && !anyInTypeTree(*column->type, [](const IDataType & type) { return type.isNullable(); }))
                 identifiers.insert(identifier->name());
         }
-    }
+        return identifiers_before;
+    };
+    const auto new_identifiers_before = collect_identifiers_before(new_metadata);
+    const auto old_identifiers_before = collect_identifiers_before(old_metadata);
+
+    auto keeps_order = [&](
+        const StorageInMemoryMetadata & metadata, const std::unordered_map<String, NameSet> & identifiers_before, const String & column_name)
+    {
+        const auto column_default = metadata.columns.getDefault(column_name);
+        if (!column_default
+            || (column_default->kind != ColumnDefaultKind::Default && column_default->kind != ColumnDefaultKind::Materialized))
+            return true;
+
+        const auto it = identifiers_before.find(column_name);
+        const auto sources = analyzeExpressionSources(
+            column_default->expression, metadata.columns, context, /*keep_alias_columns=*/ false, /*check_determinism=*/ true);
+        return sources.is_deterministic
+            && std::ranges::all_of(
+                   sources.columns, [&](const String & name) { return it != identifiers_before.end() && it->second.contains(name); });
+    };
 
     NameSet checked;
     for (const auto & key_column : new_metadata.getColumnsRequiredForSortingKey())
     {
-        const String column_name = name_in_storage(key_column);
+        const String column_name = name_in_storage(key_column, new_columns);
         if (stored_in_every_part.contains(column_name) || !checked.insert(column_name).second)
             continue;
 
@@ -5858,7 +5881,7 @@ void checkDefaultsOfSortingKeyColumns(
             {
                 for (const auto & name : *names)
                 {
-                    const String dependency = name_in_storage(name);
+                    const String dependency = name_in_storage(name, new_columns);
                     if (!visited.insert(dependency).second)
                         continue;
 
@@ -5879,10 +5902,11 @@ void checkDefaultsOfSortingKeyColumns(
             through = fmt::format(" through column {}", backQuoteIfNeed(*it));
         }
 
-        const auto & allowed = identifiers_before[column_name];
-        const auto sources = analyzeExpressionSources(
-            column_default->expression, new_columns, context, /*keep_alias_columns=*/ false, /*check_determinism=*/ true);
-        if (sources.is_deterministic && std::ranges::all_of(sources.columns, [&](const String & name) { return allowed.contains(name); }))
+        if (keeps_order(new_metadata, new_identifiers_before, column_name))
+            continue;
+
+        /// Refusing to change an expression that already breaks the rule, like one from CREATE, protects nothing.
+        if (!keeps_order(old_metadata, old_identifiers_before, column_name))
             continue;
 
         throw Exception(

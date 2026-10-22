@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS t_v;
 DROP TABLE IF EXISTS t_r;
 DROP TABLE IF EXISTS t_c;
 DROP TABLE IF EXISTS t_sub;
+DROP TABLE IF EXISTS t_s;
 
 CREATE TABLE t (a UInt32, x UInt32, y UInt32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t VALUES (1, 30, 10), (1, 10, 1);
@@ -105,6 +106,14 @@ ALTER TABLE t_r MODIFY COLUMN d UInt8 DEFAULT x % 2;
 CREATE TABLE t_c (a UInt32, x UInt32, s Int8 DEFAULT if(x > 0, 1, -1)) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s) PRIMARY KEY a;
 ALTER TABLE t_c MODIFY COLUMN x UInt32 DEFAULT 5;
 
+-- An expression that already breaks the rule, like one from CREATE, can still change.
+CREATE TABLE t_s (a UInt32, k UInt32 DEFAULT x, x UInt32) ENGINE = MergeTree ORDER BY (a, k) PRIMARY KEY a;
+INSERT INTO t_s (a, k, x) VALUES (1, 10, 30), (1, 20, 10);
+ALTER TABLE t_s MODIFY COLUMN k UInt32 DEFAULT x + 1;
+ALTER TABLE t_s MODIFY COLUMN x UInt32 DEFAULT 3;
+INSERT INTO t_s (a) VALUES (1);
+SELECT groupArray((a, k)) FROM (SELECT a, k FROM t_s ORDER BY a, k);
+
 -- A sorting key column used through a subcolumn.
 CREATE TABLE t_sub (a UInt32, x UInt32) ENGINE = MergeTree ORDER BY a;
 ALTER TABLE t_sub ADD COLUMN t Tuple(p UInt32), MODIFY ORDER BY (a, t.p);
@@ -123,3 +132,4 @@ DROP TABLE t_v;
 DROP TABLE t_r;
 DROP TABLE t_c;
 DROP TABLE t_sub;
+DROP TABLE t_s;
