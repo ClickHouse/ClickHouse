@@ -440,7 +440,6 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
@@ -462,7 +461,7 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     /// Add storage limits.
     for (const auto & processor : pipe.getProcessors())
-        processor->setStorageLimits(storage_limits);
+        processor->setStorageLimits(query_info.storage_limits);
 
     /// Add to processors to get processor info through explain pipeline statement.
     for (const auto & processor : pipe.getProcessors())
