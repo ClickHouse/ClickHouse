@@ -986,10 +986,42 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         std::vector<std::pair<String, StorageMaterializedPostgreSQL *>> tables_without_nested;
         std::optional<std::set<std::pair<String, String>>> published;
 
+        auto snapshot_positions = loadSnapshotPositions();
+
+        /// A snapshot position of a table that is not replicated is left by an `ATTACH TABLE` that did not complete (the
+        /// server was terminated before `materialized_postgresql_tables_list` was updated), or by a `DETACH TABLE ...
+        /// PERMANENTLY` that did not complete after it was updated. Finish the rollback, or the detach: the nested table
+        /// would otherwise hide the table from a retried `ATTACH TABLE`, and the publication would stream its changes.
+        for (const auto & [table_name, position] : snapshot_positions)
+        {
+            if (materialized_storages.contains(table_name))
+                continue;
+
+            auto nested_context = StorageMaterializedPostgreSQL::makeNestedTableContext(getContext()->getGlobalContext());
+            const StorageID nested_table_id(current_database_name, table_name);
+            if (DatabaseCatalog::instance().tryGetTable(nested_table_id, nested_context))
+            {
+                LOG_INFO(log, "Table {}.{} is not replicated, but has a nested table left by an interrupted `ATTACH TABLE` "
+                         "or `DETACH TABLE ... PERMANENTLY`, it will be dropped", postgres_database, table_name);
+                /// The drop query is executed in a copy of the first context, which must be internal too: otherwise the
+                /// database does not find the nested table of a table that it does not replicate.
+                InterpreterDropQuery::executeDropQuery(
+                    ASTDropQuery::Kind::Drop, nested_context, nested_context, nested_table_id,
+                    /* sync */ true, /* ignore_sync_setting */ true);
+            }
+
+            if (!published)
+                published = fetchPublishedTablePairs(tx);
+            if (published->contains(getNormalizedSchemaAndTableName(table_name)))
+            {
+                removeTableFromPublication(tx, table_name);
+                published->erase(getNormalizedSchemaAndTableName(table_name));
+            }
+        }
+
         /// Forget the snapshot positions of the completed snapshots that the replication slot has durably passed
         /// (`start_lsn` is its `confirmed_flush_lsn`), and the ones of the tables that are not replicated anymore.
         /// The position of an interrupted snapshot is kept regardless of the replication slot: its table is loaded again.
-        auto snapshot_positions = loadSnapshotPositions();
         if (std::erase_if(snapshot_positions, [&](const auto & position)
             {
                 return (position.second.completed
@@ -2109,8 +2141,9 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         /// See `snapshot_positions_path`. The snapshot is marked incomplete before the table is published: otherwise, after
         /// a restart in between, a published table with an empty nested table would be resumed. The snapshot position is
         /// not known until the temporary replication slot is created. An entry left by a failure is dropped on the next
-        /// attach if the table is not replicated then. Otherwise (it is discovered from `materialized_postgresql_schema_list`),
-        /// the nested table is loaded again, because its snapshot is not marked completed.
+        /// attach if the table is not replicated then, together with its nested table and publication entry. Otherwise
+        /// (it is discovered from `materialized_postgresql_schema_list`), the nested table is loaded again, because its
+        /// snapshot is not marked completed.
         auto snapshot_positions = loadSnapshotPositions();
         snapshot_positions[postgres_table_name] = SnapshotPosition{};
         saveSnapshotPositions(snapshot_positions);

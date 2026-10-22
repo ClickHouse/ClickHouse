@@ -3884,11 +3884,15 @@ def test_attach_table_snapshot_interrupted_by_server_termination(started_cluster
     pg_manager.drop_materialized_db(mat_db)
 
 
-def test_detach_permanently_rejects_last_replicated_table(started_cluster):
-    # A database without replicated tables could not start again, so detaching the last table is refused.
-    tables = ["detach_last_a", "detach_last_b"]
-    mat_db = "detach_last_database"
-    for table in tables:
+def test_attach_table_snapshot_interrupted_with_tables_list(started_cluster):
+    # Like `test_attach_table_snapshot_interrupted_by_server_termination`, but with
+    # `materialized_postgresql_tables_list`, which does not list the table whose `ATTACH TABLE` did not complete.
+    # Its orphaned nested table is dropped on attach, so that `ATTACH TABLE` can be retried.
+    table_a = "interrupted_list_a"
+    table_b = "interrupted_list_b"
+    mat_db = "interrupted_list_database"
+    failpoint = "materialized_postgresql_pause_before_attach_table_snapshot"
+    for table in (table_a, table_b):
         pg_manager.create_postgres_table(table)
         instance.query(
             f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 10)"
@@ -3898,13 +3902,125 @@ def test_detach_permanently_rejects_last_replicated_table(started_cluster):
         port=started_cluster.postgres_port,
         materialized_database=mat_db,
         settings=[
-            f"materialized_postgresql_tables_list = '{','.join(tables)}'",
+            f"materialized_postgresql_tables_list = '{table_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+
+    def attach_table():
+        try:
+            instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
+        except Exception:
+            pass  # The server is terminated while the query runs.
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    attach_thread = threading.Thread(target=attach_table)
+    attach_thread.start()
+    instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    instance.stop_clickhouse(kill=True)
+    attach_thread.join()
+    instance.start_clickhouse()
+
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table_b}"))
+
+    instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(10, 10)"
+    )
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_table_keeps_transaction_committed_at_snapshot_position(started_cluster):
+    # A transaction that writes before `ATTACH TABLE` creates the temporary replication slot and commits while
+    # the slot waits for it is not in the snapshot, although its change precedes the snapshot position in WAL.
+    # It must be applied from the replication stream, because it commits at the snapshot position.
+    table_a = "commit_position_a"
+    table_b = "commit_position_b"
+    mat_db = "commit_position_database"
+    for table in (table_a, table_b):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 10)"
+        )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+
+    # The table is published before the transaction writes, so that its change is in the replication stream.
+    cursor = pg_manager.get_db_cursor()
+    publication = get_single_publication(cursor)
+    cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY {table_b}')
+
+    writer = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    writer_cursor = writer.cursor()
+    writer_cursor.execute(f"INSERT INTO {table_b} VALUES (10, 10)")
+
+    attach_thread = threading.Thread(
+        target=lambda: instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
+    )
+    attach_thread.start()
+    # The temporary replication slot cannot export its snapshot until the open transaction ends.
+    wait_for_replication_slot(cursor, expected_count=2)
+    writer.commit()
+    writer.close()
+    attach_thread.join()
+
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(11, 19) AS i")
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_detach_permanently_rejects_last_replicated_table(started_cluster):
+    # A database without replicated tables could not start again, so detaching the last table is refused.
+    # A listed table whose first snapshot failed (it has no primary key) has no nested table and does not count.
+    tables = ["detach_last_a", "detach_last_b"]
+    unmaterialized = "detach_last_no_primary_key"
+    mat_db = "detach_last_database"
+    for table in tables:
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 10)"
+        )
+    pg_manager.create_postgres_table(
+        unmaterialized, template=postgres_table_template_without_primary_key
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{','.join(tables + [unmaterialized])}'",
             "materialized_postgresql_backoff_min_ms = 100",
             "materialized_postgresql_backoff_max_ms = 100",
         ],
     )
     for table in tables:
         check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{unmaterialized}"))
 
     instance.query(f"DETACH TABLE {mat_db}.{tables[0]} PERMANENTLY")
     error = instance.query_and_get_error(
