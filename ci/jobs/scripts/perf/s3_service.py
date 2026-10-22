@@ -31,20 +31,16 @@ def endpoint_url(namespace):
     return f"http://localhost:{S3_PORT}/{S3_BUCKET}/perf/{namespace}/"
 
 
-def iceberg_s3_database_ddl_commands(server_path):
-    """Attach the performance job's shared S3 fixture on one server."""
-    metadata = f"{server_path}/db/metadata"
+def iceberg_s3_database_queries():
+    """Queries that create the performance job's shared S3 fixture as a database on one running server. Idempotent."""
     directory, tables = ICEBERG_DATASETS[READ_DATASET]
-    commands = [
-        f"mkdir -p {metadata}/{READ_DATASET_DATABASE}",
-        f'echo "ATTACH DATABASE {READ_DATASET_DATABASE} ENGINE=Ordinary" > {metadata}/{READ_DATASET_DATABASE}.sql',
-    ]
+    queries = [f"CREATE DATABASE IF NOT EXISTS {READ_DATASET_DATABASE}"]
     for table in tables:
-        commands.append(
-            f'echo "ATTACH TABLE {table} ENGINE = IcebergS3(perf_s3_data, filename = '
-            f"'{directory}/{table}/')\" > {metadata}/{READ_DATASET_DATABASE}/{table}.sql"
+        queries.append(
+            f"CREATE TABLE IF NOT EXISTS {READ_DATASET_DATABASE}.{table} "
+            f"ENGINE = IcebergS3(perf_s3_data, filename = '{directory}/{table}/')"
         )
-    return commands
+    return queries
 
 
 def _client():

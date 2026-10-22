@@ -59,6 +59,14 @@
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     <columns_cache_size>0</columns_cache_size>
     <!--
+        Disable the query condition cache for every query, also for the queries that set
+        `use_query_condition_cache = 1` themselves (it is disabled by default in
+        perf-comparison-tweaks-users.xml): it is keyed by the UUID of the table, which the tables of
+        the tests have in `Atomic` databases, and a query served from it after the prewarm run
+        measures the cache, not the code.
+    -->
+    <query_condition_cache_size>0</query_condition_cache_size>
+    <!--
         The tables of the tests live in `Atomic` databases, which keep the data of a dropped table
         for this long; the tests create and drop large tables, so free their disk space at once.
     -->

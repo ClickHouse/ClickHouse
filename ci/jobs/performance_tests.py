@@ -25,7 +25,7 @@ from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
-    iceberg_database_ddl_commands,
+    iceberg_database_queries,
 )
 from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
@@ -2518,6 +2518,16 @@ def stage_datasets(server_db):
             shutil.rmtree(metadata / database)
 
 
+def create_iceberg_databases(port, server_path, with_s3_read_dataset):
+    """Create the Iceberg datasets as databases on one server, so tests read tpch_ice10.<table> with no create_query of their own."""
+    client = _perf_client(port)
+    queries = iceberg_database_queries(server_path)
+    if with_s3_read_dataset:
+        queries += s3_service.iceberg_s3_database_queries()
+    for query in queries:
+        Shell.check(f"{client} --query {quote(query)}", strict=True, verbose=True)
+
+
 def attach_datasets(port, server_db):
     """Attach the staged datasets of one server, see DATASETS_STAGING_DIR. Re-entrant: an attached table is skipped."""
     client = _perf_client(port)
@@ -2570,7 +2580,7 @@ def populate_data(port):
     Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
 
 
-def populate_data_both(left_port, right_port):
+def populate_data_both(left_port, right_port, with_s3_read_dataset):
     # Populate both servers in parallel. Each writes its own parts, so a PR that
     # changes a write-time default is reflected only on the right (patched) side.
     errors = []
@@ -2578,6 +2588,7 @@ def populate_data_both(left_port, right_port):
     def run(port, server_path):
         try:
             attach_datasets(port, f"{server_path}/db")
+            create_iceberg_databases(port, server_path, with_s3_read_dataset)
             populate_data(port)
         except Exception as e:  # noqa: BLE001
             print(f"populate_data failed on port {port}: {e}")
@@ -2974,12 +2985,6 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
-        # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
-        commands += iceberg_database_ddl_commands(perf_left)
-        commands += iceberg_database_ddl_commands(perf_right)
-        if needs_s3_read_dataset:
-            commands += s3_service.iceberg_s3_database_ddl_commands(perf_left)
-            commands += s3_service.iceberg_s3_database_ddl_commands(perf_right)
 
         if needs_s3:
             commands.append(prepare_s3)
@@ -3067,7 +3072,7 @@ def main():
 
         def populate():
             return populate_data_both(
-                CHServer.LEFT_SERVER_PORT, CHServer.RIGHT_SERVER_PORT
+                CHServer.LEFT_SERVER_PORT, CHServer.RIGHT_SERVER_PORT, needs_s3_read_dataset
             )
 
         results.append(Result.from_commands_run(name="Populate", command=[populate]))
