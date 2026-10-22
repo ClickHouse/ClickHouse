@@ -316,6 +316,8 @@ public:
 
     bool isFileEngine(bool as_alias = false) const;
 
+    bool isSummingMergeTree(bool as_alias = false) const;
+
     bool isJoinEngine(bool as_alias = false) const;
 
     bool isNullEngine(bool as_alias = false) const;

@@ -1521,7 +1521,13 @@ void QueryOracle::generateImportQuery(
     if (can_test_oracle_result)
     {
         /// Ensure deleted mask and patch parts are applied
-        finishSettings(nins->mutable_setting_values());
+        SettingValues * svs = nins->mutable_setting_values();
+        finishSettings(svs);
+        /// `SELECT ... FINAL` keeps all-zero `SummingMergeTree` rows that a merge on insert would drop,
+        /// so reload exactly the dumped rows.
+        SetValue * sv = svs->add_other_values();
+        sv->set_property("optimize_on_insert");
+        sv->set_value("0");
     }
 }
 
@@ -2008,6 +2014,10 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
+        /// Store exactly the `FINAL` rows: a merge on insert would drop all-zero `SummingMergeTree` rows
+        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
+        sv->set_property("optimize_on_insert");
+        sv->set_value("0");
         peer_queries.emplace_back(next2);
     }
 }

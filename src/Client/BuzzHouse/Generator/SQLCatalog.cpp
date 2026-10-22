@@ -237,6 +237,12 @@ bool SQLBase::isFileEngine(const bool as_alias) const
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::File);
 }
 
+bool SQLBase::isSummingMergeTree(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::SummingMergeTree
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::SummingMergeTree);
+}
+
 bool SQLBase::isJoinEngine(const bool as_alias) const
 {
     return engine.value == TableEngineValues::Join
