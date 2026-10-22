@@ -1894,7 +1894,14 @@ public:
         return left_domain;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Ordering an `Enum` with a string converts the string to the `Enum`, which throws for an unknown name, as `CAST` does.
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (IsOperation<Op>::equals || IsOperation<Op>::not_equals)
+            return false;
+        else
+            return arguments.size() == 2 && ordersEnumWithString(arguments[0].type, arguments[1].type);
+    }
 
     /// Documentation-only — comparison is defined for numbers (cross-type via
     /// least-supertype), strings, dates, UUIDs, IPv4/IPv6, equivalent enums,
