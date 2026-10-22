@@ -21,6 +21,11 @@ using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
 
 class NamesAndTypesList;
 
+/// Rejects a bare identifier as the right-hand side of an `IN` operator in a freshly supplied
+/// constraint declaration. Not applied to definitions read back from stored metadata, so tables
+/// created before this check remain loadable.
+void checkConstraintExpressionIsValid(const IAST & ast);
+
 struct ConstraintsDescription
 {
 public:
