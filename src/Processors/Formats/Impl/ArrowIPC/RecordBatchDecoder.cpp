@@ -1903,14 +1903,9 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();
 
-    /// A non-nullable field must declare a zero null count, unless `input_format_null_as_default` turns its nulls
-    /// into defaults: then it is decoded as nullable.
+    /// A field declared non-nullable that still has nulls is decoded as nullable; the conversion to the
+    /// requested type then applies `input_format_null_as_default`.
     const bool nullable = field.nullable || node.null_count() != 0;
-    if (nullable && !field.nullable && !settings.null_as_default)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow IPC field '{}' is declared non-nullable but its FieldNode reports {} nulls",
-            field.name, node.null_count());
 
     /// Null rows have undefined value bytes and join the inherited invisible rows before value decoding.
     ColumnUInt8::Ptr own_null_map;

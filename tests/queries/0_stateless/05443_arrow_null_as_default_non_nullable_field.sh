@@ -2,8 +2,9 @@
 # Tags: no-fasttest
 # no-fasttest: needs pyarrow
 
-# Arrow fields declared non-nullable that still contain nulls: with `input_format_null_as_default = 1`
-# the nulls become defaults (including column `DEFAULT` expressions), otherwise the input is rejected.
+# Arrow fields declared non-nullable that still contain nulls are read as nulls: with
+# `input_format_null_as_default = 1` they become defaults (including column `DEFAULT` expressions) in non-nullable
+# columns; with 0 they are rejected for non-nullable columns and kept as NULL for `Nullable` ones.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -54,7 +55,8 @@ for format in Arrow ArrowStream; do
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_arrow_null_as_default"
 
     $CLICKHOUSE_CLIENT -q "INSERT INTO t_arrow_null_as_default SETTINGS input_format_null_as_default = 0 FORMAT $format" < "$file" 2>&1 \
-        | grep -o -m1 "INCORRECT_DATA"
+        | grep -o -m1 "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN"
+    $CLICKHOUSE_LOCAL -q "SELECT i, s FROM file('$file', $format, 'i Nullable(Int64), s Nullable(String)') ORDER BY i SETTINGS input_format_null_as_default = 0"
 done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_arrow_null_as_default"
