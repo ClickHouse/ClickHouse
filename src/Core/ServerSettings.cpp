@@ -2387,6 +2387,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "profiles",
         "quotas",
         "roles",
+        "masking_policies",
         "users_config",
         "user_directories",
         "ldap_servers",
