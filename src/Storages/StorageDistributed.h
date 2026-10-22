@@ -147,7 +147,7 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
     ClusterPtr getCluster() const;
 
-    /// Used by InterpreterSystemQuery
+    /// Used by `SYSTEM FLUSH DISTRIBUTED`
     void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
     size_t getShardCount() const;
