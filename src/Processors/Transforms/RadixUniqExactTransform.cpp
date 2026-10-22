@@ -115,11 +115,12 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt256 x)
 /// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`, `Decimal128`) uniformly
 /// distributed, so that both halves of the result can serve as hashes. It is a two-round Feistel network with
 /// `intHash64` as the round function: each round only XORs one half with a function of the other one, so it can be
-/// undone, and distinct values stay distinct.
+/// undone, and distinct values stay distinct. The first round leaves the top bit alone, so the result keeps the top bit
+/// of the value (see `LONG_STRING_KEY_BIT`).
 ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
 {
     UInt64 low = static_cast<UInt64>(x);
-    UInt64 high = static_cast<UInt64>(x >> 64) ^ bucketHash(low);
+    UInt64 high = static_cast<UInt64>(x >> 64) ^ (bucketHash(low) & (~0ULL >> 1));
     low ^= bucketHash(high);
     return (UInt128(high) << 64) | low;
 }
@@ -145,9 +146,10 @@ ALWAYS_INLINE inline UInt128 packShortString(const char * data, size_t size)
     return (UInt128(high) << 64) | low;
 }
 
-/// The packed short strings have the top bit clear, so the keys of the longer strings set it before `mixKey`: otherwise a
-/// `SipHash` could equal the key of a short string (`mixKey` is easy to invert), and they would be counted once. The
-/// longer strings keep 127 bits of their hash, so two of them collide with probability 2^-127 instead of 2^-128.
+/// The packed short strings have the top bit clear, and so do their keys (see `mixKey`), so the `SipHash` of the longer
+/// strings sets it: otherwise it could equal the key of a short string (`mixKey` is easy to invert), and they would be
+/// counted once. The `SipHash` is uniformly distributed already, so it is not mixed. The longer strings keep 127 bits of
+/// their hash, so two of them collide with probability 2^-127 instead of 2^-128.
 constexpr UInt128 LONG_STRING_KEY_BIT = UInt128(1) << 127;
 
 /// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
@@ -1058,9 +1060,9 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             {
                 const size_t size = size_of(row);
                 routed_empty_string |= size == 0;
-                if (size < sizeof(UInt128))
-                    return mixKey(packShortString(chars + start_of(row), size));
-                return mixKey(sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT);
+                if (size >= sizeof(UInt128)) [[unlikely]]
+                    return sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT;
+                return mixKey(packShortString(chars + start_of(row), size));
             },
             [&](size_t lhs, size_t rhs)
             {

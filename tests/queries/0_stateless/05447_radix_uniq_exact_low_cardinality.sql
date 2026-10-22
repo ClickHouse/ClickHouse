@@ -25,8 +25,17 @@ CREATE TABLE low_cardinality_values (s LowCardinality(String), n LowCardinality(
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000;
 INSERT INTO low_cardinality_values SELECT toString(number % 5000), if(number % 3 = 0, NULL, toString(number % 300)) FROM numbers(300000);
 
-SELECT 'MergeTree', uniqExact(s), uniqExact(n) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 1, max_block_size = 777;
-SELECT 'MergeTree', uniqExact(s), uniqExact(n) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 0, max_block_size = 777;
+-- One aggregate per query: with two of them, the radix partitioning is not used.
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(s) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 1)
+WHERE explain LIKE '%RadixUniqExactRouteTransform%';
+
+SELECT 'MergeTree LowCardinality(String)',
+    (SELECT uniqExact(s) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 1, max_block_size = 777),
+    (SELECT uniqExact(s) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 0, max_block_size = 777);
+
+SELECT 'MergeTree LowCardinality(Nullable(String))',
+    (SELECT uniqExact(n) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 1, max_block_size = 777),
+    (SELECT uniqExact(n) FROM low_cardinality_values SETTINGS optimize_uniq_exact_radix_partitioning = 0, max_block_size = 777);
 
 -- Only NULLs: the result is 0, not an empty set.
 SELECT 'only NULLs', uniqExact(n) FROM low_cardinality_values WHERE n IS NULL
