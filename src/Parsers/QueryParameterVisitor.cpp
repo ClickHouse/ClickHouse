@@ -3,6 +3,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/forEachNonChildSemanticAST.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -15,8 +17,9 @@ namespace DB
 class QueryParameterVisitor
 {
 public:
-    explicit QueryParameterVisitor(NameToNameMap & parameters)
+    explicit QueryParameterVisitor(NameToNameMap & parameters, bool include_deferred_expressions_ = true)
         : query_parameters(parameters)
+        , include_deferred_expressions(include_deferred_expressions_)
     {
     }
 
@@ -33,7 +36,10 @@ public:
             /// placeholder there would otherwise go undiscovered and never be requested from or
             /// sent by the client. The walk shares the carrier list with the substitution and
             /// the rewrite-rule matcher — see `forEachNonChildSemanticAST`.
-            forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member) { visit(member); });
+            /// Row policy filters and masking policy expressions are the only carriers of these
+            /// two classes, and they are deferred: skip them when asked to.
+            if (include_deferred_expressions || !(ast->as<ASTCreateRowPolicyQuery>() || ast->as<ASTCreateMaskingPolicyQuery>()))
+                forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member) { visit(member); });
 
             for (const auto & child : ast->children)
                 visit(child);
@@ -42,6 +48,7 @@ public:
 
 private:
     NameToNameMap & query_parameters;
+    const bool include_deferred_expressions;
 
     void visitQueryParameter(const ASTQueryParameter & query_parameter)
     {
@@ -83,10 +90,10 @@ NameSet analyzeReceiveQueryParams(const std::string & query)
     return query_param_names;
 }
 
-NameSet analyzeReceiveQueryParams(const ASTPtr & ast)
+NameSet analyzeReceiveQueryParams(const ASTPtr & ast, bool include_deferred_expressions)
 {
     NameToNameMap query_params;
-    QueryParameterVisitor(query_params).visit(ast);
+    QueryParameterVisitor(query_params, include_deferred_expressions).visit(ast);
     NameSet query_param_names;
     for (const auto & query_param : query_params)
         query_param_names.insert(query_param.first);

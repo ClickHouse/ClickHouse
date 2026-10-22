@@ -388,13 +388,12 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 
 static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
 {
-    if (query.database)
-    {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
-        return;
-    }
+    std::string resolved_name = query.database
+        ? loader.resolveDictionaryName(QualifiedTableName{query.getDatabase(), query.getTable()}, context)
+        : loader.resolveDictionaryName(query.getTable(), context);
 
-    loader.reloadDictionary(query.getTable(), context);
+    context->onQueryExecutionStarted();
+    loader.loadOrReload(resolved_name);
 }
 
 static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
@@ -855,6 +854,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_DICTIONARIES:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            getContext()->onQueryExecutionStarted();
             executeCommandsAndThrowIfError({
                 [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
@@ -1040,9 +1040,13 @@ BlockIO InterpreterSystemQuery::execute()
                 task->run();
             break;
         case Type::WAIT_VIEW:
-            for (const auto & task : getRefreshTasks())
+        {
+            auto tasks = getRefreshTasks();
+            getContext()->onQueryExecutionStarted();
+            for (const auto & task : tasks)
                 task->wait(getContext());
             break;
+        }
         case Type::CANCEL_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->cancel();
@@ -1160,6 +1164,7 @@ BlockIO InterpreterSystemQuery::execute()
 
             /// We wait 2 times here because a background blob cleanup round may already be running
             /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
+            getContext()->onQueryExecutionStarted();
             object_disk->waitBlobsCleanup();
             object_disk->waitBlobsCleanup();
 
@@ -1174,6 +1179,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
+            getContext()->onQueryExecutionStarted();
             system_logs.flush(query.tables);
             break;
         }
@@ -1204,6 +1210,7 @@ BlockIO InterpreterSystemQuery::execute()
                 getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
             }
 
+            getContext()->onQueryExecutionStarted();
             queue->flush(tables);
             break;
         }
@@ -1220,6 +1227,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::UNFREEZE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
+            getContext()->onQueryExecutionStarted();
             /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
@@ -1270,6 +1278,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            getContext()->onQueryExecutionStarted();
             if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
             {
                 LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
@@ -1451,6 +1460,7 @@ void InterpreterSystemQuery::restoreReplica()
 
     const auto & settings = getContext()->getSettingsRef();
 
+    getContext()->onQueryExecutionStarted();
     table_replicated_ptr->restoreMetadataInZooKeeper(
         ZooKeeperRetriesInfo{
             settings[Setting::keeper_max_retries],
@@ -1473,6 +1483,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
     }
 
+    getContext()->onQueryExecutionStarted();
     replicated_db->restoreDatabaseInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
@@ -1532,6 +1543,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
             table->is_being_restarted = false;
     });
     table->is_being_restarted = true;
+    getContext()->onQueryExecutionStarted();
     table->flushAndShutdown();
 
     /// The definition re-attached below was read back from this server's own metadata, so it must be
@@ -2295,6 +2307,7 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
+        context_->onQueryExecutionStarted();
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
@@ -2341,6 +2354,7 @@ void InterpreterSystemQuery::waitLoadingParts()
     if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
     {
         LOG_TRACE(log, "Waiting for loading of parts of table {}", table_id.getFullTableName());
+        getContext()->onQueryExecutionStarted();
         merge_tree->waitForOutdatedPartsToBeLoaded();
         LOG_TRACE(log, "Finished waiting for loading of parts of table {}", table_id.getFullTableName());
     }
@@ -2357,7 +2371,10 @@ void InterpreterSystemQuery::waitQueryRunner()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     if (auto * query_runner = dynamic_cast<StorageQueryRunner *>(table.get()))
+    {
+        getContext()->onQueryExecutionStarted();
         query_runner->waitForQueriesToFinish(getContext()->getProcessListElement());
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command WAIT QUERY RUNNER is supported only for QueryRunner table, but got: {}", table->getName());
@@ -2462,6 +2479,7 @@ void InterpreterSystemQuery::syncMerges()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto & merge_tree = getMergeTreeWithManualSelector(table, table_id, "SYNC MERGES");
 
+    getContext()->onQueryExecutionStarted();
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
@@ -2519,6 +2537,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
         {
             LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
+            getContext()->onQueryExecutionStarted();
             load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
         }
         else
@@ -2532,6 +2551,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
+        getContext()->onQueryExecutionStarted();
         for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
@@ -2633,6 +2653,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
+        getContext()->onQueryExecutionStarted();
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds(), query.sync_replica_mode))
         {
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
@@ -2649,6 +2670,7 @@ void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+    getContext()->onQueryExecutionStarted();
     TransactionManager::instance().sync();
 }
 
@@ -2667,7 +2689,10 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     /// otherwise destroy the table while flushClusterNodesAllData is still running.
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(table.get()))
+    {
+        getContext()->onQueryExecutionStarted();
         storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -2686,6 +2711,7 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
 
+    context->onQueryExecutionStarted();
     queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
@@ -2861,6 +2887,7 @@ void InterpreterSystemQuery::prewarmMarkCache()
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
+    getContext()->onQueryExecutionStarted();
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
@@ -2889,6 +2916,7 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
     if (!index_cache)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary index cache is not configured or is not enabled for table {}", table_id.getFullTableName());
 
+    getContext()->onQueryExecutionStarted();
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
