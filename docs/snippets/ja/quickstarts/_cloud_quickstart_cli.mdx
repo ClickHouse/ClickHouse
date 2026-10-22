@@ -4,9 +4,7 @@ title: Cloud クイックスタート CLI
 
 このページでは、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使用して、コマンドラインから ClickHouse Cloud サービスのプロビジョニング、接続、データの読み込みを行う方法を説明します。コマンドは非対話型で、`clickhousectl` は `--json` を指定すると JSON を出力します。
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 ClickHouse CLI をインストールします。
 
@@ -26,9 +24,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 
 または、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` で確認し、scope が `read/write` のエントリが表示されることを確認してください。
 
-<div id="create-service">
-  ## ClickHouse サービスを作成する
-</div>
+## ClickHouse サービスを作成する {#create-service}
 
 サービスを作成してレスポンスを保存します。`default` USER のパスワードは一度しか表示されません。
 
@@ -81,9 +77,7 @@ CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .hos
 
 `clickhousectl` で作成されたサービスでは、デフォルトで、すべてのアクセス元 (`0.0.0.0/0`) を許可する IP アクセスリストが設定されます。アクセスを制限するには、サービスの作成時に `--ip-allow` を指定してください。詳細は[&quot;IP フィルタの設定&quot;](/ja/products/cloud/guides/security/connectivity/setting-ip-filters)を参照してください。
 
-<div id="wait-for-provisioning">
-  ## サービスのプロビジョニングが完了するまで待機する
-</div>
+## サービスのプロビジョニングが完了するまで待機する {#wait-for-provisioning}
 
 プロビジョニングには約1分かかります。状態が `running` になるまでポーリングします。
 
@@ -93,14 +87,12 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
 done
 ```
 
-<div id="run-sql">
-  ## Query API を使用して SQL を実行する
-</div>
+## Query API を使用して SQL を実行する {#run-sql}
 
 `clickhousectl cloud service query` を使用すると、HTTP 経由で SQL を実行できます。ローカルの `clickhouse` バイナリやサービスのパスワードは不要です。初回の呼び出し時に、Query API エンドポイントとサービススコープの API キーが自動的にプロビジョニングされます。
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
 ```
 
 ```text
@@ -111,11 +103,9 @@ Provisioning Query API endpoint + key for service 'quickstart-ch'...
 {"name":"system"}
 ```
 
-パイプでの出力はデフォルトで `JSONEachRow` 形式です。表形式で出力するには、代わりに `--format PrettyCompact` を指定します。
+出力は、端末ではデフォルトで `PrettyCompact`、パイプ経由の場合は `TabSeparated` になります。上記で使用した `--json` は `JSONEachRow` を選択します。それ以外のフォーマットを使用する場合は、代わりに `--format` を指定してください (`--json` と `--format` は併用できません) 。
 
-<div id="create-database-and-table">
-  ## データベースとテーブルを作成する
-</div>
+## データベースとテーブルを作成する {#create-database-and-table}
 
 ```bash
 clickhousectl cloud service query --id "$CH_ID" \
@@ -145,7 +135,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 正常に動作したことを確認します。
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -158,9 +148,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 
 タイムスタンプはinsertを実行した時刻に依存するため、実際の値は異なります。
 
-<div id="load-csv-file">
-  ## CSVファイルを読み込む
-</div>
+## CSVファイルを読み込む {#load-csv-file}
 
 次のテキストが、`data.csv`という名前のCSVファイルに含まれているとします。
 
@@ -180,7 +168,7 @@ printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
 新しい行が取り込まれたことを確認します。
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -188,9 +176,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 {"count()":7}
 ```
 
-<div id="native-client">
-  ## clickhouse client で接続する
-</div>
+## clickhouse client で接続する {#native-client}
 
 [**clickhouse client**](/ja/concepts/features/interfaces/client) を使用すると、ネイティブプロトコル経由でも接続できます。ClickHouse CLI が `clickhouse` バイナリを管理するため、クライアントを別途インストールする必要はありません。
 
@@ -226,9 +212,7 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
   --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
 ```
 
-<div id="cleanup">
-  ## クリーンアップ
-</div>
+## クリーンアップ {#cleanup}
 
 サービスを削除すると、そのすべてのデータが完全に失われます。`--force` を指定すると、実行中のサービスを先に停止します。
 

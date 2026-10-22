@@ -66,6 +66,8 @@ clickhousectl cloud service backup-config update "$CH_ID" \
 }
 ```
 
+Frequency determines the worst-case age of the newest restore point (your RPO). Retention controls how long backup data is kept; it does not make the newest restore point more recent. For example, with a retention of 24 hours and a frequency of 48 hours, the newest restore point can be almost 48 hours old.
+
 The change takes effect immediately; read the configuration back to confirm:
 
 ```bash

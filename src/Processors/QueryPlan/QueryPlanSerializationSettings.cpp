@@ -30,7 +30,7 @@ namespace DB
     DECLARE(UInt64, max_bytes_to_sort, 0, "If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     \
-    DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging.", 0) \
+    DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, "Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`.", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, "If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, "The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
@@ -46,6 +46,7 @@ namespace DB
     DECLARE(UInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.", 0) \
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, "If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
+    DECLARE(UInt64, min_bytes_before_external_group_by, 0, "The minimum size in bytes of the aggregation state of one thread before external GROUP BY writes it to disk.", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, "Compile aggregate functions to native code.", 0) \
     DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, "The number of identical aggregate expressions before they are JIT-compiled", 0) \
@@ -67,6 +68,7 @@ namespace DB
     DECLARE(Float, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.", 0) \
     \
     DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", "Specifies which JOIN algorithm is used.", 0) \
+    DECLARE(Bool, allow_block_nested_loop_join, true, "Allow the block nested loop join to execute a JOIN whose ON section determines no join key, instead of rejecting it.", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
@@ -110,6 +112,7 @@ namespace DB
     DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.", 0) \
     \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, "Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
+    DECLARE(UInt64, join_runtime_filter_exact_bytes_limit, 0, "Max bytes of the exact key set before switching to bloom; 0 means the bloom filter size. Transported filters may raise this above the bloom size from plan-time row estimates.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.", 0) \
@@ -117,13 +120,15 @@ namespace DB
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
+    DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, "Treat max_rows_in_join / max_bytes_in_join as a spill trigger instead of a hard cap", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, use_aggregation_memory_tracker, true, "Measure the size of the aggregation state compared with `group_by_two_level_threshold_bytes` with the memory tracker dedicated to the aggregation. When disabled, the size is measured as the growth of the memory usage of the whole query since the aggregation was created.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
-    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
 
 
 // clang-format on
