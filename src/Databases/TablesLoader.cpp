@@ -229,8 +229,7 @@ void TablesLoader::removeUnresolvableDependencies()
         if (metadata.parsed_tables.contains(table_id.getQualifiedName()))
             return false;
 
-        /// Only the message below depends on the answer, the dependency is excluded either way. Some databases cannot
-        /// answer without reaching their data, e.g. a `Filesystem` path stat fails on or a remote server that is down.
+        /// isTableExist can throw when a database cannot reach its data. Only the log message below depends on the answer.
         bool table_exists = false;
         try
         {
