@@ -29,17 +29,18 @@ struct WindowFunctionWorkspace
 {
     AggregateFunctionPtr aggregate_function;
     bool is_aggregate_function_state = false;
+    size_t result_column = 0;
     VectorWithMemoryTracking<size_t> argument_column_indices;
     mutable AlignedBuffer aggregate_function_state;
     VectorWithMemoryTracking<const IColumn *> argument_columns;
     Int64 cached_block_number = -1;
 };
 
-struct WindowFunctionSlot
+struct GeneralWindowFunctionSlot
 {
-    GeneralWindowFunctionPtr general;
+    GeneralWindowFunctionPtr function;
     char * state = nullptr;
-    size_t workspace_index = 0;
+    size_t result_column = 0;
     WindowArguments arguments;
 };
 
@@ -88,16 +89,14 @@ private:
     std::optional<Chunk> pending_input;
     bool input_is_finished = false;
 
-    /// One per output column.
-    std::vector<WindowFunctionSlot> slots;
+    /// The general functions with their states, and the aggregates; each names its output column.
+    std::vector<GeneralWindowFunctionSlot> general_functions;
+    std::vector<WindowFunctionWorkspace> workspaces;
     Arena states_arena;
 
     /// The batch being collected, starting at `batch_start`.
     WindowBounds bounds;
     RowNumber batch_start;
-
-    /// Aggregates only.
-    std::vector<WindowFunctionWorkspace> workspaces;
 
     /// Shared by the aggregate states of the current partition and replaced with it, so it does not grow across
     /// partitions. No result lives in it: a -State result is merged into the arena of the output column.

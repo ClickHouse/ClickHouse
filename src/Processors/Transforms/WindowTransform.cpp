@@ -28,10 +28,11 @@ std::vector<size_t> argumentColumnIndices(const Block & input_header, const Wind
         | std::ranges::to<std::vector<size_t>>();
 }
 
-WindowFunctionWorkspace createWorkspace(const Block & input_header, const WindowFunctionDescription & function)
+WindowFunctionWorkspace createWorkspace(const Block & input_header, const WindowFunctionDescription & function, size_t result_column)
 {
     WindowFunctionWorkspace workspace;
     workspace.aggregate_function = function.aggregate_function;
+    workspace.result_column = result_column;
     const auto & aggregate_function = workspace.aggregate_function;
 
     workspace.argument_column_indices.reserve(function.argument_names.size());
@@ -45,14 +46,22 @@ WindowFunctionWorkspace createWorkspace(const Block & input_header, const Window
     return workspace;
 }
 
-char * createState(Arena & arena, const IGeneralWindowFunction & function)
+GeneralWindowFunctionSlot createSlot(const Block & input_header, const WindowFunctionDescription & function, GeneralWindowFunctionPtr general, size_t result_column, Arena & states_arena)
 {
-    if (function.sizeOfState() == 0)
-        return nullptr;
+    GeneralWindowFunctionSlot slot{
+        .function = std::move(general),
+        .state = nullptr,
+        .result_column = result_column,
+        .arguments = WindowArguments(argumentColumnIndices(input_header, function)),
+    };
 
-    char * place = arena.alignedAlloc(function.sizeOfState(), function.alignOfState());
-    function.createState(place);
-    return place;
+    if (slot.function->sizeOfState() != 0)
+    {
+        slot.state = states_arena.alignedAlloc(slot.function->sizeOfState(), slot.function->alignOfState());
+        slot.function->createState(slot.state);
+    }
+
+    return slot;
 }
 
 std::vector<ArgumentBlock> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
@@ -86,24 +95,16 @@ WindowTransform::WindowTransform(
         if (const auto general = asGeneralWindowFunction(function.aggregate_function))
             general->checkWindowFrameType(params.window_description);
 
-    slots.reserve(functions.size());
-    for (const auto & function : functions)
+    for (size_t result_column = 0; result_column < functions.size(); ++result_column)
     {
-        WindowFunctionSlot & slot = slots.emplace_back(WindowFunctionSlot{
-            .general = asGeneralWindowFunction(function.aggregate_function),
-            .state = nullptr,
-            .workspace_index = 0,
-            .arguments = WindowArguments(argumentColumnIndices(params.input_header, function)),
-        });
-
-        if (slot.general)
+        const WindowFunctionDescription & function = functions[result_column];
+        if (auto general = asGeneralWindowFunction(function.aggregate_function))
         {
-            slot.state = createState(states_arena, *slot.general);
+            general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
         }
         else
         {
-            slot.workspace_index = workspaces.size();
-            workspaces.push_back(createWorkspace(params.input_header, function));
+            workspaces.push_back(createWorkspace(params.input_header, function, result_column));
             if (!arena && function.aggregate_function->allocatesMemoryInArena())
                 arena = std::make_unique<Arena>();
         }
@@ -112,9 +113,9 @@ WindowTransform::WindowTransform(
 
 WindowTransform::~WindowTransform()
 {
-    for (auto & slot : slots)
+    for (auto & slot : general_functions)
         if (slot.state)
-            slot.general->destroyState(slot.state);
+            slot.function->destroyState(slot.state);
 
     for (auto & ws : workspaces)
         ws.aggregate_function->destroy(ws.aggregate_function_state.data());
@@ -167,14 +168,9 @@ void WindowTransform::writeOutCurrentRow()
         && current_frame.end.row_index_in_partition == prev_frame.end.row_index_in_partition;
 
     const SlidingBlock & block = blocks.blockAt(current.location.block);
-    for (size_t slot_index = 0; slot_index < slots.size(); ++slot_index)
+    for (auto & ws : workspaces)
     {
-        const WindowFunctionSlot & slot = slots[slot_index];
-        if (slot.general)
-            continue;
-
-        auto & ws = workspaces[slot.workspace_index];
-        IColumn & result_column = *block.result_columns[slot_index];
+        IColumn & result_column = *block.result_columns[ws.result_column];
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
         if (frame_unchanged && !ws.is_aggregate_function_state && current.location.row > 0)
@@ -204,12 +200,13 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
     partition.advance(blocks);
 
-    for (const auto & slot : slots)
-    {
-        const DataTypePtr & result_type = slot.general ? slot.general->getResultType() : workspaces[slot.workspace_index].aggregate_function->getResultType();
-        block.result_columns.push_back(result_type->createColumn());
-        block.result_columns.back()->reserve(block.rows_count);
-    }
+    block.result_columns.resize(general_functions.size() + workspaces.size());
+    for (const auto & slot : general_functions)
+        block.result_columns[slot.result_column] = slot.function->getResultType()->createColumn();
+    for (const auto & ws : workspaces)
+        block.result_columns[ws.result_column] = ws.aggregate_function->getResultType()->createColumn();
+    for (auto & column : block.result_columns)
+        column->reserve(block.rows_count);
 }
 
 void WindowTransform::computeReadyRows()
@@ -248,6 +245,9 @@ void WindowTransform::computeReadyRows()
 
 void WindowTransform::appendCurrentRow()
 {
+    if (general_functions.empty())
+        return;
+
     const RowPoint & current = peers.current();
     const FrameBounds & current_frame = frame.bounds();
     const PeersBounds & current_peers = peers.bounds();
@@ -270,17 +270,18 @@ void WindowTransform::flushBatch()
     if (bounds.rows == 0)
         return;
 
-    const std::vector<ArgumentBlock> argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
-    const SlidingBlock & block = blocks.blockAt(batch_start.block);
-    for (size_t slot_index = 0; slot_index < slots.size(); ++slot_index)
+    std::vector<ArgumentBlock> argument_blocks;
+    const bool has_arguments = std::ranges::any_of(general_functions, [](const GeneralWindowFunctionSlot & slot) { return slot.arguments.size() != 0; });
+    if (has_arguments)
     {
-        WindowFunctionSlot & slot = slots[slot_index];
-        if (!slot.general)
-            continue;
-
-        slot.arguments.rebuild(argument_blocks);
-        slot.general->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot_index]);
+        argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
+        for (auto & slot : general_functions)
+            slot.arguments.rebuild(argument_blocks);
     }
+
+    const SlidingBlock & block = blocks.blockAt(batch_start.block);
+    for (const auto & slot : general_functions)
+        slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
 
     bounds.clear();
 }
@@ -297,9 +298,8 @@ void WindowTransform::startNextPartition()
     frame.enterPartition(partition_start);
     prev_frame = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = true};
 
-    for (const auto & slot : slots)
-        if (slot.general)
-            slot.general->resetPartition(slot.state);
+    for (const auto & slot : general_functions)
+        slot.function->resetPartition(slot.state);
 
     for (auto & ws : workspaces)
         ws.aggregate_function->destroy(ws.aggregate_function_state.data());
