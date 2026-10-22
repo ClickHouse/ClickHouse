@@ -54,10 +54,16 @@ public:
     /// Whether the entries are encrypted at rest.
     bool isEncrypted() const;
 
-    /// Turns stored bytes back into the `CREATE NAMED COLLECTION` statement, verifying the key
-    /// fingerprint of the entry's header against this storage's key for the `*_encrypted` storage
-    /// types.
-    std::string decryptStored(const std::string & stored) const;
+    /// Appends a message authentication code to stored bytes exported into a backup, because the
+    /// stored ciphertext alone is malleable (see `decryptStoredFromBackup`). Only supported with
+    /// an encrypted storage.
+    std::string authenticateStoredForBackup(const std::string & stored) const;
+
+    /// Turns the bytes of a backup entry written by `authenticateStoredForBackup` back into the
+    /// `CREATE NAMED COLLECTION` statement: verifies the key fingerprint of the entry's header
+    /// against this storage's key, verifies the authentication code, and decrypts. Only supported
+    /// with an encrypted storage.
+    std::string decryptStoredFromBackup(const std::string & data) const;
 
 private:
     class INamedCollectionsStorage;

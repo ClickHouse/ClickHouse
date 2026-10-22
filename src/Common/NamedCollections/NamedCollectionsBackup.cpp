@@ -42,9 +42,10 @@ namespace
 {
 
 /// Entries of an encrypted metadata storage are stored in the backup as the `FileEncryption`
-/// ciphertext the storage holds, with a distinct extension so that a restoring server can tell
-/// them from the plaintext `.sql` entries of the unencrypted storage types (and so that an old
-/// server never tries to parse ciphertext as SQL).
+/// ciphertext the storage holds followed by an authentication code (see
+/// `NamedCollectionsMetadataStorage::decryptStoredFromBackup`), with a distinct extension so that
+/// a restoring server can tell them from the plaintext `.sql` entries of the unencrypted storage
+/// types (and so that an old server never tries to parse ciphertext as SQL).
 constexpr std::string_view sql_extension = ".sql";
 constexpr std::string_view encrypted_sql_extension = ".sql.enc";
 
@@ -112,8 +113,14 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     backup_entries.reserve(raw_entries.size());
     const std::string_view extension = storage_properties.is_encrypted ? encrypted_sql_extension : sql_extension;
     for (auto & [collection_name, stored] : raw_entries)
+    {
+        /// The backup medium is less trusted than the metadata storage, and the stored CTR
+        /// ciphertext alone is malleable, so an exported entry carries an authentication code.
+        if (storage_properties.is_encrypted)
+            stored = factory.authenticateStoredEntryForBackup(stored);
         backup_entries.emplace_back(
             escapeForFileName(collection_name) + String{extension}, std::make_shared<BackupEntryFromMemory>(std::move(stored)));
+    }
 
     if (!storage_properties.is_replicated)
     {
@@ -196,11 +203,12 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             "encrypted storage holding the key the collections were encrypted with, or skip them with "
             "SETTINGS restore_named_collections = false");
 
-    /// Read, decrypt and parse every entry before creating anything, so that a problem - in
-    /// particular a key mismatch, which `decryptStoredEntry` detects by the key fingerprint of the
-    /// entry's header - fails the restore before it has touched anything. Because the collections
-    /// are restored before any database or table is created, nothing has been restored at all at
-    /// this point.
+    /// Read, authenticate, decrypt and parse every entry before creating anything, so that a
+    /// problem - a key mismatch, which `decryptStoredEntryFromBackup` detects by the key
+    /// fingerprint of the entry's header, or a tampered entry, which it detects by the
+    /// authentication code - fails the restore before it has touched anything. Because the
+    /// collections are restored before any database or table is created, nothing has been
+    /// restored at all at this point.
     std::vector<ASTPtr> create_queries;
     create_queries.reserve(filenames.size());
     for (const auto & filename : filenames)
@@ -230,7 +238,7 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         String statement;
         try
         {
-            statement = filename.ends_with(encrypted_sql_extension) ? factory.decryptStoredEntry(stored) : stored;
+            statement = filename.ends_with(encrypted_sql_extension) ? factory.decryptStoredEntryFromBackup(stored) : stored;
         }
         catch (Exception & e)
         {
@@ -259,9 +267,9 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             /// A parser exception embeds the text around the error position, and here that text is the
             /// statement with the collection's values - for an encrypted entry, decrypted secret material,
             /// while restoring requires only `CREATE NAMED COLLECTION`, not the rights to read the values.
-            /// The CTR encryption of the storage is not authenticated (`decryptStoredEntry` verifies only
-            /// the key fingerprint of the header), so a corrupted or tampered entry decrypts into garbled
-            /// plaintext and reaches this parser. Report the failure without the original exception and
+            /// A plaintext `.sql` entry is read from the backup unauthenticated, so a corrupted or crafted
+            /// entry reaches this parser (a tampered encrypted entry is rejected by its authentication
+            /// code before it is decrypted). Report the failure without the original exception and
             /// without the entry path (which is the collection's name), so that nothing the restoring user
             /// may not read leaks to them or to the log.
             throw Exception(
@@ -276,7 +284,8 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     bool throw_if_exists = (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kReplace);
 
-    auto log = getLogger("restoreNamedCollections");
+    size_t restored_count = 0;
+    size_t kept_from_config_count = 0;
 
     for (auto & ast : create_queries)
     {
@@ -291,11 +300,7 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         if (auto existing = factory.tryGet(create_query.collection_name);
             existing && existing->getSourceId() == NamedCollection::SourceId::CONFIG && !throw_if_exists && !replace_if_exists)
         {
-            LOG_WARNING(
-                log,
-                "Not restoring named collection `{}` from backup because a collection with this name "
-                "is defined in the server configuration",
-                create_query.collection_name);
+            ++kept_from_config_count;
             continue;
         }
 
@@ -304,9 +309,37 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         /// `createFromSQL` honours both flags and writes through the metadata storage, so the
         /// entry is re-encrypted under this server's key with a fresh IV (and replicated by
         /// Keeper for the Keeper storage types).
-        factory.createFromSQL(create_query);
-        LOG_TRACE(log, "Restored named collection `{}` from backup", create_query.collection_name);
+        try
+        {
+            factory.createFromSQL(create_query);
+        }
+        catch (...)
+        {
+            /// The errors of `createFromSQL` name the collection (`NAMED_COLLECTION_ALREADY_EXISTS`
+            /// with the 'create' mode, `NAMED_COLLECTION_IS_IMMUTABLE` for a config-defined
+            /// collection with the 'replace' mode, a Keeper error naming the entry's path), and the
+            /// restoring user may not see the name (as explained above). Report the failure without
+            /// the original exception and without the name; the error code alone cannot leak it.
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore a named collection from backup {} ({}) (SETTINGS restore_named_collections = false "
+                "skips restoring named collections)",
+                backup->getNameForLogging(),
+                ErrorCodes::getName(getCurrentExceptionCode()));
+        }
+        ++restored_count;
     }
+
+    /// The restoring user receives the log records of the query (`send_logs_level`) without
+    /// `SHOW NAMED COLLECTIONS`, so, like the errors above, the log records name no collection.
+    auto log = getLogger("restoreNamedCollections");
+    if (kept_from_config_count)
+        LOG_WARNING(
+            log,
+            "Not restoring {} named collections from the backup because collections with the same "
+            "names are defined in the server configuration",
+            kept_from_config_count);
+    LOG_DEBUG(log, "Restored {} named collections from backup", restored_count);
 }
 
 

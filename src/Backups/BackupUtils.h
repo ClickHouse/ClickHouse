@@ -27,6 +27,13 @@ bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Element
 /// Whether a TABLE element of the query names the `system.named_collections` table.
 bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements);
 
+/// Excludes `system.named_collections` from every wildcard (DATABASE or ALL) element covering it,
+/// through the element's `EXCEPT TABLES` clause. `BackupsWorker` rewrites a dispatched ON CLUSTER
+/// query this way when the initiating user may not read the collection values: the hosts then
+/// skip the export, and - unlike a forwarded, resolved `backup_named_collections = false` - the
+/// rewritten query stays accepted by hosts predating that setting.
+void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements & elements);
+
 /// Returns access required to execute BACKUP query. `backup_named_collections` is the value of the
 /// backup setting of the same name; it decides whether selecting the `system.named_collections`
 /// table requires the rights to read the collections' values (see `BackupSettings`).

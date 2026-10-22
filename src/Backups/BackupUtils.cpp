@@ -98,6 +98,13 @@ bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Element
     return std::ranges::any_of(elements, wildcardElementCoversSystemNamedCollections);
 }
 
+void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements & elements)
+{
+    for (auto & element : elements)
+        if (wildcardElementCoversSystemNamedCollections(element))
+            element.except_tables.emplace(DatabaseCatalog::SYSTEM_DATABASE, "named_collections");
+}
+
 bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
 {
     return std::ranges::any_of(

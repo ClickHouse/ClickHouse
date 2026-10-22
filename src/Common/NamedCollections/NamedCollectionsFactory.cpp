@@ -429,11 +429,18 @@ std::map<std::string, std::string> NamedCollectionFactory::getRawEntriesForBacku
     return metadata_storage->getAllRaw();
 }
 
-std::string NamedCollectionFactory::decryptStoredEntry(const std::string & stored)
+std::string NamedCollectionFactory::authenticateStoredEntryForBackup(const std::string & stored)
 {
     std::lock_guard lock(mutex);
     loadIfNot(lock);
-    return metadata_storage->decryptStored(stored);
+    return metadata_storage->authenticateStoredForBackup(stored);
+}
+
+std::string NamedCollectionFactory::decryptStoredEntryFromBackup(const std::string & data)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->decryptStoredFromBackup(data);
 }
 
 void NamedCollectionFactory::updateFunc()

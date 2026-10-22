@@ -140,9 +140,10 @@ struct BackupSettings
     /// - true: the backup exports the collections and requires the rights, however the table is
     ///   selected.
     /// - false: the backup never exports the collections and does not require the rights.
-    /// For `BACKUP ON CLUSTER` the initiating host resolves the unset default against its user's
-    /// rights before dispatching the query, because the other hosts may execute it with full access
-    /// (see `BackupsWorker`).
+    /// For `BACKUP ON CLUSTER` the initiating host takes the unset-default decision against its
+    /// user's rights before dispatching the query, because the other hosts may execute it with full
+    /// access; a refusal is dispatched as an `EXCEPT TABLES` clause of the wildcard elements, not
+    /// as a resolved value of this setting (see `BackupsWorker`).
     std::optional<bool> backup_named_collections;
 
 #if CLICKHOUSE_CLOUD

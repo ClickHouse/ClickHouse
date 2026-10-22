@@ -27,6 +27,10 @@
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
 #endif
+#if USE_SSL
+#include <Common/OpenSSLHelpers.h>
+#include <openssl/crypto.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -88,7 +92,18 @@ public:
 
     virtual bool isEncrypted() const { return false; }
 
-    virtual std::string decryptStored(const std::string & data) const { return data; }
+    /// Only the encrypted storage types authenticate backup entries (see
+    /// `NamedCollectionsMetadataStorageEncrypted`): the entries of the other types are backed up
+    /// as plaintext SQL and these methods are never reached for them.
+    virtual std::string authenticateStoredForBackup(const std::string & /* stored */) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
+    }
+
+    virtual std::string decryptStoredFromBackup(const std::string & /* data */) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
+    }
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -434,30 +449,41 @@ public:
 
     bool isEncrypted() const override { return true; }
 
-    std::string decryptStored(const std::string & data) const override
+    /// The CTR ciphertext is malleable: with known plaintext positions (the statement framing
+    /// around a value) it can be reshaped without the key, for example to move an unknown secret
+    /// value into a key name, which `SHOW NAMED COLLECTIONS` displays. Inside the server the
+    /// entries are covered by the trust in the metadata storage, but a backup is written to a
+    /// less trusted medium, so an exported entry carries an HMAC-SHA256 tag computed with a key
+    /// derived from the storage key, and the restore rejects an entry whose tag does not verify.
+    std::string authenticateStoredForBackup(const std::string & stored) const override
     {
-        FileEncryption::Header header;
-        try
-        {
-            ReadBufferFromString in(data);
-            header.read(in);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While reading the header of an encrypted named collection entry");
-            throw;
-        }
+        const auto mac = calculateBackupMAC(stored);
+        return stored + std::string(reinterpret_cast<const char *>(mac.data()), mac.size());
+    }
 
-        /// `readHook` decrypts blindly and would hand back garbage with the wrong key.
-        if (header.key_fingerprint != key_fingerprint)
+    std::string decryptStoredFromBackup(const std::string & data) const override
+    {
+        if (data.size() <= backup_mac_size)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The named collection entry is encrypted with a key with fingerprint {}, "
-                "but the key of this storage for named collections has fingerprint {}",
-                getHexUIntLowercase(header.key_fingerprint),
-                getHexUIntLowercase(key_fingerprint));
+                "The encrypted named collection entry is too short to hold its message authentication code, "
+                "the entry has been truncated or was written by an incompatible version");
 
-        return readHook(data);
+        const std::string stored = data.substr(0, data.size() - backup_mac_size);
+
+        /// The key fingerprint is checked first so that a restore under a different key reports
+        /// the key mismatch rather than a failed authentication (the tag never verifies across keys).
+        checkHeaderKeyFingerprint(stored);
+
+        const auto expected_mac = calculateBackupMAC(stored);
+        chassert(expected_mac.size() == backup_mac_size);
+        if (CRYPTO_memcmp(expected_mac.data(), data.data() + stored.size(), backup_mac_size) != 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The encrypted named collection entry failed authentication: the entry was modified "
+                "or corrupted after the backup was written");
+
+        return readHook(stored);
     }
 
     std::string readHook(const std::string & data) const override
@@ -506,6 +532,41 @@ public:
     }
 
 private:
+    /// HMAC-SHA256.
+    static constexpr size_t backup_mac_size = 32;
+
+    void checkHeaderKeyFingerprint(const std::string & stored) const
+    {
+        FileEncryption::Header header;
+        try
+        {
+            ReadBufferFromString in(stored);
+            header.read(in);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While reading the header of an encrypted named collection entry");
+            throw;
+        }
+
+        /// `readHook` decrypts blindly and would hand back garbage with the wrong key.
+        if (header.key_fingerprint != key_fingerprint)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The named collection entry is encrypted with a key with fingerprint {}, "
+                "but the key of this storage for named collections has fingerprint {}",
+                getHexUIntLowercase(header.key_fingerprint),
+                getHexUIntLowercase(key_fingerprint));
+    }
+
+    std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
+    {
+        /// Domain separation from the encryption use of the key.
+        const auto auth_key = hmacSHA256(
+            std::vector<uint8_t>(key.begin(), key.end()), "ClickHouse named collections backup entry v1");
+        return hmacSHA256(auth_key, stored);
+    }
+
     std::string key;
     UInt128 key_fingerprint{};
     FileEncryption::Algorithm algorithm;
@@ -687,9 +748,14 @@ bool NamedCollectionsMetadataStorage::isEncrypted() const
     return storage->isEncrypted();
 }
 
-std::string NamedCollectionsMetadataStorage::decryptStored(const std::string & stored) const
+std::string NamedCollectionsMetadataStorage::authenticateStoredForBackup(const std::string & stored) const
 {
-    return storage->decryptStored(stored);
+    return storage->authenticateStoredForBackup(stored);
+}
+
+std::string NamedCollectionsMetadataStorage::decryptStoredFromBackup(const std::string & data) const
+{
+    return storage->decryptStoredFromBackup(data);
 }
 
 bool NamedCollectionsMetadataStorage::waitUpdate()

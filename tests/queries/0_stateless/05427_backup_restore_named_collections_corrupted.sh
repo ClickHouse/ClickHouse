@@ -23,16 +23,38 @@ CREATE NAMED COLLECTION ${collection} AS key1 = '${secret}';
 echo "backup"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE system.named_collections TO ${backup_name}" | grep -c "BACKUP_CREATED"
 
-# The storage's CTR encryption is not authenticated, so this leaves the entry decryptable (the key
-# fingerprint of the header is intact) but garbles the first character of the statement: the entry
-# reaches the parser, and the parser fails on it. The rest of the statement, including the secret
-# value, decrypts unchanged, so any leak of the parsed text into the error would be caught below.
+# An exported entry is the stored FileEncryption bytes followed by a 32-byte authentication code,
+# so any modification of the ciphertext must fail the authentication check before anything is
+# decrypted or parsed - the unauthenticated CTR ciphertext alone could be reshaped with known
+# plaintext positions without holding the key.
 echo "corrupt the first ciphertext byte of the entry (after the 64-byte FileEncryption header)"
 byte=$(od -An -tu1 -j64 -N1 "${entry_file}" | tr -d ' ')
 printf '%b' "$(printf '\\%03o' $((byte ^ 1)))" | dd of="${entry_file}" bs=1 seek=64 count=1 conv=notrunc 2>/dev/null
 
-echo "the restore fails without leaking the decrypted statement or the collection name"
+echo "the restore rejects the modified entry without leaking the collection name"
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION ${collection}"
+error=$(${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.named_collections FROM ${backup_name}" 2>&1)
+echo "${error}" | grep -m1 -c "failed authentication"
+echo "${error}" | grep -c "${secret}" || true
+echo "${error}" | grep -c "${collection}" || true
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${collection}'"
+
+# Recompute the authentication code over the corrupted bytes with the test key of
+# tests/config/config.d/named_collections_storage.xml; this doubles as a check of the HMAC
+# construction. The authenticated entry now decrypts into a statement with a garbled first
+# character - the rest, including the secret value, decrypts unchanged - and reaches the parser,
+# so any leak of the parsed text into the error would be caught below.
+echo "recompute the authentication code, the restore then fails in the parser without leaking"
+python3 -c "
+import hmac, hashlib, sys
+path = sys.argv[1]
+key = bytes.fromhex('5e4acb1bce2688abbc7f546d7877f04d')
+data = open(path, 'rb').read()
+stored = data[:-32]
+auth_key = hmac.new(key, b'ClickHouse named collections backup entry v1', hashlib.sha256).digest()
+mac = hmac.new(auth_key, stored, hashlib.sha256).digest()
+open(path, 'wb').write(stored + mac)
+" "${entry_file}"
 error=$(${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.named_collections FROM ${backup_name}" 2>&1)
 echo "${error}" | grep -m1 -c "Cannot parse a named collection entry"
 echo "${error}" | grep -c "${secret}" || true

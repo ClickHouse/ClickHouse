@@ -523,15 +523,18 @@ struct BackupsWorker::BackupStarter
             /// collections only if the user may read their values. That decision belongs to the
             /// initiating user, but with the default `distributed_ddl_use_initial_user_and_roles = false`
             /// the other hosts execute the dispatched query with full access and would always export, so
-            /// it is taken here and forwarded. Only the refusal is forwarded: for a user holding the
-            /// rights the setting stays unset, which keeps the query accepted by hosts predating it.
+            /// it is taken here. A refusal is applied by excluding the table from the dispatched wildcard
+            /// elements through `EXCEPT TABLES`, not by forwarding a resolved
+            /// `backup_named_collections = false`: every host understands the long-established EXCEPT
+            /// clause, while a host predating the setting would reject a query carrying it (e.g. during
+            /// a rolling upgrade).
             if (!backup_settings.backup_named_collections.has_value()
                 && BackupUtils::wildcardSelectionCoversSystemNamedCollections(backup_query->elements))
             {
                 /// An element explicitly naming the table keeps its hard access requirement (see
-                /// `getRequiredAccessToBackup`): resolving the setting to `false` for the wildcard element
-                /// would erase that requirement and silently drop the explicitly requested entries instead.
-                /// The element may be written unqualified, so it is checked against the effective database
+                /// `getRequiredAccessToBackup`) whether or not the wildcard elements are rewritten, so
+                /// the query is about to fail the access check: skip the warning and the rewrite. The
+                /// element may be written unqualified, so it is checked against the effective database
                 /// of every selected address, the same way the access check resolves it.
                 bool explicitly_selected = false;
                 for (const auto * address : cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num))
@@ -558,7 +561,7 @@ struct BackupsWorker::BackupStarter
                             "their values (`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and "
                             "`displaySecretsInShowAndSelect`). Set backup_named_collections = 1 to make this an error, or "
                             "backup_named_collections = 0 to silence this warning");
-                        backup_settings.backup_named_collections = false;
+                        BackupUtils::excludeSystemNamedCollectionsFromWildcardSelection(backup_query->elements);
                     }
                 }
             }

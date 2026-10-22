@@ -101,9 +101,13 @@ public:
     /// keyed by the collection name. Never decrypts anything.
     std::map<std::string, std::string> getRawEntriesForBackup();
 
-    /// Turns stored bytes back into the `CREATE NAMED COLLECTION` statement, see
-    /// NamedCollectionsMetadataStorage::decryptStored.
-    std::string decryptStoredEntry(const std::string & stored);
+    /// Appends a message authentication code to stored bytes exported into a backup, see
+    /// NamedCollectionsMetadataStorage::authenticateStoredForBackup.
+    std::string authenticateStoredEntryForBackup(const std::string & stored);
+
+    /// Turns the bytes of a backup entry back into the `CREATE NAMED COLLECTION` statement, see
+    /// NamedCollectionsMetadataStorage::decryptStoredFromBackup.
+    std::string decryptStoredEntryFromBackup(const std::string & data);
 
     void loadIfNot();
 

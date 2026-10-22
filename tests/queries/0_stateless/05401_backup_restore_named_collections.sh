@@ -99,16 +99,26 @@ CREATE NAMED COLLECTION ${collection} AS url = 'http://localhost:8123/changed', 
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.named_collections FROM ${backup_name}" | grep -c "RESTORED"
 ${CLICKHOUSE_CLIENT} --query "SELECT mapContains(collection, 'marker') FROM system.named_collections WHERE name = '${collection}'"
 
-echo "an existing collection fails the restore with create_named_collection = 'create'"
-${CLICKHOUSE_CLIENT} --query "
+echo "an existing collection fails the restore with create_named_collection = 'create', without the name"
+error=$(${CLICKHOUSE_CLIENT} --query "
     RESTORE TABLE system.named_collections FROM ${backup_name} SETTINGS create_named_collection = 'create'
-" 2>&1 | grep -m1 -c "NAMED_COLLECTION_ALREADY_EXISTS"
+" 2>&1)
+echo "${error}" | grep -m1 -c "NAMED_COLLECTION_ALREADY_EXISTS"
+echo "${error}" | grep -c "${collection}" || true
 
 echo "an existing collection is replaced with create_named_collection = 'replace'"
 ${CLICKHOUSE_CLIENT} --query "
     RESTORE TABLE system.named_collections FROM ${backup_name} SETTINGS create_named_collection = 'replace'
 " | grep -c "RESTORED"
 ${CLICKHOUSE_CLIENT} --query "SELECT mapContains(collection, 'marker') FROM system.named_collections WHERE name = '${collection}'"
+
+# Restoring does not require `SHOW NAMED COLLECTIONS`, and `send_logs_level` streams the query's
+# log records to the restoring client, so the records must name no collection.
+echo "the restore streams no collection name to the client log"
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION ${collection}"
+CLICKHOUSE_CLIENT_WITH_LOG=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
+logs=$(${CLICKHOUSE_CLIENT_WITH_LOG} --query "RESTORE TABLE system.named_collections FROM ${backup_name}" 2>&1 >/dev/null)
+echo "${logs}" | grep -c "${collection}" || true
 
 echo "restore_named_collections = false skips the collections"
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION ${collection}"

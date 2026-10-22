@@ -1196,8 +1196,9 @@ def test_system_named_collections_implicit_selection_on_cluster():
             with open(os.path.join(dir_path, file_name), "rb") as f:
                 assert b"nc_secret_value" not in f.read(), file_name
 
-    # The hosts skip silently on the forwarded resolved value, so the initiator must have warned
-    # about the privilege-based skip, like a local backup does.
+    # The hosts skip silently because the dispatched query excludes the table from its wildcard
+    # elements (an `EXCEPT TABLES` clause survives hosts predating `backup_named_collections`),
+    # so the initiator must have warned about the privilege-based skip, like a local backup does.
     assert node1.contains_in_log(
         "Not exporting the named collections to the backup: the initiating user has no rights"
     )

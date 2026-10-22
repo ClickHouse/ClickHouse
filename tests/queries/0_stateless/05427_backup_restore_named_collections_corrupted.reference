@@ -1,7 +1,12 @@
 backup
 1
 corrupt the first ciphertext byte of the entry (after the 64-byte FileEncryption header)
-the restore fails without leaking the decrypted statement or the collection name
+the restore rejects the modified entry without leaking the collection name
+1
+0
+0
+0
+recompute the authentication code, the restore then fails in the parser without leaking
 1
 0
 0
