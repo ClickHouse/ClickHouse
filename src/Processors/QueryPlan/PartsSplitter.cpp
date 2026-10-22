@@ -9,12 +9,9 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -894,71 +891,70 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
 }
 
 
-/// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
-static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders, bool in_reverse_order)
+/// Returns the filter of layer `layer`: rows with the primary key in (borders[layer - 1], borders[layer]]
+/// (in [borders[layer], borders[layer - 1]) if `in_reverse_order`). `borders` must not be empty.
+static ActionsDAG buildLayerFilter(
+    const KeyDescription & primary_key, const std::vector<Values> & borders, size_t layer, bool in_reverse_order, const ContextPtr & context)
 {
-    auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = (!result) ? foo : makeASTFunction("and", result, foo); };
+    auto tuple_function = FunctionFactory::instance().get("tuple", context);
+    auto compare_function = FunctionFactory::instance().get(in_reverse_order ? "less" : "greater", context);
 
-    /// Produces ASTPtr to predicate (pk_col0, pk_col1, ... , pk_colN) > (value[0], value[1], ... , value[N]), possibly with conversions.
-    /// For example, if table PK is (a, toDate(d)), where `a` is UInt32 and `d` is DateTime, and PK columns values are (8192, 19160),
-    /// it will build the following predicate: greater(tuple(a, toDate(d)), tuple(8192, cast(19160, 'Date'))).
-    /// If @in_reverse_order == true, compare values in reverse order.
-    auto lexicographically_greater = [&](const Values & values) -> ASTPtr
+    size_t num_key_columns = layer > 0 ? borders.at(layer - 1).size() : 0;
+    if (layer < borders.size())
+        num_key_columns = std::max(num_key_columns, borders[layer].size());
+
+    ActionsDAG dag;
+
+    /// Refer to the key column by name instead of inlining the key expression. `applyLayerRangeFilter`
+    /// composes this predicate with the table's own key expression, so the name resolves to the value
+    /// the table computed. Inlining the key expression here and resolving it in the query context would
+    /// instead give different values for a key expression whose result type depends on a setting
+    /// (`CAST(json.b, 'String')` under `cast_keep_nullable`), and rows the table sorted into a layer
+    /// would fall out of that layer's filter.
+    /// A key may repeat a column (`ORDER BY (k, k)`), and `ActionsDAG::merge` binds every input to its own output.
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    ActionsDAG::NodeRawConstPtrs key_columns;
+    for (size_t i = 0; i < num_key_columns; ++i)
     {
-        ASTs pks_ast;
-        ASTs values_ast;
+        const auto & name = primary_key.column_names.at(i);
+        const auto & type = primary_key.data_types.at(i);
+        /// The callers split only by keys accepted by `isSafePrimaryDataKeyType`.
+        if (type->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot split by the Nullable primary key column {}", name);
+        auto & input = inputs[name];
+        if (!input)
+            input = &dag.addInput(name, type);
+        key_columns.push_back(input);
+    }
+
+    auto lexicographically_greater = [&](size_t border_index) -> const ActionsDAG::Node *
+    {
+        const auto & values = borders.at(border_index);
+        ActionsDAG::NodeRawConstPtrs keys(key_columns.begin(), key_columns.begin() + values.size());
+        ActionsDAG::NodeRawConstPtrs constants;
         for (size_t i = 0; i < values.size(); ++i)
         {
-            const auto & type = primary_key.data_types.at(i);
-
-            // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
-            auto pk_ast = primary_key.expression_list_ast->children.at(i)->clone();
-
-            // If PK is nullable, prepend a null mask column for > comparison.
-            // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
-            if (type->isNullable())
-            {
-                pks_ast.push_back(makeASTFunction("isNull", pk_ast));
-                values_ast.push_back(make_intrusive<ASTLiteral>(values[i].isNull() ? 1 : 0));
-                pk_ast = makeASTFunction("assumeNotNull", pk_ast);
-            }
-
-            pks_ast.push_back(pk_ast);
-
-            // If value is null, the comparison is already complete by looking at the null mask column.
-            // Here we put the pk_ast as a placeholder: (pk_null_mask, pk_ast_not_null) > (value_is_null?, pk_ast_not_null).
-            if (values[i].isNull())
-            {
-                values_ast.push_back(pk_ast);
-            }
-            else
-            {
-                ASTPtr component_ast = make_intrusive<ASTLiteral>(values[i]);
-                auto decayed_type = removeNullable(removeLowCardinality(primary_key.data_types.at(i)));
-
-                // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
-                // So we need an explicit Cast for them.
-                component_ast = makeASTFunction("cast", std::move(component_ast), make_intrusive<ASTLiteral>(decayed_type->getName()));
-
-                values_ast.push_back(std::move(component_ast));
-            }
+            /// The index returns border values as the column stores them (e.g. Date, DateTime as plain numbers).
+            auto type = removeLowCardinality(primary_key.data_types.at(i));
+            constants.push_back(&dag.addColumn(type->createColumnConst(0, values[i]), type, fmt::format("__border_{}_{}", border_index, i)));
         }
 
-        ASTPtr pk_columns_as_tuple = makeASTFunction("tuple", pks_ast);
-        ASTPtr values_as_tuple = makeASTFunction("tuple", values_ast);
-
-        return makeASTFunction(in_reverse_order ? "less" : "greater", pk_columns_as_tuple, values_as_tuple);
+        const auto * keys_tuple = &dag.addFunction(tuple_function, std::move(keys), {});
+        const auto * values_tuple = &dag.addFunction(tuple_function, std::move(constants), {});
+        return &dag.addFunction(compare_function, {keys_tuple, values_tuple}, {});
     };
 
-    ASTs filters(borders.size() + 1);
-    for (size_t layer = 0; layer <= borders.size(); ++layer)
+    const ActionsDAG::Node * filter = nullptr;
+    if (layer > 0)
+        filter = lexicographically_greater(layer - 1);
+    if (layer < borders.size())
     {
-        if (layer > 0)
-            add_and_condition(filters[layer], lexicographically_greater(borders[layer - 1]));
-        if (layer < borders.size())
-            add_and_condition(filters[layer], makeASTFunction("not", lexicographically_greater(borders[layer])));
+        const auto * not_upper = &dag.addFunction(FunctionFactory::instance().get("not", context), {lexicographically_greater(layer)}, {});
+        filter = filter ? &dag.addFunction(FunctionFactory::instance().get("and", context), {filter, not_upper}, {}) : not_upper;
     }
-    return filters;
+
+    dag.getOutputs() = {filter};
+    return dag;
 }
 
 /// Granule `m` of a part holds primary key values in the closed interval [value at mark `m`, value at mark `m + 1`].
@@ -1252,10 +1248,16 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     return result;
 }
 
-/// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
-/// is null (the open first/last interval) or when the pipe is empty. `pipe`'s streams must be sorted by
-/// the primary key.
-static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
+/// Keeps the rows of layer `layer` (see `buildLayerFilter`); a no-op without borders or for an empty pipe.
+/// `pipe`'s streams must be sorted by the primary key.
+static void applyLayerRangeFilter(
+    Pipe & pipe,
+    const KeyDescription & primary_key,
+    const std::vector<Values> & borders,
+    size_t layer,
+    bool in_reverse_order,
+    const String & description,
+    const ContextPtr & context)
 {
     /// An empty pipe has no header at all, and there is nothing to filter in it anyway. Skipping it here
     /// is safe: the only step getters that can return an empty pipe are the merging-pipe getters (the
@@ -1268,17 +1270,33 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     /// positional shard pairing, never passes an empty pipe here: in `ReadFromMergeTree::readByLayers`
     /// the in-order getter substitutes a `NullSource` placeholder, and the default getter reads through
     /// `readFromPool`, which creates one source per thread regardless of the number of parts.
-    if (!filter_function || pipe.empty())
+    if (borders.empty() || pipe.empty())
         return;
 
-    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
-    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-    reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
+    /// The filter refers to the key columns by name, see `buildLayerFilter`. It is built over the key
+    /// sample block columns and then composed with the table's own key expression, so the values it
+    /// compares are the ones the table computed - the ones the layer borders came from. Resolving the key
+    /// expression in the query context instead made a key expression whose result type depends on a
+    /// setting a different function: `CAST(json.b, 'String')` is `String` for a
+    /// table created under `cast_keep_nullable = 0` and `Nullable(String)` in a session with
+    /// `cast_keep_nullable = 1`, the row whose `json.b` is missing is `''` for the table and `NULL` for
+    /// the query, and `FilterSortedStreamByRange` dropped it from every layer.
+    ///
+    /// Composing with the key expression - rather than reading the key columns off the stream header -
+    /// is what keeps the two shapes of caller working: `readByLayers` and `MergeTreeFinalMerge` run the
+    /// sorting expression on the pipe first, but the join-by-shards layers of
+    /// `ReadFromMergeTree::readByLayers` are read without it and carry the plain table columns only.
+    /// Those may lack the source columns of a key suffix the filter does not compare, so its computation is removed.
+    auto filter_actions = buildLayerFilter(primary_key, borders, layer, in_reverse_order, context);
+    String filter_column = filter_actions.getOutputs().front()->result_name;
+    auto actions = ActionsDAG::merge(primary_key.expression->getActionsDAG().clone(), std::move(filter_actions));
+    reorderColumns(actions, pipe.getHeader(), filter_column);
+    actions.removeUnusedActions();
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
     pipe.addSimpleTransform(
         [&](const SharedHeader & header)
         {
-            auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
+            auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_column, true);
             step->setDescription(description);
             return step;
         });
@@ -1291,7 +1309,6 @@ Pipes readByLayers(
     ContextPtr context)
 {
     auto && [layers, borders, in_reverse_order] = std::move(split_ranges);
-    auto filters = buildFilters(primary_key, borders, in_reverse_order);
     Pipes merging_pipes(layers.size());
 
     for (size_t i = 0; i < layers.size(); ++i)
@@ -1306,7 +1323,7 @@ Pipes readByLayers(
                                                   "filter values in ({}, {}]",
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
-        applyRangeFilterFromAST(merging_pipes[i], filters[i], description, primary_key, context);
+        applyLayerRangeFilter(merging_pipes[i], primary_key, borders, i, in_reverse_order, description, context);
     }
 
     return merging_pipes;
@@ -1320,8 +1337,14 @@ void addLayerRangeFilterToPipe(
     bool in_reverse_order,
     ContextPtr context)
 {
-    auto filters = buildFilters(primary_key, borders, in_reverse_order);
-    applyRangeFilterFromAST(pipe, filters.at(layer_index), "filter distributed FINAL layer", primary_key, context);
+    if (layer_index > borders.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Distributed FINAL layer index {} is out of range for {} borders",
+            layer_index,
+            borders.size());
+
+    applyLayerRangeFilter(pipe, primary_key, borders, layer_index, in_reverse_order, "filter distributed FINAL layer", context);
 }
 
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
