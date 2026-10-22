@@ -312,6 +312,11 @@ echo "$page" | grep -q -F 'if (options.progressMeter) options.progressMeter(+pro
 # Live progress packets sample the IO rate too, so it falls once the payload stops (send_profile_events = 0).
 echo "$page" | grep -A1 -F 'progressMeter: () => {' | grep -q -F 'if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);' \
     && echo 'live progress samples the IO rate: OK'
+# In `Run all`, each group's statement clocks are offset by the run elapsed time at the group's start,
+# so a shorter statement after a longer barrier statement still advances `_last_elapsed_ns` and samples IO.
+echo "$page" | grep -q -F 'elapsed_ns: statementBaseNs[i] + (+e.detail.elapsed_ns || 0),' \
+    && echo "$page" | grep -q -F 'cell.runElapsedBaseNs = group_base_ns;' \
+    && echo 'live multi-statement IO clock is offset per group: OK'
 # The result sends of remote shards to the initiator count too: an HTTP query has no own `NativeProtocolDataBytes`.
 echo "$page" | grep -q -F "|| e.name === 'NativeProtocolDataBytes' || e.name === 'NativeProtocolDataReceiveBytes'" && echo 'remote native result sends feed the IO meter: OK'
 # The page sends the query and its data as the HTTP request body, so the browser's upload counts too.

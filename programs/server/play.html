@@ -11112,7 +11112,9 @@ function makeEventStreamHandler(targetResultEl, options = {})
             if (dataLines[0])
             {
                 const progress = JSON.parse(dataLines[0]);
+                const stream_elapsed_ns = +progress.elapsed_ns || 0;
                 targetResultEl.update({ progress });
+                if (options.advanceClock) options.advanceClock(stream_elapsed_ns);
                 /// A missing `elapsed_ns` (omitted when zero by the framing progress packet) reads as 0.
                 if (options.progressMeter) options.progressMeter(+progress.elapsed_ns || 0);
             }
@@ -11302,6 +11304,24 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
     /// previous run's state when a new run starts; the run's first stream creates the aggregate
     /// and every stream accumulates into it, so the meter shows the run's combined resources.
     if (!cell.resources) cell.resources = freshResourceState();
+    /// Offset this stream's clock by the run elapsed time at its start (set per group by `postMulti`,
+    /// or taken from the previous statement's last sample), so a shorter statement after a longer
+    /// barrier statement still advances `_last_elapsed_ns` and samples its own IO/CPU rates.
+    const io_clock_base_ns = cell.runElapsedBaseNs ?? Math.max(
+        cell.resources.io_at_ns,
+        cell.resources.cpu_at_ns,
+        cell.progress?.elapsed_ns || 0,
+        cellOwnsChrome(cell) ? progressEl._last_elapsed_ns : 0,
+    );
+    if (io_clock_base_ns > 0)
+    {
+        if (cell.resources.io_bytes > cell.resources.io_sampled)
+            sampleIoRate(cell.resources, io_clock_base_ns);
+        else
+            cell.resources.io_at_ns = Math.max(cell.resources.io_at_ns, io_clock_base_ns);
+        if (cell.resources.cpu_ns === cell.resources.cpu_sampled_ns)
+            cell.resources.cpu_at_ns = Math.max(cell.resources.cpu_at_ns, io_clock_base_ns);
+    }
     if (cellOwnsChrome(cell))
         progressEl.adoptResourceState(cell.resources);
 
@@ -11317,6 +11337,13 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
         payloadMeter: (bytes) => {
             accumulateResultPayload(cell.resources, bytes);
             if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
+        },
+        advanceClock: (stream_elapsed_ns) => {
+            const elapsed_ns = io_clock_base_ns + stream_elapsed_ns;
+            if (stream_elapsed_ns && cell.progress && cell.progress.elapsed_ns < elapsed_ns)
+                cell.progress.elapsed_ns = elapsed_ns;
+            if (stream_elapsed_ns && cellOwnsChrome(cell) && progressEl._last_elapsed_ns < elapsed_ns)
+                progressEl._last_elapsed_ns = elapsed_ns;
         },
         /// Progress packets advance the IO clock too, so the rate falls once the payload stops.
         progressMeter: () => {
@@ -13046,14 +13073,18 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         if (active()) progressEl.updateProgress(detail);
     }
 
-    /// Listen for progress events from each result element.
+    /// Listen for progress events from each result element. Each group starts after the previous
+    /// barrier group completed, so offset its statements' elapsed clocks by the run elapsed time at
+    /// the group's start; `_last_elapsed_ns` then advances monotonically across the whole run and
+    /// later shorter statements still sample their live IO/CPU rates.
+    const statementBaseNs = new Array(parsed.length).fill(0);
     for (let i = 0; i < resultElements.length; ++i) {
         resultElements[i].addEventListener('query-progress', (e) => {
             progressState.set(i, {
                 read_rows: +e.detail.read_rows,
                 read_bytes: +e.detail.read_bytes,
                 total_rows: +e.detail.total_rows_to_read,
-                elapsed_ns: +e.detail.elapsed_ns,
+                elapsed_ns: statementBaseNs[i] + (+e.detail.elapsed_ns || 0),
             });
             updateAggregatedProgress();
         });
@@ -13081,8 +13112,24 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
     let had_error = false;
     const collected = new Array(parsed.length).fill(null);
     for (const group of groups) {
-        if (posted_request_num != tab.reqNum) return;
+        if (posted_request_num != tab.reqNum) { cell.runElapsedBaseNs = null; return; }
         if (had_error) break;
+
+        let group_base_ns = cell.progress?.elapsed_ns || 0;
+        if (cell.resources) {
+            group_base_ns = Math.max(group_base_ns, cell.resources.io_at_ns || 0, cell.resources.cpu_at_ns || 0);
+        }
+        if (active()) {
+            group_base_ns = Math.max(group_base_ns, progressEl._last_elapsed_ns || 0);
+        }
+        for (let j = 0; j < resultElements.length; ++j) {
+            group_base_ns = Math.max(
+                group_base_ns,
+                progressState.get(j)?.elapsed_ns || 0,
+                statementBaseNs[j] + (resultElements[j].elapsedNs || 0));
+        }
+        cell.runElapsedBaseNs = group_base_ns;
+        for (const i of group.indices) statementBaseNs[i] = group_base_ns;
 
         const promises = group.indices.map(i => {
             const ac = new AbortController();
@@ -13094,13 +13141,14 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         const results = await Promise.all(promises);
 
         for (const { index, result } of results) {
-            if (result.cancelled) return;
+            if (result.cancelled) { cell.runElapsedBaseNs = null; return; }
             collected[index] = result;
             if (result.is_error || !result.response_ok) {
                 had_error = true;
             }
         }
     }
+    cell.runElapsedBaseNs = null;
 
     if (posted_request_num != tab.reqNum) return;
 
@@ -14655,6 +14703,7 @@ function clearCell(cell) {
     /// Drop the cell-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     cell.resources = null;
+    cell.runElapsedBaseNs = null;
     if (cellOwnsChrome(cell)) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; paintDownloadCopy(cell); }
     updateCellStatus(cell);
 }

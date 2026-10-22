@@ -1131,6 +1131,147 @@ async function main() {
             res.failed && res.phase === 'error', res);
     }
 
+    /// Contract 8: in `Run all` (`postMulti`), a shorter statement after a longer barrier statement
+    /// must still advance the shared progress clock and sample its live IO rate against the run
+    /// timeline, rather than stalling at `dt <= 0` behind the barrier statement's elapsed time.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            progressEl = new QueryProgressElement();
+            const origCreateElement = document.createElement;
+            document.createElement = (tag) => tag === 'query-result' ? new QueryResultElement() : origCreateElement(tag);
+
+            function makeStreamResponse(text) {
+                const bytes = new TextEncoder().encode(text);
+                let read = false;
+                return {
+                    body: {
+                        getReader() {
+                            return {
+                                async read() {
+                                    if (read) return { done: true, value: undefined };
+                                    read = true;
+                                    return { done: false, value: bytes };
+                                },
+                            };
+                        },
+                    },
+                };
+            }
+
+            const payloadB64 = btoa('x'.repeat(1000));
+            const shortStream =
+                'event: progress\\ndata: {"read_rows":"1","read_bytes":"1000","total_rows_to_read":"1","elapsed_ns":"1000000000"}\\n\\n' +
+                'event: data\\ndata: ' + payloadB64 + '\\n\\n' +
+                'event: progress\\ndata: {"read_rows":"1","read_bytes":"1000","total_rows_to_read":"1","elapsed_ns":"2000000000"}\\n\\n';
+            const barrierStream =
+                'event: progress\\ndata: {"read_rows":"10","read_bytes":"0","total_rows_to_read":"10","elapsed_ns":"10000000000"}\\n\\n';
+            const barrierWithIoStream =
+                'event: data\\ndata: ' + btoa('y'.repeat(50000)) + '\\n\\n' +
+                'event: progress\\ndata: {"read_rows":"10","read_bytes":"50000","total_rows_to_read":"10","elapsed_ns":"10000000000"}\\n\\n';
+
+            function setupCell(title, query) {
+                const tab = makeTab(title, query);
+                tab.reqNum = 1;
+                tab.panel = document.createElement('div');
+                const cell = activeCell(tab);
+                cell.resultEl = new QueryResultElement();
+                cell.resultEl.addEventListener('query-progress', (e) => handleResultProgress(cell, e.detail));
+                cell.resultSlot = document.createElement('div');
+                cell.resultSlot.appendChild(cell.resultEl);
+                tab.panel.appendChild(cell.resultSlot);
+                tabs.push(tab);
+                activeTabId = tab.id;
+                return cell;
+            }
+
+            /// 1) Standalone 2-second statement with 1,000 result bytes.
+            const soloCell = setupCell('Solo', 'SELECT short');
+            clearCell(soloCell);
+            soloCell.progressPhase = 'running';
+            progressEl.start();
+            await readEventStream(
+                makeStreamResponse(shortStream),
+                soloCell.resultEl,
+                new AbortController(),
+                soloCell,
+                1,
+                false,
+                true,
+                'TabSeparated');
+            const solo = {
+                io: soloCell.resources.io,
+                io_sampled: soloCell.resources.io_sampled,
+                io_bytes: soloCell.resources.io_bytes,
+            };
+
+            /// 2) The same 2-second statement run after a 10-second barrier statement via postMulti.
+            const multiCell = setupCell('Multi', 'INSERT barrier; SELECT short');
+            const savedPostImpl = postImpl;
+            const streams = {
+                'INSERT barrier': barrierStream,
+                'SELECT short': shortStream,
+            };
+            postImpl = async (c, reqNum, query, targetEl, ac) => {
+                await readEventStream(
+                    makeStreamResponse(streams[query]),
+                    targetEl,
+                    ac,
+                    c,
+                    reqNum,
+                    false,
+                    true,
+                    'TabSeparated');
+                return {
+                    format: 'TabSeparated', reply: '', response_ok: true, is_error: false,
+                    is_table: false, is_raw: true, is_chart: false, is_image: false,
+                    is_base64: true, is_truncated: false, framing_kind: 'event_stream',
+                };
+            };
+            await postMulti(multiCell, 1, [
+                { query: 'INSERT barrier', is_select: false, queryStart: 0 },
+                { query: 'SELECT short', is_select: true, queryStart: 16 },
+            ], {}, multiCell.tab.query, { url: 'http://example.test', user: '', password: '' }, true, '');
+            const afterBarrier = {
+                io: multiCell.resources.io,
+                io_sampled: multiCell.resources.io_sampled,
+                io_bytes: multiCell.resources.io_bytes,
+                last_elapsed_ns: progressEl._last_elapsed_ns,
+            };
+
+            /// 3) Barrier statement with its own IO (50,000 B over 10s = 5,000 B/s), followed by the
+            /// 2-second statement with 1,000 B: the second statement must update the throughput
+            /// rather than leaving the barrier statement's stale 5,000 B/s untouched.
+            const staleCell = setupCell('Stale', 'INSERT barrier; SELECT short');
+            streams['INSERT barrier'] = barrierWithIoStream;
+            await postMulti(staleCell, 1, [
+                { query: 'INSERT barrier', is_select: false, queryStart: 0 },
+                { query: 'SELECT short', is_select: true, queryStart: 16 },
+            ], {}, staleCell.tab.query, { url: 'http://example.test', user: '', password: '' }, true, '');
+            const afterIoBarrier = {
+                io: staleCell.resources.io,
+                io_sampled: staleCell.resources.io_sampled,
+                io_bytes: staleCell.resources.io_bytes,
+            };
+
+            postImpl = savedPostImpl;
+            document.createElement = origCreateElement;
+            return JSON.stringify({ solo, afterBarrier, afterIoBarrier });
+        })()`));
+        check('run-all-io-clock', 'standalone 2-second statement reports 1,000 B/s and samples all 1,000 bytes',
+            res.solo.io === 1000 && res.solo.io_sampled === 1000 && res.solo.io_bytes === 1000, res);
+        check('run-all-io-clock', '2-second statement after a 10-second barrier statement reports the same 1,000 B/s and samples all 1,000 bytes',
+            res.afterBarrier.io === res.solo.io
+            && res.afterBarrier.io_sampled === 1000
+            && res.afterBarrier.io_bytes === 1000
+            && res.afterBarrier.last_elapsed_ns === 12000000000, res);
+        check('run-all-io-clock', '2-second statement updates throughput instead of keeping the barrier statement stale rate',
+            res.afterIoBarrier.io_sampled === 51000
+            && res.afterIoBarrier.io_bytes === 51000
+            && res.afterIoBarrier.io > 0
+            && res.afterIoBarrier.io < 5000, res);
+    }
+
     if (failures === 0) {
         console.log('All scenarios passed');
         process.exit(0);

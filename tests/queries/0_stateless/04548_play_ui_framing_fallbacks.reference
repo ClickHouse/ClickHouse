@@ -73,6 +73,7 @@ replayed result payload bytes accumulate: OK
 replayed IO rate is sampled: OK
 replayed progress samples the IO rate: OK
 live progress samples the IO rate: OK
+live multi-statement IO clock is offset per group: OK
 remote native result sends feed the IO meter: OK
 browser upload feeds the IO meter: OK
 result payload alone makes the meter live: OK
