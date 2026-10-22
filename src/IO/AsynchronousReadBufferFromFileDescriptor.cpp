@@ -76,23 +76,22 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 
 void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch)
 {
-    prefetches_log->add([&](FilesystemReadPrefetchesLogElement & element)
+    FilesystemReadPrefetchesLogElement elem
     {
-        element = FilesystemReadPrefetchesLogElement
-        {
-            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-            .query_id = query_id,
-            .path = getFileName(),
-            .offset = file_offset_of_buffer_end,
-            .size = size,
-            .prefetch_submit_time = last_prefetch_info.submit_time,
-            .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
-            .priority = last_prefetch_info.priority,
-            .state = state,
-            .thread_id = getThreadId(),
-            .reader_id = current_reader_id,
-        };
-    });
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .path = getFileName(),
+        .offset = file_offset_of_buffer_end,
+        .size = size,
+        .prefetch_submit_time = last_prefetch_info.submit_time,
+        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+        .priority = last_prefetch_info.priority,
+        .state = state,
+        .thread_id = getThreadId(),
+        .reader_id = current_reader_id,
+    };
+
+    prefetches_log->add(std::move(elem));
 }
 
 
@@ -138,17 +137,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     size_t bytes_read = result.size - result.offset;
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
-    /// The local read throttler exists to keep the load on the block device within the configured
-    /// budget, so the data that was copied from the OS page cache must not consume its tokens.
-    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
-    /// the amount of work regardless of where the data came from, and still account it.
     if (throttler)
-    {
-        if (result.from_os_page_cache)
-            throttler->throttleOSPageCacheRead(result.size);
-        else
-            throttler->throttle(result.size);
-    }
+        throttler->throttle(result.size);
 
     if (bytes_read)
     {

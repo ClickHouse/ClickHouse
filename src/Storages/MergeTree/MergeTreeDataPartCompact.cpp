@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
@@ -34,33 +34,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
     const String & name_,
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
-    const IMergeTreeDataPart * parent_part_,
-    PartDirIntent intent)
-    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_, intent)
+    const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_)
 {
-}
-
-Strings MergeTreeDataPartCompact::getPreferredFileOrder() const
-{
-    Strings preferred_order = COMMON_METADATA_FILES;
-
-    /// Files for partition key columns MinMax indices
-    preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
-
-    /// Data marks file is used for loadIndexGranularity
-    preferred_order.push_back(DATA_FILE_NAME + getMarksFileExtension());
-    preferred_order.push_back("primary" + getIndexExtension(true));
-    preferred_order.push_back("primary" + getIndexExtension(false));
-
-    /// Files with statistics. Statistics are written as separate files
-    /// in packed parts to avoid double bufferization in packed archive.
-    for (const auto & [filename, _] : checksums.files)
-    {
-        if (filename.ends_with(STATS_FILE_SUFFIX))
-            preferred_order.push_back(filename);
-    }
-
-    return preferred_order;
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(
@@ -71,7 +47,6 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
-    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -86,7 +61,6 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
-    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -95,7 +69,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
 {
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
-        storage_snapshot, storage_settings, uncompressed_cache, columns_cache,
+        storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
@@ -205,13 +179,13 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
-    if (getColumns().empty())
+    if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
     loadIndexGranularityImpl(
         index_granularity,
         index_granularity_info,
-        index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size(),
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
         getDataPartStorage(),
         *storage.getSettings());
 }
@@ -235,7 +209,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         context->getReadSettings(),
         /*load_marks_threadpool_=*/ nullptr,
-        index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size(),
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
         context->getSettingsRef()[Setting::use_streaming_marks_compression]);
 
     loader.loadMarks();
@@ -291,11 +265,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     getDataPartStorage().getFullPath());
         }
     }
-
-    /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
-    /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
-    /// in that case too, as when there are no checksums at all.
-    if (!hasTrustworthyChecksums())
+    else
     {
         {
             /// count.txt should be present even in non custom-partitioned parts
@@ -308,43 +278,26 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
         }
 
-        /// The marks alone do not prove that the data is there: checksums regenerated from the files on disk
-        /// would not notice that `data.bin` is gone entirely, and missing checksums cannot tell it at all.
-        if (getDataPartStorage().existsFile(mrk_file_name) && !getDataPartStorage().existsFile(DATA_FILE_NAME_WITH_EXTENSION))
-            throw Exception(
-                ErrorCodes::NO_FILE_IN_DATA_PART,
-                "Part {} is broken: no data file {} for marks file {}",
-                getDataPartStorage().getRelativePath(),
-                DATA_FILE_NAME_WITH_EXTENSION,
-                mrk_file_name);
-
         /// Check that marks are nonempty and have the consistent size with columns number.
 
         if (getDataPartStorage().existsFile(mrk_file_name))
         {
             UInt64 file_size = getDataPartStorage().getFileSize(mrk_file_name);
-            if (!file_size)
+             if (!file_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty.",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
-            /// The size of compressed marks does not follow from the number of marks, so check their
-            /// decompressed size instead. With marks for substreams, each granule has a mark per substream.
-            UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(mrk_file_name)->ignoreAll() : file_size;
-            size_t num_marks_in_granule = index_granularity_info.mark_type.with_substreams
-                ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size();
-            UInt64 expected_payload_size = index_granularity_info.getMarkSizeInBytes(num_marks_in_granule) * index_granularity->getMarksCount();
-            if (expected_payload_size != marks_payload_size)
+            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity->getMarksCount();
+            if (expected_file_size != file_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                    "Part {} is broken: bad size of marks in file '{}': {}, must be: {}",
+                    "Part {} is broken: bad size of marks file '{}': {}, must be: {}",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
-                    marks_payload_size, expected_payload_size);
-
-            checkDataFileCoversMarks(DATA_FILE_NAME_WITH_EXTENSION, mrk_file_name, num_marks_in_granule);
+                    file_size, expected_file_size);
         }
     }
 }

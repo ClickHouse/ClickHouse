@@ -4,8 +4,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <base/Decimal_fwd.h>
 
-#include <limits>
-
 
 namespace DB
 {
@@ -23,8 +21,6 @@ enum class ReadIntTextCheckOverflow : uint8_t
 
 void assertEOF(ReadBuffer & buf);
 [[noreturn]] void throwReadAfterEOF();
-[[noreturn]] void throwNumberWithoutDigits();
-[[noreturn]] void throwIntegerTextOverflow();
 
 template <int base, typename T, typename ReturnType, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextInBaseImpl(T & x, ReadBuffer & buf)
@@ -271,65 +267,6 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
 }
 
 
-/// Reads a decimal integer into an `Int128`, saturating to the `Int128` range instead of wrapping:
-/// `readIntText` skips the overflow check for big-int types, so a literal wider than `Int128` (39+ digits)
-/// is silently accepted modulo 2^128. Overflow is detected with an explicit per-digit threshold check
-/// (`common::mulOverflow` is a no-op stub for big-int types). The whole digit run is consumed and the
-/// saturated value keeps its sign, so a later range check sees the value on the correct side of its bounds.
-/// Unlike `readIntText`, a token without any digits (empty or a bare sign) is an error — an exception for
-/// `ReturnType = void`, `false` for `bool` — so the raw-value path rejects a missing token such as `{"t":}`.
-template <typename ReturnType = void>
-ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    /// `res * 10 + digit` overflows the non-negative accumulator iff `res > max / 10`, or
-    /// `res == max / 10` and `digit > max % 10`.
-    constexpr Int128 max_div_10 = std::numeric_limits<Int128>::max() / 10;
-    constexpr Int128 max_mod_10 = std::numeric_limits<Int128>::max() % 10;
-
-    bool negative = false;
-    bool has_number = false;
-    bool overflow = false;
-    Int128 res = 0;
-
-    if (!buf.eof() && (*buf.position() == '-' || *buf.position() == '+'))
-    {
-        negative = *buf.position() == '-';
-        ++buf.position();
-    }
-
-    while (!buf.eof() && *buf.position() >= '0' && *buf.position() <= '9')
-    {
-        Int128 digit = *buf.position() - '0';
-        ++buf.position();
-        has_number = true;
-
-        if (overflow)
-            continue;
-        if (res > max_div_10 || (res == max_div_10 && digit > max_mod_10))
-            overflow = true;
-        else
-            res = res * 10 + digit;
-    }
-
-    if (!has_number)
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
-        else
-            return ReturnType(false);
-    }
-
-    if (overflow)
-        x = negative ? std::numeric_limits<Int128>::min() : std::numeric_limits<Int128>::max();
-    else
-        x = negative ? -res : res;
-
-    return ReturnType(true);
-}
-
-
 /// Parses an integer in a specific base (2 or 8 or 10 or 16).
 template <int base, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 void parseIntInBase(T & x, std::string_view str)
@@ -376,14 +313,12 @@ bool tryParseInt(T & x, std::string_view str)
 }
 
 
-/** More efficient variant (about 1.5 times on real dataset). Differs from `readIntText` in following:
-  * - overflow is not checked by default; unlike `readIntText`, the check holds at every width when asked for;
-  * - a '-' on an unsigned type is not a sign: it is left in the buffer for the caller to reject,
-  *   unless overflow is checked, which reports a negative value as an overflow;
-  * - a repeated sign is not diagnosed: '+-' reports a field without digits, '-+' stops at the second one.
+/** More efficient variant (about 1.5 times on real dataset).
+  * Differs in following:
+  * - for numbers starting with zero, parsed only zero;
+  * - symbol '+' before number is not supported;
   */
-template <typename T, typename ReturnType = void,
-          ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
+template <typename T, typename ReturnType = void>
 ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -397,45 +332,22 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
         return ReturnType(false);
     };
 
-    auto is_digit = [&] { return !buf.eof() && static_cast<unsigned char>(*buf.position() - '0') < 10; };
-
     if (buf.eof()) [[unlikely]]
         return on_error();
 
-    bool has_plus = false;
-    if ((is_signed_v<T> || check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW) && *buf.position() == '-')
+    if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
         if (buf.eof()) [[unlikely]]
             return on_error();
     }
-    else if (*buf.position() == '+')
+
+    if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
-        has_plus = true;
-    }
-
-    /// Without this a lone '+' would fall through to the digit loop, which reads nothing and returns zero.
-    if ((has_plus || (!is_signed_v<T> && negative)) && !is_digit()) [[unlikely]]
-    {
-        if constexpr (throw_exception)
-            throwNumberWithoutDigits();
-        return ReturnType(false);
-    }
-
-    /// A per-digit threshold test: `common::mulOverflow` is a no-op for the big-int types.
-    [[maybe_unused]] bool overflow = false;
-    [[maybe_unused]] make_unsigned_t<T> bound_div_10 = 0;
-    [[maybe_unused]] make_unsigned_t<T> bound_mod_10 = 0;
-    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
-    {
-        /// A negative value does not fit an unsigned type, `-0` included.
-        overflow = !is_signed_v<T> && negative;
-        const make_unsigned_t<T> bound = static_cast<make_unsigned_t<T>>(std::numeric_limits<T>::max())
-            + static_cast<make_unsigned_t<T>>(is_signed_v<T> && negative ? 1 : 0);
-        bound_div_10 = bound / 10;
-        bound_mod_10 = bound % 10;
+        x = 0;
+        return ReturnType(true);
     }
 
     while (!buf.eof())
@@ -444,33 +356,12 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
 
         if (value < 10)
         {
-            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
-            {
-                if (overflow || res > bound_div_10
-                    || (res == bound_div_10 && static_cast<make_unsigned_t<T>>(value) > bound_mod_10))
-                {
-                    overflow = true;
-                    ++buf.position();
-                    continue;
-                }
-            }
-
             res *= 10;
             res += value;
             ++buf.position();
         }
         else
             break;
-    }
-
-    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
-    {
-        if (overflow)
-        {
-            if constexpr (throw_exception)
-                throwIntegerTextOverflow();
-            return ReturnType(false);
-        }
     }
 
     /// See note about undefined behaviour above.

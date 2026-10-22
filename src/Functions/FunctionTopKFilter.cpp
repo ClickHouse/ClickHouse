@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -42,27 +41,12 @@ bool hasEmptyTuple(const DataTypePtr & type)
     return false;
 }
 
-/// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
-/// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
-/// The column comparison path places NaN the way the sort does. Container types (`Tuple`, `Array`,
-/// `Map`) compare their elements lexicographically, so a float anywhere inside them matters too.
-bool hasFloatingPoint(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
-}
-
-/// A `NULL` nested inside a container type (e.g. `Tuple(Nullable(UInt32))`) makes the comparison functions
-/// return `Nullable(UInt8)` and ignores `nulls_direction`; the column comparison path handles both.
-bool hasNestedNullable(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return node.isNullable(); });
-}
-
 }
 
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionTopKFilter final : public IFunction
@@ -102,9 +86,16 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Any) -> UInt8";
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Number of arguments for function {} can't be {}, should be 1",
+                getName(),
+                arguments.size());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
@@ -121,8 +112,7 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
-                || hasFloatingPoint(data_type) || hasNestedNullable(data_type))
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
@@ -134,7 +124,7 @@ public:
     }
 
 private:
-    /// Fast path: vectorized less/greater for non-nullable, non-collation types without NaN.
+    /// Fast path: vectorized less/greater for non-nullable, non-collation types.
     ColumnPtr executeVectorized(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
@@ -146,14 +136,10 @@ private:
             input_rows_count, convertFieldToType(current_threshold, *data_type, threshold_type.get()));
         ColumnsWithTypeAndName args{argument, {threshold_column, data_type, {}}};
         auto elem_compare = compare_function->build(args);
-        /// getReturnTypeImpl always declares UInt8, so a comparison resolving to anything else
-        /// (a Nullable nested in a Tuple makes it Nullable(UInt8)) must not be returned here.
-        if (!isUInt8(elem_compare->getResultType()))
-            return executeGeneral(argument, current_threshold, data_type, input_rows_count);
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for `Nullable` (also nested), collation-aware, floating-point, and non-vectorizable `Tuple` types.
+    /// General path for `Nullable`, collation-aware, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,

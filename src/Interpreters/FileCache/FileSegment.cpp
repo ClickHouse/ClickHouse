@@ -10,7 +10,7 @@
 #include <Interpreters/ProcessList.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
+    extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
@@ -34,7 +35,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
     extern const Event FilesystemCacheBackgroundDownloadQueuePush;
-    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 namespace CurrentMetrics
@@ -99,13 +99,13 @@ FileSegment::FileSegment(
     {
         /// EMPTY is used when file segment is not in cache and
         /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
-        case State::EMPTY:
+        case (State::EMPTY):
         {
             chassert(key_metadata.lock());
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        case State::DOWNLOADED:
+        case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
             /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
@@ -120,7 +120,7 @@ FileSegment::FileSegment(
             chassert(key_metadata.lock());
             break;
         }
-        case State::DETACHED:
+        case (State::DETACHED):
         {
             break;
         }
@@ -176,6 +176,7 @@ String FileSegment::tryGetPath() const
 
 FileSegmentGuard::Lock FileSegment::lock() const
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 
@@ -196,26 +197,6 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
 size_t FileSegment::getReservedSize() const
 {
     return reserved_size.load();
-}
-
-size_t FileSegment::getDiskAccountedSize() const
-{
-    const auto km = tryGetKeyMetadata();
-    const size_t raw = reserved_size.load();
-    if (km && km->useRealDiskSize())
-        return km->alignFileSize(raw);
-    return raw;
-}
-
-size_t FileSegment::computeDiskAccountedDelta(size_t raw_delta) const
-{
-    const auto km = tryGetKeyMetadata();
-    if (km && km->useRealDiskSize())
-    {
-        const size_t prev_raw = reserved_size.load();
-        return km->alignFileSize(prev_raw + raw_delta) - km->alignFileSize(prev_raw);
-    }
-    return raw_delta;
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -620,9 +601,6 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
-        SCOPE_EXIT({ cv_lk.release(); });
-
         /// Wait for the download in short slices so that cancellation of the waiting query
         /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
         /// is observed promptly. The condition variable is only notified on download progress, so a
@@ -649,7 +627,7 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
                 break;
             }
             const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
-            if (cv.wait_for(cv_lk, slice, downloaded))
+            if (cv.wait_for(lk, slice, downloaded))
                 break;
         }
     }
@@ -689,8 +667,7 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    std::optional<size_t> reserve_hint,
-    FileCacheReserveAhead * reserve_ahead)
+    size_t reserve_hint)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -730,18 +707,29 @@ bool FileSegment::reserve(
 
     const size_t minimum_reserve_size = size_to_reserve;
 
-    if (!is_unbound && reserve_ahead)
+    if (!is_unbound)
     {
-        /// Don't reserve ahead past the segment end or the end of the read.
-        size_t segment_reserve_limit = range().size() - reserved_size;
-        if (reserve_hint)
+        const auto reserve_granularity = cache->getReserveGranularity();
+        if (reserve_granularity && reserve_granularity > size_to_reserve)
         {
-            const size_t read_horizon = current_downloaded_size + *reserve_hint;
-            segment_reserve_limit = std::min(segment_reserve_limit, read_horizon > reserved_size ? read_horizon - reserved_size : 0);
-        }
+            size_to_reserve = reserved_size + reserve_granularity > range().size()
+                ? range().size() - reserved_size
+                : reserve_granularity;
 
-        size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, segment_reserve_limit, cache->getReserveGranularity());
+            /// `reserve_hint` is measured from the current download offset, so the read ends at
+            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
+            const size_t read_horizon = current_downloaded_size + reserve_hint;
+            if (reserve_hint
+                && read_horizon > reserved_size
+                && read_horizon < reserved_size + size_to_reserve)
+                size_to_reserve = read_horizon - reserved_size;
+        }
     }
+
+    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
+    /// must never reserve less than the current write needs, otherwise the write would exceed the
+    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
+    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -753,22 +741,9 @@ bool FileSegment::reserve(
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
-    reserve_stat->not_enough_space = false;
 
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
-
-    if (!reserved && reserve_ahead)
-        reserve_ahead->reset();
-
-    /// Reserve-ahead is best-effort: retry with the exact size if it did not fit.
-    if (!reserved && size_to_reserve > minimum_reserve_size && reserve_stat->not_enough_space)
-    {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
-        *reserve_stat = FileCacheReserveStat{};
-        reserved = cache->tryReserve(
-            *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
-    }
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -910,16 +885,6 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-void FileSegment::notifyDownloadProgress()
-{
-    /// Keep the downloader role and the DOWNLOADING state; only wake waiters so a reader
-    /// streaming the committed prefix re-checks `offset < getCurrentWriteOffset()` and proceeds.
-    auto lk = lock();
-    assertNotDetachedUnlocked(lk);
-    assertIsDownloaderUnlocked("notifyDownloadProgress", lk);
-    cv.notify_all();
-}
-
 void FileSegment::completePartAndResetDownloader()
 {
     auto lk = lock();
@@ -977,12 +942,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        const auto km = tryGetKeyMetadata();
-        const size_t aligned_delta = (km && km->useRealDiskSize())
-            ? km->alignFileSize(reserved_size) - km->alignFileSize(downloaded_size)
-            : reserved_size - downloaded_size;
-        if (aligned_delta)
-            queue_iterator->decrementSize(aligned_delta);
+        queue_iterator->decrementSize(reserved_size - downloaded_size);
         reserved_size = downloaded_size.load();
     }
 
@@ -1290,14 +1250,10 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             entry = it->getEntry();
             entry_size = entry->size;
         }
-        const auto km = tryGetKeyMetadata();
-        const size_t expected_entry_size = (km && km->useRealDiskSize())
-            ? km->alignFileSize(reserved_size)
-            : reserved_size.load();
-        if (download_state != State::DOWNLOADING && entry_size != expected_entry_size)
+        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
             throw_logical(
                 fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
-                            entry_size, expected_entry_size, entry->toString()));
+                            entry_size, reserved_size.load(), entry->toString()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1586,18 +1542,6 @@ void FileSegmentsHolder::reset()
         }
     }
     file_segments.clear();
-}
-
-FileSegmentsHolderSharedPtr FileSegmentsHolder::popHolder()
-{
-    chassert(!file_segments.empty());
-    /// Move the first segment into its own holder WITHOUT touching the hold gauge: this holder
-    /// already counts it, so the splice just transfers ownership. The new holder completes the
-    /// segment (and decrements the gauge) on destruction.
-    auto result = std::make_shared<FileSegmentsHolder>();
-    result->file_segments.splice(result->file_segments.begin(), file_segments, file_segments.begin());
-    chassert(result->file_segments.size() == 1);
-    return result;
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()

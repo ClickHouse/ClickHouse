@@ -1,14 +1,12 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessEntityIO.h>
-#include <Access/AccessRights.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/RowPolicy.h>
 #include <Access/Quota.h>
-#include <Access/MaskingPolicy.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -179,23 +177,6 @@ namespace
             }
         }
     };
-
-    AccessRights getRequiredAccessToRestoreGrants(const AccessRights & access)
-    {
-        AccessRights required_access;
-        for (const auto & element : access.getElements())
-        {
-            /// Restoring a grant requires `GRANT OPTION` even if the backed-up entity does not have it.
-            if (element.is_partial_revoke && element.grant_option)
-                continue;
-
-            if (element.is_partial_revoke)
-                required_access.revoke(element);
-            else
-                required_access.grantWithGrantOption(element);
-        }
-        return required_access;
-    }
 }
 
 
@@ -358,14 +339,12 @@ void AccessRestorerFromBackup::loadFromBackup()
 }
 
 
-AccessRights AccessRestorerFromBackup::getRequiredAccess() const
+AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
 {
     if (!loaded)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Access entities not loaded");
 
-    AccessRights res;
-    /// Like `CREATE ... OR REPLACE`, replacement requires `DROP` even if the entity does not exist.
-    const bool replace = (creation_mode == RestoreAccessCreationMode::kReplace);
+    AccessRightsElements res;
     for (const auto & [id, entity_info] : entity_infos)
     {
         if (!entity_info.restore)
@@ -377,71 +356,59 @@ AccessRights AccessRestorerFromBackup::getRequiredAccess() const
             case User::TYPE:
             {
                 const auto & user = typeid_cast<const User &>(*entity);
-                AccessFlags flags = AccessType::CREATE_USER;
-                if (replace)
-                    flags |= AccessType::DROP_USER;
-                res.grant(flags, user.getName());
+                res.emplace_back(AccessType::CREATE_USER, user.getName());
                 if (!restore_with_current_grants)
-                    res.makeUnion(getRequiredAccessToRestoreGrants(user.access));
+                {
+                    auto elements = user.access.getElements();
+                    for (auto & element : elements)
+                    {
+                        if (!element.is_partial_revoke)
+                            element.grant_option = true;
+                        res.emplace_back(element);
+                    }
+                }
                 if (!user.granted_roles.isEmpty())
-                    res.grant(AccessType::ROLE_ADMIN);
+                    res.emplace_back(AccessType::ROLE_ADMIN);
                 break;
             }
 
             case Role::TYPE:
             {
                 const auto & role = typeid_cast<const Role &>(*entity);
-                AccessFlags flags = AccessType::CREATE_ROLE;
-                if (replace)
-                    flags |= AccessType::DROP_ROLE;
-                res.grant(flags, role.getName());
+                res.emplace_back(AccessType::CREATE_ROLE, role.getName());
                 if (!restore_with_current_grants)
-                    res.makeUnion(getRequiredAccessToRestoreGrants(role.access));
+                {
+                    auto elements = role.access.getElements();
+                    for (auto & element : elements)
+                    {
+                        if (!element.is_partial_revoke)
+                            element.grant_option = true;
+                        res.emplace_back(element);
+                    }
+                }
                 if (!role.granted_roles.isEmpty())
-                    res.grant(AccessType::ROLE_ADMIN);
+                    res.emplace_back(AccessType::ROLE_ADMIN);
                 break;
             }
 
             case SettingsProfile::TYPE:
             {
-                AccessFlags flags = AccessType::CREATE_SETTINGS_PROFILE;
-                if (replace)
-                    flags |= AccessType::DROP_SETTINGS_PROFILE;
-                res.grant(flags);
+                res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
                 break;
             }
 
             case RowPolicy::TYPE:
             {
                 const auto & policy = typeid_cast<const RowPolicy &>(*entity);
-                AccessFlags flags = AccessType::CREATE_ROW_POLICY;
-                if (replace)
-                    flags |= AccessType::DROP_ROW_POLICY;
-                res.grant(flags, policy.getDatabase(), policy.getTableName());
+                res.emplace_back(AccessType::CREATE_ROW_POLICY, policy.getDatabase(), policy.getTableName());
                 break;
             }
 
             case Quota::TYPE:
             {
-                AccessFlags flags = AccessType::CREATE_QUOTA;
-                if (replace)
-                    flags |= AccessType::DROP_QUOTA;
-                res.grant(flags);
+                res.emplace_back(AccessType::CREATE_QUOTA);
                 break;
             }
-
-#if CLICKHOUSE_CLOUD
-            case MaskingPolicy::TYPE:
-            {
-                /// `CREATE MASKING POLICY` is a GLOBAL-scope privilege, so the element carries no database or
-                /// table argument even though the policy itself names a table.
-                AccessFlags flags = AccessType::CREATE_MASKING_POLICY;
-                if (replace)
-                    flags |= AccessType::DROP_MASKING_POLICY;
-                res.grant(flags);
-                break;
-            }
-#endif
 
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));

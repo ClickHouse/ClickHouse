@@ -69,19 +69,21 @@ void MapConfiguration::enumerate(const std::string& key, Keys& range) const
 	std::string prefix = key;
 	if (!prefix.empty()) prefix += '.';
 	std::string::size_type psize = prefix.size();
-	/// The keys that start with `prefix` are contiguous in the sorted map.
-	for (StringMap::const_iterator it = _map.lower_bound(prefix); it != _map.end() && it->first.compare(0, psize, prefix) == 0; ++it)
+	for (StringMap::const_iterator it = _map.begin(); it != _map.end(); ++it)
 	{
-		std::string subKey;
-		std::string::size_type end = it->first.find('.', psize);
-		if (end == std::string::npos)
-			subKey = it->first.substr(psize);
-		else
-			subKey = it->first.substr(psize, end - psize);
-		if (keys.find(subKey) == keys.end())
+		if (it->first.compare(0, psize, prefix) == 0)
 		{
-			range.push_back(subKey);
-			keys.insert(subKey);
+			std::string subKey;
+			std::string::size_type end = it->first.find('.', psize);
+			if (end == std::string::npos)
+				subKey = it->first.substr(psize);
+			else
+				subKey = it->first.substr(psize, end - psize);
+			if (keys.find(subKey) == keys.end())
+			{
+				range.push_back(subKey);
+				keys.insert(subKey);
+			}
 		}
 	}
 }

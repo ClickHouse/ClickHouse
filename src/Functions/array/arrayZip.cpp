@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_COLUMN;
 }
@@ -40,13 +41,28 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Same "T was not captured" issue as `array()` — the zero-arg case
-        /// stays a separate alternative.
-        if (allow_unaligned)
-            return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(Nullable(T), ...))";
-        return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(T, ...))";
+        DataTypes arguments_types;
+        for (size_t index = 0; index < arguments.size(); ++index)
+        {
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
+
+            if (!array_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} must be array. Found {} instead.",
+                    toString(index + 1),
+                    getName(),
+                    arguments[index].type->getName());
+
+            auto nested_type = array_type->getNestedType();
+            if (allow_unaligned)
+                nested_type = makeNullable(nested_type);
+            arguments_types.emplace_back(nested_type);
+        }
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
     }
 
     ColumnPtr
@@ -167,7 +183,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Syntax syntax = "arrayZip(arr1, arr2, ... , arrN)";
     FunctionDocumentation::Arguments argument = {{"arr1, arr2, ... , arrN", "N arrays to combine into a single array.", {"Array(T)"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed", {"Array(T)"}};
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);", "[('a',5),('b',2),('c',1)]"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);", "[('a', 5), ('b', 2), ('c', 1)]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, example, introduced_in, category};
@@ -178,13 +194,12 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Syntax syntax_unaligned = "arrayZipUnaligned(arr1, arr2, ..., arrN)";
     FunctionDocumentation::Arguments argument_unaligned = {{"arr1, arr2, ..., arrN", "N arrays to combine into a single array.", {"Array(T)"}}};
     FunctionDocumentation::ReturnedValue returned_value_unaligned = {"Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.", {"Array(T)", "Tuple(T1, T2, ...)"}};
-    FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a',1),(NULL,2),(NULL,3)]"}};
+    FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a', 1),(NULL, 2),(NULL, 3)]"}};
     FunctionDocumentation::IntroducedIn introduced_in_unaligned = {20, 1};
     FunctionDocumentation::Category category_unaligned = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
 
     factory.registerFunction("arrayZipUnaligned", [](ContextPtr){ return FunctionArrayZip::create("arrayZipUnaligned", true); }, documentation_unaligned);
-    factory.registerAlias("zip", "arrayZipUnaligned", FunctionFactory::Case::Insensitive);
 }
 
 }

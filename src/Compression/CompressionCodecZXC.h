@@ -16,7 +16,6 @@ public:
     explicit CompressionCodecZXC(int level_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -38,6 +37,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
+    bool isExperimental() const override { return true; }
 
     String getDescription() const override
     {

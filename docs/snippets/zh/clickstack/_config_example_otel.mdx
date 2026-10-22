@@ -2,7 +2,7 @@
 title: OTel 配置示例
 ---
 
-将端点和密码占位符替换为 ClickStack 生成的凭据：
+下面展示了此配置的一个示例 (如果从 UI 复制，环境变量会预先填入) ：
 
 ```yaml
 receivers:
@@ -20,9 +20,9 @@ receivers:
 processors:
   batch:
   memory_limiter:
-    # 80% of maximum memory up to 2G, adjust for low memory environments
+    # 最大内存的 80%，上限为 2G，低内存环境请适当调整
     limit_mib: 1500
-    # 25% of limit up to 2G, adjust for low memory environments
+    # 上限的 25%，上限为 2G，低内存环境请适当调整
     spike_limit_mib: 512
     check_interval: 5s
 connectors:
@@ -34,6 +34,10 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

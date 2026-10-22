@@ -26,9 +26,6 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -36,9 +33,9 @@ public:
         return 0;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override

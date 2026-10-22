@@ -120,16 +120,16 @@ FROM format('GeoJSON', '{
 }')
 SETTINGS input_format_geojson_unsupported_geometry_handling = 'null';
 
--- MultiPoint is representable in the Geometry type.
+-- MultiPoint cannot be represented in the Geometry type: it throws by default instead of silently dropping data.
 SELECT variantType(geometry)
 FROM format('GeoJSON', '{
     "type": "FeatureCollection",
     "features": [
         {"type": "Feature", "geometry": {"type": "MultiPoint", "coordinates": [[0, 0], [1, 1]]}, "properties": {}}
     ]
-}');
+}'); -- { serverError INCORRECT_DATA }
 
--- The unsupported geometry handling does not apply to MultiPoint, the geometry is stored.
+-- MultiPoint with null handling inserts NULL for geometry.
 SELECT isNull(geometry)
 FROM format('GeoJSON', '{
     "type": "FeatureCollection",

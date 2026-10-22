@@ -1,0 +1,508 @@
+---
+title: 'pandas에서 마이그레이션'
+sidebarTitle: 'pandas에서 마이그레이션'
+slug: /chdb/guides/migration-from-pandas
+description: 'pandas에서 DataStore로 마이그레이션하기 위한 단계별 가이드'
+keywords: ['chdb', 'datastore', 'pandas', '마이그레이션', '가이드']
+doc_type: 'guide'
+---
+
+이 가이드는 호환성을 유지하면서 성능을 향상할 수 있도록 기존 pandas 코드를 DataStore로 마이그레이션하는 방법을 안내합니다.
+
+<div id="one-line">
+  ## 한 줄로 마이그레이션
+</div>
+
+가장 간단한 마이그레이션 방법은 import만 변경하는 것입니다:
+
+```python
+# 이전 (pandas)
+import pandas as pd
+
+# 이후 (DataStore)
+from chdb import datastore as pd
+```
+
+이제 끝입니다! 대부분의 pandas 코드는 수정 없이 그대로 작동합니다.
+
+<div id="step-by-step">
+  ## 단계별 마이그레이션
+</div>
+
+<Steps>
+  <Step>
+    ### chDB 설치
+
+    ```bash
+    pip install "chdb>=4.0"
+    ```
+  </Step>
+
+  <Step>
+    ### import 구문 변경
+
+    ```python
+    # 다음을 변경합니다:
+    import pandas as pd
+
+    # 다음으로 변경합니다:
+    from chdb import datastore as pd
+    ```
+  </Step>
+
+  <Step>
+    ### 코드 테스트
+
+    기존 코드를 실행하세요. 대부분의 작업은 수정 없이 그대로 동작합니다.
+
+    ```python
+    from chdb import datastore as pd
+
+    # 아래 코드는 모두 동일하게 동작합니다
+    df = pd.read_csv("data.csv")
+    result = df[df['age'] > 25]
+    grouped = df.groupby('city')['salary'].mean()
+    df.to_csv("output.csv")
+    ```
+  </Step>
+
+  <Step>
+    ### 차이점 확인
+
+    일부 작업은 다르게 동작합니다. 아래의 [주요 차이점](#differences)을 참조하세요.
+  </Step>
+</Steps>
+
+***
+
+<div id="works-unchanged">
+  ## 변경 없이 그대로 작동하는 항목
+</div>
+
+<div id="loading-unchanged">
+  ### 데이터 로딩
+</div>
+
+```python
+# 이들은 모두 같은 방식으로 작동합니다
+df = pd.read_csv("data.csv")
+df = pd.read_parquet("data.parquet")
+df = pd.read_json("data.json")
+df = pd.read_excel("data.xlsx")
+```
+
+<div id="filtering-unchanged">
+  ### 필터링
+</div>
+
+```python
+# 불리언 인덱싱
+df[df['age'] > 25]
+df[(df['age'] > 25) & (df['city'] == 'NYC')]
+
+# query() 메서드
+df.query('age > 25 and salary > 50000')
+```
+
+<div id="selection-unchanged">
+  ### 선택
+</div>
+
+```python
+# 컬럼 선택
+df['name']
+df[['name', 'age']]
+
+# 행 선택
+df.head(10)
+df.tail(10)
+df.iloc[0:100]
+```
+
+<div id="groupby-unchanged">
+  ### GroupBy 및 집계
+</div>
+
+```python
+# GroupBy
+df.groupby('city')['salary'].mean()
+df.groupby(['city', 'dept']).agg({'salary': ['sum', 'mean']})
+```
+
+<div id="sorting-unchanged">
+  ### 정렬
+</div>
+
+```python
+df.sort_values('salary', ascending=False)
+df.sort_values(['city', 'age'])
+```
+
+<div id="string-unchanged">
+  ### String 연산
+</div>
+
+```python
+df['name'].str.upper()
+df['name'].str.contains('John')
+df['name'].str.len()
+```
+
+<div id="datetime-unchanged">
+  ### DateTime 연산
+</div>
+
+```python
+df['date'].dt.year
+df['date'].dt.month
+df['date'].dt.dayofweek
+```
+
+<div id="io-unchanged">
+  ### I/O 연산
+</div>
+
+```python
+df.to_csv("output.csv")
+df.to_parquet("output.parquet")
+df.to_json("output.json")
+```
+
+***
+
+<div id="differences">
+  ## 주요 차이점
+</div>
+
+<div id="lazy">
+  ### 1. 지연 평가
+</div>
+
+DataStore 작업은 지연 평가 방식으로 동작하므로, 결과가 필요해질 때까지 실행되지 않습니다.
+
+**pandas:**
+
+```python
+# 즉시 실행됨
+result = df[df['age'] > 25]
+print(type(result))  # pandas.DataFrame
+```
+
+**DataStore:**
+
+```python
+# 쿼리를 생성하지만 아직 실행되지는 않습니다
+result = ds[ds['age'] > 25]
+print(type(result))  # DataStore(지연 평가)
+
+# 데이터가 필요할 때 실행됩니다
+print(result)        # 실행이 시작됩니다
+df = result.to_df()  # 실행이 시작됩니다
+```
+
+<div id="return-types">
+  ### 2. 반환 유형
+</div>
+
+| 연산                | pandas 반환값 | DataStore 반환값      |
+| ----------------- | ---------- | ------------------ |
+| `df['col']`       | Series     | ColumnExpr (지연 평가) |
+| `df[['a', 'b']]`  | DataFrame  | DataStore (지연 평가)  |
+| `df[condition]`   | DataFrame  | DataStore (지연 평가)  |
+| `df.groupby('x')` | GroupBy    | LazyGroupBy        |
+
+<div id="no-inplace">
+  ### 3. `inplace` 매개변수 미지원
+</div>
+
+DataStore는 `inplace=True`를 지원하지 않습니다. 항상 반환값을 사용하십시오:
+
+**pandas:**
+
+```python
+df.drop(columns=['col'], inplace=True)
+```
+
+**DataStore:**
+
+```python
+ds = ds.drop(columns=['col'])  # 결과를 다시 할당하세요
+```
+
+<div id="comparing">
+  ### 4. DataStore 비교하기
+</div>
+
+pandas는 DataStore 객체를 인식하지 않으므로 비교할 때는 `to_pandas()`를 사용하세요:
+
+```python
+# 예상한 대로 작동하지 않을 수 있습니다
+df == ds  # pandas doesn't know DataStore
+
+# 대신 다음과 같이 하세요
+df.equals(ds.to_pandas())
+```
+
+<div id="row-order">
+  ### 5. 행 순서
+</div>
+
+DataStore는 파일 소스(예: SQL 데이터베이스)의 경우 행 순서를 유지하지 않을 수 있습니다. 명시적으로 정렬하세요:
+
+```python
+# pandas는 순서를 유지합니다
+df = pd.read_csv("data.csv")
+
+# DataStore - 순서를 보장하려면 sort를 사용하세요
+ds = pd.read_csv("data.csv")
+ds = ds.sort('id')  # 명시적 정렬
+```
+
+***
+
+<div id="patterns">
+  ## 마이그레이션 패턴
+</div>
+
+<div id="pattern-1">
+  ### 패턴 1: 읽고 분석한 뒤 쓰기
+</div>
+
+```python
+# pandas
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['amount'] > 100].groupby('category')['amount'].sum()
+result.to_csv("output.csv")
+
+# DataStore - 같은 코드가 그대로 작동합니다!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['amount'] > 100].groupby('category')['amount'].sum()
+result.to_csv("output.csv")
+```
+
+<div id="pattern-2">
+  ### 패턴 2: pandas 작업용 DataFrame
+</div>
+
+pandas 전용 기능이 필요하다면 마지막에 변환하세요:
+
+```python
+from chdb import datastore as pd
+
+# 빠른 DataStore 연산
+ds = pd.read_csv("large_data.csv")
+ds = ds.filter(ds['date'] >= '2024-01-01')
+ds = ds.filter(ds['amount'] > 100)
+
+# 특정 기능이 필요하면 마지막에 pandas로 변환
+df = ds.to_df()
+df_pivoted = df.pivot_table(...)  # pandas 전용
+```
+
+<div id="pattern-3">
+  ### 패턴 3: 혼합 워크플로우
+</div>
+
+```python
+from chdb import datastore as pd
+import pandas
+
+# 빠른 필터링을 위해 DataStore로 시작
+ds = pd.read_csv("huge_file.csv")  # 1,000만 행
+ds = ds.filter(ds['year'] == 2024)  # 빠른 SQL 필터
+ds = ds.select('col1', 'col2', 'col3')  # 컬럼 프루닝
+
+# pandas 전용 연산을 위해 변환
+df = ds.to_df()  # 이제 약 10만 행만 처리
+result = df.apply(complex_custom_function)  # pandas 처리
+```
+
+***
+
+<div id="performance">
+  ## 성능 비교
+</div>
+
+DataStore는 대규모 데이터셋에서 훨씬 빠릅니다:
+
+| 작업               | pandas  | DataStore | 속도 향상      |
+| ---------------- | ------- | --------- | ---------- |
+| GroupBy count    | 347ms   | 17ms      | **19.93x** |
+| 복잡한 파이프라인        | 2,047ms | 380ms     | **5.39x**  |
+| Filter+Sort+Head | 1,537ms | 350ms     | **4.40x**  |
+| GroupBy agg      | 406ms   | 141ms     | **2.88x**  |
+
+*1,000만 행 기준 벤치마크*
+
+***
+
+<div id="troubleshooting">
+  ## 마이그레이션 문제 해결
+</div>
+
+<div id="issue-op">
+  ### 문제: 작업이 실행되지 않음
+</div>
+
+일부 pandas 작업은 지원되지 않을 수 있습니다. 다음 사항을 확인하세요.
+
+1. 해당 작업이 [호환성 목록](/ko/products/chdb/datastore/pandas-compat)에 포함되어 있습니까?
+2. 먼저 pandas로 변환해 보십시오: `ds.to_df().operation()`
+
+<div id="issue-results">
+  ### 문제: 결과가 다름
+</div>
+
+무슨 일이 일어나고 있는지 파악하려면 디버그 로깅을 활성화하십시오:
+
+```python
+from chdb.datastore.config import config
+config.enable_debug()
+
+# 생성되는 SQL을 확인하세요
+ds.filter(ds['x'] > 10).explain()
+```
+
+<div id="issue-slow">
+  ### 문제: 성능 저하
+</div>
+
+실행 패턴을 확인하세요:
+
+```python
+# 나쁜 예: 소규모 실행을 여러 번 수행
+for i in range(1000):
+    result = ds.filter(ds['id'] == i).to_df()
+
+# 좋은 예: 단일 실행
+result = ds.filter(ds['id'].isin(ids)).to_df()
+```
+
+<div id="issue-types">
+  ### 문제: 타입 불일치
+</div>
+
+DataStore는 타입을 서로 다르게 추론할 수 있습니다:
+
+```python
+# 타입 확인
+print(ds.dtypes)
+
+# 강제 변환
+ds['col'] = ds['col'].astype('int64')
+```
+
+***
+
+<div id="gradual">
+  ## 점진적 마이그레이션 전략
+</div>
+
+<div id="week-1">
+  ### 1주 차: 호환성 테스트
+</div>
+
+```python
+# 두 import를 모두 유지하세요
+import pandas as pd
+from chdb import datastore as ds
+
+# 결과를 비교하세요
+pdf = pd.read_csv("data.csv")
+dsf = ds.read_csv("data.csv")
+
+# 일치하는지 확인하세요
+assert pdf.equals(dsf.to_pandas())
+```
+
+<div id="week-2">
+  ### 2주차: 간단한 스크립트로 전환
+</div>
+
+다음과 같은 스크립트부터 시작합니다:
+
+* 대용량 파일을 읽는 스크립트
+* 필터링과 집계를 수행하는 스크립트
+* 사용자 정의 apply 함수를 사용하지 않는 스크립트
+
+<div id="week-3">
+  ### 3주 차: 복잡한 경우 처리
+</div>
+
+사용자 정의 함수가 있는 스크립트의 경우:
+
+```python
+from chdb import datastore as pd
+
+# 무거운 작업은 DataStore에 맡기기
+ds = pd.read_csv("data.csv")
+ds = ds.filter(ds['year'] == 2024)  # SQL
+
+# 커스텀 작업을 위해 변환
+df = ds.to_df()
+result = df.apply(my_custom_function)
+```
+
+<div id="week-4">
+  ### 4주차: 전체 마이그레이션
+</div>
+
+모든 스크립트에서 DataStore import를 사용하도록 전환합니다.
+
+***
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="faq-both">
+  ### pandas와 DataStore를 둘 다 사용할 수 있나요?
+</div>
+
+예! 두 형식 사이를 자유롭게 변환할 수 있습니다:
+
+```python
+from chdb import datastore as ds
+import pandas as pd
+
+# DataStore에서 pandas로
+df = ds_result.to_pandas()
+
+# pandas에서 DataStore로  
+ds = ds.DataFrame(pd_result)
+```
+
+<div id="faq-tests">
+  ### 테스트가 여전히 통과하나요?
+</div>
+
+대부분의 테스트는 통과합니다. 비교 테스트는 `pandas`로 변환하세요:
+
+```python
+def test_my_function():
+    result = my_function()
+    expected = pd.DataFrame(...)
+    pd.testing.assert_frame_equal(result.to_pandas(), expected)
+```
+
+<div id="faq-jupyter">
+  ### Jupyter에서 DataStore를 사용할 수 있나요?
+</div>
+
+네! DataStore는 Jupyter 노트북에서 사용할 수 있습니다:
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")
+ds.head()  # Jupyter에서 깔끔하게 표시됩니다
+```
+
+<div id="faq-issues">
+  ### 문제는 어떻게 보고하나요?
+</div>
+
+호환성 문제가 발견되면 다음 링크로 보고하십시오:
+https://github.com/chdb-io/chdb/issues

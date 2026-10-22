@@ -63,13 +63,13 @@ s390x 실행형을 디버그하려면 QEMU를 디버그 모드로 실행하여 c
 qemu-s390x-static -g 31338 -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
-다른 셸에서 LLDB를 실행해 attach한 후, `<ClickHouse Parent Directory>`와 `<build directory>`를 환경에 맞는 값으로 바꾸십시오.
+다른 셸에서 LLDB를 실행해 attach한 후, `<Clickhouse Parent Directory>`와 `<build directory>`를 환경에 맞는 값으로 바꾸십시오.
 
 ```bash
 lldb-15
 (lldb) target create ./clickhouse
-Current executable set to '/<ClickHouse Parent Directory>/ClickHouse/<build directory>/programs/clickhouse' (s390x).
-(lldb) settings set target.source-map <build directory> /<ClickHouse Parent Directory>/ClickHouse
+Current executable set to '/<Clickhouse Parent Directory>/ClickHouse/<build directory>/programs/clickhouse' (s390x).
+(lldb) settings set target.source-map <build directory> /<Clickhouse Parent Directory>/ClickHouse
 (lldb) gdb-remote 31338
 Process 1 stopped
 * thread #1, stop reason = signal SIGTRAP
@@ -91,7 +91,7 @@ Process 1 stopped
 -> 450      inside_main = true;
    451      SCOPE_EXIT({ inside_main = false; });
    452
-   453      /// PHDR cache is required for query profiler to work reliably
+   453      /// PHDR 캐시는 쿼리 프로파일러가 안정적으로 동작하기 위해 필요합니다
 ```
 
 <div id="visual-studio-code-integration">

@@ -20,9 +20,4 @@ std::string BackupCoordinationKeeperMapTables::getDataPath(const std::string & t
     return tables_with_info.at(table_zookeeper_root_path).data_path_in_backup;
 }
 
-std::string BackupCoordinationKeeperMapTables::getTableId(const std::string & table_zookeeper_root_path) const
-{
-    return tables_with_info.at(table_zookeeper_root_path).table_id;
-}
-
 }
