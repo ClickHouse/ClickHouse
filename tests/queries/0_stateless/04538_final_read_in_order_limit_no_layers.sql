@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: long, no-parallel-replicas
 -- no-parallel-replicas: the test checks the shape of the local FINAL reading pipeline.
 -- Disable force_primary_key_reverse_order: checks the shape of the `FINAL` read in order pipeline for an ascending key
 SET force_primary_key_reverse_order = 0;

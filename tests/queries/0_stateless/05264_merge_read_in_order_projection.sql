@@ -1,4 +1,6 @@
 -- Random settings limits: optimize_read_in_order=(1, None); optimize_distinct_in_order=(1, None); optimize_use_projections=(1, None)
+-- Disable force_primary_key_reverse_order: checks the read type for ascending and descending sorting keys
+SET force_primary_key_reverse_order = 0;
 
 -- A table read through `merge` or a `Merge` table can be served from a normal projection with another ORDER BY.
 -- Its rows must not be taken as sorted by the table's sorting key.

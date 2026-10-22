@@ -3,6 +3,9 @@
 -- in the main read and crosses the LIMIT, while the other columns are read lazily. Every query is followed by the
 -- number of lazy reads in its plan, and the results are compared with the optimization disabled.
 
+-- Disable force_primary_key_reverse_order: the PASTE JOIN depends on the physical row order of the tables
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
