@@ -37,6 +37,7 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/RadixUniqExactTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/Chain.h>
@@ -372,7 +373,8 @@ static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IO
         RowsBeforeStepCounterPtr rows_before_aggregation = std::make_shared<RowsBeforeStepCounter>();
         for (const auto & processor : *processors)
         {
-            if (typeid_cast<AggregatingTransform *>(processor.get()) || typeid_cast<AggregatingInOrderTransform *>(processor.get()))
+            if (typeid_cast<AggregatingTransform *>(processor.get()) || typeid_cast<AggregatingInOrderTransform *>(processor.get())
+                || typeid_cast<RadixUniqExactRouteTransform *>(processor.get()))
             {
                 processor->setRowsBeforeAggregationCounter(rows_before_aggregation);
                 has_aggregation = true;
