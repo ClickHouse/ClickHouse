@@ -161,6 +161,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
     NameSet columns_shadowing_map_subcolumns_,
+    NameToNameMap map_subcolumn_index_columns_,
     JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
     , json_argument_types(std::move(json_argument_types_))
@@ -169,6 +170,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , map_subcolumn_index_columns(std::move(map_subcolumn_index_columns_))
 {
     if (!predicate)
     {
@@ -626,8 +628,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
-    const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
-    const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
+    const auto map_key_index = getKeyIndex(getMapIndexColumnName(map_subcolumn_index_columns, "mapKeys", column_name));
+    const auto map_value_index = getKeyIndex(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", column_name));
     bool reads_map_element_against_values_index = false;
 
     if (key_node.isFunction())
@@ -649,7 +651,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             auto first_argument = key_function_node.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            if (const auto map_keys_index = getKeyIndex(getMapIndexColumnName(map_subcolumn_index_columns, "mapKeys", map_column_name)))
             {
                 auto second_argument = key_function_node.getArgumentAt(1);
                 DataTypePtr const_type;
@@ -669,7 +671,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                     return false;
                 }
             }
-            else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            else if (const auto map_values_exists = getKeyIndex(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", map_column_name)))
             {
                 key_index = map_values_exists;
                 reads_map_element_against_values_index = true;
@@ -693,13 +695,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (const_value == value_type->getDefault())
                 return false;
 
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            if (const auto map_keys_index = getKeyIndex(getMapIndexColumnName(map_subcolumn_index_columns, "mapKeys", map_column_name)))
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
                 const_source_type = std::make_shared<DataTypeString>();
             }
-            else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            else if (const auto map_values_idx = getKeyIndex(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", map_column_name)))
             {
                 key_index = map_values_idx;
                 reads_map_element_against_values_index = true;
@@ -1048,7 +1050,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns(), getMapSubcolumnIndexColumns(),
+        collectJSONIndexArgumentTypes(*index.expression));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
