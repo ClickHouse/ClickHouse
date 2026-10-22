@@ -253,7 +253,7 @@ private:
         CredentialsProviderKey,
         typename CredentialsLRUQueue::iterator,
         CredentialsKeyHash,
-        std::equal_to<CredentialsProviderKey>,
+        std::equal_to<>,
         NoDumpAllocator<std::pair<const CredentialsProviderKey, typename CredentialsLRUQueue::iterator>>>
         cached_credentials;
     CredentialsLRUQueue credentials_lru;
