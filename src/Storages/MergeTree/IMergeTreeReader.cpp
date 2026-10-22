@@ -865,7 +865,7 @@ bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMe
 {
     return columns_cache
         && part.isWidePart()
-        && canUseColumnsCacheForPart(part.getTableUUID(), part.isProjectionPart());
+        && canUseColumnsCacheForPart(part.getTableUUID());
 }
 
 MergeTreeReaderPtr createMergeTreeReader(

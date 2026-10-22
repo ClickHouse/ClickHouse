@@ -108,11 +108,12 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     if (columns_cache_reads_possible || columns_cache_writes_possible)
     {
         stripes = ColumnsCacheStripes::forPart(data_part_info_for_read->getIndexGranularity());
+        columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
 
         column_identities.reserve(requested_column_names.size());
         for (const auto & name : requested_column_names)
             column_identities.push_back(getColumnsCacheColumnIdentity(
-                data_part_info_for_read->getTableUUID(), data_part_info_for_read->getPartName(), name, settings.columns_cache_schema_identity));
+                data_part_info_for_read->getTableUUID(), columns_cache_part_name, name, settings.columns_cache_schema_identity));
 
         /// Capture the invalidation generation once, before anything is read, so that any
         /// invalidation racing with this reader is observed. It is passed to `setMany` by every
@@ -512,7 +513,7 @@ void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_ma
     {
         lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_served_from_cache);
         LOG_TEST(log, "Range of marks [{}, {}) of part {}: {} of {} granules are in the columns cache",
-            range_first_mark, range_end_mark, data_part_info_for_read->getPartName(),
+            range_first_mark, range_end_mark, columns_cache_part_name,
             std::count(granule_served_from_cache.begin(), granule_served_from_cache.end(), true), granule_served_from_cache.size());
     }
 }
@@ -838,7 +839,7 @@ void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t first_mark, size_t ro
         if (row_begin < entry->row_begin || entry->row_begin + cached_column.size() < row_begin + rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Columns cache entry of column {} of part {} holds rows [{}, {}), but rows [{}, {}) are requested",
-                requested_column_names[pos], data_part_info_for_read->getPartName(),
+                requested_column_names[pos], columns_cache_part_name,
                 entry->row_begin, entry->row_begin + cached_column.size(), row_begin, row_begin + rows);
         const size_t offset = row_begin - entry->row_begin;
 
@@ -962,7 +963,7 @@ void MergeTreeReaderWide::addPendingColumnsCacheEntry(size_t pos, size_t first_m
     auto entry = makeColumnsCacheEntry();
     {
         MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        entry->part_name = data_part_info_for_read->getPartName();
+        entry->part_name = columns_cache_part_name;
         entry->column_name = requested_column_names[pos];
     }
     entry->table_uuid = data_part_info_for_read->getTableUUID();
@@ -1102,7 +1103,7 @@ void MergeTreeReaderWide::flushPendingColumnsCacheWrites()
     if (!canWriteToColumnsCache())
         return;
 
-    LOG_TEST(log, "Writing {} entries of part {} to the columns cache", entries.size(), data_part_info_for_read->getPartName());
+    LOG_TEST(log, "Writing {} entries of part {} to the columns cache", entries.size(), columns_cache_part_name);
 
     /// Charge the budget only for entries that were actually inserted: a write that is rejected
     /// as stale or does not stay resident must not consume the budget, otherwise a query could
