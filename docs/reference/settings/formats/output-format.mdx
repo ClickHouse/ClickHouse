@@ -827,6 +827,14 @@ Target row group size in bytes, before compression.
 
 Use Parquet String type instead of Binary for String columns.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting."}]}]}/>
+
+Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

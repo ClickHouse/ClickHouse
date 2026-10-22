@@ -28,6 +28,8 @@ SETTINGS table_disk = 1, disk = disk(
     name = '05345_cache_${CLICKHOUSE_DATABASE}',
     type = 'cache',
     max_size = '1Mi',
+    max_file_segment_size = '256Ki',
+    boundary_alignment = '256Ki',
     path = '05345_cache_${CLICKHOUSE_DATABASE}/',
     disk = disk(
         name = '05345_reader_${CLICKHOUSE_DATABASE}',
