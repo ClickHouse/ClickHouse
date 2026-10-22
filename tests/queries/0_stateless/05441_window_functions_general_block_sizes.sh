@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 create_table
 
 {
-check 'ranking' "SELECT p, id, (row_number() OVER w, rank() OVER w, dense_rank() OVER w) AS r FROM t WINDOW w AS (PARTITION BY p ORDER BY k)"
+check 'ranking' "SELECT p, id, (row_number() OVER o, rank() OVER w, dense_rank() OVER w) AS r FROM t WINDOW w AS (PARTITION BY p ORDER BY k), o AS (PARTITION BY p ORDER BY k, id)"
 check 'partition readers' "SELECT p, id, (ntile(3) OVER n, round(percent_rank() OVER w, 6), round(cume_dist() OVER w, 6)) AS r FROM t WINDOW w AS (PARTITION BY p ORDER BY k), n AS (PARTITION BY p ORDER BY k, id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
 check 'lag and lead beyond the block' "SELECT p, id, (lag(v, 5) OVER w, lead(v, 7) OVER w, lag(v, 1, -1) OVER w, lead(v) OVER w) AS r FROM t WINDOW w AS (PARTITION BY p ORDER BY k, id)"
 check 'offsets beyond the frame' "SELECT p, id, (lagInFrame(v, 3, -1) OVER f, leadInFrame(v, 3, -1) OVER f, lagInFrame(v, 2) OVER f, leadInFrame(v, 2) OVER f, nth_value(v, 4) OVER f, nth_value(v, 1) OVER f) AS r FROM t WINDOW f AS (PARTITION BY p ORDER BY k, id ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)"
