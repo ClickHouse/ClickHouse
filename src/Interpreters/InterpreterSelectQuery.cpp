@@ -2668,7 +2668,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         /// require reading some data (but much faster than reading columns).
         /// Set a special flag in query info so the storage will see it and optimize count in read() method.
         query_info.optimize_trivial_count = optimize_trivial_count;
-        return storage->totalRows(context);
+        return storage->totalRowsInSnapshot(storage_snapshot, context);
     }
 
     // It's possible to optimize count() given only partition predicates
