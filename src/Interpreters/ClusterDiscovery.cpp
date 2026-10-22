@@ -380,6 +380,11 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     std::vector<Strings> shards;
+    /// The shard ids the shards are grouped by, in the order the shards end up numbered. `Cluster`
+    /// renumbers them `1..N`, so these are what a shard number of the resulting cluster actually means:
+    /// once the last node of some shard is gone from the visible set, every later shard shifts down
+    /// while the cluster name stays the same.
+    Strings shard_ids;
     {
         std::map<size_t, Strings> replica_addresses;
 
@@ -394,8 +399,12 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         }
 
         shards.reserve(replica_addresses.size());
-        for (auto & [_, replicas] : replica_addresses)
+        shard_ids.reserve(replica_addresses.size());
+        for (auto & [shard_id, replicas] : replica_addresses)
+        {
             shards.emplace_back(std::move(replicas));
+            shard_ids.emplace_back(toString(shard_id));
+        }
     }
 
     bool secure = cluster_info.current_node.secure;
@@ -410,10 +419,18 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* priority= */ Priority{1},
         /* cluster_name= */ cluster_info.name,
         /* cluster_secret= */ cluster_info.cluster_secret};
+    /// The nodes register at `<zk_root>/shards/<server uuid>` with no component for the name the cluster
+    /// is configured under, so two `remote_servers` entries over one discovery path read the same znodes
+    /// and agree on which shard a node belongs to. Keying the identity by the discovery path rather than
+    /// by the entry's name therefore keeps parallel replicas through either name, while two discovery
+    /// paths whose nodes happen to carry the same `discovery.shard` numbers stay foreign to each other.
+    const String shard_scope_key = Cluster::makeKeeperScopeKey(cluster_info.zk_name, cluster_info.zk_root);
     auto cluster = std::make_shared<Cluster>(
         context->getSettingsRef(),
         shards,
-        params);
+        params,
+        shard_ids,
+        shard_scope_key);
     return cluster;
 }
 

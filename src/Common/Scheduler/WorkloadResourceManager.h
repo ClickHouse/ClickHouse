@@ -7,6 +7,7 @@
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/setThreadName.h>
@@ -41,7 +42,11 @@ namespace DB
  * Let's consider how a single resource is implemented. Every workload is represented by corresponding WorkloadNode.
  * Every WorkloadNode manages its own subtree of ISchedulerNode objects (see details in WorkloadNode.h)
  * WorkloadNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
- * Parent of the root workload for a resource is the scheduler with its own thread.
+ * A resource may have several root workloads (workloads created without a parent). They are not
+ * attached to the scheduler directly; instead each resource has one implicit anonymous root workload
+ * that is the scheduler's single child, and every parentless workload is attached as a child of it.
+ * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
+ * fairness/priorities via the normal workload policy machinery.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -52,13 +57,15 @@ namespace DB
  *
  *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *              all                - WorkloadNode
+ *           (implicit)            - anonymous root WorkloadNode with an empty name (the scheduler's single child)
+ *               |
+ *              all                - WorkloadNode (has no explicit parent, so a child of the implicit root)
  *               |
  *            p0_fair              - FairPolicy (part of parent WorkloadNode internal structure)
  *            /     \
  *    production     development   - WorkloadNode
  *        |               |
- *      queue           queue      - FifoQueue (part of parent WorkloadNode internal structure)
+ *      queue           queue      - RequestQueue (part of parent WorkloadNode internal structure)
  *
  * === UPDATING WORKLOADS ===
  * Workload may be created, updated or deleted.
@@ -112,7 +119,7 @@ namespace DB
  *  - all events are processed by specific scheduler thread
  *  - hierarchy-wide actions: requests dequeueing, activations propagation and nodes updates.
  *  - resource version control management
- * FifoQueue::mutex and SemaphoreContraint::mutex
+ * RequestQueue::mutex and SemaphoreContraint::mutex
  *  - serializes query and scheduler threads on specific node accesses
  *  - resource request processing: enqueueRequest(), dequeueRequest() and finishRequest()
  */
@@ -187,6 +194,13 @@ private:
     private:
         void updateCurrentVersion();
 
+        /// The implicit anonymous root workload, stored in node_for_workload under the empty-string key.
+        WorkloadNodePtr implicitRoot()
+        {
+            auto it = node_for_workload.find("");
+            return it == node_for_workload.end() ? nullptr : it->second;
+        }
+
         template <class Task>
         void executeInSchedulerThread(Task && task)
         {
@@ -231,6 +245,24 @@ private:
                     std::static_pointer_cast<typename Node::Base>(result)
                 };
             };
+
+            // Create the implicit anonymous root workload as the scheduler's single child. Every
+            // workload without an explicit parent becomes a child of it (see createNode()), so the
+            // scheduler always has exactly one child and the otherwise-root workloads are scheduled
+            // with fairness/priorities by the normal workload policy machinery.
+            auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
+            // Anonymous root: an empty basename, which getPath() skips, so a workload directly under
+            // the implicit root renders as "/all".
+            implicit->basename = {};
+            // Store the implicit root under the empty-string key so a parentless workload (parent == "")
+            // attaches through the same node_for_workload[parent] path as any other child.
+            node_for_workload[""] = std::static_pointer_cast<IWorkloadNode>(implicit);
+            auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
+            executeInSchedulerThread([&, this]
+            {
+                scheduler->attachChild(implicit_scheduler_node);
+                updateCurrentVersion();
+            });
         }
 
         // Type-erasure for time-shared vs. space-shared resources
@@ -244,8 +276,11 @@ private:
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
+        /// Maps workload name to its node. The implicit anonymous root workload (the scheduler's
+        /// single child, empty basename) is stored under the empty-string key: every workload without
+        /// an explicit parent is its child, so multiple SQL "root" workloads form one hierarchy under
+        /// it, scheduled with fairness/priorities by the normal policy machinery.
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        WorkloadNodePtr root_node;
         VersionPtr current_version;
     };
 
@@ -278,8 +313,16 @@ private:
         void attach(const ResourcePtr & resource, const VersionPtr & version, IWorkloadNode & node);
         void detach(const ResourcePtr & resource);
 
+        /// Size the per-resource scheduling state (one slot per attached leaf) and stamp each link
+        /// with a pointer to its slot. Called once by `acquire()` after all attaches complete, on
+        /// the query-setup thread, before the classifier is handed out — so the hot paths only ever
+        /// read an already-resolved `ResourceLink::scheduling_state`, never allocate.
+        void finalizeResourceStates();
+
     private:
         const ClassifierSettings settings;
+        /// Per-query scheduling context, stamped by get() onto every link this classifier hands out.
+        const ResourceSchedulingContextPtr scheduling_context;
         WorkloadResourceManager * resource_manager{};
         mutable std::mutex mutex;
         struct Attachment

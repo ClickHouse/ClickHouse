@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
@@ -22,7 +21,6 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Processors/QueryPlan/Streaming/CalculateWatermarksStep.h>
-#include <Processors/QueryPlan/Streaming/RaiseWatermarksStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -141,14 +139,10 @@ Pipe buildPartitionReadingPipeline(
     {
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
-        chassert(metadata_plan);
-
         metadata_plan->addStep(std::make_unique<StampPartitionCursorsStep>(metadata_plan->getCurrentHeader(), partition_id, stream_settings.unordered));
-        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, context));
-        metadata_plan->addStep(std::make_unique<RaiseWatermarksStep>(metadata_plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
-        metadata_plan->addStep(std::make_unique<StampPartitionWatermarksStep>(metadata_plan->getCurrentHeader(), partition_id));
+        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context));
 
-        auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader());
+        auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader(), partition_id, state.getPartitionWatermark(partition_id));
 
         std::vector<QueryPlanPtr> plans;
         plans.push_back(std::move(metadata_plan));
@@ -221,7 +215,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     result.pipe = Pipe::unitePipes(std::move(pipes));
 
     if (stream_settings.watermark)
-        result.pipe.calibrateWatermarks(1);
+        result.pipe.calibrateWatermarks(1, state.getGlobalWatermark());
     else
         result.pipe.resize(1);
 
