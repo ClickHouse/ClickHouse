@@ -4,6 +4,7 @@
 #include <Interpreters/StorageID.h>
 #include <base/defines.h>
 
+#include <atomic>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -35,8 +36,13 @@ private:
         std::unordered_map<StorageID, std::exception_ptr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> errors;
     };
 
+    /// Called on every access, so the errors of a finished query are released by the next access.
+    void removeFinishedQueries() const TSA_REQUIRES(mutex);
+
     mutable std::mutex mutex;
-    std::vector<QueryErrors> queries TSA_GUARDED_BY(mutex);
+    mutable std::vector<QueryErrors> queries TSA_GUARDED_BY(mutex);
+    /// `!queries.empty()`, readable without `mutex`.
+    mutable std::atomic<bool> has_queries = false;
 };
 
 }

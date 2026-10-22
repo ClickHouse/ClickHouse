@@ -34,6 +34,12 @@ static bool isQueryOuterGuardError(int code)
         || code == ErrorCodes::ABORTED;
 }
 
+void DeferredRefreshErrors::removeFinishedQueries() const
+{
+    std::erase_if(queries, [](const QueryErrors & errors) { return errors.query.expired(); });
+    has_queries = !queries.empty();
+}
+
 void DeferredRefreshErrors::refresh(const ContextPtr & context, const StorageID & table, const std::function<void()> & refresh_table)
 {
     std::shared_ptr<const QueryStatus> query = context->getProcessListElementSafe();
@@ -57,23 +63,32 @@ void DeferredRefreshErrors::refresh(const ContextPtr & context, const StorageID 
             throw;
 
         std::lock_guard lock(mutex);
-        std::erase_if(queries, [](const QueryErrors & errors) { return errors.query.expired(); });
+        removeFinishedQueries();
         auto it = std::ranges::find_if(queries, [&](const QueryErrors & errors) { return errors.query.lock() == query; });
         if (it == queries.end())
             it = queries.insert(queries.end(), QueryErrors{query, {}});
         it->errors.emplace(table, std::current_exception());
+        has_queries = true;
+        return;
+    }
+
+    if (has_queries)
+    {
+        std::lock_guard lock(mutex);
+        removeFinishedQueries();
     }
 }
 
 void DeferredRefreshErrors::rethrow(const ContextPtr & context, const StorageID & table) const
 {
     std::shared_ptr<const QueryStatus> query = context->getProcessListElementSafe();
-    if (!query)
+    if (!query || !has_queries)
         return;
 
     std::exception_ptr error;
     {
         std::lock_guard lock(mutex);
+        removeFinishedQueries();
         for (const auto & errors : queries)
         {
             if (errors.query.lock() != query)
