@@ -343,23 +343,23 @@ def test_insert_into_write_data_path_with_other_s3_spelling(started_cluster_iceb
 
     create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
 
-    # `location` is spelled with `s3`, while `write.data.path` points outside it in the same bucket with `s3a`.
+    # `location` is spelled with `s3a`, while `write.data.path` points outside it in the same bucket with `s3`.
     temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
     metadata_dir = os.path.join(host_path, "metadata")
     for mf in find_files(metadata_dir, ".avro"):
         if os.path.basename(mf).startswith("snap-"):
             modify_avro_file(mf, ["manifest_path"],
-                             lambda p: f"s3://{bucket}/{base_path}/metadata/{os.path.basename(p)}")
+                             lambda p: f"s3a://{bucket}/{base_path}/metadata/{os.path.basename(p)}")
         else:
             modify_avro_file(mf, ["data_file", "file_path"],
-                             lambda p: f"s3://{bucket}/{base_path}/data/{os.path.basename(p)}")
+                             lambda p: f"s3a://{bucket}/{base_path}/data/{os.path.basename(p)}")
     for mj in find_files(metadata_dir, ".metadata.json"):
         with open(mj) as f:
             data = json.load(f)
-        data["location"] = f"s3://{bucket}/{base_path}"
-        data.setdefault("properties", {})["write.data.path"] = f"s3a://{bucket}/{external_prefix}"
+        data["location"] = f"s3a://{bucket}/{base_path}"
+        data.setdefault("properties", {})["write.data.path"] = f"s3://{bucket}/{external_prefix}"
         for snap in data.get("snapshots", []):
-            snap["manifest-list"] = f"s3://{bucket}/{base_path}/metadata/{os.path.basename(snap['manifest-list'])}"
+            snap["manifest-list"] = f"s3a://{bucket}/{base_path}/metadata/{os.path.basename(snap['manifest-list'])}"
         with open(mj, "w") as f:
             json.dump(data, f)
     for f in find_files(metadata_dir, ""):
