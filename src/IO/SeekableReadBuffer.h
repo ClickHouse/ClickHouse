@@ -89,7 +89,9 @@ public:
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
     virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const;
 
-    /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
+    /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat),
+    /// not thread safe (in particular can't be called in parallel with next()).
+    /// Must be called at least once before any readBigAt calls (could be renamed to prepareReadAt()).
     virtual bool supportsReadAt() { return false; }
 
     /// A contiguous region of cached data that the caller can reference directly (zero-copy).
@@ -126,7 +128,7 @@ public:
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 
-/// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
+/// Wraps a reference to a SeekableReadBuffer into a unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
@@ -134,5 +136,8 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
 /// Helper for implementing readBigAt().
 /// Updates *out_bytes_copied after each call to the callback, as well as at the end.
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
+
+/// The same for a ReadBuffer source.
+void copyFromReadBufferWithProgressCallback(ReadBuffer & in, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

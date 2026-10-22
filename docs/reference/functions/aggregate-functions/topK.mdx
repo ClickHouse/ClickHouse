@@ -53,7 +53,7 @@ Returns an array of the approximately most frequent values, sorted in descending
 
 ```sql title=Query
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
 ```
 
 ```response title=Response

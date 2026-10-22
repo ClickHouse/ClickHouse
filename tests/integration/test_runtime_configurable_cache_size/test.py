@@ -117,16 +117,13 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
 
     node.query("SYSTEM RELOAD CONFIG")
 
+    # A query cache with a zero limit can not store entries, so the existing entries are dropped on reload.
     res = node.query(
         "SELECT count(*) FROM system.query_cache",
     )
-    assert res == "1\n"
-    # "Why not 0?", I hear you say. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
-    # Not a real issue, can be changed later, at least there's a test now.
+    assert res == "0\n"
 
-    # The next SELECT will find a single stale entry which is one entry too much according to the new config.
-    # This triggers the eviction of all stale entries, in this case the 'SELECT 1' result.
-    # Then, it tries to insert the 'SELECT 2' result but it also cannot be added according to the config.
+    # The 'SELECT 2' result cannot be added according to the config.
     node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
     res = node.query(
         "SELECT count(*) FROM system.query_cache",

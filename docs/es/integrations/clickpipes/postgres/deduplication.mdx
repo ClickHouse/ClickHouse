@@ -136,15 +136,15 @@ LIMIT 10
   #### configuración FINAL
 </div>
 
-En lugar de añadir el modificador FINAL a cada nombre de tabla de la consulta, puedes usar la [configuración FINAL](/es/reference/settings/session-settings#final) para aplicarlo automáticamente a todas las tablas de la consulta.
+En lugar de añadir el modificador FINAL a cada nombre de tabla de la consulta, puedes usar la [configuración FINAL](/es/reference/settings/session-settings/other#final) para aplicarlo automáticamente a todas las tablas de la consulta.
 
 Esta configuración puede aplicarse por consulta o a toda una sesión.
 
 ```sql
--- Configuración FINAL por consulta
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- Establecer FINAL para la sesión
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

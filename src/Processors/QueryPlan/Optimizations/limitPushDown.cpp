@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -111,6 +112,11 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
     {
+        /// The hint makes DISTINCT stop reading early, which would break `rows_before_limit_at_least`
+        /// and the WITH TOTALS row that such a LIMIT reads the whole input for.
+        if (limit->alwaysReadTillEnd())
+            return 0;
+
         distinct->updateLimitHint(limit->getLimitForSorting());
         return 0;
     }
@@ -125,6 +131,11 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// Disable for WindowStep.
     /// TODO: we can push down limit in some cases if increase the limit value.
     if (typeid_cast<const WindowStep *>(child.get()))
+        return 0;
+
+    /// The query result cache must store the complete result of the (sub)query below it.
+    /// A LIMIT pushed below the cache step would truncate the cached entry.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(child.get()))
         return 0;
 
     /// Now we should decide if pushing down limit possible for this step.
@@ -186,7 +197,8 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
     /// whose size is the number of unique keys, and this can cause OOM.
     const auto & limit_by_columns = limit_by->getColumns();
-    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns).size() != limit_by_columns.size())
+    if (getCollationAwareSortPrefixInColumns(sort->getSortDescription(), limit_by_columns, *limit_by->getInputHeaders().front()).size()
+        != limit_by_columns.size())
         return;
 
     const UInt64 length = limit_by->getGroupLength();
@@ -194,7 +206,7 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset);
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, limit_by->alwaysReadTillEnd());
 }
 
 }

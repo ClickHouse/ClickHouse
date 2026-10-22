@@ -158,7 +158,9 @@ La capa de serialización calcula a qué bucket pertenece la clave solicitada y 
 Cuando se lee el mapa completo (por ejemplo, `SELECT m`), se leen todos los buckets y se reconstruye el mapa original. Esto es más lento que la serialización `basic` debido a la sobrecarga de leer y fusionar varios subflujos.
 
 <Note>
-  El orden de las claves dentro de un valor de mapa puede diferir del orden de inserción original al usar la serialización `with_buckets`. Las claves se distribuyen entre buckets mediante hash y se reconstruyen en orden de bucket, no en orden de inserción. Con la serialización `basic`, se conserva el orden de las claves de los mapas insertados.
+  Desde la versión 26.8, la serialización `with_buckets` conserva el orden original de las claves: un subflujo adicional `bucket_indexes` registra de qué bucket procede cada par clave-valor, por lo que el mapa se reconstruye en el orden en que se escribió, en lugar de en orden de bucket.
+
+  Las partes escritas por versiones anteriores no contienen ese subflujo. Sus mapas se siguen reconstruyendo en orden de bucket, y no es posible restaurar su orden original de claves porque nunca se almacenó en disco; reescribir una de esas partes (mediante una fusión o `OPTIMIZE FINAL`) fija el orden de bucket que tiene actualmente en lugar de recuperar el orden de inserción. Con la serialización `basic`, siempre se ha conservado el orden de las claves de los mapas insertados.
 </Note>
 
 El número de buckets puede variar entre partes. Cuando se fusionan partes con distintos números de buckets, el número de buckets de la nueva parte se vuelve a calcular a partir de las estadísticas fusionadas. Las partes con serialización `basic` y `with_buckets` pueden coexistir en la misma tabla y se fusionan de forma transparente.

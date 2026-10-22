@@ -44,3 +44,6 @@ SELECT sparseGrams('hello world hello world', 3, 4);
 SELECT sparseGramsHashes('hello world hello world', 3, 4);
 SELECT sparseGramsUTF8('a😊Ω𐍈界𝄞bЦ⛄', 3, 4);
 SELECT sparseGramsHashesUTF8('a😊Ω𐍈界𝄞bЦ⛄', 3, 4);
+
+SELECT '--- Maximal ngram length with cutoff';
+SELECT sparseGrams('hello world hello world', 3, 4, 4);

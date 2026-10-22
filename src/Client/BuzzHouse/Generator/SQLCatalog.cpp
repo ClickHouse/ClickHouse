@@ -433,6 +433,19 @@ bool SQLBase::isDistributedEngine(const bool as_alias) const
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Distributed);
 }
 
+bool SQLBase::isRemoteSecureEngine(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::RemoteSecure
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::RemoteSecure);
+}
+
+bool SQLBase::isAnyRemoteEngine(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::Remote || engine.value == TableEngineValues::RemoteSecure
+        || (as_alias && isAliasEngine() && subengine.has_value()
+            && (subengine->value == TableEngineValues::Remote || subengine->value == TableEngineValues::RemoteSecure));
+}
+
 bool SQLBase::isDictionaryEngine(const bool as_alias) const
 {
     return engine.value == TableEngineValues::Dictionary
@@ -490,7 +503,7 @@ bool SQLBase::isKafkaEngine(const bool as_alias) const
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
+        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isAnyRemoteEngine() || isDictionaryEngine()
         || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine();
 }
 
@@ -727,6 +740,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         }
         else if (isFileEngine())
         {
+            /// Sometimes let Spark (dolor) write the data file, so ClickHouse only reads it
+            if (has_dolor && rg.nextBool())
+            {
+                integration = IntegrationCall::Dolor;
+            }
             bucket_path = fmt::format("{}/{}", fc.server_file_path.generic_string(), bname);
         }
         else if (isURLEngine() && fc.http_server.has_value())
@@ -754,6 +772,32 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         static const DB::Strings formats = {"ORC", "Parquet"};
         file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
+    else if (isFileEngine() && integration == IntegrationCall::Dolor)
+    {
+        /// Spark/pyarrow-written data files: mostly the Arrow formats, sometimes Parquet, Avro or ORC
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 31)
+        {
+            file_format = "Arrow";
+        }
+        else if (nopt < 61)
+        {
+            file_format = "ArrowStream";
+        }
+        else if (nopt < 81)
+        {
+            file_format = "Parquet";
+        }
+        else if (nopt < 91)
+        {
+            file_format = "Avro";
+        }
+        else
+        {
+            file_format = "ORC";
+        }
+    }
     else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
     {
         /// At the moment give more preference for Parquet
@@ -761,7 +805,18 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
     if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
     {
-        file_comp = rg.pickRandomly(compressionMethods);
+        if (isFileEngine() && integration == IntegrationCall::Dolor)
+        {
+            /// Whole-file wrappers the dolor side can write with Python codecs (no lz4/brotli packages there)
+            static const DB::Strings dolorFileCompressions
+                = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
+
+            file_comp = rg.pickRandomly(dolorFileCompressions);
+        }
+        else
+        {
+            file_comp = rg.pickRandomly(compressionMethods);
+        }
     }
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
@@ -934,7 +989,8 @@ size_t SQLTable::numberOfInsertableColumns(const bool all) const
 
 bool SQLTable::supportsFinal(const bool as_alias) const
 {
-    return engine.supportsFinal() || isBufferEngine() || (isDistributedEngine() && subengine.has_value() && subengine->supportsFinal())
+    return engine.supportsFinal() || isBufferEngine()
+        || ((isDistributedEngine() || isAnyRemoteEngine()) && subengine.has_value() && subengine->supportsFinal())
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->supportsFinal());
 }
 

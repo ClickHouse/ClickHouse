@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationCustomSimpleText.h>
 
+#include <Columns/IColumn.h>
 #include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -43,6 +44,7 @@ SerializationCustomSimpleText::SerializationCustomSimpleText(const Serialization
 
 bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, bool whole) const
 {
+    size_t prev_size = column.size();
     try
     {
         deserializeText(column, istr, settings, whole);
@@ -50,6 +52,9 @@ bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB:
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern
     {
+        /// A failed parse must leave the column as it was: deserializeText may have inserted before throwing.
+        if (column.size() > prev_size)
+            column.popBack(column.size() - prev_size);
         /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
         rethrowIfNotParseError();
         return false;

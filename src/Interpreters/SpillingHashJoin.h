@@ -9,6 +9,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/SpillableAdapter.h>
 #include <Common/SharedMutex.h>
 
 
@@ -39,7 +40,7 @@ class ConcurrentHashJoin;
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
 /// transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin is used,
-/// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
+/// isDelayedBlocksProcessingEnabled is false and the probe streams close those transforms after the build.
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
 /// GraceHashJoin), since spilling may reorder rows.
@@ -54,7 +55,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
@@ -66,15 +67,17 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
+    std::string getAlgorithm() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -85,6 +88,14 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
+
+    StepAnalysisReport getAnalysisReport() const override;
+
+    ISpillable * getSpillable() override { return &spillable; }
+    /// While collecting: the whole right side, spilled by switching to the grace join.
+    /// After the switch: the grace join and unconverted concurrent slots. Nothing once the build ended in memory.
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
@@ -102,12 +113,27 @@ public:
 
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool isDelayedBlocksProcessingEnabled() const override;
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
+
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
+    /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
+    /// fixed hash map, publishing the shared runtime filter).
+    /// After a spill `chosen_join` is a `GraceHashJoin`, which does not override these methods, so
+    /// forwarding keeps the spilled path exactly as it is today: `GraceHashJoin` itself runs the
+    /// post-build phase only when the right table ended up in a single bucket. Multi-bucket spills
+    /// skip it, because a hash table holding one bucket cannot produce a runtime filter valid for
+    /// the whole right table.
+    bool hasPostBuildPhase() const override;
+    void runPostBuildPhase() override;
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
+    SpillableAdapter<SpillingHashJoin> spillable{*this};
+
     enum class State
     {
         COLLECTING, // Right-side blocks are being collected in HashJoin / ConcurrentHashJoin, no spilling yet.
@@ -115,8 +141,8 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    void switchToGraceHashJoin();
-    void tryConvertSlots();
+    void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
+    void tryConvertSlots(JoinBuildContext context);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;

@@ -52,7 +52,7 @@ FROM (
     WHERE (l.x = 'FRANCE' AND r.y = 'GERMANY') OR (l.x = 'GERMANY' AND r.y = 'FRANCE')
     ORDER BY l.x
 )
-WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0 -- Pinned because the test asserts on join plan/order
+WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0 -- Pinned because the test asserts on join plan/order, and `Memory` tables support PREWHERE, so the move would turn the pushed-down filters into `Prewhere filter column`
 FORMAT TSV;
 
 SELECT '--- plan (disabled) ---';
@@ -65,7 +65,7 @@ FROM (
     WHERE (l.x = 'FRANCE' AND r.y = 'GERMANY') OR (l.x = 'GERMANY' AND r.y = 'FRANCE')
     ORDER BY l.x
 )
-WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0 -- Pinned because the test asserts on join plan/order
+WHERE explain ILIKE '%Filter column: %' SETTINGS use_join_disjunctions_push_down = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0 -- Pinned because the test asserts on join plan/order, and `Memory` tables support PREWHERE, so the move would turn the pushed-down filters into `Prewhere filter column`
 FORMAT TSV;
 
 -- Result must be identical with push-down enabled (sanity check that the optimization is result-preserving).

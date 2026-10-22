@@ -1,0 +1,86 @@
+-- binary --
+2
+7
+0
+3
+-101
+4
+0
+3
+1
+\N
+-- tohex --
+100
+ffffffffffffff00
+00000100
+100
+-- strcmp --
+ABC	ABC	0
+abc	ABC	1
+ABC	abc	-1
+abcde	abc	1
+-- datetime_add --
+2018-01-01 00:00:00.0000000
+2017-04-01 00:00:00.0000000
+2017-02-01 00:00:00.0000000
+2017-01-08 00:00:00.0000000
+2017-01-02 00:00:00.0000000
+2012-01-01 00:00:00.0000000
+-- datetime_part, including the cumulative sub-second parts --
+2017
+4
+44
+303
+765
+765432
+765432100
+-- make_timespan --
+01:12:00
+1.12:30:55.1230000
+1.00:00:00
+-- IPv4: a CIDR suffix in the string masks the low bits --
+192.168.1.1	3232235777
+192.168.1.1/24	3232235776
+255.255.255.255/31	4294967294
+2130706432
+-- IPv4 formatting --
+192.168.1.1	24	192.168.1.0	192.168.1.0/24
+192.168.1.1	32	192.168.1.1	192.168.1.1/32
+192.168.1.1/24	32	192.168.1.0	192.168.1.0/24
+192.168.1.1/24	-1		
+-- IPv4 comparison uses the narrowest of the prefixes involved --
+192.168.1.0	192.168.1.0	0
+192.168.1.1/24	192.168.1.255	0
+192.168.1.1	192.168.1.255/24	0
+192.168.1.1/30	192.168.1.255/24	0
+true
+-- IPv4 ranges --
+192.168.1.1	192.168.1.1	true
+192.168.1.1	192.168.1.255/24	true
+true
+-- ipv4_is_private is RFC 1918 only, so loopback is not private --
+10.1.2.3	true
+192.168.1.1/24	true
+127.0.0.1	false
+-- ipv4_netmask_suffix defaults to 32 --
+10.1.2.3	32
+192.168.1.1/24	24
+127.0.0.1/16	16
+-- IPv6, which also accepts IPv4 strings on either side --
+true
+0
+true
+false
+-- geospatial: longitude before latitude, distances in metres --
+1547353.4142994815
+1545615.7905499663
+true
+false
+-- a geohash is a token string --
+dhwfz15h
+-- more mathematics --
+24
+0.6420926159
+3.141592653589793
+true
+true

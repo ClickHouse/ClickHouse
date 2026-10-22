@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests hasPhrase over a text index with support_phrase_search = 1 AND a postprocessor. The postprocessor is applied
+-- Tests hasPhrase over a text index with a postprocessor, with and without support_phrase_search = 1. The postprocessor is applied
 -- to both the indexed tokens and the phrase needle, and tokens dropped by the postprocessor leave no
 -- positional gap (the index assigns dense positions), so phrase matching reflects the postprocessed token
 -- sequence. Every match must be identical whether the index is read directly
@@ -65,10 +65,12 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SE
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see the cat') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see the cat') SETTINGS query_plan_direct_read_from_text_index = 0;
--- Contrast: the 3-argument form bypasses the index and runs literal hasPhrase (no postprocessor), so
--- 'see cat' only matches the literal 'see cat' (3), and 'see the cat' only the literal 'see the cat' (1).
+-- Naming the index tokenizer explicitly gives the same results as the two-argument form above.
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat', 'splitByNonAlpha');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see the cat', 'splitByNonAlpha');
+-- Contrast: a different tokenizer does not match the index, so literal hasPhrase runs and the
+-- postprocessor is not applied. Only the literal 'see cat' (3) matches.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'see cat', 'ngrams(3)');
 
 DROP TABLE tab;
 
@@ -192,11 +194,9 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'xyz') SETTIN
 
 DROP TABLE tab;
 
-SELECT '7. Separator-emitting postprocessor: rejected consistently on both read paths.';
+SELECT '7. Separator-emitting postprocessor: answered consistently on both read paths.';
 
--- concat appends ' x', so a token becomes e.g. 'foo x', which contains a separator. The index stores it
--- whole, but the row-scan rejoin would re-split it and disagree, so the query is rejected with
--- BAD_ARGUMENTS at query-plan time regardless of query_plan_direct_read_from_text_index.
+SELECT '-- token becomes foo x';
 CREATE TABLE tab
 (
     id UInt32,
@@ -208,8 +208,287 @@ SETTINGS allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab VALUES (1, 'foo bar');
 
-SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 1;  -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 0;  -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+SELECT '8. Tokenizer whose separators do not include a space.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByString(['()']), postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+SELECT '-- index tokens are [a, bc, d]';
+INSERT INTO tab VALUES (1, 'a()bc()d'), (2, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d', 'splitByString([\'()\'])');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETTINGS force_data_skipping_indices = 'idx';
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d') SETTINGS use_skip_indexes = 0;
+SELECT '-- value outside a filter';
+SELECT id, hasPhrase(message, 'bc()d') FROM tab ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT '9. A token that is a separator of splitByNonAlpha but not of the index tokenizer.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByString(['()']), postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'x-y()z'), (2, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y()z');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y()z') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '10. A postprocessed token that is itself a separator.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByString([' ', 'x']), postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+SELECT '-- index tokens are [a, x, b]';
+INSERT INTO tab VALUES (1, 'A X B'), (2, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a b');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a b') SETTINGS use_skip_indexes = 0;
+SELECT '-- single-token phrase still matches';
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '11. asciiCJK tokens may contain non-alphanumeric characters.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = asciiCJK, postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'A.B C'), (2, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b c');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b c') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '12. A gram that spans a space.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = ngrams(3), postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'abcd ef'), (2, 'zzzzzz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'cd e', 'ngrams(3)');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'cd e', 'ngrams(3)') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bcd', 'ngrams(3)');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bcd', 'ngrams(3)') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '13. With positions, the index and the row-level fallback agree.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByString(['()']), postprocessor = lower(message), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, 'a()bc()d'), (2, 'zz');
+
+SELECT '-- index positions vs row-level fallback';
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETTINGS text_index_hint_max_selectivity = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETTINGS text_index_hint_max_selectivity = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d') SETTINGS text_index_hint_max_selectivity = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d') SETTINGS text_index_hint_max_selectivity = 0;
+
+DROP TABLE tab;
+
+SELECT '14. An Array(String) indexed column: the tokens of all elements form one sequence.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx(tags) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(tags))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+SELECT '-- index tokens are [hello, world, foo]';
+INSERT INTO tab VALUES (1, ['Hello World', 'Foo']), (2, ['zz']);
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello world');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello world') SETTINGS use_skip_indexes = 0;
+SELECT '-- adjacent across elements';
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'world foo');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'world foo') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello foo');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello foo') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '15. A NULL array element leaves no position.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(Nullable(String)),
+    INDEX idx(tags) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(tags))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, ['Hello', NULL, 'World']), (2, ['zz']);
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello world');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'hello world') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '16. An expression index.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message Nullable(String),
+    INDEX idx(ifNull(message, 'default')) TYPE text(tokenizer = splitByString(['()']), postprocessor = lower(ifNull(message, 'default')))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'A()BC()D'), (2, NULL);
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'bc()d');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'bc()d') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'a()d');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'a()d') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+SELECT '17. An Array phrase is a sequence.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'A B A'), (2, 'A A B'), (3, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'b', 'a']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'b', 'a']) SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'a', 'b']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'a', 'b']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '18. An Array phrase with positions.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(message), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, 'The QUICK Brown fox'), (2, 'The Brown QUICK fox'), (3, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'brown']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'brown']) SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'fox']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'fox']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '19. An empty Array element is not a token, even when the postprocessor fills it.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = concat(message, ' x'), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+-- index tokens are [a x, b x]
+INSERT INTO tab VALUES (1, 'a b'), (2, 'zz');
+
+-- text_index_hint_max_selectivity = 1 makes the index answer final; the other two go through the row filter.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', '', 'b']) SETTINGS text_index_hint_max_selectivity = 1.;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', '', 'b']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', '', 'b']) SETTINGS use_skip_indexes = 0;
+
+-- The set predicates keep it instead: an empty token matches nothing, as it does without a postprocessor.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['a', '', 'b']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['a', '', 'b']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '20. An Array column answers a phrase the same way with and without the index.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx(tags) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(tags), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, ['Quick BROWN', 'Fox']), (2, ['Fox', 'Quick BROWN']), (3, ['zz']);
+
+-- Row 1 holds both tokens but not adjacently, so a token-level index answer must not be taken as final.
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'fox quick') SETTINGS text_index_hint_max_selectivity = 1.;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'fox quick') SETTINGS use_skip_indexes = 0;
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS text_index_hint_max_selectivity = 1.;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 

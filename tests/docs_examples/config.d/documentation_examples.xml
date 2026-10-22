@@ -1,0 +1,51 @@
+<clickhouse>
+    <!-- Configuration the documented examples assume, on top of the default server configuration
+         and the fragments in `programs/server/config.d`. See tests/docs_examples/runner.py. -->
+
+    <!-- Many examples convert between a date with time and a number, or hash a `DateTime` value,
+         without naming a time zone, and the documented response is the one of a server running in
+         `UTC`. Without pinning it here, the run would depend on the time zone of the machine, and
+         the baseline would only be reproducible on a machine that shares it. The name is spelled
+         `Etc/UTC` rather than `UTC` because `serverTimeZone` and `timezoneOf` return it verbatim. -->
+    <timezone>Etc/UTC</timezone>
+
+    <!-- `cutToFirstSignificantSubdomainCustom` and the other `*Custom*` URL functions take the name
+         of a top level domain list, and every example names `public_suffix_list`. The list itself
+         is copied next to the server from tests/config/top_level_domains. -->
+    <top_level_domains_lists>
+        <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    </top_level_domains_lists>
+
+    <!-- The `queryID`, `initialQueryID` and `initialQueryStartTime` examples read from three shards
+         at `127.0.0.{1..3}`, which all address this same server. The shipped configuration listens
+         on `127.0.0.1` only; listing the addresses here replaces that list, so repeat it. -->
+    <listen_host>127.0.0.1</listen_host>
+    <listen_host>127.0.0.2</listen_host>
+    <listen_host>127.0.0.3</listen_host>
+
+    <!-- The `ai*` examples name the named collections `ai_text_credentials` and
+         `ai_embedding_credentials`, and the ones that do not name a collection read the two
+         default-credentials settings (set in `users.d/documentation_examples.xml`). Without them
+         the examples stop in `FunctionBaseAI::resolveAIParams` on missing local setup, and their
+         entries in `tests/docs_examples/known_failures.txt` would record a configuration gap of
+         this job instead of the external dependency the examples really have. With them, every
+         `ai*` example is exercised up to the provider request and fails there, against an endpoint
+         that is guaranteed to refuse the connection: port 1 of the loopback interface, which is
+         also exempt from the `https` requirement. The key is not a credential, and there is
+         nothing to send it to. The two collections cannot be one: a text collection must carry
+         `model`, and an embedding collection must not, because `aiEmbed` takes the model as an
+         argument. -->
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>http://127.0.0.1:1/v1</endpoint>
+            <api_key>documentation-examples-no-such-key</api_key>
+            <model>gpt-4o-mini</model>
+        </ai_text_credentials>
+        <ai_embedding_credentials>
+            <provider>openai</provider>
+            <endpoint>http://127.0.0.1:1/v1</endpoint>
+            <api_key>documentation-examples-no-such-key</api_key>
+        </ai_embedding_credentials>
+    </named_collections>
+</clickhouse>

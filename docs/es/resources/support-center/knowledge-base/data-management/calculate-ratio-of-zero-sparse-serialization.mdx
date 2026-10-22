@@ -10,7 +10,7 @@ keywords: ['Proporción de valores vacíos o cero', 'Calcular']
   ## Cómo calcular la proporción de valores vacíos o cero en cada columna de una tabla
 </div>
 
-Si una columna es dispersa (está vacía o contiene principalmente ceros), ClickHouse puede codificarla en un formato disperso y optimizar automáticamente los cálculos; los datos no requieren una descompresión completa durante las consultas. De hecho, si sabe cuán dispersa es una columna, puede definir su proporción mediante la [configuración `ratio_of_defaults_for_sparse_serialization`](/es/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) para optimizar la serialización.
+Si una columna es dispersa (está vacía o contiene principalmente ceros), ClickHouse puede codificarla en un formato disperso y optimizar automáticamente los cálculos; los datos no requieren una descompresión completa durante las consultas. De hecho, si sabe cuán dispersa es una columna, puede definir su proporción mediante la [configuración `ratio_of_defaults_for_sparse_serialization`](/es/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization) para optimizar la serialización.
 
 Esta útil consulta puede tardar un poco, pero analiza cada fila de la tabla y determina la proporción de valores que son cero (o el valor predeterminado) en cada columna de la tabla especificada:
 
