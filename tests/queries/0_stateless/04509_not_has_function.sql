@@ -16,8 +16,9 @@ SELECT notHas([toFixedString('aa', 2), toFixedString('bb', 2)], 'bb');
 SELECT notHas([1, 2, 3], 2.0), notHas([1.5, 2.5], 2), notHas([1.0, 2.0], 2), notHas([-1, 0, 1], 0.0);
 SELECT notHas([toDecimal32(1.1, 2), toDecimal32(2.2, 2)], toDecimal32(2.2, 2));
 
--- Dates, UUIDs, and Enums. Like `has`, an Enum element matches a needle of the Enum type, not the
--- name as a plain string.
+-- Dates, UUIDs, and Enums. An Enum element matches a needle of the Enum type, and also a plain
+-- string equal to the name of the enum value, because the common type of `Enum` and `String` is
+-- `String` and that is what `equals` compares.
 SELECT notHas([toDate('2026-01-01'), toDate('2026-01-02')], toDate('2026-01-02'));
 SELECT notHas([toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')], toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'));
 SELECT notHas(CAST(['a', 'b'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'), CAST('b', 'Enum8(\'a\' = 1, \'b\' = 2)'));
@@ -62,7 +63,7 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_not_has SELECT intDiv(number, 4) FROM numbers(24);
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has WHERE notHas([1], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has WHERE notHas([1], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
 SELECT count() FROM test_not_has WHERE notHas([1], x);
 SELECT count() FROM test_not_has WHERE notHas([1], x) SETTINGS use_primary_key = 0;
 SELECT count() FROM test_not_has WHERE NOT has([1], x);

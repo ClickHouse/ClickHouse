@@ -33,6 +33,8 @@ public:
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
+    void checkBackgroundError() override;
+
 protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
@@ -114,8 +116,13 @@ private:
     std::condition_variable mono_chunk_condvar;
     std::optional<ThreadFromGlobalPool> thread;
     std::atomic_bool finish{false};
+    /// An exception from `writingThread`, rethrown by the writing methods. Protected by `writing_mutex`.
+    std::exception_ptr background_exception;
+    /// Whether `background_exception` is set, to check it without taking `writing_mutex`.
+    std::atomic_bool has_background_exception{false};
     void writingThread();
     void stopThread();
+    void rethrowBackgroundExceptionIfAny();
 };
 
 }

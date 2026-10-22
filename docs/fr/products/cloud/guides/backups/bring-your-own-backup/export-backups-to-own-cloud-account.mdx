@@ -8,7 +8,9 @@ doc_type: 'guide'
 
 ClickHouse Cloud prend en charge l’export de sauvegardes vers votre propre compte auprès d’un fournisseur de services cloud (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
 Pour en savoir plus sur le fonctionnement des sauvegardes dans ClickHouse Cloud, y compris les sauvegardes « complètes » et « incrémentielles », consultez la documentation sur les [sauvegardes](/fr/products/cloud/guides/backups/review-and-restore-backups). Notez que
-les sauvegardes vers votre propre compte cloud se distinguent des sauvegardes Cloud sur place sur un point important : elles ne peuvent pas utiliser la copie native (voir la note ci-dessous).
+les sauvegardes vers votre propre compte cloud se distinguent des sauvegardes Cloud sur place sur un point important : elles ne peuvent pas utiliser la copie native (voir la note ci-dessous).
+
+L’export de sauvegardes vers votre propre compte ne désactive généralement pas les sauvegardes gérées par ClickHouse. Celles-ci ne peuvent pas être désactivées en libre-service. Toute exception nécessite l’accord de ClickHouse et des modifications contractuelles ; contactez [ClickHouse Support](https://clickhouse.com/support/program) pour discuter de vos besoins.
 
 Dans ce guide, nous montrons des exemples de création de sauvegardes complètes et incrémentielles vers le stockage objet AWS, GCP et Azure, ainsi que la procédure de restauration à partir de ces sauvegardes.
 
@@ -21,23 +23,19 @@ Dans ce guide, nous montrons des exemples de création de sauvegardes complètes
 <Warning>
   **Impact sur les performances par rapport aux sauvegardes sur place**
   Les sauvegardes vers votre propre bucket ne peuvent pas utiliser la copie native (côté serveur). La copie native exige que la source et la destination partagent les mêmes identifiants, ce qui n’est pas
-  le cas ici : la source est un bucket géré par ClickHouse et la destination est votre propre bucket, authentifié avec des identifiants distincts.
+  le cas ici : la source est un bucket géré par ClickHouse et la destination est votre propre bucket, authentifié avec des identifiants distincts.
 
-  Comme la copie native n’est pas disponible, les données sont téléchargées depuis la source puis retéléversées vers votre bucket (« copie via des buffers »). Par conséquent, l’export de
+  Comme la copie native n’est pas disponible, les données sont téléchargées depuis la source puis retéléversées vers votre bucket (« copie via des buffers »). Par conséquent, l’export de
   sauvegardes vers votre propre bucket est plus lent et consomme davantage de ressources que les sauvegardes Cloud standard sur place.
 </Warning>
 
-<div id="requirements">
-  ## Prérequis
-</div>
+## Prérequis {#requirements}
 
 Avant d&#39;exécuter une commande `BACKUP`, assurez-vous que votre utilisateur ClickHouse dispose du privilège `BACKUP`. Le `default_role` de ClickHouse Cloud n&#39;inclut pas ce privilège. Contactez [ClickHouse Support](https://clickhouse.com/support/program) pour en faire la demande avant d&#39;exporter des sauvegardes.
 
 Vous aurez besoin des informations suivantes pour exporter/restaurer des sauvegardes vers le bucket de stockage de votre propre CSP.
 
-<div id="aws">
-  ### AWS
-</div>
+### AWS {#aws}
 
 1. Endpoint S3 AWS, au format :
 
@@ -62,17 +60,13 @@ Où :
   Pour utiliser l’authentification basée sur les rôles, veuillez suivre la [configuration sécurisée de S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely). De plus, vous devrez ajouter les autorisations `s3:PutObject` et `s3:DeleteObject` à la stratégie IAM décrite [ici.](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
 </Note>
 
-<div id="azure">
-  ### Azure
-</div>
+### Azure {#azure}
 
 1. Chaîne de connexion au stockage Azure.
 2. Nom du conteneur Azure dans le compte de stockage.
 3. Blob Azure dans le conteneur.
 
-<div id="google-cloud-storage-gcs">
-  ### Google Cloud Storage (GCS)
-</div>
+### Google Cloud Storage (GCS) {#google-cloud-storage-gcs}
 
 1. Endpoint GCS, au format :
 
@@ -83,17 +77,11 @@ Où :
 
 <hr />
 
-<div id="backup-restore">
-  ## Sauvegarde / restauration
-</div>
+## Sauvegarde / restauration {#backup-restore}
 
-<div id="backup--restore-to-aws-s3-bucket">
-  ## Sauvegarde / restauration vers un bucket S3 sur AWS
-</div>
+## Sauvegarde / restauration vers un bucket S3 sur AWS {#backup--restore-to-aws-s3-bucket}
 
-<div id="take-a-db-backup">
-  ### Effectuer une sauvegarde d’une base de données
-</div>
+### Effectuer une sauvegarde d’une base de données {#take-a-db-backup}
 
 **Sauvegarde complète**
 
@@ -117,9 +105,7 @@ TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key
 SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurer depuis une sauvegarde
-</div>
+### Restaurer depuis une sauvegarde {#restore-from-a-backup}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -129,13 +115,9 @@ FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<k
 
 Voir : [Configurer BACKUP/RESTORE pour utiliser un endpoint S3](/fr/concepts/features/backup-restore/s3-endpoint) pour plus de détails.
 
-<div id="backup--restore-to-azure-blob-storage">
-  ## Sauvegarde / restauration vers Azure Blob Storage
-</div>
+## Sauvegarde / restauration vers Azure Blob Storage {#backup--restore-to-azure-blob-storage}
 
-<div id="take-a-db-backup">
-  ### Effectuer une sauvegarde d’une base de données
-</div>
+### Effectuer une sauvegarde d’une base de données {#take-a-db-backup-1}
 
 **Sauvegarde complète**
 
@@ -154,9 +136,7 @@ TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container
 SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurer depuis une sauvegarde
-</div>
+### Restaurer depuis une sauvegarde {#restore-from-a-backup-1}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -166,13 +146,9 @@ FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<contain
 
 Voir : [Configurer BACKUP/RESTORE pour utiliser un endpoint AzureBlobStorage](/fr/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) pour plus de détails.
 
-<div id="backup--restore-to-google-cloud-storage-gcs">
-  ## Sauvegarde / restauration sur Google Cloud Storage (GCS)
-</div>
+## Sauvegarde / restauration sur Google Cloud Storage (GCS) {#backup--restore-to-google-cloud-storage-gcs}
 
-<div id="take-a-db-backup">
-  ### Effectuer une sauvegarde d’une base de données
-</div>
+### Effectuer une sauvegarde d’une base de données {#take-a-db-backup-2}
 
 **Sauvegarde complète**
 
@@ -191,9 +167,7 @@ TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', '
 SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurer depuis une sauvegarde
-</div>
+### Restaurer depuis une sauvegarde {#restore-from-a-backup-2}
 
 ```sql
 RESTORE DATABASE test_backups 

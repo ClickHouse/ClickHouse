@@ -13,6 +13,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
@@ -495,6 +496,15 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                     overcommit_result = OvercommitResult::MEMORY_FREED;
             }
 
+            /// Then the columns cache, which also gives its memory back on demand.
+            DB::IMemoryReleasableCache * releasable_cache_ptr = nullptr;
+            if (overcommit_result == OvercommitResult::NONE && level == VariableContext::Global
+                && (releasable_cache_ptr = DB::getMemoryReleasableCache()))
+            {
+                if (releasable_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit))
+                    overcommit_result = OvercommitResult::MEMORY_FREED;
+            }
+
             /// If that wasn't enough, try to stop some query.
             if (overcommit_result == OvercommitResult::NONE)
             {
@@ -706,6 +716,18 @@ void MemoryTracker::settleDriftOnQueryEnd()
 }
 
 
+void MemoryTracker::handOverToServer(Int64 size)
+{
+    for (auto * tracker = this; size > 0 && tracker && tracker->level != VariableContext::Global;
+         tracker = tracker->parent.load(std::memory_order_relaxed))
+    {
+        /// A thread's tracker counts what the thread allocated, not what the query holds.
+        if (tracker->level != VariableContext::Thread)
+            size = tracker->adjustLocally(size);
+    }
+}
+
+
 Int64 MemoryTracker::unexpectedDrift() const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -713,6 +735,10 @@ Int64 MemoryTracker::unexpectedDrift() const
     if (!loaded_parent || loaded_parent->level != VariableContext::User || drift_expected.load(std::memory_order_relaxed))
         return 0;
     Int64 drift = amount.load(std::memory_order_relaxed);
+    /// Threads batch what they allocate and free (`max_untracked_memory`), so a free can arrive before the allocation
+    /// it matches. It goes to the server total, and the allocation, arriving later, stays here without being drift.
+    if (drift > 0)
+        drift = std::max<Int64>(drift - freed_beyond_held.load(std::memory_order_relaxed), 0);
     return std::abs(drift) > drift_warn_threshold ? drift : 0;
 #else
     return 0;
@@ -911,6 +937,9 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (accounted_size < size && loaded_next->level == VariableContext::User)
     {
         std::ignore = total_memory_tracker.free(size - accounted_size, _sample_probability);
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        freed_beyond_held.fetch_add(size - accounted_size, std::memory_order_relaxed);
+#endif
         size = accounted_size;
     }
 

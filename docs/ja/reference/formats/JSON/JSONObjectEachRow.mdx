@@ -15,19 +15,13 @@ doc_type: 'reference'
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 このフォーマットでは、すべてのデータが1つのJSONオブジェクトとして表現され、各行は [`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow) フォーマットと同様に、そのオブジェクト内の個別のフィールドとして表されます。
 
-<div id="example-usage">
-  ## 使用例
-</div>
+## 使用例 {#example-usage}
 
-<div id="basic-example">
-  ### 基本例
-</div>
+### 基本例 {#basic-example}
 
 次の JSON があるとします。
 
@@ -42,9 +36,7 @@ doc_type: 'reference'
 オブジェクト名をカラムの値として使用するには、特別な設定 [`format_json_object_each_row_column_for_object_name`](/ja/reference/settings/formats/format#format_json_object_each_row_column_for_object_name) を使用できます。
 この設定の値にはカラム名を指定します。指定したカラム名は、生成されるオブジェクト内で各行の JSON キーとして使用されます。
 
-<div id="output">
-  #### 出力
-</div>
+#### 出力 {#output}
 
 `test` というテーブルに 2 つのカラムがあるとしましょう。
 
@@ -70,9 +62,7 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 }
 ```
 
-<div id="input">
-  #### 入力
-</div>
+#### 入力 {#input}
 
 前の例の出力を `data.json` という名前のファイルに保存したとします：
 
@@ -101,9 +91,7 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-<div id="json-inserting-data">
-  ### データの挿入
-</div>
+### データの挿入 {#json-inserting-data}
 
 ```sql title="Query"
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -116,9 +104,7 @@ ClickHouse では次のことが可能です。
 
 ClickHouse は、要素間の空白やオブジェクトの後のカンマを無視します。すべてのオブジェクトを1行で渡すこともできます。改行で区切る必要はありません。
 
-<div id="omitted-values-processing">
-  #### 省略された値の処理
-</div>
+#### 省略された値の処理 {#omitted-values-processing}
 
 ClickHouse は、省略された値を対応する[データ型](/ja/reference/data-types/index)のデフォルト値に置き換えます。
 
@@ -141,9 +127,7 @@ CREATE TABLE IF NOT EXISTS example_table
   `input_format_defaults_for_omitted_fields = 1` でデータを挿入する場合、`input_format_defaults_for_omitted_fields = 0` の場合に比べて、ClickHouse はより多くの計算リソースを消費します。
 </Note>
 
-<div id="json-selecting-data">
-  ### データの取得
-</div>
+### データの取得 {#json-selecting-data}
 
 例として、`UserActivity`テーブルを見てみましょう。
 
@@ -167,9 +151,7 @@ CREATE TABLE IF NOT EXISTS example_table
   文字列には任意のバイト列を出力できます。テーブル内のデータを情報を失うことなく JSON としてフォーマットできることが確実な場合は、[`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow) フォーマットを使用してください。
 </Info>
 
-<div id="jsoneachrow-nested">
-  ### Nested 構造の使用
-</div>
+### Nested 構造の使用 {#jsoneachrow-nested}
 
 [`Nested`](/ja/reference/data-types/nested-data-structures/index) データ型のカラムを持つテーブルがある場合、同じ構造の JSON データを挿入できます。この機能は、[input&#95;format&#95;import&#95;nested&#95;json](/ja/reference/settings/formats/input-format#input_format_import_nested_json) 設定を有効にすることで使用できます。
 
@@ -228,9 +210,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-<div id="format-settings">
-  ## フォーマット設定
-</div>
+## フォーマット設定 {#format-settings}
 
 | 設定                                                                                                                                                                          | 説明                                                                                                                   | デフォルト    | 注記                                                                                                                                                               |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,7 +229,7 @@ SELECT * FROM json_each_row_nested
 | [`input_format_json_compact_allow_variable_number_of_columns`](/ja/reference/settings/formats/input-format#input_format_json_compact_allow_variable_number_of_columns)         | JSONCompact/JSONCompactEachRow フォーマットでカラム数が可変であることを許可し、余分なカラムは無視し、欠落したカラムにはデフォルト値を使用します。                             | `false`  |                                                                                                                                                                  |
 | [`input_format_json_throw_on_bad_escape_sequence`](/ja/reference/settings/formats/input-format#input_format_json_throw_on_bad_escape_sequence)                                 | JSON 文字列に不正なエスケープシーケンスが含まれている場合、例外をスローします。無効にすると、不正なエスケープシーケンスはデータ内でそのまま保持されます。                                      | `true`   |                                                                                                                                                                  |
 | [`input_format_json_empty_as_default`](/ja/reference/settings/formats/input-format#input_format_json_empty_as_default)                                                         | JSON入力内の空のフィールドをデフォルト値として扱います。                                                                                       | `false`. | 複雑なデフォルト式を使用する場合は、[`input_format_defaults_for_omitted_fields`](/ja/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) も有効にする必要があります。 |
-| [`output_format_json_quote_64bit_integers`](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | JSON出力フォーマットで64ビット整数を引用符で囲むかどうかを制御します。                                                                               | `true`   |                                                                                                                                                                  |
+| [`output_format_json_quote_64bit_integers`](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | JSON出力フォーマットで64ビット以上の整数を引用符で囲むかどうかを制御します。                                                                            | `false`  |                                                                                                                                                                  |
 | [`output_format_json_quote_64bit_floats`](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_floats)                                                  | JSON出力フォーマットで64ビットFloatを引用符で囲むかどうかを制御します。                                                                            | `false`  |                                                                                                                                                                  |
 | [`output_format_json_quote_denormals`](/ja/reference/settings/formats/output-format#output_format_json_quote_denormals)                                                        | JSON 出力フォーマットで &#39;+nan&#39;、&#39;-nan&#39;、&#39;+inf&#39;、&#39;-inf&#39; を出力できるようにします。                             | `false`  |                                                                                                                                                                  |
 | [`output_format_json_quote_decimals`](/ja/reference/settings/formats/output-format#output_format_json_quote_decimals)                                                          | JSON 出力フォーマットで decimal 値をクォートするかどうかを制御します。                                                                           | `false`  |                                                                                                                                                                  |
