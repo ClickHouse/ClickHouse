@@ -549,6 +549,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
     try
     {
+        /// Count the attempt before anything can fail: resolving the proxy and setting up the
+        /// connection can both fail on their own, and the SDK retries such an attempt inside the
+        /// logged entry.
+        beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
+
         ProxyConfiguration proxy_configuration;
         if (per_request_configuration)
             proxy_configuration = per_request_configuration();
@@ -566,8 +571,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             connect_time = first_byte_time = 0;
             latency_recorded = false;
 
-            /// Count the attempt before the connection is set up, which can fail on its own.
-            beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
+            /// A redirect is a request of its own.
+            if (attempt > 0)
+                beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
 
             auto session = makeHTTPSession(
                 group,

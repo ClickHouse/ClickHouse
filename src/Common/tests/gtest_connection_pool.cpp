@@ -981,6 +981,19 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresProxyResolverRequests)
         ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
     }
 
+    {
+        /// The object request went out, failed with a retryable error, and its retry - counted before
+        /// the proxy is resolved - could not even reach the resolver. The row spans both attempts.
+        auto pool = getPool();
+        auto connection = pool->getConnection(timeouts, nullptr);
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        ASSERT_ANY_THROW(fetcher.fetch(Poco::URI("http://127.0.0.1:1/proxy"), timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
     setSlowDown(2);
     timeouts.withReceiveTimeout(1);
 

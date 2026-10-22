@@ -23,6 +23,11 @@ static thread_local size_t requests_in_scope = 0;
 /// connection setup is not counted again when the pooled session sends it.
 static thread_local bool transport_attempt_pending = false;
 
+/// Whether the attempt counted by the transport may publish its connection, decided when it was
+/// counted. Kept apart from `current_request_publishes`, because a helper request - such as a proxy
+/// lookup - can be sent between the two calls.
+static thread_local bool transport_attempt_publishes = true;
+
 /// Whether the request being issued may publish its connection. False for helper traffic - a token or
 /// credential request made on the way to the logged one - which counts towards `requests_in_scope`
 /// but must never be reported as the connection of the logged request.
@@ -41,6 +46,7 @@ HTTPConnectionInfoScope::HTTPConnectionInfoScope(bool enabled)
     : previously_enabled(capture_connection_info)
     , previous_requests_in_scope(requests_in_scope)
     , previous_transport_attempt_pending(transport_attempt_pending)
+    , previous_transport_attempt_publishes(transport_attempt_publishes)
     , previous_current_request_publishes(current_request_publishes)
     , previous_helper_requests(helper_requests)
 {
@@ -48,6 +54,7 @@ HTTPConnectionInfoScope::HTTPConnectionInfoScope(bool enabled)
     current_connection_info = {};
     requests_in_scope = 0;
     transport_attempt_pending = false;
+    transport_attempt_publishes = true;
     current_request_publishes = true;
     helper_requests = false;
 }
@@ -61,6 +68,7 @@ HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
     current_connection_info = {};
     requests_in_scope = previous_requests_in_scope;
     transport_attempt_pending = previous_transport_attempt_pending;
+    transport_attempt_publishes = previous_transport_attempt_publishes;
     current_request_publishes = previous_current_request_publishes;
     helper_requests = previous_helper_requests;
 }
@@ -89,7 +97,7 @@ void beginHTTPConnectionInfoTransportAttempt(bool logged_request)
     ++requests_in_scope;
     current_connection_info = {};
     transport_attempt_pending = true;
-    current_request_publishes = logged_request && !helper_requests;
+    transport_attempt_publishes = logged_request && !helper_requests;
 }
 
 void beginHTTPConnectionInfoRequest()
@@ -99,15 +107,15 @@ void beginHTTPConnectionInfoRequest()
 
     current_connection_info = {};
 
-    /// Already counted by the transport before it set up the connection, which also decided
-    /// whether the request may publish it.
-    if (transport_attempt_pending)
+    /// A helper request - such as a proxy lookup made by the S3 client after it counted its attempt -
+    /// is a request of its own and must not take over the attempt counted for the logged one, unless
+    /// that attempt is itself helper traffic.
+    if (transport_attempt_pending && (!helper_requests || !transport_attempt_publishes))
     {
+        /// Already counted by the transport before it set up the connection, which also decided
+        /// whether the request may publish it.
         transport_attempt_pending = false;
-        /// The pending attempt may have failed while connecting and never reached this point, leaving
-        /// the flag to a helper request - such as a proxy lookup - made on the way to its retry.
-        if (helper_requests)
-            current_request_publishes = false;
+        current_request_publishes = transport_attempt_publishes;
         return;
     }
 

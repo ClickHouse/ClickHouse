@@ -97,6 +97,7 @@ private:
     bool previously_enabled;
     size_t previous_requests_in_scope;
     bool previous_transport_attempt_pending;
+    bool previous_transport_attempt_publishes;
     bool previous_current_request_publishes;
     bool previous_helper_requests;
 };
@@ -128,8 +129,8 @@ bool isHTTPConnectionInfoCaptureEnabled();
 /// up the connection for it. Called by the object storage transports, so that an attempt that fails
 /// while connecting - before the pooled session is ever asked to send anything - still counts
 /// towards the requests the entry spans. The pooled session's `beginHTTPConnectionInfoRequest` for
-/// the same attempt then does not count it a second time. Does nothing outside of an
-/// `HTTPConnectionInfoScope`.
+/// the same attempt then does not count it a second time, while a helper request sent in between - such
+/// as a proxy lookup - is counted on its own. Does nothing outside of an `HTTPConnectionInfoScope`.
 ///
 /// `logged_request` is false for a transport that only carries helper traffic - the default transport
 /// of the Azure SDK, which its credentials use to fetch tokens, or an S3 client created for a
