@@ -142,8 +142,13 @@ protected:
 class ParserFunction : public IParserBase
 {
 public:
-    explicit ParserFunction(bool allow_function_parameters_ = true, bool is_table_function_ = false)
-        : allow_function_parameters(allow_function_parameters_), is_table_function(is_table_function_)
+    explicit ParserFunction(
+        bool allow_function_parameters_ = true,
+        bool is_table_function_ = false,
+        bool allow_query_parameter_name_ = false)
+        : allow_function_parameters(allow_function_parameters_)
+        , is_table_function(is_table_function_)
+        , allow_query_parameter_name(allow_query_parameter_name_)
     {
     }
 
@@ -152,6 +157,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
     bool is_table_function;
+    bool allow_query_parameter_name;
 };
 
 

@@ -341,12 +341,22 @@ clickhouse-client --param_message='hello' --query="SELECT {message: String}"
 hello
 ```
 
-If the query parameter represents the name of a database, table, function or other identifier, use `Identifier` for its type. For example, the following query returns rows from a table named `uk_price_paid`:
+If the query parameter represents the name of a database, table, column or other identifier, use `Identifier` for its type. For example, the following query returns rows from a table named `uk_price_paid`:
 
 ```sql
 SET param_mytablename = "uk_price_paid";
 SELECT * FROM {mytablename:Identifier};
 ```
+
+In a table expression, an `Identifier` parameter can also name a parameterized view or a table function that takes ordinary arguments:
+
+```sql
+SET param_myview = "active_employees";
+SET param_name_pattern = 'A%';
+SELECT * FROM {myview:Identifier}(name_pattern = {name_pattern:String});
+```
+
+It cannot name a scalar function, such as `{f:Identifier}(1)`. The bare `SELECT` argument form of `view`, `viewIfPermitted` and `eval`, such as `view(SELECT 1)`, is not available through a placeholder, while `eval('SELECT 1')` is. Inline insert data is not detected when the placeholder resolves to `input`, so `INSERT INTO t SELECT * FROM {f:Identifier}('x UInt64') FORMAT CSV` cannot read data that follows the query.
 </Accordion>
 
 <Accordion title="Example with the HTTP interface">
