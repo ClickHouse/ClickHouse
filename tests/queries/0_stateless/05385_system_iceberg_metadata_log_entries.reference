@@ -19,11 +19,19 @@ Row 1:
 ──────
 table:                        t0
 file_ends_with_metadata_json: 1
+latest_snapshot_id_is_null:   1
+latest_schema_id:             ᴺᵁᴸᴸ
+latest_sequence_number:       ᴺᵁᴸᴸ
+
+Row 2:
+──────
+table:                        t0
+file_ends_with_metadata_json: 1
 latest_snapshot_id_is_null:   0
 latest_schema_id:             0
 latest_sequence_number:       1
 
-Row 2:
+Row 3:
 ──────
 table:                        t0
 file_ends_with_metadata_json: 1
@@ -34,18 +42,25 @@ latest_sequence_number:       2
 Row 1:
 ──────
 table:                      t0
-latest_snapshot_id_is_null: 0
-latest_schema_id:           0
-latest_sequence_number:     1
+latest_snapshot_id_is_null: 1
+latest_schema_id:           ᴺᵁᴸᴸ
+latest_sequence_number:     ᴺᵁᴸᴸ
 
 Row 2:
 ──────
 table:                      t0
 latest_snapshot_id_is_null: 0
 latest_schema_id:           0
-latest_sequence_number:     2
+latest_sequence_number:     1
 
 Row 3:
+──────
+table:                      t0
+latest_snapshot_id_is_null: 0
+latest_schema_id:           0
+latest_sequence_number:     2
+
+Row 4:
 ──────
 table:                      t0
 latest_snapshot_id_is_null: 0

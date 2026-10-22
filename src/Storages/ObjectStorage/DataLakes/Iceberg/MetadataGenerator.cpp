@@ -237,6 +237,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     Int64 timestamp = user_defined_timestamp.value_or(ms.count());
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
+    /// The `metadata-log` entry of the previous file records when that file was written.
+    const Int64 previous_last_updated_ms = metadata_object->getValue<Int64>(Iceberg::f_last_updated_ms);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
@@ -318,7 +320,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     {
         Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
         new_metadata_item->set(Iceberg::f_metadata_file, previous_metadata_file_path.serialize());
-        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
+        new_metadata_item->set(Iceberg::f_timestamp_ms, previous_last_updated_ms);
         metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
     }
     {
