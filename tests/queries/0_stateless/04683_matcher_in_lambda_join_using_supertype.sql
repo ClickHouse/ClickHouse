@@ -98,31 +98,12 @@ FROM (EXPLAIN QUERY TREE run_passes = 1
     SELECT a + 1 AS a, arrayMap(z -> tuple(* EXCEPT w), [1]) FROM r1 INNER JOIN r2 USING (a)
     SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1);
 
--- 9. The rollback now descends into lambda bodies for every writer of the replacement map, so cover
--- the other channels too: the nullability writer, an empty map, a lambda argument, and a lambda
--- subquery. The nullability cases need a NON-PRESERVED side, so the lambda body reads a column the
--- join actually widens: under LEFT JOIN both `a` and `v` come from the preserved left table and stay
--- non-Nullable, which is why the supertype carrier below is the only thing a LEFT shape can assert.
+-- 9. The rollback now descends into lambda bodies, so cover a lambda argument and a lambda subquery
+-- too. PREWHERE is resolved with join_use_nulls disabled, so no nullability entry reaches it: the
+-- LEFT JOIN case below carries only the supertype.
 SELECT 'join_use_nulls with USING';
 SELECT count() FROM r1 LEFT JOIN r2 USING (a)
 PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0 SETTINGS join_use_nulls = 1;
--- RIGHT/FULL make the LEFT table's `v` the non-preserved one, so the map really carries a
--- Nullable(Int16) entry for it. Assert the resolved type, not just the row count: the lambda body
--- must converge on the direct form's Int16 after the rollback, and print 1 twice.
-SELECT 'join_use_nulls widens the lambda body, right', countIf(explain LIKE '%column_name: v, result_type: Int16%')
-FROM (EXPLAIN QUERY TREE run_passes = 1
-    SELECT count() FROM r1 RIGHT JOIN r2 USING (a)
-    PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1);
-SELECT 'join_use_nulls widens the lambda body, right direct oracle', countIf(explain LIKE '%column_name: v, result_type: Int16%')
-FROM (EXPLAIN QUERY TREE run_passes = 1
-    SELECT count() FROM r1 RIGHT JOIN r2 USING (a)
-    PREWHERE v != 0 SETTINGS join_use_nulls = 1);
-SELECT 'join_use_nulls widens the lambda body, right value';
-SELECT count() FROM r1 RIGHT JOIN r2 USING (a)
-PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
-SELECT 'join_use_nulls widens the lambda body, full value';
-SELECT count() FROM r1 FULL JOIN r2 USING (a)
-PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
 SELECT 'join_use_nulls with ON, bare column';
 SELECT count() FROM r1 LEFT JOIN r2 ON r1.a = r2.a
 PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
@@ -132,6 +113,11 @@ SELECT 'cross join lambda reads the right table';
 SELECT count() FROM r1 CROSS JOIN r2 PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0; -- { serverError ILLEGAL_PREWHERE }
 SELECT 'join on lambda reads the right table';
 SELECT count() FROM r1 INNER JOIN r2 ON r1.a = r2.a PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0; -- { serverError ILLEGAL_PREWHERE }
+SELECT 'paste join lambda reads the right table';
+SELECT count() FROM r1 PASTE JOIN r2 PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0; -- { serverError ILLEGAL_PREWHERE }
+-- A lambda that reads only the right table puts PREWHERE on that table, as `PREWHERE r2.w != 0` does.
+SELECT 'lambda reads only the right table';
+SELECT count() FROM r1 INNER JOIN r2 ON r1.a = r2.a PREWHERE (arrayMap(z -> r2.w, [1])[1]) != 0;
 SELECT 'lambda argument is not replaced';
 SELECT count() FROM r1 INNER JOIN r2 USING (a) PREWHERE (arrayMap(z -> z + v, [1])[1]) != 0;
 SELECT 'lambda argument beside a matcher';

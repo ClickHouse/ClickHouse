@@ -60,6 +60,22 @@ PREWHERE r.v2 != 'B'
 GROUP BY ALL
 ORDER BY ALL;
 
+-- A column read only inside a lambda binds PREWHERE to its table too, so the rewrite matches the direct form.
+SELECT 'right_prewhere_lambda';
+SELECT l.k1, l.v1, r.k2, r.v2, count()
+FROM left_distributed_05194 AS l
+GLOBAL RIGHT JOIN right_distributed_05194 AS r ON l.k1 = r.k2
+PREWHERE arrayMap(z -> r.v2, [1])[1] != 'B'
+GROUP BY ALL
+ORDER BY ALL;
+SELECT
+    (SELECT countIf(explain LIKE '%Join%') FROM (EXPLAIN SELECT l.k1, l.v1, r.k2, r.v2, count()
+        FROM left_distributed_05194 AS l GLOBAL RIGHT JOIN right_distributed_05194 AS r ON l.k1 = r.k2
+        PREWHERE arrayMap(z -> r.v2, [1])[1] != 'B' GROUP BY ALL ORDER BY ALL))
+    = (SELECT countIf(explain LIKE '%Join%') FROM (EXPLAIN SELECT l.k1, l.v1, r.k2, r.v2, count()
+        FROM left_distributed_05194 AS l GLOBAL RIGHT JOIN right_distributed_05194 AS r ON l.k1 = r.k2
+        PREWHERE r.v2 != 'B' GROUP BY ALL ORDER BY ALL));
+
 SELECT 'constant_prewhere';
 SELECT l.k1, l.v1, r.k2, r.v2, count()
 FROM left_distributed_05194 AS l

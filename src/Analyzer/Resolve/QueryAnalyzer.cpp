@@ -7586,8 +7586,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         scope.allow_resolve_from_using = false;
         bool in_prewhere = scope.in_prewhere;
         scope.in_prewhere = true;
-        /// PREWHERE columns keep their pre-join types: the rollback below cannot descend into a
-        /// lambda body, so promoting here would leave types the storage cannot supply.
+        /// PREWHERE columns keep their pre-join types, so they are not promoted to Nullable here.
         bool join_use_nulls = scope.join_use_nulls;
         scope.join_use_nulls = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
