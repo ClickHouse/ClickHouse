@@ -245,5 +245,68 @@ submit
 expect "1903"
 expect ":) "
 
+# A counted Enter past the last line stays inside the buffer: on a one-line buffer and on an
+# empty buffer there is no next line, so it neither moves nor deletes anything.
+send -- "SELECT 2100+56"
+escape
+send -- "d20\r20\rx"
+submit
+expect "2105"
+expect ":) "
+
+escape
+send -- "d20\r20\r"
+send -- "iSELECT 2200+1"
+submit
+expect "2201"
+expect ":) "
+
+# A counted Enter stops on the last line.
+send -- "SELECT 2300\r+ 4\r+ 50"
+escape
+send -- "gg20\rwx"
+submit
+expect "2304"
+expect ":) "
+
+# A count on `$` moves to the end of a following line.
+send -- "SELECT 2500 + 1\r+ 2\r+ 30"
+escape
+send -- "gg2\$x"
+submit
+expect "2531"
+expect ":) "
+
+# `D` and `C` take the count of `$`.
+send -- "SELECT 2600 + 7\r+ 2\r+ 30"
+escape
+send -- "ggf72D"
+submit
+expect "2630"
+expect ":) "
+
+send -- "SELECT 2800 + 7\r+ 2\r+ 30"
+escape
+send -- "ggf72C1"
+submit
+expect "2831"
+expect ":) "
+
+# Over several lines from the start of a line, `D` is linewise.
+send -- "garbage\r+ more\rSELECT 2700+5"
+escape
+send -- "gg2DA0"
+submit
+expect "2750"
+expect ":) "
+
+# A count on `$` fails on the last line.
+send -- "SELECT 2900+56"
+escape
+send -- "2Dx"
+submit
+expect "2905"
+expect ":) "
+
 send -- "\4"
 expect eof

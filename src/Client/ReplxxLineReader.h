@@ -83,6 +83,8 @@ private:
     void resetVimForNewInput();
     void vimCharwise(int & pos, std::u32string & text, int oldpos);
     void vimLinewise(int & pos, std::u32string & text, int oldpos);
+    /// The `$` motion, also used by `D` and `C`.
+    void vimDollar(int & pos, std::u32string & text);
     void fixTrailingNewline(int * pos, std::u32string * text);
     void resetVim(int * pos = nullptr, std::u32string * text = nullptr);
     template <typename T>
