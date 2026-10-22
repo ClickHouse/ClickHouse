@@ -2755,6 +2755,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               false)},
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_orc_row_index_stride", CHSetting(rowsRange, {}, false)},
+         {"output_format_parquet_use_alp_encoding", trueOrFalseSettingNoOracle},
          {"output_format_parquet_write_checksums", trueOrFalseSettingNoOracle},
          {"output_format_trim_fixed_string", trueOrFalseSettingNoOracle},
          {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle},
