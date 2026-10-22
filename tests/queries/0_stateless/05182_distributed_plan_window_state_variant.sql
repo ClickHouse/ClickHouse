@@ -1,9 +1,7 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A window aggregate of the CrossTab family produces its state in the Window representation, and no
 -- header carries the representation. Below a sorted gather the local in-memory exchange handed such
--- states to a consumer whose header named the Aggregation representation, and reading the one layout
+-- states to a consumer whose header named the Aggregation representation, and inside a deserialized
+-- fragment a cast of such a state was built for the Aggregation representation; reading the one layout
 -- as the other segfaulted in CrossTabCountsState::merge. Results must match the non-distributed plan.
 
 DROP TABLE IF EXISTS t_window_state_variant_gather;
@@ -73,6 +71,59 @@ SELECT sum(cityHash64(p, v, round(finalizeAggregation(s), 6)))
 FROM (SELECT p, v, theilsUState(b, c) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather);
 SELECT sum(cityHash64(p, v, round(finalizeAggregation(s), 6)))
 FROM (SELECT p, v, theilsUState(b, c) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather)
+SETTINGS make_distributed_plan = 0;
+
+-- A window state merged with an ordinary one through a Variant: the cast to the Variant runs in the
+-- fragment that holds the window, and has to convert the state rather than relabel it.
+SELECT '-- Variant of a window and an ordinary state: distributed then local';
+SELECT round(contingencyMerge(s.`AggregateFunction(contingency, UInt32, UInt32)`), 6)
+FROM
+(
+    SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1
+    UNION ALL
+    SELECT contingencyState(b, c) AS s FROM t_window_state_variant_gather
+);
+SELECT round(contingencyMerge(s.`AggregateFunction(contingency, UInt32, UInt32)`), 6)
+FROM
+(
+    SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1
+    UNION ALL
+    SELECT contingencyState(b, c) AS s FROM t_window_state_variant_gather
+)
+SETTINGS make_distributed_plan = 0;
+
+SELECT 'Variant shape distributes'
+FROM
+(
+    EXPLAIN PIPELINE SELECT round(contingencyMerge(s.`AggregateFunction(contingency, UInt32, UInt32)`), 6)
+    FROM
+    (
+        SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1
+        UNION ALL
+        SELECT contingencyState(b, c) AS s FROM t_window_state_variant_gather
+    )
+)
+WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
+
+SELECT '-- Dynamic: distributed then local';
+SELECT round(contingencyMerge(dynamicElement(CAST(s AS Dynamic), 'AggregateFunction(contingency, UInt32, UInt32)')), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
+SELECT round(contingencyMerge(dynamicElement(CAST(s AS Dynamic), 'AggregateFunction(contingency, UInt32, UInt32)')), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0;
+
+SELECT '-- CAST to the state type: distributed then local';
+SELECT round(contingencyMerge(CAST(s AS AggregateFunction(contingency, UInt32, UInt32))), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
+SELECT round(contingencyMerge(CAST(s AS AggregateFunction(contingency, UInt32, UInt32))), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0;
+
+SELECT '-- contingencyMerge of the window state: distributed then local';
+SELECT round(contingencyMerge(s), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1);
+SELECT round(contingencyMerge(s), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_window_state_variant_gather;

@@ -14,3 +14,16 @@ sorted gather above the window step: 	1
 -- theilsU control: distributed then local
 8028078959096672967
 8028078959096672967
+-- Variant of a window and an ordinary state: distributed then local
+0.075652
+0.075652
+Variant shape distributes
+-- Dynamic: distributed then local
+0.075652
+0.075652
+-- CAST to the state type: distributed then local
+0.075652
+0.075652
+-- contingencyMerge of the window state: distributed then local
+0.075652
+0.075652
