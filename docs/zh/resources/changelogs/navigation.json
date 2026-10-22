@@ -5,7 +5,7 @@
       "icon": "/images/icons/icon-clickhouse-cloud.svg",
       "pages": [
         "zh/resources/changelogs/cloud/index",
-        "resources/changelogs/cloud/2026",
+        "zh/resources/changelogs/cloud/2026",
         {
           "group": "归档",
           "pages": [
