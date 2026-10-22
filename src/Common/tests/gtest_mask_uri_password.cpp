@@ -115,7 +115,7 @@ bool maskPresignedURLParametersWithRE2(std::string & url)
 {
     return RE2::GlobalReplace(
         &url,
-        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[A-Za-z0-9\-]*)=)[^&#]*)",
+        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[^=?&]*)=)[^&#]*)",
         "\\1[HIDDEN]");
 }
 
@@ -161,7 +161,7 @@ const std::vector<std::string> url_corpus = {
     "https://h/f?X-AMZ-SECURITY-TOKEN=a",
     "https://h/f?x-goog-signature=a",
     "https://h/f?x-amz-=empty",
-    "https://h/f?x-amz-bad_name=visible",
+    "https://h/f?x-amz-any_name=hidden",
 
     /// An Azure shared access signature: `sig` is the signature, the other fields say what it grants.
     "https://acct.blob.core.windows.net/c/b?sp=r&sig=abc",

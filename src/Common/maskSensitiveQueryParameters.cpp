@@ -141,10 +141,25 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
     return result;
 }
 
+/// The query parameters of an S3 or GCS presigned URL. The prefixes are header names, so any case: SigV2 sends
+/// `x-amz-security-token`. `presignedURLCredentials` reads the secret ones among them, so extend both together.
+constexpr std::array<std::string_view, 4> presigned_url_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
+constexpr std::array<std::string_view, 2> presigned_url_prefixes = {"X-Amz-", "X-Goog-"};
+
+bool isPresignedURLParameterName(std::string_view name)
+{
+    return std::ranges::find(presigned_url_names, name) != presigned_url_names.end()
+        || std::ranges::any_of(
+               presigned_url_prefixes,
+               [&](std::string_view prefix) { return equalsCaseInsensitive(name.substr(0, prefix.length()), prefix); });
+}
+
 std::vector<std::string> presignedURLCredentials(std::string_view uri)
 {
-    static constexpr std::array<std::string_view, 5> credential_names{
-        "x-amz-signature", "x-amz-security-token", "x-amz-s3session-token", "signature", "awsaccesskeyid"};
+    /// `sig` is the signature of an Azure SAS.
+    static constexpr std::array<std::string_view, 8> credential_names{
+        "x-amz-signature", "x-amz-security-token", "x-amz-s3session-token", "signature", "awsaccesskeyid",
+        "x-goog-signature", "googleaccessid", "sig"};
 
     std::vector<std::string> credentials;
     const size_t question = uri.find('?');
@@ -181,7 +196,7 @@ std::vector<std::string> presignedURLCredentials(std::string_view uri)
                 add(std::string(value));
             add(std::move(decoded));
         }
-        else if (name == "x-amz-credential")
+        else if (name == "x-amz-credential" || name == "x-goog-credential")
         {
             /// `<access key id>/<scope>`: the scope is not a secret, and the key id is echoed on its own.
             std::string decoded = decodeQueryComponent(value);

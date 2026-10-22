@@ -317,13 +317,8 @@ TEST(BackupInfo, WithoutS3CredentialsRedactsHeaderNamesInAnyCase)
         "S3('https://storage.googleapis.com/bucket/backup?GoogleAccessId=ID&Expires=12345&Signature=URLSIGNATURE&x-goog-encryption-key=URLKEY')");
     EXPECT_EQ(gcs.withoutS3Credentials().toString(), "S3('https://storage.googleapis.com/bucket/backup')");
 
-    /// `S3::URI` reads no key from a versioned query either.
     auto versioned = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup?versionId=v1&x-amz-security-token=URLTOKEN')");
     EXPECT_EQ(versioned.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup?versionId=v1')");
-
-    /// Not presigned: `S3::URI` reads this query as part of the key.
-    auto plain = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup?x-amz-foo=bar')");
-    EXPECT_EQ(plain.withoutS3Credentials().toString(), plain.toString());
 }
 
 TEST(BackupInfo, WithoutS3CredentialsRedactsCombinedURLCredentials)

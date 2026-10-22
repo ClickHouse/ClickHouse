@@ -73,7 +73,7 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
                         String url;
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
-                            if (maskS3URICredentials(url))
+                            if (maskURICredentials(url))
                                 finder.result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
@@ -204,7 +204,7 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
         finder.markSecretArgument(positional[url_slot]);
         return;
     }
-    if (maskS3URICredentials(url))
+    if (maskURICredentials(url))
         finder.result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
@@ -327,15 +327,6 @@ bool isNonSecretExtraCredentialsKey(std::string_view key)
 bool isS3SecretKey(std::string_view key)
 {
     return std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys);
-}
-
-bool maskS3URICredentials(String & url)
-{
-    /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular expressions they
-    /// replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-    bool changed = maskURIUserinfo(url);
-    changed |= maskPresignedURLParameters(url);
-    return changed;
 }
 
 SecretArgumentsSpec s3TableFunctionSecretArguments(bool is_cluster_function)

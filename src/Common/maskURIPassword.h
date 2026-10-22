@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/HiddenSecret.h>
-#include <Common/StringUtils.h>
 #include <Common/maskSensitiveQueryParameters.h>
 
 #include <algorithm>
@@ -307,36 +306,16 @@ inline bool maskURIUserinfo(std::string & url)
 /// is masked. Returns whether anything was masked.
 ///
 /// This used to be the regular expression
-/// `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[A-Za-z0-9\-]*)=)[^&#]*`
+/// `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[^=?&]*)=)[^&#]*`
 /// rewritten to `\1[HIDDEN]` globally; `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
 /// A name is also matched percent-decoded, as the storage endpoint reads it: `?%73ig=` is `?sig=`.
-/// `sig` is the signature of an Azure SAS. The prefixes are header names, so any case: SigV2 sends `x-amz-security-token`.
+/// `sig` is the signature of an Azure SAS.
 inline bool maskPresignedURLParameters(std::string & url)
 {
-    static constexpr std::array<std::string_view, 5> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId", "sig"};
-    static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
-
     auto is_secret_parameter = [](std::string_view raw_name)
     {
         const std::string name = decodeQueryComponent(raw_name);
-        for (auto exact : exact_names)
-            if (name == exact)
-                return true;
-
-        for (auto prefix : prefixes)
-        {
-            if (!equalsCaseInsensitive(std::string_view(name).substr(0, prefix.length()), prefix))
-                continue;
-            /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
-            bool rest_matches = true;
-            for (char c : name.substr(prefix.length()))
-                if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '-'))
-                    rest_matches = false;
-            if (rest_matches)
-                return true;
-        }
-
-        return false;
+        return name == "sig" || isPresignedURLParameterName(name);
     };
 
     /// Built in one pass rather than replacing in place: a replacement of a different length shifts
