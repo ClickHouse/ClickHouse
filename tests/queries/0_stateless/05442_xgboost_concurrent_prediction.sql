@@ -7,6 +7,7 @@
 -- prediction as when the model is used by a single thread, for the `gbtree` and the `gblinear` boosters.
 
 SET enable_xgboost = 1;
+SET send_logs_level = 'error'; -- XGBoost warns that `gblinear` is deprecated
 
 DROP DICTIONARY IF EXISTS model_05442_xgb;
 DROP DICTIONARY IF EXISTS model_05442_linear;

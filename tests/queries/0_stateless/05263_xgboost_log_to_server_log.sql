@@ -5,6 +5,7 @@
 -- that trains or predicts, instead of to `stderr`. XGBoost warns that the `gblinear` booster is deprecated.
 
 SET enable_xgboost = 1;
+SET send_logs_level = 'error'; -- the warning is checked in `system.text_log`, not sent to the client
 SET max_rows_to_read = 0; -- system.text_log can be really big
 
 DROP DICTIONARY IF EXISTS model_05263_xgb;
