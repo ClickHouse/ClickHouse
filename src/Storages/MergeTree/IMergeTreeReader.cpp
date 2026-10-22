@@ -153,21 +153,36 @@ IMergeTreeReader::IMergeTreeReader(
 
             /// The key is the name in the part: it may differ from the requested name
             /// when the column is affected by a pending RENAME.
-            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, it->second);
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, StringValueFilterForColumn{.filter = it->second});
         }
     }
 }
 
-StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePair & column_in_part) const
+void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings)
 {
+    deserialize_settings.string_value_filter = nullptr;
+    deserialize_settings.string_value_filter_bytes_skipped = nullptr;
+
     if (string_value_filters_by_part_column_name.empty())
-        return nullptr;
+        return;
 
     auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
     if (it == string_value_filters_by_part_column_name.end())
-        return nullptr;
+        return;
 
-    return it->second;
+    deserialize_settings.string_value_filter = it->second.filter;
+    deserialize_settings.string_value_filter_bytes_skipped = &it->second.bytes_skipped;
+}
+
+std::unordered_map<String, size_t> IMergeTreeReader::takeBytesSkippedByStringValueFilters()
+{
+    std::unordered_map<String, size_t> res;
+    for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
+    {
+        if (filter_for_column.bytes_skipped)
+            res.emplace(name, std::exchange(filter_for_column.bytes_skipped, 0));
+    }
+    return res;
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const

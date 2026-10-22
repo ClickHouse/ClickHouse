@@ -622,6 +622,8 @@ public:
         /// which is guaranteed to filter out the rows with non-matching values, so the replacement
         /// cannot change the query result. Used only by `SerializationString`.
         std::shared_ptr<const StringValueFilter> string_value_filter;
+        /// If set, the total size of the values replaced with empty strings by `string_value_filter` is added to it.
+        size_t * string_value_filter_bytes_skipped = nullptr;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.

@@ -230,11 +230,15 @@ public:
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
+    /// `bytes_skipped_by_string_value_filters` are the sizes of the values read from disk but replaced with
+    /// empty strings in `input_columns` (see `StringValueFilter`), by column name.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,
+        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
+        const ColumnSize & total_columns_size,
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,

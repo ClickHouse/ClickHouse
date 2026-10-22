@@ -172,6 +172,7 @@ MergeTreeReadTask::MergeTreeReadTask(
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
+                                                           const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
                                                            size_t read_bytes,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
@@ -183,8 +184,11 @@ MergeTreeReadTask::MergeTreeReadTask(
             updater->recordInputColumns(
                 columns,
                 partially_read_columns,
+                bytes_skipped_by_string_value_filters,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
+                /// Needed only to estimate the bytes skipped by the string value filters, see `recordInputColumns`.
+                bytes_skipped_by_string_value_filters.empty() ? ColumnSize{} : info->data_part_info->getTotalColumnsSize(),
                 column_codecs,
                 default_codec,
                 read_bytes,

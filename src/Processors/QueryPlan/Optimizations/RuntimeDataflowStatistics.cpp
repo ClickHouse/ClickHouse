@@ -403,8 +403,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NameSet & partially_read_columns,
+    const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
+    const ColumnSize & total_columns_size,
     const ColumnCodecByName & column_codecs,
     const CompressionCodecPtr & default_codec,
     size_t read_bytes,
@@ -418,6 +420,15 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         for (const auto & column : input_columns)
             read_bytes += column.column->byteSize();
     }
+
+    /// The values replaced with empty strings were read from disk all the same.
+    auto get_bytes_skipped = [&](const String & name) -> size_t
+    {
+        const auto it = bytes_skipped_by_string_value_filters.find(name);
+        return it == bytes_skipped_by_string_value_filters.end() ? 0 : it->second;
+    };
+    for (const auto & [_, bytes_skipped] : bytes_skipped_by_string_value_filters)
+        read_bytes += bytes_skipped;
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
@@ -434,8 +445,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         ? (static_cast<double>(column_sizes.at(column.name).data_compressed)
                            / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
                         : 1.0;
-                    sample_bytes += column.column->byteSize();
-                    compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
+                    const size_t column_bytes = column.column->byteSize() + get_bytes_skipped(column.name);
+                    sample_bytes += column_bytes;
+                    compressed_bytes += static_cast<size_t>(static_cast<double>(column_bytes) * compressed_ratio);
                 }
             }
         }
@@ -462,17 +474,32 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                 for (const auto & column : input_columns)
                 {
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
-                    if (part_columns.contains(column.name))
+                    if (!part_columns.contains(column.name))
+                        continue;
+
+                    /// A sample of the values replaced with empty strings says nothing about the values read,
+                    /// so the compression ratio of the whole part stands in for the one of the column.
+                    if (const size_t bytes_skipped = get_bytes_skipped(column.name))
                     {
-                        const auto codec_it = column_codecs.find(column.name);
-                        /// A column with no `CODEC` of its own is written with the part's default codec,
-                        /// which is generic, so it applies to any serialization layout.
-                        const auto [sample, compressed] = estimateCompressedColumnSize(
-                            column,
-                            codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
-                        sample_bytes += sample;
-                        compressed_bytes += compressed;
+                        if (total_columns_size.data_uncompressed)
+                        {
+                            const size_t column_bytes = column.column->byteSize() + bytes_skipped;
+                            sample_bytes += column_bytes;
+                            compressed_bytes += static_cast<size_t>(
+                                static_cast<double>(column_bytes) * static_cast<double>(total_columns_size.data_compressed)
+                                / static_cast<double>(total_columns_size.data_uncompressed));
+                        }
+                        continue;
                     }
+
+                    const auto codec_it = column_codecs.find(column.name);
+                    /// A column with no `CODEC` of its own is written with the part's default codec,
+                    /// which is generic, so it applies to any serialization layout.
+                    const auto [sample, compressed] = estimateCompressedColumnSize(
+                        column,
+                        codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
+                    sample_bytes += sample;
+                    compressed_bytes += compressed;
                 }
             }
         }
