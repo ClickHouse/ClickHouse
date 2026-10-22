@@ -24,6 +24,7 @@
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
@@ -130,7 +131,15 @@ void FormatSchemaInfo::handleSchemaFile(
 
 void FormatSchemaInfo::verifySchemaFileName(const String & format_schema, bool require_message, fs::path & path)
 {
-    size_t colon_pos = format_schema.find(':');
+    size_t message_separator_search_from = 0;
+#if defined(OS_WINDOWS)
+    /// The colon of a drive designator (`C:/schemas/row.tpl`) belongs to the file name, it does not
+    /// separate a message name.
+    if (format_schema.size() >= 3 && isAlphaASCII(format_schema[0]) && format_schema[1] == ':'
+        && (format_schema[2] == '/' || format_schema[2] == '\\'))
+        message_separator_search_from = 2;
+#endif
+    size_t colon_pos = format_schema.find(':', message_separator_search_from);
     String format_schema_file_name;
     String format_schema_message_name;
     if (colon_pos != String::npos)
