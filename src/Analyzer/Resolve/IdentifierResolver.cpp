@@ -654,6 +654,41 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     return {};
 }
 
+namespace
+{
+
+/// Parts of the identifier consumed by the table name at `start`, "ns.t" eats 2 parts of
+/// ns.t.column, or 1 quoted dotted part. allow_multipart=0 keeps old single-part match
+size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name, bool allow_multipart)
+{
+    if (table_name.empty())
+        return 0;
+
+    if (!allow_multipart)
+        return (start < identifier.getPartsSize() && identifier[start] == table_name) ? 1 : 0;
+
+    const auto & parts = identifier.getParts();
+    size_t part = start;
+    size_t offset = 0;
+
+    while (part < parts.size())
+    {
+        const String & component = parts[part];
+        if (table_name.compare(offset, component.size(), component) != 0)
+            return 0;
+        offset += component.size();
+        ++part;
+        if (offset == table_name.size())
+            return part - start;
+        if (table_name[offset] != '.')
+            return 0;
+        ++offset;
+    }
+    return 0;
+}
+
+}
+
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
@@ -688,10 +723,12 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         if (table_node->isMaterializedCTE())
             materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
 
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
-        if (parts_size != 1 && parts_size != 2 && !scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        if (parts_size != 1 && parts_size != 2 && !allow_table_paths)
             throw Exception(ErrorCodes::INVALID_IDENTIFIER,
                 "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
                 identifier_lookup.identifier.getFullName(),
@@ -717,16 +754,8 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 1)
         return false;
 
-    auto starts_with_table_name_part = [](const IdentifierView & identifier_view, const String & table_name_part)
-    {
-        if (table_name_part.empty())
-            return false;
-
-        auto full_name = identifier_view.getFullName();
-        return full_name.starts_with(table_name_part) && full_name.size() > table_name_part.size() && full_name[table_name_part.size()] == '.';
-    };
-
-    if (starts_with_table_name_part(IdentifierView(identifier), table_name))
+    if (size_t consumed = numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths);
+        consumed > 0 && consumed < identifier.getPartsSize())
         return true;
 
     if (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias())
@@ -738,24 +767,14 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 2)
         return false;
 
-    // Check database name
-    IdentifierView identifier_view(identifier);
-    if (!starts_with_table_name_part(identifier_view, database_name))
-        return false;
-    identifier_view.popFirst();
-
-    // Check table name
-    if (!starts_with_table_name_part(identifier_view, table_name))
-        return false;
-
-    size_t skipped_length = 0;
-    while (skipped_length < table_name.length() && !identifier_view.empty())
+    if (!database_name.empty() && identifier[0] == database_name)
     {
-        skipped_length += identifier_view[0].length() + 1;
-        identifier_view.popFirst();
+        size_t consumed = numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths);
+        if (consumed > 0 && 1 + consumed < identifier.getPartsSize())
+            return true;
     }
 
-    return (skipped_length == (table_name.length() + 1)) && !identifier_view.empty();
+    return false;
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLookup & identifier_lookup,
@@ -951,41 +970,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     // std::cerr << "resolved from storage : " << qualified_identifier.getFullName() << " as " << result_expression->dumpTree() << std::endl;
 
     return { .resolved_identifier = result_expression, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-}
-
-namespace
-{
-
-/// Parts of the identifier consumed by the table name at `start`, "ns.t" eats 2 parts of
-/// ns.t.column, or 1 quoted dotted part. allow_multipart=0 keeps old single-part match
-size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name, bool allow_multipart)
-{
-    if (table_name.empty())
-        return 0;
-
-    if (!allow_multipart)
-        return (start < identifier.getPartsSize() && identifier[start] == table_name) ? 1 : 0;
-
-    const auto & parts = identifier.getParts();
-    size_t part = start;
-    size_t offset = 0;
-
-    while (part < parts.size())
-    {
-        const String & component = parts[part];
-        if (table_name.compare(offset, component.size(), component) != 0)
-            return 0;
-        offset += component.size();
-        ++part;
-        if (offset == table_name.size())
-            return part - start;
-        if (table_name[offset] != '.')
-            return 0;
-        ++offset;
-    }
-    return 0;
-}
-
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
