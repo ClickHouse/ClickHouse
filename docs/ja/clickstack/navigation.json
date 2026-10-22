@@ -33,7 +33,7 @@
           ]
         },
         "ja/clickstack/architecture",
-        "ja/clickstack/faq"
+        "clickstack/faq"
       ]
     },
     {
@@ -97,11 +97,11 @@
         "ja/clickstack/text-to-chart",
         "ja/clickstack/features/event-patterns",
         "ja/clickstack/features/event-deltas",
-        "ja/clickstack/features/alerts",
+        "clickstack/features/alerts",
         "ja/clickstack/features/anomaly-detection",
         "ja/clickstack/service-maps",
         "ja/clickstack/features/session-replay",
-        "ja/clickstack/mcp",
+        "clickstack/mcp",
         "ja/clickstack/url-parameters",
         {
           "group": "デモデイズ",
