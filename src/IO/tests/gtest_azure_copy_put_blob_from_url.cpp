@@ -63,8 +63,8 @@ public:
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
         const auto & headers = request.GetHeaders();
-        const bool has_copy_source = headers.count("x-ms-copy-source") != 0;
-        const bool has_blob_type = headers.count("x-ms-blob-type") != 0;
+        const bool has_copy_source = headers.contains("x-ms-copy-source");
+        const bool has_blob_type = headers.contains("x-ms-blob-type");
 
         if (request.GetMethod() == Azure::Core::Http::HttpMethod::Put && has_copy_source && !has_blob_type)
         {
@@ -142,12 +142,17 @@ public:
     std::string put_from_url_metadata;
 
 private:
+    /// Answers `Put Blob From URL`, an ordinary upload, a staged block and a committed block list. The
+    /// SDK reads `ETag`, `Last-Modified` and `x-ms-request-server-encrypted` out of all four responses
+    /// with an unguarded `GetHeaders().at`, so omitting any of them throws `std::out_of_range` from the
+    /// response parser rather than returning a result.
     static std::unique_ptr<Azure::Core::Http::RawResponse> created()
     {
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Created, "Created");
         response->SetHeader("Content-Length", "0");
         response->SetHeader("ETag", "\"0x8DA000000000001\"");
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
+        response->SetHeader("x-ms-request-server-encrypted", "true");
         response->SetBodyStream(std::make_unique<OwningBodyStream>(""));
         return response;
     }
