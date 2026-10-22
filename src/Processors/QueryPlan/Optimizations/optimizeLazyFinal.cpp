@@ -497,6 +497,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (split_result.fully_replaced)
         return;
 
+    /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
+    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+        return;
+
     const auto & context = reading_step->getContext();
     const auto & storage_snapshot = reading_step->getStorageSnapshot();
     auto mutations_snapshot = reading_step->getMutationsSnapshot();
@@ -510,7 +514,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Build the set for primary key columns only (PK is a prefix of sorting key;
     /// the remaining sorting key columns are useless for index analysis).
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
-    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ false);
+    /// This set selects FINAL winners by key identity, so a NULL key must equal itself here.
+    const bool pk_has_nullable_column = std::any_of(
+        primary_key.data_types.begin(),
+        primary_key.data_types.end(),
+        [](const auto & type) { return isNullableOrLowCardinalityNullable(type); });
+    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ pk_has_nullable_column);
     set->setHeader(primary_key.sample_block.cloneWithColumns(primary_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
     set->fillSetElements();
     auto set_and_key = std::make_shared<SetAndKey>(SetAndKey{.key = "__lazy_final_set", .set = set, .external_table = nullptr});
@@ -690,7 +699,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
-    /// and can be dropped by tryRemoveUnusedColumns.
+    /// and can be dropped by `removeUnusedColumns`.
     {
         auto dag = primary_key_dag.clone();
         NamesWithAliases projection;
@@ -709,11 +718,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     }
 
     /// CreatingSetStep fills the Set from the pipeline.
+    /// Unlike the sets of `IN`, the set never spills to disk: it only serves index analysis, which needs its
+    /// values, and its own BREAK-mode size limits above bound its memory.
     set_plan.addStep(std::make_unique<CreatingSetStep>(
         set_plan.getCurrentHeader(),
         set_and_key,
         SizeLimits{},
-        nullptr));
+        nullptr,
+        FutureSetSettings{}));
 
     /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
     /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits
