@@ -261,7 +261,8 @@ void ReadFromObjectStorageStep::createIterator()
 std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
+    if (!top_k_filter || !allow_top_k_query_condition_cache
+        || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
     /// Only a table with a UUID has cache entries. With distributed processing each worker reads a
@@ -338,6 +339,21 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     };
     if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
         || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
+        return {};
+
+    /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
+    /// and so can the name of the table (`_table`, by `RENAME TABLE` or `EXCHANGE TABLES`, which keep
+    /// the UUID), so a condition on them may let other files make the threshold on a rerun.
+    auto reads_mutable_virtual_columns = [&](const ActionsDAG & dag)
+    {
+        return std::ranges::any_of(dag.getInputs(), [&](const auto * input)
+        {
+            const auto & name = input->result_name;
+            return (name == "_time" || name == "_etag" || name == "_tags" || name == "_table") && virtual_columns.contains(name);
+        });
+    };
+    if ((filter_actions_dag && reads_mutable_virtual_columns(*filter_actions_dag))
+        || (query_info.prewhere_info && reads_mutable_virtual_columns(query_info.prewhere_info->prewhere_actions)))
         return {};
 
     auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
