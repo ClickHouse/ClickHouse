@@ -8,7 +8,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -29,8 +28,9 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
@@ -51,7 +51,6 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -62,6 +61,7 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/HiddenSecret.h>
 #include <Common/JSONBuilder.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
@@ -72,7 +72,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Interpreters/HypotheticalObjectStore.h>
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/WhatIfEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -112,13 +112,9 @@ namespace ErrorCodes
 namespace
 {
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
-    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
-    ///
-    /// In the analyzer path, without this expansion the query tree would show the unexpanded
-    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
-    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
-    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
-    /// parameterized views that appear on the right side of a JOIN as well.
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` and `EXPLAIN AST optimize = 1` show
+    /// the resolved query. Without this expansion the query tree would show the unexpanded table
+    /// function call, on either side of a JOIN.
     struct ExpandParameterizedViewsMatcher
     {
         struct Data : public WithContext
@@ -241,31 +237,42 @@ namespace
     {
         struct Data : public WithContext
         {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
+            Data(ContextPtr context_, bool run_passes_, Int64 passes_, bool only_analyze_)
+                : WithContext(context_), run_passes(run_passes_), passes(passes_), only_analyze(only_analyze_)
+            {
+            }
+
+            bool run_passes;
+            Int64 passes;
+            bool only_analyze;
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
-            return !node->as<ASTSelectQuery>();
+            return !node->as<ASTSelectWithUnionQuery>();
         }
 
         static void visit(ASTPtr & ast, Data & data)
         {
-            if (auto * select = ast->as<ASTSelectQuery>())
-                visit(*select, ast, data);
-        }
+            auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>();
+            if (!select_with_union_query)
+                return;
 
-        static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
-        {
-            InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+            auto query_tree = buildQueryTree(ast, data.getContext());
 
-            const SelectQueryInfo & query_info = interpreter.getQueryInfo();
-            if (query_info.view_query)
+            if (data.run_passes)
             {
-                ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
+                QueryTreePassManager query_tree_pass_manager(data.getContext());
+                addQueryTreePasses(query_tree_pass_manager, data.only_analyze);
+                size_t pass_index = data.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(data.passes);
+                query_tree_pass_manager.run(query_tree, pass_index);
             }
+
+            ConvertToASTOptions ast_options;
+            ast_options.use_source_expression_for_constants = true;
+            auto analyzed_query = query_tree->toAST(ast_options);
+
+            *select_with_union_query = analyzed_query->as<ASTSelectWithUnionQuery &>();
         }
     };
 
@@ -302,7 +309,20 @@ namespace
         {
             if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                auto settings_changes = table_function_node->getSettingsChanges();
+                bool has_secret_settings = false;
+                for (auto & change : settings_changes)
+                {
+                    if (renderSecretChangeValue(change))
+                    {
+                        change.value = String(HIDDEN_SECRET);
+                        has_secret_settings = true;
+                    }
+                }
+                if (has_secret_settings)
+                    table_function_node->setSettingsChanges(std::move(settings_changes));
+
+                auto secret_arguments = findSecretArguments(*table_function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -317,12 +337,12 @@ namespace
                         if (auto * constant = node->as<ConstantNode>())
                             constant->setMaskId();
                         else
-                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                            node = std::make_shared<ConstantNode>(Field(String(HIDDEN_SECRET)));
                     });
             }
             else if (auto * function_node = query_tree_node->as<FunctionNode>())
             {
-                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                auto secret_arguments = findSecretArguments(*function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -341,7 +361,7 @@ namespace
     /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
     void hideWholeNode(ASTPtr & node)
     {
-        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        auto hidden = make_intrusive<ASTLiteral>(Field(String(HIDDEN_SECRET)));
         hidden->setAlias(node->tryGetAlias());
         node = std::move(hidden);
     }
@@ -360,12 +380,11 @@ namespace
             hideLiteralsInSubtree(child);
     }
 
-    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
-    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
-    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    /// A function (not a table function or an engine) with a secret argument: `encrypt`, `HMAC`, ...
+    bool isFunctionWithSecretArguments(const ASTFunction & function)
     {
-        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
-            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+        return function.getKind() == ASTFunction::Kind::ORDINARY_FUNCTION
+            && FunctionFactory::instance().tryGetSecretArgumentsSpec(function.name);
     }
 
     bool isKeyValueArgument(const IAST & node)
@@ -435,7 +454,7 @@ namespace
             if (!function || !function->arguments)
                 return;
 
-            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            auto secret_arguments = SecretArgumentsRegistry::instance().find(function->getKind(), FunctionAST(*function));
             if (!secret_arguments.hasSecrets())
                 return;
 
@@ -443,7 +462,7 @@ namespace
             for (size_t i = 0; i < arguments.size(); ++i)
             {
                 if (auto * map = arguments[i]->as<ASTFunction>();
-                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                    map && map->arguments && secret_arguments.nested_maps.contains(map->name))
                 {
                     for (auto & entry : map->arguments->children)
                         hideWholeNode(secretValueSlot(entry));
@@ -483,7 +502,7 @@ namespace
                 /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
                 /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
                 /// `key = value` in the span: it is a positional secret written as a comparison.
-                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                if (isFunctionWithSecretArguments(*function) && !isKeyValueArgument(*arguments[i]))
                     hideLiteralsInSubtree(arguments[i]);
                 else
                     hideWholeNode(arguments[i]);
@@ -958,7 +977,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
     ContextPtr context;
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> parallel_replicas_builder;
+    QueryPlanWithParallelReplicasBuilder parallel_replicas_builder;
     bool ignore_quota = false;
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
@@ -1092,7 +1111,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+                ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+                ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
+
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1133,8 +1155,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (explain_ok)
                 break;
 
-            /// Not a `SELECT`: there is no query tree to dump, so the query is shown as parsed.
-            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+            /// Not a `SELECT`: the query is shown as parsed, with every `SELECT` inside it converted through the query tree.
+            ExplainAnalyzedSyntaxVisitor::Data data(query_context, settings.run_query_tree_passes, settings.query_tree_passes, /*only_analyze=*/ false);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);
@@ -1356,7 +1378,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(query_ast.get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 
-            auto whatif_result = estimateHypotheticalIndexes(query_ast, query_context, ast.getSettings());
+            auto whatif_result = estimateHypotheticalObjects(query_ast, query_context, ast.getSettings());
             whatif_result.format(buf);
             break;
         }

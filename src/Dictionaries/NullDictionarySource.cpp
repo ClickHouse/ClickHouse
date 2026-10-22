@@ -46,7 +46,7 @@ void registerDictionarySourceNull(DictionarySourceFactory & factory)
               const std::string & /* default_database */,
               bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(std::make_shared<const Block>(sample_block)); };
 
-    factory.registerSource("null", create_table_source, Documentation{
+    factory.registerSource("null", create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
 # Null dictionary source
 

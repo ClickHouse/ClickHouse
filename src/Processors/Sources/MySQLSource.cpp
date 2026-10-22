@@ -1,3 +1,5 @@
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -376,7 +378,7 @@ namespace
                     String time_str(value.data(), value.size());
                     bool negative = time_str.starts_with("-");
                     if (negative) time_str = time_str.substr(1);
-                    std::vector<String> hhmmss;
+                    VectorWithMemoryTracking<String> hhmmss;
                     boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
                     Int64 v = 0;
 
@@ -586,7 +588,7 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
     else
     {
         const auto & sample_names = description.sample_block.getNames();
-        std::unordered_set<std::string> missing_names(sample_names.begin(), sample_names.end());
+        UnorderedSetWithMemoryTracking<std::string> missing_names(sample_names.begin(), sample_names.end());
 
         size_t fields_size = connection->result.getNumFields();
 

@@ -63,7 +63,29 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// `arrayIntersect` uses `mostSubtype` to narrow the element types so that
+    /// the same value can fit in every input array. `arrayUnion` and
+    /// `arraySymmetricDifference` widen instead via `leastSupertype`.
+    /// The signature is documentation-only: `arrayUnion` additionally rejects mixing
+    /// `Decimal` with non-`Decimal` elements, which `leastSupertype` accepts, so both
+    /// entry points resolve through the handwritten `getReturnTypeImpl` below.
+    String getSignatureString() const override
+    {
+        if (mode == ArraySetMode::Intersect)
+            return "(Array(T), ...) -> Array(mostSubtype(T, ...))";
+        return "(Array(T), ...) -> Array(leastSupertype(T, ...))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        return getReturnTypeImpl(types);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -961,6 +983,7 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
     factory.registerFunction("arrayUnion",
         [](ContextPtr ctx){ return FunctionArrayIntersect::create("arrayUnion", ArraySetMode::Union, std::move(ctx)); },
         union_documentation);
+    factory.registerAlias("array_union", "arrayUnion", FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 

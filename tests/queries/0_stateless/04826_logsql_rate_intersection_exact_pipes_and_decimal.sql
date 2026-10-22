@@ -19,7 +19,7 @@ INSERT INTO logs_04826 SELECT
     toDecimal128('10.5', 20) + toDecimal128('0.00000000000000000001', 20) * (number % 3)
 FROM numbers(24);
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04826';
 SET dialect = 'logsql';
 

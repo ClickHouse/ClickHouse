@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -23,6 +24,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserViewTargets.h>
+#include <Parsers/isCompressionCodec.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -424,6 +426,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
     ParserForeignKeyDeclaration foreign_key_p;
+    ParserCodecDeclaration codec_p;
     ParserColumnDeclaration column_p{true, true};
     ParserExpression primary_key_p;
 
@@ -456,11 +459,41 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     }
     else
     {
-        if (!column_p.parse(pos, new_node, expected))
+        if (!codec_p.parse(pos, new_node, expected) && !column_p.parse(pos, new_node, expected))
             return false;
     }
 
     node = new_node;
+    return true;
+}
+
+bool ParserCodecDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_codec(Keyword::CODEC);
+    ParserCompoundIdentifier name_p;
+    ParserCodec codec_p;
+
+    ASTPtr name;
+    ASTPtr codec;
+
+    if (!s_codec.ignore(pos, expected))
+        return false;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!codec_p.parse(pos, codec, expected))
+        return false;
+
+    /// "codec Nullable(String)" is a column named `codec`, not a codec declaration.
+    /// A target name without dots may be a data type like here, so in this case we also check
+    /// that the expression in parentheses looks like a codec: there is no codec named "String",
+    /// so this example fails here and the caller parses it as a column.
+    const String target_name = getIdentifierName(name);
+    if (!target_name.contains('.') && !isCompressionCodec(codec))
+        return false;
+
+    node = make_intrusive<ASTCodecDeclaration>(target_name, codec);
     return true;
 }
 
@@ -492,6 +525,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     ASTPtr columns = make_intrusive<ASTExpressionList>();
+    ASTPtr codec_declarations = make_intrusive<ASTExpressionList>();
     ASTPtr indices = make_intrusive<ASTExpressionList>();
     ASTPtr constraints = make_intrusive<ASTExpressionList>();
     ASTPtr projections = make_intrusive<ASTExpressionList>();
@@ -517,6 +551,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             }
             columns->children.push_back(elem);
         }
+        else if (elem->as<ASTCodecDeclaration>())
+            codec_declarations->children.push_back(elem);
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
@@ -545,6 +581,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (!columns->children.empty())
         res->set(res->columns, columns);
+    if (!codec_declarations->children.empty())
+        res->set(res->codec_declarations, codec_declarations);
     if (!indices->children.empty())
         res->set(res->indices, indices);
     if (!constraints->children.empty())
@@ -939,7 +977,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
         }
 
         return true;
@@ -2156,6 +2194,8 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 For both features, you can specify a different engine for the table.
 If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
+A copy of the schema needs the `SHOW COLUMNS` privilege on `db.table`. If the inherited definition holds credentials, which `SHOW CREATE TABLE` masks, the copy also needs the `SELECT` privilege, because the new table can read the data with those credentials.
+
 ### Create a table with a table function {#from-a-table-function}
 
 ```sql
@@ -2476,6 +2516,26 @@ ENGINE = <Engine>
 
 For the available general purpose, specialized and encryption codecs, see [Column compression codecs](/reference/statements/create/table/codec).
 
+### Codecs for subcolumns {#subcolumn-codecs}
+
+This feature is experimental and requires the setting [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+A `CODEC name (codec, ...)` entry in the column list declares a codec for a subcolumn, such as an element of a `Tuple` or the values of a `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Only the engines of the `MergeTree` family support codecs for subcolumns. A column has either its own codec or codecs for its subcolumns. Codecs cannot be specified for nested subcolumns: if a codec is declared for `payload.meta`, none can be declared for `payload.meta.seq`. An element of an unnamed `Tuple` is addressed with quoted names, as in ``CODEC `pair`.`2` (ZSTD)``, because `pair.2` would be read as a number. The subcolumn must exist in the type of the column and cannot be inside a `JSON`, `Dynamic` or `Variant` value. Streams that hold only structure, such as array sizes or null maps, get only the general purpose part of the codec. The declarations are shown in `SHOW CREATE TABLE` and in the `subcolumn_codecs` column of `system.columns`.
+
 ## Create temporary tables {#temporary-tables}
 
 ClickHouse supports temporary tables, which disappear when the session ends. For details, see [CREATE TEMPORARY TABLE](/reference/statements/create/table/temporary-table).
@@ -2567,6 +2627,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
+- The number of temporary tables in a session and their sizes can be limited with the [max_temporary_tables](/reference/settings/session-settings/max-temporary#max_temporary_tables), [max_temporary_table_memory_usage](/reference/settings/session-settings/max-temporary#max_temporary_table_memory_usage) (for the `Memory` engine), [max_temporary_table_size_bytes_compressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_compressed) and [max_temporary_table_size_bytes_uncompressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_uncompressed) (for the `MergeTree` family) settings.
 
 ## Syntax {#syntax}
 
@@ -2810,6 +2871,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
+Codec names are case-insensitive, so `CODEC(ZSTD)`, `CODEC(zstd)` and `CODEC(ZStd)` all name the same codec.
+
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 </Tip>
@@ -2897,6 +2960,22 @@ The codec accepts an optional variant argument:
 
 <Note>
 This codec is in beta and requires `SET enable_alp_codec = 1` to use.
+</Note>
+
+### PCO {#pco}
+
+<BetaBadge/>
+
+`PCO(level)` — Lossless compression for sequences of fixed-width numbers, using the [pcodec](https://github.com/pcodec/pcodec) library. Applicable to all numeric types of 1, 2, 4 or 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, and the types backed by them such as `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4`, and `Enum`). `Decimal128`/`Decimal256` and non-numeric types are not supported.
+
+pcodec identifies an approximate structure of the numbers (a "mode", e.g. an approximate common multiplier) and splits each value into "latents" that it then compresses with delta encoding and an interleaved [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entropy coder. On numeric columns with smooth, multimodal, or high-entropy distributions (measurements, timings, counters, identifiers) it often compresses better than `Gorilla`/`FPC`/`ZSTD`/`ALP`; it has no run-length or match-based path, so constant or low-cardinality columns compress worse. Encoding is several times slower than `ZSTD`; decoding is workload-dependent.
+
+The optional `level` argument sets the compression level from 0 to 12; the default is 8. When a block would not compress (e.g. incompressible data), it is stored uncompressed, so the codec never expands data by more than a small constant per block.
+
+The payload of each compression block is a standalone [`.pco`](https://github.com/pcodec/pcodec) stream, compatible with the reference pcodec implementation.
+
+<Note>
+This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
 </Note>
 
 ### FPC {#fpc}
@@ -3766,6 +3845,11 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 
 `OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
 replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
 
 **Example**
 
