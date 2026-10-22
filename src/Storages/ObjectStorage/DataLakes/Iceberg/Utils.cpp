@@ -37,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -104,10 +105,17 @@ extern const SettingsString iceberg_metadata_compression_method;
 namespace ProfileEvents
 {
     extern const Event IcebergVersionHintUsed;
+    extern const Event IcebergVersionHintReadMicroseconds;
+    extern const Event IcebergMetadataJSONReads;
+    extern const Event IcebergMetadataJSONReadMicroseconds;
+    extern const Event IcebergMetadataJSONParses;
+    extern const Event IcebergMetadataJSONParsedBytes;
+    extern const Event IcebergMetadataJSONParseMicroseconds;
 }
 
 namespace DB::Setting
 {
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
 }
@@ -643,6 +651,9 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 {
     auto create_fn = [&]()
     {
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONReads);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONReadMicroseconds);
+
         ObjectInfo object_info(metadata_file_path);
 
         auto read_settings = local_context->getReadSettings();
@@ -672,6 +683,11 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
         metadata_json_str = create_fn();
+
+    /// The cache holds the raw content, so the file is parsed on every call.
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
@@ -1291,6 +1307,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
 
+On S3 and Azure, with `iceberg_list_only_v_prefixed_metadata_files`, a read with no pointer setting takes the files named `v...` as the only candidates whenever any exist.
+
 We use table_uuid both for metadata cache queries and selection of the latest metadata file.
 For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
  */
@@ -1315,10 +1333,19 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
+        const bool list_v_prefixed_names_only = local_context->getSettingsRef()[Setting::iceberg_list_only_v_prefixed_metadata_files]
+            && !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
+            && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+            && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
+
         std::vector<String> metadata_files;
         for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            /// Manifests and manifest lists share this directory but are never named `v...`.
+            if (list_v_prefixed_names_only)
+                metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
+            if (metadata_files.empty())
+                metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
             if (!metadata_files.empty())
                 break;
             LOG_DEBUG(
@@ -1654,6 +1681,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
         auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);
@@ -1797,6 +1825,21 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+
+    Poco::JSON::Array::Ptr fields;
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) == sort_order_id)
+        {
+            fields = sort_order->getArray(f_fields);
+            break;
+        }
+    }
+
+    if (!fields || fields->size() == 0)
+        return KeyDescription{};
+
     std::unordered_map<Int64, String> source_id_to_column_name;
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
 
@@ -1806,70 +1849,55 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
         source_id_to_column_name[source_id] = col_name;
     }
 
-    KeyDescription key_description;
-    ColumnsDescription column_description;
-    for (size_t i = 0; i < ch_schema.size(); ++i)
-        column_description.add(ColumnDescription(ch_schema.getNames()[i], ch_schema.getTypes()[i]));
-
     String order_by_str;
 
-    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
     {
-        auto sort_order = sort_orders->getObject(i);
-        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
-            continue;
-        auto fields = sort_order->getArray(f_fields);
-        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        auto field = fields->getObject(field_index);
+        auto source_id = field->getValue<Int64>(f_source_id);
+        auto column_name = source_id_to_column_name[source_id];
+        int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+        auto iceberg_transform_name = field->getValue<String>(f_transform);
+        std::optional<TransformAndArgument> clickhouse_transform_name;
+        try
         {
-            auto field = fields->getObject(field_index);
-            auto source_id = field->getValue<Int64>(f_source_id);
-            auto column_name = source_id_to_column_name[source_id];
-            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
-            auto iceberg_transform_name = field->getValue<String>(f_transform);
-            std::optional<TransformAndArgument> clickhouse_transform_name;
-            try
-            {
-                clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                    throw;
-            }
-            if (!clickhouse_transform_name.has_value())
-            {
-                /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
-                /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
-                return KeyDescription{};
-            }
-            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
-            /// produce a parseable ORDER BY clause.
-            auto quoted_column_name = backQuoteIfNeed(column_name);
-            String full_argument;
-            if (clickhouse_transform_name->transform_name != "identity")
-            {
-                full_argument = clickhouse_transform_name->transform_name + "(";
-                if (clickhouse_transform_name->argument)
-                {
-                    full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
-                }
-                full_argument += quoted_column_name + ")";
-            }
-            else
-            {
-                full_argument = quoted_column_name;
-            }
-            if (direction == 1)
-                order_by_str += fmt::format("{} ASC,", full_argument);
-            else
-                order_by_str += fmt::format("{} DESC,", full_argument);
+            clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
         }
-        break;
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
+        }
+        if (!clickhouse_transform_name.has_value())
+        {
+            /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
+            /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
+            return KeyDescription{};
+        }
+        /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+        /// produce a parseable ORDER BY clause.
+        auto quoted_column_name = backQuoteIfNeed(column_name);
+        String full_argument;
+        if (clickhouse_transform_name->transform_name != "identity")
+        {
+            full_argument = clickhouse_transform_name->transform_name + "(";
+            if (clickhouse_transform_name->argument)
+            {
+                full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
+            }
+            full_argument += quoted_column_name + ")";
+        }
+        else
+        {
+            full_argument = quoted_column_name;
+        }
+        if (direction == 1)
+            order_by_str += fmt::format("{} ASC,", full_argument);
+        else
+            order_by_str += fmt::format("{} DESC,", full_argument);
     }
-    if (order_by_str.empty())
-        return KeyDescription{};
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
+    return KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
@@ -1897,9 +1925,9 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
     ColumnsWithTypeAndName reordered_columns;
     for (const auto & column_name : initial_column_names)
         reordered_columns.push_back(block.getByName(column_name));
-    for (size_t i = 0; i < block.columns(); ++i)
-        if (!initial_column_names_set.contains(block.getNames()[i]))
-            reordered_columns.push_back(block.getColumnsWithTypeAndName()[i]);
+    for (const auto & column : block.getColumnsWithTypeAndName())
+        if (!initial_column_names_set.contains(column.name))
+            reordered_columns.push_back(column);
 
     block = Block(reordered_columns);
     SortDescription result_sort_description;

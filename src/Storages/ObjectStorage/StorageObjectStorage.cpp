@@ -732,6 +732,12 @@ void StorageObjectStorage::read(
         }
     });
 
+    /// The state can be pinned on another storage object of the same table (a `DataLakeCatalog` builds one per lookup),
+    /// so the configuration of this one may not be initialized yet.
+    if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
+        && storage_snapshot->metadata->datalake_table_state.has_value())
+        configuration->lazyInitializeIfNeeded(object_storage, local_context);
+
     /// The read pipeline needs a single, internally consistent metadata snapshot: the requested
     /// columns (prepareReadingFromFormat below), the field-id mapping used to list/read files, and
     /// the read-in-order sorting key must all come from the SAME data lake snapshot. Normally
@@ -1105,6 +1111,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
@@ -1144,6 +1151,10 @@ void StorageObjectStorage::truncate(
             "Truncate is not supported for partitioned tables, the path is '{}'",
             path.path);
     }
+
+    /// The credentials of the client follow the session that truncates, as for `write`.
+    if (!is_table_function)
+        configuration->update(object_storage, local_context);
 
     auto paths = configuration->getPaths();
 
@@ -1212,6 +1223,16 @@ void StorageObjectStorage::truncate(
                 getStorageID().getNameForLogs(),
                 forgotten_key);
     }
+}
+
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// Dropping a data lake may delete its data with the client it holds: in the query, or later in the background with
+    /// the global settings.
+    if (configuration->isDataLakeConfiguration()
+        && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
+            || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
+        checkSessionMayUseServerIdentity(*object_storage, query_context);
 }
 
 void StorageObjectStorage::drop()
@@ -1395,6 +1416,8 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context_);
+
     /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
     /// storage snapshot contains the `datalake_table_state`. Without this the mutation
     /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
@@ -1414,6 +1437,7 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
@@ -1422,6 +1446,9 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
+    /// These entrypoints reuse the client without refreshing it for the session, so check its policy first.
+    checkSessionMayUseServerIdentity(*object_storage, context);
+
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
@@ -1445,12 +1472,14 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    checkSessionMayUseServerIdentity(*object_storage, context);
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
