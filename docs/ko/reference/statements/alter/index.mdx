@@ -54,7 +54,30 @@ doc_type: 'reference'
 | [ALTER DATABASE ... MODIFY COMMENT](/ko/reference/statements/alter/database-comment) | 이전 설정 여부와 관계없이 데이터베이스 주석을 추가, 수정 또는 제거합니다.                                              |
 | [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection)            | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
 
-## 뮤테이션
+## 하나의 `ALTER`에서 여러 작업 결합하기 {#combining-actions}
+
+하나의 `ALTER TABLE`에는 쉼표로 구분된 여러 작업을 지정할 수 있으므로, 여러 SQL 문으로 나누어 차례로 실행해야 할 작업을 하나의 SQL 문으로 처리할 수 있습니다.
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
+```
+
+각 작업(action)이 모두 같은 유형일 필요는 없습니다. 작업은 왼쪽에서 오른쪽 순서로 적용되므로, 뒤에 오는 작업에서 앞선 작업이 추가한 항목을 사용할 수 있습니다:
+
+```sql
+-- a new column and an index over it
+ALTER TABLE visits ADD COLUMN duration UInt32, ADD INDEX idx_duration duration TYPE minmax GRANULARITY 4;
+
+-- a type change together with a new column
+ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page_id UInt64;
+
+-- three actions in one statement
+ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
+```
+
+클라이언트가 `ALTER`의 완료를 기다릴 때 그 대기를 제어하는 설정은 SQL 문이 아니라 작업(action)에 따라 결정됩니다. `MATERIALIZE INDEX`처럼 뮤테이션 실행 경로에 속하는 작업에는 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)가 적용되고, 메타데이터 작업에는 [`alter_sync`](/ko/reference/settings/session-settings/alter#alter_sync)가 적용됩니다. 따라서 두 종류의 작업을 하나의 SQL 문에 함께 사용하더라도 하나의 설정으로 제어되지는 않습니다. 각 설정이 적용되는 작업은 [ALTER 쿼리의 동기성](#synchronicity-of-alter-queries)을 참고하십시오. 이처럼 혼합된 SQL 문이 `Replicated` 데이터베이스에서 받는 제약은 [`MATERIALIZE INDEX` 절 함께 사용하기](#combining-materialize-index-clauses)를 참고하십시오.
+
+## 뮤테이션 {#mutations}
 
 테이블 데이터를 변경하기 위한 `ALTER` 쿼리는 &quot;뮤테이션&quot;이라는 메커니즘으로 구현되며, 대표적인 예로 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 및 [ALTER TABLE ... UPDATE](/ko/reference/statements/alter/update)가 있습니다. 이는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블의 머지와 유사한 비동기 백그라운드 프로세스로, 파트의 새로운 &quot;뮤테이션된&quot; 버전을 생성합니다.
 
@@ -67,13 +90,26 @@ doc_type: 'reference'
 
 완료된 뮤테이션 항목은 즉시 삭제되지 않습니다(보존되는 항목 수는 `finished_mutations_to_keep` 스토리지 엔진 매개변수로 결정됩니다). 오래된 뮤테이션 항목은 삭제됩니다.
 
-## ALTER 쿼리의 동기성
+## 실행 비용 및 완료 {#execution-cost-and-completion}
 
-복제되지 않은 테이블에서는 모든 `ALTER` 쿼리가 동기식으로 수행됩니다. 복제된 테이블에서는 쿼리가 적절한 작업에 대한 지시만 `ZooKeeper`에 추가하고, 실제 작업은 가능한 한 빨리 수행됩니다. 다만, 쿼리는 이러한 작업이 모든 레플리카에서 완료될 때까지 기다릴 수 있습니다.
+`ALTER TABLE`을 계획할 때는 메타데이터 변경과 기존 데이터 파트에 필요한 작업을 구분하십시오. 클라이언트가 완료될 때까지 기다리는지 여부는 작업에 따라 다릅니다. [`alter_sync`](/ko/reference/settings/session-settings/alter#alter_sync)는 메타데이터 작업과 `MODIFY COLUMN`(데이터를 재작성하는 타입 변환 포함)을 제어하고, [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)는 `UPDATE`, `DELETE`, `MATERIALIZE ...` 등의 백그라운드 뮤테이션을 제어합니다. 고정된 소요 시간을 운영 기준으로 삼지 마십시오. 비용은 메타데이터의 양, 영향을 받는 파트 수와 바이트 수, 변환 비용, 현재 백그라운드 부하에 따라 달라집니다.
 
-뮤테이션을 생성하는 `ALTER` 쿼리(예: `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` 등이 있으나 이에 국한되지는 않음)의 동기성은 [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정으로 정의됩니다.
+| 작업                                        | 기존 데이터에 대한 작업                                        | 기본 완료 동작                                           | 주요 비용 요인                             |
+| ----------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- | ------------------------------------ |
+| `ADD COLUMN`                              | 재작성하지 않으며, 기존 파트는 읽기 시점에 기본값을 제공합니다.                 | 메타데이터 대기는 `alter_sync`를 따릅니다.                      | 메타데이터 크기 및 레플리카 가용성.                 |
+| `RENAME COLUMN`                           | 행을 재작성하지는 않지만, 앞선 뮤테이션 뒤에 오는 순서 장벽(barrier) 역할을 합니다. | 메타데이터 대기는 `alter_sync`를 따릅니다.                      | 앞선 뮤테이션 및 레플리카 가용성.                  |
+| `DROP COLUMN`                             | 컬럼 파일을 제거하므로 순수한 메타데이터 변경이 아닙니다.                     | 메타데이터 및 뮤테이션 순서 규칙이 적용됩니다.                         | 컬럼 파일의 개수와 크기.                       |
+| `MODIFY COLUMN` 기본값, 주석 또는 표현이 유지되는 타입 변경 | 즉시 재작성하지 않습니다.                                       | 메타데이터 대기는 `alter_sync`를 따릅니다.                      | 메타데이터 크기 및 레플리카 가용성.                 |
+| 기타 `MODIFY COLUMN` 타입 변경                  | `READ_COLUMN` 뮤테이션이 기존 파트에서 해당 컬럼을 재작성합니다.           | 대기 동작은 `alter_sync`를 따릅니다(기본값 `1`, Cloud 기본값 `0`). | 영향을 받는 파트 수와 바이트 수, 변환 비용, 백그라운드 부하. |
+| `UPDATE`, `DELETE`, `MATERIALIZE ...`     | 백그라운드 뮤테이션이 영향을 받는 파트를 재작성합니다.                       | 기본적으로 비동기로 실행되며, 대기 여부는 `mutations_sync`로 제어합니다.   | 영향을 받는 파트 수와 바이트 수, 백그라운드 부하.        |
 
-메타데이터만 수정하는 다른 `ALTER` 쿼리의 경우 [alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정을 사용해 대기 동작을 설정할 수 있습니다.
+## ALTER 쿼리의 동기성 {#synchronicity-of-alter-queries}
+
+기본적으로 복제되지 않은 테이블에 대한 `ALTER` 쿼리는 작업이 완료될 때까지 기다립니다. `alter_sync = 0`이면 백그라운드 작업을 수행하는 `ALTER`는 해당 작업이 끝나기 전에 반환될 수 있습니다. 복제된 테이블에서는 쿼리가 적절한 작업에 대한 지시를 `ZooKeeper`에 추가하고, 실제 작업은 가능한 한 빨리 수행됩니다. 쿼리는 이러한 작업이 모든 레플리카에서 완료될 때까지 기다릴 수 있습니다.
+
+뮤테이션 실행 경로를 통해 뮤테이션을 생성하는 `ALTER` 쿼리(`UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` 등이 있으나 이에 국한되지는 않음)의 동기성은 [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정으로 정의됩니다.
+
+`MODIFY COLUMN` 재작성을 포함한 그 밖의 `ALTER` 쿼리는 [alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정으로 대기 동작을 제어합니다.
 
 비활성 레플리카가 모든 `ALTER` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위)는 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
 
@@ -81,17 +117,17 @@ doc_type: 'reference'
   모든 `ALTER` 쿼리에서 `alter_sync = 2`이고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다. `alter_sync = 3`에서는 비활성 레플리카를 기다리지 않으므로 예외가 발생하지 않습니다.
 </Note>
 
-### 하나의 테이블에서 동시 `ALTER` 할당
+### 하나의 테이블에서 동시 `ALTER` 할당 {#concurrent-alter-assignment-on-one-table}
 
 복제된 테이블에서 동일한 테이블에 여러 개의 개별 `ALTER` 문을 짧은 간격으로 연속 제출하면 `CANNOT_ASSIGN_ALTER`(코드 517) 오류가 발생할 수 있습니다. 레플리카가 이전 `ALTER` 중 일부를 아직 적용하지 않은 경우(메타데이터 버전이 공통 메타데이터보다 뒤처진 경우) 복제 경로에서 이 오류가 발생합니다. 서버는 레플리카가 &quot;still not applied some of previous alters&quot; 또는 &quot;Probably too many alters executing concurrently&quot; 상태라고 표시할 수 있습니다. 이전 `ALTER`가 이미 할당된 후에도 이 상태가 계속될 수 있습니다. 이는 **일반적인 동시 메타데이터 `ALTER` / 뮤테이션** 관련 상태이며, 뮤테이션 전용 SQL 문에만 국한되지 않습니다. 일반적인 동시 메타데이터 변경(`ADD` / `DROP` / `MODIFY` 등)에서도 동일한 재시도 가능한 코드가 발생할 수 있습니다(예를 들어 `tests/queries/0_stateless/03518_alter_logical_race.sh`에서 다루는 재시도 경로를 참조하십시오).
 
 경합을 방지하는 방법:
 
-* 문법에서 허용하는 경우 독립적인 메타데이터 작업을 **하나의** 다중 절 `ALTER`로 결합하십시오(예: 여러 `ADD INDEX` 절).
+* 문법에서 허용하는 경우 [하나의 `ALTER`에서 작업 결합](#combining-actions)에 설명된 대로 독립적인 메타데이터 작업을 **하나의** 다중 절 `ALTER`로 결합하십시오(예: 여러 `ADD INDEX` 절).
 * `ALTER` 문을 순차적으로 실행하고, 이전 `ALTER`가 레플리카에 적용될 때까지 코드 517 오류 발생 시 재시도하십시오.
 * 뮤테이션을 생성하는 `ALTER`의 경우, 다음 작업을 제출하기 전에 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync) 또는 [`system.mutations`](/ko/reference/system-tables/mutations)의 `is_done`과 같은 문서화된 확인 수단을 사용하여 이전 뮤테이션이 완료될 때까지 기다리십시오.
 
-### `MATERIALIZE INDEX` 절 함께 사용하기
+### `MATERIALIZE INDEX` 절 함께 사용하기 {#combining-materialize-index-clauses}
 
 하나의 `ALTER`에 여러 `MATERIALIZE INDEX` 절을 포함할 수 있습니다. 현재 트리에서 다루는 사례는 여러 `ADD INDEX` 절과 해당 새 인덱스에 대한 `MATERIALIZE INDEX`를 하나의 SQL 문에 함께 지정하는 것입니다(`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql` 참고). 이렇게 `ADD INDEX`와 `MATERIALIZE INDEX`를 함께 사용하는 형식은 `AlterCommand` 세그먼트와 `MutationCommand` 세그먼트를 혼합하므로, **`DatabaseReplicated`는 이를 `QUERY_IS_PROHIBITED`와 함께 거부합니다**(`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). 일반(`DatabaseReplicated`가 아닌) 데이터베이스에서는 `02911` 예시가 유효합니다. `DatabaseReplicated`에서는 메타데이터 변경과 구체화 뮤테이션을 별도 SQL 문으로 실행하십시오.
 
@@ -99,7 +135,7 @@ doc_type: 'reference'
 
 순서대로 뮤테이션을 적용해야 한다면, SQL 문마다 `MATERIALIZE INDEX`를 하나씩 실행하고 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)로 완료를 기다릴 수 있습니다.
 
-## 관련 콘텐츠
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 업데이트 및 삭제 처리](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

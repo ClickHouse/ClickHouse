@@ -127,6 +127,8 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
+struct HypotheticalProjection;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -211,6 +213,18 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
+        bool exact_ranges_excluded = false;
+        /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
+        /// from the analysis done on the initiator.
+        bool index_analysis_was_already_done_on_initiator = false;
+        /// The filter constrains the primary key of the analyzed parts (the same criterion the
+        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
+        /// the read.
+        bool pk_condition_useful = false;
+        /// Set when the read skipped its own index analysis (a parallel replicas follower): its ranges are whole parts,
+        /// not narrowed by this condition.
+        ConditionTemplate<KeyCondition>::Ptr key_condition_not_applied;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -232,6 +246,10 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
+            , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
+            , pk_condition_useful(other.pk_condition_useful)
+            , key_condition_not_applied(other.key_condition_not_applied)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -252,6 +270,10 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , exact_ranges_excluded(other.exact_ranges_excluded)
+            , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
+            , pk_condition_useful(other.pk_condition_useful)
+            , key_condition_not_applied(std::move(other.key_condition_not_applied))
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -413,6 +435,10 @@ public:
     bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
+
+    /// Whether every part surviving pruning has the value of its virtual row in the index.
+    /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
+    bool everyPartHasVirtualRowBound(bool read_in_reverse) const;
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -529,9 +555,9 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
-    /// Adds virtual columns for reading from text index.
+    /// Sets the read tasks for text indexes and adds their virtual columns for reading.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
@@ -601,6 +627,10 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    /// a hypothetical projection that the projection optimization also weighs
+    void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
+    const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
     bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
@@ -638,7 +668,33 @@ public:
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
-    void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+    /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
+    /// them: the read keeps more than it is asked to, such as the inputs of PREWHERE and virtual columns.
+    Names getLazilyReadColumns(const NameSet & required_outputs) const;
+
+    /// Of `unneeded_output_positions`, the ones whose storage column `removeUnusedColumns` would stop reading, so that a
+    /// lazy read can read it instead. The read keeps the others: FINAL merges by them, PREWHERE or the row policy reads
+    /// them, or they are virtual.
+    std::vector<size_t> getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const;
+    /// `removeUnusedColumns`, and a lazy read of the columns at `lazy_output_positions`, which are among the ones
+    /// `getLazilyReadablePositions` returns for `unneeded_output_positions`. Without them, it is `removeUnusedColumns`.
+    std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
+        const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions);
+
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
+    /// their part offsets. Reading a projection instead would address other rows.
+    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
+
+    /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
+    /// them. The columns the output header had keep their order.
+    struct PartOffsetColumns
+    {
+        size_t part_starting_offset_position = 0;
+        size_t part_offset_position = 0;
+        bool added_part_starting_offset = false;
+        bool added_part_offset = false;
+    };
+    PartOffsetColumns addStartingPartOffsetAndPartOffset();
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
@@ -680,6 +736,24 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
+    struct ColumnPruning
+    {
+        /// The output positions that go away.
+        std::vector<size_t> dropped_output_positions;
+        /// The output positions of the row policy filter, which PREWHERE reads, that nothing needs.
+        std::vector<size_t> unneeded_row_level_output_positions;
+        /// The positions in `all_column_names` the read stops reading, sorted.
+        std::vector<size_t> dropped_storage_positions;
+        /// For each output position, the position in `all_column_names` of the column it is, unchanged, if it is one.
+        std::vector<std::optional<size_t>> storage_position_of_output;
+    };
+    ColumnPruning pruneColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    /// Of the dropped output positions, the ones a lazy read can read: storage columns the read stops reading.
+    std::vector<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
+    /// Prunes the filters and the columns of this read as `pruning` says.
+    RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
+
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
@@ -777,6 +851,12 @@ private:
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
 
+    /// Whether the `FINAL` merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
+    bool canUseVirtualRowWithFinal() const;
+
+    /// The columns of a virtual row: the leading primary key columns the conversions read.
+    Block makeVirtualRowHeader() const;
+
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -863,12 +943,14 @@ private:
     bool allow_top_k_prewhere_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+    bool has_lazily_read_columns = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+    std::shared_ptr<HypotheticalProjection> hypothetical_projection;
 
     /// See enableSealGatedReading.
     struct SealGatedReading

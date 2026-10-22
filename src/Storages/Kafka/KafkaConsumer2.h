@@ -10,6 +10,8 @@
 #include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
 
+#include <unordered_set>
+
 namespace CurrentMetrics
 {
 extern const Metric KafkaConsumers;
@@ -108,6 +110,9 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
+    /// True when the last `consume` was cut short by a stop, leaving the batch incomplete.
+    inline bool wasStoppedWhileConsuming() const { return stalled_status == StalledStatus::CONSUMER_STOPPED; }
+
     void updateOffsets(TopicPartitionOffsets && topic_partition_offsets);
 
     /// Polls batch of messages from the given topic-partition and returns read buffer containing the next message or
@@ -173,6 +178,9 @@ private:
 
     // order is important, need to be destructed before consumer
     std::unordered_map<TopicPartition, cppkafka::Queue, TopicPartitionHash, TopicPartitionEquality> queues;
+    /// Partitions paused by `initializeQueues` when they were removed from the assignment. They have to be resumed
+    /// if they are assigned again, because librdkafka clears only its own pause flag on unassign.
+    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> paused_partitions;
     const Names topics;
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
