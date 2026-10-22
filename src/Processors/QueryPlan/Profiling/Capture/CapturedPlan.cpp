@@ -1,0 +1,204 @@
+#include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
+
+#include <base/find_symbols.h>
+#include <Common/typeid_cast.h>
+
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/types.h>
+
+#include <memory>
+#include <vector>
+
+namespace DB
+{
+
+namespace
+{
+
+/// The step's own account of itself, one string per line. Like: `Filter column: ...`,
+/// `Sort description: ...`, `Limit ...`.
+///
+/// Each line is cut to `max_description_length`, as the one-line description is. A step renders its
+/// literals here, so a query carrying a large `IN` list produces a correspondingly large line, and
+/// this one is stored on a `system.query_log` row rather than streamed to the client as `EXPLAIN`
+/// does. The capture also runs with the memory tracker blocked, so without the cut the size of a
+/// row would answer to nothing.
+std::vector<String> stepDetails(
+    const IQueryPlanStep & step,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    const PrettyNames * plan_pretty_names)
+{
+    if (!options.actions)
+        return {};
+
+    PrettyNames empty_pretty_names;
+    WriteBufferFromOwnString out;
+
+    IQueryPlanStep::FormatSettings settings{
+        .out = out,
+        .header_prefix = "",
+        .detail_prefix = "",
+        /// Compact and pretty are needed to avoid UNKNOWN_IDENTIFIER throw when using describeActions.
+        .compact = true,
+        .pretty = true,
+        .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
+        .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names};
+
+    step.describeActions(settings);
+
+    /// Split the resulting lines into a vector of strings, dropping the empty ones.
+    std::vector<String> details;
+    splitInto<'\n'>(details, out.str(), /*token_compress=*/ true);
+
+    if (max_description_length)
+        for (auto & line : details)
+            if (line.size() > max_description_length)
+                line.resize(max_description_length);
+
+    return details;
+}
+
+/// How the step describes itself in one line, trimmed and cut to length.
+String stepDescription(
+    const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
+{
+    if (!options.description)
+        return {};
+
+    std::string_view description = step.getStepDescription();
+
+    /// Backs the view when trimming produces a new string, as the text renderer does.
+    String pretty_description;
+    if (options.pretty)
+    {
+        pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
+        description = pretty_description;
+    }
+
+    if (max_description_length)
+        description = description.substr(0, max_description_length);
+
+    return String(description);
+}
+
+/// Only a `ReadFromMergeTree` analyses indexes, and the analysis is data it already holds --
+/// `describeIndexes` is one rendering of it, this capture is another.
+PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+{
+    const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
+    if (!options.indexes || !read_from_merge_tree)
+        return {};
+
+    return read_from_merge_tree->getIndexStats();
+}
+
+/// See `stepIndexes`: the same data, from the same step. A query served from a projection says so
+/// here, and `EXPLAIN` already shows it, so the captured plan would otherwise hide the choice.
+PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+{
+    const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
+    if (!options.projections || !read_from_merge_tree)
+        return {};
+
+    return read_from_merge_tree->getProjectionStats();
+}
+
+/// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
+/// query that failed before finishing is captured without statistics.
+std::optional<AnalyzedStepData> stepStatistics(
+    const IQueryPlanStep & step, const AnalyzeStepsStats * steps_to_stats)
+{
+    if (!steps_to_stats)
+        return {};
+
+    return steps_to_stats->analyzeStep(&step);
+}
+
+/// The names are scoped per plan: a sub-plan is its own naming scope and has its own entry.
+/// A miss is not a mistake: `ReadFromMerge` builds its child plans in `initializePipeline`, which
+/// runs after `buildPrettyNamesPerPlan`, so a child plan reached here may have no entry.
+const PrettyNames * findPrettyNames(const PrettyNamesPerPlan * pretty_names, const QueryPlan * plan)
+{
+    if (!pretty_names)
+        return nullptr;
+
+    auto it = pretty_names->names.find(plan);
+    return it == pretty_names->names.end() ? nullptr : &it->second;
+}
+
+/// Everything the document needs about one step, read while the step and its pipeline are alive.
+/// `children` is left empty: only the walk knows the shape.
+CapturedStep captureStep(
+    const IQueryPlanStep & step,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    const AnalyzeStepsStats * steps_to_stats,
+    const PrettyNames * plan_pretty_names)
+{
+    CapturedStep captured;
+
+    captured.id = step.getUniqID();
+    captured.type = step.getName();
+    captured.description = stepDescription(step, options, max_description_length);
+    captured.details = stepDetails(step, options, max_description_length, plan_pretty_names);
+    captured.indexes = stepIndexes(step, options);
+    captured.projections = stepProjections(step, options);
+    captured.statistics = stepStatistics(step, steps_to_stats);
+
+    return captured;
+}
+
+}
+
+CapturedPlan CapturedPlan::capture(
+    const PlanWalk & walk,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    const AnalyzeStepsStats * steps_to_stats,
+    const PrettyNamesPerPlan * pretty_names)
+{
+    CapturedPlan result;
+    if (!walk.plan)
+        return result;
+
+    result.root_id = walk.root_id;
+
+    result.nodes.reserve(walk.steps.size());
+    for (const auto & visited : walk.steps)
+    {
+        auto captured = captureStep(
+            *visited.step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, visited.owning_plan));
+        captured.children = visited.children;
+        result.nodes.push_back(std::move(captured));
+    }
+
+    if (steps_to_stats)
+    {
+        result.execution_time_ns = steps_to_stats->getExecutionTimeNs();
+        result.max_threads = steps_to_stats->getMaxThreads();
+    }
+
+    /// The columns the query produces.
+    if (options.pretty)
+    {
+        const auto * root_pretty_names = findPrettyNames(pretty_names, walk.plan);
+        PrettyNames empty_pretty_names;
+        const auto & names
+            = root_pretty_names ? root_pretty_names->pretty_names : empty_pretty_names.pretty_names;
+
+        const auto & root_step = *walk.plan->getRootNode()->step;
+        if (root_step.hasOutputHeader() && root_step.getOutputHeader())
+            for (const auto & column : *root_step.getOutputHeader())
+                result.output.push_back(QueryPlanFormat::formatColumnPretty(column.name, names));
+    }
+
+    return result;
+}
+
+}

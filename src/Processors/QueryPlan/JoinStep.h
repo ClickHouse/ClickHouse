@@ -95,7 +95,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    StepAnalyzer makeAnalyzer() const override;
 
     const JoinEstimation & getEstimation() const { return estimation; }
     UInt64 getClusterId() const { return cluster_id; }
@@ -103,8 +103,6 @@ public:
 private:
     bool optimized = false;
     void updateOutputHeader() override;
-
-    JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
@@ -160,7 +158,7 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    StepAnalyzer makeAnalyzer() const override;
 
 private:
     void updateOutputHeader() override;

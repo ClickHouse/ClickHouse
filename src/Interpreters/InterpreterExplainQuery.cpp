@@ -56,7 +56,9 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Profiling/Capture/PlanWalk.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <QueryPipeline/printPipeline.h>
 
@@ -1433,7 +1435,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
+            PrettyNamesPerPlan precomputed_pretty_names
+                = QueryPlanFormat::buildPrettyNamesPerPlan(plan, /*only_built_child_plans=*/ false);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
@@ -1482,7 +1485,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 planning_ns += watch.elapsed();
 
-                step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+                step_profiler = std::make_shared<StepProfiler>(PlanWalk::of(plan, /*only_built_child_plans=*/ false), analyzed.time);
                 pipeline.setStepProfiler(step_profiler);
 
                 CompletedPipelineExecutor executor(pipeline);
@@ -1503,7 +1506,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, plan, *step_profiler, watch.getStart(), execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, *step_profiler, watch.getStart(), execute_ns);
 
             formatHeaderExplainAnalyze(
                 total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);

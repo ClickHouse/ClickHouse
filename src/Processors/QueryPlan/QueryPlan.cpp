@@ -12,6 +12,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
@@ -240,7 +243,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
-    bool do_optimize)
+    bool do_optimize,
+    QueryPlanProfiler * profiler)
 {
     checkInitialized();
 
@@ -253,6 +257,14 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     if (effective_settings.make_distributed_plan)
         convertToDistributed(effective_settings);
+
+    /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
+    /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
+    /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
+    /// capturing the plan change the work the query does.
+    PrettyNamesPerPlan pretty_names;
+    if (profiler)
+        pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
 
     struct Frame
     {
@@ -298,6 +310,34 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(resources);
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
+
+    /// The last moment the plan is worth reading: the index analysis and the child plans built
+    /// along the way exist now, and nothing after this needs the plan at all.
+    ///
+    /// The two readings are owned differently. The captured plan goes to the profiler, which the
+    /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
+    /// and analyzers go to the pipeline, which must be their only owner, so that they are freed
+    /// with it rather than living as long as the context does.
+    if (profiler)
+    {
+        /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
+        MemoryTrackerBlockerInThread block_memory_tracker;
+
+        try
+        {
+            /// Walked once and read twice, so that the captured plan and the analyzers cannot
+            /// disagree about which steps there are or what is below what.
+            const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
+
+            profiler->capturePlanStructure(walk, pretty_names);
+            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            profiler->dropCapturedPlan();
+        }
+    }
 
     return last_pipeline;
 }
@@ -666,7 +706,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ false);
         precomputed_pretty_names = &local_pretty_names;
     }
 

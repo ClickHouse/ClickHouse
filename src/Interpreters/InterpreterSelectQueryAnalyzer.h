@@ -84,6 +84,8 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void setPlanProfiler(QueryPlanProfilerPtr profiler) override { plan_profiler = std::move(profiler); }
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
@@ -107,6 +109,7 @@ private:
     SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
     Planner planner;
+    QueryPlanProfilerPtr plan_profiler;
 
     QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 };

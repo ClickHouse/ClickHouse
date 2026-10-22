@@ -61,6 +61,8 @@ struct DeserializedSetsRegistry;
 class SettingsChanges;
 
 /// Options from EXPLAIN queries based on plan.
+class QueryPlanProfiler;
+
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -174,10 +176,13 @@ public:
     /// True once `applyDistributedPlanFallbackToLocal` rejected this plan, which then runs locally.
     bool didFallBackToLocal() const { return distributed_plan_decision == DistributedPlanDecision::FellBack; }
 
+    /// `profiler` is passed only by the caller whose plan is the query's own; the nested builds of
+    /// subqueries and of child plans pass nothing, so only one plan per query is ever captured.
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
-        bool do_optimize=true);
+        bool do_optimize=true,
+        QueryPlanProfiler * profiler = nullptr);
 
     struct ExplainPipelineOptions
     {

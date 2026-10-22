@@ -140,15 +140,6 @@ void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::st
     out << "\n";
 }
 
-/// A group of placeholders means the work intervals were not collected; such a group is not printed.
-bool hasCollectedMetrics(const MetricGroup & group)
-{
-    for (const auto & metric : group.metrics)
-        if (!std::holds_alternative<std::monostate>(metric.value))
-            return true;
-    return false;
-}
-
 /// The group is built by `makeTimingReport`: a (time, share) pair for the step, then one for its branch.
 void printTimeGroup(const MetricGroup & time_group, WriteBuffer & out, const std::string & prefix)
 {
@@ -229,8 +220,13 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 }
 
-AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, StepProfiler & step_profiler, UInt64 execution_start_ns, UInt64 execution_query_time_ns_)
-: max_num_threads_per_query(pipeline.getNumThreads())
+AnalyzeStepsStats::AnalyzeStepsStats(
+    const QueryPipeline & pipeline,
+    StepProfiler & step_profiler,
+    UInt64 execution_start_ns,
+    UInt64 execution_query_time_ns_)
+: plan_snapshot(step_profiler.getPlanSnapshot())
+, max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
     const auto & processors = pipeline.getProcessors();
@@ -239,11 +235,11 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, const Query
     collectSpillStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(step_profiler, processors);
     computeDistribution(elapsed_per_step_group);
-    computeJoinBranchCosts(plan);
+    computeJoinBranchCosts();
 
-    /// Work intervals are collected only when EXPLAIN ANALYZE requests the `time` setting.
+    /// Work intervals are collected only when `EXPLAIN ANALYZE` requests the `time` setting.
     if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
-        interval_timings.emplace(work_intervals, plan);
+        interval_timings.emplace(work_intervals, plan_snapshot);
 }
 
 std::optional<ExecutionTimeBreakdown> AnalyzeStepsStats::executionTimeBreakdown() const
@@ -257,19 +253,19 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 {
     auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
     {
-        return owner.getQueryPlanStep() != neighbour.getQueryPlanStep();
+        return owner.getStepUniqID() != neighbour.getStepUniqID();
     };
 
     for (const auto & proc : processors)
     {
-        const auto * step = proc->getQueryPlanStep();
+        const auto & step_id = proc->getStepUniqID();
 
-        if (!step)
+        if (step_id.empty())
             continue;
 
-        auto & step_stats = stats_by_step[step];
+        auto & step_stats = stats_by_step[step_id];
 
-        processors_by_step[step].push_back(proc.get());
+        processors_by_step[step_id].push_back(proc.get());
 
         for (const auto & input_port : proc->getInputs())
         {
@@ -301,11 +297,18 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
 void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 {
-    std::unordered_map<const TemporaryDataOnDiskScope *, const IQueryPlanStep *> steps_by_scope;
+    /// By id rather than by step: the processors outlive the plan, and so does this.
+    const auto creates_a_set = [this](const String & step_id)
+    {
+        const auto * analyzer = plan_snapshot.find(step_id);
+        return analyzer && analyzer->isCreatingSet();
+    };
+
+    std::unordered_map<const TemporaryDataOnDiskScope *, String> steps_by_scope;
     for (const auto & processor : processors)
     {
-        const auto * step = processor->getQueryPlanStep();
-        if (!step)
+        const String & step_id = processor->getStepUniqID();
+        if (step_id.empty())
             continue;
 
         for (const auto * spillable : processor->getSpillables())
@@ -316,14 +319,14 @@ void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 
             /// A set's builder and consumers share its scope. Attribute its lifetime total to
             /// `CreatingSet` when present; sets built during index analysis have only consumers here.
-            auto [it, inserted] = steps_by_scope.try_emplace(scope, step);
-            if (!inserted && typeid_cast<const CreatingSetStep *>(step))
-                it->second = step;
+            auto [it, inserted] = steps_by_scope.try_emplace(scope, step_id);
+            if (!inserted && creates_a_set(step_id))
+                it->second = step_id;
         }
     }
 
-    for (const auto & [scope, step] : steps_by_scope)
-        spilled_bytes_by_step[step] += scope->getSpilledBytes();
+    for (const auto & [scope, step_id] : steps_by_scope)
+        spilled_bytes_by_step[step_id] += scope->getSpilledBytes();
 }
 
 AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStats(const StepProfiler & step_profiler, const Processors & processors)
@@ -332,9 +335,9 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
 
     for (const auto & proc : processors)
     {
-        const auto * step = proc->getQueryPlanStep();
+        const auto & step_id = proc->getStepUniqID();
 
-        if (!step)
+        if (step_id.empty())
             continue;
 
         const size_t group = proc->getQueryPlanStepGroup();
@@ -342,14 +345,14 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
         if (group_elapsed == 0)
             continue;
 
-        const auto step_group_key = std::make_pair(step, group);
+        const auto step_group_key = std::make_pair(step_id, group);
         auto & group_stats = stats_by_step_group[step_group_key];
         group_stats.sum_elapsed_ns += group_elapsed;
         ++group_stats.total_num_processors;
         elapsed_per_step_group[step_group_key].insert(group_elapsed);
 
         if (group_stats.wall_clock_time_ns == 0)
-            if (const auto * clock = step_profiler.findClockForStep(step, group))
+            if (const auto * clock = step_profiler.findClockForStep(step_id, group))
                 group_stats.wall_clock_time_ns = clock->getStepWallTime();
     }
 
@@ -377,71 +380,92 @@ void AnalyzeStepsStats::computeDistribution(const ElapsedTimesPerStepGroup & ela
     }
 }
 
-void AnalyzeStepsStats::computeJoinBranchCosts(const QueryPlan & plan)
+void AnalyzeStepsStats::computeJoinBranchCosts()
 {
     CardinalityByJoinStep cardinality_by_join_step;
-    for (const auto & [step, io_stats] : stats_by_step)
+
+    for (const auto & [step_id, analyzer] : plan_snapshot.analyzers)
     {
-        const auto * join_step = typeid_cast<const JoinStep *>(step);
-        if (!join_step || !join_step->getJoin())
+        if (!analyzer.isJoin())
             continue;
 
-        StepProcessors step_processors = processors_by_step.at(step);
+        const auto processors_it = processors_by_step.find(step_id);
+        if (processors_it == processors_by_step.end())
+            continue;
 
-        auto report = step->getAnalysisReport(step_processors);
-        const auto & table_join = join_step->getJoin()->getTableJoin();
-        cardinality_by_join_step[join_step] = joinMatchedOutputRows(report, io_stats.output_rows, table_join.kind(), table_join.strictness());
+        StepAnalysisReport report;
+        if (analyzer.reporter)
+            report = analyzer.reporter(processors_it->second);
 
-        join_raw_reports.emplace(step, std::move(report));
+        UInt64 output_rows = 0;
+        if (const auto io_it = stats_by_step.find(step_id); io_it != stats_by_step.end())
+            output_rows = io_it->second.output_rows;
+
+        cardinality_by_join_step[step_id] = analyzer.join_cardinality(report, output_rows);
+
+        join_raw_reports.emplace(step_id, std::move(report));
     }
 
-    const JoinBranchCosts join_branch_costs(plan, cardinality_by_join_step);
-    for (auto & [step, report] : join_raw_reports)
+    const JoinBranchCosts join_branch_costs(plan_snapshot, cardinality_by_join_step);
+    for (auto & [step_id, report] : join_raw_reports)
     {
-        const auto * join_step = typeid_cast<const JoinStep *>(step);
         MetricGroup cost_group{MetricGroupKey::Cost, {}};
-        cost_group.metrics.emplace_back(MetricKey::Actual, optionalQuantity(join_branch_costs.getBranchCost(join_step)));
+        cost_group.metrics.emplace_back(MetricKey::Actual, optionalQuantity(join_branch_costs.getBranchCost(step_id)));
         report.push_back(std::move(cost_group));
     }
 }
 
-StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) const
+StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const StepAnalyzer & analyzer) const
 {
     StepStatsContext context;
-    context.step = step;
     context.execution_query_time_ns = execution_query_time_ns;
     context.max_num_threads_per_query = max_num_threads_per_query;
+    context.groups = analyzer.groups;
+    context.group_names = analyzer.group_names;
 
-    if (const auto step_stats_it = stats_by_step.find(step); step_stats_it != stats_by_step.end())
+    if (const auto step_stats_it = stats_by_step.find(step_id); step_stats_it != stats_by_step.end())
         context.io = step_stats_it->second;
 
-    for (size_t group : step->getStepGroups())
-        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step, group)); group_stats_it != stats_by_step_group.end())
+    for (size_t group : context.groups)
+        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step_id, group)); group_stats_it != stats_by_step_group.end())
             context.group_stats[group] = group_stats_it->second;
 
     if (interval_timings)
-        context.time_and_conc_stats = interval_timings->findTiming(step);
+        context.time_and_conc_stats = interval_timings->findTiming(step_id);
 
     return context;
 }
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    StepProcessors step_processors;
-    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-        step_processors = processors_it->second;
+    return analyzeStep(step->getUniqID());
+}
+
+AnalyzedStepData AnalyzeStepsStats::analyzeStep(const String & step_id) const
+{
+    /// Every step analysed here comes from the walk that filled the snapshot, so it has an entry.
+    /// One without would be shaped as a plain single-stage step and report none of its metrics.
+    const auto analyzer_it = plan_snapshot.analyzers.find(step_id);
+    chassert(analyzer_it != plan_snapshot.analyzers.end(), "a step is being analysed that the plan snapshot does not know");
+    static const StepAnalyzer unknown_step;
+    const StepAnalyzer & analyzer = analyzer_it != plan_snapshot.analyzers.end() ? analyzer_it->second : unknown_step;
 
     StepAnalysisReport raw_report;
-    if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
+    if (const auto report_it = join_raw_reports.find(step_id); report_it != join_raw_reports.end())
     {
+        /// A join's report was already read, to accumulate the branch costs.
         raw_report = report_it->second;
     }
-    else
+    else if (analyzer.reporter)
     {
-        raw_report = step->getAnalysisReport(step_processors);
+        StepProcessors step_processors;
+        if (const auto processors_it = processors_by_step.find(step_id); processors_it != processors_by_step.end())
+            step_processors = processors_it->second;
+
+        raw_report = analyzer.reporter(step_processors);
     }
 
-    if (const auto it = spilled_bytes_by_step.find(step); it != spilled_bytes_by_step.end() && it->second)
+    if (const auto it = spilled_bytes_by_step.find(step_id); it != spilled_bytes_by_step.end() && it->second)
     {
         auto * spill_group = findGroup(raw_report, MetricGroupKey::Spill);
         if (!spill_group)
@@ -449,15 +473,11 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
         spill_group->metrics.emplace_back(MetricKey::Spilled, it->second);
     }
 
-    auto context_for_step = makeContext(step);
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);
+    auto context_for_step = makeContext(step_id, analyzer);
+    if (analyzer.finish)
+        return analyzer.finish(context_for_step, std::move(raw_report));
 
-    /// Use the service of a generator, which takes the context (e.g. i/o, total time)
-    /// some internal raw metrics, which are specific for each step,  that
-    /// with the knowledge of the step will pre-process the metrics before printing
-    AnalyzedStepData result = step_stats_generator(context_for_step, std::move(raw_report));
-
-    return result;
+    return analyzeDefaultStep(context_for_step, std::move(raw_report));
 }
 
 void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const

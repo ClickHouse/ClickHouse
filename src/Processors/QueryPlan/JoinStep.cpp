@@ -20,6 +20,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/Profiling/Analysis/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 #include <unordered_set>
@@ -319,7 +320,8 @@ StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJo
 
 }
 
-JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
+/// Reads only the processors, so the reporter can call it without holding the step.
+static JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors)
 {
     JoinAnalysisCounters counters;
     MatchedRowsAccumulator matched_left;
@@ -342,29 +344,61 @@ JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_proc
     return counters;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+StepAnalyzer JoinStep::makeAnalyzer() const
 {
-    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
-    /// so every join it reaches must have been told to collect statistics
-    chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
-    /// Case of Y-shaped join
-    if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
-        return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+    analyzer.cluster_id = getClusterId();
 
-    if (typeid_cast<const PasteJoin *>(join.get()))
-        return join->getAnalysisReport();
+    JoinAnalysisInputs join_inputs;
+    join_inputs.join = join;
+    join_inputs.swapped = swap_streams;
+    join_inputs.has_estimation = true;
+    join_inputs.estimation = getEstimation();
+    join_inputs.input_columns = QueryPlanFormat::collectJoinInputColumns(*this);
 
-    /// Case for sharded join
-    auto executed_joins = collectExecutedJoins(step_processors);
-    const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join.get());
-    if (executed_by_shard_clones)
-        return buildShardedHashJoinReport(executed_joins);
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
 
-    chassert(executed_joins.size() == 1);
+    /// `JoinStep` is the only step in the branch-cost phase, so it is the only one reading this.
+    analyzer.join_cardinality = [join_ptr = join](const StepAnalysisReport & report, UInt64 output_rows)
+    {
+        const auto & table_join = join_ptr->getTableJoin();
+        return joinMatchedOutputRows(report, output_rows, table_join.kind(), table_join.strictness());
+    };
 
-    /// Case for one join, stored in the JoinStep directly
-    return join->getAnalysisReport();
+    /// A join counts nothing unless the query runs with the analyze mode on, so with it off there
+    /// is no report to build -- zeros here would be indistinguishable from measured ones. The
+    /// estimation and input columns that `finish` adds do not depend on the mode.
+    if (!join->getTableJoin().collectAnalyzeStats())
+        return analyzer;
+
+    /// The `IJoin` is shared with the processors that run it, so holding it keeps the report
+    /// available after the step is gone. Nothing else of the step is captured.
+    analyzer.reporter = [join_ptr = join](StepProcessors step_processors) -> StepAnalysisReport
+    {
+        /// Case of Y-shaped join
+        if (typeid_cast<const FullSortingMergeJoin *>(join_ptr.get()))
+            return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+
+        if (typeid_cast<const PasteJoin *>(join_ptr.get()))
+            return join_ptr->getAnalysisReport();
+
+        /// Case for sharded join
+        auto executed_joins = collectExecutedJoins(step_processors);
+        const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join_ptr.get());
+        if (executed_by_shard_clones)
+            return buildShardedHashJoinReport(executed_joins);
+
+        chassert(executed_joins.size() == 1);
+
+        /// Case for one join, stored in the JoinStep directly
+        return join_ptr->getAnalysisReport();
+    };
+
+    return analyzer;
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -583,11 +617,25 @@ void FilledJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
 
-StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
+StepAnalyzer FilledJoinStep::makeAnalyzer() const
 {
-    chassert(join->getTableJoin().collectAnalyzeStats(), "FilledJoinStep analyzed without the analyze mode");
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
-    return join->getAnalysisReport();
+    /// A filled join always keeps the storage on the right and never carries an estimation.
+    JoinAnalysisInputs join_inputs;
+    join_inputs.join = join;
+
+    analyzer.finish = [inputs = std::move(join_inputs)](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeJoinStep(context, std::move(report), inputs);
+    };
+
+    if (!join->getTableJoin().collectAnalyzeStats())
+        return analyzer;
+
+    analyzer.reporter = [join_ptr = join](StepProcessors) { return join_ptr->getAnalysisReport(); };
+
+    return analyzer;
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
