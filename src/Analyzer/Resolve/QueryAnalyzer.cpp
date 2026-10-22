@@ -3120,7 +3120,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
     /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
-    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    auto has_aggregate_function_in_tree = [&scope](const IQueryTreeNode * root) -> bool
     {
         if (!root)
             return false;
@@ -3135,9 +3135,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * func = subtree_node->as<FunctionNode>())
             {
-                /// The arguments of `grouping` are compared with the GROUP BY keys in their original form as well.
+                /// The arguments of `grouping` are compared with the GROUP BY keys in their original form as well,
+                /// unless the name is bound to a lambda by an alias, which `resolveFunction` calls instead.
                 if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
-                    || func->getFunctionName() == "grouping")
+                    || (func->getFunctionName() == "grouping" && !scope.hasFunctionAlias("grouping")))
                     return true;
             }
 
@@ -3212,6 +3213,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             strict_transformer_to_used_column_names.emplace(replace_transformer, std::unordered_set<std::string>());
     }
 
+    /// See `query_with_deferred_transformer_expressions`.
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const bool defer_transformer_expressions = query_with_deferred_transformer_expressions
+        && nearest_query_scope && nearest_query_scope->scope_node.get() == query_with_deferred_transformer_expressions;
+
     ListNodePtr list = std::make_shared<ListNode>();
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
@@ -3250,6 +3256,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
                 apply_transformer_was_used = true;
+
+                if (defer_transformer_expressions)
+                    continue;
+
                 apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
@@ -3349,6 +3359,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
 
                 replace_transformer_mappings[column_name] = replace_expression;
+
+                if (defer_transformer_expressions)
+                    continue;
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -3861,7 +3874,7 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             const auto & matched_nodes = list_node->as<ListNode &>().getNodes();
             /// The nodes produced by the matcher are passed as well, see below.
             for (const auto & matched_node : matched_nodes)
-                projection_nodes_before_matcher.insert(matched_node.get());
+                markProjectionNodeBeforeMatcher(matched_node.get());
             expanded_nodes.insert(expanded_nodes.end(), matched_nodes.begin(), matched_nodes.end());
             expanded = true;
             return;
@@ -3871,7 +3884,7 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             expanded |= expandMatchersInsideProjectionExpression(list_node, scope);
 
         /// The nodes are resolved in order, so the following matchers must not rewrite this one.
-        projection_nodes_before_matcher.insert(list_node.get());
+        markProjectionNodeBeforeMatcher(list_node.get());
         expanded_nodes.push_back(list_node);
     };
 
@@ -3893,7 +3906,7 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
 
             /// The argument is expanded in a copy, so that a failed attempt leaves neither the argument
             /// nor the guard of the preceding nodes half-rewritten.
-            auto saved_projection_nodes_before_matcher = projection_nodes_before_matcher;
+            const size_t saved_insertions_size = projection_nodes_before_matcher_insertions.size();
             const bool saved_expanded = expanded;
             /// The failed resolution may leave its expressions on the stack, and an aggregate function among them
             /// would keep the following GROUP BY keys from being converted to Nullable.
@@ -3909,10 +3922,10 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
                 while (scope.expressions_in_resolve_process_stack.size() > saved_expressions_stack_size)
                     scope.popExpressionNode();
 
-                projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher);
+                rollbackProjectionNodesBeforeMatcher(saved_insertions_size);
                 expanded = saved_expanded;
                 expanded_nodes.clear();
-                projection_nodes_before_matcher.insert(list_node.get());
+                markProjectionNodeBeforeMatcher(list_node.get());
                 expanded_nodes.push_back(list_node);
             }
         }
@@ -3997,12 +4010,12 @@ bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
       * All the entries added while walking the definition are removed, including the nested function arguments,
       * and the ones that existed before are kept.
       */
-    auto projection_nodes_before_window_definition = projection_nodes_before_matcher;
-    SCOPE_EXIT({ projection_nodes_before_matcher = std::move(projection_nodes_before_window_definition); });
+    const size_t insertions_size_before_window_definition = projection_nodes_before_matcher_insertions.size();
+    SCOPE_EXIT({ rollbackProjectionNodesBeforeMatcher(insertions_size_before_window_definition); });
 
     auto mark_passed = [&](const QueryTreeNodePtr & passed_node)
     {
-        projection_nodes_before_matcher.insert(passed_node.get());
+        markProjectionNodeBeforeMatcher(passed_node.get());
     };
 
     if (window_node->hasPartitionBy())
@@ -4076,6 +4089,22 @@ bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node
     return expanded;
 }
 
+void QueryAnalyzer::markProjectionNodeBeforeMatcher(const IQueryTreeNode * node)
+{
+    if (projection_nodes_before_matcher.insert(node).second)
+        projection_nodes_before_matcher_insertions.push_back(node);
+}
+
+/// Remove the entries inserted after the insertion log had the given size, keeping the ones that existed before.
+void QueryAnalyzer::rollbackProjectionNodesBeforeMatcher(size_t insertions_size)
+{
+    while (projection_nodes_before_matcher_insertions.size() > insertions_size)
+    {
+        projection_nodes_before_matcher.erase(projection_nodes_before_matcher_insertions.back());
+        projection_nodes_before_matcher_insertions.pop_back();
+    }
+}
+
 /** Expand the matchers of the projection of the query, at the root of the projection items and nested inside them,
   * without resolving the rest of the projection. Used with `group_by_use_nulls`, see `resolveQuery`.
   *
@@ -4090,7 +4119,11 @@ bool QueryAnalyzer::expandProjectionMatchers(QueryNode & query_node, IdentifierR
 {
     /// A subquery resolved while expanding a matcher has its own projection.
     auto saved_projection_nodes_before_matcher = std::exchange(projection_nodes_before_matcher, {});
-    SCOPE_EXIT({ projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher); });
+    auto saved_projection_nodes_before_matcher_insertions = std::exchange(projection_nodes_before_matcher_insertions, {});
+    SCOPE_EXIT({
+        projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher);
+        projection_nodes_before_matcher_insertions = std::move(saved_projection_nodes_before_matcher_insertions);
+    });
 
     auto & projection_nodes = query_node.getProjection().getNodes();
     QueryTreeNodes expanded_projection_nodes;
@@ -4102,7 +4135,7 @@ bool QueryAnalyzer::expandProjectionMatchers(QueryNode & query_node, IdentifierR
         if (node_to_resolve->getNodeType() != QueryTreeNodeType::MATCHER)
         {
             expanded |= expandMatchersInsideProjectionExpression(node_to_resolve, scope);
-            projection_nodes_before_matcher.insert(node_to_resolve.get());
+            markProjectionNodeBeforeMatcher(node_to_resolve.get());
             expanded_projection_nodes.push_back(std::move(node_to_resolve));
             continue;
         }
@@ -8133,7 +8166,63 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           */
         auto unexpanded_projection = query_node_typed.getProjectionNode()->clone();
         auto unexpanded_window = query_node_typed.hasWindow() ? query_node_typed.getWindowNode()->clone() : nullptr;
-        if (expandProjectionMatchers(query_node_typed, scope))
+
+        /** The expressions produced by the transformers in the first expansion are discarded, unless GROUP BY ALL
+          * or a positional argument of GROUP BY refers to them: they are GROUP BY keys and have to be resolved
+          * against the source columns. Otherwise they are not resolved at all, because the types of the source
+          * columns may differ from the Nullable keys they are resolved against in the second expansion:
+          * `* APPLY (x -> getSubcolumn(x, 'null'))` is valid only for the latter.
+          * A key that is an identifier may become a positional argument when a `REPLACE` transformer rewrites it
+          * into a constant, as `c` in `SELECT * REPLACE (1 AS c) ... GROUP BY c`, so such keys are taken into account.
+          */
+        bool group_by_refers_to_projection = query_is_group_by_all;
+        if (!group_by_refers_to_projection && query_node_typed.hasGroupBy()
+            && scope.context->getSettingsRef()[Setting::enable_positional_arguments])
+        {
+            std::unordered_set<std::string> replaced_column_names;
+            std::vector<const IQueryTreeNode *> nodes_to_process{query_node_typed.getProjectionNode().get()};
+            while (!nodes_to_process.empty())
+            {
+                const auto * node = nodes_to_process.back();
+                nodes_to_process.pop_back();
+
+                if (const auto * replace_transformer = node->as<ReplaceColumnTransformerNode>())
+                    replaced_column_names.insert(replace_transformer->getReplacementsNames().begin(), replace_transformer->getReplacementsNames().end());
+
+                for (const auto & child : node->getChildren())
+                {
+                    if (child)
+                        nodes_to_process.push_back(child.get());
+                }
+            }
+
+            std::function<bool(const QueryTreeNodePtr &)> may_be_positional_argument = [&](const QueryTreeNodePtr & node)
+            {
+                if (const auto * list_node = node->as<ListNode>())
+                    return std::ranges::any_of(list_node->getNodes(), may_be_positional_argument);
+
+                if (const auto * identifier_node = node->as<IdentifierNode>())
+                    return replaced_column_names.contains(identifier_node->getIdentifier().getFullName());
+
+                const auto * constant_node = node->as<ConstantNode>();
+                return constant_node
+                    && (constant_node->getValue().getType() == Field::Types::UInt64
+                        || constant_node->getValue().getType() == Field::Types::Int64);
+            };
+            group_by_refers_to_projection = may_be_positional_argument(query_node_typed.getGroupByNode());
+        }
+
+        bool projection_matchers_expanded = false;
+        {
+            const auto * previous_query_with_deferred_transformer_expressions = query_with_deferred_transformer_expressions;
+            if (!group_by_refers_to_projection)
+                query_with_deferred_transformer_expressions = query_node_ptr;
+            SCOPE_EXIT({ query_with_deferred_transformer_expressions = previous_query_with_deferred_transformer_expressions; });
+
+            projection_matchers_expanded = expandProjectionMatchers(query_node_typed, scope);
+        }
+
+        if (projection_matchers_expanded)
         {
             projection_with_unexpanded_matchers = std::move(unexpanded_projection);
             window_with_unexpanded_matchers = std::move(unexpanded_window);

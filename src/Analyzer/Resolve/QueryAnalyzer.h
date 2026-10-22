@@ -344,6 +344,22 @@ private:
       */
     std::unordered_set<const IQueryTreeNode *> projection_nodes_before_matcher;
 
+    /** The entries inserted into `projection_nodes_before_matcher`, in the order of insertion, so that a speculative
+      * expansion can remove the entries it added without copying the whole set, see `markProjectionNodeBeforeMatcher`.
+      */
+    std::vector<const IQueryTreeNode *> projection_nodes_before_matcher_insertions;
+
+    void markProjectionNodeBeforeMatcher(const IQueryTreeNode * node);
+
+    void rollbackProjectionNodesBeforeMatcher(size_t insertions_size);
+
+    /** The query whose projection matchers are expanded for the first time under `group_by_use_nulls`
+      * while nothing depends on the expressions produced by their `APPLY` and `REPLACE` transformers, see `resolveQuery`.
+      * The GROUP BY keys are not known yet, so `resolveMatcher` does not resolve these expressions: they are resolved
+      * in the second expansion, against the Nullable keys. Only the `REPLACE` mappings are registered.
+      */
+    const IQueryTreeNode * query_with_deferred_transformer_expressions = nullptr;
+
     /** The definitions of the named windows, as of the time the window function referencing them is passed by `expandProjectionMatchers`.
       * The key is the window node of the function, see `expandMatchersInsideProjectionExpression` and `resolveWindow`.
       */
