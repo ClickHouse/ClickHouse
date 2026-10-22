@@ -1839,7 +1839,7 @@ void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePt
             return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
         });
 
-    if (!joins_multiple_tables)
+    if (!joins_multiple_tables && !planner_context->hasInSubqueriesForJoinRewrite())
         return;
 
     LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");

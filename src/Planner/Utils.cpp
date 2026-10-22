@@ -26,6 +26,7 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
@@ -508,6 +509,43 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 {
     const auto & query_node_typed = query_node->as<const QueryNode &>();
     return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTreeNode().get());
+}
+
+namespace
+{
+
+bool isViewOrRemoteStorage(const StoragePtr & storage)
+{
+    if (storage->isView() || storage->isRemote())
+        return true;
+
+    if (const auto * alias = typeid_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return target && isViewOrRemoteStorage(target);
+    }
+
+    const auto * merge = typeid_cast<const StorageMerge *>(storage.get());
+    return merge && merge->hasChildTable(isViewOrRemoteStorage);
+}
+
+}
+
+bool readsViewOrRemoteStorage(const QueryTreeNodePtr & table_expression)
+{
+    for (const auto & table : extractTableExpressions(std::static_pointer_cast<ITableExpressionNode>(table_expression), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        StoragePtr storage;
+        if (const auto * table_node = table->as<TableNode>())
+            storage = table_node->getStorage();
+        else if (const auto * table_function_node = table->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+
+        if (storage && isViewOrRemoteStorage(storage))
+            return true;
+    }
+
+    return false;
 }
 
 

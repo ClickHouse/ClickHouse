@@ -7575,15 +7575,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
-        bool in_prewhere = scope.in_prewhere;
-        scope.in_prewhere = true;
         /// PREWHERE columns keep their pre-join types: the rollback below cannot descend into a
         /// lambda body, so promoting here would leave types the storage cannot supply.
         bool join_use_nulls = scope.join_use_nulls;
         scope.join_use_nulls = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         scope.join_use_nulls = join_use_nulls;
-        scope.in_prewhere = in_prewhere;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
         /** Expressions in PREWHERE with JOIN should not change their type.

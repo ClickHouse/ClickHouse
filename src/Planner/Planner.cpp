@@ -97,6 +97,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinTree.h>
@@ -673,6 +674,43 @@ public:
     bool is_limit_by_offset_negative = false;
 };
 
+/// Makes the step consume the columns the joins added for themselves, so that they do not pass through it.
+void dropColumnsAddedByJoins(ActionsDAG & actions, const Block & header_before_joins, const Block & header_after_joins)
+{
+    NameSet input_names;
+    for (const auto * input : actions.getInputs())
+        input_names.insert(input->result_name);
+
+    for (const auto & column : header_after_joins)
+        if (!header_before_joins.has(column.name) && !input_names.contains(column.name))
+            actions.addInput(column);
+}
+
+void addInToJoinSteps(
+    const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
+    ActionsDAG & actions,
+    const SelectQueryOptions & select_query_options,
+    UsefulSets & useful_sets)
+{
+    auto header_before_joins = query_plan.getCurrentHeader();
+    while (auto in_subquery = findInnermostUncorrelatedInSubquery(actions, *planner_context))
+    {
+        /// The part of the actions the `IN` reads is computed below the join, and the rest reads the `IN` as an input.
+        auto [in_actions, rest_actions, split_nodes_mapping] = actions.split(
+            {in_subquery->in_node}, /*create_split_nodes_mapping=*/ true, /*avoid_duplicate_inputs=*/ true);
+        in_subquery->in_node = split_nodes_mapping.at(in_subquery->in_node);
+        in_subquery->actions = std::move(in_actions);
+
+        auto subquery_global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, collectFiltersForAnalysis(in_subquery->subquery, select_query_options, /*post_filter=*/ nullptr));
+        buildQueryPlanForUncorrelatedInSubquery(planner_context, query_plan, std::move(*in_subquery), select_query_options, std::move(subquery_global_planner_context), useful_sets);
+
+        actions = std::move(rest_actions);
+    }
+
+    dropColumnsAddedByJoins(actions, *header_before_joins, *query_plan.getCurrentHeader());
+}
+
 template <size_t size>
 ALWAYS_INLINE void addExpressionStep(
     const PlannerContextPtr & planner_context,
@@ -704,6 +742,8 @@ ALWAYS_INLINE void addExpressionStep(
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
 
+    addInToJoinSteps(planner_context, query_plan, actions, select_query_options, useful_sets);
+
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions));
     appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
     expression_step->setStepDescription(step_description);
@@ -727,6 +767,8 @@ ALWAYS_INLINE void addFilterStep(
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+
+    addInToJoinSteps(planner_context, query_plan, actions, select_query_options, useful_sets);
 
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(actions),
@@ -2230,6 +2272,12 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 {
     auto subqueries = planner_context->getPreparedSets().getSubqueries();
 
+    for (const auto & set : useful_sets)
+    {
+        if (planner_context->isSetForJoinRewrite(set))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "An `IN` the planner evaluates with a join is read by an expression that no join is added for");
+    }
+
     auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set); };
     auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
     subqueries.erase(it, subqueries.end());
@@ -2980,7 +3028,8 @@ void Planner::buildPlanForQueryNode()
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())
+        if (!settings[Setting::parallel_replicas_allow_in_with_subquery]
+            && (planner_context->getPreparedSets().hasSubqueries() || planner_context->hasInSubqueriesForJoinRewrite()))
         {
             if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");

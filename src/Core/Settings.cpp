@@ -11245,6 +11245,8 @@ Use hash table size statistics collected from previous executions to size the JO
         {"26.7", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."}) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
+
+The subquery then becomes part of the query plan like a joined table: the `IN` takes no part in primary key analysis and in reading in order, and the order of rows is not preserved.
 )", EXPERIMENTAL, \
         {"25.10", false, false, "New experimental setting"}) \
     \

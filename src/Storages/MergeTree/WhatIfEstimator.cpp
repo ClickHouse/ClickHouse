@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indexes;
     extern const SettingsString force_data_skipping_indexes;
+    extern const SettingsBool rewrite_in_to_join;
 }
 
 namespace ErrorCodes
@@ -428,8 +429,12 @@ WhatIfResult estimateHypotheticalObjects(
 
     if (read_steps.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "EXPLAIN WHATIF currently supports only single-table queries (found {} read steps)",
-            read_steps.size());
+            "EXPLAIN WHATIF currently supports only single-table queries (found {} read steps){}",
+            read_steps.size(),
+            plan_context->getSettingsRef()[Setting::rewrite_in_to_join]
+                ? ". With `rewrite_in_to_join`, an `IN (subquery)` reads its subquery under a join; "
+                  "set `rewrite_in_to_join = 0` to estimate the query with sets"
+                : "");
 
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();

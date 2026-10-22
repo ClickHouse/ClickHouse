@@ -1170,6 +1170,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
+    else if (planner_context->isInSubqueryForJoinRewrite(node))
+    {
+        set = planner_context->createSetForJoinRewrite(node);
+    }
     else
     {
         set = planner_context->getPreparedSets().findSubquery(set_key);
@@ -1182,7 +1186,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
 
-    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    auto name = DB::PlannerContext::createSetKey(
+        in_first_argument->getResultType(), in_second_argument, planner_context->isInSubqueryForJoinRewrite(node));
     auto type = std::make_shared<DataTypeSet>();
     ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
