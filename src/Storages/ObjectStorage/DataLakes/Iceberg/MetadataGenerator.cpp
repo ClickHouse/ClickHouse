@@ -302,9 +302,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
             : 0;
+        /// `added-rows` and the table's `next-row-id` are set by `generateManifestList`, which assigns the row ids.
         new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
-        new_snapshot->set(Iceberg::f_added_rows, added_records);
-        metadata_object->set(Iceberg::f_next_row_id, next_row_id + added_records);
     }
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);

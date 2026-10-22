@@ -177,6 +177,8 @@ Parts virtually divided into segments to be distributed between replicas for par
 
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
 
+Ignored when `automatic_parallel_replicas_mode` is enabled: the automatic mode decides with its own cost model.
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

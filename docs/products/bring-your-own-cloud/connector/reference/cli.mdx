@@ -1,7 +1,7 @@
 ---
 title: 'CLI reference'
 sidebarTitle: 'CLI'
-description: 'Reference for the clicklink clctl commands: init, preflight, support sessions, gateway trust, audit, access provisioning, managed services, and platform approval'
+description: 'Reference for the clicklink clctl commands: init, preflight, support sessions, gateway trust, audit, access provisioning, managed services, platform approval, contexts, and connector upgrades'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 The connector ships as a single binary named `clicklink`; the commands you run live under `clicklink clctl`. This page covers the commands used during installation and day-to-day operation. Run any command with `--help` for its full help text.
 
-Flags in the `troubleshoot`, `scraper`, `preflight`, `executor`, `instances create`, and `platform` subtrees, plus the global `--endpoint` and `--cluster`, can also come from `CLCTL_*` environment variables (named in each flag's help output) or `~/.clicklink/clctl.yaml`. The global `-v` logs the admin API requests a command makes; `-vv` adds request bodies.
+Flags in the `troubleshoot`, `scraper`, `preflight`, `executor`, `instances create`, `platform`, and `connector upgrade` subtrees, plus the global `--endpoint`, `--cluster`, and `--infra-context`, can also come from `CLCTL_*` environment variables (named in each flag's help output) or `~/.clicklink/clctl.yaml`. The global `-v` logs the admin API requests a command makes; `-vv` adds request bodies.
 
 The `instances` and `commands` commands, and `executor teardown`, read the executor's local API. Two global flags select it: `--endpoint <url>` (default `http://127.0.0.1:9999`, env `CLCTL_ENDPOINT`) and `--cluster <name>` (env `CLCTL_CLUSTER`), which names the managed cluster when a command needs one. On Kubernetes, open a `kubectl port-forward` to the executor Deployment first; see [managed services](/products/bring-your-own-cloud/connector/managed-services#status).
 
@@ -411,6 +411,34 @@ For test clusters with no services: uninstalls the platform releases in reverse 
 | `--output-dir <path>` | Access root whose `_platform` bundle is removed (default `/etc/clicklink/access/executor`). |
 | `--secret-namespace <ns>`, `--secret-name <name>` | Kubernetes installs: remove the platform bundle Secret in the connector namespace instead (default name `clicklink-platform-bundle`). |
 | `--dry-run` | Checks for services and prints the reset plan without changing the cluster. |
+
+## clicklink clctl context {#context}
+
+`clctl` finds an enrolled connector through a named context: on Kubernetes, the kubeconfig context it runs in; on a VM, the configuration file on the host. `context add` saves a context (the first saved becomes current), `context use <name>` switches, `context list` and `context current` show them, and `context remove <name>` deletes one. `--infra-context <name>` (env `CLCTL_INFRA_CONTEXT`) overrides the current context for a single run. The current context supplies the defaults for `--context`, `--config`, and `--cluster` on the commands that take them; explicit flags and `CLCTL_*` variables still win. `connector upgrade` requires a context.
+
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context>
+```
+
+| Flag | Description |
+|------|-------------|
+| `--kube-context <name>` | Exact kubeconfig context name from `kubectl config get-contexts`, validated locally. Kubernetes installs. |
+| `--config <path>` | Connector configuration file on this host. VM installs. One of `--kube-context` and `--config` is required. |
+| `--connector-namespace <ns>` | Connector chart namespace when it is not `clicklink`. |
+| `--use` | Make this the current context even when another one is. |
+
+## clicklink clctl connector upgrade {#connector-upgrade}
+
+Upgrades a Kubernetes install from the public chart repository, using the kubeconfig context saved by `context add`. It prints the current and target chart and image, then asks for confirmation. It keeps the release's values (clearing a stale `image.tag`), runs the upgrade with its built-in Helm client, waits for the rollout, and checks that every enabled component's pods run the new image. It refuses a kube context whose cluster, account, or region differs from the connector's configuration, and a release whose image repository is not the public one (a [private mirror](/products/bring-your-own-cloud/connector/configuration#private-mirrors)). See [operations](/products/bring-your-own-cloud/connector/operations#upgrades-kubernetes).
+
+| Flag | Description |
+|------|-------------|
+| `--version <X.Y.Z>` | Chart version to install: the release tag without the leading `v`. One of `--version` and `--latest` is required. |
+| `--latest` | Resolve and install the newest published chart. |
+| `--set <key=value>` | Helm value override, repeatable. It changes the release only; `clicklink-values.yaml` is not updated. |
+| `--dry-run` | Stop after Helm's server-side simulation; nothing changes. |
+| `--yes`, `-y` | Skip the confirmation prompt. |
+| `--timeout <dur>` | Bound for the rollout and, separately, for the image verification (default `15m`). |
 
 ## Remote channel flags {#channel-flags}
 

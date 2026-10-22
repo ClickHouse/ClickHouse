@@ -460,7 +460,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t current_range_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    MutableColumns & res_columns, Columns & /* shared_columns */)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -525,10 +525,17 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         MutableColumns fallback_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols);
+        Columns fallback_shared_cols(fallback_columns_list.size());
+        fallback_reader->readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols, fallback_shared_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
-            fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
+        {
+            if (fallback_cols[col_idx])
+                fallback_block.insert({std::move(fallback_cols[col_idx]), col_name_type.type, col_name_type.name});
+            else
+                fallback_block.insert({fallback_shared_cols[col_idx], col_name_type.type, col_name_type.name});
+            ++col_idx;
+        }
     }
 
     size_t fallback_offset = 0;
