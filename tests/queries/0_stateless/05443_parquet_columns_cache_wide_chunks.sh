@@ -36,10 +36,11 @@ QUERY="SELECT count(), sum(length(s)) FROM file('${FILE}', Parquet, 'id UInt64, 
 
 echo "--- a chunk of 128 MiB, under a memory limit of 160 MiB: read in small blocks, not cached"
 write_file 65536 2048
-# Decoded whole, the chunk would take 256 MiB with the growth of its buffer. Read in small blocks, without the cache, the
-# row group takes 40-75 MiB, depending on how far the reader reads ahead, so only the read with the cache is limited.
+# Decoded whole, the chunk would take 256 MiB with the growth of its buffer. Read in small blocks, the row group takes as
+# much memory as the reader decodes ahead of the blocks it delivers, which is bounded by the watermark rather than by the
+# memory limit of the query, so the watermark is set low.
 $CLICKHOUSE_CLIENT -q "${QUERY}, input_format_parquet_max_block_size = 1000, use_columns_cache = 0"
-$CLICKHOUSE_CLIENT -q "${QUERY}, input_format_parquet_max_block_size = 1000, max_memory_usage = '160Mi', use_columns_cache = 1"
+$CLICKHOUSE_CLIENT -q "${QUERY}, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_high_watermark = '16Mi', max_memory_usage = '160Mi', use_columns_cache = 1"
 $CLICKHOUSE_CLIENT -q "${ENTRIES}"
 
 echo "--- a chunk larger than the cache of 100 MiB, and a short one: neither is kept"

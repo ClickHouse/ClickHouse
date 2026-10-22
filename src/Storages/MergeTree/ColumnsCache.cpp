@@ -616,6 +616,11 @@ void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
     parkedColumns().releaseUnused();
 }
 
+bool ColumnsCache::containsAll(const std::vector<Key> & keys) const
+{
+    return std::ranges::all_of(keys, [&](const Key & key) { return shards[shardIndex(key)]->contains(key); });
+}
+
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
     /// The memory of the cache is the server's, see `setMany`.

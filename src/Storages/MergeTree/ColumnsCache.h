@@ -247,6 +247,10 @@ public:
     /// replaced or merged with another write of the same stripe is left alone.
     void removeEntries(const std::vector<MappedPtr> & entries);
 
+    /// Whether the cache holds an entry under every one of the keys. Unlike `getMany`, it neither touches the
+    /// priorities of the entries nor marks them as used, so a writer can check what of its write survived.
+    bool containsAll(const std::vector<Key> & keys) const;
+
     /// Whether a stripe that is not in the cache should be written to it. Nothing is written
     /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
     ///

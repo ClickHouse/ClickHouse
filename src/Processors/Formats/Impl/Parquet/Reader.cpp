@@ -2906,9 +2906,13 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         /// chunk, while the block size settings ask for less: then the row group is read in the blocks the settings
         /// ask for, still never crossing a chunk, and is not written to the cache, which takes only whole chunks.
         /// A chunk written to the cache is the server's only after it is decoded.
+        /// A column served from the cache takes no memory of the query when a whole chunk is served, but the rows
+        /// of a chunk that pass a filter are copied out of it, see `getOrFormOutputColumn`.
+        const bool rows_may_be_filtered = format_filter_info->prewhere_info || format_filter_info->row_level_filter
+            || format_filter_info->rows_to_read || format_filter_info->top_k_filter;
         double bytes_per_row = 0;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
-            if (!row_group.columns.at(i).served_from_cache)
+            if (!row_group.columns.at(i).served_from_cache || rows_may_be_filtered)
                 bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
         const size_t memory_limit = memoryLimitOfCurrentThread();
         const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
@@ -4576,11 +4580,30 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
 
     /// A column of a row group is served from the cache only if all its chunks are there, see `initColumnsCache`.
     /// A chunk is not written when no row subgroup decoded it, e.g. when the column index skipped its rows.
+    /// And a chunk that was admitted can be evicted by the chunks written after it, even of the same column,
+    /// when the column does not fit into the cache as a whole while each of its chunks does.
     const size_t num_rows = size_t(row_group.meta->num_rows);
     const size_t num_chunks = (num_rows + COLUMNS_CACHE_CHUNK_ROWS - 1) / COLUMNS_CACHE_CHUNK_ROWS;
-    for (auto & write : row_group.columns_cache_writes)
-        if (write.active && write.chunks_written != num_chunks)
+    std::vector<ColumnsCacheKey> keys;
+    for (size_t idx = 0; idx < row_group.columns_cache_writes.size(); ++idx)
+    {
+        auto & write = row_group.columns_cache_writes[idx];
+        if (!write.active)
+            continue;
+
+        bool complete = write.chunks_written == num_chunks;
+        if (complete)
+        {
+            keys.clear();
+            for (size_t chunk = 0; chunk < num_chunks; ++chunk)
+                keys.push_back(ColumnsCacheKey{
+                    columns_cache_identities.at(idx), row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + chunk});
+            complete = options.columns_cache->cache->containsAll(keys);
+        }
+
+        if (!complete)
             withdrawColumnsCacheWrite(write);
+    }
     row_group.columns_cache_writes.clear();
 }
 
