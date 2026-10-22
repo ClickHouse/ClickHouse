@@ -1,0 +1,12 @@
+wide	2	1	c	1
+wide	7	1	f	0
+compact	2	1	c	1
+compact	7	1	f	0
+again	2	c
+again	7	f
+alias_off	2	b
+alias_off	3	c
+alias_off	4	d
+alias_on	2	b
+alias_on	3	c
+alias_on	4	d

@@ -52,9 +52,9 @@ SELECT sum(x + 10 AS id) FROM (SELECT 1 AS x, 2 AS id) t1 JOIN (SELECT 2 AS id) 
 SET analyzer_compatibility_join_using_top_level_identifier = 0;
 SELECT sum(x + 10 AS id) FROM (SELECT 1 AS x, 2 AS id) t1 JOIN (SELECT 2 AS id) t2 USING (id);
 
--- case 5: alias defined only in WHERE is out of scope.
+-- case 5: alias defined only in WHERE is considered too (old-analyzer-compatible).
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
-SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id) WHERE (x + 1 AS id) > 0; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id) WHERE (x + 1 AS id) > 0;
 
 -- case 6: nested alias expression references a column absent from the left table.
 SET analyzer_compatibility_join_using_top_level_identifier = 1;

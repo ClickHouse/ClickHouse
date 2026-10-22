@@ -1,5 +1,4 @@
 <clickhouse>
-    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
 
     <remote_servers>
         <test_auto_cluster_with_pwd>

@@ -39,6 +39,8 @@ In `categorical` mode, selecting a cell emphasizes the other cells that share th
 
 The chosen modes are remembered per column in the page URL and in the browser history, so reloading the page, sharing the link, or navigating back and forward preserves them. Only non-default choices are stored, to keep the URL and history state compact.
 
+Like the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the modes belong to the result they color: to the query tab, and within a tab that is a [notebook](/concepts/features/interfaces/web-ui-notebook) to the individual cell. The tables of one `Run all` (multi-query) run share them, while other cells and other tabs keep their own.
+
 ## Limitations {#limitations}
 
 - The vertical (transposed) single-row layout shows no color coding.
