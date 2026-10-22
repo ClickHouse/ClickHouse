@@ -725,8 +725,13 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     {
         /// A `DEFAULT` reads the final values of the columns evaluated again before it, not the stale ones,
         /// so a column goes only after all of the others its expression reads. `DEFAULT` expressions have no cycles.
+        /// A subcolumn such as `z.x` goes after its parent `z` too: `evaluateDefaults` takes it from the parent
+        /// when the block has one, so it must be the final value of the parent, not the stale one.
         auto it = std::find_if(remaining.begin(), remaining.end(), [&](const NameAndTypePair & column)
         {
+            if (column.isSubcolumn() && remaining_names.contains(column.getNameInStorage()))
+                return false;
+
             NameSet others = remaining_names;
             others.erase(column.name);
             return reader.getDefaultsDependingOn({column.name}, others).empty();
