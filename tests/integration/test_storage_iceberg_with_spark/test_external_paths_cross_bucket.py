@@ -1,11 +1,12 @@
 import os
 import json
 import shutil
+import tempfile
 import time
 import pytest
 
 from helpers.s3_tools import S3Uploader
-from helpers.iceberg_utils import default_upload_directory, get_uuid_str
+from helpers.iceberg_utils import default_download_directory, default_upload_directory, get_uuid_str
 from .external_paths_utils import (
     ALL_ROWS,
     create_and_upload_table,
@@ -18,6 +19,7 @@ from .external_paths_utils import (
     external_bucket,
     find_files,
     get_query_args,
+    get_uploader,
     modify_avro_file,
     relocate_data_files_to_bucket,
 )
@@ -330,3 +332,78 @@ def test_dot_segments_in_s3_key_are_literal(started_cluster_iceberg_with_spark):
     args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
     error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args}) ORDER BY id")
     assert "alpha" not in error, error
+
+
+def test_insert_into_write_data_path_with_other_s3_spelling(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_insert_write_data_path_{get_uuid_str()}"
+    bucket = started_cluster_iceberg_with_spark.minio_bucket
+    external_prefix = f"external_data/{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    # `location` is spelled with `s3`, while `write.data.path` points outside it in the same bucket with `s3a`.
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    metadata_dir = os.path.join(host_path, "metadata")
+    for mf in find_files(metadata_dir, ".avro"):
+        if os.path.basename(mf).startswith("snap-"):
+            modify_avro_file(mf, ["manifest_path"],
+                             lambda p: f"s3://{bucket}/{base_path}/metadata/{os.path.basename(p)}")
+        else:
+            modify_avro_file(mf, ["data_file", "file_path"],
+                             lambda p: f"s3://{bucket}/{base_path}/data/{os.path.basename(p)}")
+    for mj in find_files(metadata_dir, ".metadata.json"):
+        with open(mj) as f:
+            data = json.load(f)
+        data["location"] = f"s3://{bucket}/{base_path}"
+        data.setdefault("properties", {})["write.data.path"] = f"s3a://{bucket}/{external_prefix}"
+        for snap in data.get("snapshots", []):
+            snap["manifest-list"] = f"s3://{bucket}/{base_path}/metadata/{os.path.basename(snap['manifest-list'])}"
+        with open(mj, "w") as f:
+            json.dump(data, f)
+    for f in find_files(metadata_dir, ""):
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(f, f"{base_path}/{os.path.relpath(f, host_path)}")
+    shutil.rmtree(temp_dir)
+
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (4, 'delta')", settings={"allow_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS + "4\tdelta\n"
+
+    written = [
+        obj.object_name
+        for obj in started_cluster_iceberg_with_spark.minio_client.list_objects(bucket, prefix=f"{external_prefix}/", recursive=True)
+    ]
+    assert len(written) == 1 and written[0].endswith(".parquet"), written
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_azure_endpoint_of_other_cloud_with_same_account_is_rejected(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    account = started_cluster_iceberg_with_spark.azurite_account
+
+    TABLE_NAME = f"test_azure_other_cloud_{get_uuid_str()}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = _distribute_table_components(started_cluster_iceberg_with_spark, TABLE_NAME, "azure", "azure", "azure", "azure")
+    args = get_query_args("azure", started_cluster_iceberg_with_spark, base_path)
+    assert instance.query(f"SELECT * FROM icebergAzure({args}) ORDER BY id") == ALL_ROWS
+
+    # The same account name in the endpoint of another cloud names other objects than the base endpoint.
+    temp_dir = tempfile.mkdtemp()
+    default_download_directory(started_cluster_iceberg_with_spark, "azure", f"{base_path}/metadata/", temp_dir)
+    for mf in find_files(temp_dir, ".avro"):
+        if os.path.basename(mf).startswith("snap-"):
+            continue
+        modify_avro_file(mf, ["data_file", "file_path"],
+                         lambda p: p.replace(f"@{account}/", f"@{account}.dfs.core.usgovcloudapi.net/"))
+        get_uploader("azure", started_cluster_iceberg_with_spark).upload_file(
+            mf, f"{base_path}/metadata/{os.path.relpath(mf, temp_dir)}")
+    shutil.rmtree(temp_dir)
+
+    error = instance.query_and_get_error(
+        f"SELECT * FROM icebergAzure({args}) ORDER BY id", settings={"use_iceberg_metadata_files_cache": 0})
+    assert "differs from the table's base endpoint" in error, error

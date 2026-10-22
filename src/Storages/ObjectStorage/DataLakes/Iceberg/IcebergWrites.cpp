@@ -1309,6 +1309,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 filename_generator,
                 persistent_table_components.path_resolver,
                 object_storage,
+                *external_storages,
                 context,
                 format_settings,
                 write_format,

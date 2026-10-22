@@ -850,6 +850,22 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                     "account '{}'.",
                     account_name, base_account, account_name);
 
+            /// An authority with a host names the endpoint as well, e.g. of another cloud, which the cloned client would not reach.
+            const auto at_pos = target_decomposed.authority.find('@');
+            const bool authority_names_host = at_pos != std::string::npos && target_decomposed.authority.find('.', at_pos) != std::string::npos;
+            if (!access_check && authority_names_host)
+            {
+                const auto target_endpoint
+                    = Poco::toLower(Poco::URI(azureServiceUrlFromAbfsAuthority(target_decomposed.authority)).getAuthority());
+                const auto base_endpoint = Poco::toLower(Poco::URI(conn_params.getConnectionURL()).getAuthority());
+                if (target_endpoint != base_endpoint)
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Iceberg metadata references Azure endpoint '{}', which differs from the table's base endpoint '{}'. "
+                        "Reading across Azure endpoints is not supported.",
+                        target_endpoint, base_endpoint);
+            }
+
             check_remote_host(conn_params.getConnectionURL());
             check_access();
             if (access_check != nullptr)
