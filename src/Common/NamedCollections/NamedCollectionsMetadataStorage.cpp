@@ -569,6 +569,38 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
     return result;
 }
 
+std::map<std::string, std::string> NamedCollectionsMetadataStorage::getAllRaw() const
+{
+    std::map<std::string, std::string> result;
+    for (const auto & collection_name : listCollections())
+    {
+        if (result.contains(collection_name))
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+                "Found duplicate named collection `{}`",
+                collection_name);
+        }
+        try
+        {
+            result.emplace(collection_name, readRaw(collection_name));
+        }
+        catch (const Coordination::Exception & e)
+        {
+            /// A concurrent DROP on a replicated storage may have removed the collection between
+            /// listing and reading; the result simply does not include the dropped collection.
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                LOG_DEBUG(getLogger("NamedCollectionsMetadataStorage"),
+                    "Collection '{}' was removed while reading, skipping", collection_name);
+                continue;
+            }
+            throw;
+        }
+    }
+    return result;
+}
+
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreateNamedCollectionQuery & create_query)
 {
     auto collection_ptr = NamedCollectionFromSQL::create(create_query);

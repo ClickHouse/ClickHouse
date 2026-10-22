@@ -1,6 +1,5 @@
 #include <Core/Settings.h>
 #include <base/sleep.h>
-#include <base/sort.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -420,21 +419,14 @@ NamedCollectionFactory::MetadataStorageProperties NamedCollectionFactory::getMet
     return properties;
 }
 
-std::vector<std::pair<std::string, std::string>> NamedCollectionFactory::getRawEntriesForBackup()
+std::map<std::string, std::string> NamedCollectionFactory::getRawEntriesForBackup()
 {
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
     /// The metadata storage holds exactly the SQL-created collections; the config-defined ones
     /// exist only in memory and must be neither backed up nor restored.
-    auto collection_names = metadata_storage->listCollections();
-    ::sort(collection_names.begin(), collection_names.end());
-
-    std::vector<std::pair<std::string, std::string>> entries;
-    entries.reserve(collection_names.size());
-    for (const auto & collection_name : collection_names)
-        entries.emplace_back(collection_name, metadata_storage->readRaw(collection_name));
-    return entries;
+    return metadata_storage->getAllRaw();
 }
 
 std::string NamedCollectionFactory::decryptStoredEntry(const std::string & stored)

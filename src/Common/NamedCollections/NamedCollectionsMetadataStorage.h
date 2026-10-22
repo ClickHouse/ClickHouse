@@ -5,6 +5,8 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <map>
+
 namespace DB
 {
 
@@ -39,6 +41,11 @@ public:
 
     /// Stored bytes of one collection, exactly as the storage holds them.
     std::string readRaw(const std::string & collection_name) const;
+
+    /// Stored bytes of every collection, exactly as the storage holds them, keyed by the
+    /// collection name. Never decrypts anything. A collection dropped concurrently (by another
+    /// replica of a replicated storage) between listing and reading is skipped.
+    std::map<std::string, std::string> getAllRaw() const;
 
     /// Identifies the shared storage for backup coordination: the Keeper path holding the
     /// collections. Only meaningful when isReplicated() is true.

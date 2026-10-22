@@ -38,3 +38,13 @@ echo "${error}" | grep -m1 -c "Cannot parse a named collection entry"
 echo "${error}" | grep -c "${secret}" || true
 echo "${error}" | grep -c "${collection}" || true
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${collection}'"
+
+# The entry stays listed in the backup metadata, so the restore still reads it and fails. The
+# read errors of the backup implementation name the entry file, and the entry file name is the
+# collection's name, so the restore must replace them with an error of its own.
+echo "the restore fails without naming the entry when the entry data is missing from the backup"
+rm "${entry_file}"
+error=$(${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.named_collections FROM ${backup_name}" 2>&1)
+echo "${error}" | grep -m1 -c "Cannot read a named collection entry"
+echo "${error}" | grep -c "${collection}" || true
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.named_collections WHERE name = '${collection}'"

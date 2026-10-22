@@ -6,3 +6,7 @@ the restore fails without leaking the decrypted statement or the collection name
 0
 0
 0
+the restore fails without naming the entry when the entry data is missing from the backup
+1
+0
+0

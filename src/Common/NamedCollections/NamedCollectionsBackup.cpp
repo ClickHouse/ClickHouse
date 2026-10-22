@@ -15,6 +15,7 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/ErrorCodes.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -205,9 +206,26 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     for (const auto & filename : filenames)
     {
         String filepath = data_path_in_backup_fs / filename;
-        auto in = backup->readFile(filepath);
         String stored;
-        readStringUntilEOF(stored, *in);
+        try
+        {
+            auto in = backup->readFile(filepath);
+            readStringUntilEOF(stored, *in);
+        }
+        catch (...)
+        {
+            /// `readFile` names the entry in its errors - `BACKUP_ENTRY_NOT_FOUND` for an entry
+            /// listed but missing or inconsistent, in particular - and the entry name is the
+            /// collection's name, which the restoring user may not see (as explained above).
+            /// Report the failure without the original exception and without the entry path;
+            /// the error code alone cannot leak the name.
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot read a named collection entry from backup {} ({}), the backup may be corrupted or "
+                "incomplete (SETTINGS restore_named_collections = false skips restoring named collections)",
+                backup->getNameForLogging(),
+                ErrorCodes::getName(getCurrentExceptionCode()));
+        }
 
         String statement;
         try

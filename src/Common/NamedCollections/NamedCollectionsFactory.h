@@ -97,9 +97,9 @@ public:
     };
     MetadataStorageProperties getMetadataStorageProperties();
 
-    /// Stored bytes of the SQL-created collections, exactly as the metadata storage holds them.
-    /// Never decrypts anything.
-    std::vector<std::pair<std::string, std::string>> getRawEntriesForBackup();
+    /// Stored bytes of the SQL-created collections, exactly as the metadata storage holds them,
+    /// keyed by the collection name. Never decrypts anything.
+    std::map<std::string, std::string> getRawEntriesForBackup();
 
     /// Turns stored bytes back into the `CREATE NAMED COLLECTION` statement, see
     /// NamedCollectionsMetadataStorage::decryptStored.
