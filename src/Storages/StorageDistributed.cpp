@@ -1,5 +1,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledRowPolicies.h>
@@ -11,12 +12,14 @@
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Utils.h>
 
@@ -2219,7 +2222,14 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     /// Ask the shard for the modification hash and the UUID of the underlying table through system.tables.
     /// The UUID is folded for the same reason as on the local path above. The engine is fetched to restrict
     /// this remote probe to engines whose hash is probe-consistent (see below).
-    const String query = "SELECT modification_hash, toString(uuid) AS uuid, engine FROM system.tables WHERE database = "
+    /// The shard reads as its own user, under the settings it receives merged with that user's profile, and
+    /// neither is visible here: the cluster configuration can switch the endpoint to another user, and a
+    /// profile edit on the shard can change a setting such as `final` or `additional_table_filters`. The
+    /// raw hash of the table covers neither, so the probe also returns the user and the changed settings of
+    /// its own context, which is the context of an ordinary read by the same initiator.
+    const String query = "SELECT modification_hash, toString(uuid) AS uuid, engine, currentUser() AS reader, "
+        "(SELECT groupArray((name, value)) FROM system.settings WHERE changed) AS reader_settings "
+        "FROM system.tables WHERE database = "
         + quoteString(table_id.database_name) + " AND name = " + quoteString(table_id.table_name);
 
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
@@ -2234,10 +2244,13 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
 
     auto hash_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
     auto string_type = std::make_shared<DataTypeString>();
+    auto settings_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type}));
     auto sample_block = std::make_shared<const Block>(Block{
         {hash_type->createColumn(), hash_type, "modification_hash"},
         {string_type->createColumn(), string_type, "uuid"},
-        {string_type->createColumn(), string_type, "engine"}});
+        {string_type->createColumn(), string_type, "engine"},
+        {string_type->createColumn(), string_type, "reader"},
+        {settings_type->createColumn(), settings_type, "reader_settings"}});
 
     /// Whether the remote engine's modification hash can be validated by this probe at all. The probe is a
     /// separate query on the shard, so it can only observe hashes derived from server-side state that any
@@ -2279,6 +2292,8 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
         const auto & hash_column = current.getByName("modification_hash").column;
         const auto & uuid_column = current.getByName("uuid").column;
         const auto & engine_column = current.getByName("engine").column;
+        const auto & reader_column = current.getByName("reader").column;
+        const auto & reader_settings_column = current.getByName("reader_settings").column;
         for (size_t i = 0; i < hash_column->size(); ++i)
         {
             Field value = (*hash_column)[i];
@@ -2295,6 +2310,30 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
             SipHash with_identity;
             with_identity.update((*uuid_column)[i].safeGet<String>());
             with_identity.update(value.safeGet<UInt128>());
+
+            /// The reader context of the shard. Only the settings that can change rows take part, in a
+            /// deterministic order, the same as `updateHashWithRowAffectingSettings` does locally; the
+            /// values are hashed as the shard renders them, so a setting unknown to this server is kept.
+            const String reader = (*reader_column)[i].safeGet<String>();
+            with_identity.update(reader.size());
+            with_identity.update(reader);
+            std::vector<std::pair<String, String>> reader_settings;
+            for (const auto & setting : (*reader_settings_column)[i].safeGet<Array>())
+            {
+                const auto & name_and_value = setting.safeGet<Tuple>();
+                const auto & name = name_and_value.at(0).safeGet<String>();
+                if (settingCanAffectQueryRows(name))
+                    reader_settings.emplace_back(name, name_and_value.at(1).safeGet<String>());
+            }
+            std::sort(reader_settings.begin(), reader_settings.end());
+            with_identity.update(reader_settings.size());
+            for (const auto & [name, setting_value] : reader_settings)
+            {
+                with_identity.update(name.size());
+                with_identity.update(name);
+                with_identity.update(setting_value.size());
+                with_identity.update(setting_value);
+            }
             result = with_identity.get128();
         }
     }
