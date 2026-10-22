@@ -41,7 +41,7 @@ Langfuse ofrece opciones de implementación flexibles para adaptarse a distintas
 
 Langfuse solo depende de componentes de código abierto y puede implementarse localmente, en infraestructura en la nube o en sus propias instalaciones:
 
-* **ClickHouse**: Almacena grandes volúmenes de datos de observabilidad (trazas, spans, generations, puntuaciones). Permite realizar agregaciones y analítica rápidos para los dashboards.
+* **ClickHouse**: Almacena grandes volúmenes de datos de observabilidad (traces, spans, generations, scores). Permite realizar agregaciones y análisis rápidos para los paneles de control.
 * **Postgres**: Almacena datos transaccionales, como cuentas de usuario, configuraciones de proyectos y definiciones de prompts.
 * **Redis**: Gestiona la cola de eventos y el almacenamiento en caché.
 * **S3/almacenamiento de blobs**: Almacena payloads de gran tamaño y datos de eventos sin procesar.
@@ -49,28 +49,28 @@ Langfuse solo depende de componentes de código abierto y puede implementarse lo
 ```mermaid
 flowchart TB
     User["UI, API, SDKs"]
-    subgraph vpc["VPC"]
-        Web["Web Server<br/>(langfuse/langfuse)"]
-        Worker["Async Worker<br/>(langfuse/worker)"]
-        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
-        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
-        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
+    subgraph vpc ["VPC"]
+        Web["Servidor web<br/>(langfuse/langfuse)"]
+        Worker["Worker asíncrono<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Datos transaccionales)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Caché, cola)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(Datos de observabilidad)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Eventos sin procesar, adjuntos multimodales)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
-    LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
+    LLM["API/gateway de LLM<br/>(opcional; BYO; puede estar en la misma VPC o emparejada con otra VPC)"]
 
     User --> Web
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> ClickHouse
-    Web -..->|"optional for playground"| LLM
+    Web --> Clickhouse
+    Web -..->|"opcional para Playground"| LLM
 
     Cache --> Worker
-    Worker --> ClickHouse
+    Worker --> Clickhouse
     Worker --> Postgres
     Worker --> S3
-    Worker -..->|"optional for evals"| LLM
+    Worker -..->|"opcional para evaluaciones"| LLM
 ```
 
 <div id="features">

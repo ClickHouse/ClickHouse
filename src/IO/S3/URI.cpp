@@ -7,14 +7,12 @@
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
-#include <Common/RemoteHostFilter.h>
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <aws/s3/S3EndpointProvider.h>
 
 namespace DB
 {
@@ -38,6 +36,13 @@ namespace S3
 
 namespace
 {
+
+/// `Common/maskURIPassword.h` has no `maskURIUserinfo` on this release; this is the regular expression it replaced.
+bool maskURIUserinfo(String & url)
+{
+    static const re2::RE2 userinfo(R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)");
+    return RE2::Replace(&url, userinfo, "\\1[HIDDEN]@");
+}
 
 /// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
 /// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
@@ -218,7 +223,7 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     String name;
     String endpoint_authority_from_uri;
 
-    if (!re2::RE2::FullMatch(uri.getAuthority(), use_strict_pattern ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
+    if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
         return false;
 
     is_virtual_hosted_style = true;
@@ -244,15 +249,6 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     else
         storage_name = name;
     return true;
-}
-
-void URI::checkRemoteHostFilter(const RemoteHostFilter & filter) const
-{
-    Poco::URI endpoint_uri(endpoint);
-    if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
-        return;
-
-    filter.checkURL(uri);
 }
 
 void URI::addRegionToURI(const std::string &region)
@@ -302,19 +298,6 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
             onError();
         }
     }
-}
-
-std::string expandRegionToAmazonPath(const std::string & region)
-{
-    Aws::S3::Endpoint::S3EndpointProvider provider;
-    provider.AccessBuiltInParameters().SetStringParameter("Region", Aws::String(region));
-    auto outcome = provider.ResolveEndpoint({});
-    if (outcome.IsSuccess())
-    {
-        auto uri = outcome.GetResult().GetURI();
-        return uri.GetURIString();
-    }
-    return "https://s3." + region + ".amazonaws.com";
 }
 
 }

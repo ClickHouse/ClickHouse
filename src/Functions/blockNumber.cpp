@@ -71,7 +71,7 @@ public:
 REGISTER_FUNCTION(BlockNumber)
 {
     FunctionDocumentation::Description description = R"(
-Returns a monotonically increasing sequence number of the [block](/resources/develop-contribute/introduction/architecture#block) containing the row.
+Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
 The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate.
     )";
     FunctionDocumentation::Syntax syntax = "blockNumber()";
@@ -91,16 +91,24 @@ FROM
             )",
             R"(
 ┌─blockNumber()─┐
-│             6 │
-│             6 │
 │             7 │
 │             7 │
+└───────────────┘
+┌─blockNumber()─┐
 │             8 │
 │             8 │
+└───────────────┘
+┌─blockNumber()─┐
 │             9 │
 │             9 │
+└───────────────┘
+┌─blockNumber()─┐
 │            10 │
 │            10 │
+└───────────────┘
+┌─blockNumber()─┐
+│            11 │
+│            11 │
 └───────────────┘
             )"
         }

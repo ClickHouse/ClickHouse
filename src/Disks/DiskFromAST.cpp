@@ -1,23 +1,22 @@
 #include <Disks/DiskFromAST.h>
-#include <Disks/getDiskConfigurationFromAST.h>
-#include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Disks/getDiskConfigurationFromAST.h>
+#include <Disks/DiskSelector.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
-#include <memory>
 
 namespace DB
 {
@@ -34,8 +33,14 @@ static std::string getOrCreateCustomDisk(
     bool attach,
     bool for_system_database)
 {
+    std::string default_path = "/etc/metrika.xml";
+
     const auto & server_config = context->getConfigRef();
-    std::string include_from_path = server_config.getString("include_from", "");
+    std::string include_from_path;
+    if (server_config.has("include_from"))
+        include_from_path = server_config.getString("include_from");
+    else if (fs::exists(default_path))
+        include_from_path = default_path;
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
@@ -100,9 +105,6 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
-
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
@@ -123,16 +125,25 @@ static std::string getOrCreateCustomDisk(
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
 
-    return disk_name;
-}
+    if (!attach && !disk->isRemote() && disk->getName() != "backup")
+    {
+        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
+        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
 
-template <typename Matcher>
-static void visitBottomUp(ASTPtr & ast, typename Matcher::Data & data)
-{
-    checkStackSize();
-    for (auto & child : ast->children)
-        visitBottomUp<Matcher>(child, data);
-    Matcher::visit(ast, data);
+        if (disk_path_expected_prefix.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Base path for custom local disks must be defined in config file by `{}`",
+                custom_local_disks_base_dir_in_config);
+
+        if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Path of the custom local disk must be inside `{}` directory",
+                disk_path_expected_prefix);
+    }
+
+    return disk_name;
 }
 
 class DiskConfigurationFlattener
@@ -144,6 +155,8 @@ public:
         bool attach;
         bool for_system_database;
     };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
     static void visit(ASTPtr & ast, Data & data)
     {
@@ -172,6 +185,8 @@ public:
         bool for_system_database;
     };
 
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
     static void visit(ASTPtr & ast, Data & data)
     {
         if (!isDiskFunction(ast))
@@ -186,7 +201,7 @@ public:
         auto is_marker = [](const ASTPtr & arg)
         {
             const auto * eq = arg->as<ASTFunction>();
-            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() < 2)
+            if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() != 2)
                 return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
             return key && key->name() == "_server_credentials_allowed";
@@ -232,14 +247,16 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     if (!attach)
     {
         ASTPtr to_mark = disk_function_ast;
-        ServerCredentialMarkerInjector::Data inject_data{context, for_system_database};
-        visitBottomUp<ServerCredentialMarkerInjector>(to_mark, inject_data);
+        using MarkerInjector = InDepthNodeVisitor<ServerCredentialMarkerInjector, false>;
+        MarkerInjector::Data inject_data{context, for_system_database};
+        MarkerInjector{inject_data}.visit(to_mark);
     }
 
     auto ast = disk_function_ast->clone();
 
-    DiskConfigurationFlattener::Data data{context, attach, for_system_database};
-    visitBottomUp<DiskConfigurationFlattener>(ast, data);
+    using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
+    FlattenDiskConfigurationVisitor::Data data{context, attach, for_system_database};
+    FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }

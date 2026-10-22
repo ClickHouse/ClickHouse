@@ -1,6 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
 #include <memory>
@@ -14,7 +11,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/TypeTree.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/AlignedBuffer.h>
@@ -36,8 +32,8 @@ namespace ErrorCodes
 /// Stores numbers of key-columns and value-columns.
 struct SummingSortedAlgorithm::MapDescription
 {
-    VectorWithMemoryTracking<size_t> key_col_nums;
-    VectorWithMemoryTracking<size_t> val_col_nums;
+    std::vector<size_t> key_col_nums;
+    std::vector<size_t> val_col_nums;
 };
 
 /// Stores aggregation function, state, and columns to be used as function arguments.
@@ -46,7 +42,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
     AggregateFunctionPtr function;
     IAggregateFunction::AddFunc add_function = nullptr;
-    VectorWithMemoryTracking<size_t> column_numbers;
+    std::vector<size_t> column_numbers;
     IColumn * merged_column = nullptr;
     AlignedBuffer state;
     bool created = false;
@@ -131,7 +127,7 @@ static bool isInNames(const std::string & column_name, const Names & names)
 /// ancestors is in `names`. `flatten_ancestors[flattened_index]` holds the ancestor paths of
 /// the flattened column, as produced by `Nested::flattenTupleRecursive`.
 static bool isColumnOrAncestorInNames(
-    size_t flattened_index, const Block & header_flatten, const VectorWithMemoryTracking<Strings> & flatten_ancestors, const Names & names)
+    size_t flattened_index, const Block & header_flatten, const std::vector<Strings> & flatten_ancestors, const Names & names)
 {
     if (isInNames(header_flatten.safeGetByPosition(flattened_index).name, names))
         return true;
@@ -140,6 +136,8 @@ static bool isColumnOrAncestorInNames(
             return true;
     return false;
 }
+
+using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
@@ -168,7 +166,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
         return matrix[i].safeGet<Array>()[j];
     };
 
-    auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const VectorWithMemoryTracking<size_t> & col_nums, size_t j) -> Array
+    auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
     {
         size_t size = col_nums.size();
         Array res(size);
@@ -177,7 +175,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
         return res;
     };
 
-    MapWithMemoryTracking<Array, Array> merged;
+    std::map<Array, Array> merged;
 
     auto accumulate = [](Array & dst, const Array & src)
     {
@@ -267,7 +265,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
     /// `flatten_ancestors[i]` holds, for flattened column `i`, the list of its true tuple
     /// ancestor paths (empty for columns that are not the result of tuple flattening).
-    VectorWithMemoryTracking<Strings> flatten_ancestors;
+    std::vector<Strings> flatten_ancestors;
     Block header_flatten;
     if (allow_tuple_element_aggregation)
         header_flatten = Nested::flattenTupleRecursive(header, &flatten_ancestors);
@@ -284,7 +282,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     NameSet original_column_names = header.getNameSet();
 
     /// name of nested structure -> the column numbers that refer to it.
-    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<size_t>> discovered_maps;
+    std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
 
     /** Fill in the column numbers, which must be summed.
         * This can only be numeric columns that are not part of the sort key.
@@ -572,7 +570,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     ///
     /// Wrappers such as `Nullable(Float32)`, `LowCardinality(Nullable(Float32))`, `Array(Float32)`,
     /// `Tuple(..., Float32, ...)`, and `Map(K, Float32)` all route through the same `Field` layer,
-    /// so they are affected too. We use `anyInTypeTree` to walk the whole type tree.
+    /// so they are affected too. We use `IDataType::forEachChild` to walk the whole type tree.
     def.columns_need_exact_copy.resize(num_columns, false);
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -580,7 +578,16 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (!col.type)
             continue;
 
-        if (anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); }))
+        bool contains_float = WhichDataType(*col.type).isFloat();
+        if (!contains_float)
+        {
+            col.type->forEachChild([&contains_float](const IDataType & child)
+            {
+                if (!contains_float && WhichDataType(child).isFloat())
+                    contains_float = true;
+            });
+        }
+        if (contains_float)
             def.columns_need_exact_copy[i] = true;
     }
 
@@ -650,15 +657,10 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(
-    Row & row,
-    Columns & row_columns,
-    const ColumnRawPtrs & raw_columns,
-    size_t row_num,
-    const Names & column_names,
-    const VectorWithMemoryTracking<bool> & columns_need_exact_copy,
-    const ColumnNumbers & column_numbers)
+static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
+                   const Names & column_names, const std::vector<bool> & columns_need_exact_copy)
 {
+    size_t num_columns = row.size();
     const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)
     {
         tryLogCurrentException(logger_name);
@@ -671,7 +673,7 @@ static void setRow(
                         row_num, column_index, column_name.empty() ? "" : fmt::format(" ({})", column_name), reason);
     };
 
-    for (size_t i : column_numbers)
+    for (size_t i = 0; i < num_columns; ++i)
     {
         try
         {
@@ -775,14 +777,7 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
 {
     is_group_started = true;
 
-    setRow(
-        current_row,
-        current_row_columns,
-        raw_columns,
-        row,
-        def.column_names,
-        def.columns_need_exact_copy,
-        def.column_numbers_not_to_aggregate);
+    setRow(current_row, current_row_columns, raw_columns, row, def.column_names, def.columns_need_exact_copy);
 
     /// Reset aggregation states for next row
     for (auto & desc : def.columns_to_aggregate)
@@ -1012,7 +1007,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     {
         bool key_differs = false;
 
-        SortCursor current = *queue.current().first;
+        SortCursor current = queue.current();
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -1053,7 +1048,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next(1);
+            queue.next();
         }
         else
         {

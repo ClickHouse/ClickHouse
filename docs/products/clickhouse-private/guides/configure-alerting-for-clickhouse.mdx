@@ -1,0 +1,41 @@
+---
+noindex: true
+title: "Configure Alerting for ClickHouse"
+sidebarTitle: "Configure alerting"
+description: "Set up Prometheus scrape targets and alerting for ClickHouse Server, Keeper, and the operator."
+---
+
+Set up Prometheus scrape targets and alerting for ClickHouse Server, Keeper, and the operator.
+
+## Set Up Prometheus Scrape Targets for ClickHouse Server
+
+ClickHouse server pods include `prometheus.io/*` annotations that expose basic metrics. For the full set of metrics (including `ClickHouse_CustomMetrics_*`), configure the `:8123/metrics` endpoint as a Prometheus scrape target on each server pod via a PodMonitor or equivalent.
+
+This endpoint **requires authentication**. Authenticate with a dedicated user that has read-only privileges.
+
+## Set Up PodMonitor for Keeper
+
+Create a PodMonitor targeting the `:8001/metrics` endpoint on Keeper pods to capture Keeper metrics.
+
+## Alert Rules
+
+For the full list of recommended alert definitions (Prometheus expressions, thresholds, and actions), see [reference/metrics-and-alerts.md](/products/clickhouse-private/reference/metrics-and-alerts-reference).
+
+Key alerts include:
+
+| Alert | Metric | Purpose |
+|----|----|----|
+| Operator not reconciling | `last_cluster_reconcile` | Operator has not reconciled within expected window |
+| Operator reconciliation errors | `controller_runtime_reconcile_errors_total` | Error rate exceeds 5% of reconciliation attempts |
+| Broken detached parts | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts` | More than 100 broken detached parts for over 60 minutes |
+| Data loss | `ClickHouse_CustomMetric_LostPartCount` | Lost parts detected (potential data loss) |
+| Server stuck shutting down | `ClickHouseMetrics_IsServerShuttingDown` | Server has been shutting down for over an hour |
+| Table replicas read only | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | Table in read-only mode for over an hour |
+
+## Standard Kubernetes Alerts
+
+In addition to ClickHouse-specific alerts, add standard Kubernetes alerts for:
+
+- Crashlooping pods
+- Unschedulable pods
+- Other infrastructure-related issues particular to your environment

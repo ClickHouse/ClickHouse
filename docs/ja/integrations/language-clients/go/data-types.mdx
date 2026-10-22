@@ -258,7 +258,7 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
   ### Nested
 </div>
 
-Nested フィールドは、名前付き タプル の Array に相当します。使い方は、ユーザーが [flatten&#95;nested](/ja/reference/settings/session-settings/other#flatten_nested) を 1 に設定しているか 0 に設定しているかによって異なります。
+Nested フィールドは、名前付き タプル の Array に相当します。使い方は、ユーザーが [flatten&#95;nested](/ja/reference/settings/session-settings#flatten_nested) を 1 に設定しているか 0 に設定しているかによって異なります。
 
 flatten&#95;nested を 0 に設定すると、Nested カラムは単一の タプル の Array のまま保持されます。これにより、挿入や取得に map のスライスを使用できるほか、任意のレベルでネストできます。以下の例に示すように、map のキーはカラム名と一致している必要があります。
 
@@ -357,7 +357,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// NOTE: Do not skip rows.Err() check
+// 注意: rows.Err() のチェックを省略しないこと
 if err := rows.Err(); err != nil {
     return err
 }

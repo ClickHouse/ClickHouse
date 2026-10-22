@@ -6,7 +6,6 @@
 #endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -83,12 +82,12 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait(saturatedMilliseconds(getCacheUpdateWaitMs(*storage.getSettings()).count()))
+    , update_wait(getCacheUpdateWaitMs(*storage.getSettings()))
     , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ update(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ update(); });
 }
 
 template <typename TStorage>

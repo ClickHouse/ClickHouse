@@ -1,8 +1,6 @@
 #include <Columns/IColumn.h>
-#include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/Exception.h>
 
 #include <Core/Block.h>
@@ -16,9 +14,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Interpreters/convertColumnToType.h>
-#include <Formats/FormatFactory.h>
-#include <Core/ConstantValue.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -40,49 +36,37 @@ namespace
 
 void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
-    /// The query's format settings, so that a constant outside the window of a `DateTime64` / `Time64` column
-    /// follows `date_time_overflow_behavior` exactly as the same constant does in `INSERT ... VALUES`.
-    const FormatSettings format_settings = getFormatSettings(context);
-
-    if (res_columns.size() == 1) /// Parsing arguments as single values
+    if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
         for (size_t i = start; i < args.size(); ++i)
         {
-            const auto value = evaluateConstantExpressionAsColumn(args[i], context);
-            const auto & value_column = value.getColumn();
-            const auto & value_type = value.getType();
+            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
-            ColumnPtr converted = convertColumnToTypeOrThrow(
-                *value_column, value_type, sample_block.getByPosition(0).type, format_settings, /*convert_inexact_floats=*/true);
-            res_columns[0]->insertRangeFrom(*converted, 0, 1);
+            Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get(), {}, /*convert_inexact_floats=*/true);
+            res_columns[0]->insert(value);
         }
     }
     else /// Parsing arguments as Tuples
     {
         for (size_t i = start; i < args.size(); ++i)
         {
-            const auto value = evaluateConstantExpressionAsColumn(args[i], context);
-            const auto & value_column = value.getColumn();
-            const auto & value_type = value.getType();
+            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
-            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type.get());
+            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get());
             if (!type_tuple)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Table function VALUES requires all but the first argument (rows specification) to be either tuples or single values");
 
-            const DataTypes & value_types_tuple = type_tuple->getElements();
+            const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
-            if (value_types_tuple.size() != sample_block.columns())
+            if (value_tuple.size() != sample_block.columns())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Values size should match with the number of columns");
 
-            /// Convert each tuple element to the corresponding column's type independently (same
-            /// per-element semantics as the previous `Field` path), without materializing a `Field`.
-            const ColumnTuple & value_tuple = assert_cast<const ColumnTuple &>(*value_column->convertToFullColumnIfConst());
-            for (size_t j = 0; j < value_types_tuple.size(); ++j)
+            const DataTypes & value_types_tuple = type_tuple->getElements();
+            for (size_t j = 0; j < value_tuple.size(); ++j)
             {
-                ColumnPtr converted = convertColumnToTypeOrThrow(
-                    value_tuple.getColumn(j), value_types_tuple[j], sample_block.getByPosition(j).type, format_settings, /*convert_inexact_floats=*/true);
-                res_columns[j]->insertRangeFrom(*converted, 0, 1);
+                Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get(), {}, /*convert_inexact_floats=*/true);
+                res_columns[j]->insert(value);
             }
         }
     }
@@ -90,11 +74,11 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
 
 DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context)
 {
-    const auto value_type = evaluateConstantExpressionAsColumn(arg, context).getType();
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type.get()))
+    const auto & [value_field, value_type_ptr] = evaluateConstantExpression(arg, context);
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get()))
         return type_tuple->getElements();
 
-    return {value_type};
+    return {value_type_ptr};
 }
 
 /* values(structure, values...) - creates a temporary storage filling columns with values
@@ -428,11 +412,11 @@ naming columns of derived tables. If omitted, columns are named `c1`, `c2`, etc.
 ## See also {#see-also}
 
 - [Values format](/reference/formats/Values)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
     factory.registerFunction<TableFunctionValues<false>>({.description = R"(
 Internal table function used to implement SQL standard VALUES clause syntax.
 Created automatically by the parser when it encounters (VALUES (row1), (row2), ...) in a FROM clause.
-)", .category = FunctionDocumentation::Category::Internal}, SecretArgumentsSpec{}, {.allow_readonly = true});
+)", .category = FunctionDocumentation::Category::Internal}, {.allow_readonly = true});
 }
 
 }

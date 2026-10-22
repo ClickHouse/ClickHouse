@@ -37,6 +37,8 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     SerializationPtr shared_data_path_serialization;
     bool read_from_shared_data{};
+    ColumnPtr shared_data;
+    size_t shared_data_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -147,13 +149,8 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     if (dynamic_path_state->read_from_shared_data)
     {
         settings.path.push_back(Substream::ObjectSharedData);
-        /// The shared data stores each path as a separate column, so its subcolumns are resolved
-        /// from that root, while `nested_serialization` was resolved inside the enclosing types.
-        auto shared_data_subcolumn_serialization = path_subcolumn.empty()
-            ? nested_serialization
-            : dynamic_type->getSubcolumnSerialization(path_subcolumn, dynamic_serialization);
         dynamic_path_state->shared_data_path_serialization = SerializationObjectSharedDataPath::create(
-            shared_data_subcolumn_serialization,
+            nested_serialization,
             object_structure_state->shared_data_serialization_version,
             path,
             path_subcolumn,
@@ -182,7 +179,8 @@ void SerializationObjectDynamicPath::serializeBinaryBulkWithMultipleStreams(cons
 }
 
 void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & result_column,
+    ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -198,13 +196,13 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
     else
     {
         settings.path.push_back(Substream::ObjectSharedData);
-        dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
+        dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
 

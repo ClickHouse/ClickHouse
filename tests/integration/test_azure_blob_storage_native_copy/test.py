@@ -57,15 +57,6 @@ def generate_config(port):
                         <use_native_copy>true</use_native_copy>
                         <max_single_part_copy_size>4</max_single_part_copy_size>
                     </disk_azure_small_native_copy>
-                    <disk_azure_no_native_copy>
-                        <metadata_type>local</metadata_type>
-                        <type>object_storage</type>
-                        <object_storage_type>azure_blob_storage</object_storage_type>
-                        <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
-                        <container_name>cont</container_name>
-                        <skip_access_check>false</skip_access_check>
-                        <use_native_copy>false</use_native_copy>
-                    </disk_azure_no_native_copy>
                 </disks>
                 <policies>
                     <policy_azure>
@@ -89,20 +80,12 @@ def generate_config(port):
                             </main>
                         </volumes>
                     </policy_azure_cache>
-                    <policy_azure_no_native_copy>
-                        <volumes>
-                            <main>
-                                <disk>disk_azure_no_native_copy</disk>
-                            </main>
-                        </volumes>
-                    </policy_azure_no_native_copy>
                 </policies>
             </storage_configuration>
             <backups>
                 <allowed_disk>disk_azure</allowed_disk>
                 <allowed_disk>disk_azure_cache</allowed_disk>
                 <allowed_disk>disk_azure_other_bucket</allowed_disk>
-                <allowed_disk>disk_azure_no_native_copy</allowed_disk>
             </backups>
         </clickhouse>
         """
@@ -144,13 +127,6 @@ def cluster():
             # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
             with_remote_database_disk=False,
         )
-        cluster.add_instance(
-            "node5",
-            main_configs=[path],
-            with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
-        )
         cluster.start()
 
         yield cluster
@@ -159,22 +135,14 @@ def cluster():
 
 
 def azure_query(
-    node,
-    query,
-    expect_error=False,
-    try_num=10,
-    settings={},
-    query_on_retry=None,
-    query_id=None,
+    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
 ):
     for i in range(try_num):
         try:
             if expect_error:
-                return node.query_and_get_error(
-                    query, settings=settings, query_id=query_id
-                )
+                return node.query_and_get_error(query, settings=settings)
             else:
-                return node.query(query, settings=settings, query_id=query_id)
+                return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
@@ -198,26 +166,6 @@ def azure_query(
             if query_on_retry is not None:
                 node.query(query_on_retry)
             continue
-
-
-def get_events_for_query(node, query_id):
-    """`ProfileEvents` of a single finished query, as a name -> count mapping.
-
-    Only non-zero events are stored, so a missing key means the event never fired.
-    """
-    node.query("SYSTEM FLUSH LOGS")
-    rows = node.query(
-        f"""
-        WITH arrayJoin(ProfileEvents) AS pe
-        SELECT pe.1, pe.2
-        FROM system.query_log
-        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
-        """
-    )
-    return {
-        event: int(value)
-        for event, value in (line.split("\t") for line in rows.splitlines() if line)
-    }
 
 
 def test_backup_restore_on_merge_tree_same_container(cluster):
@@ -366,67 +314,6 @@ def test_backup_restore_native_copy_disabled_in_query(cluster):
     assert not node4.contains_in_log("using native copy")
 
 
-@pytest.mark.parametrize("allow_azure_native_copy", [0, 1])
-def test_native_copy_controlled_by_backup_setting(cluster, allow_azure_native_copy):
-    node = cluster.instances["node5"]
-
-    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    params = [p for p in connection_string.split(";") if p]
-    unmatched_connection_string = (
-        ";".join(sorted(params, key=lambda p: not p.startswith("BlobEndpoint"))) + ";"
-    )
-    assert sorted(params) == sorted(
-        p for p in unmatched_connection_string.split(";") if p
-    )
-    assert not unmatched_connection_string.startswith(connection_string)
-
-    table = f"test_native_copy_setting_{allow_azure_native_copy}"
-    restored = f"{table}_restored"
-    azure_query(node, f"DROP TABLE IF EXISTS {table} SYNC")
-    azure_query(node, f"DROP TABLE IF EXISTS {restored} SYNC")
-    azure_query(
-        node,
-        f"""
-        CREATE TABLE {table} (key UInt64, data String)
-        ENGINE = MergeTree() ORDER BY tuple()
-        SETTINGS storage_policy='policy_azure'
-        """,
-    )
-    azure_query(node, f"INSERT INTO {table} VALUES (1, 'a')")
-
-    cont = "cont" + str(time.time_ns())
-    backup_destination = (
-        f"AzureBlobStorage('{unmatched_connection_string}', '{cont}', '{table}_backup')"
-    )
-
-    backup_query_id = f"{table}_backup_{cont}"
-    azure_query(
-        node,
-        f"BACKUP TABLE {table} TO {backup_destination} "
-        f"SETTINGS allow_azure_native_copy = {allow_azure_native_copy}",
-        query_id=backup_query_id,
-    )
-
-    restore_query_id = f"{table}_restore_{cont}"
-    azure_query(
-        node,
-        f"RESTORE TABLE {table} AS {restored} FROM {backup_destination} "
-        f"SETTINGS allow_azure_native_copy = {allow_azure_native_copy}",
-        query_id=restore_query_id,
-    )
-
-    for query_id in [backup_query_id, restore_query_id]:
-        events = get_events_for_query(node, query_id)
-        used_native_copy = "AzureCopyObject" in events
-        assert used_native_copy == (allow_azure_native_copy == 1), events
-
-    # Either way the data must survive the round trip.
-    assert azure_query(node, f"SELECT * FROM {restored}") == "1\ta\n"
-
-    azure_query(node, f"DROP TABLE {table} SYNC")
-    azure_query(node, f"DROP TABLE {restored} SYNC")
-
-
 @pytest.mark.parametrize("inflight", [1, 2])
 def test_backup_restore_read_write_multipart_inflight_limit(cluster, inflight):
     # Force the read-then-write (non-native) copy path through a multipart upload
@@ -537,77 +424,3 @@ def test_clickhouse_disks_azure(cluster):
         ]
     )
     assert out == "meow\n\n"
-
-
-def test_blob_storage_log_copy_events(cluster):
-    node = cluster.instances["node1"]
-    suffix = str(time.time_ns())
-    table = f"test_blob_storage_log_copy_{suffix}"
-    table_no_native = f"{table}_no_native"
-    restored = f"{table}_restored"
-
-    for name, policy in [(table, "policy_azure"), (table_no_native, "policy_azure_no_native_copy")]:
-        azure_query(
-            node,
-            f"CREATE TABLE {name} (key UInt64, data String) ENGINE = MergeTree ORDER BY key SETTINGS storage_policy = '{policy}'",
-        )
-        azure_query(node, f"INSERT INTO {name} SELECT number, toString(number) FROM numbers(1000)")
-
-    def blob_log(columns, where):
-        node.query("SYSTEM FLUSH LOGS blob_storage_log")
-        return node.query(f"SELECT {columns} FROM system.blob_storage_log WHERE {where}").strip()
-
-    # A same-disk backup copies every object with a server-side copy.
-    native_dir = f"native_{suffix}"
-    azure_query(node, f"BACKUP TABLE {table} TO Disk('disk_azure', '{native_dir}')")
-    assert (
-        blob_log(
-            "count() > 0, countIf(error_code != 0) = 0, countIf(source_bucket != 'cont' OR bucket != 'cont') = 0, "
-            "countIf(source_remote_path = '' OR source_remote_path = remote_path) = 0, countIf(data_size > 0) > 0",
-            f"event_type = 'Copy' AND local_path LIKE '%{native_dir}/data/%'",
-        )
-        == "1\t1\t1\t1\t1"
-    )
-
-    # Without native copy the objects are read and uploaded again.
-    no_native_dir = f"no_native_{suffix}"
-    azure_query(node, f"BACKUP TABLE {table_no_native} TO Disk('disk_azure_no_native_copy', '{no_native_dir}')")
-    assert (
-        blob_log(
-            "countIf(event_type = 'Copy') = 0, countIf(event_type = 'Upload' AND error_code = 0) > 0",
-            f"local_path LIKE '%{no_native_dir}/data/%'",
-        )
-        == "1\t1"
-    )
-
-    backup_dir = f"backup_{suffix}"
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_dir}')"
-    backup_query_id = f"{table}_backup"
-    azure_query(node, f"BACKUP TABLE {table} TO {backup_destination}", query_id=backup_query_id)
-    assert (
-        blob_log(
-            "countIf(event_type = 'Copy') > 0, "
-            f"countIf(event_type = 'Copy' AND NOT (error_code = 0 AND source_bucket = 'cont' AND bucket = 'cont' "
-            f"AND remote_path LIKE '{backup_dir}/%' AND source_remote_path != remote_path)) = 0, "
-            f"countIf(event_type = 'Upload' AND error_code = 0 AND remote_path = '{backup_dir}/.backup') >= 1",
-            f"query_id = '{backup_query_id}'",
-        )
-        == "1\t1\t1"
-    )
-
-    restore_query_id = f"{table}_restore"
-    azure_query(node, f"RESTORE TABLE {table} AS {restored} FROM {backup_destination}", query_id=restore_query_id)
-    assert (
-        blob_log(
-            f"countIf(event_type = 'Copy' AND error_code = 0 AND source_bucket = 'cont' AND source_remote_path LIKE '{backup_dir}/%') > 0, "
-            f"countIf(event_type = 'Copy' AND source_remote_path LIKE '{backup_dir}/%' AND (disk_name != 'disk_azure' OR local_path = '')) = 0",
-            f"query_id = '{restore_query_id}'",
-        )
-        == "1\t1"
-    )
-    assert azure_query(node, f"SELECT count(), sum(key) FROM {restored}") == azure_query(
-        node, f"SELECT count(), sum(key) FROM {table}"
-    )
-
-    for name in [table, table_no_native, restored]:
-        azure_query(node, f"DROP TABLE {name} SYNC")

@@ -16,35 +16,39 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكنك إدراج البيانات من S3 إلى ClickHouse، كما يمكنك استخدام S3 أيضًا كوجهة للتصدير، مما يتيح التفاعل مع معماريات &quot;بحيرة البيانات&quot;. علاوة على ذلك، يمكن أن يوفّر S3 طبقات تخزين &quot;باردة&quot; ويساعد في فصل التخزين عن موارد المعالجة. في الأقسام التالية، نستخدم مجموعة بيانات سيارات الأجرة في مدينة نيويورك لشرح عملية نقل البيانات بين S3 وClickHouse، بالإضافة إلى تحديد معلمات التكوين الرئيسية وتقديم إرشادات لتحسين الأداء.
 
-## دوال الجداول S3 {#s3-table-functions}
+<div id="s3-table-functions">
+  ## دوال الجداول S3
+</div>
 
 تتيح لك دالة الجدول `s3` قراءة الملفات وكتابتها من وإلى وحدات تخزين متوافقة مع S3. والصيغة العامة لهذا التركيب هي:
 
 ```sql
-s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
 ```
 
 حيث:
 
-* path — ‏عنوان URL للحاوية يتضمّن مسار الملف. يدعم هذا محارف البدل التالية في وضع القراءة فقط: `*`، `?`، `{abc,def}` و `{N..M}`، حيث إن `N` و `M` أرقام، و`'abc'` و`'def'` سلاسل نصية. لمزيد من المعلومات، راجع الوثائق حول [استخدام محارف البدل في المسار](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* path — ‏Bucket URL يتضمّن مسار الملف. يدعم هذا محارف البدل التالية في وضع القراءة فقط: `*`، `?`، `{abc,def}` و `{N..M}`، حيث إن `N` و `M` أرقام، و`'abc'` و`'def'` سلاسل نصية. لمزيد من المعلومات، راجع الوثائق حول [استخدام محارف البدل في المسار](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — ‏[التنسيق](/ar/reference/formats/index#formats-overview) الخاص بالملف.
 * structure — بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — هذه المعلمة اختيارية. القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. بشكل افتراضي، يُكتشف الضغط تلقائيًا من امتداد الملف. بالنسبة إلى `snappy`، يُحدد تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (تكون قيمته `basic` افتراضيًا).
+* compression — هذه المعلمة اختيارية. القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. بشكل افتراضي، يُكتشف الضغط تلقائيًا من امتداد الملف.
 
 يتيح استخدام محارف البدل في تعبير المسار الإشارة إلى عدة ملفات، ويفسح المجال للمعالجة المتوازية.
 
-### التحضير {#preparation}
+<div id="preparation">
+  ### التحضير
+</div>
 
 قبل إنشاء الجدول في ClickHouse، قد ترغب في إلقاء نظرة عن كثب على البيانات في حاوية S3. يمكنك فعل ذلك مباشرةً من ClickHouse باستخدام تعليمة `DESCRIBE`:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
 ```
 
 يجب أن يوضّح لك ناتج عبارة `DESCRIBE TABLE` كيف يستنتج ClickHouse هذه البيانات تلقائيًا كما تظهر في حاوية S3. لاحظ أنه يتعرّف أيضًا تلقائيًا على تنسيق الضغط gzip ويفك ضغطه:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
 ```
 
 ```response
@@ -157,13 +161,15 @@ ORDER BY pickup_datetime
 
 يمثل كل سجل في مجموعة بيانات سيارات الأجرة لدينا رحلةَ سيارة أجرة. وهذه البيانات منزوعة الهوية، وتتكون من 20 مليون سجل مخزّنًا بشكل مضغوط في حاوية S3 ‏https://datasets-documentation.s3.eu-west-3.amazonaws.com/ ضمن المجلد **nyc-taxi**. البيانات بتنسيق TSV، وبمعدل يقارب مليون صف لكل ملف.
 
-### قراءة البيانات من S3 {#reading-data-from-s3}
+<div id="reading-data-from-s3">
+  ### قراءة البيانات من S3
+</div>
 
 يمكننا تنفيذ استعلام على بيانات S3 كمصدر من دون الحاجة إلى تخزينها بشكل دائم في ClickHouse. في الاستعلام التالي، نأخذ عينة من 10 صفوف. لاحظ عدم وجود بيانات اعتماد هنا لأن الحاوية متاحة للعامة:
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
 LIMIT 10;
 ```
 
@@ -173,7 +179,7 @@ LIMIT 10;
 
 ```sql
 SELECT  _path, _file, trip_id
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', NOSIGN, 'TabSeparatedWithNames')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', 'TabSeparatedWithNames')
 LIMIT 5;
 ```
 
@@ -191,7 +197,7 @@ LIMIT 5;
 
 ```sql
 SELECT count() AS count
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
 ```
 
 ```response
@@ -202,15 +208,19 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trip
 
 مع أن قراءة البيانات مباشرةً من S3 مفيدة لأخذ عينات من البيانات وتنفيذ استعلامات استكشافية مخصّصة، فإنها ليست شيئًا سترغب في فعله بانتظام. وعندما يحين وقت العمل الجاد، استورد البيانات إلى جدول من نوع `MergeTree` في ClickHouse.
 
-### استخدام clickhouse-local {#using-clickhouse-local}
+<div id="using-clickhouse-local">
+  ### استخدام clickhouse-local
+</div>
 
 يتيح لك برنامج `clickhouse-local` إجراء معالجة سريعة للملفات المحلية دون الحاجة إلى نشر ClickHouse server وتهيئته. ويمكن تنفيذ أي استعلامات تستخدم دالة الجدول `s3` باستخدام هذه الأداة. على سبيل المثال:
 
 ```sql
-clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
 ```
 
-### إدراج البيانات من S3 {#inserting-data-from-s3}
+<div id="inserting-data-from-s3">
+  ### إدراج البيانات من S3
+</div>
 
 للاستفادة من الإمكانات الكاملة لـ ClickHouse، ننتقل بعد ذلك إلى قراءة البيانات وإدراجها في مثيلنا.
 نستخدم الدالة `s3` مع تعليمة `INSERT` بسيطة لتحقيق ذلك. لاحظ أنه لا يلزمنا سرد الأعمدة، لأن الجدول المستهدف يوفّر البنية المطلوبة. ويتطلب ذلك أن تظهر الأعمدة بالترتيب المحدد في عبارة DDL الخاصة بالجدول، إذ تُطابَق الأعمدة وفقًا لمواضعها في عبارة `SELECT`. وقد يستغرق إدراج جميع الصفوف البالغ عددها 10m بضع دقائق، وذلك بحسب مثيل ClickHouse. في ما يلي، نُدرج 1M صف لضمان استجابة سريعة. عدّل عبارة `LIMIT` أو اختيار الأعمدة لاستيراد مجموعات فرعية حسب الحاجة:
@@ -218,16 +228,18 @@ clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu
 ```sql
 INSERT INTO trips
    SELECT *
-   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames')
+   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
    LIMIT 1000000;
 ```
 
-### الإدراج عن بُعد باستخدام ClickHouse Local {#remote-insert-using-clickhouse-local}
+<div id="remote-insert-using-clickhouse-local">
+  ### الإدراج عن بُعد باستخدام ClickHouse Local
+</div>
 
 إذا كانت سياسات أمان الشبكة تمنع عنقود ClickHouse لديك من إجراء اتصالات صادرة، فقد تتمكن من إدراج بيانات S3 باستخدام `clickhouse-local`. في المثال أدناه، نقرأ من حاوية S3 ونُدرج البيانات في ClickHouse باستخدام الدالة `remote`:
 
 ```sql
-clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <Note>
@@ -295,7 +307,9 @@ FROM trips
 LIMIT 100000;
 ```
 
-### استخدام العناقيد {#utilizing-clusters}
+<div id="utilizing-clusters">
+  ### استخدام العناقيد
+</div>
 
 تقتصر جميع الدوال المذكورة أعلاه على التنفيذ على عقدة واحدة. تتوسع سرعات القراءة خطيًا مع عدد أنوية CPU إلى أن تتشبع الموارد الأخرى (وعادةً الشبكة)، مما يتيح للمستخدمين التوسع رأسيًا. ومع ذلك، لهذا النهج حدوده. فمع أنه يمكنك تخفيف بعض الضغط على الموارد عبر الإدراج في جدول موزع عند تنفيذ استعلام `INSERT INTO SELECT`، فإن هذا يترك عقدةً واحدةً فقط تتولى قراءة البيانات وتحليلها ومعالجتها. ولمواجهة هذا التحدي وإتاحة توسيع عمليات القراءة أفقيًا، لدينا الدالة [s3Cluster](/ar/reference/functions/table-functions/s3Cluster).
 
@@ -304,11 +318,11 @@ LIMIT 100000;
 تأخذ الدالة `s3Cluster` الصيغة نفسها الخاصة بمتغيرات العقدة الواحدة، باستثناء أنه يلزم تحديد عنقود مستهدف للإشارة إلى العقد العاملة:
 
 ```sql
-s3Cluster(cluster_name, source, [NOSIGN | access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
 ```
 
 * `cluster_name` — اسم عنقود يُستخدم لبناء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.
-* `source` — عنوان URL لملف أو لمجموعة من الملفات. يدعم محارف بدل التالية في وضع القراءة فقط: `*`, `?`, `{'abc','def'}` و `{N..M}`، حيث إن N و M — أرقام، و abc و def — سلاسل نصية. لمزيد من المعلومات، راجع [Wildcards In Path](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* `source` — عنوان URL لملف أو لمجموعة من الملفات. يدعم محارف البدل التالية في وضع القراءة فقط: `*`, `?`, `{'abc','def'}` و `{N..M}`، حيث إن N و M — أرقام، و abc و def — سلاسل نصية. لمزيد من المعلومات، راجع [Wildcards In Path](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `access_key_id` و `secret_access_key` — مفاتيح تحدد بيانات الاعتماد المطلوب استخدامها مع نقطة النهاية المحددة. اختيارية.
 * `format` — [التنسيق](/ar/reference/formats/index#formats-overview) الخاص بالملف.
 * `structure` — بنية الجدول. بالتنسيق &#39;column1&#95;name column1&#95;type, column2&#95;name column2&#95;type, ...&#39;.
@@ -323,29 +337,32 @@ INSERT INTO default.trips_all
    FROM s3Cluster(
        'events',
        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
-       NOSIGN,
        'TabSeparatedWithNames'
     )
 ```
 
-ستُجرى عمليات الإدراج على العقدة المُبادِرة. وهذا يعني أنه في حين ستتم عمليات القراءة على كل عقدة، فستُوجَّه الصفوف الناتجة إلى العقدة المُبادِرة لتوزيعها. في السيناريوهات ذات معدل النقل المرتفع، قد يُشكّل ذلك عنق زجاجة. ولمعالجة ذلك، اضبط المعلمة [parallel&#95;distributed&#95;insert&#95;select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select) للدالة `s3cluster`.
+ستُجرى عمليات الإدراج على العقدة المُبادِرة. وهذا يعني أنه في حين ستتم عمليات القراءة على كل عقدة، فستُوجَّه الصفوف الناتجة إلى العقدة المُبادِرة لتوزيعها. في السيناريوهات ذات معدل النقل المرتفع، قد يُشكّل ذلك عنق زجاجة. ولمعالجة ذلك، اضبط المعلمة [parallel&#95;distributed&#95;insert&#95;select](/ar/reference/settings/session-settings#parallel_distributed_insert_select) للدالة `s3cluster`.
 
-## محركات جداول S3 {#s3-table-engines}
+<div id="s3-table-engines">
+  ## محركات جداول S3
+</div>
 
-في حين تتيح دوال `s3` إجراء استعلامات مخصّصة على البيانات المخزّنة في S3، فإن صياغتها مطوّلة. ويجنّبك محرك جداول `S3` الحاجة إلى تحديد عنوان URL للحاوية وبيانات الاعتماد مرارًا وتكرارًا. ولمعالجة ذلك، يوفّر ClickHouse محرك جداول S3.
+في حين تتيح دوال `s3` إجراء استعلامات مخصّصة على البيانات المخزّنة في S3، فإن صياغتها مطوّلة. ويجنّبك محرك جداول `S3` الحاجة إلى تحديد URL الخاصة بـ الحاوية وبيانات الاعتماد مرارًا وتكرارًا. ولمعالجة ذلك، يوفّر ClickHouse محرك جداول S3.
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
-    ENGINE = S3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS ...]
 ```
 
-* `path` — ‏عنوان URL للحاوية مع مسار للملف. يدعم محارف البدل التالية في وضع القراءة فقط: `*` و `?` و `{abc,def}` و `{N..M}`، حيث إن N و M — أرقام، و &#39;abc&#39; و &#39;def&#39; — سلاسل نصية. لمزيد من المعلومات، راجع [هنا](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* `path` — ‏حاوية URL مع مسار للملف. يدعم محارف البدل التالية في وضع القراءة فقط: `*` و `?` و `{abc,def}` و `{N..M}`، حيث إن N و M — أرقام، و &#39;abc&#39; و &#39;def&#39; — سلاسل نصية. لمزيد من المعلومات، راجع [هنا](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — [تنسيق](/ar/reference/formats/index#formats-overview) الملف.
 * `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأمد لمستخدم حساب AWS. يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. إذا لم تُحدَّد بيانات الاعتماد، فستُستخدم قيم ملف الإعدادات. لمزيد من المعلومات، راجع [إدارة بيانات الاعتماد](#managing-credentials).
-* `compression` — نوع الضغط. القيم المدعومة: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. هذه المعلمة اختيارية. وبشكل افتراضي، سيُكتشَف نوع الضغط تلقائيًا استنادًا إلى امتداد الملف. بالنسبة إلى `snappy`، يُحدَّد تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (‏`basic` افتراضيًا).
+* `compression` — نوع الضغط. القيم المدعومة: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. هذه المعلمة اختيارية. وبشكل افتراضي، سيُكتشَف نوع الضغط تلقائيًا استنادًا إلى امتداد الملف.
 
-### قراءة البيانات {#reading-data}
+<div id="reading-data">
+  ### قراءة البيانات
+</div>
 
 في المثال التالي، ننشئ جدولًا باسم `trips_raw` باستخدام أول عشرة ملفات TSV الموجودة في الحاوية `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/`. يحتوي كل ملف منها على مليون صف:
 
@@ -397,7 +414,7 @@ CREATE TABLE trips_raw
    `dropoff_ntacode`       FixedString(4),
    `dropoff_ntaname`       String,
    `dropoff_puma`          UInt16
-) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', NOSIGN, 'TabSeparatedWithNames', 'gzip');
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
 ```
 
 لاحظ استخدام النمط `{0..9}` لقصره على الملفات العشرة الأولى. وبمجرد إنشائه، يمكننا الاستعلام عن هذا الجدول مثل أي جدول آخر:
@@ -622,7 +639,9 @@ SELECT * FROM trips_dest LIMIT 5;
 </clickhouse>
 ```
 
-### إنشاء جدول {#creating-a-table}
+<div id="creating-a-table">
+  ### إنشاء جدول
+</div>
 
 بافتراض أنك أعددت القرص لاستخدام حاوية S3 مع صلاحية الكتابة، ينبغي أن تتمكن من إنشاء جدول كما في المثال أدناه. وللاختصار، نستخدم مجموعة فرعية من أعمدة سيارات الأجرة في نيويورك ونرسل البيانات مباشرةً إلى الجدول المستند إلى S3:
 
@@ -650,7 +669,7 @@ SETTINGS storage_policy='s3_main'
 ```
 
 ```sql
-INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
 اعتمادًا على العتاد، قد يستغرق تنفيذ عملية الإدخال الأخيرة هذه لـ 1m صفًا بضع دقائق. يمكنك التحقق من التقدم عبر جدول system.processes. لا تتردد في تعديل عدد الصفوف حتى الحد الأقصى البالغ 10m واستكشاف بعض الاستعلامات النموذجية.
@@ -700,11 +719,13 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 يمكن تنفيذ النسخ المتماثل مع أقراص S3 باستخدام محرك الجدول `ReplicatedMergeTree`. راجع دليل [نسخ شظية واحدة عبر منطقتين من AWS باستخدام تخزين الكائنات في S3](#s3-multi-region) للاطّلاع على التفاصيل.
 
-### القراءة والكتابة {#read--writes}
+<div id="read--writes">
+  ### القراءة والكتابة
+</div>
 
 تتناول الملاحظات التالية كيفية تنفيذ تفاعلات S3 مع ClickHouse. ورغم أنها معلوماتية في الغالب، فقد تساعد القرّاء عند [تحسين الأداء](#s3-optimizing-performance):
 
-* افتراضيًا، يساوي الحد الأقصى لعدد خيوط معالجة الاستعلام التي يمكن لأي مرحلة من مراحل مسار معالجة الاستعلام استخدامها عددَ الأنوية. بعض المراحل أكثر قابليةً للتوازي من غيرها، لذا تمثل هذه القيمة حدًا أعلى. وقد تُنفَّذ عدة مراحل من الاستعلام في الوقت نفسه لأن البيانات تُبث من القرص. لذلك قد يتجاوز العدد الفعلي للخيوط المستخدمة في الاستعلام هذا الحد. يمكن تعديل ذلك عبر الإعداد [max&#95;threads](/ar/reference/settings/session-settings/max-threads#max_threads).
+* افتراضيًا، يساوي الحد الأقصى لعدد خيوط معالجة الاستعلام التي يمكن لأي مرحلة من مراحل مسار معالجة الاستعلام استخدامها عددَ الأنوية. بعض المراحل أكثر قابليةً للتوازي من غيرها، لذا تمثل هذه القيمة حدًا أعلى. وقد تُنفَّذ عدة مراحل من الاستعلام في الوقت نفسه لأن البيانات تُبث من القرص. لذلك قد يتجاوز العدد الفعلي للخيوط المستخدمة في الاستعلام هذا الحد. يمكن تعديل ذلك عبر الإعداد [max&#95;threads](/ar/reference/settings/session-settings#max_threads).
 * تكون عمليات القراءة من S3 غير متزامنة افتراضيًا. ويُحدَّد هذا السلوك بواسطة الإعداد `remote_filesystem_read_method`، المضبوط افتراضيًا على القيمة `threadpool`. عند خدمة طلب ما، يقرأ ClickHouse الحبيبات ضمن شرائط. وقد يحتوي كل شريط على العديد من الأعمدة. ويقرأ أحد الخيوط الأعمدة الخاصة بحبيباته واحدًا تلو الآخر. وبدلًا من تنفيذ ذلك بشكل متزامن، يُجرى جلب مسبق لجميع الأعمدة قبل انتظار البيانات. ويوفر ذلك تحسينات كبيرة في الأداء مقارنةً بالانتظار المتزامن لكل عمود. لن تحتاج إلى تغيير هذا الإعداد في معظم الحالات - راجع [تحسين الأداء](#s3-optimizing-performance).
 * تُنفَّذ عمليات الكتابة بالتوازي، بحد أقصى يبلغ 100 خيط متزامن لكتابة الملفات. يتحكم `max_insert_delayed_streams_for_parallel_write`، الذي تبلغ قيمته الافتراضية 1000، في عدد كائنات S3 المكتوبة بالتوازي. وبما أن كل ملف تتم كتابته يتطلب مخزنًا مؤقتًا (~1MB)، فإن ذلك يحد فعليًا من استهلاك الذاكرة لعملية INSERT. وقد يكون من المناسب خفض هذه القيمة عندما تكون ذاكرة الخادم محدودة.
 
@@ -781,7 +802,9 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### الاختبار {#testing}
+<div id="testing">
+  ### الاختبار
+</div>
 
 1. اتصل باستخدام `ClickHouse client`، كما في المثال التالي
 
@@ -1166,9 +1189,11 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
-#### تحقّق من خادم ClickHouse {#verify-clickhouse-server}
+<div id="verify-clickhouse-server">
+  #### تحقّق من خادم ClickHouse
+</div>
 
-عند إضافة [إعدادات العنقود](#define-a-cluster)، جرى تعريف جزء بيانات واحد مكرّر عبر عقدتَي ClickHouse. في خطوة التحقّق هذه، ستتأكد من أن العنقود قد أُنشئ عند بدء تشغيل ClickHouse، ثم ستنشئ جدولًا مكرّرًا باستخدام ذلك العنقود.
+عند إضافة [إعدادات العنقود](#define-a-cluster)، جرى تعريف shard واحدة مكرّرة عبر عقدتَي ClickHouse. في خطوة التحقّق هذه، ستتأكد من أن العنقود قد أُنشئ عند بدء تشغيل ClickHouse، ثم ستنشئ جدولًا مكرّرًا باستخدام ذلك العنقود.
 
 * تحقّق من وجود العنقود:
   ```sql
@@ -1234,10 +1259,12 @@ sudo service clickhouse-server start
   ```
 
 <Note>
-  يمكنك تخصيص مسار ZooKeeper `'clickhouse/tables/{uuid}/{shard}` الظاهر أعلاه من خلال ضبط `default_replica_path` و`default_replica_name`. تتوفر الوثائق [هنا](/ar/reference/settings/server-settings/settings/default-replica#default_replica_path).
+  يمكنك تخصيص مسار ZooKeeper `'clickhouse/tables/{uuid}/{shard}` الظاهر أعلاه من خلال ضبط `default_replica_path` و`default_replica_name`. تتوفر الوثائق [هنا](/ar/reference/settings/server-settings/settings#default_replica_path).
 </Note>
 
-### التحقق {#testing-1}
+<div id="testing-1">
+  ### التحقق
+</div>
 
 ستتحقق هذه الاختبارات من أن البيانات تُكرَّر بين الخادمين، وأنها مخزَّنة في حاويات S3 وليس على القرص المحلي.
 
@@ -1257,7 +1284,7 @@ sudo service clickhouse-server start
          tip_amount,
          total_amount,
          payment_type
-     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
+     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
   ```
 * تحقّق من أن البيانات مخزَّنة في S3.
 

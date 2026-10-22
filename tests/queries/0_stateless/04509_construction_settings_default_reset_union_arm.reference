@@ -1,4 +1,0 @@
--- last-arm `= DEFAULT` is detected: the ambiguous mixed union is rejected
--- non-last-arm `= DEFAULT` also enables per-arm mode, so SETTINGS on the last arm is ambiguous
--- nesting each arm in a subquery keeps `= DEFAULT` unambiguous (1 + 3 = 4)
-4

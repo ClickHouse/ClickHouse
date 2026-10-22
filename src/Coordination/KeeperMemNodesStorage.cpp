@@ -6,19 +6,13 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
-#include <fmt/ranges.h>
-
 #include <filesystem>
-#include <set>
-#include <unordered_set>
-#include <mutex>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -152,28 +146,6 @@ KeeperMemNodesStorage::NodeHolder KeeperMemNodesStorage::getCommittedNode(std::s
     return {&node_it->value};
 }
 
-std::pair<KeeperMemNodesStorage::UncommittedNodesIterator, bool> KeeperMemNodesStorage::addUncommittedNode(std::string path, UncommittedNode node)
-{
-    auto [it, added] = uncommitted_nodes.emplace(std::move(path), std::move(node));
-    /// The root has no parent, and a node already present is already indexed.
-    if (added && it->first != "/")
-        uncommitted_children_by_parent[std::string{Coordination::parentNodePath(it->first)}].insert(it);
-    return {it, added};
-}
-
-void KeeperMemNodesStorage::eraseUncommittedNode(UncommittedNodesIterator it)
-{
-    if (it->first != "/")
-    {
-        auto parent_it = uncommitted_children_by_parent.find(Coordination::parentNodePath(it->first));
-        chassert(parent_it != uncommitted_children_by_parent.end());
-        parent_it->second.erase(it);
-        if (parent_it->second.empty())
-            uncommitted_children_by_parent.erase(parent_it);
-    }
-    uncommitted_nodes.erase(it);
-}
-
 KeeperMemNodesStorage::UncommittedNodeRef KeeperMemNodesStorage::getUncommittedNode(std::string_view path)
 {
     if (auto node_it = uncommitted_nodes.find(path); node_it != uncommitted_nodes.end())
@@ -193,7 +165,7 @@ KeeperMemNodesStorage::UncommittedNodeRef KeeperMemNodesStorage::getUncommittedN
     if (!node)
         return {};
 
-    auto [node_it, _] = addUncommittedNode(std::string{path}, UncommittedNode{.node = node});
+    auto [node_it, _] = uncommitted_nodes.emplace(std::string{path}, UncommittedNode{.node = node});
     uncommitted_zxid_to_nodes[0].insert(node_it);
     return {node_it};
 }
@@ -325,10 +297,6 @@ void KeeperMemNodesStorage::removeCommittedNode(std::string_view path)
 
 void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest)
 {
-    /// The caller doesn't hold storage_mutex; there's no throttling here, so just hold it for the
-    /// whole load.
-    std::lock_guard lock(*storage_mutex);
-
     container.reserve(reader.node_count);
     auto streams = reader.createStreams(1);
     chassert(streams.size() == 1);
@@ -360,172 +328,6 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
 
     reader.finishStreams(std::move(streams));
 
-    /// A snapshot that lost the root node `"/"` is catastrophically corrupted: every remaining node
-    /// looks like an orphan, so orphan cleanup would delete the entire data tree, and
-    /// `KeeperStorage::initializeSystemNodes` would then silently recreate `"/"` and `"/keeper"` —
-    /// Keeper would start with an empty database. This also covers a snapshot with no nodes at all,
-    /// which is corrupted for the same reason: every valid Keeper snapshot contains `"/"`. Refuse to
-    /// load such a snapshot regardless of `remove_orphaned_nodes_on_startup`.
-    if (!container.contains("/"))
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Snapshot is missing the root node '/' ({} nodes loaded). Refusing to load it: the whole data tree would be treated as "
-            "orphaned and Keeper would start with an empty database. Restore Keeper from a valid snapshot or from the changelog",
-            container.size());
-
-    /// Detect orphaned nodes — nodes whose parent is absent from the snapshot. Without special
-    /// handling, populating children sets below would fail with an opaque "Could not find key"
-    /// error when trying to update the missing parent.
-    std::unordered_set<std::string> orphan_paths;
-    for (const auto & itr : container)
-    {
-        if (itr.key != "/")
-        {
-            auto parent_path = Coordination::parentNodePath(itr.key);
-            if (!container.contains(parent_path))
-                orphan_paths.insert(std::string(itr.key));
-        }
-    }
-
-    bool orphans_removed = false;
-    if (!orphan_paths.empty())
-    {
-        /// Expand the orphan set to include all descendants of orphan roots.
-        /// A node whose ancestor is an orphan is itself an orphan.
-        for (const auto & itr : container)
-        {
-            if (itr.key == "/" || orphan_paths.contains(std::string(itr.key)))
-                continue;
-
-            auto path = Coordination::parentNodePath(itr.key);
-            while (path != "/")
-            {
-                if (orphan_paths.contains(std::string(path)))
-                {
-                    orphan_paths.insert(std::string(itr.key));
-                    break;
-                }
-                path = Coordination::parentNodePath(path);
-            }
-        }
-
-        /// Removing orphaned nodes requires all of:
-        /// 1. `remove_orphaned_nodes_on_startup` config option enabled (opt-in)
-        /// 2. digest disabled (to avoid digest mismatch during rolling upgrades)
-        /// 3. the snapshot is the latest local snapshot loaded from disk during server startup
-        ///    (`reader.allow_orphaned_nodes_removal`) and the server is still starting up
-        ///    (`Phase::INIT`). A snapshot received from another node — e.g. a follower applying
-        ///    a leader snapshot in `KeeperStateMachine::apply_snapshot`, which can happen even
-        ///    before the server phase flips to `RUNNING` — must be applied faithfully; silently
-        ///    cleaning orphans there would make the follower diverge from the rest of the cluster.
-        const bool remove_enabled = keeper_context->removeOrphanedNodesOnStartup();
-        const bool is_startup_load
-            = reader.allow_orphaned_nodes_removal && keeper_context->getServerState() == KeeperContext::Phase::INIT;
-        const bool can_remove = remove_enabled && !keeper_context->digestEnabled() && is_startup_load;
-
-        if (!can_remove)
-        {
-            const char * reason = !remove_enabled
-                ? "remove_orphaned_nodes_on_startup is disabled"
-                : keeper_context->digestEnabled()
-                    ? "digest_enabled is true; set keeper_server.digest_enabled=false to allow removal"
-                    : "removal is only allowed when loading the latest local snapshot during server startup, "
-                      "not when applying a snapshot received from another node";
-
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Found {} orphaned nodes in snapshot but cannot remove them: {}. "
-                "Set 'keeper_server.remove_orphaned_nodes_on_startup' to true and "
-                "'keeper_server.digest_enabled' to false, then restart, to allow removal",
-                orphan_paths.size(),
-                reason);
-        }
-
-        /// Digest is disabled here (see `can_remove`), so nodes' digests are not being
-        /// accumulated and removal cannot corrupt an already-computed digest.
-        chassert(out_digest == nullptr);
-
-        /// Identify orphan roots for concise logging
-        std::vector<std::string> orphan_roots;
-        for (const auto & path : orphan_paths)
-        {
-            auto parent = std::string(Coordination::parentNodePath(path));
-            if (!orphan_paths.contains(parent))
-                orphan_roots.push_back(path);
-        }
-        std::sort(orphan_roots.begin(), orphan_roots.end());
-
-        LOG_WARNING(
-            getLogger("KeeperMemNodeStorage"),
-            "Removing {} orphaned nodes ({} orphan roots) from snapshot. Roots: [{}]. "
-            "Note: this changes the local state only — enable 'remove_orphaned_nodes_on_startup' on all Keeper replicas and "
-            "restart them, otherwise this replica's state will diverge from its peers",
-            orphan_paths.size(),
-            orphan_roots.size(),
-            fmt::join(orphan_roots, ", "));
-
-        /// Sessions whose ephemeral nodes are pruned here. Their `Close` cannot be replayed from the
-        /// local log tail: on every other replica it still removes those nodes and updates their
-        /// parents' stats, so `KeeperStateMachine::findOrphanConflictInLogTail` must refuse it.
-        std::set<int64_t> removed_ephemeral_sessions;
-
-        for (const auto & orphan : orphan_paths)
-        {
-            auto node_it = container.find(orphan);
-            if (node_it == container.end())
-                continue;
-
-            if (node_it->value.stats.isEphemeral())
-                removed_ephemeral_sessions.insert(node_it->value.stats.getEphemeralOwner());
-
-            /// Decrement ACL usage count
-            reader.acl_map.removeUsage(node_it->value.stats.acl_id);
-
-            /// Clean up ephemeral, TTL and container-node bookkeeping
-            if (storage)
-                storage->nodeRemovedFromSnapshot(orphan, node_it->value.stats);
-
-            container.erase(orphan);
-        }
-        reader.acl_map.removeUnusedACLs();
-
-        /// The nodes we just removed are only part of the damage: their *missing* ancestors mark the
-        /// boundary between the tree we loaded and the tree that the raft log above this snapshot was
-        /// produced against. Record the topmost absent path of every pruned subtree so that
-        /// `KeeperStateMachine::findOrphanConflictInLogTail` can refuse to start if a local log entry
-        /// above the snapshot still references the damaged region.
-        ///
-        /// Computed after the erase loop on purpose: erasing makes strictly more paths absent, so
-        /// computing this earlier could stop at a path that is too deep and under-report the damage.
-        /// Walks the copied strings in `orphan_roots` rather than container keys, so no `string_view`
-        /// dangles across the erase above.
-        std::set<std::string> damage_roots;
-        for (const auto & orphan_root : orphan_roots)
-        {
-            /// The parent of an orphan root is absent by construction, and `"/"` is always present
-            /// (checked above), so this terminates without ever yielding `"/"`.
-            std::string_view damaged = Coordination::parentNodePath(orphan_root);
-            while (true)
-            {
-                auto parent = Coordination::parentNodePath(damaged);
-                if (container.contains(parent))
-                    break;
-                damaged = parent;
-            }
-            damage_roots.emplace(damaged);
-        }
-        reader.removed_orphan_subtree_roots.assign(damage_roots.begin(), damage_roots.end());
-        reader.removed_orphan_ephemeral_sessions.assign(removed_ephemeral_sessions.begin(), removed_ephemeral_sessions.end());
-
-        LOG_WARNING(
-            getLogger("KeeperMemNodeStorage"),
-            "Paths missing from the snapshot that root the removed subtrees: [{}]. Keeper will refuse to start if a local log entry "
-            "above this snapshot references any of them",
-            fmt::join(reader.removed_orphan_subtree_roots, ", "));
-
-        orphans_removed = true;
-    }
-
     LOG_TRACE(getLogger("KeeperMemNodeStorage"), "Building structure for children nodes");
 
     /// Populate children sets.
@@ -536,34 +338,6 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             auto parent_path = Coordination::parentNodePath(itr.key);
             container.updateValue(
                 parent_path, [path = itr.key](Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
-        }
-    }
-
-    if (orphans_removed)
-    {
-        /// A snapshot with orphaned nodes lost some nodes, so surviving ancestors can carry a stale
-        /// `numChildren` counter. Fix the counters to match the actual rebuilt children sets so that
-        /// the consistency check below passes.
-        for (const auto & itr : container)
-        {
-            auto actual_num_children = static_cast<int32_t>(itr.value.getChildren().size());
-            if (itr.value.stats.getNumChildren() != actual_num_children)
-            {
-                LOG_WARNING(
-                    getLogger("KeeperMemNodeStorage"),
-                    "Fixing stale numChildren counter for node {} after orphan removal: {} -> {}",
-                    itr.key,
-                    itr.value.stats.getNumChildren(),
-                    actual_num_children);
-
-                container.updateValue(
-                    itr.key,
-                    [actual_num_children](Node & value)
-                    {
-                        value.stats.setNumChildren(actual_num_children);
-                        value.invalidateDigestCache();
-                    });
-            }
         }
     }
 
@@ -596,54 +370,36 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
     }
 }
 
-class KeeperMemNodesStorage::NodesReadView final : public KeeperNodesReadView
+std::unique_ptr<KeeperNodeStreamForSnapshot> KeeperMemNodesStorage::beginWritingSnapshot()
 {
-public:
-    NodesReadView(KeeperMemNodesStorage * nodes_storage_, std::unique_ptr<Container::ReadView> view_)
-        : nodes_storage(nodes_storage_)
-        , view(std::move(view_))
-        , it(view->begin())
-    {
-    }
-
-    ~NodesReadView() override
-    {
-        nodes_storage->retireReadView(std::move(view));
-    }
-
-    size_t getNodeCount() const override { return view->nodeCount(); }
-
-    bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
-
-private:
-    KeeperMemNodesStorage * nodes_storage;
-    std::unique_ptr<Container::ReadView> view;
-    Container::ReadView::Iterator it;
-};
-
-std::unique_ptr<KeeperNodesReadView> KeeperMemNodesStorage::issueReadView()
-{
-    std::lock_guard lock(*storage_mutex);
-    return std::make_unique<NodesReadView>(this, container.issueReadView());
+    auto res = std::make_unique<NodeStreamForSnapshot>();
+    auto [size, ver] = container.snapshotSizeWithVersion();
+    container.enableSnapshotMode(ver);
+    res->node_count = size;
+    res->it = container.begin();
+    return res;
 }
 
-void KeeperMemNodesStorage::retireReadView(std::unique_ptr<Container::ReadView> view) noexcept
+void KeeperMemNodesStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream)
 {
-    std::lock_guard lock(*storage_mutex);
-    container.retireReadView(std::move(view));
+    stream->node_count = 0;
+    container.disableSnapshotMode();
+    container.clearOutdatedNodes();
 }
 
-bool KeeperMemNodesStorage::NodesReadView::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
+bool KeeperMemNodesStorage::NodeStreamForSnapshot::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
 {
-    if (it == view->end())
+    if (next_node_idx >= node_count)
         return false;
 
-    const auto & elem = *it;
-    out_path = elem.key;
-    out_data = elem.value.getData();
-    out_stats = elem.value.stats;
+    out_path = it->key;
+    out_data = it->value.getData();
+    out_stats = it->value.stats;
 
-    ++it;
+    ++next_node_idx;
+    if (next_node_idx < node_count) // don't move the iterator past the end of immutable range
+        ++it;
+
     return true;
 }
 
@@ -732,7 +488,7 @@ void KeeperMemNodesStorage::cleanupUncommittedState(int64_t commit_zxid)
         {
             std::erase(node_it->second.applied_zxids, transaction_zxid);
             if (node_it->second.applied_zxids.empty())
-                eraseUncommittedNode(node_it);
+                uncommitted_nodes.erase(node_it);
         }
     }
 }
@@ -793,7 +549,7 @@ void KeeperMemNodesStorage::cleanupAfterRollback(std::vector<uint64_t> rollbacke
         {
             std::erase(node_it->second.applied_zxids, transaction_zxid);
             if (node_it->second.applied_zxids.empty())
-                eraseUncommittedNode(node_it);
+                uncommitted_nodes.erase(node_it);
         }
 
         uncommitted_zxid_to_nodes.erase(it);
@@ -826,6 +582,19 @@ void KeeperMemNodesStorage::updateNodesDigest(uint64_t & current_digest, uint64_
 
 bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path, size_t limit, std::function<bool(std::string_view /*path*/, UncommittedNodeRef &&)> check_node)
 {
+    struct PathCmp
+    {
+        auto operator()(const std::string_view a,
+                        const std::string_view b) const
+        {
+            size_t level_a = std::count(a.begin(), a.end(), '/');
+            size_t level_b = std::count(b.begin(), b.end(), '/');
+            return level_a < level_b || (level_a == level_b && a < b);
+        }
+
+        using is_transparent = void; // required to make find() work with different type than key_type
+    };
+
     struct QueueEntry
     {
         std::string path;
@@ -841,15 +610,20 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
         queue.push_back(QueueEntry{std::string{root_path}, std::move(root_node)});
     }
 
+    /// Collect uncommitted children of root node in a specialized structure so we avoid iterating
+    /// all uncommitted nodes for each child node.
+    std::map<std::string_view, UncommittedNodesIterator, PathCmp> uncommitted_children;
+    for (auto it = uncommitted_nodes.begin(); it != uncommitted_nodes.end(); ++it)
+    {
+        if (Coordination::matchPath(it->first, root_path) == Coordination::PathMatchResult::IS_CHILD)
+            uncommitted_children[it->first] = it;
+    }
+
     size_t nodes_visited = 0;
     auto limit_reached = [&]
     {
         return nodes_visited + queue.size() > limit;
     };
-
-    /// The root node (already queued above) counts toward `limit`, same as in `TestKeeper`.
-    if (limit_reached())
-        return false;
 
     while (!queue.empty())
     {
@@ -861,24 +635,24 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
 
         std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> processed_uncommitted_children;
 
-        /// Add uncommitted children to queue. Nothing in this loop changes uncommitted_children_by_parent.
-        if (auto children_it = uncommitted_children_by_parent.find(path); children_it != uncommitted_children_by_parent.end())
+        /// Add uncommitted children to queue.
+        for (auto nodes_it = uncommitted_children.upper_bound(path + "/");
+             nodes_it != uncommitted_children.end() && Coordination::parentNodePath(nodes_it->first) == path;
+             ++nodes_it)
         {
-            for (auto uncommitted_node_it : children_it->second)
-            {
-                std::string_view node_path = uncommitted_node_it->first;
-                processed_uncommitted_children.insert(node_path);
+            const auto & [node_path, uncommitted_node_it] = *nodes_it;
 
-                if (uncommitted_node_it->second.node == nullptr)
-                    /// Node was deleted in uncommitted state. Don't visit it, but it's important that
-                    /// we added it to processed_uncommitted_children; otherwise it could be incorrectly
-                    /// visited by the committed children iteration below.
-                    continue;
+            processed_uncommitted_children.insert(node_path);
 
-                queue.push_back(QueueEntry{std::string{node_path}, UncommittedNodeRef{uncommitted_node_it}});
-                if (limit_reached())
-                    return false;
-            }
+            if (uncommitted_node_it->second.node == nullptr)
+                /// Node was deleted in uncommitted state. Don't visit it, but it's important that
+                /// we added it to processed_uncommitted_children; otherwise it could be incorrectly
+                /// visited by the committed children iteration below.
+                continue;
+
+            queue.push_back(QueueEntry{std::string{node_path}, UncommittedNodeRef{uncommitted_node_it}});
+            if (limit_reached())
+                return false;
         }
 
         /// Add committed children to queue, except the ones already processed as uncommitted above.
@@ -897,7 +671,7 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
                 {
                     auto node = std::make_shared<Node>();
                     node->shallowCopy(committed_node);
-                    auto [uncommitted_node_it, added] = addUncommittedNode(path, UncommittedNode{.node = node});
+                    auto [uncommitted_node_it, added] = uncommitted_nodes.emplace(path, UncommittedNode{.node = node});
                     chassert(added);
                     uncommitted_zxid_to_nodes[0].insert(uncommitted_node_it);
                     uncommitted_ref = {uncommitted_node_it};
@@ -985,7 +759,7 @@ void KeeperMemNodesStorage::prepareCreateNodeWithoutUpdatingParent(
     std::string_view data, KeeperStagingTransaction & staging)
 {
     if (!node.it.has_value())
-        node.it = addUncommittedNode(std::string{path}, UncommittedNode{}).first;
+        node.it = uncommitted_nodes.emplace(std::string{path}, UncommittedNode{}).first;
     prepareWriteCommon(path, node, staging);
 
     staging.deltas.emplace_back(

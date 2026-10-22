@@ -1,2 +1,10 @@
-SELECT *\nFROM system.one\nLIMIT 1 BY *\nLIMIT 1
-SELECT *\nFROM system.one\nLIMIT 1 BY\n    plus(0, dummy),\n    minus(0, dummy)\nLIMIT 1
+SELECT *
+FROM system.one
+LIMIT 1 BY *
+LIMIT 1
+SELECT *
+FROM system.one
+LIMIT 1 BY
+    plus(0, dummy),
+    minus(0, dummy)
+LIMIT 1

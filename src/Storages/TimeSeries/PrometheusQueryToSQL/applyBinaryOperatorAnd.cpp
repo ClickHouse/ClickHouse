@@ -5,19 +5,61 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorSet.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
 
 
 namespace DB::PrometheusQueryToSQL
 {
 
+void checkArgumentTypesForSetBinaryOperator(
+    const PQT::BinaryOperator * operator_node,
+    const SQLQueryPiece & left_argument,
+    const SQLQueryPiece & right_argument,
+    const ConverterContext & context)
+{
+    std::string_view operator_name = operator_node->operator_name;
+
+    if (left_argument.type != ResultType::INSTANT_VECTOR)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Binary operator '{}' expects two arguments of type {}, but expression {} has type {}",
+                        operator_name, ResultType::INSTANT_VECTOR,
+                        getPromQLText(left_argument, context), left_argument.type);
+    }
+
+    if (right_argument.type != ResultType::INSTANT_VECTOR)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Binary operator '{}' expects two arguments of type {}, but expression {} has type {}",
+                        operator_name, ResultType::INSTANT_VECTOR,
+                        getPromQLText(right_argument, context), right_argument.type);
+    }
+
+    if (operator_node->group_left)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Binary operator '{}' doesn't allow group_left",
+                        operator_name);
+    }
+
+    if (operator_node->group_right)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Binary operator '{}' doesn't allow group_right",
+                        operator_name);
+    }
+}
+
+
 SQLQueryPiece applyBinaryOperatorAnd(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
-    SQLQueryPiece && left_argument,
-    SQLQueryPiece && right_argument,
-    ConverterContext & context)
+    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 
@@ -37,7 +79,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
 
     /// Step 1:
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
+    ///        countForEach(values) AS join_count
     /// GROUP BY join_group
     /// FROM right
     ///
@@ -53,8 +95,8 @@ SQLQueryPiece applyBinaryOperatorAnd(
             right_metric_name_dropped));
         builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-        builder.select_list.push_back(makePresenceMask(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-        builder.select_list.back()->setAlias(ColumnNames::JoinPresence);
+        builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinCount);
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
@@ -67,7 +109,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
 
     /// Step 2:
     /// SELECT group,
-    ///        arrayMap(x, y -> if(y > 0, x, NULL), values, join_presence) AS values
+    ///        arrayMap(x, y -> if(y > 0, x, NULL), values, join_count) AS values
     /// FROM left LEFT SEMI JOIN step1
     /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
     ///
@@ -88,7 +130,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
                     make_intrusive<ASTIdentifier>("x"),
                     make_intrusive<ASTLiteral>(Field{} /* NULL */))),
             make_intrusive<ASTIdentifier>(ColumnNames::Values),
-            make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence)));
+            make_intrusive<ASTIdentifier>(ColumnNames::JoinCount)));
 
         builder.select_list.back()->setAlias(ColumnNames::Values);
 

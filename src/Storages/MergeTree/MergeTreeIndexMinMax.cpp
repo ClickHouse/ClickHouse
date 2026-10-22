@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
-#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -129,9 +128,6 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
-        normalizeBoolFields(min_ref);
-        normalizeBoolFields(max_ref);
-
         if (update_in_place)
         {
             hyperrectangle[i].left_included = true;
@@ -212,8 +208,6 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
-    /// The granule bound comes from `getExtremes`, which skips NaN.
-    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -260,15 +254,15 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
-    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-
     return {0 /* unknown */, {}};
 }
 
@@ -304,9 +298,6 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(scratch, istr, format_settings);
         serialization->deserializeBinary(value, istr, format_settings);
     }
-
-    normalizeBoolFields(value);
-
     /// If index granularity is not 1, we insert the same value as the min
     /// or max for all the corresponding granules. For our top-K purpose, this
     /// is safe and maybe lead to false positives, but never wrong results.
@@ -507,7 +498,8 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                     "with different data types. Consider using typed subcolumns or cast column to a specific data type",
                     column.type->getName(), column.name);
         };
-        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
+        check_not_dynamic_or_variant(*column.type);
+        column.type->forEachChild(check_not_dynamic_or_variant);
     }
 }
 

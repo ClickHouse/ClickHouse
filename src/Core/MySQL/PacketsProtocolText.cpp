@@ -230,9 +230,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             if (type.getPrecision() > 65 || type.getScale() > 30)
             {
                 column_type = ColumnType::MYSQL_TYPE_STRING;
-                /// Must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`),
-                /// otherwise drivers that validate `ColumnDefinition41.character_set` see contradictory session charsets.
-                charset = CharacterSet::utf8mb4_0900_ai_ci;
+                charset = CharacterSet::utf8_general_ci;
             }
             else
             {
@@ -243,8 +241,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
         }
         default:
             column_type = ColumnType::MYSQL_TYPE_STRING;
-            /// Must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`).
-            charset = CharacterSet::utf8mb4_0900_ai_ci;
+            charset = CharacterSet::utf8_general_ci;
             break;
     }
     return ColumnDefinition(column_name, charset, 0, column_type, static_cast<uint16_t>(flags), decimals);

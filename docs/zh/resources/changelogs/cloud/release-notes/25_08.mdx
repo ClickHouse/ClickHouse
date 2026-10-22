@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/25.8
 title: 'Cloud v25.8 更新日志'
-description: 'v25.8 的更新日志'
+description: 'v25.8 快速发布的更新日志'
 keywords: ['更新日志', 'Cloud']
 sidebarTitle: '25.8'
 doc_type: 'changelog'
@@ -16,7 +16,7 @@ doc_type: 'changelog'
 </div>
 
 * 默认不再为 JSON 格式 中的 64 位整数加引号。[#74079](https://github.com/ClickHouse/ClickHouse/pull/74079) ([Pavel Kruglov](https://github.com/Avogar)) 。
-* 对于 JSON 中包含不同类型值的数组，将推断为 `Array(Dynamic)`，而不是未命名的 `Tuple`。如需沿用此前的行为，请禁用设置 [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/zh/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types)。[#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 对于 JSON 中包含不同类型值的数组，将推断为 `Array(Dynamic)`，而不是未命名的 `Tuple`。如需沿用此前的行为，请禁用设置 [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/zh/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)。[#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)) 。
 * 默认会在 Parquet 输出格式中，将 `Enum` 类型的值写为具有 `ENUM` 逻辑类型的 `BYTE_ARRAY`。[#84169](https://github.com/ClickHouse/ClickHouse/pull/84169) ([Pavel Kruglov](https://github.com/Avogar)) 。
 
 <div id="storage-and-partitioning">
@@ -24,7 +24,7 @@ doc_type: 'changelog'
 </div>
 
 * 新增对 hive 分区样式写入的支持，并重构了读取实现 (hive 分区列不再是虚拟列) 。[#76802](https://github.com/ClickHouse/ClickHouse/pull/76802) ([Arthur Passos](https://github.com/arthurpassos)) 。
-* 默认启用 MergeTree 设置 [`write_marks_for_substreams_in_compact_parts`](/zh/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts)。这将显著提升从新创建的 Compact parts 读取子列的性能。版本低于 25.5 的服务器将无法读取新的 Compact parts。[#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 默认启用 MergeTree 设置 [`write_marks_for_substreams_in_compact_parts`](/zh/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts)。这将显著提升从新创建的 Compact parts 读取子列的性能。版本低于 25.5 的服务器将无法读取新的 Compact parts。[#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)) 。
 * 禁止对 SummingMergeTree 中显式列为求和列的列执行 `RENAME COLUMN` 或 `DROP COLUMN`。关闭 [#81836](https://github.com/ClickHouse/ClickHouse/issues/81836)。[#82821](https://github.com/ClickHouse/ClickHouse/pull/82821) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
 
 <div id="function-enhancements">
@@ -45,8 +45,8 @@ doc_type: 'changelog'
 </div>
 
 * 以前，`BACKUP` 查询、合并和变更不会使用针对本地 (`max_local_read_bandwidth_for_server` 和 `max_local_write_bandwidth_for_server`) 及远程 (`max_remote_read_network_bandwidth_for_server` 和 `max_remote_write_network_bandwidth_for_server`) 流量的服务器级限流器，而仅受专用服务器设置 (`max_backup_bandwidth_for_server`、`max_mutations_bandwidth_for_server` 和 `max_merges_bandwidth_for_server`) 的限制。现在，它们会同时使用这两类限流器。[#81753](https://github.com/ClickHouse/ClickHouse/pull/81753) ([Sergei Trifonov](https://github.com/serxa)).
-* 新增了设置 [`cluster_function_process_archive_on_multiple_nodes`](/zh/reference/settings/session-settings/cluster#cluster_function_process_archive_on_multiple_nodes)，当其设为 true (默认值) 时，可提升 cluster 函数处理归档文件时的性能。如果你在早期版本中使用带归档文件的 cluster 函数，那么在升级到 25.7+ 时，为保证兼容性并避免报错，应将其设为 `false`。[#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* 之前 [`concurrent_threads_scheduler`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 的默认值是 `round_robin`，但事实证明，在存在大量单线程查询 (例如 `INSERT` 语句) 时，它并不公平。此次变更将更稳妥的替代调度器 `fair_round_robin` 设为默认值。[#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
+* 新增了设置 [`cluster_function_process_archive_on_multiple_nodes`](/zh/reference/settings/session-settings#cluster_function_process_archive_on_multiple_nodes)，当其设为 true (默认值) 时，可提升 cluster 函数处理归档文件时的性能。如果你在早期版本中使用带归档文件的 cluster 函数，那么在升级到 25.7+ 时，为保证兼容性并避免报错，应将其设为 `false`。[#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 之前 [`concurrent_threads_scheduler`](/zh/reference/settings/server-settings/settings#concurrent_threads_scheduler) 的默认值是 `round_robin`，但事实证明，在存在大量单线程查询 (例如 `INSERT` 语句) 时，它并不公平。此次变更将更稳妥的替代调度器 `fair_round_robin` 设为默认值。[#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
 * 为避免在不使用 analyzer 的情况下维护该功能 (这可能会带来一些问题，例如在 conditions 中使用 `indexHint()` 时) ，惰性物化现仅在启用 analyzer 时生效。[#83791](https://github.com/ClickHouse/ClickHouse/pull/83791) ([Igor Nikonov](https://github.com/devcrafter)).
 
 <div id="schema-and-sql-syntax">
@@ -140,21 +140,21 @@ doc_type: 'changelog'
 
 * 除了 `DESCRIBE (SELECT ...)` 之外，现在也支持 `DESCRIBE SELECT`。 [#82947](https://github.com/ClickHouse/ClickHouse/pull/82947) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * 支持使用 `USE DATABASE {name}`。 [#81307](https://github.com/ClickHouse/ClickHouse/pull/81307) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* 并行副本现已支持从 projection 中读取。新增了一个设置 [`parallel_replicas_support_projection`](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_support_projection)，用于控制是否启用 projection 支持。为简化实现，只有在启用 `parallel_replicas_local_plan` 时，才支持 projection。 [#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
+* 并行副本现已支持从 projection 中读取。新增了一个设置 [`parallel_replicas_support_projection`](/zh/reference/settings/session-settings#parallel_replicas_support_projection)，用于控制是否启用 projection 支持。为简化实现，只有在启用 `parallel_replicas_local_plan` 时，才支持 projection。 [#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
 
 <div id="formats">
   ### 格式
 </div>
 
-* 新增 [`format_schema_source`](/zh/reference/settings/formats/format-schema#format_schema_source) 设置，用于定义 `format_schema` 的来源。[#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* 新增 [`format_schema_source`](/zh/reference/settings/formats#format_schema_source) 设置，用于定义 `format_schema` 的来源。[#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
 * 新增 `Hash` 输出格式。它会对结果中的所有列和行计算一个哈希值。这对于计算结果的“指纹”很有帮助，例如在数据传输成为瓶颈的场景中。示例：`SELECT arrayJoin(['abc', 'def']), 42 FORMAT Hash` 返回 `e5f9e676db098fdb9530d2059d8c23ef`。[#84607](https://github.com/ClickHouse/ClickHouse/pull/84607) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="server-configuration-and-workload-management">
   ### 服务器配置与工作负载管理
 </div>
 
-* 服务器设置 [`cpu_slot_preemption`](/zh/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) 为工作负载启用抢占式 CPU 调度，并确保各工作负载之间的 CPU 时间按 max-min 公平原则进行分配。新增了用于 CPU 限流的工作负载设置：`max_cpus`、`max_cpu_share` 和 `max_burst_cpu_seconds`。[#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)) 。
-* 现已支持工作负载设置 [`max_waiting_queries`](/zh/reference/settings/server-settings/settings/max#max_waiting_queries)。可用于限制查询队列的大小。如果达到该限制，后续所有查询都将因 `SERVER_OVERLOADED` 错误而终止。[#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)) 。
+* 服务器设置 [`cpu_slot_preemption`](/zh/reference/settings/server-settings/settings#cpu_slot_preemption) 为工作负载启用抢占式 CPU 调度，并确保各工作负载之间的 CPU 时间按 max-min 公平原则进行分配。新增了用于 CPU 限流的工作负载设置：`max_cpus`、`max_cpu_share` 和 `max_burst_cpu_seconds`。[#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)) 。
+* 现已支持工作负载设置 [`max_waiting_queries`](/zh/reference/settings/server-settings/settings#max_waiting_queries)。可用于限制查询队列的大小。如果达到该限制，后续所有查询都将因 `SERVER_OVERLOADED` 错误而终止。[#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)) 。
 * 达到已配置的查询次数或时间阈值后，将断开 TCP 连接。修复了 [#68000](https://github.com/ClickHouse/ClickHouse/issues/68000)。[#81472](https://github.com/ClickHouse/ClickHouse/pull/81472) ([Kenny Sun](https://github.com/hwabis)) 。
 
 <div id="cloud-storage">
@@ -206,7 +206,7 @@ doc_type: 'changelog'
 </div>
 
 * 对 `-If` 聚合函数组合器进行了简单优化。[#78454](https://github.com/ClickHouse/ClickHouse/pull/78454) ([李扬](https://github.com/taiyang-li)) 。
-* 新增了一项逻辑 (由设置 [`enable_producing_buckets_out_of_order_in_aggregation`](/zh/reference/settings/session-settings/enable#enable_producing_buckets_out_of_order_in_aggregation) 控制，且默认启用) ，允许在内存高效聚合过程中乱序发送部分桶。当某些聚合桶的合并耗时明显长于其他桶时，该改进允许发起节点同时合并 bucket id 更高的桶，从而提升性能。代价是内存占用可能会略有增加 (通常不会太明显) 。[#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)) 。
+* 新增了一项逻辑 (由设置 [`enable_producing_buckets_out_of_order_in_aggregation`](/zh/reference/settings/session-settings#enable_producing_buckets_out_of_order_in_aggregation) 控制，且默认启用) ，允许在内存高效聚合过程中乱序发送部分桶。当某些聚合桶的合并耗时明显长于其他桶时，该改进允许发起节点同时合并 bucket id 更高的桶，从而提升性能。代价是内存占用可能会略有增加 (通常不会太明显) 。[#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)) 。
 * 将 `TOTALS` 步骤之后的管道改为多线程执行。[#80331](https://github.com/ClickHouse/ClickHouse/pull/80331) ([UnamedRus](https://github.com/UnamedRus)) 。
 * 当聚合查询仅包含一个针对 `NOT NULL` 列的 `COUNT()` 函数时，聚合逻辑会在哈希表探测期间被完全内联。这样可以避免分配和维护任何聚合状态，从而显著降低内存占用和 CPU 开销。此更改部分解决了 [#81982](https://github.com/ClickHouse/ClickHouse/issues/81982)。[#82104](https://github.com/ClickHouse/ClickHouse/pull/82104) ([Amos Bird](https://github.com/amosbird)) 。
 * 在按多个字符串列或数值列进行 group by 时，以列式方式计算序列化键。[#83884](https://github.com/ClickHouse/ClickHouse/pull/83884) ([李扬](https://github.com/taiyang-li)) 。
@@ -216,7 +216,7 @@ doc_type: 'changelog'
   ### JOIN 优化
 </div>
 
-* 新增设置 [`min_joined_block_size_rows`](/zh/reference/settings/session-settings/min-joined#min_joined_block_size_rows) (类似于 `min_joined_block_size_bytes`；默认值为 65409) ，用于控制 JOIN 输入块和输出块的最小大小 (按行数计)  (如果 join algorithm 支持) 。较小的块会被合并。 [#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
+* 新增设置 [`min_joined_block_size_rows`](/zh/reference/settings/session-settings#min_joined_block_size_rows) (类似于 `min_joined_block_size_bytes`；默认值为 65409) ，用于控制 JOIN 输入块和输出块的最小大小 (按行数计)  (如果 join algorithm 支持) 。较小的块会被合并。 [#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
 * 在只有一个 key columns 的典型场景下，通过移除对哈希映射的额外遍历，优化了 `HashJoin` 的性能；同时，当 `null_map` 和 `join_mask` 恒为 `true`/`false` 时，也省去了对它们的检查。 [#82308](https://github.com/ClickHouse/ClickHouse/pull/82308) ([Nikita Taranov](https://github.com/nickitat)).
 * 将 [#82308](https://github.com/ClickHouse/ClickHouse/issues/82308) 中针对 `null_map` 和 `JoinMask` 的优化应用到了包含多个析取条件的 JOIN 场景中。同时，还优化了 `KnownRowsHolder` data structure。 [#83041](https://github.com/ClickHouse/ClickHouse/pull/83041) ([Nikita Taranov](https://github.com/nickitat)).
 * 对 join 标记使用普通的 `std::vector<std::atomic_bool>`，以避免每次访问标记时都计算哈希。 [#83043](https://github.com/ClickHouse/ClickHouse/pull/83043) ([Nikita Taranov](https://github.com/nickitat)).
@@ -352,8 +352,8 @@ doc_type: 'changelog'
 
 * 允许对 PostgreSQL、MySQL 和 DataLake 数据库进行备份。对此类数据库进行备份时，只会保存其定义，不会保存其中的数据。[#79982](https://github.com/ClickHouse/ClickHouse/pull/79982) ([Nikolay Degterinsky](https://github.com/evillique)).
 * 将写入备份文件时产生的所有日志消息级别设为 TRACE。[#82907](https://github.com/ClickHouse/ClickHouse/pull/82907) ([Hans Krutzer](https://github.com/hkrutzer)).
-* 引入 [`backup_restore_s3_retry_initial_backoff_ms`](/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_initial_backoff_ms)、[`backup_restore_s3_retry_max_backoff_ms`](/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_max_backoff_ms)、[`backup_restore_s3_retry_jitter_factor`](/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_jitter_factor)，用于配置备份和恢复操作期间使用的 S3 重试退避策略。[#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
-* 引入新的 [`backup_slow_all_threads_after_retryable_s3_error`](/zh/reference/settings/session-settings/other#backup_slow_all_threads_after_retryable_s3_error) 设置：一旦检测到单个可重试错误，就减慢所有线程，以降低发生 `SlowDown` 等错误导致重试风暴时对 S3 的压力。[#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
+* 引入 [`backup_restore_s3_retry_initial_backoff_ms`](/zh/reference/settings/session-settings#backup_restore_s3_retry_initial_backoff_ms)、[`backup_restore_s3_retry_max_backoff_ms`](/zh/reference/settings/session-settings#backup_restore_s3_retry_max_backoff_ms)、[`backup_restore_s3_retry_jitter_factor`](/zh/reference/settings/session-settings#backup_restore_s3_retry_jitter_factor)，用于配置备份和恢复操作期间使用的 S3 重试退避策略。[#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
+* 引入新的 [`backup_slow_all_threads_after_retryable_s3_error`](/zh/reference/settings/session-settings#backup_slow_all_threads_after_retryable_s3_error) 设置：一旦检测到单个可重试错误，就减慢所有线程，以降低发生 `SlowDown` 等错误导致重试风暴时对 S3 的压力。[#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
 
 <div id="data-integrity-and-validation">
   ### 数据完整性与验证
@@ -374,7 +374,7 @@ doc_type: 'changelog'
 * 支持将 Iceberg 写入结果读取到 pyiceberg 中。 [#84466](https://github.com/ClickHouse/ClickHouse/pull/84466) ([scanhex12](https://github.com/scanhex12)).
 * 为数据湖表引擎新增了快照版本。 [#84659](https://github.com/ClickHouse/ClickHouse/pull/84659) ([Pete Hampton](https://github.com/pjhampton)).
 * 支持在 Iceberg 中写入 version-hint 文件。此更改关闭了 [#85097](https://github.com/ClickHouse/ClickHouse/issues/85097)。 [#85130](https://github.com/ClickHouse/ClickHouse/pull/85130) ([scanhex12](https://github.com/scanhex12)).
-* 支持通过 [`iceberg_metadata_compression_method`](/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_compression_method) 设置使用压缩的 `.metadata.json` 文件。该设置支持所有 ClickHouse 压缩方法。此更改关闭了 [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895)。 [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
+* 支持通过 [`iceberg_metadata_compression_method`](/zh/reference/settings/session-settings#iceberg_metadata_compression_method) 设置使用压缩的 `.metadata.json` 文件。该设置支持所有 ClickHouse 压缩方法。此更改关闭了 [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895)。 [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
 * 优化了 Iceberg 位置删除文件的内存使用。不再将整个删除文件的数据全部加载到内存中，而是只将 Parquet 删除文件的当前行组保留在 RAM 中。这显著降低了处理大型位置删除文件时的内存消耗。 [#85329](https://github.com/ClickHouse/ClickHouse/pull/85329) ([scanhex12](https://github.com/scanhex12)).
 * 允许以异步方式遍历 Iceberg 表中的对象，而无需为每个数据文件显式存储对象。 [#85369](https://github.com/ClickHouse/ClickHouse/pull/85369) ([Daniil Ivanik](https://github.com/divanik)).
 * 支持 Iceberg 等值删除。 [#85843](https://github.com/ClickHouse/ClickHouse/pull/85843) ([Han Fei](https://github.com/hanfei1991)).
@@ -388,8 +388,8 @@ doc_type: 'changelog'
 * 修复在 DeltaLakeCluster 表函数中读取分区数据的问题。在此 PR 中，cluster 函数的 protocol 版本已提升，因此可以将额外信息从 发起节点 发送给副本。这些额外信息包含 delta-kernel 的转换表达式，这是解析分区列所必需的 (未来还可用于其他内容，例如 generated columns 等) 。[#82132](https://github.com/ClickHouse/ClickHouse/pull/82132) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * 现在 Datalake database 会抛出更易理解的 Exception。修复了 [#81211](https://github.com/ClickHouse/ClickHouse/issues/81211)。[#82304](https://github.com/ClickHouse/ClickHouse/pull/82304) ([alesapin](https://github.com/alesapin)).
 * 在存储 `DeltaLake` 中实现内部 `delta-kernel-rs` 过滤 (统计信息和分区 pruning) 。[#84006](https://github.com/ClickHouse/ClickHouse/pull/84006) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* 添加设置 [`delta_lake_enable_expression_visitor_logging`](/zh/reference/settings/session-settings/delta-lake#delta_lake_enable_expression_visitor_logging)，用于关闭 expression visitor 日志，因为在调试问题时，即使在测试日志级别下，这些日志也可能过于冗长。[#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* 添加设置 [`delta_lake_snapshot_version`](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version)，以允许在表引擎 `DeltaLake` 中读取特定 快照版本。[#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 添加设置 [`delta_lake_enable_expression_visitor_logging`](/zh/reference/settings/session-settings#delta_lake_enable_expression_visitor_logging)，用于关闭 expression visitor 日志，因为在调试问题时，即使在测试日志级别下，这些日志也可能过于冗长。[#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 添加设置 [`delta_lake_snapshot_version`](/zh/reference/settings/session-settings#delta_lake_snapshot_version)，以允许在表引擎 `DeltaLake` 中读取特定 快照版本。[#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 <div id="data-lake-integration">
   ### 数据湖集成
@@ -477,13 +477,13 @@ doc_type: 'changelog'
   ### 设置与配置
 </div>
 
-* 将设置 `allow_experimental_join_condition` 标记为已废弃。[#80566](https://github.com/ClickHouse/ClickHouse/pull/80566) ([Vladimir Cherkasov](https://github.com/vdimir)) 。
+* 将设置 `allow_experimental_join_condition` 标记为已弃用。[#80566](https://github.com/ClickHouse/ClickHouse/pull/80566) ([Vladimir Cherkasov](https://github.com/vdimir)) 。
 * 全局和按用户划分的网络限流器都不会被重置，从而确保永远不会超过 `max_network_bandwidth_for_all_users` 和 `max_network_bandwidth_for_all_users` 的限制。[#81729](https://github.com/ClickHouse/ClickHouse/pull/81729) ([Sergei Trifonov](https://github.com/serxa)) 。
 * 引入设置 `optimize_rewrite_regexp_functions` (默认启用) 。当检测到特定的正则表达式模式时，它允许优化器将某些 `replaceRegexpAll`、`replaceRegexpOne` 和 `extract` 调用重写为更简单、更高效的形式。 (issue [#81981](https://github.com/ClickHouse/ClickHouse/issues/81981)) 。[#81992](https://github.com/ClickHouse/ClickHouse/pull/81992) ([Amos Bird](https://github.com/amosbird)) 。
 * 根据 listen&#95;backlog (默认值为 4096) 调整 TCP 服务器队列 (默认值为 64) 。[#82045](https://github.com/ClickHouse/ClickHouse/pull/82045) ([Azat Khuzhin](https://github.com/azat)) 。
 * 新增支持：无需重启服务器即可动态重新加载 `max_local_read_bandwidth_for_server` 和 `max_local_write_bandwidth_for_server`。[#82083](https://github.com/ClickHouse/ClickHouse/pull/82083) ([Kai Zhu](https://github.com/nauu)) 。
-* 引入设置 `enable_vector_similarity_index`，必须启用该设置才能使用向量相似度索引。现有设置 `allow_experimental_vector_similarity_index` 现已废弃；如有需要，仍可继续使用。[#83459](https://github.com/ClickHouse/ClickHouse/pull/83459) ([Robert Schulze](https://github.com/rschu1ze)) 。
-* 新增 [`max_joined_block_size_bytes`](/zh/reference/settings/session-settings/max-joined#max_joined_block_size_bytes)，作为 `max_joined_block_size_rows` 的补充，用于限制包含重量级列的 JOIN 的内存使用量。[#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 引入设置 `enable_vector_similarity_index`，必须启用该设置才能使用向量相似度索引。现有设置 `allow_experimental_vector_similarity_index` 现已弃用；如有需要，仍可继续使用。[#83459](https://github.com/ClickHouse/ClickHouse/pull/83459) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 新增 [`max_joined_block_size_bytes`](/zh/reference/settings/session-settings#max_joined_block_size_bytes)，作为 `max_joined_block_size_rows` 的补充，用于限制包含重量级列的 JOIN 的内存使用量。[#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
 * 修复 `cluster_function_process_archive_on_multiple_nodes` 的兼容性问题。[#83968](https://github.com/ClickHouse/ClickHouse/pull/83968) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
 * 默认启用对关联子查询的支持。[#85107](https://github.com/ClickHouse/ClickHouse/pull/85107) ([Dmitry Novik](https://github.com/novikd)) 。
 * 新增 `database_replicated` 设置，用于定义 DatabaseReplicatedSettings 的默认值。如果 Replicated DB 的 CREATE 查询中未指定该设置，则使用此设置中的值。[#85127](https://github.com/ClickHouse/ClickHouse/pull/85127) ([Tuan Pham Anh](https://github.com/tuanpach)) 。
@@ -566,8 +566,8 @@ doc_type: 'changelog'
 * 以更细粒度禁用依赖于即时更新或补丁分区片段所更新列的跳过索引。现在，跳过索引只会在受即时变更或补丁分区片段影响的 parts 中停用；此前，这些索引会在所有 parts 中一律停用。[#84241](https://github.com/ClickHouse/ClickHouse/pull/84241) ([Anton Popov](https://github.com/CurtizJ)).
 * 新增 MergeTree 设置 `search_orphaned_parts_drives`，用于限制查找 parts 的范围，例如仅按带有本地元数据的磁盘进行查找。[#84710](https://github.com/ClickHouse/ClickHouse/pull/84710) ([Ilya Golshtein](https://github.com/ilejn)).
 * 为 `WHERE` 补充了缺失的 `read_in_order_use_virtual_row` 支持。这样一来，对于过滤器未能完全下推到 `PREWHERE` 的查询，可以跳过读取更多 parts。[#84835](https://github.com/ClickHouse/ClickHouse/pull/84835) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* 修复了 MergeTree 中对 “compact” Variant 判别值序列化的使用问题。此前在某些本可使用它的场景中却没有使用。[#84141](https://github.com/ClickHouse/ClickHouse/pull/84141) ([Pavel Kruglov](https://github.com/Avogar)).
-* 为补丁分区片段中的未压缩字节总量新增限制 (表设置 [`max_uncompressed_bytes_in_patches`](/zh/reference/settings/merge-tree-settings/max#max_uncompressed_bytes_in_patches)) 。这可防止轻量级更新后 `SELECT` 查询显著变慢，并避免轻量级更新被滥用。[#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
+* 修复了 MergeTree 中对 “compact” Variant 判别器序列化的使用问题。此前在某些本可使用它的场景中却没有使用。[#84141](https://github.com/ClickHouse/ClickHouse/pull/84141) ([Pavel Kruglov](https://github.com/Avogar)).
+* 为补丁分区片段中的未压缩字节总量新增限制 (表设置 [`max_uncompressed_bytes_in_patches`](/zh/reference/settings/merge-tree-settings#max_uncompressed_bytes_in_patches)) 。这可防止轻量级更新后 `SELECT` 查询显著变慢，并避免轻量级更新被滥用。[#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
 
 <div id="cache-and-memory-management">
   ### 缓存和内存管理
