@@ -259,7 +259,8 @@ void IcebergMetadata::update(const ContextPtr &)
     cached_latest_metadata.reset();
 }
 
-Iceberg::MetadataFileWithInfo IcebergMetadata::fetchLatestMetadata(const ContextPtr & context, bool force_fetch_latest_metadata) const
+Iceberg::MetadataFileWithInfo IcebergMetadata::fetchLatestMetadata(
+    const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_metadata_pointer_overrides) const
 {
     return getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -270,7 +271,8 @@ Iceberg::MetadataFileWithInfo IcebergMetadata::fetchLatestMetadata(const Context
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
-        force_fetch_latest_metadata);
+        force_fetch_latest_metadata,
+        ignore_metadata_pointer_overrides);
 }
 
 DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
@@ -282,10 +284,10 @@ DataLakeStorageSettings IcebergMetadata::getMetadataLookupSettings() const
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
-    const ContextPtr & context, bool force_fetch_latest_metadata) const
+    const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_metadata_pointer_overrides) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
-    if (!force_fetch_latest_metadata && !explicit_metadata_file_path.get()
+    if (!force_fetch_latest_metadata && !ignore_metadata_pointer_overrides && !explicit_metadata_file_path.get()
         && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         std::optional<Iceberg::MetadataFileWithInfo> latest_metadata;
@@ -297,7 +299,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
             return getState(context, latest_metadata->path, latest_metadata->version);
     }
 
-    const auto latest_metadata = fetchLatestMetadata(context, force_fetch_latest_metadata);
+    const auto latest_metadata = fetchLatestMetadata(context, force_fetch_latest_metadata, ignore_metadata_pointer_overrides);
     return getState(context, latest_metadata.path, latest_metadata.version);
 }
 
@@ -1201,7 +1203,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;

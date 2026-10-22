@@ -213,7 +213,8 @@ public:
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
         const ContextPtr & context,
-        bool force_fetch_latest_metadata = false) const;
+        bool force_fetch_latest_metadata = false,
+        bool ignore_metadata_pointer_overrides = false) const;
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
         const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const;
@@ -260,7 +261,8 @@ private:
     mutable std::mutex cached_latest_metadata_mutex;
     mutable std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata TSA_GUARDED_BY(cached_latest_metadata_mutex);
 
-    Iceberg::MetadataFileWithInfo fetchLatestMetadata(const ContextPtr & context, bool force_fetch_latest_metadata) const;
+    Iceberg::MetadataFileWithInfo fetchLatestMetadata(
+        const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_metadata_pointer_overrides) const;
 
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
