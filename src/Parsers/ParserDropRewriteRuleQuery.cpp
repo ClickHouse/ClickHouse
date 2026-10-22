@@ -37,4 +37,28 @@ bool ParserDropRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Ex
     return true;
 }
 
+std::map<String, Documentation> ParserDropRewriteRuleQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["DROP RULE"] =
+    {
+        .description = R"DOCS_MD(
+Deletes a query rewrite rule. With `IF EXISTS`, dropping a rule that does not exist is not an error.
+
+See [Query rewrite rules](/operations/query-rules) for the details.
+)DOCS_MD",
+        .syntax = R"(
+DROP RULE [IF EXISTS] rule_name
+)",
+        .examples = {
+            {"Drop a rule", "DROP RULE rule_1;", ""},
+        },
+        .parent = "DROP",
+        .related = {"CREATE RULE", "ALTER RULE"},
+    };
+
+    return documentation;
+}
+
 }

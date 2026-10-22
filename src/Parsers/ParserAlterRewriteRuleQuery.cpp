@@ -101,4 +101,36 @@ bool ParserAlterRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     return true;
 }
 
+std::map<String, Documentation> ParserAlterRewriteRuleQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["ALTER RULE"] =
+    {
+        .description = R"DOCS_MD(
+Replaces the definition of an existing query rewrite rule. The new definition has the same form as in `CREATE RULE`: the rule either rewrites a matching query into another query, or rejects it with a message.
+
+See [Query rewrite rules](/operations/query-rules) for the details and the limitations.
+)DOCS_MD",
+        .syntax = R"(
+ALTER RULE rule_name AS (source_query) REWRITE TO (result_query)
+ALTER RULE rule_name AS (source_query) REJECT WITH 'message'
+)",
+        .examples = {
+            {"Change a rule into a rejection",
+             R"(
+ALTER RULE rule_1 AS
+(
+    SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
+)
+REJECT WITH 'Use the totals table';
+)", ""},
+        },
+        .parent = "ALTER",
+        .related = {"CREATE RULE", "DROP RULE"},
+    };
+
+    return documentation;
+}
+
 }

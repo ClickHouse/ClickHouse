@@ -100,4 +100,47 @@ bool ParserCreateRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, 
     return true;
 }
 
+std::map<String, Documentation> ParserCreateRewriteRuleQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE RULE"] =
+    {
+        .description = R"DOCS_MD(
+Creates a query rewrite rule. A rule either rewrites a matching query into another query, or rejects it with a message.
+
+The source template and the result template can be any query. A `{name:Type}` placeholder in the source template matches a part of the query and captures it, and the same placeholder in the result template substitutes the captured part. The supported placeholder types are `String`, `Int`, `Expression`, `ExpressionList` and `Subquery`. Matching is structural and ignores aliases.
+
+A rule is applied only to the queries of a session where it is listed in the `query_rules` setting. See [Query rewrite rules](/operations/query-rules) for the details and the limitations.
+)DOCS_MD",
+        .syntax = R"(
+CREATE RULE rule_name AS (source_query) REWRITE TO (result_query)
+CREATE RULE rule_name AS (source_query) REJECT WITH 'message'
+)",
+        .examples = {
+            {"Rewrite a query",
+             R"(
+CREATE RULE rule_1 AS
+(
+    SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
+)
+REWRITE TO
+(
+    SELECT date, hits FROM totals WHERE page = {name:String}
+);
+
+SET query_rules = 'rule_1';
+)", ""},
+            {"Reject a query",
+             R"(
+CREATE RULE rule_2 AS (SELECT * FROM stats) REJECT WITH 'Full scans of stats are not allowed';
+)", ""},
+        },
+        .parent = "CREATE",
+        .related = {"ALTER RULE", "DROP RULE"},
+    };
+
+    return documentation;
+}
+
 }
