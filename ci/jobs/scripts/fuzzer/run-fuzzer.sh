@@ -15,6 +15,10 @@ repo_dir=/repo
 
 CONFIG_DIR="/etc/clickhouse-server"
 
+# query-fuzzer-tweaks-users.xml runs the server-side AST fuzzer on every query of the `default` user.
+# The harness's own queries opt out: their fuzzed copies run before the reply and can hold it open.
+NO_AST_FUZZER="--ast_fuzzer_runs=0"
+
 export PATH="$repo_dir/ci/tmp/:$PATH"
 export PYTHONPATH=$repo_dir:$repo_dir/ci
 
@@ -30,6 +34,13 @@ for _san in ASAN TSAN MSAN UBSAN LSAN; do
     export "$_var"="${!_var:+${!_var} }log_path=${SANITIZER_LOG_BASE}"
 done
 unset _san _var
+
+# The server dumps jemalloc heap profiles here on every 1 GiB of peak growth and when the
+# server-wide memory limit is hit (jemalloc_flush_profile.yaml). jemalloc names the files
+# itself from prof_prefix and does not create the directory.
+JEMALLOC_PROFILES_DIR="/workspace/jemalloc_profiles"
+mkdir -p "$JEMALLOC_PROFILES_DIR"
+export MALLOC_CONF="${MALLOC_CONF:+${MALLOC_CONF},}prof_prefix:${JEMALLOC_PROFILES_DIR}/clickhouse.jemalloc"
 
 function collect_sanitizer_reports
 {
@@ -73,6 +84,8 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/ssl_certs.xml $CONFIG_DIR/config.d
     # Without this the server applies its 1GiB core_dump.size_limit default, which truncates cores.
     cp -av --dereference "$repo_dir"/tests/config/config.d/core_dump.yaml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_enable_global_profiler.yaml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/jemalloc_flush_profile.yaml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/server.crt "$repo_dir"/tests/config/server.key $CONFIG_DIR
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
@@ -93,6 +106,38 @@ EOL
     (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
 }
 
+function collect_jemalloc_profiles
+{
+    local server_died=$1
+    local profiles=("$JEMALLOC_PROFILES_DIR"/*.heap)
+    if [[ ! -e "${profiles[0]}" ]]; then
+        echo "No jemalloc profiles were dumped"
+        return 0
+    fi
+    local latest
+    latest=$(find "$JEMALLOC_PROFILES_DIR" -maxdepth 1 -name '*.heap' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)
+
+    # Symbolizing a debug build takes minutes, so render only the latest profile and only when
+    # the memory is actually in question. The raw .heap files always ship and can be rendered
+    # offline with jeprof and the job's binary.
+    if [[ "$server_died" == 1 ]] || grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' server.log; then
+        local collapsed="${latest%.heap}.collapsed"
+        # The whole pipeline is under the timeout: killing jeprof alone would leave an unfinished
+        # collapsed file that still looks valid.
+        if timeout --verbose --signal=TERM --kill-after=60 600 \
+            jeprof "$repo_dir/ci/tmp/clickhouse" "$latest" --collapsed > "$collapsed" 2> "${collapsed}.log"
+        then
+            flamegraph.pl --color mem --width 2560 < "$collapsed" > "${latest%.heap}.svg" || rm -f "${latest%.heap}.svg"
+        else
+            echo "Failed to symbolize $latest"
+            rm -f "$collapsed"
+        fi
+    fi
+
+    tar -C /workspace -cf - jemalloc_profiles | zstd --threads=0 -f -o jemalloc.tar.zst \
+        || echo "Failed to archive jemalloc profiles"
+}
+
 function filter_exists_and_template
 {
     local path
@@ -110,7 +155,7 @@ function filter_exists_and_template
 
 function stop_server
 {
-    timeout --signal TERM --kill-after=10 20 clickhouse-client --query "select elapsed, query from system.processes" ||:
+    timeout --signal TERM --kill-after=10 20 clickhouse-client $NO_AST_FUZZER --query "select elapsed, query from system.processes" ||:
     clickhouse stop
 
     # Debug.
@@ -153,7 +198,7 @@ function fuzz
     # A dead server is detected early, so the deadline only affects hung servers.
     for _ in {1..120}
     do
-        if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
+        if clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi
@@ -163,7 +208,7 @@ function fuzz
 
     kill -0 $server_pid
 
-    IS_ASAN=$(clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    IS_ASAN=$(clickhouse-client $NO_AST_FUZZER --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
     if [[ "$IS_ASAN" = "1" ]];
     then
         echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
@@ -202,13 +247,13 @@ function fuzz
         gdb -batch -command script.gdb -p $server_pid &
         sleep 5
         # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
-        time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+        time clickhouse-client $NO_AST_FUZZER --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
         # Check connectivity after we attach gdb, because it might cause the server
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1"
+            if clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -341,7 +386,7 @@ function fuzz
         # Make sure the server is still accepting queries before restarting: a fuzzer that
         # exited with code 0 against a dead server would otherwise restart-loop until the budget
         # runs out and hide the failure.
-        if ! clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
+        if ! timeout --signal TERM --kill-after=10 60 clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
             echo "Server is not responding, not restarting the fuzzer"
             break
         fi
@@ -373,7 +418,11 @@ function fuzz
         # --receive_timeout governs the socket only once the handshake has completed; until
         # then both directions run on handshake_timeout_ms, whose client-side default is 300s.
         # A probe needs both bounds to be held to the budget it asks for.
-        if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 1" 2> err
+        # Neither bounds the wait after the client's own timeout: it cancels and then waits for
+        # the server to answer, so a server that never answers is bounded only by `timeout`.
+        probe_rc=0
+        timeout --signal TERM --kill-after=10 60 clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 1" 2> err || probe_rc=$?
+        if [[ "$probe_rc" == "0" ]]
         then
             server_died=0
             break
@@ -386,7 +435,7 @@ function fuzz
                 # diagnostic and runs under `set -e`; if the same overload rejects
                 # it, do not abort the script (that would skip the status.tsv
                 # write below and surface as a missing-status job ERROR).
-                timeout --signal TERM --kill-after=10 20 clickhouse-client --query "SHOW PROCESSLIST" ||:
+                timeout --signal TERM --kill-after=10 20 clickhouse-client $NO_AST_FUZZER --query "SHOW PROCESSLIST" ||:
                 timeouts=0
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
@@ -394,7 +443,7 @@ function fuzz
                 # Server is alive but at memory limit, give it time to reclaim
                 timeouts=0
                 sleep 1
-            elif grep -F 'Timeout exceeded while' err
+            elif [[ "$probe_rc" == "124" || "$probe_rc" == "137" ]] || grep -F 'Timeout exceeded while' err
             then
                 # Alive but slow to answer: retry, and only treat it as a real
                 # hang once the timeouts persist (a dead server hits the branch
@@ -409,7 +458,7 @@ function fuzz
                 fi
                 sleep 1
             else
-                echo "Server live check returns $?"
+                echo "Server live check returns $probe_rc"
                 cat err
                 server_died=1
                 break
@@ -430,6 +479,8 @@ function fuzz
     echo "Server exit code is $server_exit_code"
 
     echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv
+
+    collect_jemalloc_profiles "$server_died"
 
     if test -f core.*; then
         zstd --threads=0 core.*

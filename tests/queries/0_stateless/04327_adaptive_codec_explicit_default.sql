@@ -23,14 +23,14 @@ SELECT 'Adaptive ON';
 INSERT INTO t_explicit_default_on SELECT number, number, number, number, number FROM numbers(50000);
 INSERT INTO t_explicit_default_on SELECT number, number, number, number, number FROM numbers(50000, 50000);
 OPTIMIZE TABLE t_explicit_default_on FINAL;
-SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
+SELECT column, mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_explicit_default_on) ORDER BY column;
 
 SELECT 'Adaptive OFF';
 INSERT INTO t_explicit_default_off SELECT number, number, number, number, number FROM numbers(50000);
 INSERT INTO t_explicit_default_off SELECT number, number, number, number, number FROM numbers(50000, 50000);
 OPTIMIZE TABLE t_explicit_default_off FINAL;
-SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
+SELECT column, mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_explicit_default_off) ORDER BY column;
 
 -- Read back to exercise the part.

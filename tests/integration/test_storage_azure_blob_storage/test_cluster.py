@@ -82,6 +82,47 @@ def test_select_all(cluster):
     assert TSV(pure_azure) == TSV(distributed_azure)
 
 
+def test_select_all_split_by_buckets(cluster):
+    """
+    With `cluster_table_function_split_granularity = 'bucket'` the initiator opens every Parquet file
+    itself to split it into row-group buckets, using the object info of the cluster iterator, which
+    skips the metadata probe. That placeholder must not be taken as a known size of zero: the Azure
+    read is bounded by the size recorded in the object info, so the file would be read as empty.
+    """
+    node = cluster.instances["node_0"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_split_by_buckets.parquet', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', 'auto', 'key UInt64, data String') "
+        f"SELECT number, toString(number) FROM numbers(100000)",
+        settings={
+            "azure_truncate_on_insert": 1,
+            "output_format_parquet_row_group_size": 1000,
+        },
+    )
+
+    pure_azure = azure_query(
+        node,
+        f"SELECT count(), sum(key), sum(length(data)) from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_split_by_buckets.parquet', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet')",
+    )
+    assert TSV(pure_azure) == TSV("100000\t4999950000\t488890")
+
+    for validate_etag_on_read in (0, 1):
+        distributed_azure = azure_query(
+            node,
+            f"SELECT count(), sum(key), sum(length(data)) from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_cluster_split_by_buckets.parquet', 'devstoreaccount1',"
+            f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet')",
+            settings={
+                "cluster_table_function_split_granularity": "bucket",
+                "cluster_table_function_buckets_batch_size": 10,
+                "azure_validate_etag_on_read": validate_etag_on_read,
+            },
+        )
+        assert TSV(pure_azure) == TSV(distributed_azure)
+
+
 def test_count(cluster):
     node = cluster.instances["node_0"]
     port = cluster.env_variables["AZURITE_PORT"]
