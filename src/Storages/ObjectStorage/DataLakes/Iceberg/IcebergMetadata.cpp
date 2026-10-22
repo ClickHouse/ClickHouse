@@ -1882,7 +1882,7 @@ void IcebergMetadata::drop(ContextPtr context)
     }
 
     std::unordered_set<String> authorized;
-    bool allow_server_credentials;
+    bool allow_server_credentials = false;
     {
         std::lock_guard lock(external_files_drop_authorized_mutex);
         authorized = external_files_drop_authorized;
