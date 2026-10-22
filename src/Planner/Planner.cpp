@@ -207,6 +207,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -505,14 +506,15 @@ struct LimitRangeConditions
 
 /// Builds the boundary conditions of a `LIMIT` range as one DAG over the columns of `header`, so a
 /// subexpression shared by `AFTER` and `UNTIL` is computed once; the DAG keeps only the inputs the
-/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the column
-/// named after the interpolated alias (see `addWithFillStepIfNeeded`), while the projection expression the
+/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the target's
+/// column (see `addWithFillStepIfNeeded`), while the projection expression the
 /// alias was computed from keeps default values on the filled rows. A boundary that refers to such an alias
 /// is therefore redirected to the alias column, as `Project names` does for the query result.
 LimitRangeConditions buildLimitRangeConditions(
     const SharedHeader & header,
     const QueryNode & query_node,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const NameToNameMap & interpolate_target_column_names)
 {
     ActionsDAG actions;
     for (const auto & column : header->getColumnsWithTypeAndName())
@@ -558,7 +560,8 @@ LimitRangeConditions buildLimitRangeConditions(
         for (const auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
         {
             const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            const auto & alias_column = interpolated_columns.findInOutputs(interpolate_node_typed.getExpressionName());
+            const auto & alias_column = interpolated_columns.findInOutputs(
+                interpolate_target_column_names.at(interpolate_node_typed.getExpressionName()));
             auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
             interpolated_columns.addOrReplaceInOutputs(interpolated_columns.addAlias(alias_column, expression_name));
         }
@@ -1535,6 +1538,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         else
         {
             ActionsDAG rename_dag;
+            const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
+
+            /// `FillingTransform` rejects an ORDER BY column as an INTERPOLATE output by name, which a renamed target column no longer has.
+            for (const auto & description : query_analysis_result.sort_description)
+                for (const auto & name : {description.alias, description.column_name})
+                    if (auto it = target_column_names.find(name); !name.empty() && it != target_column_names.end() && it->second != name)
+                        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output", name);
 
             /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
             std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
@@ -1542,6 +1553,18 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+                const auto & column_name = target_column_names.at(interpolate_node_typed.getExpressionName());
+
+                /// The expression reads the previous value of its target through a column named by the target name.
+                QueryTreeNodePtr interpolate_expression_node = interpolate_node_typed.getInterpolateExpression();
+                if (column_name != interpolate_node_typed.getExpressionName())
+                {
+                    interpolate_expression_node = interpolate_expression_node->clone();
+                    auto target_column_node = std::make_shared<ColumnNode>(
+                        NameAndTypePair(column_name, interpolate_node_typed.getExpression()->getResultType()),
+                        std::static_pointer_cast<ITableExpressionNode>(interpolate_node));
+                    replaceColumns(interpolate_expression_node, interpolate_node, {{interpolate_node_typed.getExpressionName(), target_column_node}});
+                }
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
@@ -1552,14 +1575,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
                 auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
-                    interpolate_node_typed.getInterpolateExpression());
+                    interpolate_expression_node);
                 interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, interpolate_node_typed.getExpressionName());
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, column_name);
             }
 
             for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
@@ -1672,6 +1695,7 @@ void addLimitRangeStep(
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node,
+    const NameToNameMap & interpolate_target_column_names,
     UsefulSets & useful_sets)
 {
     if (query_node.isLimitWithTies())
@@ -1692,7 +1716,7 @@ void addLimitRangeStep(
     if (query_node.hasLimit())
         limit_length = query_analysis_result.limit_length;
 
-    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context);
+    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context, interpolate_target_column_names);
     appendSetsFromActionsDAG(conditions.actions, useful_sets);
 
     const auto & query_context = planner_context->getQueryContext();
@@ -3471,7 +3495,13 @@ void Planner::buildPlanForQueryNode()
                     "Before LIMIT range (AFTER/UNTIL)",
                     useful_sets);
 
-            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
+            addLimitRangeStep(
+                query_plan,
+                query_analysis_result,
+                planner_context,
+                query_node,
+                expression_analysis_result.hasSort() ? expression_analysis_result.getSort().interpolate_target_column_names : NameToNameMap{},
+                useful_sets);
         }
         else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
