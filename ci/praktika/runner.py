@@ -846,8 +846,7 @@ class Runner:
                     workflow.enable_exit_code_result,
                 )
         finally:
-            # Idempotent: a no-op if stop() already ran above; guarantees the
-            # sampling thread is always joined even if TeePopen raised.
+            # Idempotent no-op if stop() already ran; still joins the sampling thread if TeePopen raised.
             host_metrics_collector.stop()
 
         return exit_code
