@@ -392,6 +392,8 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
             ProfileEvents::increment(ProfileEvents::DiskAzureCreateContainer);
 
         auto raw_client = service_client->CreateBlobContainer(params.endpoint.container_name).Value;
+        /// `CreateBlobContainer` returns a client without `ClickhouseOptions`.
+        raw_client.SetClickhouseOptions(params.client_options.ClickhouseOptions);
         return std::make_unique<ContainerClient>(std::move(raw_client), params.endpoint.prefix);
     }
     catch (const Azure::Storage::StorageException & e)

@@ -127,6 +127,9 @@ def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_ur
         "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
         "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+        "CREATE TABLE azure_blocked_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = 'http://127.0.0.1:1', "
+        "container_name = 'container', account_name = 'account', account_key = 'YQ==')",
     ],
 )
 def test_azure_host_filter_before_client_creation(start_cluster, query):
@@ -139,6 +142,37 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
     assert "UNACCEPTABLE_URL" in error
     # The host check must run before even a container existence probe.
     assert node5.query(container_requests) == before
+
+
+@pytest.mark.parametrize(
+    "endpoint, write_url",
+    [
+        (
+            "storage_account_url = 'https://onelake.blob.fabric.microsoft.com', "
+            "account_name = 'account', account_key = 'YQ=='",
+            "https://onelake.dfs.fabric.microsoft.com",
+        ),
+        (
+            "connection_string = 'BlobEndpoint=https://onelake.blob.fabric.microsoft.com/;"
+            "DfsEndpoint=http://127.0.0.1:1;SharedAccessSignature=sv=2022&sig=c2FzY2FuYXJ5'",
+            "http://127.0.0.1:1",
+        ),
+    ],
+)
+def test_azure_disk_onelake_write_host(start_cluster, endpoint, write_url):
+    # node2 allows only the OneLake `.blob` host, while writes of such a disk go to another host.
+    container_requests = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
+    )
+    before = node2.query(container_requests)
+    error = node2.query_and_get_error(
+        "CREATE TABLE azure_onelake_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
+        f"SETTINGS disk = disk(type = azure_blob_storage, {endpoint}, container_name = 'container')",
+        settings={"azure_sdk_max_retries": 0},
+    )
+    assert f'URL "{write_url}" is not allowed' in error
+    assert node2.query(container_requests) == before
 
 
 def test_config_with_only_primary_hosts(start_cluster):

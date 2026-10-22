@@ -372,6 +372,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     /// validated at CREATE time (OneLake writes go to the `.dfs` host, reads to
     /// `.blob`). Normalize scheme and host as Poco::URI does at CREATE time (the
     /// scheme resolves the default port; the host is lower-cased) so both agree.
+    /// Disks are exempt; their redirects are still checked below.
+    if (!for_disk_azure)
     {
         Poco::URI request_uri;
         request_uri.setScheme(url.GetScheme());
