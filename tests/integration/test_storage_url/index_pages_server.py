@@ -228,6 +228,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(len(response_data)))
         self.send_header("Accept-Ranges", "bytes")
+        self.send_header("X-Source-File", urlparse(self.path).path.rsplit("/", 1)[-1])
         self.end_headers()
         self.wfile.write(response_data)
 
@@ -267,6 +268,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Length", str(len(archive_data)))
+            self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
             self.end_headers()
             return
 

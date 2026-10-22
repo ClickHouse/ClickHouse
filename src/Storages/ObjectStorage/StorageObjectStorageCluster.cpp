@@ -4,6 +4,9 @@
 #include <Common/StringUtils.h>
 #include <Common/parseGlobs.h>
 #include <Disks/DiskType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -193,12 +196,23 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     }
 
     metadata.setConstraints(constraints_);
-    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    auto virtual_columns = VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context_,
         /* format_settings */std::nullopt,
         configuration->partition_strategy_type,
-        sample_path));
+        sample_path);
+    if (configuration->getType() == ObjectStorageType::Web && !metadata.columns.has("_headers"))
+    {
+        virtual_columns.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "",
+            VirtualsMaterializationPlace::Reader);
+    }
+    metadata.setVirtuals(std::move(virtual_columns));
 
     setInMemoryMetadata(metadata);
 }

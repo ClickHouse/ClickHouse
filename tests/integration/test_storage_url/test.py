@@ -836,6 +836,26 @@ def test_url_archive_path_failover():
         assert "index listing" in error
 
 
+def test_url_cluster_headers_virtual_column():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT _file, any(_headers['X-Source-File']), any(_headers['X-Probe-Method']) "
+            "FROM urlCluster('test_cluster_two_shards', "
+            "'http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
+            "GROUP BY _file ORDER BY _file"
+        )
+    )
+    assert result == "part1.tsv\tpart1.tsv\tGET\npart2.tsv\tpart2.tsv\tGET\n"
+    for multiple_nodes in (0, 1):
+        result = node1.query(
+            "SELECT sum(x), any(_headers['X-Source-File']) "
+            "FROM urlCluster('test_cluster_two_shards', "
+            "'http://resolver:8087/data/simple_archive.zip :: eod.csv', 'CSV', 'x UInt64')",
+            settings={"cluster_function_process_archive_on_multiple_nodes": multiple_nodes},
+        )
+        assert result == "3\tsimple_archive.zip\n"
+
+
 def test_url_archive_combined_expansion_limit():
     settings = {
         "allow_experimental_url_wildcard_from_index_pages": 0,
