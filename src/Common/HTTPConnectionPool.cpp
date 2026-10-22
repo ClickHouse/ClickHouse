@@ -1117,6 +1117,15 @@ private:
         /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
         /// there would break certificate verification. Routing it through the cache needs a
         /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
+#if USE_SILK
+        /// `HTTPSClientSession::connect` tunnels through a separate proxy session and wraps its socket in TLS
+        /// with ordinary Poco sockets, so the connection would block despite its transport.
+        if (transport == HTTPConnectionTransport::Cooperative && https && poco_proxy_config.tunnel)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot connect to {} over tunneling proxy {}: tunneling is not supported for cooperative HTTPS connections",
+                host, proxy_configuration.host);
+#endif
         auto connection = createConnection();
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
