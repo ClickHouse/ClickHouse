@@ -1,0 +1,21 @@
+--- queries of a user without the privileges
+Not enough privileges. To execute this query, it's necessary to have the grant demangle ON *.* (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant demangle ON *.* (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant demangle ON *.* (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant demangle ON *.* (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant demangle ON *.* (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant READ ON FILE (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON system.macros (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON system.server_settings (ACCESS_DENIED)
+Not enough privileges. To execute this query, it's necessary to have the grant SELECT ON system.merge_tree_settings (ACCESS_DENIED)
+--- introspection functions are disabled
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0 (FUNCTION_NOT_ALLOWED)
+--- the pending mutation uses demangle, the user reads only the other columns
+1	b
+--- the pending mutation is applied when the user reads the updated column
+Not enough privileges. To execute this query, it's necessary to have the grant demangle ON *.* (ACCESS_DENIED)
+foo()

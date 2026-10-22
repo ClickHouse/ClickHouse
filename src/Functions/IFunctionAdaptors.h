@@ -149,6 +149,7 @@ public:
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
     String getName() const override { return function->getName(); }
+    void checkAccessOnBuild() const override { function->checkAccessOnBuild(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
