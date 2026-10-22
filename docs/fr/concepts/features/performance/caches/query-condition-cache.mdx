@@ -53,6 +53,13 @@ SETTINGS use_query_condition_cache = true;
 stockera des plages de la table qui ne satisfont pas le prédicat.
 Les exécutions suivantes de la même requête, également avec le paramètre `use_query_condition_cache = true`, utiliseront le cache des conditions de requête pour parcourir moins de données.
 
+### Fichiers Parquet {#parquet-files}
+
+Le cache des conditions de requête fonctionne également pour les fichiers Parquet lus via les table engines `File`, `S3`, `AzureBlobStorage`, `URL` et de lac de données (mais pas via les fonctions de table, car les entrées du cache sont rattachées à une table).
+Pour ces fichiers, le cache mémorise des groupes de lignes plutôt que des granules.
+Les entrées d’un fichier sont liées à sa version, de sorte qu’un fichier modifié soit relu : l’ETag pour le stockage d’objet, et la date de modification ainsi que la taille pour les fichiers locaux et pour `URL`.
+Comme un serveur web n’indique la date de modification (`Last-Modified`) qu’à la seconde près, un fichier lu via `URL` n’utilise le cache que s’il a été modifié il y a plus d’une minute selon l’horloge du serveur web (l’en-tête `Date` de sa réponse), et à condition que le serveur indique la date de modification, la taille et la date.
+
 ### Conditions impliquant l’heure actuelle {#time-conditions}
 
 Une condition comme `WHERE time >= now() - INTERVAL 10 DAY` est non déterministe : la valeur repliée de `now()` change à chaque requête, si bien que de telles conditions ne peuvent pas être mises en cache directement.

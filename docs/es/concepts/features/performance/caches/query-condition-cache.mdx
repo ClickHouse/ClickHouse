@@ -53,6 +53,13 @@ SETTINGS use_query_condition_cache = true;
 almacenará los rangos de la tabla que no cumplan el predicado.
 Las ejecuciones posteriores de la misma consulta, también con el parámetro `use_query_condition_cache = true`, utilizarán la caché de condiciones de consulta para escanear menos datos.
 
+### Archivos Parquet {#parquet-files}
+
+La caché de condiciones de consulta también funciona con archivos Parquet leídos mediante los motores de tabla `File`, `S3`, `AzureBlobStorage`, `URL` y de lago de datos (pero no mediante funciones de tabla, ya que las entradas de caché pertenecen a una tabla).
+Para estos archivos, la caché almacena grupos de filas en lugar de gránulos.
+Las entradas de un archivo están vinculadas a su versión, de modo que un archivo modificado se vuelve a leer: el ETag en el caso del almacenamiento de objetos, y la hora de modificación y el tamaño en el caso de los archivos locales y de `URL`.
+Dado que un servidor web informa de la hora de modificación (`Last-Modified`) con una precisión de solo un segundo, un archivo leído mediante `URL` solo utiliza la caché si se modificó hace más de un minuto según el reloj del servidor web (el encabezado `Date` de su respuesta) y si el servidor informa de su hora de modificación, su tamaño y la fecha.
+
 ### Condiciones que dependen de la hora actual {#time-conditions}
 
 Una condición como `WHERE time >= now() - INTERVAL 10 DAY` es no determinista: el valor plegado de `now()` cambia con cada consulta, por lo que este tipo de condiciones no pueden almacenarse en caché directamente.
