@@ -316,7 +316,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
@@ -340,7 +339,6 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
@@ -476,14 +474,21 @@ static SortDescription getSortDescriptionForOutputHeader(
     return {};
 }
 
+static Int64 getMaxPartitionsToRead(const Settings & settings, const MergeTreeSettings & data_settings)
+{
+    return settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : data_settings[MergeTreeSetting::max_partitions_to_read].value;
+}
+
 std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
     const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const
 {
     const Settings & settings = context_.getSettingsRef();
-    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
-        ? settings[Setting::max_partitions_to_read].value
-        : data_settings_[MergeTreeSetting::max_partitions_to_read].value;
-    if (max_partitions_to_read > 0)
+    auto max_partitions_to_read = getMaxPartitionsToRead(settings, data_settings_);
+    /// Without its own analysis a follower would count parts that the coordinator never assigns to it.
+    /// The initiator checks the limit on the coordinator's analysis.
+    if (max_partitions_to_read > 0 && !index_analysis_was_already_done_on_initiator)
     {
         std::set<String> partitions;
         for (const auto & part_with_ranges : parts_with_ranges)
@@ -654,6 +659,28 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
+/// A replica that skipped its own index analysis would evaluate skip indexes at read time over whole parts. Narrow them
+/// to the ranges analyzed on the initiator: the coordinator assigns only marks within them. A part missing from the
+/// analyzed set is never assigned to this replica.
+static void setAnalyzedSkipIndexReadRanges(
+    MergeTreeIndexBuildContext & index_build_context,
+    const RangesInDataParts & parts_with_ranges,
+    const RangesInDataPartsDescription & analyzed_parts)
+{
+    std::map<std::pair<MergeTreePartInfo, String>, const MarkRanges *> analyzed_ranges;
+    for (const auto & part : analyzed_parts)
+        analyzed_ranges.emplace(std::pair{part.info, part.projection_name}, &part.ranges);
+
+    for (const auto & part : parts_with_ranges)
+    {
+        const bool is_projection = part.data_part->isProjectionPart();
+        const auto & info = is_projection ? part.parent_part->info : part.data_part->info;
+        const String & projection_name = is_projection ? part.data_part->name : "";
+        if (auto it = analyzed_ranges.find({info, projection_name}); it != analyzed_ranges.end())
+            index_build_context.addAnalyzedReadRanges(part.part_index_in_query, *it->second);
+    }
+}
+
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -698,13 +725,18 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
-    /// Default pool ignores the announcement response. The latter is relevant only to InOrder
-    /// reading where we split the table into multiple streams.
-    std::ignore = extension.sendInitialRequest(
+    /// Default mode needs the announcement response only for the analyzed ranges, so it is requested only by a follower
+    /// whose read-time skip-index reader would otherwise evaluate over whole parts.
+    const bool wants_analyzed_ranges = index_build_context && index_build_context->needs_analyzed_ranges;
+    auto response = extension.sendInitialRequest(
         CoordinationMode::Default,
         pool->buildAnnouncementDescriptions(),
         pool->getMarkSegmentSize(),
-        pool->getMinMarksPerRequest());
+        pool->getMinMarksPerRequest(),
+        wants_analyzed_ranges);
+
+    if (wants_analyzed_ranges && response)
+        setAnalyzedSkipIndexReadRanges(*index_build_context, pool->getPartsRanges(), response->parts);
 
     Pipes pipes;
 
@@ -1082,17 +1114,23 @@ Pipe ReadFromMergeTree::readInOrder(
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.
+        /// Ordered modes always get the response; the flag only says what this replica uses it for.
+        const bool wants_analyzed_ranges = index_build_context && index_build_context->needs_analyzed_ranges;
         auto response = extension.sendInitialRequest(
             mode,
             in_order_pool->buildAnnouncementDescriptions(),
             /*mark_segment_size=*/0,
-            in_order_pool->getMinMarksPerRequest());
+            in_order_pool->getMinMarksPerRequest(),
+            wants_analyzed_ranges);
 
         if (response)
         {
             initiator_selected_parts.emplace();
             for (const auto & part : response->parts)
                 initiator_selected_parts->emplace(part.info, part.projection_name);
+
+            if (wants_analyzed_ranges)
+                setAnalyzedSkipIndexReadRanges(*index_build_context, parts_with_ranges, response->parts);
         }
 
         pool = std::move(in_order_pool);
@@ -3836,8 +3874,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
     /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
     /// the initiator's parts, which are not the parts this replica reads.
+    /// The initiator must also run a local plan: without one nobody analyzes the indexes or checks the
+    /// partition limit for the followers.
     if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
-        && settings[Setting::parallel_replicas_local_plan]
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context_)
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)
@@ -3845,7 +3885,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         // Skip index analysis and return parts with all marks
         // The coordinator will choose ranges to read for workers based on index analysis on its side
         result.parts_with_ranges = std::move(res_parts);
-        result.key_condition_not_applied = indexes->key_condition;
+        result.index_analysis_was_already_done_on_initiator = true;
     }
     else
     {
@@ -5156,6 +5196,11 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
         return false;
 
+    /// Same for `max_partitions_to_read`: it is checked before the read, so parts that a skip index
+    /// would drop must already be excluded by index analysis.
+    if (getMaxPartitionsToRead(settings, *data_settings) > 0)
+        return false;
+
     /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
     /// making the existing on-disk index data incompatible with the current column type.
     /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
@@ -5893,14 +5938,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
 
-    if (skip_index_reader && result.key_condition_not_applied)
-    {
-        std::vector<std::optional<size_t>> pk_to_minmax_slot;
-        if (context->getSettingsRef()[Setting::use_partition_minmax_for_primary_key_pruning])
-            pk_to_minmax_slot = MergeTreeDataSelectExecutor::buildPrimaryKeyToMinMaxSlotMapping(storage_snapshot->metadata, data_settings);
-        skip_index_reader->setPrimaryKeyCondition(result.key_condition_not_applied, std::move(pk_to_minmax_slot));
-    }
-
     /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
     /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
     /// path, the join runtime-filter fallback or the top-K primary key pruning), it increments these
@@ -5978,6 +6015,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             std::move(projection_index_read_desc.read_ranges),
             std::move(index_read_result_pool),
             std::move(part_remaining_marks));
+        index_build_context->needs_analyzed_ranges
+            = result.index_analysis_was_already_done_on_initiator && index_build_context->index_reader_pool->hasSkipIndexReader();
     }
 
     Pipe pipe;
@@ -6643,7 +6682,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
     };
     // This code is executed only if there is no parts to read, so the parameter values don't really matter
     std::ignore = extension.sendInitialRequest(
-        get_coordination_mode(), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
+        get_coordination_mode(), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1, /*wants_analyzed_ranges=*/false);
     return true;
 }
 
