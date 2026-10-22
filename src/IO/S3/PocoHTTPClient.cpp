@@ -232,6 +232,15 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
+/// Chosen per request, so that one client and its shared credentials providers serve both fibers and threads.
+/// Amber always uses cooperative transport. A fiber uses it inside `Silk::ThreadModeScope` too, as Amber already does.
+static HTTPConnectionTransport getTransport(HTTPConnectionGroupType group)
+{
+    if (group == HTTPConnectionGroupType::AMBER || Silk::isInsideFiber())
+        return HTTPConnectionTransport::Cooperative;
+    return HTTPConnectionTransport::Blocking;
+}
+
 static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
@@ -631,7 +640,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 target_uri,
                 getTimeouts(method, first_attempt, /*first_byte*/ true),
                 proxy_configuration,
-                &connect_time);
+                &connect_time,
+                getTransport(group));
 
             /// In case of error this address will be written to logs
             request.SetResolvedRemoteHost(session->getResolvedAddress());
@@ -980,7 +990,7 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
     std::lock_guard lock(mutex);
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
     {
-        /// The token is requested over blocking HTTP transport, like AWS credentials.
+        /// `postTokenRequest`, used for the ADC triple and the service account key, keeps blocking transport.
         Silk::ThreadModeScope thread_mode;
         bearer_token = requestBearerToken();
     }
@@ -1015,7 +1025,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", url.toString());
 
-    auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts));
+    auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts), {}, nullptr, getTransport(group));
     sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
