@@ -54,11 +54,21 @@ struct IcebergFileRecord
     std::optional<UInt64> first_row_id;
 };
 
+struct IcebergMetadataLogEntry
+{
+    DateTime64 timestamp{};
+    String file;
+    std::optional<Int64> latest_snapshot_id;
+    std::optional<Int32> latest_schema_id;
+    std::optional<Int64> latest_sequence_number;
+};
+
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
     using IcebergFiles = std::vector<IcebergFileRecord>;
+    using IcebergMetadataLogEntries = std::vector<IcebergMetadataLogEntry>;
 
     static constexpr auto name = "Iceberg";
 
@@ -118,6 +128,7 @@ public:
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
     IcebergHistory getHistory(ContextPtr local_context) const;
+    IcebergMetadataLogEntries getMetadataLogEntries(ContextPtr local_context) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
