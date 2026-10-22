@@ -359,6 +359,7 @@ ts = now();
 3. **默认搜索**：
 
 * 如果上述两个设置都未提供，则 `metadata` 目录中的所有 `.metadata.json` 文件都会作为候选文件
+* 在 S3 和 Azure 上，如果启用了查询级设置 `iceberg_list_only_v_prefixed_metadata_files` 并禁用了 `iceberg_use_version_hint`，且其中部分文件名以 `v` 开头 (ClickHouse 和 Hadoop 目录即采用这种命名方式)，则只有这些文件会成为候选文件，系统也只会列出这些文件 (按键前缀 `metadata/v` 列出，因此不会列出存储在同一目录中的清单文件)。仅当表的所有元数据文件均采用这种命名方式时，才应启用此设置：如果目录中同时存在两种命名方案，`<N>-<uuid>.metadata.json` 文件将永远不会成为候选文件
 
 ### 选择最新的文件 {#most-recent-file}
 

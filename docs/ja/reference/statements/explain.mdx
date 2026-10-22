@@ -1111,7 +1111,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 結果がプロジェクションパーツのレイアウトに依存する場合は、`marks_span` に範囲が示され、どちらとも判断できない判定は `too close to call` として報告されます。大きなテーブルでは、推定はグラニュールのサンプルを読み取って行われます (`projection_scan_budget_rows` を参照)。
 
-集約プロジェクション、`WHERE` 句、独自のスキップ索引、コミット順または仮想カラムのキー、あるいは格納された `_block_number` を持つプロジェクション、およびクエリが読み取るカラムをすべてカバーしていないプロジェクションは、`not_applicable` として報告されます。`force_optimize_projection_name` と `preferred_optimize_projection_name` は無視され、`force_optimize_projection` によってステートメントが失敗することはありません。
+WHATIF は、集約プロジェクションおよび独自のスキップ索引を持つプロジェクションを `not_applicable` として報告します。また、コミット順のキー、仮想カラムのキー、あるいは格納された `_block_number` を持つプロジェクションも `not_applicable` として報告します。クエリが読み取るカラムをすべて備えていないプロジェクションについても同様です。WHATIF は `force_optimize_projection_name` と `preferred_optimize_projection_name` を無視し、`force_optimize_projection` によってステートメントが失敗することはありません。
 
 **構文**
 
@@ -1122,7 +1122,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **設定**
 
 * `projection_scan_budget_rows` — プロジェクションの推定が、グラニュールのサンプリングに切り替わる前に読み取ってよい行数です。デフォルト: `10000000`。`0` は無制限を意味し、`max_rows_to_read` でこの値を引き下げることもできます。サンプリングでは少なくとも約 30 個のグラニュールを読み取り、かつパーツごとに 1 つ以上のグラニュールを読み取ります。`max_rows_to_read` によってこれが許容されない場合、推定は `unsupported` になります。
-* `empirical` — `1` (デフォルト) では、ベースラインによるプルーニング後に残ったグラニュールに対し、メモリ上で索引を評価してスキップ率 (上限値) を測定します。`0` では、この処理を行いません。どちらの設定でも、実測で結果が得られない場合 (無効になっている場合や、メモリ上で索引を評価できない場合) は、推定器がカラム [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を使用します。どちらも利用できない場合は、適用可能かどうかのみを示す要約に切り替えます。
+* `empirical` — `1` (デフォルト) では、ベースラインによる枝刈り後に残ったグラニュールに対し、メモリ上で索引を評価してスキップ率 (上限値) を測定します。`0` では、この処理を行いません。どちらの設定でも、経験的な評価で結果が得られない場合 (無効になっている場合や、メモリ上で索引を評価できない場合) は、推定器がカラム [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を使用します。どちらも利用できない場合は、適用可能かどうかのみを示す要約に切り替えます。
 
 **出力**
 

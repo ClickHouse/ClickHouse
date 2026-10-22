@@ -177,6 +177,8 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Ограничивает число реплик, используемых в запросе, значением (оценочное количество строк для чтения / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). Максимальное значение по-прежнему ограничено параметром &#39;max&#95;parallel&#95;replicas&#39;
 
+Игнорируется, если включён `automatic_parallel_replicas_mode`: в этом случае автоматический режим принимает решение на основе собственной стоимостной модели.
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

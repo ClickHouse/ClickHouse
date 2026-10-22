@@ -1,23 +1,22 @@
 ---
-title: 'GCP workload identity para ClickPipes'
-sidebarTitle: 'GCP workload identity'
+title: 'identidade de carga de trabalho do GCP para ClickPipes'
+sidebarTitle: 'identidade de carga de trabalho do GCP'
 slug: /integrations/clickpipes/security/gcp-workload-identity
-description: 'Configure o acesso sem chave do ClickPipes a fontes de dados compatíveis do Google Cloud usando o GCP workload identity.'
+description: 'Configure o acesso sem chave do ClickPipes a fontes de dados compatíveis do Google Cloud usando a identidade de carga de trabalho do GCP.'
 doc_type: 'guide'
 keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', 'autenticação sem chave']
 ---
 
 <Note>
-  A autenticação com GCP workload identity está em prévia privada. Entre em contato com o suporte do ClickHouse para habilitá-la na sua organização.
+  A autenticação com identidade de carga de trabalho do GCP está em Beta.
 </Note>
 
-O GCP workload identity permite que o ClickPipes acesse fontes de dados compatíveis do Google Cloud sem que seja necessário armazenar uma chave de conta de serviço do cliente. Este guia mostra como obter a service account do Google gerenciada pelo ClickPipes, conceder a ela acesso à sua fonte de dados e criar um ClickPipe que use credenciais de curta duração.
+A identidade de carga de trabalho do GCP permite que o ClickPipes acesse fontes de dados compatíveis do Google Cloud sem que seja necessário armazenar uma chave de conta de serviço do cliente. Este guia mostra como obter a service account do Google gerenciada pelo ClickPipes, conceder a ela acesso à sua fonte de dados e criar um ClickPipe que use credenciais de curta duração.
 
 ## Antes de começar {#before-you-begin}
 
 Você precisará de:
 
-* Acesso à prévia privada habilitado para sua organização do ClickHouse Cloud.
 * Um serviço do ClickHouse Cloud em execução no GCP. A implantação do ClickPipes desse serviço também deve estar no GCP.
 * Uma chave de API do ClickHouse Cloud com permissão para gerenciar ClickPipes no serviço.
 * Permissão para conceder funções do IAM nos recursos da fonte de dados do Google Cloud.
@@ -127,7 +126,7 @@ Consulte os exemplos programáticos de cada fonte de dados:
 ## Solução de problemas {#troubleshooting}
 
 <Accordion title="Workload Identity não é suportado">
-  Confirme que o acesso à prévia privada está habilitado e que tanto o serviço do ClickHouse Cloud quanto a respectiva implantação do ClickPipes são executados no GCP. Se o serviço atender a esses requisitos, mas `supported` for `false`, entre em contato com o suporte do ClickHouse.
+  Confirme que tanto o serviço do ClickHouse Cloud quanto a respectiva implantação do ClickPipes são executados no GCP. Se o serviço atender a esses requisitos, mas `supported` for `false`, entre em contato com o suporte do ClickHouse.
 </Accordion>
 
 <Accordion title="A identidade não está pronta">

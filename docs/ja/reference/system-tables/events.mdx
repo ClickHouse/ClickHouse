@@ -158,6 +158,18 @@ HTTP接続での接続エラーにより異常とマークされたアドレス�
 
 トリビアルな GROUP BY LIMIT のカットオフで保持される共有キーの集合に限定されたハッシュテーブルが、external aggregation によって一時ファイルへ flush された後、それらのキーで再シードされた回数です (`optimize_trivial_group_by_limit_query` 設定を参照) 。
 
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+top-K しきい値マージで実際にマージされ、候補としてランク付けされたグループの数。
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+すべてのグループを通常の方法でマージする代わりに、top-K しきい値マージ (Fagin のしきい値アルゴリズム) によってマージされた二段階バケットの数。
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+top-K しきい値マージで一度も参照されなかった、スレッドごとのハッシュテーブルのセルの数。これらのセルに含まれるどのグループも上位 K 件に入り得ないため、参照が省略されます。
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 top-K 集約のヒープが凍結され、通常の集約にフォールバックした回数。ヒープが観測 window 内でほとんど何も棄却しなかった (例: 異なる grouping key の数が LIMIT を超えない) か、あるいはヒープの boundary にある同値集合 (決して追い出すことができない) が肥大化してヒープを超えたかのいずれかです (`enable_group_by_top_k_optimization` を参照) 。
@@ -2068,6 +2080,18 @@ encryption header cache 内に encryption header のバイト列が見つから�
 ### ExternalJoinWritePart {#externaljoinwritepart}
 
 外部メモリ使用時のJOINで、一時ファイルがディスクに書き込まれた回数。
+
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+書き込み中の packed パーツでバッファリングされたデータが占有するメモリを解放するために、一時ファイルへ書き込まれた圧縮バイト数。
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+書き込み中の packed パーツについて、バッファリングされたデータが占有するメモリを解放するために一時ファイルへ書き込まれたデータ量 (圧縮前の非圧縮サイズ) 。
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+メモリを解放するために、書き込み中の packed データパーツのバッファリングされたデータが一時ファイルへ移動された回数。
 
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
@@ -4517,6 +4541,10 @@ DB::Parquet::Prefetcher が読み込んだ範囲のうち、Parquet リーダー
 
 Parquet データから読み込まれた行グループの総数
 
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+Parquet の PREWHERE 入力カラムのうち、辞書索引として読み取られた行数。これにより、当該カラムに適用される関数は辞書の値ごとに 1 回だけ評価されます
+
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 フィルタを通過した行の合計数
@@ -6441,6 +6469,14 @@ lazy posting list モードで、出力領域の値がすでに確定してい�
 
 候補駆動型の フレーズ search で検査された候補行 (ポスティングリストの積集合) 。
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+フレーズ検索の候補行の特定に要した合計時間です。具体的には、フレーズを構成するトークンのポスティングリストを読み取り、それらの積集合を求める処理にかかった時間です。
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+ビットマップの積集合ではなく、ポスティングリストのカーソルを使用して候補行を特定したフレーズ検索の回数。
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 フレーズ クエリが、&#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39; を超える行数に一致すると推定されたためにテキスト索引をスキップし、代わりにカラム上で評価された回数。
@@ -6451,7 +6487,7 @@ lazy posting list モードで、出力領域の値がすでに確定してい�
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-テキスト索引に対して実行されたフレーズ検索の回数。同一パーツ内での同一フレーズの再検索はcacheから応答されるため、カウントされません。
+テキスト索引に対して実行されたフレーズ検索の回数。グラニュールのリーダーごとに1回カウントされます。すべてcacheから応答されたリーダーはカウントされません。
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 

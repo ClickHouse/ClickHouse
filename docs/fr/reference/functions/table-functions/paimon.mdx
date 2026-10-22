@@ -43,8 +43,14 @@ Une table ayant la structure spécifiée, permettant de lire les données de la 
 ## Limitations {#limitations}
 
 La fusion à la lecture (merge-on-read) n&#39;étant pas implémentée, **les tables à clé primaire ne peuvent pas être lues** : le lecteur renvoie l&#39;union brute des
-fichiers de données du snapshot, qui contient encore les versions de lignes remplacées par des upserts ultérieurs. La lecture d&#39;une table dont le schéma
+Fichiers de données du snapshot, qui contient encore les versions de lignes remplacées par des upserts ultérieurs. La lecture d&#39;une table dont le schéma
 déclare `primary-key` lève donc une exception.
+
+Les vecteurs de suppression n&#39;étant pas appliqués, **les snapshots comportant des vecteurs de suppression ne peuvent pas être lus** : l&#39;ensemble de résultats contiendrait encore
+les lignes supprimées par des instructions `DELETE` et `UPDATE` ultérieures. La lecture d&#39;un snapshot dont le manifest d&#39;index référence
+des vecteurs de suppression lève donc une exception, même après la désactivation de `deletion-vectors.enabled`.
+Un compactage complet dans Paimon (`compact_strategy => 'full'`) applique les vecteurs de suppression ; les snapshots créés ensuite
+peuvent alors de nouveau être lus.
 
 ## Définir une collection nommée {#defining-a-named-collection}
 

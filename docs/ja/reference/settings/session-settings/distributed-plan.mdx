@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) にあり、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
@@ -152,6 +153,18 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい実験的な設定"}]}]} />
 
 分散クエリプラン内の不要な Exchange を削除します。デバッグ時は無効にしてください。
+
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい実験的設定: 分散集約において、入力行ではなく部分集約状態をshuffleします。"}]}]} />
+
+分散集約が `GROUP BY` キーに基づいてデータをshuffleする前に、データを読み取るノード上で部分集約を行います。これにより、shuffle時にはすべての入力行ではなく、各ノードからグループごとに 1 つの集約状態のみが送信され、各バケットは担当するキーの状態をマージします。
+ルールベースのプランナーは、カラム STATISTICS に基づき、部分集約を行ってもデータ量が半分以下にならないと判断した場合は、従来どおり入力行をshuffleします。`enable_cascades_optimizer` が有効な場合、この設定により、オプティマイザはバケットごとにこのマージを行うかどうかをコストに基づいて選択できます。
+この設定は `make_distributed_plan = 1` と併用した場合にのみ有効です。入力行をshuffleする `distributed_plan_force_shuffle_aggregation` と併用した場合は効果がありません。
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 

@@ -81,7 +81,7 @@ Conecte-se ao Cloud SQL Postgres usando o usuário admin e execute os comandos a
 
 A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
-## Uso da autenticação de banco de dados via IAM (opcional, prévia privada) {#iam-database-authentication}
+## Uso da autenticação de banco de dados via IAM (opcional, Beta) {#iam-database-authentication}
 
 <CloudSQLIAMAuthentication engine="postgres" />
 

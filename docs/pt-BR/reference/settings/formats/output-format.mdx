@@ -830,6 +830,14 @@ Tamanho alvo do grupo de linhas, em bytes, antes da compressão.
 
 Use o tipo String do Parquet em vez de Binary para colunas String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Codifica colunas `Float32` e `Float64` (Parquet `FLOAT` e `DOUBLE`) com a codificação `ALP` (Adaptive Lossless floating-Point). A `ALP` é sem perdas e comprime dados de ponto flutuante com características decimais (preços, medições, coordenadas) muito melhor do que a `PLAIN`. Essas colunas são gravadas sem dicionário, e qualquer página em que a `ALP` gere um resultado maior do que a `PLAIN` é gravada com `PLAIN`. Essa codificação foi adicionada ao formato Parquet recentemente, portanto nem todo leitor de Parquet oferece suporte a ela ainda: habilite-a somente se os arquivos forem lidos por leitores compatíveis.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

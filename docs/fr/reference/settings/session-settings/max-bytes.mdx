@@ -95,7 +95,7 @@ Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire d
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du filtre de Bloom qu’un set de `IN` sur disque conserve afin d’éviter de lire le disque pour les valeurs absentes du set."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Le paramètre a été rétroporté vers la 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du filtre de Bloom qu’un set de `IN` sur disque conserve afin d’éviter de lire le disque pour les valeurs absentes du set."}]}]} />
 
 Budget mémoire, en octets, alloué au filtre de Bloom que chaque set de `IN` écrit sur disque conserve en mémoire. Le
 filtre permet aux lookups de valeurs absentes du set d’éviter la lecture du disque. Il n’accélère pas les lookups
@@ -126,7 +126,7 @@ Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory)
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du cache de blocs conservé par un set de `IN` sur disque, afin que ses lookups ne relisent pas les mêmes blocs depuis le disque."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Le paramètre a été rétroporté vers la version 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du cache de blocs conservé par un set de `IN` sur disque, afin que ses lookups ne relisent pas les mêmes blocs depuis le disque."}]}]} />
 
 Budget mémoire, en octets, alloué au cache de blocs que chaque set de `IN` écrit sur disque conserve en mémoire. Un
 lookup qui a besoin d’un bloc déjà lu par un lookup précédent le récupère dans le cache au lieu de le relire
@@ -235,7 +235,7 @@ A un effet pour tous les `join_algorithm` basés sur le hachage, y compris `grac
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Le déversement sur le disque du set d’un `IN` avec sous-requête est désormais activé par défaut, à partir de la moitié de la mémoire disponible du serveur ou de l’utilisateur."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "La modification de la valeur par défaut à 0.5 a été rétroportée vers 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
 
 Fraction de la mémoire disponible du serveur ou de l’utilisateur servant à calculer, au début de l’exécution, le seuil à partir duquel le set d’un `IN`
 avec sous-requête est déversé sur le disque. Par exemple, `0.5` correspond à la moitié de la mémoire disponible.

@@ -177,6 +177,8 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 クエリで使用するレプリカ数を、 (読み取ると推定される行数 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica) に制限します。なお、最大値は引き続き &#39;max&#95;parallel&#95;replicas&#39; によって制限されます
 
+`automatic_parallel_replicas_mode` が有効な場合、この設定は無視されます。自動モードでは独自のコストモデルに基づいて判断が行われます。
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

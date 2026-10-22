@@ -34,6 +34,16 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Значение должно быть больше нуля.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка: при поиске последнего файла метаданных таблицы Iceberg, читаемой по пути, получать список только по префиксу ключа `metadata\/v`."}]}]} />
+
+Ищет последний файл метаданных таблицы Iceberg, читаемой по пути в S3 или Azure, получая список только по префиксу ключа `metadata/v`, чтобы не перечислять манифесты, хранящиеся в том же каталоге `metadata`. Если по этому префиксу находятся файлы `.metadata.json`, кандидатами считаются только они; в противном случае запрашивается список всего каталога. Не применяется вместе с `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` или `iceberg_recent_metadata_file_by_last_updated_ms_field`, а также к таблицам базы данных каталога озера данных.
+
+Включайте эту настройку только для таблиц, все файлы метаданных которых имеют имена вида `v<N>...` (так их именуют ClickHouse и каталоги Hadoop): если в каталоге есть также файлы `<N>-<uuid>.metadata.json`, они никогда не становятся кандидатами, и коммиты создающей их пишущей стороны остаются невидимыми.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Псевдонимы**: `iceberg_delete_manifest_decode_concurrency`

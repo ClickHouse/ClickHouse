@@ -28,7 +28,7 @@ Las filas se filtran según los derechos de acceso: una entrada solo es visible 
 * `database` ([String](/es/reference/data-types/string)) — Nombre de la base de datos de la tabla a la que pertenece la parte.
 * `table` ([String](/es/reference/data-types/string)) — Nombre de la tabla.
 * `table_uuid` ([UUID](/es/reference/data-types/uuid)) — UUID de la tabla. No cambia aunque se cambie el nombre de la tabla.
-* `part` ([String](/es/reference/data-types/string)) — Nombre de la parte de datos.
+* `part` ([String](/es/reference/data-types/string)) — Nombre de la parte de datos. En el caso de una parte de una proyección, el nombre de la parte padre y el nombre de la proyección, con el formato `parent_part:projection`.
 * `column` ([String](/es/reference/data-types/string)) — Nombre de la columna.
 * `row_begin` ([UInt64](/es/reference/data-types/int-uint)) — Índice de la fila inicial del rango almacenado en caché (incluido).
 * `row_end` ([UInt64](/es/reference/data-types/int-uint)) — Índice de la fila final del rango almacenado en caché (excluido).

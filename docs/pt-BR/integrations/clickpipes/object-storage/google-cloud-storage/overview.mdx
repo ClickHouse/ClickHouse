@@ -149,9 +149,9 @@ Ao usar o [modo não ordenado](#continuous-ingestion-any-order), a conta de serv
 
 A autenticação por conta de serviço é necessária ao usar o [modo não ordenado](#continuous-ingestion-any-order) com notificações do Pub/Sub. Selecione **Service Account** como método de autenticação e envie o arquivo JSON da chave da conta de serviço.
 
-#### Workload Identity do GCP (prévia privada) {#gcp-workload-identity}
+#### Identidade de carga de trabalho do GCP (Beta) {#gcp-workload-identity}
 
-Siga o [guia de Workload Identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter a service account gerenciada no contexto do serviço ClickPipes. Conceda a ela a função `roles/storage.objectViewer` no bucket de origem e crie o pipe com a autenticação `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Para ingestão no modo unordered, conceda também `roles/pubsub.subscriber` e `roles/pubsub.viewer` na assinatura de notificação existente e use o nome totalmente qualificado dela: `projects/<project-id>/subscriptions/<subscription-id>`.
+Siga o [guia de identidade de carga de trabalho do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity) para obter a service account gerenciada no contexto do serviço ClickPipes. Conceda a ela a função `roles/storage.objectViewer` no bucket de origem e crie o pipe com a autenticação `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Para ingestão no modo unordered, conceda também `roles/pubsub.subscriber` e `roles/pubsub.viewer` na assinatura de notificação existente e use o nome totalmente qualificado dela: `projects/<project-id>/subscriptions/<subscription-id>`.
 
 #### Credenciais HMAC {#hmac-credentials}
 

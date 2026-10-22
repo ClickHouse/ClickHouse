@@ -20,7 +20,12 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ativar ou desativar a otimização do plano que materializa apenas os n melhores grupos de cada bucket de dois níveis quando uma agregação final alimenta ORDER BY com suas saídas usando LIMIT n e é possível comprovar que a seleção por bucket é exata."}]}]} />
 
-Ativa ou desativa uma otimização no nível do plano de consulta que, quando uma agregação final alimenta `ORDER BY` com as saídas da agregação usando `LIMIT n` e o plano comprova que a seleção por bucket é exata, materializa apenas os n melhores grupos de cada bucket de dois níveis nessa ordem durante a conversão final da agregação. O resultado é exato: um grupo que não está entre os n melhores de seu próprio bucket tem pelo menos n grupos à sua frente globalmente e, portanto, não pode estar entre os n melhores globais.
+Ativa ou desativa uma otimização no nível do plano de consulta que, quando uma agregação final alimenta `ORDER BY` com as saídas da agregação usando `LIMIT n` e o plano comprova que a seleção por bucket é exata, mantém apenas os n melhores grupos de cada bucket de dois níveis durante a mesclagem ou conversão final da agregação. O resultado é exato: um grupo que não está entre os n melhores de seu próprio bucket tem pelo menos n grupos à sua frente globalmente e, portanto, não pode estar entre os n melhores globais.
+
+Para ordenação por `count`, a otimização pode selecionar os melhores grupos durante a conversão final. Para funções agregadas cujos valores mesclados podem ser limitados a partir de seus estados parciais, ela pode, em vez disso, usar uma mesclagem por limiar (Threshold Algorithm de Fagin), que deixa de mesclar grupos que não têm como alcançar os n melhores. Isso é compatível com `count`, `sum` de inteiros sem sinal cujo resultado é `UInt64` (argumentos de `UInt8` a `UInt64`; inteiros sem sinal largos, como `UInt128`, ficam de fora) e `uniqExact` em ordem decrescente, além de `max` em ordem decrescente e `min` em ordem crescente para tipos inteiros, de data, de data e hora, decimais e enum (ponto flutuante, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString` e outros tipos ficam de fora). Os combinadores `If` e `Null` mantêm a mesclagem por limiar apenas para `count`, `sum` sem sinal e `uniqExact`, e somente quando o resultado não é anulável (por exemplo, `countIf`, `sumIf` de um argumento não `Nullable` ou `uniqExact` de um argumento `Nullable`); `sum` e `sumIf` de um argumento `Nullable` (cujo resultado é `Nullable`), `maxIf`, `minIf` e `max` ou `min` de um argumento `Nullable` usam a mesclagem comum. O algoritmo é escolhido automaticamente de acordo com a função agregada, o formato da consulta e a distribuição dos estados parciais.
+
+Um grupo que não está entre os n melhores de seu bucket não é mesclado nem finalizado; portanto, esta não é apenas uma opção de desempenho: as demais funções agregadas da consulta deixam de ser mescladas e finalizadas nos grupos que não têm como alcançar os n melhores. Uma consulta que lançava uma exceção ao mesclar ou finalizar uma dessas funções agregadas em um desses grupos pode, em vez disso, retornar linhas. Definir esta configuração como 0 mantém o comportamento anterior.
+
 Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) estiver definida como 1.
 
 Valores possíveis:
@@ -540,11 +545,13 @@ Valores possíveis:
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Adicionado o valor `force`: mantém a leitura em ordem através de uma junção mesmo quando as partes não anunciam linhas virtuais."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Nova configuração"}]}]} />
 
-Mantém a leitura em ordem da tabela à esquerda em operações JOIN, que pode ser aproveitada por etapas subsequentes.
+Mantém a leitura em ordem a partir da tabela à esquerda em operações JOIN, o que pode ser aproveitado pelas etapas seguintes.
+
+Em junções que não sejam `LEFT`, a leitura só permanece em ordem quando todas as partes da tabela à esquerda anunciam uma linha virtual (consulte [`read_in_order_use_virtual_row`](/pt-BR/reference/settings/session-settings/read-in#read_in_order_use_virtual_row)); sem as linhas virtuais, a mesclagem após a junção pode ler muito mais do que o limite exige. O valor `force` mantém a leitura em ordem em qualquer caso.
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 

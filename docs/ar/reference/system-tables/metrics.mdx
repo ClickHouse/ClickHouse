@@ -854,6 +854,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمع سلاسل التنفيذ العام.
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+حجم ذاكرة التخزين المؤقت لأنواع حقول مخطط Iceberg الحالي في كتالوجات Glue، بالبايتات
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+عدد العناصر في ذاكرة التخزين المؤقت لأنواع حقول مخطط Iceberg الحالي في كتالوجات Glue
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 عدد خيوط التنفيذ في تجمع خيوط التنفيذ الخاص بـ HashedDictionary.
@@ -1465,6 +1473,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 عدد المهام النشطة أو المدرجة في قائمة الانتظار في مجمّع الخيوط المسؤول عن تحميل أجزاء البيانات المتقادمة.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+مقدار الذاكرة (بالبايتات) المخصَّصة للبيانات المخزَّنة مؤقتًا لأجزاء البيانات المحزَّمة قيد الكتابة، ولا يشمل ذلك البيانات المنقولة إلى الملفات المؤقتة.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2169,6 +2181,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 عدد الملفات المؤقتة المستخدمة في الدمج العمودي
+
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+عدد الملفات المؤقتة التي تحتوي على البيانات المخزَّنة مؤقتًا لأجزاء البيانات المحزَّمة الجاري كتابتها
 
 ### TemporaryFilesForSet {#temporaryfilesforset}
 

@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Esta página descreve as instruções `KILL QUERY` e `KILL MUTATION`.
 
-Por padrão, quando não há correspondência, a instrução retorna sem gerar uma exceção. Para fazer com que `KILL QUERY` lance uma exceção quando sua expressão `WHERE` não deixar nenhuma linha elegível em `system.processes` após a exclusão da própria instrução `KILL` atual, e com que `KILL MUTATION` lance uma exceção quando sua expressão `WHERE` não corresponder a nenhuma linha em `system.mutations`, defina [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) como `true`.
+Por padrão, `KILL QUERY` lança uma exceção `NOTHING_TO_KILL` quando sua expressão `WHERE` não deixa nenhuma linha elegível em `system.processes` após a exclusão da própria instrução `KILL` atual, e `KILL MUTATION` lança uma exceção quando sua expressão `WHERE` não corresponde a nenhuma linha em `system.mutations`. Para permitir que a instrução retorne sem gerar uma exceção quando não houver correspondência, defina [`kill_throw_if_noop`](/pt-BR/operations/settings/settings#kill_throw_if_noop) como `false`.
 A execução com `ON CLUSTER` não lança exceção quando não há correspondências, pois os resultados não são agregados entre os hosts.
 
 ## KILL QUERY {#kill-query}
@@ -57,7 +57,7 @@ SELECT
   ORDER BY time_delta DESC;
 ```
 
-Interrompa a consulta:
+Encerre a consulta:
 
 ```sql
 -- Forcibly terminates all queries with the specified query_id:
@@ -68,16 +68,16 @@ KILL QUERY WHERE user='username' SYNC
 ```
 
 <Tip>
-  Se você estiver interrompendo uma consulta no ClickHouse Cloud ou em um cluster autogerenciado, use a opção `ON CLUSTER [cluster-name]` para garantir que a consulta seja interrompida em todas as réplicas
+  Se você estiver encerrando uma consulta no ClickHouse Cloud ou em um cluster autogerenciado, use a opção `ON CLUSTER [cluster-name]` para garantir que a consulta seja encerrada em todas as réplicas
 </Tip>
 
 Usuários com acesso somente leitura só podem interromper as próprias consultas.
 
 Um usuário sem a concessão `SELECT` em `system.processes` ainda pode cancelar a própria consulta informando seu identificador:
 `KILL QUERY WHERE query_id = '<id>'`. Se o usuário não tiver essa concessão nem `KILL QUERY`, informar um identificador de consulta
-que não esteja em execução em seu nome não cancela nenhuma consulta nem retorna linhas, em vez de gerar um erro, a menos que
-[`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) esteja habilitado, caso em que a operação sem efeito
-é reportada como uma exceção. Já um usuário com `KILL QUERY`, mas sem essa concessão `SELECT`, tem a solicitação recusada por falta do `SELECT`.
+que não esteja em execução em seu nome não cancela nenhuma consulta e, por padrão, lança uma exceção `NOTHING_TO_KILL`. Com
+[`kill_throw_if_noop`](/pt-BR/operations/settings/settings#kill_throw_if_noop) definido como `false`, nenhuma linha é retornada;
+já um usuário com `KILL QUERY`, mas sem essa concessão `SELECT`, tem a solicitação recusada por falta do `SELECT`.
 Qualquer outra condição `WHERE`, assim como `ON CLUSTER`, continua exigindo as concessões descritas acima.
 
 Por padrão, é usada a versão assíncrona das consultas (`ASYNC`), que não espera a confirmação de que as consultas foram interrompidas.

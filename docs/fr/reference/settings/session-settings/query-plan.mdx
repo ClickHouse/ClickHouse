@@ -20,7 +20,12 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer ou de désactiver l’optimisation du plan qui matérialise uniquement les n meilleurs groupes de chaque compartiment à deux niveaux lorsqu’une agrégation finale alimente ORDER BY sur ses résultats avec LIMIT n et qu’il est possible de prouver que la sélection par compartiment est exacte."}]}]} />
 
-Active ou désactive une optimisation au niveau du plan de requête qui, lorsqu’une agrégation finale alimente `ORDER BY` sur les résultats de l’agrégation avec `LIMIT n` et que le plan prouve que la sélection par compartiment est exacte, matérialise uniquement les n meilleurs groupes de chaque compartiment à deux niveaux, dans cet ordre, lors de la conversion finale de l’agrégation. Le résultat est exact : un groupe ne figurant pas parmi les n meilleurs groupes de son propre compartiment est précédé d’au moins n groupes au niveau global et ne peut donc pas figurer parmi les n meilleurs groupes globaux.
+Active ou désactive une optimisation au niveau du plan de requête qui, lorsqu’une agrégation finale alimente `ORDER BY` sur les résultats de l’agrégation avec `LIMIT n` et que le plan prouve que la sélection par compartiment est exacte, conserve uniquement les n meilleurs groupes de chaque compartiment à deux niveaux lors de la fusion ou de la conversion finale de l’agrégation. Le résultat est exact : un groupe ne figurant pas parmi les n meilleurs groupes de son propre compartiment est précédé d’au moins n groupes au niveau global et ne peut donc pas figurer parmi les n meilleurs groupes globaux.
+
+Pour un tri par `count`, l’optimisation peut sélectionner les meilleurs groupes lors de la conversion finale. Pour les agrégats dont les valeurs fusionnées peuvent être bornées à partir de leurs états partiels, elle peut à la place recourir à une fusion à seuil (algorithme à seuil de Fagin, ou Fagin&#39;s Threshold Algorithm), qui évite de fusionner les groupes ne pouvant pas atteindre les n premiers. Sont pris en charge : `count`, `sum` d’entiers non signés dont le résultat est `UInt64` (arguments `UInt8` à `UInt64` ; les entiers non signés larges tels que `UInt128` sont exclus) et `uniqExact` en ordre décroissant, ainsi que `max` en ordre décroissant et `min` en ordre croissant pour les types entiers, date, date-heure, décimaux et énumérés (les types à virgule flottante, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString` et les autres types sont exclus). Avec les combinateurs `If` et `Null`, la fusion à seuil n’est conservée que pour `count`, `sum` non signé et `uniqExact`, et uniquement lorsque le résultat n’est pas nullable (par exemple `countIf`, `sumIf` d’un argument non `Nullable`, ou `uniqExact` d’un argument `Nullable`) ; `sum` et `sumIf` d’un argument `Nullable` (dont le résultat est `Nullable`), `maxIf`, `minIf`, ainsi que `max` ou `min` d’un argument `Nullable` utilisent la fusion ordinaire. L’algorithme est choisi automatiquement en fonction de l’agrégat, de la forme de la requête et de la distribution des états partiels.
+
+Un groupe ne figurant pas parmi les n meilleurs de son compartiment n’est ni fusionné ni finalisé ; ce paramètre ne se limite donc pas aux performances : les autres agrégats de la requête ne sont plus fusionnés ni finalisés sur les groupes ne pouvant pas atteindre les n premiers. Une requête qui levait une exception lors de la fusion ou de la finalisation de l’un de ces agrégats sur un tel groupe peut désormais renvoyer des lignes. La valeur 0 permet de conserver le comportement précédent.
+
 Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est défini sur 1.
 
 Valeurs possibles :
@@ -540,11 +545,13 @@ Valeurs possibles :
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Ajout de la valeur `force` : maintient la lecture dans l’ordre à travers une jointure même lorsque les parts n’annoncent aucune ligne virtuelle."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
 
-Conserve la lecture dans l’ordre depuis la table de gauche lors des opérations JOIN, afin qu’elle puisse être utilisée par les étapes suivantes.
+Maintient la lecture dans l’ordre depuis la table de gauche dans les opérations JOIN, ce dont les étapes suivantes peuvent tirer parti.
+
+Pour une jointure autre que `LEFT`, la lecture ne reste dans l’ordre que si chaque part de la table de gauche annonce une ligne virtuelle (voir [`read_in_order_use_virtual_row`](/fr/reference/settings/session-settings/read-in#read_in_order_use_virtual_row)) ; en l’absence de lignes virtuelles, la fusion qui suit la jointure peut lire bien plus de données que ne l’exige la limite. La valeur `force` maintient la lecture dans l’ordre dans tous les cas.
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 

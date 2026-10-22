@@ -8,7 +8,7 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 ---
 
 <Note>
-  GCP Workload Identity 인증은 비공개 프리뷰(Private Preview) 단계입니다. 조직에서 이 기능을 활성화하려면 ClickHouse 지원팀에 문의하십시오.
+  GCP Workload Identity 인증은 베타 단계입니다.
 </Note>
 
 GCP Workload Identity를 사용하면 고객의 서비스 계정 키를 저장하지 않고도 ClickPipes가 지원되는 Google Cloud 소스에 액세스할 수 있습니다. 이 가이드에서는 ClickPipes가 관리하는 Google 서비스 계정을 확인하고, 이 계정에 소스 액세스 권한을 부여한 다음, 단기 자격 증명을 사용하는 ClickPipe를 생성하는 방법을 설명합니다.
@@ -17,7 +17,6 @@ GCP Workload Identity를 사용하면 고객의 서비스 계정 키를 저장�
 
 다음 사항이 필요합니다.
 
-* ClickHouse Cloud 조직에 비공개 프리뷰(Private Preview) 액세스가 활성화되어 있어야 합니다.
 * GCP에서 실행되는 ClickHouse Cloud 서비스가 있어야 합니다. 해당 서비스의 ClickPipes 배포도 GCP에서 실행되어야 합니다.
 * 해당 서비스의 ClickPipes를 관리할 수 있는 권한(permission)이 있는 ClickHouse Cloud API 키가 있어야 합니다.
 * Google Cloud 소스 리소스에 IAM 역할을 부여할 수 있는 권한이 있어야 합니다.
@@ -127,7 +126,7 @@ ClickPipes는 Google Cloud 프로젝트에 IAM 바인딩을 생성할 수 없습
 ## 문제 해결 {#troubleshooting}
 
 <Accordion title="Workload Identity가 지원되지 않음">
-  비공개 프리뷰 액세스가 활성화되어 있는지, 그리고 ClickHouse Cloud 서비스와 해당 서비스의 ClickPipes 배포가 모두 GCP에서 실행되고 있는지 확인하십시오. 서비스가 이러한 요구 사항을 충족하는데도 `supported`가 `false`이면 ClickHouse 지원팀에 문의하십시오.
+  ClickHouse Cloud 서비스와 해당 서비스의 ClickPipes 배포가 모두 GCP에서 실행되고 있는지 확인하십시오. 서비스가 이러한 요구 사항을 충족하는데도 `supported`가 `false`이면 ClickHouse 지원팀에 문의하십시오.
 </Accordion>
 
 <Accordion title="아이덴티티가 준비되지 않음">

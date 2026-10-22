@@ -944,13 +944,13 @@ INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자�
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`KILL QUERY` 및 `KILL MUTATION`이 일치하는 항목이 없음을 보고하도록 `kill_throw_if_noop`을 기본적으로 활성화합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
 
 [`KILL QUERY`](/ko/reference/statements/kill#kill-query) 및 [`KILL MUTATION`](/ko/reference/statements/kill#kill-mutation)의 `WHERE` 절과 일치하는 행이 없을 때 예외를 발생시킬지 여부를 제어합니다.
 
-true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제외하고 `system.processes`에 대상 행이 없을 때 예외를 발생시키며, `KILL MUTATION`은 `system.mutations`에 일치하는 행이 없을 때 예외를 발생시킵니다. 기본적으로는 일치하는 행이 없어도 예외 없이 반환됩니다. `ON CLUSTER`로 실행하면 일치 결과가 호스트 간에 집계되지 않으므로, 일치하는 행이 없어도 예외가 발생하지 않습니다.
+기본적으로 활성화되어 있습니다. `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제외하고 `system.processes`에 대상 행이 없을 때 예외를 발생시키며, `KILL MUTATION`은 `system.mutations`에 일치하는 행이 없을 때 예외를 발생시킵니다. 일치하는 행이 없어도 예외 없이 처리하려면 `false`로 설정하십시오. `TEST` 시험 실행(dry run)은 예외를 발생시키지 않고 빈 미리보기를 반환합니다. `ON CLUSTER`로 실행하면 일치 결과가 호스트 간에 집계되지 않으므로, 일치하는 행이 없어도 예외가 발생하지 않습니다.
 
 가능한 값:
 
@@ -1506,13 +1506,13 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "제출한 연결과 분리된 상태로 백그라운드에서 쿼리를 실행하고 결과는 버리는 새로운 설정입니다."}]}]} />
 
-활성화하면 서버는 쿼리를 백그라운드에서 예약하고 즉시 비어 있는 성공 결과를 반환합니다. 이후 연결 상태와 관계없이 쿼리는 완료될 때까지 실행됩니다.
+활성화하면 서버는 쿼리를 백그라운드에서 예약한 뒤, 쿼리가 검사(예: 테이블이 존재하는지, 사용자에게 필요한 권한이 부여되어 있는지)를 통과하고 주요 작업을 시작하기 직전 단계에 이를 때까지 기다렸다가 비어 있는 성공 결과를 반환합니다. 이후 연결 상태와 관계없이 쿼리는 완료될 때까지 실행됩니다. 그 이전에 발생한 오류는 클라이언트에 반환되며, 이후에 발생한 오류는 `system.query_log`에만 기록됩니다.
 
 백그라운드 쿼리는 서버를 재시작하면 유지되지 않습니다. 서버 종료 시에는 포그라운드 쿼리와 동일한 서버 설정을 따릅니다. `shutdown_wait_unfinished_queries`는 쿼리를 취소할지 완료될 때까지 기다릴지를 결정하며(큐에 대기 중인 항목은 어느 경우든 `system.query_log` 항목을 남기지 않고 삭제됩니다), `shutdown_wait_unfinished`는 서버가 기다리는 시간을 제한합니다.
 
 `query_id`로 쿼리를 추적할 수 있습니다. 실행 중에는 `system.processes`에서, 완료 후 쿼리 로그 항목이 플러시되면 `system.query_log`에서 확인할 수 있습니다.
 
-네이티브 TCP 및 HTTP 프로토콜을 통해 수신된 쿼리에 적용됩니다. HTTP에서는 이 설정을 URL 매개변수로 전달하십시오. `SET`으로 변경할 수 없으므로 쿼리별로 활성화하거나 사용자 또는 profile 수준에서 활성화하십시오.
+네이티브 TCP 및 HTTP 프로토콜을 통해 수신된 쿼리에 적용됩니다. HTTP에서는 이 설정을 URL 매개변수로 전달하십시오. `SET`으로 변경할 수 없으므로 쿼리별로 활성화하거나 사용자 또는 프로필 수준에서 활성화하십시오.
 
 주요 사용 사례는 클라이언트 연결이 끊어져도 손실되어서는 안 되는 장시간 실행 `INSERT ... SELECT`입니다.
 

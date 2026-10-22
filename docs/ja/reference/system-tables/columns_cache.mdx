@@ -28,12 +28,12 @@ doc_type: 'reference'
 * `database` ([String](/ja/reference/data-types/string)) — パーツが属するテーブルのデータベース名。
 * `table` ([String](/ja/reference/data-types/string)) — テーブル名。
 * `table_uuid` ([UUID](/ja/reference/data-types/uuid)) — テーブルの UUID。リネームしても変わりません。
-* `part` ([String](/ja/reference/data-types/string)) — データパーツの名前。
+* `part` ([String](/ja/reference/data-types/string)) — データパーツの名前。プロジェクションのパーツの場合は、親パーツの名前とプロジェクションの名前を `parent_part:projection` の形式で組み合わせたものになります。
 * `column` ([String](/ja/reference/data-types/string)) — カラムの名前。
-* `row_begin` ([UInt64](/ja/reference/data-types/int-uint)) — キャッシュされた範囲の開始行の位置 (この値を含む) 。
-* `row_end` ([UInt64](/ja/reference/data-types/int-uint)) — キャッシュされた範囲の終了行の位置 (この値を含まない) 。
-* `rows` ([UInt64](/ja/reference/data-types/int-uint)) — キャッシュされた範囲内の行数 (`row_end - row_begin`) 。
-* `bytes` ([UInt64](/ja/reference/data-types/int-uint)) — エントリが保持するメモリ量 (バイト単位) 。キャッシュされたカラムの割り当てサイズに、エントリごとのわずかなオーバーヘッドを加えた値です。キャッシュの上限はこの値で管理されるため、全エントリにおけるこのカラムの合計は `columns_cache_size` 以内に収まります。カラムは割り当て時の容量を保持し続けるため、この値は行の論理サイズより大きくなることがあります。
+* `row_begin` ([UInt64](/ja/reference/data-types/int-uint)) — cacheされた範囲の開始行の位置 (この値を含む) 。
+* `row_end` ([UInt64](/ja/reference/data-types/int-uint)) — cacheされた範囲の終了行の位置 (この値を含まない) 。
+* `rows` ([UInt64](/ja/reference/data-types/int-uint)) — cacheされた範囲内の行数 (`row_end - row_begin`) 。
+* `bytes` ([UInt64](/ja/reference/data-types/int-uint)) — エントリが保持するメモリ量 (バイト単位) 。cacheされたカラムの割り当てサイズに、エントリごとのわずかなオーバーヘッドを加えた値です。cacheの上限はこの値で管理されるため、全エントリにおけるこのカラムの合計は `columns_cache_size` 以内に収まります。カラムは割り当て時の容量を保持し続けるため、この値は行の論理サイズより大きくなることがあります。
 
 ## 例 {#examples}
 

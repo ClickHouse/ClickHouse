@@ -613,6 +613,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 Эти драйверы-примеры служат отправной точкой; прежде чем открывать к ним доступ недоверенным пользователям, проверьте и при необходимости усильте изоляцию для вашей среды.
 
+### Сторонние драйверы {#third-party-drivers}
+
+Драйверы могут разрабатываться и вне ClickHouse. Их сопровождают авторы, а не ClickHouse, поэтому, прежде чем открывать к ним доступ недоверенным пользователям, проверьте их так же, как и примеры драйверов:
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) — выполняет тело функции на Python в микро-ВМ [Hyperlight](https://github.com/hyperlight-dev/hyperlight) с собственным ядром. Hyperlight — проект песочницы под эгидой [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/). Обработка каждого блока строк начинается со снимка гостевого кода, поэтому у кода нет доступа к сети и к файлам сервера, а состояние между запросами не сохраняется. Требуется Linux с `/dev/kvm`.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## См. также {#related-content}
 
 * [Пользовательские функции в ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

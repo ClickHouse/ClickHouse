@@ -30,7 +30,7 @@ Para seguir esta guía, necesitará:
 ClickPipes para Pub/Sub admite dos métodos de autenticación:
 
 * **Clave de cuenta de servicio:** creas una cuenta de servicio de Google y subes su [clave JSON](https://cloud.google.com/iam/docs/keys-create-delete) en la interfaz de usuario de ClickPipes o la proporcionas mediante la API. ClickPipes cifra la clave en reposo.
-* **Workload Identity de GCP (vista previa privada):** ClickPipes usa credenciales de corta duración para una cuenta de servicio de Google gestionada por ClickPipes. No se almacena ninguna clave de cuenta de servicio del cliente. Consulta la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para conocer los requisitos.
+* **Workload Identity de GCP (Beta):** ClickPipes usa credenciales de corta duración para una cuenta de servicio de Google gestionada por ClickPipes. No se almacena ninguna clave de cuenta de servicio del cliente. Consulta la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para conocer los requisitos.
 
 Con cualquiera de los dos métodos, la cuenta de servicio se usa para:
 
@@ -102,7 +102,7 @@ O bien, en la Consola de GCP, ve a **IAM &amp; Admin → Roles → Crear rol** y
 
 Si prefieres omitir el rol personalizado, puedes otorgar `roles/pubsub.editor` en su lugar.
 
-### Usar Workload Identity de GCP (vista previa privada) {#use-workload-identity}
+### Usar Workload Identity de GCP (Beta) {#use-workload-identity}
 
 Obtenga la cuenta de servicio gestionada por ClickPipes en el contexto del servicio siguiendo la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity).
 

@@ -30,7 +30,7 @@ integration:
 ClickPipes for Pub/Sub поддерживает два метода аутентификации:
 
 * **Ключ служебной учётной записи:** вы создаёте служебную учётную запись Google и загружаете её [JSON-ключ](https://cloud.google.com/iam/docs/keys-create-delete) в интерфейсе ClickPipes или передаёте его через API. ClickPipes шифрует ключ при хранении.
-* **GCP workload identity (закрытая предварительная версия):** ClickPipes использует краткосрочные учётные данные служебной учётной записи Google, которой управляет ClickPipes. Ключ служебной учётной записи клиента не хранится. Требования см. в [руководстве по GCP workload identity](/ru/integrations/clickpipes/security/gcp-workload-identity).
+* **GCP workload identity (бета):** ClickPipes использует краткосрочные учётные данные служебной учётной записи Google, которой управляет ClickPipes. Ключ служебной учётной записи клиента не хранится. Требования см. в [руководстве по GCP workload identity](/ru/integrations/clickpipes/security/gcp-workload-identity).
 
 При любом из методов служебная учётная запись используется для следующих задач:
 
@@ -102,7 +102,7 @@ gcloud iam roles create clickpipes.pubsub.ingestion \
 
 Если не хотите создавать пользовательскую роль, можно вместо этого назначить `roles/pubsub.editor`.
 
-### Использование GCP Workload Identity (закрытая предварительная версия) {#use-workload-identity}
+### Использование GCP Workload Identity (бета) {#use-workload-identity}
 
 Получите служебную учётную запись, управляемую ClickPipes, из контекста сервиса, как описано в [руководстве по GCP Workload Identity](/ru/integrations/clickpipes/security/gcp-workload-identity).
 

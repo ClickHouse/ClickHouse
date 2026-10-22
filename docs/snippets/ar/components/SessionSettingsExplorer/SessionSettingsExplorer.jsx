@@ -727,7 +727,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 17,
+      count: 18,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -741,6 +741,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_max_buffered_log_rows", path: "/distributed-plan#distributed_plan_max_buffered_log_rows", default: "100000" },
         { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
+        { name: "distributed_plan_partial_aggregation_before_shuffle", path: "/distributed-plan#distributed_plan_partial_aggregation_before_shuffle", default: "1" },
         { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
         { name: "distributed_plan_read_in_order", path: "/distributed-plan#distributed_plan_read_in_order", default: "0" },
         { name: "distributed_plan_worker_cluster", path: "/distributed-plan#distributed_plan_worker_cluster", default: '""' },
@@ -1162,10 +1163,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 10,
+      count: 11,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
+        { name: "iceberg_list_only_v_prefixed_metadata_files", path: "/iceberg#iceberg_list_only_v_prefixed_metadata_files", default: "0" },
         { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "16" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
@@ -3202,7 +3204,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
         { name: "json_extract_named_tuples_as_objects", path: "/other#json_extract_named_tuples_as_objects", default: "0" },
-        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "0" },
+        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "1" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
         { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
@@ -3516,7 +3518,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="ابحث في الإعدادات، مثل: parallel replicas أو %materialized%"
+          placeholder="ابحث في الإعدادات، مثلًا: parallel replicas أو %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
@@ -3532,7 +3534,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "طي الكل" : "توسيع الكل"}
+            aria-label={allGroupsExpanded ? "طيّ الكل" : "توسيع الكل"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -3541,7 +3543,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "طي الكل" : "توسيع الكل"}</span>
+            <span>{allGroupsExpanded ? "طيّ الكل" : "توسيع الكل"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (

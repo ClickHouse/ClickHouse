@@ -147,7 +147,7 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 使用带有 Pub/Sub 通知的[无序模式](#continuous-ingestion-any-order)时，必须使用服务账号进行身份验证。选择 **服务账号** 作为身份验证方法，并上传服务账号密钥 JSON 文件。
 
-#### GCP Workload Identity (私有预览) {#gcp-workload-identity}
+#### GCP Workload Identity (Beta) {#gcp-workload-identity}
 
 按照 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)，从 ClickPipes 服务上下文中获取托管服务账号。在源桶上为该账号授予 `roles/storage.objectViewer` 角色，然后使用 `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 身份验证方式创建管道。如需以 unordered 模式摄取，还需在现有的通知订阅上为该账号授予 `roles/pubsub.subscriber` 和 `roles/pubsub.viewer` 角色，并使用该订阅的完全限定名称：`projects/<project-id>/subscriptions/<subscription-id>`。
 

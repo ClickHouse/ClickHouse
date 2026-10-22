@@ -1113,7 +1113,7 @@ El informe indica las marcas y filas que leería, un `read_ratio` respecto a la 
 
 Cuando el resultado depende de cómo se dispondría la parte de la proyección, `marks_span` indica el rango, y una decisión que podría decantarse hacia cualquiera de los dos lados se notifica como `too close to call`. En tablas grandes, la estimación lee una muestra de gránulos (consulte `projection_scan_budget_rows`).
 
-Las proyecciones de agregación, las proyecciones con una cláusula `WHERE`, con índices de omisión propios, con una clave basada en el orden de commit o en columnas virtuales, o con un `_block_number` almacenado, así como las proyecciones que no cubren todas las columnas que lee la consulta, se notifican como `not_applicable`. Se ignoran `force_optimize_projection_name` y `preferred_optimize_projection_name`, y `force_optimize_projection` no hace que la sentencia falle.
+WHATIF notifica como `not_applicable` las proyecciones de agregación y las proyecciones con sus propios índices de omisión. También notifica como `not_applicable` las proyecciones con una clave basada en el orden de commit, una clave basada en columnas virtuales o un `_block_number` almacenado. Lo mismo ocurre con las proyecciones que no contienen todas las columnas que lee la consulta. WHATIF ignora `force_optimize_projection_name` y `preferred_optimize_projection_name`, y `force_optimize_projection` no hace que la sentencia falle.
 
 **Sintaxis**
 

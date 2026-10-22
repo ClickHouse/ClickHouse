@@ -78,6 +78,27 @@ La fusión en lectura (merge-on-read) no está implementada, por lo que **las ta
 archivos de datos de la instantánea, que todavía contiene las versiones de fila reemplazadas por upserts posteriores. Por ello, al leer una tabla cuyo esquema
 declara `primary-key` se lanza una excepción.
 
+## Tablas con vectores de eliminación {#deletion-vectors}
+
+Los vectores de eliminación no se aplican, por lo que **las instantáneas con vectores de eliminación no se pueden leer**: el resultado seguiría
+conteniendo las filas que eliminaron sentencias `DELETE` y `UPDATE` posteriores. Por ello, leer una instantánea cuyo manifiesto de índice enumera
+vectores de eliminación lanza una excepción, incluso después de desactivar `deletion-vectors.enabled`.
+
+Una compactación completa en Paimon (`compact_strategy => 'full'`) aplica los vectores de eliminación, y las instantáneas creadas a partir
+de ella vuelven a poder leerse.
+
+Una lectura incremental se detiene en la primera instantánea no consumida con vectores de eliminación y permanece ahí incluso después de una compactación
+completa, ya que todas las instantáneas hasta esa compactación enumeran los mismos vectores de eliminación. El cursor no avanza.
+La lectura se reanuda cuando Paimon hace expirar esas instantáneas, o cuando se abandonan moviendo el cursor a la instantánea de
+la compactación completa, lo que descarta todas las instantáneas aún no consumidas hasta ese punto (consulte
+[Cuando no se puede leer una instantánea](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+En cualquier caso, las filas eliminadas por esos vectores de eliminación siguen presentes en los datos que la lectura incremental ya ha devuelto.
+
 ## Configuración {#settings}
 
 Este motor usa la misma configuración que los motores correspondientes de almacenamiento de objetos y añade ajustes específicos de Paimon:

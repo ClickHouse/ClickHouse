@@ -66,7 +66,7 @@ Valores possíveis:
 
 Ative o [cache de condições de consulta](/pt-BR/concepts/features/performance/caches/query-condition-cache) para consultas que usam a otimização `ORDER BY <column> LIMIT n` (TopK) (baseada em filtragem dinâmica ou em índices de omissão). Quando desativado, essas leituras não consultam nem preenchem o cache.
 
-Essas consultas podem descartar grânulos durante a execução, dependendo do limiar em uso. Por isso, suas entradas de cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas (para uma tabela `File`, pelo conjunto de arquivos lidos e suas versões). Essa configuração não tem efeito, a menos que `use_query_condition_cache` também esteja ativada.
+Essas consultas podem descartar grânulos durante a execução, dependendo do limiar em uso. Por isso, suas entradas de cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas (para uma tabela `File`, pelo conjunto de arquivos lidos e suas versões; para uma tabela de data lake, pelo seu snapshot). Essa configuração não tem efeito, a menos que `use_query_condition_cache` também esteja ativada.
 
 Valores possíveis:
 

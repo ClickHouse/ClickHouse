@@ -81,7 +81,7 @@ Postgres 12 以降
 
 `clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションするつもりでない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
-## IAM データベース認証を使用する (任意、プライベートプレビュー) {#iam-database-authentication}
+## IAM データベース認証を使用する (任意、ベータ) {#iam-database-authentication}
 
 <CloudSQLIAMAuthentication engine="postgres" />
 

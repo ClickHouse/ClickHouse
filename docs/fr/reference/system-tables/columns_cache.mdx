@@ -28,7 +28,7 @@ Les lignes sont filtrées selon les droits d&#39;accès : une entrée n&#39;est 
 * `database` ([String](/fr/reference/data-types/string)) — Nom de la base de données de la table à laquelle appartient la part.
 * `table` ([String](/fr/reference/data-types/string)) — Nom de la table.
 * `table_uuid` ([UUID](/fr/reference/data-types/uuid)) — UUID de la table. Reste inchangé en cas de renommage.
-* `part` ([String](/fr/reference/data-types/string)) — Nom de la part.
+* `part` ([String](/fr/reference/data-types/string)) — Nom de la part. Pour une part de projection, nom de la part parente suivi du nom de la projection, sous la forme `parent_part:projection`.
 * `column` ([String](/fr/reference/data-types/string)) — Nom de la colonne.
 * `row_begin` ([UInt64](/fr/reference/data-types/int-uint)) — Index de la première ligne de la plage mise en cache (inclus).
 * `row_end` ([UInt64](/fr/reference/data-types/int-uint)) — Index de fin de la plage mise en cache (exclu).

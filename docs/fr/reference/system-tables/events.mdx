@@ -159,6 +159,18 @@ Nombre de flux d&#39;agrégation ayant reconstruit leur table de hachage selon l
 
 Nombre de fois où une table de hachage restreinte au set partagé de clés conservées lors de la coupure d&#39;un GROUP BY LIMIT trivial a été réalimentée avec ces clés après avoir été vidée dans un fichier temporaire par l&#39;agrégation externe (voir le paramètre `optimize_trivial_group_by_limit_query`).
 
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+Nombre de groupes effectivement fusionnés et classés comme candidats lors de la fusion avec seuil top-K.
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+Nombre de buckets à deux niveaux fusionnés par la fusion avec seuil top-K (algorithme à seuil de Fagin) au lieu de la fusion ordinaire de chaque groupe.
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+Nombre de cellules de table de hachage par fil d’exécution que la fusion avec seuil top-K n’a jamais parcourues, car aucun des groupes qu’elles recouvraient ne pouvait se classer parmi les K premiers.
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 Nombre de heaps d&#39;agrégation top-K qui ont été gelés, avec repli sur l&#39;agrégation classique. Soit le heap n&#39;a presque rien rejeté au cours de sa fenêtre d&#39;observation (par exemple, le nombre de clés de regroupement distinctes ne dépasse pas la valeur de LIMIT), soit un ensemble d&#39;ex æquo situé à la frontière du heap — qui ne peut jamais être évincé — l&#39;a fait déborder (voir `enable_group_by_top_k_optimization`).
@@ -2069,6 +2081,18 @@ Quantité de données écrite pour JOIN en mémoire externe (non compressées, a
 ### ExternalJoinWritePart {#externaljoinwritepart}
 
 Nombre d’écritures d’un fichier temporaire sur disque pour un JOIN en mémoire externe.
+
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+Nombre d&#39;octets compressés écrits dans des fichiers temporaires afin de libérer la mémoire occupée par les données mises en mémoire tampon des parts compactées en cours d&#39;écriture.
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+Volume de données (non compressées, avant compression) écrites dans des fichiers temporaires afin de libérer la mémoire occupée par les données mises en mémoire tampon des parts compactées en cours d&#39;écriture.
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+Nombre de fois où les données mises en mémoire tampon d&#39;une part compactée en cours d&#39;écriture ont été déplacées vers son fichier temporaire afin de libérer de la mémoire.
 
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
@@ -4518,6 +4542,10 @@ Le nombre total de pages de données Parquet lues
 
 Nombre total de groupes de lignes lus dans les données Parquet
 
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+Nombre de lignes des colonnes d&#39;entrée PREWHERE Parquet lues sous forme d&#39;indices de dictionnaire, afin que les fonctions appliquées à ces colonnes ne soient évaluées qu&#39;une seule fois par valeur du dictionnaire
+
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 Le nombre total de lignes ayant passé le filtre
@@ -6442,6 +6470,14 @@ Nombre de fois où le parcours du dictionnaire pour un motif d&#39;index de text
 
 Lignes candidates (intersection des postings) examinées par la recherche de phrase basée sur les candidats.
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+Temps total consacré à la recherche des lignes candidates d’une recherche d’expression : lecture et intersection des listes de postings des jetons de l’expression.
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+Nombre de recherches d’expression ayant trouvé leurs lignes candidates au moyen de curseurs sur les listes de postings plutôt que par intersection de bitmaps.
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 Nombre de fois où une requête de phrase a contourné l&#39;index de texte, parce que la phrase était estimée correspondre à un nombre de lignes supérieur à &#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39;, et a été évaluée directement sur la colonne.
@@ -6452,7 +6488,7 @@ Temps total consacré à la correspondance des positions de phrases sur les lign
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-Nombre de recherches de phrase exécutées sur un index de texte. Les recherches répétées de la même phrase dans la même partie de données sont servies depuis le cache et ne sont pas comptabilisées.
+Nombre de recherches d’expression exécutées sur un index de texte, une par lecteur de granule. Les lecteurs servis entièrement depuis le cache ne sont pas comptabilisés.
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 

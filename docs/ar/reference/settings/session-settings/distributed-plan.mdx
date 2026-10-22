@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -152,6 +153,18 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد تجريبي جديد."}]}]} />
 
 يزيل عمليات التبادل غير الضرورية في خطة الاستعلام الموزعة. عطِّله لأغراض تصحيح الأخطاء.
+
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد تجريبي جديد: يعيد التجميع الموزّع توزيع حالات التجميع الجزئية بدلاً من صفوف الإدخال."}]}]} />
+
+يُجري تجميعاً جزئياً على العُقد التي تقرأ البيانات قبل أن يعيد التجميع الموزّع توزيعها وفقاً لمفاتيح `GROUP BY`، وبذلك ترسل كل عقدة أثناء إعادة التوزيع حالة تجميع واحدة لكل مجموعة بدلاً من إرسال جميع صفوف الإدخال، ثم تدمج كل حاوية حالات المفاتيح التابعة لها.
+يستمر مخطط الاستعلامات القائم على القواعد في إعادة توزيع صفوف الإدخال إذا أظهرت إحصاءات الأعمدة أن التجميع الجزئي لن يقلّص حجم البيانات إلى النصف على الأقل. وعند تفعيل `enable_cascades_optimizer`، يتيح هذا الإعداد لمُحسِّن الاستعلامات اختيار هذا الدمج لكل حاوية على أساس التكلفة.
+لا يسري مفعوله إلا مع `make_distributed_plan = 1`، ولا يسري عند استخدام `distributed_plan_force_shuffle_aggregation` الذي يعيد توزيع صفوف الإدخال.
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 

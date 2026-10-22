@@ -28,7 +28,7 @@ doc_type: 'reference'
 * `database` ([String](/ar/reference/data-types/string)) — اسم قاعدة البيانات التي ينتمي إليها جدول جزء البيانات.
 * `table` ([String](/ar/reference/data-types/string)) — اسم الجدول.
 * `table_uuid` ([UUID](/ar/reference/data-types/uuid)) — معرّف UUID للجدول. يظل ثابتًا عند إعادة تسمية الجدول.
-* `part` ([String](/ar/reference/data-types/string)) — اسم جزء البيانات.
+* `part` ([String](/ar/reference/data-types/string)) — اسم جزء البيانات. أما الجزء التابع لإسقاط، فيتكوّن اسمه من اسم الجزء الأصل متبوعًا باسم الإسقاط، بالصيغة `parent_part:projection`.
 * `column` ([String](/ar/reference/data-types/string)) — اسم العمود.
 * `row_begin` ([UInt64](/ar/reference/data-types/int-uint)) — فهرس صف البداية في النطاق المخزَّن مؤقتًا (مُضمَّن).
 * `row_end` ([UInt64](/ar/reference/data-types/int-uint)) — فهرس صف النهاية في النطاق المخزَّن مؤقتًا (غير مُضمَّن).

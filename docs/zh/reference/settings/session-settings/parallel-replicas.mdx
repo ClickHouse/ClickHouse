@@ -177,6 +177,8 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 将查询中使用的副本数量限制为 (预计读取的行数 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica) 。最大值仍然受 &#39;max&#95;parallel&#95;replicas&#39; 限制
 
+启用 `automatic_parallel_replicas_mode` 时，此设置将被忽略：自动模式会根据自身的成本模型进行决策。
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

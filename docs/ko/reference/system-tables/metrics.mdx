@@ -854,6 +854,14 @@ Global Thread 풀 내 스레드 수.
 
 Global Thread 풀의 큐에 있거나 현재 활성 상태인 작업 수입니다.
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Glue 카탈로그의 현재 Iceberg 스키마(schema) 필드 타입 캐시 크기(바이트 단위)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Glue 카탈로그의 현재 Iceberg 스키마 필드 타입을 저장하는 캐시의 엔트리 수
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 HashedDictionary 스레드 풀에 있는 스레드 수입니다.
@@ -1465,6 +1473,10 @@ Outdated 데이터 파트를 로드하는 스레드 풀에서 활성 상태인 �
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Outdated 데이터 파트를 로드하는 스레드 풀에서 큐에 있거나 현재 실행 중인 작업 수입니다.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+기록 중인 패킹 데이터 파트(data part)에서 버퍼에 저장된 데이터에 할당된 메모리 양(바이트)입니다. 임시 파일로 옮겨진 데이터는 포함되지 않습니다.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2169,6 +2181,10 @@ JOIN에 대해 생성된 임시 파일 수
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 수직 병합용 임시 파일 수
+
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+기록 중인 패킹 데이터 파트의 버퍼링된 데이터를 저장하는 임시 파일 수
 
 ### TemporaryFilesForSet {#temporaryfilesforset}
 

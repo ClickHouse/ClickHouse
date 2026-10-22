@@ -66,7 +66,7 @@ Valeurs possibles :
 
 Activez le [cache des conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache) pour les requêtes utilisant l&#39;optimisation `ORDER BY <column> LIMIT n` (TopK), basée sur le filtrage dynamique ou les index de saut. Lorsqu&#39;il est désactivé, ces lectures ne consultent pas le cache et ne l&#39;alimentent pas non plus.
 
-Ces requêtes peuvent ignorer des granules lors de l&#39;exécution selon le seuil courant. Leurs entrées de cache sont donc partitionnées en fonction des paramètres du plan TopK et de l&#39;ensemble des parties de données lues (pour une table `File`, en fonction de l&#39;ensemble des fichiers lus et de leurs versions). Ce paramètre n&#39;a aucun effet si `use_query_condition_cache` n&#39;est pas également activé.
+Ces requêtes peuvent ignorer des granules lors de l&#39;exécution selon le seuil courant. Leurs entrées de cache sont donc partitionnées en fonction des paramètres du plan TopK et de l&#39;ensemble des parties de données lues (pour une table `File`, en fonction de l&#39;ensemble des fichiers lus et de leurs versions ; pour une table de lac de données, en fonction de son snapshot). Ce paramètre n&#39;a aucun effet si `use_query_condition_cache` n&#39;est pas également activé.
 
 Valeurs possibles :
 

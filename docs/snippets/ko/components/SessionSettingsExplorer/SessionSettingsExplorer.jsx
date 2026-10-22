@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
   // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 유지하지 않고
-  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
+  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)를 사용하면 생성된 데이터를
   // 해당 평가 범위에 유지하면서 마운트당 한 번만 생성합니다.
   const [entries] = useState(() => [
     {
@@ -727,7 +727,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 17,
+      count: 18,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -741,6 +741,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_max_buffered_log_rows", path: "/distributed-plan#distributed_plan_max_buffered_log_rows", default: "100000" },
         { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
+        { name: "distributed_plan_partial_aggregation_before_shuffle", path: "/distributed-plan#distributed_plan_partial_aggregation_before_shuffle", default: "1" },
         { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
         { name: "distributed_plan_read_in_order", path: "/distributed-plan#distributed_plan_read_in_order", default: "0" },
         { name: "distributed_plan_worker_cluster", path: "/distributed-plan#distributed_plan_worker_cluster", default: '""' },
@@ -1162,10 +1163,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 10,
+      count: 11,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
+        { name: "iceberg_list_only_v_prefixed_metadata_files", path: "/iceberg#iceberg_list_only_v_prefixed_metadata_files", default: "0" },
         { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "16" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
@@ -3202,7 +3204,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
         { name: "json_extract_named_tuples_as_objects", path: "/other#json_extract_named_tuples_as_objects", default: "0" },
-        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "0" },
+        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "1" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
         { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
@@ -3432,7 +3434,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `설정 ${entry.count}개`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "개 설정" : "개 설정"}`
 
     return (
       <div key={key} className="min-w-max">
@@ -3516,14 +3518,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="설정 검색(예: parallel replicas 또는 %materialized%)"
+          placeholder="설정 검색 (예: parallel replicas 또는 %materialized%)"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            일치하는 설정 {matchingCount}개
+            일치하는 {matchingCount === 1 ? "설정" : "설정"} {matchingCount}개
           </span>
         </div>
       )}

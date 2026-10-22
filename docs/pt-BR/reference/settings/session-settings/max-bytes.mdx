@@ -96,7 +96,7 @@ No caso de ORDER BY com LIMIT, quando o uso de memória for maior que o limite e
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória do filtro de Bloom que um conjunto de `IN` em disco mantém para evitar a leitura do disco para valores que não estão no conjunto."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "A configuração recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória do filtro de Bloom que um conjunto de `IN` em disco mantém para evitar a leitura do disco para valores que não estão no conjunto."}]}]} />
 
 Orçamento de memória, em bytes, para o filtro de Bloom que cada conjunto de `IN` gravado em disco mantém em memória. O
 filtro permite que consultas de valores que não estão no conjunto evitem a leitura do disco. Ele não acelera consultas
@@ -127,7 +127,7 @@ Consulte [IN em memória externa](/pt-BR/reference/statements/in#in-in-external-
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória do cache de blocos mantido por um conjunto de `IN` em disco, para que suas consultas não leiam os mesmos blocos do disco novamente."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "A configuração recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória do cache de blocos mantido por um conjunto de `IN` em disco, para que suas consultas não leiam os mesmos blocos do disco novamente."}]}]} />
 
 Orçamento de memória, em bytes, para o cache de blocos que cada conjunto de `IN` gravado em disco mantém em memória. Uma
 consulta que precisa de um bloco já lido por uma consulta anterior o obtém do cache, em vez de lê-lo
@@ -247,7 +247,7 @@ Tem efeito para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, d
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Spill para o disco do conjunto de `IN` com uma subconsulta habilitado por padrão, a partir da metade da memória disponível do servidor ou do usuário."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar o spill para o disco do conjunto de `IN` com uma subconsulta quando o uso de memória exceder a razão especificada da memória disponível. Se for 0, apenas `max_bytes_before_external_set` se aplica."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "A alteração do valor padrão para 0.5 recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nova configuração para habilitar o spill para o disco do conjunto de `IN` com uma subconsulta quando o uso de memória exceder a razão especificada da memória disponível. Se for 0, apenas `max_bytes_before_external_set` se aplica."}]}]} />
 
 Fração da memória disponível do servidor ou do usuário usada para calcular, no início da execução, o limiar de spill para o disco do conjunto de `IN`
 com uma subconsulta. Por exemplo, `0.5` usa metade da memória disponível.

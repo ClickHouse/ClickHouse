@@ -66,7 +66,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `ORDER BY <column> LIMIT n` (TopK) 最適化 (動的フィルタリングまたはスキップ索引ベース) を使用するクエリで、[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)を有効にします。無効の場合、このような読み取りではcacheの参照も格納も行いません。
 
-このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセット (`File` テーブルの場合は、読み取られるファイルのセットとそのバージョン) ごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
+このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセット (`File` テーブルの場合は、読み取られるファイルのセットとそのバージョン、データレイクテーブルの場合はそのスナップショット) ごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
 
 設定可能な値:
 

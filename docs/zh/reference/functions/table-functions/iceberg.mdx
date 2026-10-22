@@ -288,7 +288,7 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 1. **直接指定路径**：
    *如果设置了 `iceberg_metadata_file_path`，系统会将其与 Iceberg 表目录路径拼接，使用该精确路径。
 
-* 提供此设置后，所有其他解析设置都会被忽略。
+* 提供此设置后，所有其他分辨率设置都会被忽略。
 
 2. **表 UUID 匹配**：
    *如果指定了 `iceberg_metadata_table_uuid`，系统将：
@@ -296,7 +296,9 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
    *筛选出包含 `table-uuid` 字段且与指定 UUID 匹配的文件 (不区分大小写)
 
 3. **默认搜索**：
-   *如果以上两个设置都未提供，`metadata` 目录中的所有 `.metadata.json` 文件都会成为候选项
+
+* 如果以上两个设置都未提供，`metadata` 目录中的所有 `.metadata.json` 文件都会成为候选项
+* 在 S3 和 Azure 上，若启用了查询级设置 `iceberg_list_only_v_prefixed_metadata_files` 且禁用了 `iceberg_use_version_hint`，那么当其中部分文件名以 `v` 开头时 (ClickHouse 和 Hadoop 目录即采用这种命名方式)，只有这些文件会成为候选项，也只会列出这些文件 (按键前缀 `metadata/v` 列出，因此不会列出存储在同一目录中的清单)。仅当表的所有元数据文件都采用这种命名方式时才应启用该设置：如果目录中同时存在两种命名方式，`<N>-<uuid>.metadata.json` 文件将始终不会成为候选项
 
 ### 选择最新文件 {#most-recent-file}
 
@@ -312,14 +314,14 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 
 * (对于格式为 `V.metadata.json` 或 `V-uuid.metadata.json` 的文件名，版本号显示为 `V`)
 
-**注意**：上述所有设置都是表函数设置 (不是全局设置，也不是查询级设置) ，必须按如下所示指定：
+**注意**：除 `iceberg_list_only_v_prefixed_metadata_files` 外，上述所有设置都是表函数设置 (不是全局设置，也不是查询级设置) ，必须按如下所示指定：
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
-**注意**：虽然 Iceberg 目录通常负责处理元数据解析，但 ClickHouse 中的 `iceberg` 表函数 会直接将存储在 S3 中的文件识别为 Iceberg 表，因此理解这些解析规则很重要。
+**注意**：虽然 Iceberg 目录通常负责处理元数据分辨率，但 ClickHouse 中的 `iceberg` 表函数 会直接将存储在 S3 中的文件识别为 Iceberg 表，因此理解这些分辨率规则很重要。
 
 ## 元数据缓存 {#metadata-cache}
 

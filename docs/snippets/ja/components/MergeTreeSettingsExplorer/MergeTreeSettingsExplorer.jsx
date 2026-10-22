@@ -343,8 +343,9 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_bytes_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "max_bytes_to_buffer_for_packed_part", path: "/max-bytes#max_bytes_to_buffer_for_packed_part", default: "0" },
         { name: "max_bytes_to_merge_at_max_space_in_pool", path: "/max-bytes#max_bytes_to_merge_at_max_space_in_pool", default: "161061273600" },
         { name: "max_bytes_to_merge_at_min_space_in_pool", path: "/max-bytes#max_bytes_to_merge_at_min_space_in_pool", default: "1048576" }
       ],

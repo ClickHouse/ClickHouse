@@ -28,7 +28,7 @@ doc_type: 'reference'
 * `database` ([String](/zh/reference/data-types/string)) — 该数据分区片段所属表的数据库名称。
 * `table` ([String](/zh/reference/data-types/string)) — 表名。
 * `table_uuid` ([UUID](/zh/reference/data-types/uuid)) — 表的 UUID。表重命名后保持不变。
-* `part` ([String](/zh/reference/data-types/string)) — 数据分区片段的名称。
+* `part` ([String](/zh/reference/data-types/string)) — 数据分区片段的名称。对于投影的数据分区片段，该名称由父数据分区片段的名称和投影名称组成，格式为 `parent_part:projection`。
 * `column` ([String](/zh/reference/data-types/string)) — 列名。
 * `row_begin` ([UInt64](/zh/reference/data-types/int-uint)) — 缓存范围的起始行索引 (包含) 。
 * `row_end` ([UInt64](/zh/reference/data-types/int-uint)) — 缓存范围的结束行索引 (不包含) 。

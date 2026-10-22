@@ -147,7 +147,7 @@ ClickPipes が使用するサービス アカウントでは、バケット レ�
 
 Pub/Sub 通知で[順不同モード](#continuous-ingestion-any-order)を使用する場合は、サービス アカウント認証が必要です。認証方法として **Service Account** を選択し、サービス アカウントの秘密鍵の JSON ファイルをアップロードします。
 
-#### GCP Workload Identity (プライベートプレビュー) {#gcp-workload-identity}
+#### GCP Workload Identity (ベータ) {#gcp-workload-identity}
 
 [GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)に従い、ClickPipes のサービスコンテキストからマネージドの service account を取得します。ソースバケットに対してこの service account に `roles/storage.objectViewer` を付与し、`SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 認証でパイプを作成します。unordered モードでインジェストする場合は、既存の通知サブスクリプションに対して `roles/pubsub.subscriber` と `roles/pubsub.viewer` も付与し、サブスクリプションの完全修飾名 `projects/<project-id>/subscriptions/<subscription-id>` を指定してください。
 

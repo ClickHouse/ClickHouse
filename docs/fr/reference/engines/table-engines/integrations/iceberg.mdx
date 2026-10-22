@@ -345,20 +345,21 @@ Lors de l’utilisation du moteur de table `Iceberg` dans ClickHouse, le systèm
 
 ### Recherche des candidats {#candidate-search}
 
-1. **Spécification directe du chemin** :
+1. **Spécification directe du chemin** :
 
 * Si vous définissez `iceberg_metadata_file_path`, le système utilisera ce chemin exact en le combinant avec le chemin du répertoire de la table Iceberg.
 * Lorsque ce paramètre est défini, tous les autres paramètres de résolution sont ignorés.
 
-2. **Correspondance de l’UUID de la table** :
+2. **Correspondance de l’UUID de la table** :
 
-* Si `iceberg_metadata_table_uuid` est spécifié, le système :
+* Si `iceberg_metadata_table_uuid` est spécifié, le système :
   * examinera uniquement les fichiers `.metadata.json` du répertoire `metadata`
   * filtrera les fichiers contenant un champ `table-uuid` correspondant à l’UUID spécifié (sans distinction entre majuscules et minuscules)
 
-3. **Recherche par défaut** :
+3. **Recherche par défaut** :
 
 * Si aucun des paramètres ci-dessus n’est défini, tous les fichiers `.metadata.json` du répertoire `metadata` sont considérés comme des candidats
+* Sur S3 et Azure, lorsque le paramètre au niveau de la requête `iceberg_list_only_v_prefixed_metadata_files` est activé et que `iceberg_use_version_hint` est désactivé, si certains de ces fichiers ont un nom commençant par `v` (convention de nommage utilisée par ClickHouse et les catalogues Hadoop), seuls ces fichiers sont candidats, et seuls eux sont listés (via le préfixe de clé `metadata/v`, si bien que les manifestes stockés dans le même répertoire ne le sont pas). N’activez ce paramètre que pour les tables dont tous les fichiers de métadonnées suivent cette convention : dans un répertoire où coexistent les deux conventions de nommage, les fichiers `<N>-<uuid>.metadata.json` ne sont jamais candidats
 
 ### Sélection du fichier le plus récent {#most-recent-file}
 

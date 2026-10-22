@@ -28,7 +28,7 @@ doc_type: 'reference'
 * `database` ([String](/ko/reference/data-types/string)) — 파트가 속한 테이블의 데이터베이스 이름입니다.
 * `table` ([String](/ko/reference/data-types/string)) — 테이블 이름입니다.
 * `table_uuid` ([UUID](/ko/reference/data-types/uuid)) — 테이블의 UUID입니다. 테이블 이름이 변경되어도 그대로 유지됩니다.
-* `part` ([String](/ko/reference/data-types/string)) — 데이터 파트의 이름입니다.
+* `part` ([String](/ko/reference/data-types/string)) — 데이터 파트의 이름입니다. 프로젝션(projection)의 파트인 경우 상위 파트 이름과 프로젝션 이름을 `parent_part:projection` 형식으로 표시합니다.
 * `column` ([String](/ko/reference/data-types/string)) — 컬럼 이름입니다.
 * `row_begin` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시된 범위의 시작 행 인덱스입니다(포함).
 * `row_end` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시된 범위의 끝 행 인덱스입니다(미포함).

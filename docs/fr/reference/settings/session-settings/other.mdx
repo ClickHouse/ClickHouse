@@ -955,13 +955,13 @@ Désactivé par défaut.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Active `kill_throw_if_noop` par défaut afin que `KILL QUERY` et `KILL MUTATION` signalent l'absence de correspondance."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
 Détermine si [`KILL QUERY`](/fr/reference/statements/kill#kill-query) et [`KILL MUTATION`](/fr/reference/statements/kill#kill-mutation) lèvent une exception lorsque leurs clauses `WHERE` ne correspondent à aucune ligne.
 
-Si ce paramètre vaut true, `KILL QUERY` lève une exception lorsqu&#39;aucune ligne éligible n&#39;existe dans `system.processes` une fois le statement `KILL` en cours exclu, et `KILL MUTATION` lève une exception lorsqu&#39;aucune ligne ne correspond dans `system.mutations`. Par défaut, l&#39;absence de correspondance n&#39;entraîne aucune exception. L&#39;exécution avec `ON CLUSTER` ne lève pas d&#39;exception en l&#39;absence de correspondance, car les résultats ne sont pas agrégés entre les hôtes.
+Activé par défaut. `KILL QUERY` lève une exception lorsqu&#39;aucune ligne éligible n&#39;existe dans `system.processes` une fois le statement `KILL` en cours exclu, et `KILL MUTATION` lève une exception lorsqu&#39;aucune ligne ne correspond dans `system.mutations`. Définissez ce paramètre sur `false` pour autoriser l&#39;absence de correspondance sans exception. Les exécutions à blanc `TEST` renvoient un aperçu vide sans lever d&#39;exception. L&#39;exécution avec `ON CLUSTER` ne lève pas d&#39;exception en l&#39;absence de correspondance, car les résultats ne sont pas agrégés entre les hôtes.
 
 Valeurs possibles :
 
@@ -1518,13 +1518,13 @@ Lorsqu’il est activé, ClickHouse fournit la valeur exacte de la statistique r
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d’exécuter une requête en arrière-plan, indépendamment de la connexion qui l’a soumise, et d’en ignorer le résultat."}]}]} />
 
-S’il est activé, le serveur planifie la requête en arrière-plan, renvoie immédiatement un résultat vide indiquant la réussite, puis exécute la requête jusqu’à son terme, indépendamment de ce qui arrive à la connexion.
+S’il est activé, le serveur planifie la requête en arrière-plan, attend que la requête ait passé ses vérifications (par exemple, que les tables existent et que l’utilisateur dispose des privilèges requis) et soit sur le point de commencer son traitement principal, renvoie un résultat vide indiquant la réussite, puis exécute la requête jusqu’à son terme, indépendamment de ce qui arrive à la connexion. Une erreur levée avant ce stade est renvoyée au client ; une erreur survenant ensuite n’est enregistrée que dans `system.query_log`.
 
-Une requête en arrière-plan ne survit pas à un redémarrage du serveur. Lors de l’arrêt, elle respecte les mêmes paramètres du serveur qu’une requête au premier plan : `shutdown_wait_unfinished_queries` détermine s’il faut l’annuler ou attendre qu’elle se termine (les entrées en file d’attente sont supprimées dans les deux cas, sans entrée dans `system.query_log`), et `shutdown_wait_unfinished` limite la durée pendant laquelle le serveur attend.
+Une requête en arrière-plan ne survit pas à un redémarrage du serveur. Lors de l’arrêt, elle respecte les mêmes paramètres du serveur qu’une requête au premier plan : `shutdown_wait_unfinished_queries` détermine s’il faut l’annuler ou attendre qu’elle se termine (les entrées en file d’attente sont supprimées dans les deux cas, sans entrée dans `system.query_log`), et `shutdown_wait_unfinished` limite la durée pendant laquelle le serveur attend.
 
-Suivez la requête à l’aide de son `query_id` : dans `system.processes` pendant son exécution et dans `system.query_log` après sa fin et l’écriture de l’entrée dans le journal des requêtes.
+Suivez la requête à l’aide de son `query_id` : dans `system.processes` pendant son exécution et dans `system.query_log` après sa fin et l’écriture de l’entrée dans le journal des requêtes.
 
-S’applique aux requêtes reçues via les protocoles TCP natif et HTTP. Via HTTP, transmettez le paramètre en tant que paramètre d’URL. Il ne peut pas être modifié avec `SET` ; activez-le par requête ou au niveau de l’utilisateur ou du profil.
+S’applique aux requêtes reçues via les protocoles TCP natif et HTTP. Via HTTP, transmettez le paramètre en tant que paramètre d’URL. Il ne peut pas être modifié avec `SET` ; activez-le par requête ou au niveau de l’utilisateur ou du profil.
 
 Le principal cas d’utilisation est un long `INSERT ... SELECT` qui ne doit pas être perdu lorsque la connexion client est interrompue.
 

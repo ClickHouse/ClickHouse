@@ -177,6 +177,8 @@ Partes divididas virtualmente em segmentos para serem distribuídos entre répli
 
 Limita o número de réplicas usadas em uma consulta a (linhas estimadas para leitura / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). O valor máximo continua sendo limitado por &#39;max&#95;parallel&#95;replicas&#39;
 
+Ignorado quando `automatic_parallel_replicas_mode` está habilitado: o modo automático decide com base em seu próprio modelo de custo.
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

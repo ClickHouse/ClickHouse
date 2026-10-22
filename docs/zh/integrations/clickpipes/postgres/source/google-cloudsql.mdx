@@ -81,7 +81,7 @@ Postgres 12 及更高版本
 
 `clickpipes` publication 定义了将流式传输到 ClickPipes 的表的变更事件集合。除非您打算复制所有表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
-## 使用 IAM 数据库身份验证 (可选，私有预览) {#iam-database-authentication}
+## 使用 IAM 数据库身份验证 (可选，Beta) {#iam-database-authentication}
 
 <CloudSQLIAMAuthentication engine="postgres" />
 

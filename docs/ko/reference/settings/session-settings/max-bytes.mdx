@@ -94,7 +94,7 @@ ORDER BY와 LIMIT를 함께 사용하는 경우, 메모리 사용량이 지정�
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "디스크에 저장된 `IN` 집합이 집합에 없는 값에 대한 디스크 읽기를 건너뛰기 위해 유지하는 블룸 필터(Bloom filter)의 메모리를 제한하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "이 설정은 26.10에 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "디스크에 저장된 `IN` 집합이 집합에 없는 값에 대한 디스크 읽기를 건너뛰기 위해 유지하는 블룸 필터(Bloom filter)의 메모리를 제한하는 새로운 설정입니다."}]}]} />
 
 디스크에 기록된 각 `IN` 집합(set)이 메모리에 유지하는 블룸 필터(Bloom filter)의 메모리 예산(바이트 단위)입니다.
 이 필터를 사용하면 집합에 없는 값을 조회할 때 디스크 읽기를 건너뛸 수 있습니다. 단, 집합에 있는 값의 조회 속도는
@@ -125,7 +125,7 @@ ORDER BY와 LIMIT를 함께 사용하는 경우, 메모리 사용량이 지정�
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "디스크에 저장된 `IN` 집합(set)이 유지하는 블록(Block) 캐시의 메모리를 제한하여, 조회 시 디스크에서 동일한 블록(Block)을 다시 읽지 않도록 하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "이 설정은 26.10으로 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "디스크에 저장된 `IN` 집합(set)이 유지하는 블록(Block) 캐시의 메모리를 제한하여, 조회 시 디스크에서 동일한 블록(Block)을 다시 읽지 않도록 하는 새로운 설정입니다."}]}]} />
 
 디스크에 기록된 각 `IN` 집합(set)이 메모리에 유지하는 블록(Block) 캐시의 메모리 예산(바이트 단위)입니다.
 조회(lookup) 시 이전 조회에서 이미 읽은 블록(Block)이 필요하면 디스크에서 다시 읽지 않고 캐시에서 가져옵니다.
@@ -239,7 +239,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "서브쿼리가 포함된 `IN`의 집합을 디스크로 스필하는 기능이 기본적으로 활성화되었습니다. 사용 가능한 서버 또는 사용자 메모리의 절반에 도달하면 스필합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "메모리 사용량(memory usage)이 사용 가능한 메모리의 지정된 비율을 초과하면 서브쿼리가 포함된 `IN`의 집합을 디스크로 스필할 수 있도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_set`만 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "기본값을 0.5로 변경한 사항이 26.10에 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "메모리 사용량(memory usage)이 사용 가능한 메모리의 지정된 비율을 초과하면 서브쿼리가 포함된 `IN`의 집합을 디스크로 스필할 수 있도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_set`만 적용됩니다."}]}]} />
 
 서브쿼리가 포함된 `IN`의 집합을 디스크로 스필하는 임계값을 실행 시작 시점에 계산할 때 사용하는,
 사용 가능한 서버 또는 사용자 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 의미합니다.

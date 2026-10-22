@@ -89,7 +89,7 @@ ClickPipes 使用[服务账号密钥](https://docs.cloud.google.com/iam/docs/key
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="创建具有 BigQuery 和云存储权限的服务账号密钥" size="lg" border />
 
-#### GCP Workload Identity (私有预览) {#gcp-workload-identity}
+#### GCP Workload Identity (Beta) {#gcp-workload-identity}
 
 请按照 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)，从 ClickPipes 服务上下文中获取托管服务账号。为该账号授予下文所列的 [BigQuery 和 GCS 角色](#permissions)，然后使用 `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 身份验证方式创建管道。使用此身份验证方法时，请勿提供服务账号凭证。
 

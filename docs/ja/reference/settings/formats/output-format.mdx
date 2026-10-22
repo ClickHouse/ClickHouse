@@ -830,6 +830,14 @@ Parquetのエンコードを複数スレッドで行います。
 
 String 型のカラムでは、Binary ではなく Parquet String 型を使用します。
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+`Float32` および `Float64` カラム (Parquet の `FLOAT` および `DOUBLE`) を `ALP` (Adaptive Lossless floating-Point) エンコーディングでエンコードします。`ALP` はロスレスであり、10 進数的な値を持つ浮動小数点データ (価格、測定値、座標など) を `PLAIN` よりもはるかに効率よく圧縮します。これらのカラムは辞書を使用せずに書き込まれ、`ALP` を使うと `PLAIN` よりもサイズが大きくなるページは `PLAIN` で書き込まれます。このエンコーディングは Parquet形式に最近追加されたばかりであるため、まだすべての Parquet リーダーがサポートしているわけではありません。ファイルを読み込むリーダーがこのエンコーディングに対応している場合にのみ有効化してください。
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

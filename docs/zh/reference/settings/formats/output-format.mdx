@@ -830,6 +830,14 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 对 String 列使用 Parquet String 类型，而非 Binary。
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+使用 `ALP` (Adaptive Lossless floating-Point，自适应无损浮点) 编码对 `Float32` 和 `Float64` 列 (即 Parquet 中的 `FLOAT` 和 `DOUBLE`) 进行编码。`ALP` 是一种无损编码，对于类十进制的浮点数据 (如价格、测量值、坐标) ，其压缩效果远优于 `PLAIN`。此类列在写入时不使用字典；如果某个页面采用 `ALP` 编码后反而比 `PLAIN` 更大，则该页面改用 `PLAIN` 写入。该编码是最近才加入 Parquet 格式的，因此并非所有 Parquet 读取器都已支持：仅当读取这些文件的读取器支持该编码时，才应启用此设置。
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

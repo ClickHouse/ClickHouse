@@ -347,18 +347,19 @@ ClickHouse で `Iceberg` テーブルエンジンを使用する場合、シス�
 
 1. **パスの直接指定**:
 
-* `iceberg_metadata_file_path` を設定すると、システムはこの値を Iceberg テーブル の directory path と組み合わせて、その正確な path を使用します。
+* `iceberg_metadata_file_path` を設定すると、システムはこの値を Iceberg テーブル の ディレクトリ パス と組み合わせて、その正確な パス を使用します。
 * この設定が指定されている場合、他のすべての解決設定は無視されます。
 
-2. **table UUID の照合**:
+2. **テーブル UUID の照合**:
 
 * `iceberg_metadata_table_uuid` が指定されている場合、システムは次のように動作します:
-  * `metadata` directory 内の `.metadata.json` ファイルのみを対象にします
+  * `metadata` ディレクトリ 内の `.metadata.json` ファイルのみを対象にします
   * 指定した UUID と一致する `table-uuid` フィールドを含むファイルに絞り込みます (大文字と小文字は区別しません)
 
 3. **デフォルトの検索**:
 
-* 上記のどちらの設定も指定されていない場合、`metadata` directory 内のすべての `.metadata.json` ファイルが候補になります
+* 上記のどちらの設定も指定されていない場合、`metadata` ディレクトリ 内のすべての `.metadata.json` ファイルが候補になります
+* S3 および Azure では、クエリレベルの設定 `iceberg_list_only_v_prefixed_metadata_files` が有効で、かつ `iceberg_use_version_hint` が無効の場合、これらのファイルの中に `v` で始まる名前のもの (ClickHouse カタログおよび Hadoop カタログによる命名) があれば、そのファイルのみが候補となり、一覧取得の対象もそれらに限られます (キープレフィックス `metadata/v` で一覧取得するため、同じディレクトリに保存されているマニフェストは一覧取得されません)。この設定は、メタデータファイルがすべてこの命名規則に従っているテーブルに限って有効化してください。両方の命名規則が混在するディレクトリでは、`<N>-<uuid>.metadata.json` ファイルが候補になることはありません
 
 ### 最新のファイルの選択 {#most-recent-file}
 

@@ -177,6 +177,8 @@ Les parts de données sont divisées virtuellement en segments, qui sont répart
 
 Limite le nombre de répliques utilisées dans une requête à (nombre estimé de lignes à lire / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). Le maximum reste toutefois limité par &#39;max&#95;parallel&#95;replicas&#39;
 
+Ignoré lorsque `automatic_parallel_replicas_mode` est activé : le mode automatique s&#39;appuie sur son propre modèle de coût pour décider.
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

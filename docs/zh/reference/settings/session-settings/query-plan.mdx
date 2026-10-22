@@ -20,10 +20,15 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "用于切换一项查询计划级别优化的新增设置：当最终聚合的输出经由带 LIMIT n 的 ORDER BY 排序，且能够证明每个桶的选择结果准确时，该优化仅物化每个两级桶中排名前 n 的组。"}]}]} />
 
-切换一项查询计划级别的优化：当最终聚合的输出经由带有 `LIMIT n` 的 `ORDER BY` 排序，且计划能够证明每个桶的选择结果准确时，该优化会在聚合的最终转换过程中，仅按此顺序物化每个两级桶中排名前 n 的组。结果准确无误：未进入所在桶前 n 名的组，在全局范围内至少有 n 个组排在它之前，因此不可能进入全局前 n 名。
+切换一项查询计划级别的优化：当最终聚合的输出经由带有 `LIMIT n` 的 `ORDER BY` 排序，且计划能够证明每个桶的选择结果准确时，该优化会在聚合的最终合并或转换过程中，仅保留每个两级桶中排名前 n 的组。结果准确无误：未进入所在桶前 n 名的组，在全局范围内至少有 n 个组排在它之前，因此不可能进入全局前 n 名。
+
+对于按 `count` 排序的情况，该优化可以在最终转换过程中选出排名靠前的组。对于可根据部分状态确定合并后取值边界的聚合函数，该优化则可以改用阈值合并 (Fagin 阈值算法) ，跳过合并那些不可能进入前 n 名的组。降序排列时，此方式支持 `count`、结果为 `UInt64` 的无符号整数 `sum` (参数为 `UInt8` 至 `UInt64`；不包括 `UInt128` 等宽无符号整数) 以及 `uniqExact`；对于整数、日期、日期时间、小数和枚举类型，还支持降序排列的 `max` 和升序排列的 `min` (不包括浮点、`UUID`、`IPv4`、`IPv6`、`String`、`FixedString` 及其他类型) 。使用 `If` 和 `Null` 组合器时，仅 `count`、无符号 `sum` 和 `uniqExact` 保留阈值合并，且仅限结果不可为空的情况 (例如 `countIf`、参数非 `Nullable` 的 `sumIf`，或参数为 `Nullable` 的 `uniqExact`) ；参数为 `Nullable` 的 `sum` 和 `sumIf` (其结果为 `Nullable`) 、`maxIf`、`minIf`，以及参数为 `Nullable` 的 `max` 或 `min` 则使用普通合并。具体采用哪种算法，会根据聚合函数、查询形态以及部分状态的分布自动选择。
+
+未进入所在桶前 n 名的组既不会被合并，也不会被标记为已完成，因此这不仅仅是一个性能开关：对于不可能进入前 n 名的组，查询中的其他聚合函数也不会再对其进行合并并将其标记为已完成。原本在此类组上合并或最终计算某个聚合函数时会抛出异常的查询，现在可能转而返回结果行。将此设置设为 0 可保留之前的行为。
+
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
 
-可能的值：
+可选值：
 
 * 0 - 禁用
 * 1 - 启用
@@ -536,11 +541,13 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增取值 `force`：即使 parts 未声明虚拟行，也会在连接过程中保持按序读取。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "新增设置"}]}]} />
 
-在 JOIN 操作中保持按顺序从左表读取，以便后续步骤加以利用。
+在 JOIN 操作中保持对左表的按序读取，以便后续步骤加以利用。
+
+对于 `LEFT` 以外的连接，只有当左表的每个 part 都声明了虚拟行时，读取才会保持有序 (参见 [`read_in_order_use_virtual_row`](/zh/reference/settings/session-settings/read-in#read_in_order_use_virtual_row)) 。如果没有虚拟行，连接之后的合并阶段实际读取的数据量可能远超 limit 所需。取值为 `force` 时，则无论何种情况都会保持按序读取。
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 

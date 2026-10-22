@@ -151,7 +151,7 @@ ClickPipes에서 사용하는 서비스 계정에는 버킷 수준에서 다음 
 
 Pub/Sub 알림을 사용하는 [unordered mode](#continuous-ingestion-any-order)에서는 서비스 계정 인증이 필요합니다. 인증 메서드로 **Service Account**를 선택하고 서비스 계정 키가 포함된 JSON 파일을 업로드하세요.
 
-#### GCP Workload Identity (비공개 프리뷰) {#gcp-workload-identity}
+#### GCP Workload Identity (베타) {#gcp-workload-identity}
 
 [GCP Workload Identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity)에 따라 ClickPipes 서비스 컨텍스트에서 관리형 서비스 계정을 확인하십시오. 해당 서비스 계정에 소스 버킷에 대한 `roles/storage.objectViewer` 권한을 부여한 다음, `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 인증을 사용하여 파이프를 생성하십시오. unordered 모드로 수집하려면 기존 알림 subscription에 대한 `roles/pubsub.subscriber` 및 `roles/pubsub.viewer` 권한도 부여하고, `projects/<project-id>/subscriptions/<subscription-id>` 형식의 정규화된 전체 이름을 사용하십시오.
 

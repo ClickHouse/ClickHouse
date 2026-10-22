@@ -149,7 +149,7 @@ Lors de l’utilisation du [mode non ordonné](#continuous-ingestion-any-order),
 
 L’authentification via un compte de service est requise lors de l’utilisation du [mode non ordonné](#continuous-ingestion-any-order) avec les notifications Pub/Sub. Sélectionnez **Service Account** comme méthode d’authentification, puis téléversez le fichier JSON de la clé du compte de service.
 
-#### GCP Workload Identity (aperçu privé) {#gcp-workload-identity}
+#### GCP Workload Identity (bêta) {#gcp-workload-identity}
 
 Suivez le [guide GCP Workload Identity](/fr/integrations/clickpipes/security/gcp-workload-identity) pour récupérer le compte de service managé depuis le contexte du service ClickPipes. Accordez-lui le rôle `roles/storage.objectViewer` sur le bucket source, puis créez le pipeline d’ingestion avec l’authentification `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Pour une ingestion en mode unordered, accordez-lui également les rôles `roles/pubsub.subscriber` et `roles/pubsub.viewer` sur l’abonnement de notification existant, puis utilisez son nom complet : `projects/<project-id>/subscriptions/<subscription-id>`.
 

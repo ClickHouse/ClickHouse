@@ -955,13 +955,13 @@ Desabilitada por padrão.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Habilita `kill_throw_if_noop` por padrão para que `KILL QUERY` e `KILL MUTATION` informem quando não há correspondências."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
 
 Controla se [`KILL QUERY`](/pt-BR/reference/statements/kill#kill-query) e [`KILL MUTATION`](/pt-BR/reference/statements/kill#kill-mutation) devem lançar uma exceção quando suas cláusulas `WHERE` não correspondem a nenhuma linha.
 
-Quando definida como true, `KILL QUERY` lança uma exceção se não houver linhas elegíveis em `system.processes` após a exclusão da própria instrução `KILL` em execução, e `KILL MUTATION` lança uma exceção se nenhuma linha corresponder em `system.mutations`. Por padrão, quando nenhuma linha corresponde, o comando retorna sem exceção. A execução com `ON CLUSTER` não lança exceção quando não há correspondências, pois os resultados não são agregados entre os hosts.
+Habilitada por padrão. `KILL QUERY` lança uma exceção se não houver linhas elegíveis em `system.processes` após a exclusão da própria instrução `KILL` em execução, e `KILL MUTATION` lança uma exceção se nenhuma linha corresponder em `system.mutations`. Defina como `false` para que a ausência de correspondências não lance exceção. Execuções de simulação com `TEST` retornam uma prévia vazia sem lançar exceção. A execução com `ON CLUSTER` não lança exceção quando não há correspondências, pois os resultados não são agregados entre os hosts.
 
 Valores possíveis:
 
@@ -1518,7 +1518,7 @@ Quando habilitada, o ClickHouse fornecerá o valor exato da estatística rows&#9
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para executar uma consulta em segundo plano, desvinculada da conexão que a enviou e descartando o resultado."}]}]} />
 
-Se habilitada, o servidor agenda a consulta em segundo plano, retorna imediatamente um resultado vazio e bem-sucedido e executa a consulta até a conclusão, independentemente do que aconteça com a conexão.
+Se habilitada, o servidor agenda a consulta em segundo plano, aguarda até que ela passe pelas verificações (por exemplo, se as tabelas existem e se o usuário tem as concessões necessárias) e esteja prestes a iniciar seu trabalho principal, retorna um resultado vazio e bem-sucedido e executa a consulta até a conclusão, independentemente do que aconteça com a conexão. Um erro lançado antes desse ponto é retornado ao cliente; um erro posterior é registrado apenas em `system.query_log`.
 
 Uma consulta em segundo plano não sobrevive à reinicialização do servidor. Durante o encerramento, ela segue as mesmas configurações do servidor que uma consulta em primeiro plano: `shutdown_wait_unfinished_queries` define se ela será cancelada ou se o servidor aguardará sua conclusão (as entradas enfileiradas são descartadas em ambos os casos, sem uma entrada em `system.query_log`), e `shutdown_wait_unfinished` limita por quanto tempo o servidor espera.
 

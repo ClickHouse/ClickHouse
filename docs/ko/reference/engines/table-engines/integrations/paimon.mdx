@@ -76,6 +76,26 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 
 읽기 시 머지(merge-on-read)가 구현되어 있지 않으므로 **기본 키 테이블은 읽을 수 없습니다**. reader는 스냅샷의 데이터 파일을 단순히 합친 원시(raw) 결과를 반환하며, 여기에는 이후 업서트로 대체된 이전 행 버전이 그대로 남아 있습니다. 따라서 스키마에 `primary-key`가 선언된 테이블을 읽으면 예외가 발생합니다.
 
+## 삭제 벡터(deletion vectors)가 있는 테이블 {#deletion-vectors}
+
+삭제 벡터는 적용되지 않으므로 **삭제 벡터가 있는 스냅샷은 읽을 수 없습니다**. 읽더라도 결과(result)에는
+이후 `DELETE` 및 `UPDATE` SQL 문으로 제거된 행(rows)이 그대로 남아 있게 됩니다. 따라서 index manifest에
+삭제 벡터가 나열된 스냅샷을 읽으면, `deletion-vectors.enabled`를 끈 후에도 예외가 발생합니다.
+
+Paimon에서 전체 컴팩션(`compact_strategy => 'full'`)을 수행하면 삭제 벡터가 적용되며, 이후 생성된 스냅샷은
+다시 읽을 수 있습니다.
+
+증분 읽기(Incremental read)는 아직 소비되지 않은 스냅샷 중 삭제 벡터가 있는 첫 번째 스냅샷에서 멈추며, 전체
+컴팩션을 수행한 후에도 그 지점에 머무릅니다. 해당 컴팩션까지의 모든 스냅샷에 동일한 삭제 벡터가 나열되어 있기 때문입니다. 커서(Cursor)도 앞으로 이동하지 않습니다.
+Paimon이 해당 스냅샷을 만료시키거나, 커서를 전체 컴팩션 스냅샷으로 옮겨 해당 스냅샷들을 건너뛰면 읽기가 재개됩니다.
+커서를 옮기면 그 지점까지 아직 소비되지 않은 모든 스냅샷이 삭제됩니다([스냅샷을 읽을 수 없는 경우](#when-a-snapshot-cannot-be-read) 참조):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+어느 경우든 해당 삭제 벡터(deletion vectors)로 제거된 행(rows)은 증분 읽기(Incremental read)로 이미 전달된 결과에 그대로 남아 있습니다.
+
 ## 설정 {#settings}
 
 이 엔진은 해당 객체 스토리지 엔진과 동일한 설정을 사용하며, 여기에 Paimon 전용 설정이 추가됩니다:

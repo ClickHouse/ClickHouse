@@ -285,41 +285,43 @@ Lors de l&#39;utilisation de la fonction de table `iceberg` dans ClickHouse, le 
 
 ### Recherche des candidats (par ordre de priorité) {#candidate-search}
 
-1. **Spécification directe du chemin** :
+1. **Spécification directe du chemin** :
    *Si vous définissez `iceberg_metadata_file_path`, le système utilisera exactement ce chemin en le combinant avec le chemin du répertoire de la table Iceberg.
 
 * Lorsque ce paramètre est fourni, tous les autres paramètres de résolution sont ignorés.
 
-2. **Correspondance de l’UUID de la table** :
-   *Si `iceberg_metadata_table_uuid` est spécifié, le système :
+2. **Correspondance de l’UUID de la table** :
+   *Si `iceberg_metadata_table_uuid` est spécifié, le système :
    *N’examinera que les fichiers `.metadata.json` du répertoire `metadata`
    *Filtrera les fichiers contenant un champ `table-uuid` correspondant à l’UUID spécifié (sans distinction de casse)
 
-3. **Recherche par défaut** :
-   *Si aucun des paramètres ci-dessus n’est fourni, tous les fichiers `.metadata.json` du répertoire `metadata` deviennent des candidats
+3. **Recherche par défaut** :
+
+* Si aucun des paramètres ci-dessus n’est fourni, tous les fichiers `.metadata.json` du répertoire `metadata` deviennent des candidats
+* Sur S3 et Azure, lorsque le paramètre au niveau de la requête `iceberg_list_only_v_prefixed_metadata_files` est activé et que `iceberg_use_version_hint` est désactivé, si certains de ces fichiers ont un nom commençant par `v` (convention de nommage des catalogues ClickHouse et Hadoop), seuls ces fichiers sont candidats et seuls eux sont listés (via le préfixe de clé `metadata/v`, si bien que les manifests stockés dans le même répertoire ne le sont pas). N’activez ce paramètre que pour les tables dont tous les fichiers de métadonnées suivent cette convention : dans un répertoire où coexistent les deux schémas de nommage, les fichiers `<N>-<uuid>.metadata.json` ne sont jamais candidats
 
 ### Sélection du fichier le plus récent {#most-recent-file}
 
-Après avoir identifié les fichiers candidats à l’aide des règles ci-dessus, le système détermine lequel est le plus récent :
+Après avoir identifié les fichiers candidats à l’aide des règles ci-dessus, le système détermine lequel est le plus récent :
 
-* Si `iceberg_recent_metadata_file_by_last_updated_ms_field` est activé :
+* Si `iceberg_recent_metadata_file_by_last_updated_ms_field` est activé :
 
 * Le fichier dont la valeur `last-updated-ms` est la plus élevée est sélectionné
 
-* Sinon :
+* Sinon :
 
 * Le fichier dont le numéro de version est le plus élevé est sélectionné
 
 * (La version apparaît sous la forme `V` dans les noms de fichiers au format `V.metadata.json` ou `V-uuid.metadata.json`)
 
-**Remarque** : tous les paramètres mentionnés sont des paramètres de fonction de table (et non des paramètres globaux ou au niveau de la requête) et doivent être spécifiés comme indiqué ci-dessous :
+**Remarque** : tous les paramètres mentionnés, à l’exception de `iceberg_list_only_v_prefixed_metadata_files`, sont des paramètres de fonction de table (et non des paramètres globaux ou au niveau de la requête) et doivent être spécifiés comme indiqué ci-dessous :
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
-**Remarque** : si les catalogues Iceberg assurent généralement la résolution des métadonnées, la fonction de table `iceberg` de ClickHouse interprète directement les fichiers stockés dans S3 comme des tables Iceberg ; il est donc important de comprendre ces règles de résolution.
+**Remarque** : si les catalogues Iceberg assurent généralement la résolution des métadonnées, la fonction de table `iceberg` de ClickHouse interprète directement les fichiers stockés dans S3 comme des tables Iceberg ; il est donc important de comprendre ces règles de résolution.
 
 ## Cache de métadonnées {#metadata-cache}
 

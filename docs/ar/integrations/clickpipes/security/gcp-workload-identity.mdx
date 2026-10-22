@@ -8,7 +8,7 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 ---
 
 <Note>
-  تتوفر المصادقة عبر Workload Identity من GCP حاليًا في مرحلة المعاينة الخاصة. تواصل مع ClickHouse Support لتمكينها لمؤسستك.
+  تتوفر المصادقة عبر Workload Identity من GCP حاليًا في المرحلة التجريبية.
 </Note>
 
 تتيح Workload Identity من GCP لـ ClickPipes الوصول إلى مصادر Google Cloud المدعومة دون الحاجة إلى تخزين مفتاح حساب خدمة خاص بالعميل. يوضح هذا الدليل كيفية الحصول على حساب خدمة Google الذي تديره ClickPipes، ومنحه أذونات الوصول إلى مصدرك، ثم إنشاء ClickPipe يستخدم بيانات اعتماد قصيرة الأجل.
@@ -17,7 +17,6 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 
 ستحتاج إلى ما يلي:
 
-* تفعيل الوصول إلى المعاينة الخاصة لمؤسستك في ClickHouse Cloud.
 * خدمة ClickHouse Cloud تعمل على GCP، على أن يعمل نشر ClickPipes التابع لها على GCP أيضًا.
 * مفتاح API لـ ClickHouse Cloud يمتلك صلاحية إدارة ClickPipes على الخدمة.
 * صلاحية منح أدوار IAM على موارد المصدر في Google Cloud.
@@ -127,7 +126,7 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 
 <Accordion title="ميزة Workload Identity غير مدعومة">
-  تأكد من تفعيل الوصول إلى المعاينة الخاصة، ومن أن خدمة ClickHouse Cloud ونشر ClickPipes التابع لها يعملان كلاهما على GCP. تواصل مع ClickHouse Support إذا كانت الخدمة تستوفي هذه المتطلبات وظلت قيمة `supported` هي `false`.
+  تأكد من أن خدمة ClickHouse Cloud ونشر ClickPipes التابع لها يعملان كلاهما على GCP. تواصل مع ClickHouse Support إذا كانت الخدمة تستوفي هذه المتطلبات وظلت قيمة `supported` هي `false`.
 </Accordion>
 
 <Accordion title="الهوية ليست جاهزة">

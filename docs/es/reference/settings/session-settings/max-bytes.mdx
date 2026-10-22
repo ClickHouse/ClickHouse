@@ -96,7 +96,7 @@ En caso de usar ORDER BY con LIMIT, cuando el uso de memoria supere el umbral es
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria del filtro de Bloom que mantiene un conjunto de `IN` en disco para evitar leer el disco cuando se buscan valores que no están en el conjunto."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "El parámetro de configuración se aplicó mediante backport a la versión 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria del filtro de Bloom que mantiene un conjunto de `IN` en disco para evitar leer el disco cuando se buscan valores que no están en el conjunto."}]}]} />
 
 Presupuesto de memoria, en bytes, para el filtro de Bloom que cada conjunto de `IN` escrito en disco mantiene en memoria. El
 filtro permite que las búsquedas de valores que no están en el conjunto no tengan que leer el disco. No acelera las búsquedas
@@ -127,7 +127,7 @@ Consulte [IN en memoria externa](/es/reference/statements/in#in-in-external-memo
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria de la caché de bloques que mantiene un conjunto de `IN` en disco, de modo que sus búsquedas no vuelvan a leer los mismos bloques desde el disco."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "El parámetro de configuración se aplicó mediante backport a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria de la caché de bloques que mantiene un conjunto de `IN` en disco, de modo que sus búsquedas no vuelvan a leer los mismos bloques desde el disco."}]}]} />
 
 Presupuesto de memoria, en bytes, para la caché de bloques que cada conjunto de `IN` escrito en disco mantiene en memoria. Cuando una
 búsqueda necesita un bloque que ya leyó una búsqueda anterior, lo obtiene de la caché en lugar de volver a leerlo
@@ -248,7 +248,7 @@ Tiene efecto en todos los `join_algorithm` basados en hash, incluido `grace_hash
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Se habilitó de forma predeterminada el volcado a disco del conjunto de `IN` con una subconsulta, a partir de la mitad de la memoria disponible del servidor o del usuario."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración que permite el volcado a disco del conjunto de `IN` con una subconsulta cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_set`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "El cambio del valor predeterminado a 0.5 se aplicó mediante backport a la versión 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nueva configuración que permite el volcado a disco del conjunto de `IN` con una subconsulta cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_set`."}]}]} />
 
 Fracción de la memoria disponible del servidor o del usuario que se utiliza para calcular, al inicio de la ejecución, el umbral a partir del cual se vuelca a disco el conjunto de `IN`
 con una subconsulta. Por ejemplo, `0.5` utiliza la mitad de la memoria disponible.

@@ -20,7 +20,12 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para activar o desactivar la optimización del plan que materializa únicamente los n mejores grupos de cada bucket de dos niveles cuando una agregación final alimenta ORDER BY con sus resultados y LIMIT n, y la selección por bucket puede demostrarse exacta."}]}]} />
 
-Activa o desactiva una optimización a nivel de plan de consulta que, cuando una agregación final alimenta `ORDER BY` con los resultados de la agregación y `LIMIT n`, y el plan demuestra que la selección por bucket es exacta, materializa únicamente los n mejores grupos de cada bucket de dos niveles en ese orden durante la conversión final de la agregación. El resultado es exacto: un grupo que no está entre los n mejores de su propio bucket tiene al menos n grupos por delante a nivel global, por lo que no puede estar entre los n mejores globales.
+Activa o desactiva una optimización a nivel de plan de consulta que, cuando una agregación final alimenta `ORDER BY` con los resultados de la agregación y `LIMIT n`, y el plan demuestra que la selección por bucket es exacta, conserva únicamente los n mejores grupos de cada bucket de dos niveles durante la fusión o conversión final de la agregación. El resultado es exacto: un grupo que no está entre los n mejores de su propio bucket tiene al menos n grupos por delante a nivel global, por lo que no puede estar entre los n mejores globales.
+
+Al ordenar por `count`, la optimización puede seleccionar los mejores grupos durante la conversión final. Para las funciones de agregación cuyos valores fusionados pueden acotarse a partir de sus estados parciales, puede recurrir en su lugar a una fusión con umbral (Threshold Algorithm de Fagin), que omite la fusión de los grupos que no pueden llegar a estar entre los n mejores. Esto es compatible con `count`, `sum` de enteros sin signo cuyo resultado es `UInt64` (argumentos de `UInt8` a `UInt64`; se excluyen los enteros sin signo anchos como `UInt128`) y `uniqExact` en orden descendente, así como con `max` en orden descendente y `min` en orden ascendente para los tipos enteros, de fecha, de fecha y hora, decimales y enumerados (se excluyen los de coma flotante, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString` y otros tipos). Con los combinadores `If` y `Null`, la fusión con umbral se mantiene solo para `count`, `sum` sin signo y `uniqExact`, y únicamente cuando el resultado no admite valores NULL (por ejemplo, `countIf`, `sumIf` de un argumento que no es `Nullable`, o `uniqExact` de un argumento `Nullable`); `sum` y `sumIf` de un argumento `Nullable` (cuyo resultado es `Nullable`), `maxIf`, `minIf`, y `max` o `min` de un argumento `Nullable` usan la fusión ordinaria. El algoritmo se elige automáticamente en función de la función de agregación, la forma de la consulta y la distribución de los estados parciales.
+
+Un grupo que no está entre los n mejores de su bucket no se fusiona ni se finaliza, por lo que no se trata solo de un ajuste de rendimiento: las demás funciones de agregación de la consulta dejan de fusionarse y finalizarse en los grupos que no pueden llegar a estar entre los n mejores. Una consulta que generaba una excepción al fusionar o finalizar una de esas funciones de agregación en uno de esos grupos puede, en cambio, devolver filas. Si se establece en 0, se conserva el comportamiento anterior.
+
 Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) es 1.
 
 Valores posibles:
@@ -540,11 +545,13 @@ Valores posibles:
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Se añadió el valor `force`: mantiene la lectura en orden a través de una unión incluso cuando las partes no anuncian filas virtuales."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Nueva configuración"}]}]} />
 
-Mantiene la lectura en orden de la tabla izquierda en las operaciones JOIN, lo que puede aprovecharse en pasos posteriores.
+Mantiene la lectura en orden desde la tabla izquierda en las operaciones JOIN, de modo que los pasos posteriores puedan aprovecharla.
+
+En una unión distinta de `LEFT`, la lectura se mantiene en orden solo si todas las partes de la tabla izquierda anuncian una fila virtual (consulte [`read_in_order_use_virtual_row`](/es/reference/settings/session-settings/read-in#read_in_order_use_virtual_row)); sin las filas virtuales, la fusión posterior a la unión puede leer mucho más de lo que exige el límite. Con el valor `force`, la lectura se mantiene en orden en cualquier caso.
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 

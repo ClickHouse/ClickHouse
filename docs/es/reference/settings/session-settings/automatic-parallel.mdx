@@ -10,7 +10,6 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Esta configuración está disponible en [system.settings](/es/reference/system-tables/settings) y se genera automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -33,8 +32,6 @@ Establézcalo en 1 para aceptar cualquier cantidad de lectura duplicada, lo que 
 
 ## automatic_parallel_replicas_min_bytes_per_replica {#automatic_parallel_replicas_min_bytes_per_replica}
 
-<ExperimentalBadge />
-
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048576"},{"label": "Mejor valor predeterminado derivado de los resultados de las pruebas"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
@@ -43,8 +40,6 @@ Umbral de bytes que deben leerse por réplica para habilitar automáticamente la
 El número total de bytes que deben leerse se calcula a partir de las estadísticas recopiladas.
 
 ## automatic_parallel_replicas_mode {#automatic_parallel_replicas_mode}
-
-<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

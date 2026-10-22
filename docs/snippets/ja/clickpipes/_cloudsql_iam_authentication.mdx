@@ -10,7 +10,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       port: '5432',
       createUserName: '<name>@<project>.iam',
       userNameHint: <>Postgres の場合、ユーザー名は service account のメールアドレスから <code>.gserviceaccount.com</code> 接尾辞を<strong>除いた</strong>ものです:</>,
-      grantsStep: <>管理者ユーザーで接続し、<a href="/ja/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">ClickPipes ユーザーの作成とアクセス許可の付与</a>の手順を実行します。ユーザーは既に存在するため、ステップ 1 はスキップしてください。<code>clickpipes_user</code> の代わりに <code>{'"<name>@<project>.iam"'}</code> を使用し、二重引用符は残してください（名前に特殊文字が含まれるため）。</>,
+      grantsStep: <>管理者ユーザーで接続し、<a href="/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">ClickPipes ユーザーの作成とアクセス許可の付与</a>の手順を実行します。ユーザーは既に存在するため、ステップ 1 はスキップしてください。<code>clickpipes_user</code> の代わりに <code>{'"<name>@<project>.iam"'}</code> を使用し、二重引用符は残してください（名前に特殊文字が含まれるため）。</>,
       firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
     },
     mysql: {
@@ -19,9 +19,9 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       port: '3306',
       createUserName: 'SERVICE_ACCOUNT_EMAIL',
       userNameHint: <>MySQL の場合は、service account のメールアドレス全体を指定します。Cloud SQL はメールアドレスの <code>@</code> より<strong>前</strong>の部分から MySQL ユーザーを作成します。以下の権限付与では、この短い名前（<code>{'<name>'}</code>）を使用します:</>,
-      grantsStep: <>root ユーザーとして接続し、<a href="/ja/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">データベースユーザーを設定する</a>の手順を実行します。ユーザーは既に存在するため、ステップ 1 はスキップしてください。 <code>{"'<name>'@'%'"}</code> を <code>'clickpipes_user'@'host'</code> および <code>'clickpipes_user'@'%'</code> の代わりに使用します。</>,
+      grantsStep: <>root ユーザーとして接続し、<a href="/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">データベースユーザーを設定する</a>の手順を実行します。ユーザーは既に存在するため、ステップ 1 はスキップしてください。 <code>{"'<name>'@'%'"}</code> を <code>'clickpipes_user'@'host'</code> および <code>'clickpipes_user'@'%'</code> の代わりに使用します。</>,
       firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
-      tlsSuffix: <> <a href="/ja/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">証明書のステップ</a>はスキップできます。</>,
+      tlsSuffix: <> <a href="/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">証明書のステップ</a>はスキップできます。</>,
     },
   };
   const cfg = engines[String(engine).toLowerCase()];
@@ -40,17 +40,17 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
   return (
     <>
       <p>
-        ClickPipes は、パスワードの代わりに、ClickHouse Cloud サービスに属する Google service account（<a href="/ja/integrations/clickpipes/security/gcp-workload-identity">ClickPipes 向け GCP workload identity</a> を参照）を使用し、<a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>自動 IAM データベース認証</a>で認証できます。これにより、ClickPipes はデータベースの認証情報を一切保存せずに Cloud SQL インスタンスへ接続します。
+        ClickPipes は、パスワードの代わりに、ClickHouse Cloud サービスに属する Google service account（<a href="/integrations/clickpipes/security/gcp-workload-identity">ClickPipes 向け GCP workload identity</a> を参照）を使用し、<a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>自動 IAM データベース認証</a>で認証できます。これにより、ClickPipes はデータベースの認証情報を一切保存せずに Cloud SQL インスタンスへ接続します。
       </p>
 
       <Note>
-        IAM データベース認証は<strong>プライベートプレビュー</strong>段階です。サービスで有効化するには、<a href="https://clickhouse.com/support/program">ClickHouse サポートチーム</a>にお問い合わせください。
+        IAM データベース認証は<strong>ベータ版</strong>です。
       </Note>
 
       <h3 id="get-the-clickhouse-service-account">ClickHouse の service account を取得する</h3>
 
       <p>
-        <a href="/ja/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">ClickPipes の service account を取得する</a>に従い、ClickPipes のサービスコンテキストから ClickHouse サービスの service account を取得します。メールアドレスは <code>principal</code> として返され、<code>{'<name>@<project>.iam.gserviceaccount.com'}</code> のような形式です。以下の手順ではこれを <code>SERVICE_ACCOUNT_EMAIL</code> と表記します。
+        <a href="/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">ClickPipes の service account を取得する</a>に従い、ClickPipes のサービスコンテキストから ClickHouse サービスの service account を取得します。メールアドレスは <code>principal</code> として返され、<code>{'<name>@<project>.iam.gserviceaccount.com'}</code> のような形式です。以下の手順ではこれを <code>SERVICE_ACCOUNT_EMAIL</code> と表記します。
       </p>
 
       <h3 id="configure-cloud-sql-for-iam">Cloud SQL を設定する</h3>
@@ -63,7 +63,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
           インスタンスで <code>{cfg.flag}</code> フラグを有効にします。このフラグを変更するとインスタンスが再起動されます。
         </li>
         <li>
-          <a href="/ja/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">ソースへのアクセスを許可</a>します。インスタンスをホストするプロジェクトで、service account に <code>roles/cloudsql.client</code> および <code>roles/cloudsql.instanceUser</code> の IAM ロールを付与します。これらの権限は ClickPipe を作成する前に付与しておいてください。
+          <a href="/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">ソースへのアクセスを許可</a>します。インスタンスをホストするプロジェクトで、service account に <code>roles/cloudsql.client</code> および <code>roles/cloudsql.instanceUser</code> の IAM ロールを付与します。これらの権限は ClickPipe を作成する前に付与しておいてください。
 
           <CodeBlock language="bash">{`${addBindingSql('roles/cloudsql.client')}
 
@@ -86,7 +86,7 @@ ${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
       <ul>
         <li><strong>Host</strong> には、<code>PROJECT:REGION:INSTANCE</code> 形式のインスタンス接続名を設定します。IP アドレスは使用できません。</li>
         <li>ClickPipes はポート {cfg.port} ではなく、インスタンスのサーバー側プロキシポート <strong>3307</strong> に接続します。このポートに到達可能であることを確認してください。パブリック IP の場合は、<a href={cfg.firewallAnchor}>ClickPipes の IP を承認済みネットワークに追加</a>してください。</li>
-        <li>サービスにインスタンスの PSC DNS 名を解決する<a href="/ja/integrations/clickpipes/networking/gcp-psc">リバースプライベートエンドポイント</a>がある場合、ClickPipes は Private Service Connect を使用します。それ以外の場合はインスタンスのパブリック IP に接続し、パブリック IP がない場合はプライベート IP に接続します。</li>
+        <li>サービスにインスタンスの PSC DNS 名を解決する<a href="/integrations/clickpipes/networking/gcp-psc">リバースプライベートエンドポイント</a>がある場合、ClickPipes は Private Service Connect を使用します。それ以外の場合はインスタンスのパブリック IP に接続し、パブリック IP がない場合はプライベート IP に接続します。</li>
         <li>ルート CA などの TLS 設定は適用されません。接続は暗号化され、サーバーのアイデンティティは自動的に検証されます。{cfg.tlsSuffix}</li>
       </ul>
     </>

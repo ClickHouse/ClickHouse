@@ -34,6 +34,16 @@ Iceberg データマニフェストのデコードタスクとクエリの間の
 
 ゼロより大きい値を指定する必要があります。
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "パス指定で読み取るIcebergテーブルの最新メタデータファイルを探す際に、`metadata\/v` キープレフィックスのみを一覧表示する新しい設定。"}]}]} />
+
+S3 または Azure 上のIcebergテーブルをパス指定で読み取る際、キープレフィックス `metadata/v` のみを一覧表示して最新のメタデータファイルを探します。これにより、同じ `metadata` ディレクトリに保存されているマニフェストは一覧表示の対象外となります。このプレフィックス配下に `.metadata.json` ファイルが存在する場合はそれらのみが候補となり、存在しない場合はディレクトリ全体が一覧表示されます。`iceberg_use_version_hint`、`iceberg_metadata_file_path`、`iceberg_metadata_table_uuid`、`iceberg_recent_metadata_file_by_last_updated_ms_field` のいずれかと併用した場合や、データレイクカタログデータベースのテーブルには適用されません。
+
+この設定は、すべてのメタデータファイルが `v<N>...` という形式の名前 (ClickHouse および Hadoop カタログが使用する命名規則) であるテーブルに対してのみ有効化してください。`<N>-<uuid>.metadata.json` ファイルが混在するディレクトリでは、それらのファイルが候補になることはないため、それらを書き込んだライターによるコミットは認識されません。
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **別名**: `iceberg_delete_manifest_decode_concurrency`

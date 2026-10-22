@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -152,6 +153,18 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая экспериментальная настройка."}]}]} />
 
 Убирает лишние обмены данными в распределённом плане запроса. Отключите эту настройку для отладки.
+
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая экспериментальная настройка: при распределённой агрегации перераспределяются промежуточные состояния агрегации вместо входных строк."}]}]} />
+
+Выполняет частичную агрегацию на узлах, читающих данные, до того как распределённая агрегация перераспределит их по ключам `GROUP BY`. Благодаря этому при перераспределении каждый узел передаёт одно состояние агрегации на группу, а не все входные строки, и каждый бакет выполняет слияние состояний своих ключей.
+Планировщик на основе правил по-прежнему перераспределяет входные строки, если статистика столбцов показывает, что частичная агрегация не сократит объём данных хотя бы вдвое. При включённой настройке `enable_cascades_optimizer` данная настройка позволяет оптимизатору выбирать такое слияние для каждого бакета на основе стоимости.
+Действует только вместе с `make_distributed_plan = 1` и не действует при включённой настройке `distributed_plan_force_shuffle_aggregation`, которая перераспределяет входные строки.
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 

@@ -28,7 +28,7 @@ As linhas são filtradas por direitos de acesso: uma entrada só é visível par
 * `database` ([String](/pt-BR/reference/data-types/string)) — Nome do banco de dados da tabela à qual a parte pertence.
 * `table` ([String](/pt-BR/reference/data-types/string)) — Nome da tabela.
 * `table_uuid` ([UUID](/pt-BR/reference/data-types/uuid)) — UUID da tabela. Permanece o mesmo mesmo após renomeações.
-* `part` ([String](/pt-BR/reference/data-types/string)) — Nome da parte de dados.
+* `part` ([String](/pt-BR/reference/data-types/string)) — Nome da parte de dados. No caso de uma parte de projeção, o nome da parte pai e o nome da projeção, no formato `parent_part:projection`.
 * `column` ([String](/pt-BR/reference/data-types/string)) — Nome da coluna.
 * `row_begin` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Índice da linha inicial do intervalo em cache (inclusivo).
 * `row_end` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Índice da linha final do intervalo em cache (exclusivo).

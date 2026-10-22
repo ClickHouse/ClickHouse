@@ -78,6 +78,27 @@ La fusion à la lecture (merge-on-read) n&#39;est pas implémentée ; **les tabl
 fichiers de données du snapshot, qui contient encore les versions de lignes remplacées par des upserts ultérieurs. C&#39;est pourquoi la lecture d&#39;une table dont le schéma
 déclare `primary-key` lève une exception.
 
+## Tables avec vecteurs de suppression {#deletion-vectors}
+
+Les vecteurs de suppression ne sont pas appliqués : **les snapshots comportant des vecteurs de suppression ne peuvent donc pas être lus**, car l&#39;ensemble de résultats contiendrait encore
+les lignes supprimées par des statements `DELETE` et `UPDATE` ultérieurs. La lecture d&#39;un snapshot dont le manifest d&#39;index répertorie
+des vecteurs de suppression lève donc une exception, même après la désactivation de `deletion-vectors.enabled`.
+
+Un compactage complet dans Paimon (`compact_strategy => 'full'`) applique les vecteurs de suppression, et les snapshots créés après
+ce compactage peuvent de nouveau être lus.
+
+Une lecture incrémentielle s&#39;arrête au premier snapshot non consommé comportant des vecteurs de suppression et y reste bloquée, même après un
+compactage complet, car tous les snapshots jusqu&#39;à ce compactage répertorient les mêmes vecteurs de suppression. Le curseur n&#39;avance pas.
+La lecture reprend dès que Paimon fait expirer ces snapshots, ou dès qu&#39;ils sont abandonnés en déplaçant le curseur vers le snapshot du
+compactage complet, ce qui supprime tous les snapshots non encore consommés jusqu&#39;à celui-ci (voir
+[Lorsqu&#39;un snapshot ne peut pas être lu](#when-a-snapshot-cannot-be-read)) :
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+Dans les deux cas, les lignes supprimées par ces vecteurs de suppression restent présentes dans les données déjà fournies par la lecture incrémentielle.
+
 ## Paramètres {#settings}
 
 Ce moteur utilise les mêmes paramètres que les moteurs de stockage objet correspondants et ajoute des paramètres spécifiques à Paimon :

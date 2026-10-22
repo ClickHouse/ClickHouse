@@ -20,7 +20,12 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 버킷별 선택이 정확하다는 것을 증명할 수 있을 때, 각 2단계 버킷에서 상위 n개 그룹만 구체화하는 계획 최적화를 전환하는 새로운 설정입니다."}]}]} />
 
-최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 계획에서 버킷별 선택이 정확하다는 것을 증명할 수 있는 경우, 집계의 최종 변환 과정에서 각 2단계 버킷의 상위 n개 그룹만 해당 순서로 구체화하는 쿼리 계획 수준 최적화를 전환합니다. 결과는 정확합니다. 자체 버킷의 상위 n개 그룹에 속하지 않는 그룹은 전역적으로 적어도 n개의 그룹보다 뒤에 있으므로 전역 상위 n개에 포함될 수 없습니다.
+최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 계획에서 버킷별 선택이 정확하다는 것을 증명할 수 있는 경우, 집계의 최종 머지 또는 변환 과정에서 각 2단계 버킷의 상위 n개 그룹만 유지하는 쿼리 계획 수준 최적화를 전환합니다. 결과는 정확합니다. 자체 버킷의 상위 n개 그룹에 속하지 않는 그룹은 전역적으로 적어도 n개의 그룹보다 뒤에 있으므로 전역 상위 n개에 포함될 수 없습니다.
+
+`count`로 정렬하면 이 최적화는 최종 변환 과정에서 상위 그룹을 선택할 수 있습니다. 부분 상태(Partial States)로부터 머지된 값의 범위를 한정할 수 있는 집계 함수에는 대신 임계값 머지(Fagin&#39;s Threshold Algorithm)를 사용할 수 있으며, 이 방식은 상위 n개에 도달할 수 없는 그룹의 머지를 건너뜁니다. 지원 대상은 내림차순의 `count`, 결과가 `UInt64`인 부호 없는 정수의 `sum`(`UInt8`~`UInt64` 인수에 해당하며, `UInt128` 같은 넓은 부호 없는 정수는 제외), `uniqExact`이며, 정수, 날짜, 날짜-시간, decimal, enum 타입에 대해서는 내림차순의 `max`와 오름차순의 `min`입니다(부동 소수점, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString` 및 기타 타입은 제외). `If` 및 `Null` 조합자(Combinator)는 `count`, 부호 없는 `sum`, `uniqExact`에 한해, 그리고 결과가 NULL 허용이 아닐 때만 임계값 머지를 유지합니다(예: `countIf`, `Nullable`이 아닌 인수의 `sumIf`, `Nullable` 인수의 `uniqExact`). `Nullable` 인수의 `sum` 및 `sumIf`(결과가 `Nullable`임), `maxIf`, `minIf`, 그리고 `Nullable` 인수의 `max` 또는 `min`은 일반 머지를 사용합니다. 알고리즘은 집계 함수, 쿼리 형태, 부분 상태의 분포에 따라 자동으로 선택됩니다.
+
+버킷의 상위 n개에 속하지 않는 그룹은 머지되지도 최종화되지도 않으므로, 이 설정은 단순히 성능만을 위한 토글이 아닙니다. 상위 n개에 도달할 수 없는 그룹에 대해서는 쿼리의 다른 집계 함수도 더 이상 머지 및 최종화되지 않습니다. 따라서 이러한 그룹에서 해당 집계 함수를 머지하거나 최종화하다가 예외가 발생하던 쿼리가 이제는 행을 반환할 수 있습니다. 이 설정을 0으로 지정하면 이전 동작이 유지됩니다.
+
 설정 [query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.
 
 가능한 값:
@@ -528,11 +533,13 @@ wide `String` / `FixedString` 인수를 대체하므로 해당 인수는 더 이
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`force` 값이 추가되었습니다. 파트가 가상 행(virtual row)을 제공하지 않는 경우에도 조인을 거쳐 순서대로 읽기를 유지합니다."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "새로운 설정"}]}]} />
 
-JOIN 작업에서 왼쪽 테이블의 순서를 유지하며 계속 읽고, 이는 후속 단계에서 활용될 수 있습니다.
+JOIN 연산에서 왼쪽 테이블(left table)을 순서대로 읽는 방식을 유지하여 이후 단계에서 이 순서를 활용할 수 있도록 합니다.
+
+`LEFT` 이외의 조인에서는 왼쪽 테이블의 모든 파트가 가상 행을 제공하는 경우에만 순서대로 읽기가 유지됩니다([`read_in_order_use_virtual_row`](/ko/reference/settings/session-settings/read-in#read_in_order_use_virtual_row) 참고). 가상 행이 없으면 조인 이후의 머지 과정에서 LIMIT에 필요한 양보다 훨씬 많은 데이터를 읽을 수 있습니다. `force` 값을 사용하면 이와 관계없이 순서대로 읽기를 유지합니다.
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 

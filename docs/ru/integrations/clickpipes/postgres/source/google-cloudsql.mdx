@@ -81,11 +81,11 @@ Postgres 12 и новее
 
 Публикация `clickpipes` определяет набор таблиц, события изменений которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не собираетесь реплицировать каждую таблицу, поскольку включение ненужных таблиц увеличивает WAL-трафик из Postgres в ClickPipes и снижает общую эффективность репликации.
 
-## Использование аутентификации в базе данных через IAM (необязательно, закрытая предварительная версия) {#iam-database-authentication}
+## Использование аутентификации в базе данных через IAM (необязательно, бета) {#iam-database-authentication}
 
 <CloudSQLIAMAuthentication engine="postgres" />
 
-[//]: # "TODO Add Туннелирование SSH"
+[//]: # "TODO Add SSH Tunneling"
 
 ## Добавьте IP-адреса ClickPipes в брандмауэр {#add-clickpipes-ips-to-firewall}
 

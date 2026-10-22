@@ -289,7 +289,7 @@ ClickHouse에서 `iceberg` 테이블 함수를 사용할 때 시스템은 Iceber
 1. **직접 경로 지정**:
    *`iceberg_metadata_file_path`를 설정하면 시스템은 이 값을 Iceberg 테이블 디렉터리 경로와 결합해 해당 정확한 경로를 사용합니다.
 
-* 이 설정이 지정되면 다른 모든 탐색 관련 설정은 무시됩니다.
+* 이 설정이 지정되면 다른 모든 해상도 관련 설정은 무시됩니다.
 
 2. **테이블 UUID 일치**:
    *`iceberg_metadata_table_uuid`가 지정되면 시스템은 다음과 같이 동작합니다.
@@ -297,7 +297,9 @@ ClickHouse에서 `iceberg` 테이블 함수를 사용할 때 시스템은 Iceber
    *지정한 UUID와 일치하는 `table-uuid` 필드가 포함된 파일만 필터링합니다(대소문자 구분 없음).
 
 3. **기본 검색**:
-   *위 두 설정이 모두 지정되지 않으면 `metadata` 디렉터리의 모든 `.metadata.json` 파일이 후보가 됩니다.
+
+* 위 두 설정이 모두 지정되지 않으면 `metadata` 디렉터리의 모든 `.metadata.json` 파일이 후보가 됩니다.
+* S3 및 Azure에서 쿼리 수준 설정(query-level setting) `iceberg_list_only_v_prefixed_metadata_files`가 활성화되어 있고 `iceberg_use_version_hint`가 비활성화되어 있는 상태에서 이 파일 중 일부의 이름이 `v`로 시작하면(ClickHouse 및 Hadoop 카탈로그(catalogs)의 명명 방식) 해당 파일만 후보가 되며, 목록 조회도 이 파일들만 대상으로 합니다(키 접두사 `metadata/v` 기준으로 조회하므로 같은 디렉터리에 저장된 매니페스트는 조회되지 않습니다). 메타데이터 파일 이름이 모두 이 방식을 따르는 테이블에서만 이 설정을 활성화하십시오. 두 가지 명명 방식이 섞여 있는 디렉터리에서는 `<N>-<uuid>.metadata.json` 파일이 절대 후보가 되지 않습니다.
 
 ### 가장 최근 파일 선택 {#most-recent-file}
 
@@ -313,14 +315,14 @@ ClickHouse에서 `iceberg` 테이블 함수를 사용할 때 시스템은 Iceber
 
 * (버전은 `V.metadata.json` 또는 `V-uuid.metadata.json` 형식의 파일명에서 `V`로 표시됩니다)
 
-**참고**: 여기서 언급한 모든 설정은 테이블 함수 설정(전역 설정이나 쿼리 수준 설정이 아님)이며, 아래와 같이 지정해야 합니다:
+**참고**: 여기서 언급한 설정 중 `iceberg_list_only_v_prefixed_metadata_files`를 제외한 모든 설정은 테이블 함수 설정(전역 설정이나 쿼리 수준 설정이 아님)이며, 아래와 같이 지정해야 합니다:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
-**참고**: 일반적으로는 Iceberg 카탈로그가 메타데이터 해석을 담당하지만, ClickHouse의 `iceberg` 테이블 함수는 S3에 저장된 파일을 Iceberg 테이블로 직접 해석합니다. 따라서 이러한 해석 규칙을 이해하는 것이 중요합니다.
+**참고**: 일반적으로는 Iceberg 카탈로그가 메타데이터 해상도를 담당하지만, ClickHouse의 `iceberg` 테이블 함수는 S3에 저장된 파일을 Iceberg 테이블로 직접 해석합니다. 따라서 이러한 해상도 규칙을 이해하는 것이 중요합니다.
 
 ## 메타데이터 캐시 {#metadata-cache}
 

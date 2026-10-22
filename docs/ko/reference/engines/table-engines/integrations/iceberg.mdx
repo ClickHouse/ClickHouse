@@ -359,6 +359,7 @@ ClickHouse에서 `Iceberg` 테이블 엔진을 사용할 때 시스템은 Iceber
 3. **기본 검색**:
 
 * 위 두 설정이 모두 제공되지 않으면 `metadata` 디렉터리의 모든 `.metadata.json` 파일이 후보가 됩니다
+* S3 및 Azure에서 쿼리 수준 설정(query-level setting)인 `iceberg_list_only_v_prefixed_metadata_files`가 활성화되어 있고 `iceberg_use_version_hint`가 비활성화되어 있는 경우, 이 파일 중 일부의 이름이 `v`로 시작하면(ClickHouse 및 Hadoop 카탈로그(Catalog)는 이 방식으로 파일 이름을 지정합니다) 해당 파일만 후보가 되고 목록에도 해당 파일만 포함됩니다(키 접두사 `metadata/v`를 기준으로 나열하므로 같은 디렉터리에 저장된 매니페스트는 나열되지 않습니다). 이 설정은 모든 메타데이터 파일 이름이 이 방식을 따르는 테이블에만 활성화하십시오. 두 가지 이름 지정 방식이 섞여 있는 디렉터리에서는 `<N>-<uuid>.metadata.json` 파일이 후보가 되지 않습니다
 
 ### 최신 파일 선택 {#most-recent-file}
 

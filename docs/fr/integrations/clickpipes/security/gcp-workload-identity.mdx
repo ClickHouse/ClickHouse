@@ -1,23 +1,22 @@
 ---
-title: 'GCP workload identity pour ClickPipes'
-sidebarTitle: 'GCP workload identity'
+title: 'Workload Identity de GCP pour ClickPipes'
+sidebarTitle: 'Workload Identity de GCP'
 slug: /integrations/clickpipes/security/gcp-workload-identity
-description: "Configurez un accès sans clé depuis ClickPipes vers les sources de données Google Cloud prises en charge à l’aide de GCP workload identity."
+description: "Configurez un accès sans clé depuis ClickPipes vers les sources de données Google Cloud prises en charge à l’aide de Workload Identity de GCP."
 doc_type: 'guide'
 keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', 'keyless authentication']
 ---
 
 <Note>
-  L’authentification via GCP workload identity est disponible en aperçu privé. Contactez ClickHouse Support pour l’activer dans votre organisation.
+  L’authentification via Workload Identity de GCP est en version bêta.
 </Note>
 
-GCP workload identity permet à ClickPipes d’accéder aux sources Google Cloud prises en charge sans avoir à stocker de clé de compte de service client. Ce guide explique comment récupérer le compte de service Google géré par ClickPipes, lui accorder l’accès à votre source et créer un ClickPipe qui utilise des identifiants à durée de vie limitée.
+Workload Identity de GCP permet à ClickPipes d’accéder aux sources Google Cloud prises en charge sans avoir à stocker de clé de compte de service client. Ce guide explique comment récupérer le compte de service Google géré par ClickPipes, lui accorder l’accès à votre source et créer un ClickPipe qui utilise des identifiants à durée de vie limitée.
 
 ## Avant de commencer {#before-you-begin}
 
 Vous aurez besoin des éléments suivants :
 
-* Un accès à l’aperçu privé activé pour votre organisation ClickHouse Cloud.
 * Un service ClickHouse Cloud hébergé sur GCP. Son déploiement ClickPipes doit également s’exécuter sur GCP.
 * Une clé API ClickHouse Cloud disposant de la permission de gérer ClickPipes sur le service.
 * La permission d’attribuer des rôles IAM sur les ressources sources Google Cloud.
@@ -127,7 +126,7 @@ Consultez les exemples d’accès programmatique pour chaque source :
 ## Dépannage {#troubleshooting}
 
 <Accordion title="Workload Identity n'est pas pris en charge">
-  Vérifiez que l&#39;accès à l&#39;aperçu privé est activé et que le service ClickHouse Cloud et son déploiement ClickPipes s&#39;exécutent tous deux sur GCP. Si le service remplit ces conditions mais que `supported` vaut `false`, contactez ClickHouse Support.
+  Vérifiez que le service ClickHouse Cloud et son déploiement ClickPipes s&#39;exécutent tous deux sur GCP. Si le service remplit ces conditions mais que `supported` vaut `false`, contactez ClickHouse Support.
 </Accordion>
 
 <Accordion title="L'identity n'est pas prête">

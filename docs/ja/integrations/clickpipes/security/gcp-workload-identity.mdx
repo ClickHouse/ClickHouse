@@ -8,19 +8,18 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 ---
 
 <Note>
-  GCP workload identity 認証は現在プライベートプレビュー中です。組織で有効にするには、ClickHouse Support までお問い合わせください。
+  GCP workload identity 認証は現在ベータ版です。
 </Note>
 
-GCP workload identity を使用すると、ClickPipes はお客様の service account キーを保存することなく、サポート対象の Google Cloud ソースにアクセスできます。このガイドでは、ClickPipes が管理する Google service account を取得し、そのアカウントにソースへのアクセス権限を付与したうえで、有効期間の短い認証情報を使用する ClickPipe を作成する手順を説明します。
+GCP workload identity を使用すると、ClickPipes はお客様の サービスアカウントキーを保存することなく、サポート対象の Google Cloud ソースにアクセスできます。このガイドでは、ClickPipes が管理する Google service account を取得し、そのアカウントにソースへのアクセス権限を付与したうえで、有効期間の短い認証情報を使用する ClickPipe を作成する手順を説明します。
 
 ## 始める前に {#before-you-begin}
 
 以下が必要です。
 
-* ClickHouse Cloud 組織でプライベートプレビューへのアクセスが有効になっていること。
 * GCP 上で稼働している ClickHouse Cloud サービス。また、そのサービスの ClickPipes デプロイメントも GCP 上で稼働している必要があります。
 * 対象サービスで ClickPipes を管理するアクセス許可を持つ ClickHouse Cloud APIキー。
-* Google Cloud のソースリソースに対して IAMロールを付与するアクセス許可。
+* Google Cloud のソースリソースに対して IAM roleを付与するアクセス許可。
 * Terraform を使用する場合は、`clickhouse_clickpipes_service_context` データソースを含む ClickHouse プロバイダーのリリース。バージョンを選択する前に、[プロバイダーの変更ログ](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)を確認してください。
 
 ## 仕組み {#how-it-works}
@@ -127,7 +126,7 @@ ClickPipes は、お客様の Google Cloud プロジェクト内に IAM バイ�
 ## トラブルシューティング {#troubleshooting}
 
 <Accordion title="Workload Identity がサポートされていません">
-  プライベートプレビューへのアクセスが有効になっていること、および ClickHouse Cloud サービスとその ClickPipes デプロイメントの両方が GCP 上で稼働していることを確認してください。サービスがこれらの要件を満たしているにもかかわらず `supported` が `false` になる場合は、ClickHouse Support にお問い合わせください。
+  ClickHouse Cloud サービスとその ClickPipes デプロイメントの両方が GCP 上で稼働していることを確認してください。サービスがこれらの要件を満たしているにもかかわらず `supported` が `false` になる場合は、ClickHouse Support にお問い合わせください。
 </Accordion>
 
 <Accordion title="アイデンティティの準備が完了していません">

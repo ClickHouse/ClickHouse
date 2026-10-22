@@ -359,6 +359,7 @@ Al usar el table engine `Iceberg` en ClickHouse, el sistema necesita localizar e
 3. **Búsqueda predeterminada**:
 
 * Si no se proporciona ninguno de los ajustes anteriores, todos los archivos `.metadata.json` del directorio `metadata` pasan a ser candidatos
+* En S3 y Azure, con el ajuste de consulta `iceberg_list_only_v_prefixed_metadata_files` habilitado y `iceberg_use_version_hint` deshabilitado, si algunos de estos archivos tienen nombres que empiezan por `v` (como los nombran los catálogos de ClickHouse y Hadoop), solo esos archivos son candidatos y solo se listan ellos (mediante el prefijo de clave `metadata/v`, de modo que los manifiestos almacenados en el mismo directorio no se listan). Actívalo únicamente para tablas cuyos archivos de metadatos sigan todos esta convención de nombres: en un directorio que contenga ambos esquemas de nombres, los archivos `<N>-<uuid>.metadata.json` nunca serán candidatos
 
 ### Selección del archivo más reciente {#most-recent-file}
 

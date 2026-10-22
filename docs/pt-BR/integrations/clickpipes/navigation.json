@@ -13,7 +13,7 @@
             "pt-BR/integrations/clickpipes/kafka/index",
             "pt-BR/integrations/clickpipes/kafka/create-kafka-clickpipe",
             "pt-BR/integrations/clickpipes/kafka/schema-registries",
-            "integrations/clickpipes/kafka/reference",
+            "pt-BR/integrations/clickpipes/kafka/reference",
             "pt-BR/integrations/clickpipes/kafka/best-practices",
             "pt-BR/integrations/clickpipes/kafka/faq"
           ]
@@ -30,7 +30,7 @@
           "group": "GCP Pub/Sub",
           "icon": "/images/integrations/logos/google_pubsub.svg",
           "pages": [
-            "integrations/clickpipes/pubsub/overview",
+            "pt-BR/integrations/clickpipes/pubsub/overview",
             "pt-BR/integrations/clickpipes/pubsub/auth"
           ]
         }
@@ -52,7 +52,7 @@
           "group": "Google Cloud Storage",
           "icon": "/images/integrations/logos/gcs.svg",
           "pages": [
-            "integrations/clickpipes/object-storage/google-cloud-storage/overview",
+            "pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/overview",
             "pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
             "pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode"
           ]
@@ -106,7 +106,7 @@
                 "pt-BR/integrations/clickpipes/postgres/source/rds",
                 "pt-BR/integrations/clickpipes/postgres/source/aurora",
                 "pt-BR/integrations/clickpipes/postgres/source/supabase",
-                "integrations/clickpipes/postgres/source/google-cloudsql",
+                "pt-BR/integrations/clickpipes/postgres/source/google-cloudsql",
                 "pt-BR/integrations/clickpipes/postgres/source/azure-flexible-server-postgres",
                 "pt-BR/integrations/clickpipes/postgres/source/neon-postgres",
                 "pt-BR/integrations/clickpipes/postgres/source/crunchy-postgres",
@@ -144,7 +144,7 @@
               "pages": [
                 "pt-BR/integrations/clickpipes/mysql/source/rds",
                 "pt-BR/integrations/clickpipes/mysql/source/aurora",
-                "integrations/clickpipes/mysql/source/gcp",
+                "pt-BR/integrations/clickpipes/mysql/source/gcp",
                 "pt-BR/integrations/clickpipes/mysql/source/azure-flexible-server-mysql",
                 "pt-BR/integrations/clickpipes/mysql/source/generic",
                 "pt-BR/integrations/clickpipes/mysql/source/rds-maria",
@@ -188,7 +188,7 @@
           "group": "BigQuery",
           "icon": "/images/logo-bigquery.svg",
           "pages": [
-            "integrations/clickpipes/bigquery/overview",
+            "pt-BR/integrations/clickpipes/bigquery/overview",
             "pt-BR/integrations/clickpipes/bigquery/get-started",
             "pt-BR/integrations/clickpipes/bigquery/faq"
           ]

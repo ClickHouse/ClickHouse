@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify 的生产环境渲染器在求值导出的组件时，不会
-  // 保留模块作用域内的绑定。借助惰性状态，生成的数据可保留在
-  // 该求值作用域中，且每次挂载仅构造一次。
+  // Mintlify's production renderer evaluates the exported component without
+  // preserving module-scope bindings. Lazy state keeps the generated data in
+  // that evaluation scope while constructing it only once per mount.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -727,7 +727,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 17,
+      count: 18,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -741,6 +741,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_max_buffered_log_rows", path: "/distributed-plan#distributed_plan_max_buffered_log_rows", default: "100000" },
         { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
+        { name: "distributed_plan_partial_aggregation_before_shuffle", path: "/distributed-plan#distributed_plan_partial_aggregation_before_shuffle", default: "1" },
         { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
         { name: "distributed_plan_read_in_order", path: "/distributed-plan#distributed_plan_read_in_order", default: "0" },
         { name: "distributed_plan_worker_cluster", path: "/distributed-plan#distributed_plan_worker_cluster", default: '""' },
@@ -1162,10 +1163,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 10,
+      count: 11,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
+        { name: "iceberg_list_only_v_prefixed_metadata_files", path: "/iceberg#iceberg_list_only_v_prefixed_metadata_files", default: "0" },
         { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "16" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
@@ -3202,7 +3204,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
         { name: "json_extract_named_tuples_as_objects", path: "/other#json_extract_named_tuples_as_objects", default: "0" },
-        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "0" },
+        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "1" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
         { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
@@ -3547,7 +3549,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">无匹配的设置项</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">无匹配的设置</div>
         )}
       </div>
     </div>

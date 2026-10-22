@@ -159,6 +159,18 @@ Número de fluxos de agregação que reconstruíram sua tabela hash com base no 
 
 Número de vezes que uma tabela hash limitada ao conjunto compartilhado de chaves mantidas pelo limite de corte do GROUP BY LIMIT trivial foi reinicializada com essas chaves após a agregação externa gravá-la em um arquivo temporário (consulte a configuração `optimize_trivial_group_by_limit_query`).
 
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+Número de grupos que a mesclagem com limiar top-K de fato mesclou e classificou como candidatos.
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+Número de buckets two-level mesclados por meio da mesclagem por limiar top-K (Algoritmo de Limiar de Fagin), em vez da mesclagem comum de cada grupo.
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+Número de células da tabela hash por thread que a mesclagem com limiar top-K nunca acessou, porque nenhum grupo associado a elas poderia ficar entre os top K.
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 Quantos heaps de agregação top-K foram congelados, recorrendo à agregação comum. Ou o heap rejeitou quase nada dentro de sua janela de observação (por exemplo, o número de chaves de agrupamento distintas não excede o LIMIT), ou um conjunto de empates na fronteira do heap — que nunca pode ser removido — o fez crescer demais (consulte `enable_group_by_top_k_optimization`).
@@ -2069,6 +2081,18 @@ Quantidade de dados (não compactados, antes da compressão) gravados para JOIN 
 ### ExternalJoinWritePart {#externaljoinwritepart}
 
 Número de vezes que um arquivo temporário foi gravado no disco para JOIN em memória externa.
+
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+Número de bytes compactados gravados em arquivos temporários para liberar a memória ocupada pelos dados armazenados em buffer das partes de dados empacotadas em processo de gravação.
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+Quantidade de dados (não comprimidos, antes da compressão) gravados em arquivos temporários para liberar a memória ocupada pelos dados armazenados em buffer das partes de dados empacotadas que estão sendo gravadas.
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+Número de vezes em que os dados armazenados em buffer de uma parte de dados empacotada em gravação foram movidos para o respectivo arquivo temporário para liberar memória.
 
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
@@ -4518,6 +4542,10 @@ O número total de pages de dados Parquet lidas
 
 O número total de grupos de linhas lidos dos dados Parquet
 
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+Número de linhas das colunas de entrada de PREWHERE em Parquet lidas como índices de dicionário, de modo que as funções aplicadas a essas colunas sejam avaliadas uma única vez por valor do dicionário
+
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 O número total de linhas que passaram pelo filtro
@@ -6442,6 +6470,14 @@ Número de vezes em que uma varredura de dicionário por pattern do índice de t
 
 Linhas candidatas (interseção de postings) examinadas pela busca de frase baseada em candidatos.
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+Tempo total gasto para encontrar as linhas candidatas de uma busca por phrase: leitura e interseção das listas de postings dos tokens da phrase.
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+Número de buscas por phrase (phrase searches) que encontraram suas linhas candidatas por meio de cursores de lista de postings, em vez da interseção de bitmaps.
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 Número de vezes que uma consulta de phrase ignorou o índice de texto porque se estimou que a phrase corresponderia a mais linhas do que &#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39;, sendo avaliada diretamente na coluna.
@@ -6452,7 +6488,7 @@ Tempo total gasto na correspondência de posições de frases nas linhas candida
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-Número de buscas por frase (phrase searches) executadas sobre um índice de texto. Buscas repetidas da mesma phrase na mesma parte são atendidas pelo cache e não são contabilizadas.
+Número de buscas por phrase (phrase searches) executadas sobre um índice de texto, uma por leitor de um granule. Leitores atendidos inteiramente pelo cache não são contabilizados.
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 

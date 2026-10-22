@@ -854,6 +854,14 @@ ZooKeeper 中持有的临时节点数。
 
 全局线程池中排队中或正在运行的作业数。
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Glue 目录中当前 Iceberg schema 字段类型缓存的大小 (字节)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Glue 目录中当前 Iceberg schema 字段类型缓存的条目数
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 HashedDictionary 线程池中的线程数。
@@ -1465,6 +1473,10 @@ S3ObjectStorage 线程池中处于排队或运行中的作业数量。
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 用于加载过期数据分区 parts 的线程池中，处于排队或运行状态的作业数量。
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+为正在写入的打包式数据分区片段中已缓冲数据分配的内存量 (字节) ，不包括已移至临时 File 的数据。
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2169,6 +2181,10 @@ JOIN 期间创建的临时 File 数量
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 垂直合并的临时 File 数量
+
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+用于存放正在写入的打包式数据分区片段的已缓冲数据的临时 File 数量
 
 ### TemporaryFilesForSet {#temporaryfilesforset}
 

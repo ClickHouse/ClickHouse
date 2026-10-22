@@ -359,6 +359,7 @@ Ao usar o motor de tabela `Iceberg` no ClickHouse, o sistema precisa localizar o
 3. **Busca padrão**:
 
 * Se nenhuma das configurações acima for fornecida, todos os arquivos `.metadata.json` no diretório `metadata` passam a ser candidatos
+* No S3 e no Azure, com a configuração no nível da consulta `iceberg_list_only_v_prefixed_metadata_files` habilitada e `iceberg_use_version_hint` desabilitada, se alguns desses arquivos tiverem nomes iniciados por `v` (padrão de nomenclatura usado pelos catálogos do ClickHouse e do Hadoop), apenas esses arquivos serão candidatos e somente eles serão listados (pelo prefixo de chave `metadata/v`, de modo que os manifestos armazenados no mesmo diretório não são listados). Habilite essa configuração apenas para tabelas cujos arquivos de metadados sigam todos esse padrão: em um diretório que contenha os dois esquemas de nomenclatura, os arquivos `<N>-<uuid>.metadata.json` nunca serão candidatos
 
 ### Seleção do arquivo mais recente {#most-recent-file}
 

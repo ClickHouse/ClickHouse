@@ -830,6 +830,14 @@ Tamaño objetivo del grupo de filas, en bytes, antes de la compresión.
 
 Use el tipo String de Parquet en lugar de Binary para las columnas String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nuevo ajuste."}]}]} />
+
+Codifica las columnas `Float32` y `Float64` (`FLOAT` y `DOUBLE` de Parquet) con la codificación `ALP` (Adaptive Lossless floating-Point). `ALP` es una codificación sin pérdida y comprime los datos de coma flotante de tipo decimal (precios, mediciones, coordenadas) mucho mejor que `PLAIN`. Estas columnas se escriben sin diccionario, y las páginas en las que `ALP` ocuparía más que `PLAIN` se escriben con `PLAIN`. Esta codificación se incorporó hace poco al formato Parquet, por lo que aún no todos los lectores de Parquet la admiten: actívela solo si los archivos se van a leer con lectores compatibles.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

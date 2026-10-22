@@ -81,11 +81,11 @@ Postgres 12 فما بعده
 
 تحدّد الـ publication المسماة `clickpipes` مجموعة الجداول التي ستُبثّ أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ جميع الجداول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
-## اعتماد مصادقة قاعدة البيانات باستخدام IAM (اختياري، ضمن المعاينة الخاصة) {#iam-database-authentication}
+## اعتماد مصادقة قاعدة البيانات باستخدام IAM (اختياري، تجريبي) {#iam-database-authentication}
 
 <CloudSQLIAMAuthentication engine="postgres" />
 
-[//]: # "TODO إضافة إنشاء أنفاق SSH"
+[//]: # "TODO إضافة SSH tunneling"
 
 ## أضف عناوين IP الخاصة بـ ClickPipes إلى جدار الحماية {#add-clickpipes-ips-to-firewall}
 

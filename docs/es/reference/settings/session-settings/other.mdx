@@ -956,13 +956,13 @@ Deshabilitado de forma predeterminada.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Se habilita `kill_throw_if_noop` de forma predeterminada para que `KILL QUERY` y `KILL MUTATION` informen cuando no hay coincidencias."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
 
 Controla si [`KILL QUERY`](/es/reference/statements/kill#kill-query) y [`KILL MUTATION`](/es/reference/statements/kill#kill-mutation) lanzan una excepción cuando sus cláusulas `WHERE` no coinciden con ninguna fila.
 
-Si se establece en true, `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. De forma predeterminada, si no hay coincidencias, la sentencia finaliza sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
+Habilitado de forma predeterminada. `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. Establézcalo en `false` para que la sentencia finalice sin lanzar ninguna excepción cuando no haya coincidencias. Las ejecuciones de prueba con `TEST` devuelven una vista previa vacía sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
 
 Valores posibles:
 
@@ -1519,7 +1519,7 @@ Si está habilitado, ClickHouse proporcionará el valor exacto de la estadístic
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para ejecutar una consulta en segundo plano, desconectada de la conexión que la envió y descartando el resultado."}]}]} />
 
-Si está habilitada, el servidor programa la consulta en segundo plano, devuelve inmediatamente un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión.
+Si está habilitada, el servidor programa la consulta en segundo plano, espera a que la consulta supere sus comprobaciones (por ejemplo, que las tablas existan y que el usuario tenga los permisos necesarios) y esté a punto de iniciar su trabajo principal, devuelve un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión. Si se lanza un error antes de ese momento, se devuelve al client; si se produce después, solo se registra en `system.query_log`.
 
 Una consulta en segundo plano no sobrevive a un reinicio del servidor. Durante el apagado, respeta la misma configuración del servidor que una consulta en primer plano: `shutdown_wait_unfinished_queries` determina si se cancela o se espera a que finalice (en ambos casos, las entradas en cola se descartan sin generar una entrada en `system.query_log`), y `shutdown_wait_unfinished` limita cuánto tiempo espera el servidor.
 

@@ -830,6 +830,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 استخدم نوع Parquet String بدلًا من Binary لأعمدة String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+يرمّز أعمدة `Float32` و`Float64` (أي `FLOAT` و`DOUBLE` في Parquet) باستخدام ترميز `ALP` (Adaptive Lossless floating-Point). ‏`ALP` ترميز بلا فقدان، ويضغط بيانات الفاصلة العائمة ذات الطابع العشري (كالأسعار والقياسات والإحداثيات) بكفاءة تفوق `PLAIN` بكثير. تُكتب هذه الأعمدة دون قاموس، وأي صفحة يكون حجمها بترميز `ALP` أكبر منه بترميز `PLAIN` تُكتب بترميز `PLAIN`. أُضيف هذا الترميز إلى تنسيق Parquet حديثًا، لذا لا تدعمه جميع قارئات Parquet حتى الآن؛ فلا تمكّنه إلا إذا كانت الملفات ستُقرأ بقارئات تدعمه.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

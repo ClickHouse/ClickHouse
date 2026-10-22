@@ -41,7 +41,7 @@
         {
           "group": "Проекции",
           "pages": [
-            "concepts/features/projections/projections",
+            "ru/concepts/features/projections/projections",
             "ru/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
@@ -191,7 +191,7 @@
                 },
                 "ru/concepts/features/security/external-authenticators/http",
                 "ru/concepts/features/security/external-authenticators/kerberos",
-                "concepts/features/security/external-authenticators/jwt"
+                "ru/concepts/features/security/external-authenticators/jwt"
               ]
             }
           ]
@@ -219,7 +219,7 @@
               "group": "Драйверы и интерфейсы",
               "pages": [
                 "ru/concepts/features/interfaces/overview",
-                "concepts/features/interfaces/http",
+                "ru/concepts/features/interfaces/http",
                 "ru/concepts/features/interfaces/framing-formats",
                 "ru/concepts/features/interfaces/tcp",
                 "ru/concepts/features/interfaces/adbc",

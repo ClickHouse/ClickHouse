@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
@@ -152,6 +153,18 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新的 Experimental 设置。"}]}]} />
 
 移除分布式查询计划中不必要的 exchange。调试时请禁用此设置。
+
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增实验性设置：分布式聚合在 shuffle 时传输部分聚合状态，而非输入行。"}]}]} />
+
+在分布式聚合按 `GROUP BY` 键对数据进行 shuffle 之前，先在读取数据的节点上执行部分聚合。这样，shuffle 时每个节点对每个分组只发送一个聚合状态，而无需发送全部输入行；之后每个桶再合并各自键对应的状态。
+如果列统计信息表明部分聚合无法将数据量至少减半，基于规则的查询规划器仍会对输入行进行 shuffle。启用 `enable_cascades_optimizer` 时，该设置允许优化器根据代价决定是否在每个桶中采用这种合并方式。
+仅在同时设置 `make_distributed_plan = 1` 时生效；若启用了 `distributed_plan_force_shuffle_aggregation` (该设置会对输入行进行 shuffle) ，则此设置不生效。
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 

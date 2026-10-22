@@ -89,7 +89,7 @@ ClickPipes は、[サービスアカウントキー](https://docs.cloud.google.c
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery と Cloud ストレージ の権限を持つサービスアカウントキーの作成" size="lg" border />
 
-#### GCP workload identity (プライベートプレビュー) {#gcp-workload-identity}
+#### GCP workload identity (ベータ) {#gcp-workload-identity}
 
 [GCP workload identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)の手順に従って、ClickPipes サービスのコンテキストからマネージド service account を取得します。次に、その service account に以下の [BigQuery および GCS のロール](#permissions)を付与し、`SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 認証でパイプを作成します。この認証方式を使用する場合は、service account の認証情報を指定しないでください。
 

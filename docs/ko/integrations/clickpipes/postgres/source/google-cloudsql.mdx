@@ -81,11 +81,11 @@ Postgres 12 이상 버전
 
 `clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 의도가 있는 경우가 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
-## IAM 데이터베이스 인증(IAM database authentication) 사용 (선택 사항, 비공개 프리뷰) {#iam-database-authentication}
+## IAM 데이터베이스 인증(IAM database authentication) 사용 (선택 사항, 베타) {#iam-database-authentication}
 
 <CloudSQLIAMAuthentication engine="postgres" />
 
-[//]: # "TODO Add SSH Tunneling"
+[//]: # "TODO Add SSH tunneling"
 
 ## ClickPipes IP를 방화벽에 추가하기 {#add-clickpipes-ips-to-firewall}
 

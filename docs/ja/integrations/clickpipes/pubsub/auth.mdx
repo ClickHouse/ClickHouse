@@ -30,7 +30,7 @@ integration:
 Pub/Sub 向け ClickPipes は、次の 2 つの認証方式をサポートしています。
 
 * **サービスアカウントキー:** Google の service account を作成し、その [JSON キー](https://cloud.google.com/iam/docs/keys-create-delete)を ClickPipes UI でアップロードするか、API 経由で指定します。ClickPipes はキーを保存時に暗号化します。
-* **GCP Workload Identity (プライベートプレビュー):** ClickPipes は、ClickPipes が管理する Google service account の有効期間の短い認証情報を使用します。お客様のサービスアカウントキーは保存されません。要件については [GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)を参照してください。
+* **GCP Workload Identity (ベータ):** ClickPipes は、ClickPipes が管理する Google service account の有効期間の短い認証情報を使用します。お客様のサービスアカウントキーは保存されません。要件については [GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)を参照してください。
 
 いずれの方式でも、service account は次の目的で使用されます。
 
@@ -102,7 +102,7 @@ gcloud iam roles create clickpipes.pubsub.ingestion \
 
 カスタム ロールを作成しない場合は、代わりに `roles/pubsub.editor` を付与できます。
 
-### GCP Workload Identity を使用する (プライベートプレビュー) {#use-workload-identity}
+### GCP Workload Identity を使用する (ベータ) {#use-workload-identity}
 
 [GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)の手順に従って、サービスのコンテキストから ClickPipes が管理する service account を取得します。
 

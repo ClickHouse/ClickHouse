@@ -78,6 +78,27 @@ A mesclagem na leitura (merge-on-read) não está implementada, portanto **tabel
 arquivos de dados do snapshot, que ainda contém as versões de linhas substituídas por upserts posteriores. Por isso, ler uma tabela cujo schema
 declara `primary-key` lança uma exceção.
 
+## Tabelas com vetores de exclusão {#deletion-vectors}
+
+Os vetores de exclusão não são aplicados, portanto **snapshots com vetores de exclusão não podem ser lidos**: o resultado ainda
+conteria as linhas removidas por instruções `DELETE` e `UPDATE` posteriores. Por isso, a leitura de um snapshot cujo manifesto de índice lista
+vetores de exclusão lança uma exceção, mesmo depois que `deletion-vectors.enabled` é desabilitado.
+
+Uma compactação completa no Paimon (`compact_strategy => 'full'`) aplica os vetores de exclusão, e os snapshots criados depois
+dela voltam a poder ser lidos.
+
+Uma leitura incremental para no primeiro snapshot não consumido com vetores de exclusão e permanece nele mesmo após uma compactação
+completa, pois todos os snapshots até essa compactação listam os mesmos vetores de exclusão. O cursor não avança.
+A leitura é retomada quando o Paimon expira esses snapshots ou quando eles são abandonados ao mover o cursor para o snapshot da
+compactação completa, o que descarta todos os snapshots ainda não consumidos até ele (consulte
+[Quando um snapshot não pode ser lido](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+Em ambos os casos, as linhas removidas por esses vetores de exclusão continuam presentes no que a leitura incremental já entregou.
+
 ## Configurações {#settings}
 
 Este motor usa as mesmas configurações dos motores correspondentes de armazenamento de objetos e adiciona configurações específicas do Paimon:

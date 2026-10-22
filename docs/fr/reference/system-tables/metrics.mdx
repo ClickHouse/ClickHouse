@@ -855,6 +855,14 @@ Nombre de threads du pool de threads global exécutant une tâche.
 
 Nombre de jobs en file d&#39;attente ou en cours d&#39;exécution dans le pool global de threads.
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Taille, en octets, du cache des types de champs du schéma Iceberg actuel dans les catalogues Glue
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Nombre d&#39;entrées dans le cache des types de champs du schéma Iceberg actuel dans les catalogues Glue
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 Nombre de threads du pool de threads HashedDictionary.
@@ -1466,6 +1474,10 @@ Nombre de threads actifs dans le pool de threads chargé du chargement des data 
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Nombre de jobs en file d’attente ou actifs dans le pool de threads pour le chargement des data parts obsolètes.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+Quantité de mémoire (en octets) allouée aux données mises en mémoire tampon des parts compactées en cours d&#39;écriture. Les données déplacées vers des fichiers temporaires ne sont pas prises en compte.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2170,6 +2182,10 @@ Nombre de fichiers temporaires créés pour un JOIN
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 Nombre de fichiers temporaires pour la fusion verticale
+
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+Nombre de fichiers temporaires contenant les données mises en mémoire tampon des parts compactées en cours d&#39;écriture
 
 ### TemporaryFilesForSet {#temporaryfilesforset}
 

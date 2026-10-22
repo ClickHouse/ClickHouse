@@ -942,13 +942,13 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`KILL QUERY` および `KILL MUTATION` で一致する行がない場合にそれを報告するよう、`kill_throw_if_noop` をデフォルトで有効化しました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 [`KILL QUERY`](/ja/reference/statements/kill#kill-query) および [`KILL MUTATION`](/ja/reference/statements/kill#kill-mutation) の `WHERE` 句に一致する行が 1 件もない場合に、例外をスローするかどうかを制御します。
 
-true に設定すると、`KILL QUERY` は、実行中の `KILL` ステートメント自体を除いて `system.processes` に対象となる行がない場合に例外をスローします。同様に、`KILL MUTATION` は `system.mutations` に一致する行がない場合に例外をスローします。デフォルトでは、一致する行がなくても例外は発生せず、そのまま終了します。`ON CLUSTER` で実行した場合は、一致結果がホスト間で集計されないため、一致する行がなくても例外はスローされません。
+デフォルトで有効です。`KILL QUERY` は、実行中の `KILL` ステートメント自体を除いて `system.processes` に対象となる行がない場合に例外をスローします。同様に、`KILL MUTATION` は `system.mutations` に一致する行がない場合に例外をスローします。`false` に設定すると、一致する行がなくても例外は発生しません。`TEST` によるドライランでは、例外をスローせずに空のプレビューを返します。`ON CLUSTER` で実行した場合は、一致結果がホスト間で集計されないため、一致する行がなくても例外はスローされません。
 
 設定可能な値:
 
@@ -1497,7 +1497,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "クエリを送信した接続から切り離し、結果を破棄してバックグラウンドで実行するための新しい設定。"}]}]} />
 
-有効にすると、サーバーはクエリをバックグラウンドでスケジュールし、ただちに空の成功結果を返します。接続の状態にかかわらず、クエリは完了まで実行されます。
+有効にすると、サーバーはクエリをバックグラウンドでスケジュールし、クエリがチェック (たとえば、テーブルが存在するか、ユーザーが必要な権限を持っているかなど) を通過して主要な処理に取りかかる直前まで待機したうえで、空の成功結果を返します。接続の状態にかかわらず、クエリは完了まで実行されます。その時点より前に送出されたエラーはクライアントに返されますが、それ以降のエラーは `system.query_log` にのみ記録されます。
 
 バックグラウンドクエリはサーバーの再起動後には存続しません。シャットダウン時にはフォアグラウンドクエリと同じサーバー設定が適用されます。`shutdown_wait_unfinished_queries` は、クエリをキャンセルするか完了を待つかを選択します (キュー内のエントリは、いずれの場合も `system.query_log` にエントリを記録せず破棄されます) 。`shutdown_wait_unfinished` はサーバーの待機時間を制限します。
 

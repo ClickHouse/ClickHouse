@@ -297,7 +297,9 @@ Al usar la `función de tabla` `iceberg` en ClickHouse, el sistema necesita loca
    *Filtrará los archivos que contengan un campo `table-uuid` que coincida con el UUID especificado (sin distinguir entre mayúsculas y minúsculas)
 
 3. **Búsqueda predeterminada**:
-   *Si no se proporciona ninguno de los ajustes anteriores, todos los archivos `.metadata.json` del directorio `metadata` pasan a ser candidatos
+
+* Si no se proporciona ninguno de los ajustes anteriores, todos los archivos `.metadata.json` del directorio `metadata` pasan a ser candidatos
+* En S3 y Azure, con el ajuste de consulta `iceberg_list_only_v_prefixed_metadata_files` habilitado e `iceberg_use_version_hint` deshabilitado, si algunos de estos archivos tienen nombres que empiezan por `v` (como los nombran los catálogos de ClickHouse y Hadoop), solo esos archivos son candidatos y solo se listan esos (mediante el prefijo de clave `metadata/v`, por lo que no se listan los manifiestos almacenados en el mismo directorio). Actívelo solo para tablas cuyos archivos de metadatos sigan todos esta convención de nombres: en un directorio que contenga ambos esquemas de nomenclatura, los archivos `<N>-<uuid>.metadata.json` nunca son candidatos
 
 ### Selección del archivo más reciente {#most-recent-file}
 
@@ -313,7 +315,7 @@ Después de identificar los archivos candidatos mediante las reglas anteriores, 
 
 * (La versión aparece como `V` en nombres de archivo con formato `V.metadata.json` o `V-uuid.metadata.json`)
 
-**Nota**: Todas las configuraciones mencionadas son configuraciones de la función de tabla (no configuraciones globales ni a nivel de consulta) y deben especificarse como se muestra a continuación:
+**Nota**: Todas las configuraciones mencionadas, excepto `iceberg_list_only_v_prefixed_metadata_files`, son configuraciones de la función de tabla (no configuraciones globales ni a nivel de consulta) y deben especificarse como se muestra a continuación:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 

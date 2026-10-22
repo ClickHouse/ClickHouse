@@ -158,6 +158,18 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 受简单 GROUP BY LIMIT 截断后共享的保留键集合限制的哈希表，在外部聚合将其刷写到临时 File 后，重新填入这些键的次数 (参见 `optimize_trivial_group_by_limit_query` 设置) 。
 
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+top-K 阈值合并中实际被合并、并作为候选结果参与排名的分组数。
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+通过 top-K 阈值合并 (Fagin 阈值算法) 而非对每个分组进行普通合并的方式所合并的两级桶数量。
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+top-K 阈值合并过程中完全未被访问的各线程哈希表单元数量。这些单元之所以被跳过，是因为其中的任何分组都不可能进入前 K 名。
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 有多少个 top-K 聚合堆被冻结并回退到常规聚合。原因可能是该堆在其观察窗口内几乎没有拒绝任何数据 (例如不同分组键的数量未超过 LIMIT) ，也可能是堆边界处那些永远无法被淘汰的等值集合过度膨胀 (参见 `enable_group_by_top_k_optimization`) 。
@@ -2068,6 +2080,18 @@ JOIN 在外部内存中写入的数据量 (未压缩，即压缩前的大小) �
 ### ExternalJoinWritePart {#externaljoinwritepart}
 
 JOIN 使用外部内存时将临时 File 写入磁盘的次数。
+
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+为释放正在写入的打包式数据分区片段中已缓冲数据所占用的内存，而写入临时 File 的压缩后字节数。
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+为释放正在写入的打包式数据分区片段中已缓冲数据所占用的内存，而写入临时 File 的数据量 (未压缩，即压缩前的大小) 。
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+为释放内存，将正在写入的打包式数据分区片段中已缓冲的数据移至其临时 File 的次数。
 
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
@@ -4517,6 +4541,10 @@ DB::Parquet::Prefetcher 所读取的范围中，实际被 Parquet 读取器使�
 
 从 Parquet 数据中读取的行组总数
 
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+以字典索引形式读取的 Parquet PREWHERE 输入列的行数，从而使作用于此类列的函数对每个字典值只需计算一次
+
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 经过过滤器的总行数
@@ -6441,6 +6469,14 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 candidate 驱动的 phrase search 所检查的候选行 (postings 交集) 。
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+查找短语搜索候选行所花费的总时间，即读取短语中各标记的倒排列表并对其求交集所用的时间。
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+通过倒排列表游标 (而非对 bitmap 求交集) 找到候选行的短语搜索次数。
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 phrase 查询跳过 文本索引 的次数：由于预估该 phrase 匹配的行数超过 &#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39;，因而改为直接在列上求值。
@@ -6451,7 +6487,7 @@ phrase 查询跳过 文本索引 的次数：由于预估该 phrase 匹配的行
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-在 文本索引 上执行的 phrase search 次数。对同一 part 中同一 phrase 的重复搜索直接由 cache 返回结果，不计入此项。
+在 文本索引 上执行的短语搜索次数，每个粒度的每个读取器计一次。完全由 cache 提供数据的读取器不计入此项。
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 

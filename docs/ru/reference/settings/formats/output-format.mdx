@@ -829,6 +829,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать тип String в Parquet вместо Binary для столбцов String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+
+Кодирует столбцы `Float32` и `Float64` (Parquet `FLOAT` и `DOUBLE`) с помощью кодирования `ALP` (Adaptive Lossless floating-Point). `ALP` работает без потерь и сжимает данные с плавающей точкой, близкие к десятичным (цены, результаты измерений, координаты), значительно эффективнее, чем `PLAIN`. Такие столбцы записываются без словаря, а страница, для которой `ALP` дало бы больший размер, чем `PLAIN`, записывается в кодировании `PLAIN`. Это кодирование появилось в формате Parquet недавно, поэтому пока его поддерживают не все ридеры Parquet: включайте настройку, только если файлы будут читаться ридерами Parquet, которые его поддерживают.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

@@ -30,7 +30,7 @@ integration:
 用于 Pub/Sub 的 ClickPipes 支持两种身份验证方法：
 
 * **服务账号密钥：** 您需要创建一个 Google 服务账号，然后在 ClickPipes UI 中上传其 [JSON 密钥](https://cloud.google.com/iam/docs/keys-create-delete)，或通过 API 提供该密钥。ClickPipes 会在静态存储时对该密钥加密。
-* **GCP workload identity (私有预览) ：** ClickPipes 使用由 ClickPipes 托管的 Google 服务账号的短期凭证，不会存储任何客户服务账号密钥。有关要求，请参阅 [GCP workload identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)。
+* **GCP workload identity (Beta) ：** ClickPipes 使用由 ClickPipes 托管的 Google 服务账号的短期凭证，不会存储任何客户服务账号密钥。有关要求，请参阅 [GCP workload identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)。
 
 无论采用哪种方法，该服务账号都将用于：
 
@@ -102,7 +102,7 @@ gcloud iam roles create clickpipes.pubsub.ingestion \
 
 如果你不想创建自定义角色，也可以直接授予 `roles/pubsub.editor`。
 
-### 使用 GCP Workload Identity (私有预览) {#use-workload-identity}
+### 使用 GCP Workload Identity (Beta) {#use-workload-identity}
 
 请按照 [GCP Workload Identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity)，从服务上下文中获取由 ClickPipes 管理的服务账号。
 

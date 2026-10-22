@@ -20,7 +20,12 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "最終集約の出力に LIMIT n 付きの ORDER BY を適用し、バケットごとの選択が正確であることを証明できる場合に、各二段階バケットの上位 n グループのみをマテリアライズするプラン最適化を切り替える新しい設定。"}]}]} />
 
-最終集約の出力に `LIMIT n` 付きの `ORDER BY` を適用し、プランによってバケットごとの選択が正確であることを証明できる場合に、集約の最終変換時に各二段階バケットの上位 n グループのみをその順序でマテリアライズするクエリプランレベルの最適化を切り替えます。結果は正確です。自身のバケットで上位 n に入らないグループには、グローバルでは少なくとも n 個のグループが先行するため、グローバルの top n に入ることはありません。
+最終集約の出力に `LIMIT n` 付きの `ORDER BY` を適用し、プランによってバケットごとの選択が正確であることを証明できる場合に、集約の最終マージまたは最終変換時に各二段階バケットの上位 n グループのみを保持するクエリプランレベルの最適化を切り替えます。結果は正確です。自身のバケットで上位 n に入らないグループには、グローバルでは少なくとも n 個のグループが先行するため、グローバルの top n に入ることはありません。
+
+`count` で並べ替える場合、この最適化は最終変換時に上位グループを選択できます。部分状態からマージ済みの値の範囲を見積もれる集約関数については、代わりにしきい値マージ (Fagin&#39;s Threshold Algorithm) を使用でき、上位 n に到達し得ないグループのマージをスキップします。対応するのは、`count`、結果が `UInt64` となる符号なし整数の `sum` (`UInt8` から `UInt64` の引数。`UInt128` などの幅の広い符号なし整数は対象外)、降順の `uniqExact`、および整数、日付、日時、Decimal、Enum の型に対する降順の `max` と昇順の `min` です (浮動小数点、`UUID`、`IPv4`、`IPv6`、`String`、`FixedString`、およびその他の型は対象外)。`If` および `Null` コンビネータを使用する場合、しきい値マージが維持されるのは `count`、符号なしの `sum`、`uniqExact` に限られ、かつ結果が NULL許容でない場合のみです (例: `countIf`、非 `Nullable` 引数の `sumIf`、`Nullable` 引数の `uniqExact`)。`Nullable` 引数の `sum` および `sumIf` (結果が `Nullable` になるもの)、`maxIf`、`minIf`、`Nullable` 引数の `max` または `min` では通常のマージが使用されます。アルゴリズムは、集約関数、クエリの形状、部分状態の分布に応じて自動的に選択されます。
+
+バケットの上位 n に入らないグループはマージも最終化も行われないため、これは単なるパフォーマンス向けのトグルではありません。上位 n に到達し得ないグループについては、クエリ内の他の集約関数もマージおよび最終化されなくなります。そのため、こうしたグループでの集約関数のマージまたは最終化中に例外を発生させていたクエリが、代わりに行を返すようになる場合があります。この設定を 0 にすると、従来の動作が維持されます。
+
 設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 設定可能な値:
@@ -533,11 +538,13 @@ wide `String` / `FixedString` の引数を置き換えるため、これらの�
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "値 `force` を追加しました。パーツが仮想行を通知しない場合でも、結合をまたいで順序に従った読み取りを維持します。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
-JOIN演算において左テーブルから順序どおりに読み取りを継続し、その後のステップで利用できるようにします。
+JOIN演算において左テーブルからの順序に従った読み取りを維持し、後続の処理ステップでその順序を活用できるようにします。
+
+`LEFT` 以外の結合では、左テーブルのすべてのパーツが仮想行を通知する場合にのみ、順序に従った読み取りが維持されます ([`read_in_order_use_virtual_row`](/ja/reference/settings/session-settings/read-in#read_in_order_use_virtual_row) を参照) 。仮想行がない場合、結合後のマージで、上限を満たすのに必要な量よりはるかに多くのデータを読み取る可能性があります。値 `force` を指定すると、この条件にかかわらず順序に従った読み取りを維持します。
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 

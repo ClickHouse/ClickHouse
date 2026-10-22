@@ -933,13 +933,13 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "默认启用 `kill_throw_if_noop`，使 `KILL QUERY` 和 `KILL MUTATION` 在匹配结果为空时报告错误。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 控制 [`KILL QUERY`](/zh/reference/statements/kill#kill-query) 和 [`KILL MUTATION`](/zh/reference/statements/kill#kill-mutation) 的 `WHERE` 子句未匹配到任何行时是否抛出异常。
 
-设置为 true 时，如果在排除当前 `KILL` 语句后，`system.processes` 中没有符合条件的行，`KILL QUERY` 会抛出异常；如果 `system.mutations` 中没有匹配的行，`KILL MUTATION` 会抛出异常。默认情况下，匹配结果为空时会直接返回，不会抛出异常。使用 `ON CLUSTER` 执行时，即使匹配结果为空也不会抛出异常，因为匹配结果不会跨主机汇总。
+默认启用。如果在排除当前 `KILL` 语句后，`system.processes` 中没有符合条件的行，`KILL QUERY` 会抛出异常；如果 `system.mutations` 中没有匹配的行，`KILL MUTATION` 会抛出异常。设置为 `false` 可允许匹配结果为空而不抛出异常。`TEST` 试运行会返回空的预览结果，不会抛出异常。使用 `ON CLUSTER` 执行时，即使匹配结果为空也不会抛出异常，因为匹配结果不会跨主机汇总。
 
 可选值：
 
@@ -1490,7 +1490,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于在后台运行查询，使其脱离提交该查询的连接，并丢弃结果。"}]}]} />
 
-启用后，服务器会在后台调度查询，立即返回一个空的成功结果，并继续运行查询直至完成，不受连接状态影响。
+启用后，服务器会在后台调度查询，待查询通过各项检查 (例如表是否存在、用户是否具备所需授权) 、即将开始主要工作时，返回一个空的成功结果，并继续运行查询直至完成，不受连接状态影响。在此之前引发的错误会返回给客户端；此后发生的错误仅记录在 `system.query_log` 中。
 
 后台查询不会在服务器重启后保留。关闭服务器时，它遵循与前台查询相同的服务器设置：`shutdown_wait_unfinished_queries` 决定取消查询还是等待其完成 (无论哪种情况，队列中的条目都会被丢弃，且不会写入 `system.query_log`) ，`shutdown_wait_unfinished` 则限制服务器的最长等待时间。
 

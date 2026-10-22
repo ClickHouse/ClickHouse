@@ -854,6 +854,14 @@ cache 内の領域確保を試みているスレッド数
 
 グローバルスレッドプールでキューに入っている、または実行中のジョブ数。
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Glue カタログにおける現在の Iceberg スキーマのフィールド型を保持するキャッシュのサイズ (バイト単位)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Glue カタログ内の現在の Iceberg スキーマのフィールド型を保持するキャッシュのエントリ数
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 HashedDictionary のスレッドプールに含まれるスレッド数。
@@ -1465,6 +1473,10 @@ Outdated data partsを読み込むためのスレッドプールでアクティ�
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Outdated data parts の読み込み用スレッドプールで、キューに入っている、または実行中のジョブ数。
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+書き込み中の packed データパーツでバッファリングされたデータに割り当てられているメモリ量 (バイト) 。一時ファイルに移動されたデータは含まれません。
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2169,6 +2181,10 @@ JOIN 用に作成された一時ファイル数
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 垂直マージ用の一時ファイル数
+
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+書き込み中の packed データパーツについて、バッファリングされたデータを保持している一時ファイルの数
 
 ### TemporaryFilesForSet {#temporaryfilesforset}
 

@@ -1115,7 +1115,7 @@ Le rapport indique les marques et les lignes que la projection lirait, un `read_
 
 Lorsque le résultat dépend de la disposition de la part de projection, `marks_span` indique la plage de valeurs, et une décision trop incertaine pour trancher est signalée comme `too close to call`. Sur les tables volumineuses, l’estimation lit un échantillon de granules (voir `projection_scan_budget_rows`).
 
-Les projections d’agrégation, les projections comportant une clause `WHERE`, leurs propres index de saut, une clé basée sur l’ordre de commit ou sur une colonne virtuelle, ou un `_block_number` stocké, ainsi que les projections qui ne couvrent pas toutes les colonnes lues par la requête, sont signalées comme `not_applicable`. `force_optimize_projection_name` et `preferred_optimize_projection_name` sont ignorés, et `force_optimize_projection` ne fait pas échouer le statement.
+WHATIF signale comme `not_applicable` les projections d’agrégation et les projections disposant de leurs propres index de saut. Il signale également comme `not_applicable` les projections dont la clé est basée sur l’ordre de commit ou sur une colonne virtuelle, ou qui comportent un `_block_number` stocké. Il en va de même pour les projections qui ne contiennent pas toutes les colonnes lues par la requête. WHATIF ignore `force_optimize_projection_name` et `preferred_optimize_projection_name`, et `force_optimize_projection` ne fait pas échouer le statement.
 
 **Syntaxe**
 
@@ -1126,7 +1126,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **Paramètres**
 
 * `projection_scan_budget_rows` — nombre de lignes qu’une estimation de projection peut lire avant de basculer sur un échantillon de granules. Valeur par défaut : `10000000`. `0` signifie aucune limite ; `max_rows_to_read` peut l’abaisser. Un échantillon lit au moins une trentaine de granules, avec au moins un granule par part ; lorsque `max_rows_to_read` ne le permet pas, l’estimation est `unsupported`.
-* `empirical` — `1` (par défaut) évalue l’index en mémoire sur les granules restant après le filtrage initial pour mesurer le taux d’exclusion (une borne supérieure). `0` saute cette étape. Dans les deux cas, si `empirical` ne produit aucun résultat (parce qu’il est désactivé ou que l’index ne peut pas être évalué en mémoire), l’estimateur utilise les [statistiques](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) des colonnes. Si elles ne sont pas disponibles non plus, il fournit un résumé indiquant uniquement si l’index est applicable.
+* `empirical` — `1` (par défaut) évalue l’index en mémoire sur les granules conservés après l’élagage de référence pour mesurer le taux d’exclusion (une borne supérieure). `0` saute cette étape. Dans les deux cas, si `empirical` ne produit aucun résultat (parce qu’il est désactivé ou que l’index ne peut pas être évalué en mémoire), l’estimateur utilise les [statistiques](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) des colonnes. Si elles ne sont pas disponibles non plus, il fournit un résumé indiquant uniquement si l’index est applicable.
 
 **Sortie**
 

@@ -147,9 +147,9 @@ ClickPipe для GCS поддерживает публичные и приват
 
 При использовании [неупорядоченного режима](#continuous-ingestion-any-order) с уведомлениями Pub/Sub требуется аутентификация через сервисный аккаунт. Выберите **Service Account** в качестве метода аутентификации и загрузите JSON‑файл ключа сервисного аккаунта.
 
-#### Workload Identity в GCP (закрытая предварительная версия) {#gcp-workload-identity}
+#### Идентификация рабочих нагрузок GCP (бета) {#gcp-workload-identity}
 
-Следуйте [руководству по Workload Identity в GCP](/ru/integrations/clickpipes/security/gcp-workload-identity), чтобы получить управляемую служебную учётную запись из контекста сервиса ClickPipes. Назначьте ей роль `roles/storage.objectViewer` для исходного бакета и создайте пайп с типом аутентификации `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Для неупорядоченной ингестии дополнительно назначьте ей роли `roles/pubsub.subscriber` и `roles/pubsub.viewer` для существующей подписки на уведомления и укажите полное имя этой подписки: `projects/<project-id>/subscriptions/<subscription-id>`.
+Следуйте [руководству по идентификации рабочих нагрузок GCP](/ru/integrations/clickpipes/security/gcp-workload-identity), чтобы получить управляемую служебную учётную запись из контекста сервиса ClickPipes. Назначьте ей роль `roles/storage.objectViewer` для исходного бакета и создайте пайп с типом аутентификации `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Для неупорядоченной ингестии дополнительно назначьте ей роли `roles/pubsub.subscriber` и `roles/pubsub.viewer` для существующей подписки на уведомления и укажите полное имя этой подписки: `projects/<project-id>/subscriptions/<subscription-id>`.
 
 #### Учетные данные HMAC {#hmac-credentials}
 

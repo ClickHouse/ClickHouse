@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Рендерер Mintlify в production вычисляет экспортируемый компонент, не
-  // сохраняя привязки на уровне модуля. Ленивая инициализация состояния удерживает сгенерированные данные
-  // в этой области вычисления и при этом создаёт их только один раз за монтирование.
+  // Рендерер Mintlify в продакшене вычисляет экспортируемый компонент, не
+  // сохраняя привязки на уровне модуля. Ленивое состояние удерживает сгенерированные данные
+  // в этой области вычисления и создаёт их лишь один раз при монтировании.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -727,7 +727,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "distributed_plan_*",
-      count: 17,
+      count: 18,
       settings: [
         { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
         { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
@@ -741,6 +741,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "distributed_plan_max_buffered_log_rows", path: "/distributed-plan#distributed_plan_max_buffered_log_rows", default: "100000" },
         { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
         { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
+        { name: "distributed_plan_partial_aggregation_before_shuffle", path: "/distributed-plan#distributed_plan_partial_aggregation_before_shuffle", default: "1" },
         { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
         { name: "distributed_plan_read_in_order", path: "/distributed-plan#distributed_plan_read_in_order", default: "0" },
         { name: "distributed_plan_worker_cluster", path: "/distributed-plan#distributed_plan_worker_cluster", default: '""' },
@@ -1162,10 +1163,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "iceberg_*",
-      count: 10,
+      count: 11,
       settings: [
         { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
         { name: "iceberg_file_entries_queue_size", path: "/iceberg#iceberg_file_entries_queue_size", default: "100" },
+        { name: "iceberg_list_only_v_prefixed_metadata_files", path: "/iceberg#iceberg_list_only_v_prefixed_metadata_files", default: "0" },
         { name: "iceberg_manifest_decode_concurrency", path: "/iceberg#iceberg_manifest_decode_concurrency", default: "16" },
         { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "100" },
         { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
@@ -3202,7 +3204,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
         { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
         { name: "json_extract_named_tuples_as_objects", path: "/other#json_extract_named_tuples_as_objects", default: "0" },
-        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "0" },
+        { name: "kill_throw_if_noop", path: "/other#kill_throw_if_noop", default: "1" },
         { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
         { name: "legacy_array_join_function_nondeterministic_evaluation", path: "/other#legacy_array_join_function_nondeterministic_evaluation", default: "0" },
         { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
@@ -3432,7 +3434,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count % 10 === 1 && entry.count % 100 !== 11 ? "настройка" : entry.count % 10 >= 2 && entry.count % 10 <= 4 && (entry.count % 100 < 12 || entry.count % 100 > 14) ? "настройки" : "настроек"}`
+    const countLabel = `${entry.count} ${entry.count % 10 === 1 && entry.count % 100 !== 11 ? "настройка" : [2, 3, 4].includes(entry.count % 10) && ![12, 13, 14].includes(entry.count % 100) ? "настройки" : "настроек"}`
 
     return (
       <div key={key} className="min-w-max">

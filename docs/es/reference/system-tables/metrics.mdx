@@ -855,6 +855,14 @@ Número de hilos del pool global de hilos que están ejecutando una tarea.
 
 Número de trabajos en cola o activos en el pool global de hilos.
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Tamaño, en bytes, de la caché de los tipos de campo del esquema actual de Iceberg en los catálogos de Glue
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Número de entradas en la caché de tipos de campo del esquema actual de Iceberg en los catálogos de Glue
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 Número de hilos en el pool de hilos de HashedDictionary.
@@ -1466,6 +1474,10 @@ Número de hilos activos en el pool de hilos para cargar partes de datos obsolet
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Número de trabajos en cola o en ejecución en el pool de hilos para cargar partes de datos obsoletas.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+Cantidad de memoria (en bytes) asignada a los datos almacenados temporalmente en el búfer de las partes de datos empaquetadas que se están escribiendo. No incluye los datos movidos a archivos temporales.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2170,6 +2182,10 @@ Número de archivos temporales creados durante un JOIN
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 Número de archivos temporales de la fusión vertical
+
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+Número de archivos temporales que contienen los datos almacenados temporalmente en el búfer de las partes de datos empaquetadas que se están escribiendo
 
 ### TemporaryFilesForSet {#temporaryfilesforset}
 

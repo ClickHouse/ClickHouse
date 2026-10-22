@@ -830,6 +830,14 @@ Parquet 인코딩을 여러 스레드로 수행합니다.
 
 String 컬럼에는 Binary 대신 Parquet String 타입을 사용합니다.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+`Float32` 및 `Float64` 컬럼(Parquet `FLOAT` 및 `DOUBLE`)을 `ALP`(Adaptive Lossless floating-Point) 인코딩으로 인코딩합니다. `ALP`는 무손실 인코딩이며, 십진수에 가까운 floating-point 데이터(가격, 측정값, 좌표 등)를 `PLAIN`보다 훨씬 효율적으로 압축합니다. 이러한 컬럼은 딕셔너리(dictionary) 없이 기록되며, `ALP`를 적용하면 `PLAIN`보다 크기가 커지는 페이지는 `PLAIN`으로 기록됩니다. 이 인코딩은 Parquet 포맷에 최근 추가되어 아직 모든 Parquet 리더가 지원하지는 않습니다. 따라서 파일을 읽는 리더가 이 인코딩을 지원하는 경우에만 활성화하십시오.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

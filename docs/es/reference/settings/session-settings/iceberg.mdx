@@ -34,6 +34,16 @@ Las tareas de decodificación se pausan cuando la cola se llena y la consulta no
 
 Debe ser mayor que cero.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para listar solo el prefijo de clave `metadata\/v` al buscar el archivo de metadatos más reciente de una tabla Iceberg leída por ruta."}]}]} />
+
+Busca el archivo de metadatos más reciente de una tabla Iceberg leída por ruta en S3 o Azure listando únicamente el prefijo de clave `metadata/v`, de modo que no se listen los manifiestos almacenados en el mismo directorio `metadata`. Si este prefijo contiene archivos `.metadata.json`, solo esos archivos son candidatos; de lo contrario, se lista el directorio completo. No se aplica cuando se usan `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` o `iceberg_recent_metadata_file_by_last_updated_ms_field`, ni a las tablas de una base de datos de catálogo de lago de datos.
+
+Actívelo solo para tablas cuyos archivos de metadatos sigan todos el formato `v<N>...` (que es como los nombran los catálogos de ClickHouse y Hadoop): en un directorio que también contenga archivos `<N>-<uuid>.metadata.json`, esos archivos nunca se consideran candidatos, por lo que los commits de su escritor no se detectan.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`

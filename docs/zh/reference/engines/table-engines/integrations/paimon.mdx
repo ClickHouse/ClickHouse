@@ -76,6 +76,27 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 
 由于尚未实现读时合并 (merge-on-read) ，**无法读取主键表**：读取器返回的是该快照所有数据文件的原始并集，其中仍包含已被后续 upsert 取代的旧版本行。因此，读取 schema 中声明了 `primary-key` 的表时会抛出异常。
 
+## 带有删除向量的表 {#deletion-vectors}
+
+删除向量不会被应用，因此**无法读取带有删除向量的快照**：否则结果中仍会
+包含后续 `DELETE` 和 `UPDATE` 语句已删除的行。因此，如果某个快照的 index manifest 中列出了
+删除向量，读取该快照时会抛出异常，即使已关闭 `deletion-vectors.enabled` 也是如此。
+
+在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 会应用删除向量，此后
+创建的快照即可再次读取。
+
+增量读取会在第一个尚未消费且带有删除向量的快照处停止，即使之后执行了完整合并整理，也仍会停在该处，
+因为截至该次合并整理的每个快照都列出了相同的删除向量。此时游标不会前移。
+只有当 Paimon 使这些快照过期，或者将游标移动到完整合并整理对应的快照以放弃这些快照后，读取才会恢复；
+后一种方式会删除截至该快照的所有尚未消费的快照 (参见
+[快照无法读取时](#when-a-snapshot-cannot-be-read)) ：
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+无论哪种情况，这些删除向量所删除的行，仍会保留在增量读取此前已输出的数据中。
+
 ## 设置 {#settings}
 
 该引擎使用与相应对象存储引擎相同的设置，并额外提供了 Paimon 特有的设置：

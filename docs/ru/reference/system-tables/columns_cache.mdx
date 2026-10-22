@@ -28,7 +28,7 @@ doc_type: 'reference'
 * `database` ([String](/ru/reference/data-types/string)) — Имя базы данных, содержащей таблицу, к которой относится часть.
 * `table` ([String](/ru/reference/data-types/string)) — Имя таблицы.
 * `table_uuid` ([UUID](/ru/reference/data-types/uuid)) — UUID таблицы. Не меняется при переименовании.
-* `part` ([String](/ru/reference/data-types/string)) — Имя части данных.
+* `part` ([String](/ru/reference/data-types/string)) — Имя части данных. Для части проекции — имя родительской части и имя проекции в формате `parent_part:projection`.
 * `column` ([String](/ru/reference/data-types/string)) — Имя столбца.
 * `row_begin` ([UInt64](/ru/reference/data-types/int-uint)) — Индекс начальной строки кэшированного диапазона (включительно).
 * `row_end` ([UInt64](/ru/reference/data-types/int-uint)) — Индекс конечной строки кэшированного диапазона (не включительно).

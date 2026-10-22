@@ -177,6 +177,8 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 쿼리에서 사용할 레플리카 수를 (읽을 것으로 예상되는 행 수 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica)로 제한합니다. 최대값은 여전히 &#39;max&#95;parallel&#95;replicas&#39;로 제한됩니다.
 
+`automatic_parallel_replicas_mode`가 활성화되어 있으면 이 설정은 무시됩니다. 자동 모드에서는 자체 비용 모델(Cost Model)에 따라 레플리카 수를 결정합니다.
+
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />

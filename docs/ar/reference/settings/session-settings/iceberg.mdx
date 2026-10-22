@@ -34,6 +34,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يجب أن تكون القيمة أكبر من الصفر.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لسرد بادئة المفتاح `metadata\/v` فقط عند البحث عن أحدث ملف بيانات وصفية لجدول Iceberg تتم قراءته عبر المسار."}]}]} />
+
+يبحث عن أحدث ملف بيانات وصفية لجدول Iceberg تتم قراءته عبر المسار على S3 أو Azure بسرد بادئة المفتاح `metadata/v` فقط، كي لا تُسرد ملفات البيان المخزَّنة في دليل `metadata` نفسه. إذا احتوت هذه البادئة على ملفات `.metadata.json`، فإنها وحدها تُعدّ مرشّحة؛ وإلا فيُسرد الدليل بأكمله. لا ينطبق هذا الإعداد عند استخدام `iceberg_use_version_hint` أو `iceberg_metadata_file_path` أو `iceberg_metadata_table_uuid` أو `iceberg_recent_metadata_file_by_last_updated_ms_field`، ولا على جداول قاعدة بيانات كتالوج بحيرة البيانات.
+
+لا تُمكّنه إلا للجداول التي تحمل جميع ملفات البيانات الوصفية فيها أسماءً بالصيغة `v<N>...` (وفق طريقة التسمية التي تتبعها كتالوجات ClickHouse وHadoop): ففي الدليل الذي يحتوي أيضًا على ملفات `<N>-<uuid>.metadata.json`، لا تكون هذه الملفات مرشّحة أبدًا، ومن ثَمّ لا تظهر عمليات التثبيت التي أجراها كاتبها.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **الأسماء البديلة**: `iceberg_delete_manifest_decode_concurrency`

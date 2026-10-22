@@ -34,6 +34,16 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 必须大于零。
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置：查找按路径读取的 Iceberg 表的最新元数据文件时，仅列出 `metadata\/v` 键前缀。"}]}]} />
+
+在 S3 或 Azure 上查找按路径读取的 Iceberg 表的最新元数据文件时，仅列出键前缀 `metadata/v`，从而避免列出同样存储在 `metadata` 目录中的清单文件。如果该前缀下存在 `.metadata.json` 文件，则仅将这些文件作为候选结果；否则会列出整个目录。使用 `iceberg_use_version_hint`、`iceberg_metadata_file_path`、`iceberg_metadata_table_uuid` 或 `iceberg_recent_metadata_file_by_last_updated_ms_field` 时，该设置不生效；该设置也不适用于数据湖目录数据库中的表。
+
+仅当表的所有元数据文件均以 `v<N>...` 命名时 (ClickHouse 和 Hadoop 目录均采用此命名方式) 才应启用此设置：如果目录中还存在 `<N>-<uuid>.metadata.json` 文件，这些文件永远不会成为候选结果，因此其写入器提交的变更将无法被识别。
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **别名**: `iceberg_delete_manifest_decode_concurrency`

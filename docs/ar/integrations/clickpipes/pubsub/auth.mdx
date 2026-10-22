@@ -30,7 +30,7 @@ integration:
 تدعم ClickPipes for Pub/Sub طريقتين للمصادقة:
 
 * **مفتاح حساب الخدمة:** تُنشئ حساب خدمة في Google وترفع [مفتاح JSON](https://cloud.google.com/iam/docs/keys-create-delete) الخاص به في واجهة مستخدم ClickPipes أو تقدّمه عبر واجهة برمجة التطبيقات. وتقوم ClickPipes بتشفير المفتاح أثناء السكون.
-* **Workload Identity في GCP (المعاينة الخاصة):** تستخدم ClickPipes بيانات اعتماد قصيرة الأجل لحساب خدمة في Google تديره ClickPipes، ولا يُخزَّن أي مفتاح لحساب خدمة خاص بالعميل. راجع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للاطلاع على المتطلبات.
+* **Workload Identity في GCP (تجريبي):** تستخدم ClickPipes بيانات اعتماد قصيرة الأجل لحساب خدمة في Google تديره ClickPipes، ولا يُخزَّن أي مفتاح لحساب خدمة خاص بالعميل. راجع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للاطلاع على المتطلبات.
 
 أيًّا كانت الطريقة المستخدمة، يُستخدم حساب الخدمة من أجل:
 
@@ -102,7 +102,7 @@ gcloud iam roles create clickpipes.pubsub.ingestion \
 
 إذا كنت تفضّل تجاوز الدور المخصّص، فيمكنك بدلاً من ذلك منح `roles/pubsub.editor`.
 
-### استخدام Workload Identity في GCP (المعاينة الخاصة) {#use-workload-identity}
+### استخدام Workload Identity في GCP (تجريبي) {#use-workload-identity}
 
 احصل على حساب الخدمة الذي تديره ClickPipes من سياق الخدمة باتباع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity).
 

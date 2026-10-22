@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -152,6 +153,18 @@ Uma heurística para o planejador distribuído baseado em regras. Quando o otimi
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nova configuração experimental."}]}]} />
 
 Remove exchanges desnecessários do plano de consulta distribuída. Desative esta opção para depuração.
+
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração experimental: uma agregação distribuída redistribui estados de agregação parciais em vez das linhas de entrada."}]}]} />
+
+Realiza uma agregação parcial nos nós que leem os dados antes que uma agregação distribuída os redistribua pelas chaves do `GROUP BY`. Assim, a redistribuição envia, de cada nó, um estado de agregação por grupo em vez de cada linha de entrada, e cada bucket mescla os estados de suas próprias chaves.
+O planejador baseado em regras mantém a redistribuição das linhas de entrada quando as estatísticas de coluna indicam que a agregação parcial não reduziria os dados pelo menos pela metade. Com `enable_cascades_optimizer`, a configuração permite que o otimizador escolha essa mesclagem por bucket com base no custo.
+Só tem efeito em conjunto com `make_distributed_plan = 1`, e não com `distributed_plan_force_shuffle_aggregation`, que redistribui as linhas de entrada.
 
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 

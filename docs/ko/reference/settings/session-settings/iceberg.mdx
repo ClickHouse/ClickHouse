@@ -34,6 +34,16 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
 
 0보다 커야 합니다.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "경로로 읽는 Iceberg 테이블의 최신 메타데이터 파일을 찾을 때 `metadata\/v` 키 접두사만 목록 조회하는 새로운 설정입니다."}]}]} />
+
+S3 또는 Azure에서 경로로 읽는 Iceberg 테이블(Iceberg table)의 최신 메타데이터 파일을 찾을 때 키 접두사 `metadata/v`만 목록 조회하므로, 같은 `metadata` 디렉터리에 저장된 매니페스트는 목록 조회 대상에서 제외됩니다. 해당 접두사 아래에 `.metadata.json` 파일이 있으면 그 파일들만 후보가 되고, 없으면 디렉터리 전체를 목록 조회합니다. `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` 또는 `iceberg_recent_metadata_file_by_last_updated_ms_field`와 함께 사용할 때는 적용되지 않으며, 데이터 레이크 카탈로그 데이터베이스의 테이블에도 적용되지 않습니다.
+
+모든 메타데이터 파일 이름이 `v<N>...` 형식인 테이블(ClickHouse 및 Hadoop 카탈로그(catalogs)가 사용하는 명명 방식)에서만 활성화하십시오. `<N>-<uuid>.metadata.json` 파일이 함께 있는 디렉터리에서는 이 파일들이 후보에서 제외되므로, 해당 파일을 작성한 writer의 커밋이 반영되지 않습니다.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`

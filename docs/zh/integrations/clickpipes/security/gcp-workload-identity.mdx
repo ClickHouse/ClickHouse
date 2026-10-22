@@ -2,22 +2,21 @@
 title: '适用于 ClickPipes 的 GCP Workload Identity'
 sidebarTitle: 'GCP Workload Identity'
 slug: /integrations/clickpipes/security/gcp-workload-identity
-description: '使用 GCP Workload Identity，让 ClickPipes 以免密钥方式访问受支持的 Google Cloud 数据源。'
+description: '使用 GCP Workload Identity，让 ClickPipes 以免密钥方式访问受支持的 Google Cloud source。'
 doc_type: 'guide'
 keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', 'keyless authentication']
 ---
 
 <Note>
-  GCP Workload Identity 身份验证目前处于私有预览阶段。如需为您的组织启用该功能，请联系 ClickHouse 支持团队。
+  GCP Workload Identity 身份验证目前处于 Beta 阶段。
 </Note>
 
-借助 GCP Workload Identity，ClickPipes 无需存储客户的服务账号密钥即可访问受支持的 Google Cloud 数据源。本指南将介绍如何获取由 ClickPipes 管理的 Google 服务账号、授予其访问数据源的权限，以及创建使用短期凭证的 ClickPipe。
+借助 GCP Workload Identity，ClickPipes 无需存储客户的服务账号密钥即可访问受支持的 Google Cloud source。本指南将介绍如何获取由 ClickPipes 管理的 Google 服务账号、授予其访问 source 的权限，以及创建使用短期凭证的 ClickPipe。
 
 ## 开始之前 {#before-you-begin}
 
 您需要：
 
-* 您的 ClickHouse Cloud 组织已开通私有预览访问权限。
 * 一个运行在 GCP 上的 ClickHouse Cloud 服务，且其 ClickPipes 部署也必须运行在 GCP 上。
 * 一个 ClickHouse Cloud API 密钥，且具有管理该服务上 ClickPipes 的权限。
 * 有权在 Google Cloud 源资源上授予 IAM 角色。
@@ -127,7 +126,7 @@ ClickPipes 无法在您的 Google Cloud 项目中创建 IAM 绑定，因此请�
 ## 故障排查 {#troubleshooting}
 
 <Accordion title="不支持 Workload Identity">
-  请确认已获得私有预览访问权限，并且 ClickHouse Cloud 服务及其 ClickPipes 部署均运行在 GCP 上。如果服务满足上述要求，但 `supported` 仍为 `false`，请联系 ClickHouse 支持团队。
+  请确认 ClickHouse Cloud 服务及其 ClickPipes 部署均运行在 GCP 上。如果服务满足上述要求，但 `supported` 仍为 `false`，请联系 ClickHouse 支持团队。
 </Accordion>
 
 <Accordion title="身份尚未就绪">

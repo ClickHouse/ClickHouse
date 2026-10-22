@@ -89,7 +89,7 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="إنشاء مفتاح حساب خدمة بأذونات BigQuery وCloud Storage" size="lg" border />
 
-#### Workload Identity في GCP (المعاينة الخاصة) {#gcp-workload-identity}
+#### Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
 
 اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب [أدوار BigQuery وGCS](#permissions) الموضحة أدناه، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. لا تقدّم بيانات اعتماد حساب الخدمة عند استخدام طريقة المصادقة هذه.
 

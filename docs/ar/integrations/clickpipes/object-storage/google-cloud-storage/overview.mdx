@@ -149,7 +149,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يلزم استخدام مصادقة **حساب الخدمة** عند استخدام [الوضع غير المرتَّب](#continuous-ingestion-any-order) مع إشعارات Pub/Sub. حدِّد **حساب الخدمة** باعتبارها طريقة المصادقة، ثم حمِّل ملف JSON الخاص بمفتاح حساب الخدمة.
 
-#### Workload Identity في GCP (المعاينة الخاصة) {#gcp-workload-identity}
+#### Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
 
 اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب الدور `roles/storage.objectViewer` على حاوية المصدر، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة من نوع `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. أما في حالة الإدخال غير المرتب، فامنحه أيضًا الدورين `roles/pubsub.subscriber` و`roles/pubsub.viewer` على اشتراك الإشعارات القائم، واستخدم اسمه المؤهَّل بالكامل: `projects/<project-id>/subscriptions/<subscription-id>`.
 
