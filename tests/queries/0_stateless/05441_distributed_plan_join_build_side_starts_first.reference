@@ -1,0 +1,86 @@
+probe_t ⋈ build_t, count()
+  GatherExchange
+    JoinLogical
+      probe: ShuffleExchange
+        ReadFromMergeTree probe_t
+      build: ShuffleExchange
+        ReadFromMergeTree build_t
+  start order, execute_locally = 1: build_t probe_t
+  start order, execute_locally = 0: build_t probe_t
+probe_t ⋈ build_t, p.k
+  GatherExchange
+    JoinLogical
+      probe: ShuffleExchange
+        ReadFromMergeTree probe_t
+      build: ShuffleExchange
+        ReadFromMergeTree build_t
+  start order, execute_locally = 1: build_t probe_t
+  start order, execute_locally = 0: build_t probe_t
+build_t ⋈ probe_t, swapped by the planner
+  GatherExchange
+    JoinLogical
+      probe: ShuffleExchange
+        ReadFromMergeTree probe_t
+      build: ShuffleExchange
+        ReadFromMergeTree build_t
+  start order, execute_locally = 1: build_t probe_t
+  start order, execute_locally = 0: build_t probe_t
+five tables, left-deep
+  GatherExchange
+    JoinLogical
+      probe: ShuffleExchange
+        JoinLogical
+          probe: ShuffleExchange
+            JoinLogical
+              probe: ShuffleExchange
+                JoinLogical
+                  probe: ShuffleExchange
+                    ReadFromMergeTree probe_t
+                  build: ShuffleExchange
+                    ReadFromMergeTree build_t
+              build: ShuffleExchange
+                ReadFromMergeTree third_t
+          build: ShuffleExchange
+            ReadFromMergeTree fourth_t
+      build: ShuffleExchange
+        ReadFromMergeTree fifth_t
+  start order, execute_locally = 1: fifth_t fourth_t third_t build_t probe_t
+  start order, execute_locally = 0: fifth_t fourth_t third_t build_t probe_t
+five tables, bushy
+  GatherExchange
+    JoinLogical
+      probe: ShuffleExchange
+        JoinLogical
+          probe: ShuffleExchange
+            ReadFromMergeTree probe_t
+          build: ShuffleExchange
+            ReadFromMergeTree build_t
+      build: ShuffleExchange
+        JoinLogical
+          probe: ShuffleExchange
+            JoinLogical
+              probe: ShuffleExchange
+                ReadFromMergeTree third_t
+              build: ShuffleExchange
+                ReadFromMergeTree fourth_t
+          build: ShuffleExchange
+            ReadFromMergeTree fifth_t
+  start order, execute_locally = 1: fifth_t fourth_t third_t build_t probe_t
+  start order, execute_locally = 0: fifth_t fourth_t third_t build_t probe_t
+five tables, star of broadcast joins
+  GatherExchange
+    JoinLogical
+      probe: JoinLogical
+        probe: JoinLogical
+          probe: JoinLogical
+            probe: ReadFromMergeTree probe_t
+            build: BroadcastExchange
+              ReadFromMergeTree build_t
+          build: BroadcastExchange
+            ReadFromMergeTree third_t
+        build: BroadcastExchange
+          ReadFromMergeTree fourth_t
+      build: BroadcastExchange
+        ReadFromMergeTree fifth_t
+  start order, execute_locally = 1: probe_t fifth_t fourth_t third_t build_t
+  start order, execute_locally = 0: probe_t fifth_t fourth_t third_t build_t

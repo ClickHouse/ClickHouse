@@ -981,8 +981,10 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
     for (const auto & stage : distributed_plan.stages)
     {
-        auto it = distributed_plan.stage_depends_on.find(stage.first);
-        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
+        Strings dependencies;
+        if (auto it = distributed_plan.stage_depends_on.find(stage.first); it != distributed_plan.stage_depends_on.end())
+            for (const auto & [dependency, exchange] : it->second)
+                dependencies.push_back(fmt::format("{} ({})", dependency, exchange));
         LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
