@@ -784,18 +784,32 @@ def test_url_archive_path_failover():
 
     pinned_source = "http://resolver:8087/data/archive_pin/archive{primary|mirror}.zip :: value.tsv"
     pinned_table_functions = [
-        f"url('{pinned_source}', 'TSV', 'x UInt64')",
-        f"urlCluster('test_cluster_two_shards', '{pinned_source}', 'TSV', 'x UInt64')",
+        (f"url('{pinned_source}', 'TSV', 'x UInt64')", 0),
+        (f"urlCluster('test_cluster_two_shards', '{pinned_source}', 'TSV', 'x UInt64')", 0),
+        (f"urlCluster('test_cluster_two_shards', '{pinned_source}', 'TSV', 'x UInt64')", 1),
     ]
-    for table_function in pinned_table_functions:
+    for table_function, multiple_nodes in pinned_table_functions:
         reset_index_page_server_stats()
         result = node1.query(
-            f"SELECT _path, sum(x) FROM {table_function} GROUP BY _path", settings=settings
+            f"SELECT _path, sum(x) FROM {table_function} GROUP BY _path",
+            settings={
+                **settings,
+                # Avoid unrelated sample-path probes during Hive partition discovery.
+                "use_hive_partitioning": 0,
+                "cluster_function_process_archive_on_multiple_nodes": multiple_nodes,
+            },
         ).strip()
         visible_path, total = result.split("\t")
         assert "archivemirror.zip::value.tsv" in visible_path
         assert "archiveprimary.zip" not in visible_path
         assert total == "7"
+
+        # Only the initial failover probe may visit primary. After resolving to mirror,
+        # both worker metadata and data requests must stay pinned to `resolved_url`.
+        stats = get_index_page_server_stats()
+        primary_requests = {request: count for request, count in stats.items() if "archiveprimary.zip" in request}
+        assert primary_requests == {"HEAD /data/archive_pin/archiveprimary.zip": 1}, stats
+        assert stats.get("GET /data/archive_pin/archivemirror.zip", 0) > 0, stats
 
     limited_settings = dict(settings)
     limited_settings["glob_expansion_max_elements"] = 3
