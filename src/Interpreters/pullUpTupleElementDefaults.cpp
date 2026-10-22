@@ -156,6 +156,8 @@ void stripDefaultFromNameTypePair(ASTNameTypePair & pair)
 /// A type that already admits NULL and must not be wrapped again: `Nullable(...)`,
 /// `LowCardinality(Nullable(...))`, or a type that carries NULL as one of its own values and cannot
 /// be placed inside `Nullable` at all - `Variant(...)` and `Dynamic`.
+/// `SimpleAggregateFunction(f, T)` is a transparent wrapper: its storage type is `T`, so it is
+/// already nullable exactly when `T` is.
 bool typeIsAlreadyNullable(const ASTPtr & type)
 {
     const auto * data_type = type->as<ASTDataType>();
@@ -165,12 +167,20 @@ bool typeIsAlreadyNullable(const ASTPtr & type)
     if (data_type->name == "Nullable" || data_type->name == "Variant" || data_type->name == "Dynamic")
         return true;
 
+    const auto arguments = data_type->getArguments();
+
     if (data_type->name == "LowCardinality")
     {
-        const auto arguments = data_type->getArguments();
         if (arguments && arguments->children.size() == 1)
             if (const auto * inner = arguments->children[0]->as<ASTDataType>())
                 return inner->name == "Nullable";
+    }
+
+    if (data_type->name == "SimpleAggregateFunction")
+    {
+        /// The first argument is the aggregate function, the second one is the storage type.
+        if (arguments && arguments->children.size() >= 2)
+            return typeIsAlreadyNullable(arguments->children[1]);
     }
 
     return false;
