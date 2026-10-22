@@ -1054,7 +1054,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         /// `structure_only` is not the same condition: `restore_table_data` overrides it both ways.
         if (!restore_settings.shouldRestoreTableData())
         {
-            if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
+            if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
             {
                 String metadata_path;
                 {
@@ -1196,7 +1196,7 @@ void RestorerFromBackup::insertDataToTableImpl(
         }
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
 
-        if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
+        if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
         {
             if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup))
                 replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
