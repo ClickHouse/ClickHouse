@@ -5823,9 +5823,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
             {"naiveBayesClassifier",
              "naiveBayesClassifierWithProb",
              "naiveBayesClassifierWithAllProbs",
-             "detectCharset",
              "detectLanguage",
-             "detectLanguageUnknown",
              "detectLanguageMixed"},
             /// Word-level NLP (language/extension + word)
             {"stem", "lemmatize", "synonyms"},
