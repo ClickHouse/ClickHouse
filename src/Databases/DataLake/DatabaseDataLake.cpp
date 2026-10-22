@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsBool log_queries;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
@@ -1197,6 +1198,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
+    settings_copy[Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
     context_copy->setSettings(settings_copy);
 
     applyCatalogSpecificConfiguration(*configuration);
