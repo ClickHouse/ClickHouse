@@ -344,7 +344,7 @@ fs::path canonicalPathFollowingDanglingSymlinks(const fs::path & path, std::erro
                 return {};
             }
 
-            const fs::path target = fs::read_symlink(candidate, ec);
+            const fs::path target = fs::read_symlink(candidate, ec);    /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK: `candidate` has no trailing slash
             if (ec)
                 return {};
 
