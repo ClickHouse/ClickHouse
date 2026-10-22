@@ -1279,7 +1279,7 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
 
 /// SQL expressions are validated separately; this only checks whether an Iceberg transform can encode the key.
 /// Iceberg keys can only be sourced from columns of primitive types.
-static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & primitive_columns)
+static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & primitive_columns, bool is_top_level = true)
 {
     key = unwrapOrderByElement(key);
     if (const auto * identifier = key->as<ASTIdentifier>())
@@ -1291,9 +1291,12 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & pr
         expressions = function->arguments->as<ASTExpressionList>();
     if (expressions)
     {
+        /// Iceberg keys are flat lists of fields.
+        if (!is_top_level)
+            return false;
         bool representable = true;
         for (const auto & child : expressions->children)
-            representable = isRepresentableKey(child, primitive_columns) && representable;
+            representable = isRepresentableKey(child, primitive_columns, /*is_top_level=*/ false) && representable;
         return representable;
     }
 

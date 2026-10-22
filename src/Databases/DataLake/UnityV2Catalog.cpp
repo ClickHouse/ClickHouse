@@ -474,9 +474,25 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
 
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, namespace_name, table_name);
 
+    /// The table may be dropped by another client after the existence probe above.
+    auto is_gone_and_if_exists = [&](const DB::HTTPException & e)
+    {
+        return if_exists && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;
+    };
+
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
     /// The drop goes ahead only when `data_lake_delete_data_on_drop` agrees with that.
-    const auto table_type = getTableType(full_table_name);
+    String table_type;
+    try
+    {
+        table_type = getTableType(full_table_name);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (is_gone_and_if_exists(e))
+            return;
+        throw;
+    }
     const bool data_will_be_deleted = table_type == "MANAGED";
     if (data_will_be_deleted != purge)
         throw DB::Exception(
@@ -490,6 +506,15 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     try
     {
         deleteRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (is_gone_and_if_exists(e))
+            return;
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to drop table {}.{} from Unity catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
     catch (...)
     {

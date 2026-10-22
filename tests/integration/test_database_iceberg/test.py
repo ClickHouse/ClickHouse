@@ -2750,6 +2750,7 @@ def test_create_table_unsupported_key_expressions(started_cluster):
         ("partition", "PARTITION BY (id, id + 1) ORDER BY id", 0, 1),
         ("sort", "PARTITION BY id ORDER BY (id, id + 1)", 1, 0),
         ("duplicate_source", "PARTITION BY (icebergBucket(8, id), icebergTruncate(16, id)) ORDER BY id", 0, 1),
+        ("nested_empty_tuple", "PARTITION BY (id, tuple()) ORDER BY id", 0, 1),
     ]:
         target = f"{CATALOG_NAME}.`{namespace}.{suffix}`"
         ddl = f"CREATE TABLE {target} (id Int64) {keys}"

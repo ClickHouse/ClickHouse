@@ -1108,6 +1108,28 @@ def test_native_create_s3a_base_location(started_cluster):
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
 
 
+def test_native_create_show_create_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_show_create_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, name Nullable(String))",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    create_query = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+    assert "`id` Int64" in create_query, create_query
+    assert "`name` Nullable(String)" in create_query, create_query
+
+
 def test_native_create_non_primitive_key_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 

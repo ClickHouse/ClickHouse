@@ -55,6 +55,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -85,6 +86,7 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
+    extern const SettingsBool allow_geo_types_in_iceberg;
 }
 
 namespace DB::ServerSetting
@@ -435,6 +437,20 @@ bool GlueCatalog::tryGetTableMetadata(
                 }
 
                 schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
+            }
+
+            /// Tables registered by ClickHouse have no Glue columns, their schema lives only in the Iceberg metadata.
+            if (columns.empty() && result.isDefaultReadableTable())
+            {
+                if (!result.hasDataLakeSpecificProperties())
+                    setup_specific_properties();
+                if (result.isDefaultReadableTable())
+                {
+                    auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(
+                        getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value);
+                    auto schema_id = DB::IcebergMetadata::parseTableSchema(getIcebergMetadataObject(result), schema_processor, log);
+                    schema = *schema_processor.getClickHouseTableSchemaById(schema_id);
+                }
             }
             result.setSchema(schema);
         }
