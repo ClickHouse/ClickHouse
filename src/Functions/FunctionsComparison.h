@@ -984,11 +984,16 @@ public:
         if constexpr (IsOperation<Op>::equals || IsOperation<Op>::not_equals)
             return true;
         else
-            return arguments.size() != 2 || !comparesEnumWithString(arguments[0], arguments[1]);
+            return arguments.size() != 2 || !ordersEnumWithString(arguments[0], arguments[1]);
     }
 
 private:
     const ComparisonParams params;
+
+    static bool ordersEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        return comparesStringWithEnum(left, right) || comparesStringWithEnum(right, left);
+    }
 
     static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
     {

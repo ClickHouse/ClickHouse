@@ -895,7 +895,7 @@ static AddComparisonFilterResult addComparisonFilter(
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not by the converted name.
     if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
-        && comparesEnumWithString(expr_type, new_filter.constant_node->getResultType()))
+        && comparesStringWithEnum(expr_type, new_filter.constant_node->getResultType()))
         new_filter.converted_value.reset();
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.

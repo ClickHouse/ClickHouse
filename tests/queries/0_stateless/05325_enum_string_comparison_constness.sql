@@ -41,6 +41,7 @@ SELECT count() FROM t_enum_cmp WHERE e > 'm';
 SELECT count() FROM t_enum_cmp WHERE e < 'm';
 SELECT count() FROM t_enum_cmp WHERE e < materialize('m');
 SELECT count() FROM t_enum_cmp WHERE e < materialize('m') SETTINGS optimize_use_implicit_projections = 0;
+SELECT count() FROM t_enum_cmp WHERE e < 'm' SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_enum_cmp WHERE e = 'm';
 SELECT count() FROM t_enum_cmp WHERE e > 'm' AND e = 'z';
 SELECT count() FROM t_enum_cmp WHERE e >= 'm' AND e <= 'z';

@@ -387,26 +387,26 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
-bool comparesEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
+bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr & enum_side)
 {
-    const auto left_type = removeLowCardinalityAndNullable(left);
-    const auto right_type = removeLowCardinalityAndNullable(right);
+    const auto string_type = removeLowCardinalityAndNullable(string_side);
+    const auto enum_type = removeLowCardinalityAndNullable(enum_side);
 
-    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get());
-    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
-    if (left_tuple && right_tuple)
+    const auto * string_tuple = typeid_cast<const DataTypeTuple *>(string_type.get());
+    const auto * enum_tuple = typeid_cast<const DataTypeTuple *>(enum_type.get());
+    if (string_tuple && enum_tuple)
     {
-        const auto & left_elements = left_tuple->getElements();
-        const auto & right_elements = right_tuple->getElements();
-        if (left_elements.size() != right_elements.size())
+        const auto & string_elements = string_tuple->getElements();
+        const auto & enum_elements = enum_tuple->getElements();
+        if (string_elements.size() != enum_elements.size())
             return false;
-        for (size_t i = 0; i < left_elements.size(); ++i)
-            if (comparesEnumWithString(left_elements[i], right_elements[i]))
+        for (size_t i = 0; i < string_elements.size(); ++i)
+            if (comparesStringWithEnum(string_elements[i], enum_elements[i]))
                 return true;
         return false;
     }
 
-    return (isEnum(left_type) && isStringOrFixedString(right_type)) || (isStringOrFixedString(left_type) && isEnum(right_type));
+    return isStringOrFixedString(string_type) && isEnum(enum_type);
 }
 
 }
