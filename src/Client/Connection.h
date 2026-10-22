@@ -292,6 +292,8 @@ private:
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
     std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
     std::optional<UInt64> last_input_packet_type;
+    /// `in->count() + in->chunkFramingBytes()` before `last_input_packet_type` was read.
+    size_t last_input_packet_start = 0;
 
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.

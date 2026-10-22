@@ -1391,7 +1391,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             }
         }
 
-        const size_t packet_start = in->count();
+        const size_t packet_start = in->count() + in->chunkFramingBytes();
         UInt64 packet_type = 0;
         /// The type is a varuint, so a client can leave the input mid-packet by truncating it.
         state.at_packet_boundary = false;
@@ -1418,10 +1418,10 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 if (empty_block)
                     state.read_all_data = true;
                 /// Only a `Data` block with rows is query data: scalars come with the query itself.
-                /// A chunked packet also has a 4-byte size before it and a 4-byte end marker after it.
+                /// The chunk framing of the packet counts too.
                 if (!empty_block && !state.skipping_data && packet_type == Protocol::Client::Data)
                     ProfileEvents::increment(ProfileEvents::NativeProtocolDataReceiveBytes,
-                        in->count() - packet_start + (proto_send_chunked_cl == "chunked" ? 8 : 0));
+                        in->count() + in->chunkFramingBytes() - packet_start);
                 return !empty_block;
             }
 
