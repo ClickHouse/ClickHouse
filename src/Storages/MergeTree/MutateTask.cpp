@@ -1877,6 +1877,23 @@ static void registerCarriedColumnBases(
     }
 }
 
+/// Claim the stream bases of a column that `RECOMPRESS COLUMN` rewrites stream by stream
+/// (`recompressColumnStreams`). Its files are in `files_to_skip`, so `registerCarriedColumnBases`
+/// leaves it out, but the recompressed files keep the same names in the new part, and an index
+/// recalculated by the same mutation must not take one of their bases.
+static void registerRecompressedColumnBases(
+    const StreamBaseManifestPtr & manifest,
+    const MergeTreeData::DataPartPtr & source_part,
+    const MergeTreeData::DataPartPtr & new_part,
+    const NameAndTypePair & column)
+{
+    if (!manifest || !isWidePart(source_part))
+        return;
+
+    for (const auto & [stream_name, _] : getStreamCounts(new_part, source_part->checksums, Names{column.name}))
+        manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::Column, column.name});
+}
+
 /// Apply commands to source_part i.e. remove and rename some columns in
 /// source_part and return set of files, that have to be removed or renamed
 /// from filesystem and in-memory checksums. Ordered result is important,
@@ -5386,6 +5403,8 @@ bool MutateTask::prepare()
             ctx->columns_to_recompress.push_back(column);
             for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, column))
                 ctx->files_to_skip.insert(file);
+            MutationHelpers::registerRecompressedColumnBases(
+                ctx->stream_base_manifest, ctx->source_part, ctx->new_data_part, column);
         }
 
         /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
