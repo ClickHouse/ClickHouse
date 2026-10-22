@@ -1257,6 +1257,25 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & pr
     return column && primitive_columns.contains(column->name());
 }
 
+/// Partition fields are named after their source columns, so a partition key that uses a column twice cannot be represented.
+static bool partitionKeyUsesColumnMoreThanOnce(const ASTPtr & partition_by)
+{
+    ASTs elements{partition_by};
+    if (const auto * function = partition_by->as<ASTFunction>(); function && function->name == "tuple")
+        elements = function->arguments->children;
+
+    std::unordered_set<String> columns;
+    for (const auto & element : elements)
+    {
+        const auto * column = element->as<ASTIdentifier>();
+        if (const auto * function = element->as<ASTFunction>())
+            column = function->arguments->children.back()->as<ASTIdentifier>();
+        if (column && !columns.insert(column->name()).second)
+            return true;
+    }
+    return false;
+}
+
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
@@ -1319,13 +1338,13 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     if (is_catalog_table)
     {
         const bool ignore_unsupported_properties = context->getSettingsRef()[Setting::datalake_ignore_unsupported_table_properties];
-        auto validate_key = [&](ASTPtr & key, const char * clause)
+        auto validate_key = [&](ASTPtr & key, const char * clause, bool is_partition_key)
         {
             if (!key)
                 return;
             /// Validate even when omissions are allowed: invalid SQL must not silently disappear.
             KeyDescription::getKeyFromAST(key, columns, {}, context);
-            if (!isRepresentableKey(key, primitive_columns))
+            if (!isRepresentableKey(key, primitive_columns) || (is_partition_key && partitionKeyUsesColumnMoreThanOnce(key)))
             {
                 if (!ignore_unsupported_properties)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1335,8 +1354,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 key.reset();
             }
         };
-        validate_key(partition_by, "PARTITION BY");
-        validate_key(order_by, "ORDER BY");
+        validate_key(partition_by, "PARTITION BY", /*is_partition_key=*/ true);
+        validate_key(order_by, "ORDER BY", /*is_partition_key=*/ false);
     }
 
     new_metadata_file_content->set(Iceberg::f_default_spec_id, 0);
@@ -2066,16 +2085,22 @@ std::tuple<ASTPtr, ASTPtr, String> getPartitionAndSortingKeyASTsFromMetadata(con
     ASTPtr partition_by;
     if (partition_fields)
     {
-        /// `PARTITION BY` is omitted entirely if any field cannot be represented.
+        /// `PARTITION BY` is omitted entirely if any field cannot be represented. A partition field created from
+        /// `PARTITION BY` is named after its source column, so two fields with the same source cannot be represented.
         bool representable = true;
         std::vector<String> expressions;
+        std::unordered_set<Int32> source_ids;
         for (UInt32 i = 0; representable && i < partition_fields->size(); ++i)
         {
-            auto expression = formatIcebergTransformExpression(partition_fields->getObject(i), source_id_to_column_name);
+            const auto partition_field = partition_fields->getObject(i);
+            auto expression = formatIcebergTransformExpression(partition_field, source_id_to_column_name);
             if (!expression)
                 representable = false;
             else if (!expression->empty())
+            {
+                representable = source_ids.insert(partition_field->getValue<Int32>(f_source_id)).second;
                 expressions.push_back(std::move(*expression));
+            }
         }
 
         if (!representable)

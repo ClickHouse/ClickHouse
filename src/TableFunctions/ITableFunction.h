@@ -106,8 +106,8 @@ public:
     /// query do not register anything.
     virtual String getUsedNamedCollectionName() const { return {}; }
 
-    /// Whether the returned storage is a data lake, whose data `DROP TABLE` can delete (see `data_lake_delete_data_on_drop`).
-    virtual bool isDataLake() const { return false; }
+    /// Whether `DROP TABLE` can delete the data of the returned storage (see `data_lake_delete_data_on_drop`).
+    virtual bool canDeleteDataOnDrop() const { return false; }
 
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation

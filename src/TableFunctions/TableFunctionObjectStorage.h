@@ -41,7 +41,7 @@ public:
 
     bool needStructureHint() const override { return configuration->structure == "auto"; }
 
-    bool isDataLake() const override { return is_data_lake; }
+    bool canDeleteDataOnDrop() const override { return configuration->isIcebergConfiguration(); }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 

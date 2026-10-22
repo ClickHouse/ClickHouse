@@ -19,7 +19,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
-from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform, TruncateTransform
 from pyiceberg.types import (
     DoubleType,
     LongType,
@@ -2721,6 +2721,7 @@ def test_create_table_unsupported_key_expressions(started_cluster):
     for suffix, keys, partition_count, sort_count in [
         ("partition", "PARTITION BY (id, id + 1) ORDER BY id", 0, 1),
         ("sort", "PARTITION BY id ORDER BY (id, id + 1)", 1, 0),
+        ("duplicate_source", "PARTITION BY (icebergBucket(8, id), icebergTruncate(16, id)) ORDER BY id", 0, 1),
     ]:
         target = f"{CATALOG_NAME}.`{namespace}.{suffix}`"
         ddl = f"CREATE TABLE {target} (id Int64) {keys}"
@@ -2907,7 +2908,7 @@ def test_show_create_table_round_trip_partition_and_sort_order(started_cluster):
     node.query(f"DROP TABLE {target_table}", settings=settings)
 
 
-@pytest.mark.parametrize("unsupported_key", ["partition", "sort"])
+@pytest.mark.parametrize("unsupported_key", ["partition", "sort", "duplicate_partition_source"])
 def test_unsupported_catalog_keys(started_cluster, unsupported_key):
     node = started_cluster.instances["node1"]
 
@@ -2938,12 +2939,19 @@ def test_unsupported_catalog_keys(started_cluster, unsupported_key):
         namespace,
         table_name,
         schema=schema,
-        partition_spec=PartitionSpec(
-            PartitionField(
-                source_id=3 if unsupported_key == "partition" else 1,
-                field_id=1000,
-                transform=IdentityTransform(),
-                name="created_by" if unsupported_key == "partition" else "symbol",
+        partition_spec=(
+            PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=BucketTransform(8), name="symbol_bucket"),
+                PartitionField(source_id=1, field_id=1001, transform=TruncateTransform(16), name="symbol_trunc"),
+            )
+            if unsupported_key == "duplicate_partition_source"
+            else PartitionSpec(
+                PartitionField(
+                    source_id=3 if unsupported_key == "partition" else 1,
+                    field_id=1000,
+                    transform=IdentityTransform(),
+                    name="created_by" if unsupported_key == "partition" else "symbol",
+                )
             )
         ),
         sort_order=SortOrder(
@@ -2967,9 +2975,9 @@ def test_unsupported_catalog_keys(started_cluster, unsupported_key):
     )
     source = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
     unsupported_clause = (
-        "PARTITION BY" if unsupported_key == "partition" else "ORDER BY"
+        "PARTITION BY" if unsupported_key != "sort" else "ORDER BY"
     )
-    supported_clause = "ORDER BY" if unsupported_key == "partition" else "PARTITION BY"
+    supported_clause = "ORDER BY" if unsupported_key != "sort" else "PARTITION BY"
     settings = {"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
 
     # Reading existing tables does not require a representable `CREATE TABLE` definition.
@@ -2998,7 +3006,7 @@ def test_unsupported_catalog_keys(started_cluster, unsupported_key):
     )
     copied = catalog.load_table(f"{namespace}.copied")
     assert [field.name for field in copied.schema().fields] == ["symbol", "details"]
-    assert len(copied.spec().fields) == (0 if unsupported_key == "partition" else 1)
+    assert len(copied.spec().fields) == (0 if unsupported_key != "sort" else 1)
     assert len(copied.sort_order().fields) == (0 if unsupported_key == "sort" else 1)
     node.query(f"DROP TABLE {target}")
     node.query(f"DROP TABLE {source}")

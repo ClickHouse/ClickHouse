@@ -337,7 +337,7 @@ void StorageObjectStorageCluster::prepareForDrop(ContextPtr query_context)
 {
     const bool delete_data = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
     /// See `StorageObjectStorage::prepareForDrop`.
-    if (delete_data && !catalog && configuration->isDataLakeConfiguration())
+    if (delete_data && !catalog && configuration->isIcebergConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, query_context);
     delete_data_on_drop = delete_data;
 }
