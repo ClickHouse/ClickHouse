@@ -7,6 +7,8 @@ INSERT INTO t_load_part_io_error SELECT number, toString(number) FROM numbers(30
 DETACH TABLE t_load_part_io_error;
 SYSTEM ENABLE FAILPOINT merge_tree_load_part_io_error;
 ATTACH TABLE t_load_part_io_error;
+-- 0: the once-only failpoint is spent, so the ATTACH above did hit the injected I/O error.
+SELECT enabled FROM system.fail_points WHERE name = 'merge_tree_load_part_io_error';
 SYSTEM DISABLE FAILPOINT merge_tree_load_part_io_error;
 SELECT count() FROM t_load_part_io_error;
 SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_load_part_io_error';
