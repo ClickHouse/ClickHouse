@@ -60,9 +60,12 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.write_page_index = format_settings.parquet.write_page_index;
     options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
     options.write_checksums = format_settings.parquet.write_checksums;
+    options.use_alp_encoding = format_settings.parquet.use_alp_encoding;
     options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
     options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
     options.write_geometadata = format_settings.parquet.write_geometadata;
+    options.write_geometry_logical_type = format_settings.parquet.write_geometry_logical_type;
+    options.write_file_logical_type = format_settings.parquet.write_file_logical_type;
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
@@ -73,7 +76,13 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         /// max definition level from the schema, while the writer takes the level bit width from the
         /// state the data path builds, so the two would desynchronize.
         iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality);
+        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        schema = convertSchema(
+            *header_,
+            options,
+            column_encoding.empty() ? std::nullopt : std::optional(column_encoding),
+            iceberg_optionality);
     }
     else
         schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
@@ -112,6 +121,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
                 task_queue.size() <= format_settings.max_threads * 4)
                 break;
 
+            CurrentThread::checkIfNotCancelled();
             condvar.wait(lock);
         }
     }
@@ -148,6 +158,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
         for (size_t offset = 0; offset < staging_rows; offset += row_group_size)
         {
+            /// A sink does not call onCancel() while it writes, so `is_stopped` alone misses a killed query.
+            CurrentThread::checkIfNotCancelled();
+
             size_t count = std::min(row_group_size, staging_rows - offset);
             MutableColumns columns = concatenated.cloneEmptyColumns();
             for (size_t i = 0; i < columns.size(); ++i)
@@ -193,6 +206,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
             if (row_groups.empty())
                 break;
 
+            CurrentThread::checkIfNotCancelled();
             condvar.wait(lock);
         }
     }
@@ -378,6 +392,8 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
 {
     while (!row_groups.empty() && row_groups.front().tasks_in_flight == 0 && !is_stopped)
     {
+        CurrentThread::checkIfNotCancelled();
+
         RowGroupState & r = row_groups.front();
 
         /// Write to the file.
@@ -536,6 +552,8 @@ void registerOutputFormatParquet(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");
     factory.setContentType("Parquet", "application/octet-stream");
+    /// `.pq` is a common extension for Parquet files besides `.parquet`.
+    factory.registerFileExtension("pq", "Parquet");
 }
 
 }
