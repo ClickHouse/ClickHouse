@@ -325,7 +325,7 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+    auto [hive_partition_columns, file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
         columns,
         configuration,
         sample_path,
@@ -340,6 +340,9 @@ StorageObjectStorage::StorageObjectStorage(
             "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
             sample_path);
     }
+
+    hive_partitioning_columns.set(std::make_unique<const HivePartitioningColumns>(
+        HivePartitioningColumns{std::move(hive_partition_columns), std::move(file_columns)}));
 
     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
@@ -481,7 +484,8 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
         if (auto columns = configuration->supportedPrewhereColumns(metadata_snapshot, context))
             return columns;
     }
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
+        /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -504,10 +508,9 @@ bool StorageObjectStorage::supportsDelete() const
 
 bool StorageObjectStorage::supportsParallelInsert() const
 {
-    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
-    /// INSERT pipeline. Only the root insert table is pre-initialised by
-    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
-    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
+    /// Defense in depth. `InsertDependenciesBuilder` refreshes every dependency before calling this method,
+    /// so a data lake table reached through a materialized view is normally initialized already. Keep the
+    /// lazy initialization to protect any other caller that reaches this method without the metadata hook.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsParallelInsert();
@@ -549,9 +552,12 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (!hive_partitioning_sample_path_deferred)
         return;
 
-    std::lock_guard lock(hive_partitioning_resolution_mutex);
-    if (hive_partitioning_sample_path_resolved)
-        return;
+    /// Not held while listing: a waiter could not be cancelled.
+    {
+        std::lock_guard lock(hive_partitioning_resolution_mutex);
+        if (hive_partitioning_sample_path_resolved)
+            return;
+    }
 
     /// Listing the storage happens on behalf of the triggering query, so it must use its context.
     /// Rebuilding the client with any other one would ignore that session's credential restriction.
@@ -600,6 +606,10 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         return;
     }
 
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
+
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
@@ -619,8 +629,8 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
             sample_path);
     }
 
-    hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
-    file_columns = std::move(new_file_columns);
+    hive_partitioning_columns.set(std::make_unique<const HivePartitioningColumns>(
+        HivePartitioningColumns{std::move(new_hive_partition_columns), std::move(new_file_columns)}));
 
     new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, inference_context));
     setInMemoryMetadata(new_metadata);
@@ -725,6 +735,12 @@ void StorageObjectStorage::read(
         }
     });
 
+    /// The state can be pinned on another storage object of the same table (a `DataLakeCatalog` builds one per lookup),
+    /// so the configuration of this one may not be initialized yet.
+    if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
+        && storage_snapshot->metadata->datalake_table_state.has_value())
+        configuration->lazyInitializeIfNeeded(object_storage, local_context);
+
     /// The read pipeline needs a single, internally consistent metadata snapshot: the requested
     /// columns (prepareReadingFromFormat below), the field-id mapping used to list/read files, and
     /// the read-in-order sorting key must all come from the SAME data lake snapshot. Normally
@@ -821,6 +837,7 @@ void StorageObjectStorage::read(
         }
     }
 #endif
+    const auto hive_columns = hive_partitioning_columns.get();
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
@@ -828,17 +845,17 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ hive_columns->file_columns, hive_columns->hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
     const bool need_only_count = (query_info.optimize_trivial_count
                                   || (read_from_format_info.requested_columns.empty()
-                                      && !read_from_format_info.prewhere_info
-                                      && !read_from_format_info.row_level_filter))
+                                      && !read_from_format_info.prewhere_info))
         && settings[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto modified_format_settings{format_settings};
@@ -949,7 +966,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
 void StorageObjectStorage::truncate(
@@ -999,8 +1016,18 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
+    dropTable(configuration, catalog, storage_id);
+}
+
+void StorageObjectStorage::dropTable(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & storage_id)
+{
+    /// A table of an `Atomic` database is dropped by a background thread, which has no query context.
+    /// A table of a `DataLakeCatalog` database is dropped inside the query, so the query settings apply.
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto drop_context = query_context ? query_context : Context::getGlobalContextInstance();
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());

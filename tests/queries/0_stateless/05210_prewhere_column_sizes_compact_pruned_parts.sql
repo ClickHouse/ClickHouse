@@ -1,6 +1,6 @@
 -- Tags: no-random-merge-tree-settings
 SET enable_analyzer = 1, explain_query_plan_default = 'legacy';
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, move_all_conditions_to_prewhere = 0;
+SET optimize_move_to_prewhere = 1, move_all_conditions_to_prewhere = 0;
 SET convert_query_to_cnf = 0, enable_parallel_replicas = 0;
 SET materialize_statistics_on_insert = 0, use_statistics = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;

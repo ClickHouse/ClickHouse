@@ -11,10 +11,24 @@
 #include <IO/copyData.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/IDiskTransaction.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event ExternalPackedPartWriterCompressedBytes;
+    extern const Event ExternalPackedPartWriterUncompressedBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForPackedParts;
+}
 
 namespace DB
 {
@@ -63,12 +77,24 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    auto projection = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    if (projection->writer && temporary_data_for_transaction)
+    {
+        projection->temporary_data_for_transaction = temporary_data_for_transaction;
+        projection->setTemporaryDataToWriter();
+    }
+    return projection;
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    auto projection = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    if (projection->writer && temporary_data_for_transaction)
+    {
+        projection->temporary_data_for_transaction = temporary_data_for_transaction;
+        projection->setTemporaryDataToWriter();
+    }
+    return projection;
 }
 
 DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
@@ -421,7 +447,14 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     }
 
     if (writer)
+    {
+        /// Rewrite an already written file as a disk does. For example, when a vertical merge writes no rows,
+        /// the writers of different subcolumns of `Nested` create the file with their shared offsets each.
+        if (mode == WriteMode::Rewrite)
+            return writer->rewriteFile(name, settings);
+
         return writer->writeFile(name, settings);
+    }
 
     throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 }
@@ -552,11 +585,67 @@ void DataPartStorageOnDiskPacked::commitTransaction()
 
     transaction->commit();
 
-    if (!reader)
-        reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
-
+    /// Reset the transaction before loading the reader: it is already committed, so if loading the reader throws,
+    /// `undoTransaction` must not run and remove the blobs of the committed part.
     transaction.reset();
     is_precommitted = false;
+
+    if (!reader)
+        reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
+}
+
+void DataPartStorageOnDiskPacked::undoTransaction()
+{
+    if (!transaction || (!writer && !is_precommitted))
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
+
+    transaction->undo();
+    transaction.reset();
+    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
+    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
+    writer.reset();
+    temporary_data_for_transaction.reset();
+    is_precommitted = false;
+}
+
+void DataPartStorageOnDiskPacked::checkpointTransaction()
+{
+    auto temporary_data = temporary_data_for_transaction;
+    commitTransaction();
+    beginTransaction();
+
+    if (temporary_data)
+    {
+        temporary_data_for_transaction = std::move(temporary_data);
+        setTemporaryDataToWriter();
+    }
+}
+
+void DataPartStorageOnDiskPacked::setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory)
+{
+    if (!writer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set temporary data for {}: there is no active transaction", getRelativePath());
+
+    if (!tmp_data)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for packed part {} is not provided", getRelativePath());
+
+    /// The files of a part are mostly compressed already, so they are not compressed again.
+    /// The writer moves the data to one temporary file and counts the moves in `ExternalPackedPartWriterWritePart`.
+    auto scope = tmp_data->childScope(
+        {
+            .current_metric = CurrentMetrics::TemporaryFilesForPackedParts,
+            .bytes_compressed = ProfileEvents::ExternalPackedPartWriterCompressedBytes,
+            .bytes_uncompressed = ProfileEvents::ExternalPackedPartWriterUncompressedBytes,
+            .spilled_to_disk_operator = "packed_part_writer",
+        },
+        /*buffer_size_=*/ 0,
+        /*compression_codec_=*/ "NONE");
+
+    temporary_data_for_transaction = TemporaryDataForTransaction{std::move(scope), max_bytes_in_memory};
+    setTemporaryDataToWriter();
 }
 
 #if CLICKHOUSE_CLOUD
@@ -578,31 +667,17 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
 
     if (!mayRetryCommit(options, result))
     {
-        if (!reader && isSuccessfulOutcome(result))
-            reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
-
+        /// Reset the transaction before loading the reader, see `commitTransaction`.
         transaction.reset();
         is_precommitted = false;
+
+        if (!reader && isSuccessfulOutcome(result))
+            reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
     }
 
     return result;
 }
 
-void DataPartStorageOnDiskPacked::undoTransaction()
-{
-    if (!transaction || (!writer && !is_precommitted))
-        return;
-
-    if (has_shared_transaction)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
-
-    transaction->undo();
-    transaction.reset();
-    /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
-    /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
-    writer.reset();
-    is_precommitted = false;
-}
 #endif
 
 String DataPartStorageOnDiskPacked::getRelativeDataPath() const
@@ -641,6 +716,21 @@ bool DataPartStorageOnDiskPacked::cloneCopiesWholeArchive(const ClonePartParams 
     return params.metadata_version_to_write.has_value()
         || !params.keep_metadata_version
         || anyArchivedFileRequestedForCopy(params.files_to_copy_instead_of_hardlinks);
+}
+
+void DataPartStorageOnDiskPacked::copyInvalidatedSystemColumnsFile(
+    DataPartStorageOnDiskPacked & dest_storage, const ReadSettings & read_settings, const WriteSettings & write_settings) const
+{
+    auto src_disk = volume->getDisk();
+    const String src_path = fs::path(getRelativePath()) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    if (!src_disk->existsFile(src_path))
+        return;
+
+    auto read_buf = src_disk->readFile(src_path, read_settings);
+    auto write_buf = dest_storage.writeFile(
+        IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+    copyData(*read_buf, *write_buf);
+    write_buf->finalize();
 }
 
 void DataPartStorageOnDiskPacked::resetReader(const ReadSettings & read_settings)
@@ -714,6 +804,41 @@ void DataPartStorageOnDiskPacked::resetWriterFromTransaction()
     is_precommitted = false;
 }
 
+namespace
+{
+
+/// Temporary file for the data that PackedFilesWriter moves out of memory, in the temporary data of the server.
+class PackedFilesTemporaryFile final : public IPackedFilesTemporaryFile
+{
+public:
+    explicit PackedFilesTemporaryFile(const TemporaryDataOnDiskScopePtr & tmp_data)
+        : buffer(tmp_data)
+    {
+    }
+
+    size_t startRange() override { return buffer.startNewBlock(); }
+    void write(const char * data, size_t size) override { buffer.write(data, size); }
+    void finishWriting() override { buffer.finishWriting(); }
+    std::unique_ptr<ReadBuffer> readRange(size_t position) override { return buffer.readFromPosition(position); }
+
+private:
+    TemporaryDataBuffer buffer;
+};
+
+}
+
+void DataPartStorageOnDiskPacked::setTemporaryDataToWriter()
+{
+    chassert(writer && temporary_data_for_transaction);
+    writer->setSpillSettings({
+        .create_temporary_file = [tmp_data = temporary_data_for_transaction->tmp_data]
+        {
+            return std::make_unique<PackedFilesTemporaryFile>(tmp_data);
+        },
+        .max_bytes_in_memory = temporary_data_for_transaction->max_bytes_in_memory,
+    });
+}
+
 void DataPartStorageOnDiskPacked::finalizeWriter()
 {
     chassert(writer);
@@ -722,6 +847,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     if (!writer->hasModifiedFiles())
     {
         writer.reset();
+        temporary_data_for_transaction.reset();
         return;
     }
 
@@ -762,7 +888,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     /// away, so a throwing preparation would leave a truncated archive behind.
     auto plan = writer->prepareFinalize(preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
 
-    /// The writer keeps the whole part in memory, so stream the archive directly into the
+    /// The writer keeps the part in memory (or in a temporary file), so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
     auto buf = transaction->writeFile(
         archive_path, DBMS_DEFAULT_BUFFER_SIZE,
@@ -778,7 +904,9 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         transaction->replaceFile(archive_path, getRelativeDataPath());
 
     reader.emplace(plan.index);
+    /// Removes the temporary file of the writer.
     writer.reset();
+    temporary_data_for_transaction.reset();
 }
 
 template <typename Op>
@@ -895,6 +1023,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             need_commit = true;
         }
 
+        /// The files are rewritten into a new archive, so its writer buffers the whole part.
+        if (params.max_bytes_to_buffer_for_packed_part)
+            dest_storage->setTemporaryDataForTransaction(params.temporary_data, params.max_bytes_to_buffer_for_packed_part);
+
         auto files = reader->getFileNames();
         bool metadata_version_emitted = false;
         for (const auto & file : files)
@@ -960,6 +1092,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         else
             disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
     }
+
+    /// invalidated_system_columns.txt is written separately, next to data.packed, so neither the
+    /// archive rewrite nor the data.packed hardlink/copy above carries it. Copy it from the source
+    /// explicitly - the Full storage freeze inherits it by hardlinking every file of the part - so
+    /// a frozen or detached clone of an adopted part does not resurrect the disclaimed physically
+    /// stored _block_number/_block_offset values. A non-empty set from the caller rewrites the file
+    /// below, so the copy matters only when the caller has nothing of its own to write.
+    if (params.invalidated_columns_to_write.empty())
+        copyInvalidatedSystemColumnsFile(*dest_storage, read_settings, write_settings);
 
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
@@ -1033,6 +1174,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             need_commit = true;
         }
 
+        /// The files are rewritten into a new archive, so its writer buffers the whole part.
+        if (params.max_bytes_to_buffer_for_packed_part)
+            dest_storage->setTemporaryDataForTransaction(params.temporary_data, params.max_bytes_to_buffer_for_packed_part);
+
         auto files = reader->getFileNames();
         std::vector<std::string> all_files;
         src_disk->listFiles(getRelativePath(), all_files);
@@ -1101,6 +1246,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
         }
     }
+
+    /// invalidated_system_columns.txt is written separately, next to data.packed, so neither the
+    /// archive rewrite nor the data.packed hardlink/copy above carries it. Copy it from the source
+    /// explicitly - the Full storage freeze inherits it by hardlinking every file of the part - so
+    /// a frozen or detached clone of an adopted part does not resurrect the disclaimed physically
+    /// stored _block_number/_block_offset values. A non-empty set from the caller rewrites the file
+    /// below, so the copy matters only when the caller has nothing of its own to write.
+    if (params.invalidated_columns_to_write.empty())
+        copyInvalidatedSystemColumnsFile(*dest_storage, read_settings, write_settings);
 
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
