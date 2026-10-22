@@ -5,6 +5,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/DeferredRefreshErrors.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -160,6 +161,9 @@ private:
 
     /// The analyzer does not refresh a table function, so a `merge` table function that inferred its structure refreshes the children in `read`.
     const bool refresh_children_in_read = false;
+
+    /// Rethrown by `read` for the children it reads.
+    DeferredRefreshErrors child_refresh_errors;
 
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;

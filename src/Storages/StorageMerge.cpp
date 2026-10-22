@@ -728,12 +728,11 @@ void StorageMerge::updateExternalDynamicMetadataIfExists(ContextPtr query_contex
             if (!access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
                 return false;
 
-            auto child = resolveStorageProxyLoading(table);
-            /// A dangling `Alias` reports empty metadata, so it must not fail `DESCRIBE`; a `SELECT` still throws.
-            if (const auto * alias = child->as<StorageAlias>(); alias && alias->hasMissingTarget())
-                return false;
-
-            child->updateExternalDynamicMetadataIfExists(query_context);
+            /// An unreachable child must not fail `DESCRIBE` or a query that skips it by `_table`.
+            child_refresh_errors.refresh(query_context, id, [&]
+            {
+                resolveStorageProxyLoading(table)->updateExternalDynamicMetadataIfExists(query_context);
+            });
             return false;
         });
     }
@@ -1237,6 +1236,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 /// Otherwise `StorageMerge::updateExternalDynamicMetadataIfExists` refreshed the child before planning.
                 if (merge.refresh_children_in_read)
                     resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
+                else
+                    merge.child_refresh_errors.rethrow(context, storage->getStorageID());
                 storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
             }
 

@@ -90,3 +90,24 @@ DETACH DATABASE ${DB_LAZY};
 ATTACH DATABASE ${DB_LAZY};
 SELECT 'lazy Merge, row policy', count(), sum(k) FROM ${DB_LAZY}.t_merge;
 "
+
+# A child that cannot be refreshed (here: its newest metadata file is corrupt) fails only a query that reads it,
+# and is not read from its old snapshot.
+$CLIENT -m -q "
+CREATE TABLE t_lake7 (k Int32) ENGINE = IcebergLocal('${DIR}_7/', 'Parquet');
+INSERT INTO t_lake7 VALUES (1);
+CREATE TABLE t_ok7 (k Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_ok7 VALUES (2);
+CREATE TABLE t_merge7 (k Int32) ENGINE = Merge(currentDatabase(), '^t_(lake|ok)7\$');
+CREATE MATERIALIZED VIEW mv7 TO t_lake7 (k Int32) AS SELECT k FROM src;
+CREATE MATERIALIZED VIEW mv7_definer TO t_merge7 (k Int32) DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM src;
+"
+echo '{' > "${DIR}_7/metadata/v99.metadata.json"
+$CLIENT -m -q "
+SELECT 'broken child skipped by _table', count(), sum(k) FROM t_merge7 WHERE _table = 't_ok7';
+DESCRIBE TABLE t_merge7;
+DESCRIBE TABLE mv7;
+SELECT count(), sum(k) FROM t_merge7; -- { serverError INCORRECT_DATA }
+SELECT count(), sum(k) FROM mv7; -- { serverError INCORRECT_DATA }
+SELECT count(), sum(k) FROM mv7_definer; -- { serverError INCORRECT_DATA }
+"

@@ -5,6 +5,7 @@
 
 #include <Common/QueryScope.h>
 
+#include <Storages/DeferredRefreshErrors.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -156,6 +157,9 @@ private:
     /// If false, inner table is replaced on each refresh. In that case, target_table_id doesn't
     /// have UUID, and we do inner table lookup by name instead.
     bool fixed_uuid = true;
+
+    /// Rethrown by `read`.
+    DeferredRefreshErrors target_refresh_errors;
 
     friend class RefreshTask;
 
