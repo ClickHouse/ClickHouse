@@ -335,6 +335,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
@@ -428,6 +429,7 @@ static struct InitFiu
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
+    PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
@@ -452,14 +454,15 @@ static struct InitFiu
     ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
+    ONCE(distributed_plan_delay_failed_task_release) \
     REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \
     PAUSEABLE_ONCE(distributed_plan_runtime_filter_merge_pause_before_finalize) \
     REGULAR(distributed_plan_runtime_filter_merge_fails_before_finalize) \
     ONCE(distributed_plan_task_fail_before_start) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
-    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_zookeeper_connection_attempt_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_connection_attempt_pause) \
     PAUSEABLE_ONCE(wasm_module_manager_pause_after_compile) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
