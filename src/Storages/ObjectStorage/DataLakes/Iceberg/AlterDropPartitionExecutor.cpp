@@ -251,8 +251,9 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = catalog ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
-                                               : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
+        auto [snapshot, table_state] = catalog
+            ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
+            : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_metadata_pointer_overrides=*/true);
         if (!snapshot)
             return std::nullopt;
 
