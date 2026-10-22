@@ -2,6 +2,7 @@
 
 #include <Server/StartupWarnings.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <exception>
 #include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
@@ -1145,6 +1146,24 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 
     if (!hasExplicitTableInput() && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd)))
         return {};
+
+    /// A query file may be stdin itself (e.g. /dev/stdin or a path redirected to fd 0).
+    /// Do not infer a data table from the SQL that the query file will execute.
+    if (!hasExplicitTableInput() && !queries_files.empty())
+    {
+        struct stat stdin_stat{};
+        if (::fstat(stdin_fd, &stdin_stat) == 0)
+        {
+            for (const auto & query_file : queries_files)
+            {
+                struct stat query_file_stat{};
+                if (::stat(query_file.c_str(), &query_file_stat) == 0
+                    && query_file_stat.st_dev == stdin_stat.st_dev
+                    && query_file_stat.st_ino == stdin_stat.st_ino)
+                    return {};
+            }
+        }
+    }
 
     auto table_name = getClientConfiguration().getString("table-name", "table");
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");

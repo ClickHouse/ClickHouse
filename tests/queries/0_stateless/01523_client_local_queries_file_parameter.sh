@@ -105,3 +105,13 @@ elif [[ "$output" == *"second file failed"* ]] && ! grep -Fxq 'trailing query' <
 else
     echo "unexpected output"
 fi
+# SQL supplied through redirected stdin is not implicit table data.
+printf '%s\n' 'CREATE FUNCTION f_stdin_01523 AS (x) -> x + 1;' 'SELECT 99;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file=/dev/stdin -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
+
+# A prelude that does not read stdin must not make read() replay the same rows.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT count(); SELECT count(); SELECT count()' < "$STDIN_DATA_FILE_NAME"

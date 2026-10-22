@@ -1291,6 +1291,9 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     /// start reading data from the beginning after reading some data for
     /// schema inference.
     auto file_stat = getFileStat("", true, table_fd, getName());
+    const auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
+    inferred_fd_reader_is_positional = S_ISREG(file_stat.st_mode)
+        && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
     read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, /*preserve_fd_offset=*/true);
@@ -2922,7 +2925,19 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         /// to prevent data race in case of parallel reads.
         std::unique_ptr<ReadBuffer> read_buffer;
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
-            read_buffer = std::move(storage->peekable_read_buffer_from_fd);
+        {
+            /// Inference can use pread to preserve stdin for query files. Once the query
+            /// requests read(), use the shared descriptor so subsequent reads see its
+            /// consumed offset instead of replaying the inference buffer.
+            if (storage->inferred_fd_reader_is_positional
+                && ctx->getSettingsRef()[Setting::storage_file_read_method] == LocalFSReadMethod::read)
+            {
+                storage->peekable_read_buffer_from_fd.reset();
+                storage->read_buffer_from_fd.reset();
+            }
+            else
+                read_buffer = std::move(storage->peekable_read_buffer_from_fd);
+        }
 
         auto source = std::make_shared<StorageFileSource>(
             info,
