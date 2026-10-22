@@ -971,14 +971,7 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    {
-        std::lock_guard lock(mutex);
-        if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
-            bearer_token = requestBearerToken();
-
-        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token));
-    }
-
+    request.SetHeaderValue("Authorization", fmt::format("Bearer {}", getBearerToken()));
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
 }
 
@@ -986,7 +979,11 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 {
     std::lock_guard lock(mutex);
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
+    {
+        /// The token is requested over blocking HTTP transport, like AWS credentials.
+        Silk::ThreadModeScope thread_mode;
         bearer_token = requestBearerToken();
+    }
 
     return bearer_token->token;
 }
