@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # in the shared column of an uncompressed query cache entry. The weight of the entry must not change on reads,
 # otherwise the eviction subtracts more bytes than were added. `Arrow` over HTTP is formatted on the server.
 
-# The tag is unique per test database, so the entry does not clash with other tests and no `SYSTEM DROP` is needed.
+# The tag is unique per test database, so the entry does not clash with other tests and the cache does not need to be cleared.
 TAG="${CLICKHOUSE_DATABASE}_nullable"
 SETTINGS="use_query_cache = 1, query_cache_compress_entries = 0, query_cache_squash_partial_results = 0, query_cache_tag = '${TAG}'"
 
