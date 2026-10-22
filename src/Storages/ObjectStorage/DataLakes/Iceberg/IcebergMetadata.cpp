@@ -35,6 +35,7 @@
 #include <Common/Exception.h>
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/ObjectStorage/Utils.h>
 
 #include <Core/ColumnsWithTypeAndName.h>
@@ -1499,6 +1500,7 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
     /// Decoded in parallel as in `totalRows`, consumed in order on this thread.
     size_t next_manifest = 0;
     bool has_negative_record_count = false;
+    const auto query_status = context->getProcessListElement();
     Iceberg::decodeManifestsInOrder(
         manifests_to_decode,
         settings[Setting::iceberg_manifest_decode_concurrency],
@@ -1511,6 +1513,10 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
         },
         [&](const ManifestFileIterator::ManifestFileEntriesHandle & files_handle)
         {
+            /// The walk runs during planning, before any pipeline, so it checks `KILL QUERY` and the time limit itself.
+            if (query_status)
+                query_status->checkTimeLimit();
+
             const auto & manifest_list_entry = manifests_to_decode[next_manifest++];
 
             if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
