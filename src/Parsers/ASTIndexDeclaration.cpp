@@ -1,5 +1,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
+#include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -222,14 +223,23 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
 {
+    /// `type->name` is the user's raw spelling; the index type is lowercased everywhere downstream
+    /// (`IndicesDescription::getIndexFromAST`), so match it case-insensitively here too. Without this
+    /// an uppercase `TEXT` skips the whole-part default below and keeps the literal `GRANULARITY` the
+    /// user wrote -- and a text index is serialized whole-part, so a per-granule granularity makes its
+    /// mark-cache prewarm throw (wedging SharedMergeTree startup) and its queries under-count. The same
+    /// case-insensitivity gives an uppercase `VECTOR_SIMILARITY` its default granularity when none is
+    /// given (an explicit `GRANULARITY` is honored for it, as for lowercase `vector_similarity`).
+    const String type_name = type ? Poco::toLower(type->name) : String{};
+
     /// Text index is always built for the whole part and granularity is ignored.
-    if (type && type->name == "text")
+    if (type_name == "text")
         return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
 
     if (granularity)
         return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
 
-    if (type && type->name == "vector_similarity")
+    if (type_name == "vector_similarity")
         return ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
 
     return ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
