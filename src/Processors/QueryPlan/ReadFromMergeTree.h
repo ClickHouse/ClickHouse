@@ -746,6 +746,8 @@ private:
     ColumnPruning pruneColumns(const std::vector<size_t> & unneeded_output_positions) const;
     /// Of the dropped output positions, the ones a lazy read can read: storage columns the read stops reading.
     std::vector<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
+    /// Whether a part to read lacks the column of storage, so that the read fills it from its default.
+    bool isColumnMissingInSomePart(const String & column_name) const;
     /// Prunes the filters and the columns of this read as `pruning` says.
     RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
 

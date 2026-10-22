@@ -4973,7 +4973,8 @@ Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) 
 
     /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
     /// computed from it have.
-    const auto non_deterministic = getNonDeterministicDefaults(columns_to_remove, storage_snapshot->metadata->getColumns(), context);
+    const auto non_deterministic = getNonDeterministicDefaults(
+        columns_to_remove, storage_snapshot->metadata->getColumns(), [&](const String & column) { return isColumnMissingInSomePart(column); }, context);
     std::erase_if(columns_to_remove, [&](const String & column_name) { return non_deterministic.contains(column_name); });
     return columns_to_remove;
 }
@@ -7050,6 +7051,14 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     return applyColumnPruning(pruneColumns(unneeded_output_positions));
 }
 
+bool ReadFromMergeTree::isColumnMissingInSomePart(const String & column_name) const
+{
+    return std::ranges::any_of(getParts(), [&](const RangesInDataPart & part)
+    {
+        return !part.data_part->getColumnsDescription().has(column_name);
+    });
+}
+
 std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
 {
     const auto & virtuals = getStorageMetadata()->virtuals;
@@ -7069,7 +7078,8 @@ std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPr
 
     /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
     /// computed from it have.
-    const auto non_deterministic = getNonDeterministicDefaults(column_names, storage_snapshot->metadata->getColumns(), context);
+    const auto non_deterministic = getNonDeterministicDefaults(
+        column_names, storage_snapshot->metadata->getColumns(), [&](const String & column) { return isColumnMissingInSomePart(column); }, context);
     std::vector<size_t> readable_positions;
     for (size_t i = 0; i < positions.size(); ++i)
     {

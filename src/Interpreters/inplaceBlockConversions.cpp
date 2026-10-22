@@ -754,7 +754,11 @@ static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & c
     return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return callsNonDeterministicFunction(*child, context); });
 }
 
-NameSet getNonDeterministicDefaults(const Names & column_names, const ColumnsDescription & columns, ContextPtr context)
+NameSet getNonDeterministicDefaults(
+    const Names & column_names,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_missing_in_some_part,
+    ContextPtr context)
 {
     const auto defaults = columns.getDefaults();
 
@@ -768,7 +772,7 @@ NameSet getNonDeterministicDefaults(const Names & column_names, const ColumnsDes
             return false;
 
         const auto it = defaults.find(column->getNameInStorage());
-        if (it == defaults.end())
+        if (it == defaults.end() || !is_missing_in_some_part(it->first))
             return false;
 
         if (const auto visited_it = visited.find(it->first); visited_it != visited.end())
