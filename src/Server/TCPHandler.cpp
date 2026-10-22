@@ -1188,10 +1188,16 @@ void TCPHandler::runImpl()
                 /// Flush the tail of the profile events accumulated since the last periodic report,
                 /// so that the initiator of a distributed query charges them to the quotas over
                 /// profile events even when this query fails. Only do it while streaming the result
-                /// of a `SELECT`, where `ProfileEvents` packets are already sent periodically: in other
-                /// states (e.g. `INSERT`) the clients do not expect them before the `Exception`.
+                /// of a `SELECT`, where `ProfileEvents` packets are already sent periodically, or for a
+                /// secondary `INSERT` that has received all its data: its initiator (`RemoteInserter`)
+                /// is then waiting for the end of the query and accepts the final report, the same as
+                /// on the success path (`sendInsertProfileEvents` checks the query kind and the protocol
+                /// version). In other states the clients do not expect them before the `Exception`.
                 if (query_scope && query_state->streaming_select_result)
                     sendSelectProfileEvents(*query_state);
+                else if (query_scope && query_state->need_receive_data_for_insert && query_state->read_all_data
+                    && query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+                    sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
             catch (const Exception & e)
             {
