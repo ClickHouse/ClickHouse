@@ -131,6 +131,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mt_mutate_task_pause_after_ttl_mode_selection[];
     extern const char mutate_task_random_sleep_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
@@ -535,6 +536,61 @@ static bool rewritesAllPartColumns(
         /// format (e.g. the packing threshold changed) needs a full rewrite.
         || source_part->getDataPartStorage().getType() != future_storage_type
         || (interpreter && interpreter->isAffectingAllColumns());
+}
+
+static bool canRecalculateTTLWithoutRewritingData(
+    const MergeTreeData::DataPartPtr & source_part,
+    const MergeTreeDataPartFormat & future_format,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MutationCommands & commands,
+    const AlterConversions & alter_conversions)
+{
+    if (!isCompactPart(source_part)
+        || !isFullPartStorage(source_part->getDataPartStorage())
+        || future_format.part_type != source_part->getType()
+        || future_format.storage_type != source_part->getDataPartStorage().getType()
+        || commands.empty()
+        || !std::ranges::all_of(commands, [](const auto & command)
+        {
+            return command.type == MutationCommand::MATERIALIZE_TTL;
+        })
+        || alter_conversions.hasPatches()
+        || alter_conversions.hasMutations()
+        || !alter_conversions.getRenameMap().empty())
+        return false;
+
+    /// The data and its physical column descriptions must remain unchanged, including columns
+    /// that are read at a different type or dropped and re-added by a metadata-only alter.
+    return std::ranges::all_of(source_part->getColumns(), [&](const auto & column)
+    {
+        if (alter_conversions.isColumnDropped(column.name))
+            return false;
+
+        const auto * storage_column = metadata_snapshot->getColumns().tryGet(column.name);
+        if (!storage_column)
+            return metadata_snapshot->virtuals.has(column.name);
+
+        return column.type->equals(*storage_column->type);
+    });
+}
+
+/// Check whether any projection requires a rebuild that the recalculate-TTL-only
+/// path cannot perform. When true the caller must fall back to the normal
+/// split-and-modify path so the interpreter gets the full column set.
+static bool mustRebuildProjection(
+    const MergeTreeData::DataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot)
+{
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (!source_part->hasProjection(projection.name)
+            && (projection.with_block_number || projection.with_block_offset))
+            return true;
+
+        if (source_part->hasBrokenProjection(projection.name))
+            return true;
+    }
+    return false;
 }
 
 static UInt64 getExistingRowsCount(const Block & block)
@@ -2401,7 +2457,7 @@ static void finalizeMutatedPart(
     if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
-        DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
+        DB::writeText(new_data_part->getMetadataVersion(), *out_metadata);
         written_files.push_back(std::move(out_metadata));
     }
 
@@ -2583,6 +2639,7 @@ struct MutationContext
 
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    bool recalculate_ttl_only = false;
 
     MergeTreeTransactionPtr txn;
 
@@ -2728,6 +2785,9 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
+    chassert(!ctx->recalculate_ttl_only || (!ctx->out && ctx->projections_to_build.empty()
+        && ctx->text_indices_to_recalc.empty() && ctx->statistics_to_build.empty()));
+
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume
     /// the same source blocks. This drastically reduces the number of temporary
@@ -2790,6 +2850,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             finalizeTempProjectionsAndIndexes();
             return false;
         }
+
+        /// Drain `TTLCalcTransform` without writing the columns that were only read to calculate TTLs.
+        if (ctx->recalculate_ttl_only)
+            continue;
 
         ctx->out->write(cur_block);
 
@@ -3253,6 +3317,15 @@ private:
         /// `MergeTask` (see the projection branch there) inherit the same codec, together with
         /// whether it was asked for by an explicit `RECOMPRESS` TTL.
         ctx->new_data_part->default_codec = ctx->compression_codec;
+        /// When only recalculating TTL (no data rewrite), keep the source part's
+        /// codec metadata. Writing the policy-selected codec would falsely mark
+        /// bytes as recompressed even though they are hardlinked unchanged.
+        if (ctx->recalculate_ttl_only)
+        {
+            ctx->compression_codec = ctx->source_part->default_codec;
+            ctx->new_data_part->default_codec = ctx->compression_codec;
+            ctx->is_explicit_recompression = ctx->source_part->default_codec_is_explicit_recompression;
+        }
         ctx->new_data_part->default_codec_is_explicit_recompression = ctx->is_explicit_recompression;
 
         NameSet entries_to_hardlink;
@@ -3757,7 +3830,8 @@ private:
         ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
-        (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
+        (*ctx->mutate_entry)->columns_written = ctx->recalculate_ttl_only
+            ? 0 : ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
@@ -3919,19 +3993,22 @@ private:
                         columns_for_writer.push_back(col);
             }
 
-            ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
-                ctx->new_data_part,
-                ctx->data->getSettings(),
-                ctx->metadata_snapshot,
-                columns_for_writer,
-                std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                ctx->compression_codec,
-                ctx->source_part->index_granularity,
-                ctx->source_part->getBytesUncompressedOnDisk(),
-                static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
-                /*external_packed_skip_indices_writer=*/ nullptr,
-                ctx->stream_base_manifest);
+            if (!ctx->recalculate_ttl_only)
+            {
+                ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
+                    ctx->new_data_part,
+                    ctx->data->getSettings(),
+                    ctx->metadata_snapshot,
+                    columns_for_writer,
+                    std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
+                    ctx->compression_codec,
+                    ctx->source_part->index_granularity,
+                    ctx->source_part->getBytesUncompressedOnDisk(),
+                    static_cast<WrittenOffsetSubstreams *>(nullptr),
+                    /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
+                    /*external_packed_skip_indices_writer=*/ nullptr,
+                    ctx->stream_base_manifest);
+            }
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would
@@ -3969,7 +4046,10 @@ private:
         {
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
+        }
 
+        if (ctx->out)
+        {
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
@@ -4841,16 +4921,32 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
-    bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
-    MutationHelpers::splitAndModifyMutationCommands(
-        ctx->source_part,
-        ctx->metadata_snapshot,
-        alter_conversions,
-        ctx->commands_for_part,
-        ctx->for_interpreter,
-        ctx->for_file_renames,
-        ctx->num_for_file_renames_from_commands,
-        ctx->log);
+    const bool materialize_ttl_recalculate_only = (*merge_tree_settings)[MergeTreeSetting::materialize_ttl_recalculate_only];
+    const bool ttl_only_drop_parts = (*merge_tree_settings)[MergeTreeSetting::ttl_only_drop_parts];
+    const bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && ttl_only_drop_parts;
+    ctx->recalculate_ttl_only = materialize_ttl_recalculate_only && MutationHelpers::canRecalculateTTLWithoutRewritingData(
+        ctx->source_part, ctx->future_part->part_format, ctx->metadata_snapshot, ctx->commands_for_part, *alter_conversions);
+
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_after_ttl_mode_selection);
+
+    /// Check upfront whether projections need rebuilding — if so, the
+    /// recalculate-only shortcut cannot be used and we need the full
+    /// split-and-modify path. This avoids creating the interpreter twice.
+    if (ctx->recalculate_ttl_only && MutationHelpers::mustRebuildProjection(ctx->source_part, ctx->metadata_snapshot))
+        ctx->recalculate_ttl_only = false;
+
+    if (ctx->recalculate_ttl_only)
+        ctx->for_interpreter = ctx->commands_for_part;
+    else
+        MutationHelpers::splitAndModifyMutationCommands(
+            ctx->source_part,
+            ctx->metadata_snapshot,
+            alter_conversions,
+            ctx->commands_for_part,
+            ctx->for_interpreter,
+            ctx->for_file_renames,
+            ctx->num_for_file_renames_from_commands,
+            ctx->log);
 
     if (commands_for_execution != &ctx->commands_for_part)
     {
@@ -4878,6 +4974,7 @@ bool MutateTask::prepare()
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
         settings.apply_deleted_mask = false;
+        settings.merge_tree_settings = merge_tree_settings;
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
             *ctx->data, ctx->source_part, alter_conversions,
@@ -4888,8 +4985,11 @@ bool MutateTask::prepare()
         ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
         ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
-        ctx->updated_header = ctx->interpreter->getUpdatedHeader();
+        /// TTL inputs remain in the pipeline header, but none of them are written in recalc-only mode.
+        if (!ctx->recalculate_ttl_only)
+            ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback(
             (*ctx->mutate_entry)->ptr(),
             ctx->watch_prev_elapsed,
@@ -4952,12 +5052,14 @@ bool MutateTask::prepare()
 
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
-    const bool rewrites_all_columns = MutationHelpers::rewritesAllPartColumns(
+    const bool rewrites_all_columns = !ctx->recalculate_ttl_only && MutationHelpers::rewritesAllPartColumns(
         ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
 
-    auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
-        ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
+    auto [new_columns, new_infos, new_columns_substreams] = ctx->recalculate_ttl_only
+        ? std::make_tuple(ctx->source_part->getColumns(), ctx->source_part->getSerializationInfos(), ctx->source_part->getColumnsSubstreams())
+        : MutationHelpers::getColumnsForNewDataPart(
+            ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+            ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
 
     /// A part cannot be left with no columns: it could not be loaded or read.
     if (new_columns.empty())
@@ -4966,7 +5068,8 @@ bool MutateTask::prepare()
             "or the mutation removes them. Empty parts are not allowed",
             ctx->source_part->name, fmt::join(ctx->source_part->getColumns().getNames(), ", "));
 
-    ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
+    ctx->new_data_part->setColumns(new_columns, new_infos,
+        ctx->recalculate_ttl_only ? ctx->source_part->getMetadataVersion() : ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
@@ -5001,7 +5104,6 @@ bool MutateTask::prepare()
     }
 
     /// All columns from part are changed and may be some more that were missing before in part
-    /// TODO We can materialize compact part without copying data
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
     if (rewrites_all_columns)
@@ -5011,7 +5113,7 @@ bool MutateTask::prepare()
         /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
-        bool drop_expired_parts = suitable_for_ttl_optimization && !(*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+        bool drop_expired_parts = suitable_for_ttl_optimization && !materialize_ttl_recalculate_only;
         if (drop_expired_parts)
             task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateAllPartColumnsTask>(ctx), ctx);
         else
@@ -5091,7 +5193,7 @@ bool MutateTask::prepare()
         /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
         /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
         /// writer runs; without one no row changes. `MutateSomePartColumnsTask::finalize` drops its stale entry.
-        if (ctx->mutating_pipeline_builder.initialized())
+        if (ctx->mutating_pipeline_builder.initialized() && !ctx->recalculate_ttl_only)
         {
             for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
                 ctx->files_to_skip.insert(projection_name + ".proj");
@@ -5120,7 +5222,7 @@ bool MutateTask::prepare()
         /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
-        bool drop_expired_parts = suitable_for_ttl_optimization && !(*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+        bool drop_expired_parts = suitable_for_ttl_optimization && !materialize_ttl_recalculate_only;
         if (drop_expired_parts)
             task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateSomePartColumnsTask>(ctx), ctx);
         else
