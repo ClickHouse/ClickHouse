@@ -44,7 +44,9 @@ an open issue recording a post-merge run on the tested branch before the tested
 change counts as proof that the failure is older (`independent_occurrences`). A
 fingerprint found only in closed issues is a fixed bug that came back, which the
 PR may have reintroduced, so it keeps a PR run red (`fixed_occurrences`), and so
-does a lookup of those issues that did not complete.
+does a lookup of those issues that did not complete. Every lookup reads the
+machine lines of issues the triage robots filed only (`_filed_by_robot`): anyone
+can open an issue, but only its author and maintainers can edit its body.
 
 PRs authored by an agent that already triages its own failures are skipped
 (`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
@@ -954,15 +956,15 @@ def _remaining_sec(deadline):
 _ROBOT_TOKENS = {}
 
 
-def _robot_gh(*args, deadline=None):
-    """Run a `gh` command as a robot and return its stdout.
+def _robot_gh(*args, deadline=None, robot_name=None):
+    """Run a `gh` command as a robot (`robot_name`, else a random one) and return its stdout.
 
     Fuzz-style jobs run without `enable_gh_auth`, so a bare `gh` in the job is
     unauthenticated. The command gets at most what is left before `deadline`.
     Raises on any failure.
     """
     timeout = 120 if deadline is None else min(120, _remaining_sec(deadline))
-    robot_name = random.choice(ROBOT_NAMES)
+    robot_name = robot_name or random.choice(ROBOT_NAMES)
     if robot_name not in _ROBOT_TOKENS:
         print(f"AI fuzz triage: using robot {robot_name}")
         _ROBOT_TOKENS[robot_name] = robot_token(robot_name)
@@ -980,6 +982,30 @@ def _robot_gh(*args, deadline=None):
             timeout=timeout,
             check=True,
         ).stdout
+
+
+_ROBOT_LOGINS = set()
+
+
+def _robot_logins():
+    """The GitHub logins of `ROBOT_NAMES`, lowercased: the accounts this triage files issues as."""
+    if not _ROBOT_LOGINS:
+        for name in ROBOT_NAMES:
+            login = _robot_gh("api", "user", "--jq", ".login", robot_name=name).strip()
+            if not login:
+                raise RuntimeError(f"no GitHub login for robot {name}")
+            _ROBOT_LOGINS.add(login.lower())
+    return _ROBOT_LOGINS
+
+
+def _filed_by_robot(issue):
+    """Whether the triage robots authored `issue`.
+
+    Anyone can open an issue, so the machine lines are trusted only on the robots' own: the body of
+    one can be edited only by its author and by users with write access to the repository.
+    """
+    login = ((issue.get("author") or {}).get("login") or "").lower()
+    return bool(login) and login in _robot_logins()
 
 
 def _github_reachable():
@@ -1081,13 +1107,15 @@ def _has_fuzz_label(issue):
 
 
 def _tracks_fingerprint(issue, fingerprint):
-    """Whether the issue's one `FINGERPRINT_LINE_RE` line names `fingerprint`.
+    """Whether the issue's one `FINGERPRINT_LINE_RE` line names `fingerprint`, on an issue the robots filed.
 
     The fingerprint quoted anywhere else, e.g. in a query, does not count, and
     neither does a body with two such lines: it cannot say which one it tracks.
+    Neither does an issue someone else filed (`_filed_by_robot`): its digest and
+    observation lines could be forged to skip the agent and turn a PR green.
     """
     found = FINGERPRINT_LINE_RE.findall(issue.get("body") or "")
-    return bool(fingerprint) and found == [fingerprint]
+    return bool(fingerprint) and found == [fingerprint] and _filed_by_robot(issue)
 
 
 def independent_occurrences(issues, fingerprint, cutoff, branch):
@@ -1145,7 +1173,7 @@ def _prior_occurrences(info, repo_name, pr_mode, fingerprint, digest):
             "--limit",
             "30",
             "--json",
-            "url,state,createdAt,body,labels",
+            "url,state,createdAt,body,labels,author",
         )
         issues = json.loads(output or "[]")
         branch = info.base_branch if pr_mode else info.git_branch
@@ -1306,9 +1334,10 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
         ]
     try:
         output = _robot_gh(
-            "issue", "view", number, "--repo", repo, "--json", "body,labels,state"
+            "issue", "view", number, "--repo", repo, "--json", "body,labels,state,author"
         )
         issue = json.loads(output) if output else None
+        by_robot = isinstance(issue, dict) and _filed_by_robot(issue)
     except Exception as e:  # noqa: BLE001 - never lose a valid verdict over this
         return False, [f"AI triage: could not verify {issue_url} ({e})"]
     if not isinstance(issue, dict):
@@ -1321,7 +1350,12 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
             f"AI triage WARNING: {issue_url} is not open, so the bug regressed "
             f"and needs a new issue carrying this fingerprint"
         )
-    if not _tracks_fingerprint(issue, fingerprint):
+    if not by_robot:
+        problems.append(
+            f"AI triage WARNING: {issue_url} was not filed by the triage robots, so "
+            f"its fingerprint and observation lines are not trusted"
+        )
+    elif not _tracks_fingerprint(issue, fingerprint):
         problems.append(
             f"AI triage WARNING: {issue_url} does not carry "
             f"`{FINGERPRINT_FIELD}: {fingerprint}` as its only fingerprint line - "
@@ -1383,7 +1417,7 @@ def _fingerprint_issues(repo_name, fingerprint, deadline):
     backlog but its index lags minutes behind, and the REST list is current but
     bounded to the newest issues - where one a sibling job just filed is.
     """
-    fields = "number,url,state,body,labels"
+    fields = "number,url,state,body,labels,author"
     issues = json.loads(
         _robot_gh(
             "search",
