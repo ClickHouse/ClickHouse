@@ -27,8 +27,6 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
-
     const Names & getColumns() const { return columns; }
 
     void applyOrder(const SortDescription & sort_description);
