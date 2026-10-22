@@ -1,3 +1,7 @@
+-- Tags: no-random-settings
+-- no-random-settings: the test pins whole EXPLAIN outputs, and the harness randomizes several
+-- settings that move the join order and with it those plans.
+
 -- The pushed side of a `cascades_aggregation_pushdown` here is a JOIN SUBTREE, not a table scan
 -- (the header, statistics and condition columns all come from a join), plus the repeated
 -- pushdown through two joins. Every executed scenario runs twice - through the cascades
@@ -35,7 +39,7 @@ SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 -- Pin (randomized in CI): the pinned EXPLAIN output below is one join order, and a DP algorithm
 -- ahead of 'greedy' picks another, moving the subtree the pushdown is supposed to land on.
-SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy';
 -- Pin (randomized in CI): the canaries assert the pushed shapes, and the scenarios below turn
 -- the cascades optimizer off outright, so this cannot leak into them.
 SET cascades_aggregation_pushdown = 1;

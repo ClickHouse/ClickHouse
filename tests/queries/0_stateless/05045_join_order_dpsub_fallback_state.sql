@@ -9,7 +9,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 -- Pin (randomized in CI): a conflict detector changes which reorderings DPsub accepts, and the
 -- pinned plans below are the ones it builds without one.
-SET query_plan_optimize_join_order_conflict_detector = '';
+SET query_plan_optimize_join_order_conflict_detector = 'c';
 -- Pin (randomized in CI): without it, and with `query_plan_remove_unused_columns = 0`, the
 -- `(a.x + b.x) = c.x` expression stays between the joins and the row estimates are lost.
 SET query_plan_merge_expression_into_join = 1;

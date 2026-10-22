@@ -15,7 +15,7 @@ SET query_plan_optimize_join_order_limit = 10;
 -- Same label, other route: CI randomizes this to 'a' or 'c', and a conflict detector lets
 -- `dpsub` reorder `ON 1` into a plain `inner`. Only `dpsub` reads this setting, so pinning
 -- it (rather than the algorithm) keeps `dpsub` itself in the randomization.
-SET query_plan_optimize_join_order_conflict_detector = '';
+SET query_plan_optimize_join_order_conflict_detector = 'c';
 
 CREATE TABLE t_int (a Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_dyn (d Dynamic) ENGINE = MergeTree ORDER BY tuple();

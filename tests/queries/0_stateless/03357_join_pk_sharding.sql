@@ -1,10 +1,12 @@
--- Tags: long, no-asan, no-msan, no-tsan
+-- Tags: long, no-asan, no-msan, no-tsan, no-random-settings
+-- no-random-settings: the test asserts on the join plan, order and sharding clauses, which the
+-- randomized join settings move around.
 
 SET explain_query_plan_default = 'legacy';
 
 -- Pinned because the test asserts on join plan/order
 SET query_plan_optimize_join_order_randomize = 0;
-SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy';
 SET query_plan_optimize_join_order_max_searched_plans = 100000;
 SET query_plan_optimize_join_order_limit = 10;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test

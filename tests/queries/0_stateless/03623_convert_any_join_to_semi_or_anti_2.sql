@@ -9,7 +9,7 @@ SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False
 -- CI randomizes this to 'a' or 'c', and either lets `dpsub` estimate the LEFT SEMI join at the
 -- right side's cardinality instead of the left's, changing the `ResultRows` asserted below. Only
 -- `dpsub` reads this setting, so pinning it (rather than the algorithm) keeps `dpsub` randomized.
-SET query_plan_optimize_join_order_conflict_detector = '';
+SET query_plan_optimize_join_order_conflict_detector = 'c';
 
 CREATE TABLE users1 (uid Int16, name String, age Int16) ENGINE=Memory;
 INSERT INTO users1 SELECT number as uid, 'Alice' as name, 30 as age FROM numbers(100000);

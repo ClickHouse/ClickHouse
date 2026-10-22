@@ -10,7 +10,7 @@ SET enable_join_runtime_filters = 0; -- Ensure all filters in the plan are from 
 SET query_plan_optimize_join_order_limit = 10;
 -- The plans below are pinned, so the join-order search has to be too: another algorithm or
 -- conflict detector reaches a different but equally valid one.
-SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_conflict_detector = '';
+SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy', query_plan_optimize_join_order_conflict_detector = 'c';
 
 CREATE TABLE t1 (a Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t2 (b Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();

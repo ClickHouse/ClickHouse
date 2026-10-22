@@ -26,9 +26,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # join returns no rows until it reads all input, `min_joined_block_size_*` because squashing
 # before the join would hold the first rows back until enough blocks accumulate,
 # `max_rows_to_group_by` because the CI profile sets it and `make_distributed_plan` rejects
-# an aggregation with a row limit, and the join order (swap and algorithm: DPsub nests the joins
-# the other way round) because a swap makes the probe table the build side, which also reads all
-# input before the first row.
+# an aggregation with a row limit, and the join order because a swap makes the probe table
+# the build side, which also reads all input before the first row. `greedy` for the same
+# reason: `dpsub` puts the sleeping scan on the build side of the top join by reordering
+# rather than by swapping, so `query_plan_join_swap_table` does not hold it back.
 # The bucket counts are pinned because the reference is derived from them, and
 # `distributed_plan_fallback_to_local_execution` so a plan that cannot be distributed fails.
 COMMON_SETTINGS="make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 0,

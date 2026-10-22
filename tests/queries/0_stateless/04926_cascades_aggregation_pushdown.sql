@@ -45,7 +45,7 @@ SET join_runtime_filter_min_probe_rows = 1000;
 SET query_plan_optimize_join_order_limit = 10;
 -- Case 26 is the only three-join query, so the join-order search has freedom: an algorithm list
 -- that leads with `dpsub` reaches a different but equally valid order and reshapes its plan.
-SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy';
 -- `compatibility` only lowers settings the user has not set, and the harness passes
 -- `cascades_aggregation_pushdown` explicitly, which would make case 1b measure nothing.
 SET cascades_aggregation_pushdown = DEFAULT;

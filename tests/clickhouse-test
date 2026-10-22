@@ -2089,9 +2089,9 @@ class SettingsRandomizer:
         # Reachable: dpsub is in the algorithm list above. The detector decides which reorderings
         # DPsub considers valid, so an unsound one is a wrong-results bug. The two `cd_a`/`cd_c`
         # flags this replaces were renamed into this enum in 26.9 with no alias kept, and the bug
-        # that kept them disabled (#118520) is fixed. The default `''` (no detector) is left out
-        # because `cli_format_settings` renders an empty value as a bare `--setting` that swallows
-        # the next option; it still runs whenever the algorithm list above excludes dpsub.
+        # that kept them disabled (#118520) is fixed. The default is `'c'`; `''` (no detector) is left
+        # out because `cli_format_settings` renders an empty value as a bare `--setting` that swallows
+        # the next option.
         #"query_plan_optimize_join_order_conflict_detector": lambda: random.choice(["a", "c"]),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
