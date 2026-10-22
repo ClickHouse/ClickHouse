@@ -14,7 +14,6 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/transformEndianness.h>
@@ -478,9 +477,23 @@ void NetCDFBlockInputFormat::initialize()
     {
         /// The data of the variables is scattered over the file and is not read in the order in
         /// which it is stored, so an input that cannot be seeked has to be kept in memory.
+        /// The copy stops when the query is cancelled, and a partially copied file is not parsed.
         {
             WriteBufferFromString content_out(content);
-            copyData(*in, content_out);
+            while (!in->eof())
+            {
+                if (isCancelled())
+                    break;
+                content_out.write(in->position(), in->available());
+                in->position() = in->buffer().end();
+            }
+        }
+
+        if (isCancelled())
+        {
+            content.clear();
+            content.shrink_to_fit();
+            return;
         }
 
         file_size = content.size();
@@ -914,7 +927,7 @@ Chunk NetCDFBlockInputFormat::read()
     if (!is_initialized)
         initialize();
 
-    if (current_row >= layout.num_rows)
+    if (isCancelled() || current_row >= layout.num_rows)
         return {};
 
     approx_bytes_read_for_chunk = 0;
