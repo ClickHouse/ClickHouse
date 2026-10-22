@@ -93,6 +93,11 @@ namespace
     }
 }
 
+bool isSystemNamedCollectionsTable(const QualifiedTableName & table_name)
+{
+    return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
+}
+
 bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
 {
     return std::ranges::any_of(elements, wildcardElementCoversSystemNamedCollections);

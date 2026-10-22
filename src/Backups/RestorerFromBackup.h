@@ -79,7 +79,9 @@ private:
     Mode mode = Mode::RESTORE;
     Strings all_hosts;
 
-    /// Whether restoreNamedCollections found named collections to restore in the backup.
+    /// Whether named collections are restored into this host's storage - by this host or, with a
+    /// shared (replicated) storage, possibly by another host, in which case this host reloads them
+    /// after the stage barrier that follows restoreNamedCollections.
     bool named_collections_restored = false;
 
     void findDatabasesAndTablesInBackup();
@@ -88,6 +90,17 @@ private:
 
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
+
+    /// Returns the data path of the "system.named_collections" table in the backup, or an empty
+    /// string when this host's part of the backup holds no named collections.
+    String findNamedCollectionsDataPathInBackup() const;
+
+    /// Registers with the restore coordination the directory this host would restore the named
+    /// collections from, so that with a shared (replicated) named-collections storage the one host
+    /// restoring it can process the directories of every host sharing it. Runs in the
+    /// FINDING_TABLES_IN_BACKUP stage: the stage barrier before CHECKING_ACCESS_RIGHTS separates
+    /// every registration from the restore.
+    void registerNamedCollectionsForRestore();
 
     /// Restores named collections from the backup (if the backup has the "system.named_collections"
     /// table) before any database or table is created, because database and table engines resolve

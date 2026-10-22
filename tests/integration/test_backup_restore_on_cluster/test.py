@@ -92,6 +92,9 @@ def drop_after_test():
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
         node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc")
         node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_mismatch")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_host1")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_host2")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_dup")
 
 
 backup_id_counter = 0
@@ -1314,6 +1317,90 @@ def test_system_named_collections_key_mismatch():
         "1\n",
     )
     node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
+
+
+def test_system_named_collections_distinct_sources():
+    # A backup taken from hosts whose named-collections storages are not shared holds the
+    # collections of each host in its own directory of the backup. Restoring it onto hosts
+    # sharing one Keeper storage must restore the union of those directories - restoring only
+    # the directory of the host that acquires the restore would silently lose the others' -
+    # and refuse conflicting definitions of the same collection before anything is created.
+    storage_config = "/etc/clickhouse-server/config.d/named_collections_storage.xml"
+    local_path = "/var/lib/clickhouse/named_collections_distinct_sources/"
+    try:
+        # Move node2 to a per-host (local encrypted) storage with the same key, modeling a
+        # cluster backed up before its hosts shared a named-collections storage.
+        node2.replace_in_config(
+            storage_config, "zookeeper_encrypted", "local_encrypted"
+        )
+        node2.replace_in_config(storage_config, "/named_collections_path/", local_path)
+        node2.restart_clickhouse()
+
+        node1.query(
+            "CREATE NAMED COLLECTION backup_nc_host1 AS key1 = 'nc_host1_value'"
+        )
+        node2.query(
+            "CREATE NAMED COLLECTION backup_nc_host2 AS key1 = 'nc_host2_value'"
+        )
+        backup_name = new_backup_name()
+        node1.query(
+            f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}"
+        )
+
+        # A second backup also holding a collection the two hosts define differently.
+        node1.query("CREATE NAMED COLLECTION backup_nc_dup AS key1 = 'host1'")
+        node2.query("CREATE NAMED COLLECTION backup_nc_dup AS key1 = 'host2'")
+        conflicting_backup_name = new_backup_name()
+        node1.query(
+            f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {conflicting_backup_name}"
+        )
+
+        node1.query("DROP NAMED COLLECTION backup_nc_host1")
+        node1.query("DROP NAMED COLLECTION backup_nc_dup")
+        node2.query("DROP NAMED COLLECTION backup_nc_host2")
+        node2.query("DROP NAMED COLLECTION backup_nc_dup")
+    finally:
+        node2.replace_in_config(
+            storage_config, "local_encrypted", "zookeeper_encrypted"
+        )
+        node2.replace_in_config(storage_config, local_path, "/named_collections_path/")
+        node2.restart_clickhouse()
+
+    # The hosts share the Keeper storage again: the restore must bring back the collections of
+    # both directories, visible on both hosts without waiting for the Keeper watch. (The values
+    # cannot be read back here - displaying them needs the `display_secrets_in_show_and_select`
+    # server config - but each backup entry is one authenticated CREATE statement, so a restored
+    # name proves its values came with it.)
+    node1.query(
+        f"RESTORE TABLE system.named_collections ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+    for node in [node1, node2]:
+        assert node.query(
+            "SELECT name, mapKeys(collection) FROM system.named_collections "
+            "WHERE name LIKE 'backup_nc_host%' ORDER BY name"
+        ) == TSV(
+            [
+                ["backup_nc_host1", "['key1']"],
+                ["backup_nc_host2", "['key1']"],
+            ]
+        )
+    node1.query("DROP NAMED COLLECTION backup_nc_host1")
+    node1.query("DROP NAMED COLLECTION backup_nc_host2")
+
+    # Conflicting definitions of one name cannot coexist in one shared storage, and silently
+    # picking one of them would restore wrong values: the restore is refused before anything
+    # has been created.
+    expected_error = "define the same named collection differently"
+    assert expected_error in node1.query_and_get_error(
+        f"RESTORE TABLE system.named_collections ON CLUSTER 'cluster' FROM {conflicting_backup_name}"
+    )
+    for node in [node1, node2]:
+        assert (
+            node.query(
+                "SELECT count() FROM system.named_collections WHERE name LIKE 'backup_nc%'"
+            )
+            == "0\n"
+        )
 
 
 def test_projection():

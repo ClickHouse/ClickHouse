@@ -21,7 +21,9 @@
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
@@ -158,42 +160,82 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
 }
 
 
-void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_path_in_backup)
+void registerNamedCollectionsDirForRestore(RestorerFromBackup & restorer, const String & data_path_in_backup)
+{
+    const auto storage_properties = NamedCollectionFactory::instance().getMetadataStorageProperties();
+    if (!storage_properties.is_replicated)
+        return;
+    restorer.getRestoreCoordination()->addReplicatedNamedCollectionsDir(storage_properties.replication_id, data_path_in_backup);
+}
+
+
+bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
     auto context = restorer.getContext();
     auto & factory = NamedCollectionFactory::instance();
     const auto storage_properties = factory.getMetadataStorageProperties();
 
-    if (storage_properties.is_replicated
-        && !restorer.getRestoreCoordination()->acquireReplicatedNamedCollections(storage_properties.replication_id))
-        return; /// Other replica is already restoring named collections.
+    Strings data_paths;
+    if (storage_properties.is_replicated)
+    {
+        auto restore_coordination = restorer.getRestoreCoordination();
+
+        if (data_path_in_backup.empty())
+        {
+            /// This host's part of the backup holds no named collections, but a host sharing this
+            /// storage may restore the ones its own part holds, and then this host has to reload.
+            return !restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id).empty();
+        }
+
+        if (!restore_coordination->acquireReplicatedNamedCollections(storage_properties.replication_id))
+            return true; /// Other replica is already restoring named collections into the shared storage.
+
+        /// The directories registered by every host sharing this storage. They hold identical
+        /// entries when the backup was taken from hosts sharing a storage the same way, but a
+        /// backup taken from hosts with per-host storages (e.g. the `local` type) holds the
+        /// collections of each host in its own directory, and restoring just this host's
+        /// directory would silently lose the collections of the others.
+        data_paths = restore_coordination->getReplicatedNamedCollectionsDirs(storage_properties.replication_id);
+        if (std::find(data_paths.begin(), data_paths.end(), data_path_in_backup) == data_paths.end())
+            data_paths.push_back(data_path_in_backup);
+        ::sort(data_paths.begin(), data_paths.end());
+    }
+    else
+    {
+        if (data_path_in_backup.empty())
+            return false;
+        data_paths = {data_path_in_backup};
+    }
 
     auto backup = restorer.getBackup();
-    fs::path data_path_in_backup_fs{data_path_in_backup};
 
-    Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
-    if (filenames.empty())
-        return; /// Nothing to restore (in particular, a backup taken before named collections were backed up).
-
-    ::sort(filenames.begin(), filenames.end());
-
+    std::vector<std::pair<String /* data path */, String /* filename */>> entry_files;
     bool backup_is_encrypted = false;
-    for (const auto & filename : filenames)
+    for (const auto & data_path : data_paths)
     {
-        if (filename.ends_with(encrypted_sql_extension))
-            backup_is_encrypted = true;
-        /// The entry file names are the collection names, and seeing those requires a right
-        /// (`SHOW NAMED COLLECTIONS`) which restoring does not: an operator must be able to restore
-        /// a backup without being able to read it. So no error below names an entry.
-        else if (!filename.ends_with(sql_extension))
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot restore named collections: backup {} contains an entry whose file name has neither the {} "
-                "nor the {} extension",
-                backup->getNameForLogging(),
-                sql_extension,
-                encrypted_sql_extension);
+        Strings filenames = backup->listFiles(data_path, /*recursive*/ false);
+        ::sort(filenames.begin(), filenames.end());
+        for (auto & filename : filenames)
+        {
+            if (filename.ends_with(encrypted_sql_extension))
+                backup_is_encrypted = true;
+            /// The entry file names are the collection names, and seeing those requires a right
+            /// (`SHOW NAMED COLLECTIONS`) which restoring does not: an operator must be able to restore
+            /// a backup without being able to read it. So no error below names an entry.
+            else if (!filename.ends_with(sql_extension))
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore named collections: backup {} contains an entry whose file name has neither the {} "
+                    "nor the {} extension",
+                    backup->getNameForLogging(),
+                    sql_extension,
+                    encrypted_sql_extension);
+            entry_files.emplace_back(data_path, std::move(filename));
+        }
     }
+
+    if (entry_files.empty())
+        return false; /// Nothing to restore (in particular, a backup taken before named collections were backed up).
 
     if (backup_is_encrypted && !storage_properties.is_encrypted)
         throw Exception(
@@ -210,10 +252,16 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     /// collections are restored before any database or table is created, nothing has been
     /// restored at all at this point.
     std::vector<ASTPtr> create_queries;
-    create_queries.reserve(filenames.size());
-    for (const auto & filename : filenames)
+    create_queries.reserve(entry_files.size());
+    /// With several directories the same collection legitimately appears in more than one of them
+    /// (the backup of a shared storage holds an identical directory for every host sharing it), so
+    /// identical definitions collapse into one. The same name with a different definition means
+    /// the directories hold collections which could not have coexisted in one storage; silently
+    /// picking one of the definitions would restore wrong values, so such a backup is refused.
+    std::unordered_map<String /* collection name */, String /* formatted statement */> statements_by_name;
+    for (const auto & [entry_data_path, filename] : entry_files)
     {
-        String filepath = data_path_in_backup_fs / filename;
+        String filepath = fs::path(entry_data_path) / filename;
         String stored;
         try
         {
@@ -254,13 +302,14 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             throw;
         }
 
+        ASTPtr ast;
         try
         {
             /// Keeps the parser exception, which embeds the decrypted statement, out of the error
             /// statistics; see the read above.
             Exception::SuppressErrorCodesScope suppress_error_codes;
             ParserCreateNamedCollectionQuery parser;
-            ASTPtr ast = parseQuery(
+            ast = parseQuery(
                 parser,
                 statement.data(),
                 statement.data() + statement.size(),
@@ -268,7 +317,6 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
                 0,
                 context->getSettingsRef()[Setting::max_parser_depth],
                 context->getSettingsRef()[Setting::max_parser_backtracks]);
-            create_queries.push_back(std::move(ast));
         }
         catch (const Exception &)
         {
@@ -286,6 +334,24 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
                 "the entry may be corrupted (SETTINGS restore_named_collections = false skips restoring named collections)",
                 backup->getNameForLogging());
         }
+
+        /// Like the errors above, the conflict error below names no collection.
+        const auto & parsed_create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
+        String formatted_statement = ast->formatWithSecretsOneLine();
+        if (auto [it, inserted] = statements_by_name.try_emplace(parsed_create_query.collection_name, formatted_statement); !inserted)
+        {
+            if (it->second != formatted_statement)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore named collections: the directories of different hosts in backup {} define the same "
+                    "named collection differently, and the named collections storage of this server is shared by all "
+                    "the hosts restoring them. Restore the collections of one host with SETTINGS shard_num_in_backup / "
+                    "replica_num_in_backup, or skip them with SETTINGS restore_named_collections = false",
+                    backup->getNameForLogging());
+            continue; /// The same collection from another host's identical directory.
+        }
+
+        create_queries.push_back(std::move(ast));
     }
 
     const auto & restore_settings = restorer.getRestoreSettings();
@@ -351,6 +417,7 @@ void restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             "names are defined in the server configuration",
             kept_from_config_count);
     LOG_DEBUG(log, "Restored {} named collections from backup", restored_count);
+    return true;
 }
 
 

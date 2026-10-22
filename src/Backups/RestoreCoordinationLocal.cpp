@@ -4,6 +4,8 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -58,6 +60,23 @@ bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
 bool RestoreCoordinationLocal::acquireReplicatedNamedCollections(const String &)
 {
     return true;
+}
+
+void RestoreCoordinationLocal::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    std::lock_guard lock{mutex};
+    auto & dirs = replicated_named_collections_dirs[replication_id];
+    if (std::find(dirs.begin(), dirs.end(), dir_path) == dirs.end())
+        dirs.push_back(dir_path);
+}
+
+Strings RestoreCoordinationLocal::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_named_collections_dirs.find(replication_id);
+    if (it == replicated_named_collections_dirs.end())
+        return {};
+    return it->second;
 }
 
 bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)

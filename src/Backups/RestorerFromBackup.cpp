@@ -176,6 +176,13 @@ void RestorerFromBackup::run(Mode mode_)
     findDatabasesAndTablesInBackup();
     logNumberOfDatabasesAndTablesToRestore();
 
+    /// While still in the FINDING_TABLES_IN_BACKUP stage, tell the other hosts which directory of
+    /// the backup this host would restore the named collections from: with a shared (replicated)
+    /// named-collections storage the one host restoring it processes the directories of all the
+    /// hosts sharing it (see restoreNamedCollections below), and the stage barrier below makes
+    /// every registration visible to it before it reads them.
+    registerNamedCollectionsForRestore();
+
     /// Check access rights.
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
@@ -738,35 +745,49 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
+String RestorerFromBackup::findNamedCollectionsDataPathInBackup() const
+{
+    std::lock_guard lock{mutex};
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (isSystemNamedCollectionsTableName(table_name) && table_info.has_data)
+        {
+            if (table_info.partitions)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore the `system.named_collections` table with a PARTITIONS clause: "
+                    "it doesn't support partitions");
+
+            return table_info.data_path_in_backup;
+        }
+    }
+    return {};
+}
+
+void RestorerFromBackup::registerNamedCollectionsForRestore()
+{
+    /// The initiating host of a RESTORE ON CLUSTER query checks access rights through a restorer
+    /// without a coordination (see BackupsWorker) and restores nothing, so it registers nothing.
+    if (!restore_coordination || !restore_settings.shouldRestoreNamedCollections())
+        return;
+
+    String data_path_in_backup = findNamedCollectionsDataPathInBackup();
+    if (data_path_in_backup.empty())
+        return;
+
+    DB::registerNamedCollectionsDirForRestore(*this, data_path_in_backup);
+}
+
 void RestorerFromBackup::restoreNamedCollections()
 {
     if (!restore_settings.shouldRestoreNamedCollections())
         return;
 
-    String data_path_in_backup;
-    {
-        std::lock_guard lock{mutex};
-        for (const auto & [table_name, table_info] : table_infos)
-        {
-            if (isSystemNamedCollectionsTableName(table_name) && table_info.has_data)
-            {
-                if (table_info.partitions)
-                    throw Exception(
-                        ErrorCodes::CANNOT_RESTORE_TABLE,
-                        "Cannot restore the `system.named_collections` table with a PARTITIONS clause: "
-                        "it doesn't support partitions");
-
-                data_path_in_backup = table_info.data_path_in_backup;
-                break;
-            }
-        }
-    }
-
-    if (data_path_in_backup.empty())
-        return;
-
-    named_collections_restored = true;
-    DB::restoreNamedCollections(*this, data_path_in_backup);
+    /// The data path is empty when this host's part of the backup holds no named collections, but
+    /// a host sharing a replicated storage with this one may still restore the collections of its
+    /// own part, and then this host has to reload them after the stage barrier; the return value
+    /// covers both.
+    named_collections_restored = DB::restoreNamedCollections(*this, findNamedCollectionsDataPathInBackup());
 }
 
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)

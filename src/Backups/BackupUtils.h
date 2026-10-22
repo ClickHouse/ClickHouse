@@ -21,6 +21,9 @@ namespace BackupUtils
 /// Initializes a DDLRenamingMap from a BACKUP or RESTORE query.
 DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements);
 
+/// Whether a specified name is the name of the `system.named_collections` table.
+bool isSystemNamedCollectionsTable(const QualifiedTableName & table_name);
+
 /// Whether a DATABASE or ALL element of the query selects the `system.named_collections` table.
 bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements);
 

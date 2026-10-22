@@ -65,6 +65,8 @@ public:
     /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
     bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) override;
     bool acquireReplicatedNamedCollections(const String & replication_id) override;
+    void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
+    Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
 
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
