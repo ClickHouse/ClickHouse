@@ -387,7 +387,11 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         {
             if (!event.entity) // DROP
             {
-                // Rule 1: Entity can only be removed after all existing references to it are removed as well.
+                // Rule 1: Entity can only be removed after all existing references to it are removed as well. A recreated
+                // resource is exempt: its create event follows the drop immediately, so its references stay valid between
+                // changes, while waiting for them would make a cycle with rule 2.
+                if (change.recreates())
+                    continue;
                 for (const auto & source : old_sources[change.key])
                 {
                     if (change_by_key.contains(source))
