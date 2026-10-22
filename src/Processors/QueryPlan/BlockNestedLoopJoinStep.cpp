@@ -353,13 +353,13 @@ String BlockNestedLoopJoinStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown block nested loop join stage {}", group);
 }
 
-StepAnalyzer BlockNestedLoopJoinStep::captureAnalyzer() const
+StepAnalyzer BlockNestedLoopJoinStep::makeAnalyzer() const
 {
     /// A plan is analysed only under `EXPLAIN ANALYZE` or `log_query_plans`, and both turn the
     /// analyze mode on for the whole query before the interpreter is built.
     chassert(analyze_mode != JoinAnalyzeMode::None, "BlockNestedLoopJoinStep analyzed without the analyze mode");
 
-    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
     JoinAnalysisInputs join_inputs;
     join_inputs.is_block_nested_loop = true;

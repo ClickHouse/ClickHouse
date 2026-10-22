@@ -337,9 +337,9 @@ static JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_process
     return counters;
 }
 
-StepAnalyzer JoinStep::captureAnalyzer() const
+StepAnalyzer JoinStep::makeAnalyzer() const
 {
-    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
     JoinAnalysisInputs join_inputs;
     join_inputs.join = join;
@@ -608,9 +608,9 @@ void FilledJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
 
-StepAnalyzer FilledJoinStep::captureAnalyzer() const
+StepAnalyzer FilledJoinStep::makeAnalyzer() const
 {
-    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
 
     /// A filled join always keeps the storage on the right and never carries an estimation.
     JoinAnalysisInputs join_inputs;

@@ -277,9 +277,9 @@ static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processo
     return {{MetricGroupKey::Memory, std::move(memory_metrics)}};
 }
 
-StepAnalyzer AggregatingStep::captureAnalyzer() const
+StepAnalyzer AggregatingStep::makeAnalyzer() const
 {
-    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
     analyzer.reporter = [](StepProcessors step_processors) { return aggregationAnalysisReport(step_processors); };
     return analyzer;
 }
@@ -963,9 +963,9 @@ String AggregatingProjectionStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingProjectionStep group {}", group);
 }
 
-StepAnalyzer AggregatingProjectionStep::captureAnalyzer() const
+StepAnalyzer AggregatingProjectionStep::makeAnalyzer() const
 {
-    StepAnalyzer analyzer = IQueryPlanStep::captureAnalyzer();
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
     analyzer.reporter = [](StepProcessors step_processors) { return aggregationAnalysisReport(step_processors); };
     return analyzer;
 }

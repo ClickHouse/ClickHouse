@@ -65,7 +65,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalyzer captureAnalyzer() const override;
+    StepAnalyzer makeAnalyzer() const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
@@ -226,7 +226,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalyzer captureAnalyzer() const override;
+    StepAnalyzer makeAnalyzer() const override;
 
     const Aggregator::Params & getParams() const { return params; }
 

@@ -226,7 +226,7 @@ public:
     /// An analyzer for this step: its stages, how to read its processors, and how to shape what
     /// comes out. It captures what it needs by value and runs after the step is gone.
     /// The default reports no metrics of its own and shapes the stages the ordinary way.
-    virtual StepAnalyzer captureAnalyzer() const;
+    virtual StepAnalyzer makeAnalyzer() const;
 
 protected:
     virtual void updateOutputHeader() = 0;
