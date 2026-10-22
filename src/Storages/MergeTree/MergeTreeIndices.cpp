@@ -107,9 +107,8 @@ NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
 namespace
 {
 
-/// Does the index column `name` hold a subcolumn of the Map column `map_column_name`? The index expression
-/// must output that input unchanged, and a part computes it as `Block::findSubcolumnByName` does: from a
-/// column named `name`, else from the shortest column prefix that has the rest as a subcolumn.
+/// A part computes the index column `name` as `Block::findSubcolumnByName` does: from a column named `name`,
+/// else from the shortest column prefix that has the rest as a subcolumn.
 bool isMapSubcolumnIndexColumn(
     const ActionsDAG & dag, const ColumnsDescription & columns, const String & name, const String & map_column_name)
 {
@@ -149,7 +148,6 @@ NameToNameMap IMergeTreeIndex::getMapSubcolumnIndexColumns() const
             String map_column_name = index_column.name.substr(0, index_column.name.size() - suffix.size());
             String function_column_name = fmt::format("{}({})", function_name, map_column_name);
 
-            /// An index on the function itself is used as is.
             if (!index.sample_block.has(function_column_name)
                 && isMapSubcolumnIndexColumn(dag, columns, index_column.name, map_column_name))
                 result.emplace(std::move(function_column_name), index_column.name);
