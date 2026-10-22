@@ -4,7 +4,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBufferFromString.h>

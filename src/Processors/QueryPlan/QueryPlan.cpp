@@ -12,7 +12,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/QueryPlanProfiler.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanProfiler.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
