@@ -79,7 +79,7 @@ private:
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
-    std::vector<String> data_file_keys;
+    std::vector<std::pair<ObjectStoragePtr, String>> data_file_objects;
     std::vector<UInt64> data_file_row_counts;
     std::vector<UInt64> data_file_byte_counts;
     std::unique_ptr<WriteBufferFromFileBase> buffer;

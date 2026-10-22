@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 #if USE_AVRO
 
 static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
@@ -72,17 +67,12 @@ void MultipleFileWriter::startNewFile()
     current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     /// Resolved as a scan resolves it, so that the next read finds the written file.
-    auto [storage, storage_path] = resolveObjectStorageForPath(
+    auto [storage, storage_path] = resolveObjectStorageForWrite(
         path_resolver.getTableLocation(), metadata_path.serialize(), object_storage, external_storages, context, path_resolver);
-    if (storage != object_storage)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Writing data file '{}' outside of the storage of the table is not supported",
-            metadata_path);
 
     data_file_names.push_back(metadata_path);
-    data_file_keys.push_back(storage_path);
-    buffer = object_storage->writeObject(
+    data_file_objects.emplace_back(storage, storage_path);
+    buffer = storage->writeObject(
         StoredObject(storage_path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     if (format_settings)
@@ -148,8 +138,8 @@ void MultipleFileWriter::cancel()
 
 void MultipleFileWriter::clearAllDataFiles() const
 {
-    for (const auto & key : data_file_keys)
-        object_storage->removeObjectIfExists(StoredObject(key));
+    for (const auto & [storage, key] : data_file_objects)
+        storage->removeObjectIfExists(StoredObject(key));
 }
 
 UInt64 MultipleFileWriter::getResultBytes() const

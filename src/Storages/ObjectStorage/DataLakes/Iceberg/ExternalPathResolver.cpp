@@ -385,7 +385,6 @@ namespace
 /// Path restrictions are skipped, because they do not affect grants and are enforced when the storage is resolved.
 struct PathAccessCheck
 {
-    DB::AccessType access_type = DB::AccessType::READ;
     bool granted = true;
 };
 }
@@ -396,6 +395,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     const DB::ObjectStoragePtr & base_storage,
     ExternalStorageCache & external_storages,
     const DB::ContextPtr & context,
+    DB::AccessType access_type,
     PathAccessCheck * access_check)
 {
     if (!isAbsolutePath(path))
@@ -490,10 +490,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             uri_to_check = boost::replace_all_copy(path, "%", "%25");
         if (access_check)
             access_check->granted = context->getAccess()->isGrantedWithFilter(
-                access_check->access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
+                access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
         else
             context->getAccess()->checkAccessWithFilter(
-                DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), uri_to_check);
+                access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
     };
 
     auto check_remote_host = [&](const std::string & url)
@@ -991,7 +991,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     ExternalStorageCache & external_storages,
     const DB::ContextPtr & context)
 {
-    return tryResolveObjectStorageForPathImpl(table_location, path, base_storage, external_storages, context, /*access_check*/ nullptr);
+    return tryResolveObjectStorageForPathImpl(
+        table_location, path, base_storage, external_storages, context, DB::AccessType::READ, /*access_check*/ nullptr);
 }
 
 static PathAccessCheck checkPathAccess(
@@ -1002,8 +1003,8 @@ static PathAccessCheck checkPathAccess(
     DB::AccessType access_type)
 {
     ExternalStorageCache unused_storages;
-    PathAccessCheck access_check{.access_type = access_type};
-    tryResolveObjectStorageForPathImpl(table_location, path, base_storage, unused_storages, context, &access_check);
+    PathAccessCheck access_check;
+    tryResolveObjectStorageForPathImpl(table_location, path, base_storage, unused_storages, context, access_type, &access_check);
     return access_check;
 }
 
@@ -1044,6 +1045,20 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const Iceberg::IcebergPathResolver & path_resolver)
 {
     if (auto resolved = tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context))
+        return *resolved;
+    return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
+}
+
+std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForWrite(
+    const std::string & table_location,
+    const std::string & path,
+    const DB::ObjectStoragePtr & base_storage,
+    ExternalStorageCache & external_storages,
+    const DB::ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver)
+{
+    if (auto resolved = tryResolveObjectStorageForPathImpl(
+            table_location, path, base_storage, external_storages, context, DB::AccessType::WRITE, /*access_check*/ nullptr))
         return *resolved;
     return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
 }

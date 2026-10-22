@@ -67,6 +67,15 @@ std::pair<ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const ContextPtr & context,
     const Iceberg::IcebergPathResolver & path_resolver);
 
+/// Resolves the storage of a new file at `path` as a scan resolves it, but checks the `WRITE` grant instead of `READ`.
+std::pair<ObjectStoragePtr, std::string> resolveObjectStorageForWrite(
+    const std::string & table_location,
+    const std::string & path,
+    const ObjectStoragePtr & base_storage,
+    ExternalStorageCache & external_storages,
+    const ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver);
+
 bool isObjectInTableDirectory(
     const ObjectStoragePtr & storage,
     const std::string & key,

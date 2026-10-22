@@ -372,12 +372,22 @@ def test_insert_into_write_data_path_with_other_s3_spelling(started_cluster_iceb
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (4, 'delta')", settings={"allow_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS + "4\tdelta\n"
 
+    # Writing to `write.data.path` requires the `WRITE` grant on it, not `READ`.
+    user = f"user_{TABLE_NAME}"
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT INSERT ON {TABLE_NAME} TO {user}")
+    instance.query(f"GRANT WRITE ON S3('s3://{bucket}/{external_prefix}/.*') TO {user}")
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (5, 'epsilon')", user=user, settings={"allow_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS + "4\tdelta\n5\tepsilon\n"
+
     written = [
         obj.object_name
         for obj in started_cluster_iceberg_with_spark.minio_client.list_objects(bucket, prefix=f"{external_prefix}/", recursive=True)
     ]
-    assert len(written) == 1 and written[0].endswith(".parquet"), written
+    assert len(written) == 2 and all(name.endswith(".parquet") for name in written), written
 
+    instance.query(f"DROP USER {user}")
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
