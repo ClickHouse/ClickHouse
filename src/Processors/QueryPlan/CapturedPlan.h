@@ -48,20 +48,25 @@ struct CapturedPlan
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
 
-    std::vector<CapturedStep> nodes;};
+    std::vector<CapturedStep> nodes;
 
-/// Captures the plan into a `CapturedPlan` object
-///
-/// Must run after that plan's pipeline has executed and while it is still alive, for two reasons:
-/// `buildQueryPipeline` optimizes the plan, so the shape that ran is only visible afterwards, and
-/// the statistics are read from the pipeline's processors. `pretty_names` is the one input that has
-/// to have been captured *before* the pipeline was built, since building it moves the `ActionsDAG`
-/// out of every expression step.
-CapturedPlan capturePlan(
-    const QueryPlan & plan,
-    const ExplainPlanOptions & options,
-    size_t max_description_length,
-    const AnalyzeStepsStats * steps_to_stats,
-    const PrettyNamesPerPlan * pretty_names);
+    /// Reads a plan into a `CapturedPlan`.
+    ///
+    /// Must run after that plan's pipeline has been built and while the plan is still alive:
+    /// `buildQueryPipeline` optimizes the plan, so the shape that will run is only visible
+    /// afterwards, as are the index analysis and the child plans built along the way.
+    /// `pretty_names` is the one input that has to have been read *before* the pipeline was
+    /// built, since building it moves the `ActionsDAG` out of every expression step.
+    ///
+    /// `steps_to_stats` fills the statistics in as the plan is read, for a caller that already
+    /// has them. The logged plan does not: it captures before the query runs and fills them in
+    /// afterwards, through `QueryPlanProfiler::captureStatistics`.
+    static CapturedPlan capture(
+        const QueryPlan & plan,
+        const ExplainPlanOptions & options,
+        size_t max_description_length,
+        const AnalyzeStepsStats * steps_to_stats,
+        const PrettyNamesPerPlan * pretty_names);
+};
 
 }

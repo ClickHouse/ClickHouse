@@ -112,7 +112,7 @@ void QueryPlanProfiler::capturePlanStructure(const QueryPlan & plan, const Prett
     chassert(!captured);
 
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
-    captured = capturePlan(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
+    captured = CapturedPlan::capture(plan, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 }
 
 void QueryPlanProfiler::captureStatistics(QueryPipeline & pipeline)

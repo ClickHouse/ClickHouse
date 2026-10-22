@@ -217,7 +217,7 @@ std::vector<CapturedStep> capturePlanSteps(
 
 }
 
-CapturedPlan capturePlan(
+CapturedPlan CapturedPlan::capture(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
