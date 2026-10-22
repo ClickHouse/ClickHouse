@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
-# no-parallel: creates and drops a global named collection
+# Tags: no-replicated-database
 # no-replicated-database: named collections are server-global, not database-scoped
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
