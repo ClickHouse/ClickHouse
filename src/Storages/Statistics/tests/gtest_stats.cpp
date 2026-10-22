@@ -647,6 +647,8 @@ TEST(Statistics, StructureEqualsConsidersDataType)
 
 TEST(Statistics, BasicDefaultCountNonNullable)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
     MutableColumnPtr col = data_type->createColumn();
     /// 10 rows, 4 of them equal to the default (0).
@@ -754,6 +756,8 @@ TEST(Statistics, BasicDefaultCountNullableIsNullCount)
 
 TEST(Statistics, BasicDefaultCountRoundTrip)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
     MutableColumnPtr col = data_type->createColumn();
     for (Int64 i = 0; i < 8; ++i)
@@ -862,12 +866,15 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
 /// gain one when a mutation re-serializes them, and must stay compatible with new ones for the selectivity estimator.
 TEST(Statistics, BasicSumMissingFromOlderStatistics)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt64>();
     MutableColumnPtr col = data_type->createColumn();
     col->insert(Field(std::numeric_limits<Int64>::max()));
     col->insert(Field(Int64(1)));
     auto fresh = createTestStats({StatisticsType::Basic}, data_type);
     fresh->build(std::move(col));
+    /// `max + 1` wraps around to the minimum, as in `sum`, which computes the statistics' sum.
     ASSERT_EQ(fresh->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
 
     String older_payload;
@@ -936,6 +943,8 @@ TEST(Statistics, BasicDefaultCountArray)
 /// of the type mask -- the reverted `NullCount` -- must be skipped rather than parsed as `Basic`.
 TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeInt32>();
 
     auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)

@@ -34,9 +34,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
@@ -59,11 +56,6 @@ namespace Setting
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
     extern const SettingsBool use_statistics_for_sum_avg_aggregation;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -1014,36 +1006,6 @@ static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projec
 /// Pseudo projection name used to indicate aggregation from column statistics
 static constexpr const char * STATISTICS_PROJECTION_NAME = "_statistics_projection";
 
-/// Builds the state from its serialized form, the little-endian accumulator followed by the count for
-/// `avg` and `sumCount`, because the in-memory layout of the states is not a stable interface.
-static void deserializeSumState(
-    const IAggregateFunction & function, AggregateDataPtr place, const Field & sum, std::optional<UInt64> count, Arena & arena)
-{
-    WriteBufferFromOwnString out;
-    switch (sum.getType())
-    {
-        case Field::Types::Int64: writeBinaryLittleEndian(sum.safeGet<Int64>(), out); break;
-        case Field::Types::UInt64: writeBinaryLittleEndian(sum.safeGet<UInt64>(), out); break;
-        case Field::Types::Int128: writeBinaryLittleEndian(sum.safeGet<Int128>(), out); break;
-        case Field::Types::UInt128: writeBinaryLittleEndian(sum.safeGet<UInt128>(), out); break;
-        case Field::Types::Int256: writeBinaryLittleEndian(sum.safeGet<Int256>(), out); break;
-        case Field::Types::UInt256: writeBinaryLittleEndian(sum.safeGet<UInt256>(), out); break;
-        case Field::Types::Decimal128: writeBinaryLittleEndian(sum.safeGet<DecimalField<Decimal128>>().getValue(), out); break;
-        case Field::Types::Decimal256: writeBinaryLittleEndian(sum.safeGet<DecimalField<Decimal256>>().getValue(), out); break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected sum type {} for `{}`", sum.getTypeName(), function.getName());
-    }
-    if (count)
-        writeVarUInt(*count, out);
-    out.finalize();
-
-    ReadBufferFromString in(out.str());
-    function.deserialize(place, in, std::nullopt, &arena);
-    if (!in.eof())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "State of `{}` built from statistics has {} unread byte(s)",
-            function.getName(), in.available());
-}
-
 /// Compute the states of the aggregate functions over the parts whose column statistics
 /// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
 /// with one row of aggregate function states, or an empty block if no part could be covered.
@@ -1197,9 +1159,10 @@ static Block makeBlockFromStatistics(
         }
         else if (stats_aggregate.isSum())
         {
-            auto count = stats_aggregate.kind == StatisticsAggregate::Kind::SumAndCount
-                ? std::optional<UInt64>(covered_rows) : std::nullopt;
-            deserializeSumState(*function, place, folded_values[i], count, arena);
+            /// Unlike for min/max, `add` cannot build the state from the value: the sum may not fit in the argument
+            /// type (the sum of an `Int16` column is an `Int64`), and the state of `avg` and `sumCount` also holds the
+            /// number of rows.
+            function->setSumAndCount(place, folded_values[i], covered_rows);
         }
         else
         {

@@ -598,6 +598,14 @@ public:
         this->data(place).read(buf);
     }
 
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 /*count*/) const override
+    {
+        if constexpr (is_decimal<TResult>)
+            this->data(place).add(sum.safeGet<DecimalField<TResult>>().getValue());
+        else
+            this->data(place).add(static_cast<TResult>(sum.safeGet<NearestFieldType<TResult>>()));
+    }
+
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         castColumnToResult(to).getData().push_back(this->data(place).get());
