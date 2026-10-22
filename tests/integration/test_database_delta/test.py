@@ -388,7 +388,9 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel, use_v2)
             )
             data_spark = TSV(
                 execute_spark_query(
-                    node1, f"SELECT * FROM unity.{table} ORDER BY 1,2,3"
+                    node1,
+                    f"SELECT * FROM unity.{table} ORDER BY 1,2,3",
+                    retry_on_timeout=True,
                 )
             )
             print("Data ClickHouse\n", data_clickhouse)
@@ -474,14 +476,15 @@ def test_multiple_schemes_tables(started_cluster, use_v2):
     node1 = started_cluster.instances["node1"]
     # Combine schema creation, table creation and inserts into a single
     # Spark invocation to avoid multiple slow JVM startups.
+    # Every statement is idempotent, so the retry replay converges to the same single row per table.
     queries = []
     for i in range(10):
         queries.extend([
-            f"CREATE SCHEMA test_schema{test_uuid}{i}",
-            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
-            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
+            f"CREATE SCHEMA IF NOT EXISTS test_schema{test_uuid}{i}",
+            f"CREATE TABLE IF NOT EXISTS test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
+            f"INSERT OVERWRITE test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
         ])
-    execute_multiple_spark_queries(node1, queries)
+    execute_multiple_spark_queries(node1, queries, retry_on_timeout=True)
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, use_unity_catalog_v2={use_v2}",
@@ -594,11 +597,13 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel, use_v2):
         "-", "_"
     )
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
-    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    create_query = f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
+    insert_query = f"INSERT OVERWRITE {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    # Every statement is idempotent, so the retry replay converges to the same single row.
     execute_multiple_spark_queries(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query, insert_query],
+        retry_on_timeout=True,
     )
 
     node1.query(
