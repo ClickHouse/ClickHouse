@@ -1022,6 +1022,19 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
     /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
     Int32 partition_iter = 999;
+    /// A partition field is named after its source column, and the names must be unique in the manifest schema.
+    std::unordered_set<String> partition_field_names;
+    auto add_partition_field = [&](const ASTPtr & partition_by_element)
+    {
+        auto partition_field = getPartitionField(partition_by_element, column_name_to_source_id, partition_iter);
+        const auto & name = partition_field->getValue<String>(Iceberg::f_name);
+        if (!partition_field_names.insert(name).second)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Iceberg partitioning uses the column {} more than once, which is not supported",
+                name);
+        fields->add(partition_field);
+    };
     if (partition_by)
     {
         if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
@@ -1030,16 +1043,12 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
             {
                 const auto * expression_list = child->as<ASTExpressionList>();
                 for (const auto & expression_list_child : expression_list->children)
-                {
-                    auto partition_field = getPartitionField(expression_list_child, column_name_to_source_id, partition_iter);
-                    fields->add(partition_field);
-                }
+                    add_partition_field(expression_list_child);
             }
         }
         else
         {
-            auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
-            fields->add(partition_field);
+            add_partition_field(partition_by);
         }
     }
 
