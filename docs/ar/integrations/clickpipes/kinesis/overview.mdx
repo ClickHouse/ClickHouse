@@ -38,11 +38,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
 
-5. حدِّد تدفق Kinesis و**تنسيق البيانات** وإزاحة البدء. بالنسبة إلى `Protobuf`، ارفع ملف `.proto` أو `FileDescriptorSet` مُسلسلًا (بحد أقصى 768 KiB). ولا يُشترط وجود schema registry.
+5. حدِّد دفق Kinesis و**صيغة البيانات** وإزاحة البدء. تدعم ClickPipes الخاصة بـ Kinesis صيغ JSON وAvro وProtobuf. بالنسبة إلى `Protobuf`، ارفع ملف `.proto` أو `FileDescriptorSet` مُسلسلًا (بحد أقصى 768 KiB)، أو قم بتهيئة AWS Glue Schema Registry. أما بالنسبة إلى Avro، فقم بتهيئة AWS Glue Schema Registry. ولا تجمع بين مخطط Protobuf مرفوع وسجل مخططات.
 
-   تعرض واجهة المستخدم بيانات العينة من التدفق المحدد. ويكون خيار **Use Kinesis Enhanced Fan-Out** مُمكّنًا افتراضيًا. راجع [توثيق Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) لمزيد من التفاصيل.
+   تعرض واجهة المستخدم بيانات العينة من الدفق المحدد. ويكون خيار **Use Kinesis Enhanced Fan-Out** مُمكّنًا افتراضيًا. راجع [توثيق Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) لمزيد من التفاصيل.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="تعيين تنسيق البيانات والموضوع" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="تعيين صيغة البيانات والموضوع" size="lg" border />
 
 6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في الجدول النموذجي بالأعلى.
 
@@ -60,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 **الأذونات:** سيُنشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك تحديد دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المعرّفة مسبقًا:
 
-* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع الجدول الوجهة.
+* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع الجدول الوجهة.
   * `Only destination table`: مع أذونات `INSERT` على الجدول الوجهة فقط.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" border />
@@ -82,13 +82,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 10. **تهانينا!** لقد أعددت أول ClickPipe بنجاح. إذا كان هذا ClickPipe من نوع streaming، فسيستمر في العمل بشكل متواصل مع إدخال البيانات في الوقت الفعلي من مصدر البيانات البعيد لديك. أما إذا لم يكن كذلك، فسيُدخل الدفعة ثم يكتمل.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة
+  ## صيغ البيانات المدعومة
 </div>
 
-التنسيقات المدعومة هي:
+الصيغ المدعومة هي:
 
 * [JSON](/ar/reference/formats/JSON/JSON)
+* [Avro](/ar/reference/formats/Avro/AvroConfluent) (مع AWS Glue Schema Registry)
 * [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+يمكن لـ ClickPipes الخاصة بـ Kinesis استرداد مخططات Avro وProtobuf من AWS Glue Schema Registry. اختر **AWS Glue** في مسار إنشاء ClickPipe، ثم أدخل منطقة AWS التي يوجد فيها السجل واسمه. ويمكنك اختياريًا تحديد دور IAM للوصول إلى السجل؛ وإلا فستستخدم ClickPipes هوية IAM الخاصة بمصدر Kinesis. ويجب أن تمتلك هذه الهوية صلاحية `glue:GetSchemaVersion`.
+
+يمكنك تهيئة الحقول نفسها عبر [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) أو [Terraform](/ar/integrations/clickpipes/programmatic-access/terraform). ويتضمن [دليل سجل المخططات](/ar/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry) سياسة IAM المطلوبة وتفاصيل التهيئة.
 
 <div id="compression">
   ## الضغط

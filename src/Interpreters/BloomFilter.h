@@ -11,6 +11,10 @@
 
 namespace DB
 {
+
+/// The maximum size in bytes of a single bloom filter.
+static constexpr size_t MAX_BLOOM_FILTER_SIZE = 1 << 30;
+
 struct BloomFilterHashPair
 {
     UInt64 hash1;
