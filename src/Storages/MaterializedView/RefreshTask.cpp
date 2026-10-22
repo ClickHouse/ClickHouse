@@ -1379,8 +1379,11 @@ void RefreshTask::executeRefresh()
         chassert(false);
         error_message = getCurrentExceptionMessage(true);
     }
+    /// Looks at other views, so it must run without holding `mutex`.
+    bool on_dependency_cycle = !new_table_uuid.has_value() && dependsOnItselfUnlocked(deps);
     lock.lock();
 
+    scheduling.last_attempt_start_time = execution.start_time;
     auto start_time_seconds = std::chrono::floor<std::chrono::seconds>(execution.start_time);
     auto now = currentTime();
     auto end_time_seconds = std::chrono::floor<std::chrono::seconds>(now);
@@ -1406,11 +1409,15 @@ void RefreshTask::executeRefresh()
         znode.attempt_number = 0;
         znode.randomness_obsolete = drawRandomness();
     }
-    else if (retriesExhausted(znode))
+    else if (retriesExhausted(znode) && refresh_schedule.kind != RefreshScheduleKind::EVERY && !on_dependency_cycle)
     {
         /// `determineNextRefreshTime` will skip to the next scheduled refresh as if this one succeeded.
         /// Consume the dependency refreshes this attempt ran after, as a success would. Otherwise they
         /// still look new, and a view without REFRESH EVERY starts another refresh right away, forever.
+        /// A REFRESH EVERY view waits for its next timeslot anyway, so it keeps them.
+        /// So does a view on a DEPENDS ON cycle: its dependencies refresh again only after it succeeds,
+        /// so consuming their refreshes would leave the whole cycle waiting for each other forever.
+        /// `determineNextRefreshTime` limits how often such a view retries instead.
         znode.last_success_dependencies = std::move(execution.dependencies);
     }
     execution.znode = znode;
@@ -1718,6 +1725,34 @@ bool RefreshTask::collectDependencyStatesUnlocked(AllDependenciesInfo & out, con
     return all_found;
 }
 
+bool RefreshTask::dependsOnItselfUnlocked(const std::vector<StorageID> & deps) const
+{
+    const RefreshSet & set = view->getContext()->getRefreshSet();
+    const String self = view->getStorageID().getFullTableName();
+    std::vector<StorageID> to_visit = deps;
+    std::unordered_set<String> visited;
+    while (!to_visit.empty())
+    {
+        StorageID id = std::move(to_visit.back());
+        to_visit.pop_back();
+        String name = id.getFullTableName();
+        if (name == self)
+            return true;
+        if (!visited.insert(std::move(name)).second)
+            continue;
+        for (const RefreshTaskPtr & task : set.findTasks(id))
+            for (const StorageID & dep : task->getDependencies())
+                to_visit.push_back(dep);
+    }
+    return false;
+}
+
+std::vector<StorageID> RefreshTask::getDependencies() const
+{
+    std::unique_lock lock(mutex);
+    return set_handle.getDependencies();
+}
+
 void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps, const ContextPtr & context)
 {
     const RefreshSet & set = view->getContext()->getRefreshSet();
@@ -1752,7 +1787,8 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
-    if (retriesExhausted(znode))
+    bool retries_exhausted = retriesExhausted(znode);
+    if (retries_exhausted)
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);
@@ -1781,6 +1817,8 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         bool all_advanced = true;
         bool all_kind_every = true;
         std::chrono::sys_time<std::chrono::nanoseconds> max_time {};
+        /// The latest refresh of any dependency, unlike `max_time`, which uses `seen_dep_refresh_times`.
+        std::chrono::sys_time<std::chrono::nanoseconds> newest_dependency_refresh {};
         auto min_next_refresh_timeslot = std::chrono::sys_seconds::max();
         for (const DependencyRefreshInfo & info : dependencies.tables)
         {
@@ -1793,6 +1831,8 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
             auto current = info.last_success_end_time;
             if (current > threshold)
             {
+                newest_dependency_refresh = std::max(newest_dependency_refresh, current);
+
                 /// The dependency has refreshed since our last refresh.
                 auto & seen = scheduling.seen_dep_refresh_times[info.database_and_table];
                 if (seen > threshold)
@@ -1832,6 +1872,28 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
                     when = now;
                 else
                     when = refresh_schedule.period.advance(std::chrono::floor<std::chrono::system_clock::duration>(max_time));
+
+                /// After the retries ran out, a view on a DEPENDS ON cycle keeps the dependency refreshes it
+                /// failed to process (see `executeRefresh`). Retry them, but not more often than
+                /// `refresh_retry_max_backoff_ms`. A dependency refresh that finished after the failed attempt
+                /// started is new, so it is not delayed. `seen_dep_refresh_times` keeps the first refresh it saw
+                /// while the dependency refreshes are not consumed, so this looks at the latest refresh instead.
+                if (retries_exhausted)
+                {
+                    /// `last_attempt_time` comes from the coordination znode, so all replicas see the same value,
+                    /// but it is the end of the failed attempt rounded down to seconds.
+                    const auto attempt_time = std::chrono::system_clock::time_point(znode.last_attempt_time);
+                    /// The replica that made the failed attempt knows when it started: dependency refreshes after that
+                    /// are new. Other replicas, and this one after a restart, only have the shared `last_attempt_time`.
+                    const bool attempted_here = znode.last_attempt_replica == coordination.replica_name
+                        && scheduling.last_attempt_start_time != std::chrono::system_clock::time_point{};
+                    const auto tried_until = attempted_here ? scheduling.last_attempt_start_time : attempt_time;
+                    if (newest_dependency_refresh <= tried_until)
+                        when = std::max(
+                            when,
+                            attempt_time + std::chrono::seconds(1)
+                                + std::chrono::milliseconds(refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms]));
+                }
             }
         }
     }
