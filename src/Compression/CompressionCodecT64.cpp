@@ -341,12 +341,8 @@ NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_element
     }
 }
 
-/// A 64-byte line of the matrix: eight planes.
 using MatrixLine [[gnu::vector_size(64)]] = UInt64;
 
-/// The first `part` < 8 planes at `src`, the rest zero. Built in registers with constant lane inserts,
-/// so that it reaches the matrix with one full-width store and reads nothing past the `part` planes.
-/// The line is an output parameter: returned by value, without AVX-512 its ABI differs between targets.
 ALWAYS_INLINE void loadPartialLine(MatrixLine & line, const char * src, UInt32 part)
 {
     switch (part)
@@ -362,14 +358,12 @@ ALWAYS_INLINE void loadPartialLine(MatrixLine & line, const char * src, UInt32 p
     }
 }
 
-/// Copies the first `num_bits` planes from `src` into `matrix` and zeroes the rest.
 template <size_t N>
 ALWAYS_INLINE void loadPlanes(UInt64 (&matrix)[N], const char * src, UInt32 num_bits)
 {
     static_assert(N % 8 == 0);
     if constexpr (N == 8)
     {
-        /// Eight selects: masked loads with AVX2, a short scalar loop elsewhere.
         if (num_bits == N)
         {
             memcpy(matrix, src, sizeof(matrix));
@@ -380,11 +374,6 @@ ALWAYS_INLINE void loadPlanes(UInt64 (&matrix)[N], const char * src, UInt32 num_
     }
     else
     {
-        /// Not `memset` followed by `memcpy` of a variable size: the overlapping, unaligned tail stores of `memcpy`
-        /// cannot be forwarded to the loads of the transpose that immediately reads the matrix back. Instead every
-        /// line is written exactly once with a full-width store. It is one loop with a constant trip count on purpose:
-        /// clang turns separate loops that copy the full lines or zero the rest into `memcpy` or `memset` calls of a
-        /// variable size, which brings the problem back.
         const UInt32 full_lines = num_bits / 8;
 #pragma clang loop unroll(full)
         for (UInt32 line_index = 0; line_index < N / 8; ++line_index)
