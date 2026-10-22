@@ -820,6 +820,18 @@ The maximum number in `parallelism` is computed as a minimum between:
 2. The maximum number of query processing threads set in `max_threads`.
 </Note>
 
+#### Spilling in aggregation, sorting, and distinct steps {#explain-analyze-spilling}
+
+When a `GROUP BY`, `ORDER BY`, or `DISTINCT` step spills data to temporary storage, it reports:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+This is the cumulative number of compressed bytes written by the whole step, including its parallel processors.
+The total includes temporary files already consumed or deleted, and counts each write when data is spilled more than once.
+The line is omitted when no data was spilled.
+
 #### Join steps {#explain-analyze-join-steps}
 
 For a join step `EXPLAIN ANALYZE` prints lines comparing the join-order optimizer's estimates with what actually happened (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)) and per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. `Left` and `Right` correspond to logical SQL sides. In most of the cases `Left` would also be the probe side of the join, and `Right` would be the build side of the join. However this is not always the case due to the swap that can happen during execution of the join. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the three implementations that setting cannot select: a `CROSS` or `COMMA` join, the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition) that takes an `ON` section determining no join key, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
@@ -1098,7 +1110,7 @@ The report gives the marks and rows it would read, a `read_ratio` against the ba
 
 When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
 
-Aggregate projections, projections with a `WHERE` clause, their own skip indexes, a commit-order or virtual-column key or a stored `_block_number`, and projections that do not cover every column the query reads are reported as `not_applicable`. `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored, and `force_optimize_projection` does not fail the statement.
+WHATIF reports aggregate projections and projections with their own skip indexes as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 
