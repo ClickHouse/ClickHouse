@@ -7201,19 +7201,6 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     };
 
     const auto storage_columns = columns.getAllPhysical().getNameSet();
-    auto depends_on_recompressed_column = [&](const Names & required_columns)
-    {
-        return std::ranges::any_of(required_columns, [&](const String & required_column)
-        {
-            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
-            if (!column_in_storage || *column_in_storage != column_name)
-                return false;
-            if (required_column.size() > column_name.size()
-                && is_structural_subcolumn(std::string_view(required_column).substr(column_name.size() + 1)))
-                return false;
-            return true;
-        });
-    };
 
     /// Resolve the expressions of `MATERIALIZED` columns the same way `MutationsInterpreter` does
     /// when it collects the affected `MATERIALIZED` columns: over the physical columns plus the
@@ -7311,6 +7298,80 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
         return required_columns;
     };
 
+    /// The part stores its columns under the names they had before the
+    /// pending renames, so look a column up under its old name.
+    auto part_stores_column = [&](const String & name)
+    {
+        String name_in_part = alter_conversions && alter_conversions->isColumnRenamed(name)
+            ? alter_conversions->getColumnOldName(name)
+            : name;
+        return source_part->tryGetColumn(name_in_part).has_value();
+    };
+
+    /// When the check runs for a specific part, a dependent the part stores may read a computed
+    /// column the part does not store: `m2 MATERIALIZED m1 + 1` materialized after `m1 MATERIALIZED
+    /// x * 2` was added. Reads compute such a column from its expression (`x * 2`), so the stored
+    /// dependent was computed from the inputs of that expression and goes stale when one of them is
+    /// recompressed. Expand every `DEFAULT` or `MATERIALIZED` column absent from the part to the
+    /// columns its expression reads, transitively, the same way missing columns are evaluated.
+    std::unordered_map<String, Names> absent_column_inputs;
+    auto expand_columns_absent_from_part = [&](const Names & required_columns)
+    {
+        if (!source_part)
+            return required_columns;
+
+        Names expanded_columns;
+        NameSet visited_columns;
+        Names columns_to_expand(required_columns.rbegin(), required_columns.rend());
+        while (!columns_to_expand.empty())
+        {
+            String required_column = std::move(columns_to_expand.back());
+            columns_to_expand.pop_back();
+            if (!visited_columns.emplace(required_column).second)
+                continue;
+
+            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            const auto * required_column_desc = column_in_storage ? columns.tryGet(*column_in_storage) : nullptr;
+            if (!required_column_desc || *column_in_storage == column_name
+                || (required_column_desc->default_desc.kind != ColumnDefaultKind::Default
+                    && required_column_desc->default_desc.kind != ColumnDefaultKind::Materialized)
+                || !required_column_desc->default_desc.expression
+                || part_stores_column(*column_in_storage))
+            {
+                expanded_columns.push_back(required_column);
+                continue;
+            }
+
+            auto it = absent_column_inputs.find(required_column);
+            if (it == absent_column_inputs.end())
+            {
+                auto expression = required_column_desc->default_desc.expression->clone();
+                if (required_column.size() > column_in_storage->size())
+                    expression = makeASTFunction(
+                        "getSubcolumn",
+                        std::move(expression),
+                        make_intrusive<ASTLiteral>(required_column.substr(column_in_storage->size() + 1)));
+                it = absent_column_inputs.emplace(required_column, required_source_columns_expanded(expression)).first;
+            }
+            columns_to_expand.insert(columns_to_expand.end(), it->second.begin(), it->second.end());
+        }
+        return expanded_columns;
+    };
+
+    auto depends_on_recompressed_column = [&](const Names & required_columns)
+    {
+        return std::ranges::any_of(expand_columns_absent_from_part(required_columns), [&](const String & required_column)
+        {
+            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            if (!column_in_storage || *column_in_storage != column_name)
+                return false;
+            if (required_column.size() > column_name.size()
+                && is_structural_subcolumn(std::string_view(required_column).substr(column_name.size() + 1)))
+                return false;
+            return true;
+        });
+    };
+
     /// The stored columns every `MATERIALIZED` column is computed from.
     std::vector<std::pair<String, Names>> materialized_column_dependencies;
     for (const auto & dependent_column : columns)
@@ -7328,11 +7389,18 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     NameSet projections_built_by_task;
     NameSet columns_built_by_task;
     NameSet columns_updated_by_task;
+    /// `MATERIALIZE TTL` may write any column of the part: a column TTL resets its targets and
+    /// recomputes the `MATERIALIZED` columns derived from them, and a table TTL rewrites every
+    /// column, computing the ones the part does not store yet. Rather than reproducing the
+    /// decisions of `MutationsInterpreter`, treat every dependent as built by such a task.
+    bool task_may_build_any_dependent = false;
     if (task_commands)
     {
         for (const auto & command : *task_commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+            if (command.type == MutationCommand::Type::MATERIALIZE_TTL)
+                task_may_build_any_dependent = true;
+            else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 indices_built_by_task.insert(command.index_name);
             else if (command.type == MutationCommand::Type::MATERIALIZE_PROJECTION)
                 projections_built_by_task.insert(command.projection_name);
@@ -7386,7 +7454,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     /// must not wedge a recompression queued for the older parts.
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        if (source_part && !source_part->hasProjection(projection.name)
+        if (source_part && !task_may_build_any_dependent && !source_part->hasProjection(projection.name)
             && !projections_built_by_task.contains(projection.name)
             && !reads_column_updated_by_task(projection.getRequiredColumns()))
             continue;
@@ -7403,7 +7471,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (source_part && !source_part->hasSecondaryIndex(index.name, metadata_snapshot)
+        if (source_part && !task_may_build_any_dependent && !source_part->hasSecondaryIndex(index.name, metadata_snapshot)
             && !indices_built_by_task.contains(index.name)
             && !reads_column_updated_by_task(index.expression->getRequiredColumns()))
             continue;
@@ -7455,22 +7523,12 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     /// MATERIALIZED f(x)` the older parts carry at most the missing-column marker, and the rewrite of
     /// `RECOMPRESS COLUMN` does not compute newly added `MATERIALIZED` columns, so there is no stored
     /// value that could go stale, unless the same task computes it (`columns_updated_by_task`).
-    /// The part stores its columns under the names they had before the
-    /// pending renames, so look the dependent up under its old name.
-    auto part_stores_column = [&](const String & name)
-    {
-        String name_in_part = alter_conversions && alter_conversions->isColumnRenamed(name)
-            ? alter_conversions->getColumnOldName(name)
-            : name;
-        return source_part->tryGetColumn(name_in_part).has_value();
-    };
-
     for (const auto & [dependent_column_name, dependency_columns] : materialized_column_dependencies)
     {
         if (dependent_column_name == column_name)
             continue;
 
-        if (source_part && !part_stores_column(dependent_column_name)
+        if (source_part && !task_may_build_any_dependent && !part_stores_column(dependent_column_name)
             && !columns_updated_by_task.contains(dependent_column_name))
             continue;
 

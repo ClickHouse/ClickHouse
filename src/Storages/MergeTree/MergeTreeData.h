@@ -1215,7 +1215,10 @@ public:
     /// commands of the mutation task that runs the recompression: a dependent the part does not have
     /// is still considered when the same task builds it (`MATERIALIZE INDEX`, `MATERIALIZE
     /// PROJECTION`, `MATERIALIZE COLUMN`, or an `UPDATE` of a column it reads), because the task
-    /// computes it from the values as they were before the recompression.
+    /// computes it from the values as they were before the recompression; with `MATERIALIZE TTL` in
+    /// the task every dependent is considered. A computed (`DEFAULT` or `MATERIALIZED`) column the part
+    /// does not store is evaluated from its expression on reads, so a dependent reading it is checked
+    /// against the inputs of that expression.
     void checkLossyRecompressionIsPossible(
         const String & column_name,
         const StorageMetadataPtr & metadata_snapshot,
