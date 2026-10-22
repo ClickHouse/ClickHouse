@@ -676,7 +676,8 @@ bool applyTrivialCountIfPossible(
     /// `select count() from table` query. But if we have current transaction, then we should return number of rows in current snapshot
     /// (that may include parts in Outdated state), so the totalRows for transactional case should return the number of rows visible for
     /// the current transaction.
-    std::optional<UInt64> num_rows = storage->totalRows(query_context);
+    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+    std::optional<UInt64> num_rows = storage->totalRowsInSnapshot(storage_snapshot, query_context);
     if (!num_rows)
         return false;
 
