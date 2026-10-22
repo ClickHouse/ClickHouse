@@ -259,8 +259,8 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         convertToDistributed(effective_settings);
 
     /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
-    /// into the `ExpressionActions`, and the names are derived from them. Only the child plans the
-    /// steps already hold, unlike the rendering above: asking a step to build one would make
+    /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
+    /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
     /// capturing the plan change the work the query does.
     PrettyNamesPerPlan pretty_names;
     if (profiler)

@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
+#include <Processors/QueryPlan/Profiling/Analysis/PlanShape.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <base/types.h>
 
@@ -21,7 +21,8 @@ struct PlanAnalysisSnapshot
 {
     String root_id;
 
-    /// The shape, for accumulating the cost of each join's branch.
+    /// Who is below whom, for the passes that accumulate over a step's subtree:
+    /// the cost of a join's branch, and the time of one.
     PlanShape shape;
 
     /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`.
@@ -29,11 +30,10 @@ struct PlanAnalysisSnapshot
 
     /// Walks the plan and the child plans its steps own.
     ///
-    /// `only_built_child_plans` keeps the walk from asking a step to build one it does not already
-    /// hold, which is what the logged plan needs: capturing a plan must not change the work the
-    /// query does. `EXPLAIN ANALYZE` passes false, because the walk it later analyses -- the one
-    /// `explainPlan` makes -- does build them, and a step it reaches without a snapshot entry would
-    /// be shaped as a plain step and report nothing.
+    /// `only_built_child_plans` keeps the walk from asking a step to build one it does not
+    /// already hold, so that capturing a plan does not change the work the query does. The logged
+    /// plan passes true. `EXPLAIN ANALYZE` passes false, because it analyses the plan through
+    /// `explainPlan`, which does build them, and every step reached there needs an entry here.
     static PlanAnalysisSnapshot capture(const QueryPlan & plan, bool only_built_child_plans);
 };
 
