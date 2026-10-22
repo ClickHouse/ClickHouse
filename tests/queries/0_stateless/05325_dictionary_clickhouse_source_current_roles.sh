@@ -48,27 +48,40 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT dictGet('${db}.d_direct', 'v', toUInt64(1)), dictGet('${db}.d_hashed', 'v', toUInt64(1)), dictGet('${db}.d_invalidate', 'v', toUInt64(1))
 "
 
-# Move the privilege to a new role. A new session of the user would start with the new role only.
+# Periodic updates (and the invalidate query) are checked every 5 seconds.
+wait_for_updates()
+{
+    local get_updated="SELECT dictGetOrDefault('${db}.d_hashed', 'v', toUInt64($1), ''), dictGetOrDefault('${db}.d_invalidate', 'v', toUInt64($1), '')"
+    for _ in $(seq 1 120)
+    do
+        [[ "$(${CLICKHOUSE_CLIENT} --query "${get_updated}")" == "$(printf '%s\t%s' "$2" "$2")" ]] && break
+        sleep 0.5
+    done
+    ${CLICKHOUSE_CLIENT} --query "${get_updated}"
+}
+
+# Move the privilege to a new role. Grant it first and wait until both dictionaries load a row inserted after the grant:
+# updates of a dictionary do not overlap, so no update with only the old role is still running when it is dropped.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE ROLE ${r_new};
     GRANT SELECT ON ${db}.src TO ${r_new};
     GRANT ${r_new} TO ${user};
-    DROP ROLE ${r_old};
     INSERT INTO ${db}.src VALUES (2, 'b');
+"
+echo "-- periodic updates after the grant"
+wait_for_updates 2 b
+
+# A new session of the user would start with the new role only.
+${CLICKHOUSE_CLIENT} --query "
+    DROP ROLE ${r_old};
+    INSERT INTO ${db}.src VALUES (3, 'c');
 "
 
 echo "-- direct lookup uses the new role"
 ${CLICKHOUSE_CLIENT} --query "SELECT dictGet('${db}.d_direct', 'v', toUInt64(2))"
 
-# Periodic updates (and the invalidate query) are checked every 5 seconds.
-get_updated="SELECT dictGetOrDefault('${db}.d_hashed', 'v', toUInt64(2), ''), dictGetOrDefault('${db}.d_invalidate', 'v', toUInt64(2), '')"
-for _ in $(seq 1 120)
-do
-    [[ "$(${CLICKHOUSE_CLIENT} --query "${get_updated}")" == "$(printf 'b\tb')" ]] && break
-    sleep 0.5
-done
 echo "-- periodic updates use the new role"
-${CLICKHOUSE_CLIENT} --query "${get_updated}"
+wait_for_updates 3 c
 
 # A failed invalidate query does not leave stale data (the dictionary is then reloaded anyway), so check it in the log.
 echo "-- no failed source or invalidate queries"

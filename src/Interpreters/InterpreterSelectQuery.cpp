@@ -206,6 +206,7 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -2664,7 +2665,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         /// require reading some data (but much faster than reading columns).
         /// Set a special flag in query info so the storage will see it and optimize count in read() method.
         query_info.optimize_trivial_count = optimize_trivial_count;
-        return storage->totalRows(context);
+        return storage->totalRowsInSnapshot(storage_snapshot, context);
     }
 
     // It's possible to optimize count() given only partition predicates
@@ -2974,6 +2975,7 @@ static Aggregator::Params getAggregatorParams(
         group_by_two_level_threshold_bytes,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
