@@ -244,6 +244,12 @@ stp_padded = stp + b"\xee" * (60 - len(stp))
 dot3_frames = [snap_ip, stp_padded, ethernet(ipv4(17, udp))]
 write_pcap(out_dir / "dot3.pcap", [(packet, len(packet)) for packet in dot3_frames])
 
+# The IEEE 802.3 frame with SNAP cut by the snapshot length right after the SNAP
+# header and inside the IPv4 header it carries: the LLC header with SNAP is kept,
+# the rest is raw, and `eth_type` still names IP from the SNAP header.
+truncated_dot3 = [(snap_ip[:14 + 8], len(snap_ip)), (snap_ip[:14 + 8 + 10], len(snap_ip))]
+write_pcap(out_dir / "truncated_dot3.pcap", truncated_dot3, snaplen=32)
+
 # Headers with padding after the end-of-options marker, which a reader must skip
 # through the length field of the header (RFC 791, section 3.1, and RFC 9293):
 # an IPv4 header with `IHL = 6` whose options are the end-of-options marker and

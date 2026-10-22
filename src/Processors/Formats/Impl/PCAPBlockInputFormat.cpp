@@ -902,7 +902,9 @@ Chunk PCAPBlockInputFormat::read()
                     carrier = inner;
                     inner = inner->inner_pdu();
                 }
-                if (inner != nullptr && inner->pdu_type() == Tins::PDU::SNAP && inner->inner_pdu() != nullptr)
+                /// The SNAP header is unwrapped also when the snapshot length left nothing after
+                /// it, so that its type field names the carried protocol.
+                if (inner != nullptr && inner->pdu_type() == Tins::PDU::SNAP)
                 {
                     carrier = inner;
                     inner = inner->inner_pdu();

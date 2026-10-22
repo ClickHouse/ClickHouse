@@ -36,6 +36,9 @@ rewrite each other's files.
   `sll.pcap` packets cut inside the IPv4 header, and an Ethernet frame behind a
   PPI header (`LINKTYPE_PPI`) in full and cut inside the IPv4 header, so the
   complete outer headers are kept and the rest is raw.
+- `truncated_dot3.pcap` — the IEEE 802.3 frame with `SNAP` from `dot3.pcap` cut
+  right after the `SNAP` header and inside the IPv4 header it carries, so the
+  `SNAP` header is kept, the rest is raw, and `eth_type` is still `IP`.
 - `options.pcap` — IPv4 and TCP headers whose options are the end-of-options
   marker followed by padding, so the payload starts at the captured header
   length, and a non-first IPv6 fragment whose data looks like an extension

@@ -103,6 +103,8 @@ UDP	4	1
 5	14	76	ETHERNET_II	['ETHERNET_II']	66:77:88:99:aa:bb	IP	\N	\N	14
 1	10	62	IP	['RAW']	\N		\N	\N	10
 2	20	48	IPv6	['RAW']	\N		\N	\N	20
+1	22	50	IEEE802_3	['IEEE802_3','SNAP']	00:11:22:33:44:aa	IP	\N	\N	22
+2	32	50	IEEE802_3	['IEEE802_3','SNAP','RAW']	00:11:22:33:44:aa	IP	\N	\N	32
 --- length invariants hold across all fixtures ---
 packets.pcap	0	0	0
 packets.pcapng	0	0	0
@@ -120,6 +122,7 @@ truncated_sll.pcap	0	0	0
 ppi.pcap	0	0	0
 sll2.pcap	0	0	0
 dot3.pcap	0	0	0
+truncated_dot3.pcap	0	0	0
 options.pcap	0	0	0
 --- padded short frame: payload excludes the Ethernet padding ---
 60	4	ping	0	42

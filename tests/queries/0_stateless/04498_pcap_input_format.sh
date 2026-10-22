@@ -138,7 +138,7 @@ FROM file('$DATA_DIR/truncated_headers.pcap', PCAP)
 ORDER BY number FORMAT TSV"
 
 echo "--- headers cut by the snapshot length before the end of the IP header: the rest is raw, the outer protocols are kept ---"
-for f in truncated_ip.pcap truncated_raw_ip.pcap; do
+for f in truncated_ip.pcap truncated_raw_ip.pcap truncated_dot3.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT number, capture_length, original_length, link_type, protocols, eth_src, eth_type, vlan_id, ip_version, length(raw)
     FROM file('$DATA_DIR/$f', PCAP)
@@ -146,7 +146,7 @@ for f in truncated_ip.pcap truncated_raw_ip.pcap; do
 done
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap options.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap truncated_dot3.pcap options.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
