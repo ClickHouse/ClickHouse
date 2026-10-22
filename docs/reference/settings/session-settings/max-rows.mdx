@@ -48,6 +48,12 @@ and
 The exception is `legacy_join_size_limits_trigger_spilling`: with it on, the part of a
 join that already runs on disk treats this limit as a further spill trigger instead of a cap.
 
+When an `ON` section determines no join key at all, there is no algorithm to choose: the limit
+applies to the right side materialized by the
+[block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition),
+spilled blocks included, and the action on overflow is
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+
 Possible values:
 
 - Positive integer.

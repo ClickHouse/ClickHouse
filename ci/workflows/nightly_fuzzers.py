@@ -19,7 +19,7 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *[
-            j.set_provides([ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+            j.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
             for j in JobConfigs.special_build_jobs
             if "fuzzers" in j.name
         ],
@@ -31,7 +31,7 @@ workflow = Workflow.Config(
         *[
             j
             for j in JobConfigs.release_build_jobs_with_examples
-            if "amd_release" in j.name
+            if "arm_release" in j.name
         ],
         JobConfigs.libfuzzer_job,
     ],

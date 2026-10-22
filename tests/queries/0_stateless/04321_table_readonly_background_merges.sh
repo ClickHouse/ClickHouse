@@ -25,6 +25,16 @@ dump_background_merge_state() {
         FROM system.merges ORDER BY database, table FORMAT PrettyCompactMonoBlock" || echo "merges dump failed"
 }
 
+# Runs one poll of a bounded wait under `timeout`, capped by what is left of the wait budget: the
+# deadline is only checked between polls, so a single hung or slow client must not overrun it.
+# -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
+poll_query() {
+    local deadline=$1 query=$2
+    local remaining=$((deadline - SECONDS))
+    [[ $remaining -gt 0 ]] || return 1
+    timeout -k 5 "$remaining" ${CLICKHOUSE_CLIENT} -q "$query"
+}
+
 # A read-only table (the `table_readonly` MergeTree setting) performs no modifications on disk and
 # wastes no background CPU: neither regular merges nor TTL drop/delete merges run on it.
 
@@ -61,8 +71,8 @@ SYSTEM START MERGES t_writable;
 merged=0
 deadline=$((SECONDS + 120))
 while [[ $SECONDS -lt $deadline ]]; do
-    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_writable' AND active")
-    if [[ "$count" -lt 10 ]]; then
+    if count=$(poll_query "$deadline" "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_writable' AND active") \
+        && [[ "$count" -lt 10 ]]; then
         merged=1
         break
     fi
@@ -125,8 +135,7 @@ SYSTEM START MERGES t_writable_ttl;
 dropped=0
 deadline=$((SECONDS + 120))
 while [[ $SECONDS -lt $deadline ]]; do
-    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_writable_ttl")
-    if [[ "$count" -eq 1 ]]; then
+    if count=$(poll_query "$deadline" "SELECT count() FROM t_writable_ttl") && [[ "$count" -eq 1 ]]; then
         dropped=1
         break
     fi
