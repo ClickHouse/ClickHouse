@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Geometry {#geometry}
 
-Geometry functions allow you to calculate perimeter and area for geometric types such as POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, and POINT. Use geometries in Geometry type. If the input value is `NULL`, all functions below will return 0.
+Geometry functions allow you to calculate perimeter, area and length for geometric types such as POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, and POINT. Use geometries in Geometry type. If the input value is `NULL`, all functions below will return 0.
 
 ## perimeterCartesian {#perimetercartesian}
 
@@ -128,4 +128,100 @@ SELECT areaSpherical(geom) FROM geo_dst;
 ┌─areaSpherical(geom)────┐
 │ -0.0003046096848622019 │
 └────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+Calculates the length of the lines of a Geometry object in the Cartesian (flat) coordinate system: the sum of the distances between consecutive points.
+A `MultiLineString` has the total length of its lines, and a `Ring` is measured as the line through its points, as is an array of points without a type name, which has the type `Ring`.
+Points, polygons and multipolygons have no length, so the function returns 0 for them: use [perimeterCartesian](#perimetercartesian) for the perimeter of a polygon.
+To measure an array of arrays of points, cast it to `MultiLineString`: without a type name, it has the type `Polygon`.
+
+Alias: `ST_Length`.
+
+**Syntax**
+
+```sql
+lengthCartesian(geom)
+```
+
+**Arguments**
+- `geom` — Geometry object. [Geometry](/reference/data-types/geo).
+
+**Returned values**
+- Number — Length of the lines in the coordinate system units. [Float64](/reference/data-types/float).
+
+**Example**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+Calculates the length of the lines of a Geometry object on the surface of a sphere, with points given as (longitude, latitude) in degrees.
+The result is an angle in radians, which is the length on a sphere of radius 1, like the result of [perimeterSpherical](#perimeterspherical).
+Multiply it by the mean radius of the Earth, 6371008.8 meters, for an approximate length in meters, or use [lengthSpheroid](#lengthspheroid) for an accurate one.
+Like [lengthCartesian](#lengthcartesian), it returns 0 for points, polygons and multipolygons.
+
+**Syntax**
+
+```sql
+lengthSpherical(geom)
+```
+
+**Arguments**
+- `geom` — Geometry object. [Geometry](/reference/data-types/geo).
+
+**Returned values**
+- Number — Length of the lines in radians. [Float64](/reference/data-types/float).
+
+**Example**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+Calculates the length of the lines of a Geometry object in meters on the WGS84 spheroid, the model of the Earth used by GPS, with points given as (longitude, latitude) in degrees.
+Each segment is the shortest path between its points on the spheroid (a geodesic), calculated with Karney's algorithm, as in GeographicLib.
+Like [lengthCartesian](#lengthcartesian), it returns 0 for points, polygons and multipolygons.
+
+**Syntax**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**Arguments**
+- `geom` — Geometry object. [Geometry](/reference/data-types/geo).
+
+**Returned values**
+- Number — Length of the lines in meters. [Float64](/reference/data-types/float).
+
+**Example**
+
+The length of a line from London through Paris to Berlin:
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
 ```
