@@ -28,6 +28,9 @@ struct QueryFlags
     /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
     /// succeeded on the initiator. So the query is checked as it would be on a local database.
     bool run_as_submitting_user = false;
+    /// If true, the query is the body of `COPY (query) TO STDOUT` in the PostgreSQL wire protocol, whose result
+    /// is streamed to the client, so a query rewrite rule must not turn it into a statement without a result.
+    bool rewritten_query_must_return_rows = false;
 };
 
 }

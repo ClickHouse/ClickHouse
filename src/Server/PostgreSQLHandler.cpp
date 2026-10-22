@@ -2007,7 +2007,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         /// `COPY (query) TO STDOUT` is SQL the user submitted, so it stays subject to `query_rules`.
         if (copy_query->subquery.empty())
             query_context->setSetting("query_rules", String{});
-        auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
+        auto [ast, io] = executeQuery(select_query, query_context, QueryFlags{ .rewritten_query_must_return_rows = true }, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
 
         /// `Array(...)` columns must be streamed in PostgreSQL array-literal form (`{...}`) rather than

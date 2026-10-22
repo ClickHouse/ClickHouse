@@ -42,6 +42,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -2843,6 +2844,14 @@ static BlockIO executeQueryImpl(
         /// below), so the rules are not applied a second time.
         if ((!internal || flags.user_initiated) && !context->isDDLOrOnClusterInternal() && !flags.background)
             astTraversal(out_ast, context, applied_rewrite_rules);
+
+        /// Checked before the interpreter runs, so a rewrite into e.g. DDL has no side effects.
+        if (flags.rewritten_query_must_return_rows && !applied_rewrite_rules.empty()
+            && !out_ast->as<ASTSelectWithUnionQuery>() && !out_ast->as<ASTSelectQuery>()
+            && !out_ast->as<ASTSelectIntersectExceptQuery>() && !out_ast->as<ASTExplainQuery>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The query was rewritten by a query rule into a statement that does not return rows, "
+                "which is not allowed here");
     }
     catch (...)
     {
