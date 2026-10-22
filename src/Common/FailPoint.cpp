@@ -458,8 +458,8 @@ static struct InitFiu
     ONCE(distributed_plan_task_fail_before_start) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
-    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_zookeeper_connection_attempt_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_connection_attempt_pause) \
     PAUSEABLE_ONCE(wasm_module_manager_pause_after_compile) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \

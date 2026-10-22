@@ -21,6 +21,10 @@
 #include <Poco/UUIDGenerator.h>
 #include <filesystem>
 
+#include "config.h"
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
 
 namespace DB
 {
@@ -417,6 +421,15 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+}
+
+void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (object_storage.getType() == ObjectStorageType::Azure)
+        object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
+            context->shouldRestrictUserQueryS3Credentials());
+#endif
 }
 
 }
