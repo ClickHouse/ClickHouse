@@ -61,6 +61,24 @@ SELECT count() FROM (SELECT arraySort(groupArray(u1)) AS a FROM t_cmp_uuid_ip) A
 SELECT count() FROM (SELECT arraySort(groupArray(i6a)) AS a FROM t_cmp_uuid_ip) ARRAY JOIN arrayZip(arrayPopBack(a), arrayPopFront(a)) AS p WHERE NOT (p.1 <= p.2 AND (p.1 < p.2 OR p.1 = p.2) AND p.2 >= p.1);
 SELECT count() FROM (SELECT arraySort(groupArray(i4a)) AS a FROM t_cmp_uuid_ip) ARRAY JOIN arrayZip(arrayPopBack(a), arrayPopFront(a)) AS p WHERE NOT (p.1 <= p.2 AND (p.1 < p.2 OR p.1 = p.2) AND p.2 >= p.1);
 
+SELECT 'fixedstring(16)';
+DROP TABLE IF EXISTS t_cmp_fs16;
+CREATE TABLE t_cmp_fs16 (id UInt8, f1 FixedString(16), f2 FixedString(16)) ENGINE = Memory;
+INSERT INTO t_cmp_fs16 SELECT id, unhex(h1), unhex(h2) FROM values('id UInt8, h1 String, h2 String',
+    (0, '00000000000000000000000000000000', '00000000000000000000000000000000'),
+    (1, '00000000000000000000000000000001', '00000000000000000000000000000000'),
+    (2, '00000000000000010000000000000000', '00000000000000000000000000000001'),
+    (3, 'ffffffffffffffffffffffffffffffff', 'ffffffffffffffffffffffffffffffff'),
+    (4, '80000000000000000000000000000000', '7fffffffffffffffffffffffffffffff'),
+    (5, '12345678abcdef018000000000000000', '12345678abcdef017fffffffffffffff'),
+    (6, '12345678abcdef010000000000000001', '12345678abcdef010000000000000002'),
+    (7, '00000000000000ff0000000000000000', '01000000000000000000000000000000'),
+    (8, '0000000000000000ff00000000000000', '000000000000000000000000000000ff'));
+SELECT id, f1 < f2, f1 > f2, f1 <= f2, f1 >= f2 FROM t_cmp_fs16 ORDER BY id;
+SELECT id, f1 < toFixedString(unhex('12345678abcdef018000000000000000'), 16), f1 > toFixedString(unhex('12345678abcdef018000000000000000'), 16), f1 <= toFixedString(unhex('12345678abcdef018000000000000000'), 16), f1 >= toFixedString(unhex('12345678abcdef018000000000000000'), 16) FROM t_cmp_fs16 ORDER BY id;
+SELECT id, toFixedString(unhex('12345678abcdef018000000000000000'), 16) < f2, toFixedString(unhex('12345678abcdef018000000000000000'), 16) > f2, toFixedString(unhex('12345678abcdef018000000000000000'), 16) <= f2, toFixedString(unhex('12345678abcdef018000000000000000'), 16) >= f2 FROM t_cmp_fs16 ORDER BY id;
+DROP TABLE t_cmp_fs16;
+
 SELECT 'bulk';
 WITH
     reinterpretAsUUID(concat(reinterpretAsFixedString(cityHash64(number, 1)), reinterpretAsFixedString(cityHash64(number, 2)))) AS a,
@@ -80,5 +98,24 @@ SELECT
     countIf((a = b) != NOT (a != b)), countIf((x = y) != NOT (x != y)), countIf((p = q) != NOT (p != q)),
     countIf((a < b) != (b > a)), countIf((x < y) != (y > x)), countIf((p < q) != (q > p))
 FROM numbers(100000);
+
+SELECT 'bulk against hex strings';
+WITH
+    toFixedString(concat(reinterpretAsFixedString(cityHash64(number, 1)), reinterpretAsFixedString(cityHash64(number, 2))), 16) AS fa,
+    toFixedString(concat(reinterpretAsFixedString(cityHash64(number, if(number % 3 = 0, 1, 3))), reinterpretAsFixedString(cityHash64(number, if(number % 2 = 0, 2, 4)))), 16) AS fb,
+    CAST(fa AS IPv6) AS x,
+    CAST(fb AS IPv6) AS y,
+    toFixedString(unhex('a08e8cc19fed0d02c6d6b0d7dd1220d7'), 16) AS fc,
+    hex(fa) AS ha,
+    hex(fb) AS hb
+SELECT
+    countIf(toString(x) != IPv6NumToString(fa)),
+    countIf((fa < fb) != (ha < hb)), countIf((fa > fb) != (ha > hb)), countIf((fa <= fb) != (ha <= hb)), countIf((fa >= fb) != (ha >= hb)),
+    countIf((x < y) != (ha < hb)), countIf((x > y) != (ha > hb)), countIf((x <= y) != (ha <= hb)), countIf((x >= y) != (ha >= hb)),
+    countIf((fa < fc) != (ha < hex(fc))), countIf((fc <= fb) != (hex(fc) <= hb)),
+    countIf((x < CAST(fc AS IPv6)) != (ha < hex(fc))), countIf((CAST(fc AS IPv6) <= y) != (hex(fc) <= hb)),
+    countIf(ha < hb), countIf(ha = hb)
+FROM numbers(100000)
+SETTINGS max_block_size = 1001;
 
 DROP TABLE t_cmp_uuid_ip;

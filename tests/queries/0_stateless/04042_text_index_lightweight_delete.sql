@@ -31,8 +31,7 @@ OPTIMIZE TABLE t_text_index_lwd_bug FINAL;
 DELETE FROM t_text_index_lwd_bug WHERE id % 1000 = 999;
 
 -- Full scan that reaches the end of the part.
--- The _row_exists reader is first (canReadIncompleteGranules=true),
--- text index reader is second (canReadIncompleteGranules=false).
+-- The _row_exists reader is first, the text index reader second.
 -- max_block_size=65505 is not a multiple of index_granularity=8192,
 -- so batch boundaries fall mid-mark, triggering the drift.
 SELECT count()

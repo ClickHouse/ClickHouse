@@ -1,4 +1,5 @@
 #include <Common/FieldBinaryEncoding.h>
+#include <Common/checkStackSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -186,6 +187,9 @@ void FieldVisitorEncodeBinary::operator() (const AggregateFunctionStateData & x,
 
 void FieldVisitorEncodeBinary::operator() (const Array & x, WriteBuffer & buf) const
 {
+    /// Nothing but the value itself bounds the nesting depth of a Field.
+    checkStackSize();
+
     writeBinary(UInt8(FieldBinaryTypeIndex::Array), buf);
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -195,6 +199,8 @@ void FieldVisitorEncodeBinary::operator() (const Array & x, WriteBuffer & buf) c
 
 void FieldVisitorEncodeBinary::operator() (const Tuple & x, WriteBuffer & buf) const
 {
+    checkStackSize();
+
     writeBinary(UInt8(FieldBinaryTypeIndex::Tuple), buf);
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -204,6 +210,8 @@ void FieldVisitorEncodeBinary::operator() (const Tuple & x, WriteBuffer & buf) c
 
 void FieldVisitorEncodeBinary::operator() (const Map & x, WriteBuffer & buf) const
 {
+    checkStackSize();
+
     writeBinary(UInt8(FieldBinaryTypeIndex::Map), buf);
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -217,6 +225,8 @@ void FieldVisitorEncodeBinary::operator() (const Map & x, WriteBuffer & buf) con
 
 void FieldVisitorEncodeBinary::operator() (const Object & x, WriteBuffer & buf) const
 {
+    checkStackSize();
+
     writeBinary(UInt8(FieldBinaryTypeIndex::Object), buf);
 
     size_t size = x.size();
@@ -272,25 +282,28 @@ T decodeValueLittleEndian(ReadBuffer & buf)
     return value;
 }
 
+Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity);
+
 template <typename T>
-T decodeArrayLikeField(ReadBuffer & buf)
+T decodeArrayLikeField(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
+    /// The nesting depth comes from the data, so nothing bounds the recursion on its own.
+    checkStackSize();
+
     size_t size = 0;
     readVarUInt(size, buf);
     T value;
     for (size_t i = 0; i != size; ++i)
-        value.push_back(decodeField(buf));
+        value.push_back(decodeFieldImpl(buf, complexity, max_complexity));
     return value;
 }
 
-}
-void encodeField(const Field & x, WriteBuffer & buf)
+Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
-    Field::dispatch([&buf] (const auto & val) { FieldVisitorEncodeBinary()(val, buf); }, x);
-}
+    ++complexity;
+    if (max_complexity > 0 && complexity > max_complexity)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
 
-Field decodeField(ReadBuffer & buf)
-{
     UInt8 type = 0;
     readBinary(type, buf);
     switch (FieldBinaryTypeIndex(type))
@@ -350,25 +363,29 @@ Field decodeField(ReadBuffer & buf)
             return value;
         }
         case FieldBinaryTypeIndex::Array:
-            return decodeArrayLikeField<Array>(buf);
+            return decodeArrayLikeField<Array>(buf, complexity, max_complexity);
         case FieldBinaryTypeIndex::Tuple:
-            return decodeArrayLikeField<Tuple>(buf);
+            return decodeArrayLikeField<Tuple>(buf, complexity, max_complexity);
         case FieldBinaryTypeIndex::Map:
         {
+            checkStackSize();
+
             size_t size = 0;
             readVarUInt(size, buf);
             Map map;
             for (size_t i = 0; i != size; ++i)
             {
                 Tuple key_and_value;
-                key_and_value.push_back(decodeField(buf));
-                key_and_value.push_back(decodeField(buf));
+                key_and_value.push_back(decodeFieldImpl(buf, complexity, max_complexity));
+                key_and_value.push_back(decodeFieldImpl(buf, complexity, max_complexity));
                 map.push_back(key_and_value);
             }
             return map;
         }
         case FieldBinaryTypeIndex::Object:
         {
+            checkStackSize();
+
             size_t size = 0;
             readVarUInt(size, buf);
             Object value;
@@ -376,7 +393,7 @@ Field decodeField(ReadBuffer & buf)
             {
                 String name;
                 readStringBinary(name, buf);
-                value[name] = decodeField(buf);
+                value[name] = decodeFieldImpl(buf, complexity, max_complexity);
             }
             return value;
         }
@@ -391,6 +408,24 @@ Field decodeField(ReadBuffer & buf)
     }
 
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Field type: {0:#04x}", UInt64(type));
+}
+
+}
+
+void encodeField(const Field & x, WriteBuffer & buf)
+{
+    Field::dispatch([&buf] (const auto & val) { FieldVisitorEncodeBinary()(val, buf); }, x);
+}
+
+Field decodeField(ReadBuffer & buf)
+{
+    size_t complexity = 0;
+    return decodeFieldImpl(buf, complexity, 0);
+}
+
+Field decodeField(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
+{
+    return decodeFieldImpl(buf, complexity, max_complexity);
 }
 
 }
