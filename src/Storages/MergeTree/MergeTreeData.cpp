@@ -5767,7 +5767,6 @@ void checkDefaultsOfSortingKeyColumns(
     const AlterCommands & commands,
     const StorageInMemoryMetadata & old_metadata,
     const StorageInMemoryMetadata & new_metadata,
-    const Names & engine_columns,
     const ContextPtr & context)
 {
     const auto & old_columns = old_metadata.columns;
@@ -5795,7 +5794,7 @@ void checkDefaultsOfSortingKeyColumns(
     if (changed.empty())
         return;
 
-    /// Every part stores these columns: they exist since CREATE and no ALTER can add them.
+    /// Every part stores these columns: no ALTER adds them, and ATTACH PARTITION FROM requires the same keys.
     NameSet stored_in_every_part;
     auto add_stored_in_every_part = [&](const Names & names)
     {
@@ -5804,8 +5803,6 @@ void checkDefaultsOfSortingKeyColumns(
     };
     add_stored_in_every_part(new_metadata.getColumnsRequiredForPrimaryKey());
     add_stored_in_every_part(new_metadata.getColumnsRequiredForPartitionKey());
-    add_stored_in_every_part(new_metadata.sorting_key.additional_columns.getNames());
-    add_stored_in_every_part(engine_columns);
 
     /// Rows with equal values of the sorting key elements before a column are adjacent in a part, and for the
     /// identifiers among those elements collected here equal means identical.
@@ -5853,6 +5850,22 @@ void checkDefaultsOfSortingKeyColumns(
             && std::ranges::all_of(
                    sources.columns, [&](const String & name) { return it != identifiers_before.end() && it->second.contains(name); });
     };
+
+    /// An expression is judged for the whole column, so breaking the rule does not mean breaking the order of a key
+    /// element that is not the bare column, like `k % 2` or `t.p`.
+    NameSet in_key_not_bare;
+    if (const auto & sorting_key_ast = new_metadata.sorting_key.expression_list_ast)
+    {
+        for (const auto & element : sorting_key_ast->children)
+        {
+            IdentifierNameSet element_names;
+            element->collectIdentifierNames(element_names);
+            const bool is_identifier = element->as<ASTIdentifier>() != nullptr;
+            for (const auto & name : element_names)
+                if (const String column_name = name_in_storage(name, new_columns); !is_identifier || column_name != name)
+                    in_key_not_bare.insert(column_name);
+        }
+    }
 
     NameSet checked;
     for (const auto & key_column : new_metadata.getColumnsRequiredForSortingKey())
@@ -5906,7 +5919,7 @@ void checkDefaultsOfSortingKeyColumns(
             continue;
 
         /// Refusing to change an expression that already breaks the rule, like one from CREATE, protects nothing.
-        if (!keeps_order(old_metadata, old_identifiers_before, column_name))
+        if (!in_key_not_bare.contains(column_name) && !keeps_order(old_metadata, old_identifiers_before, column_name))
             continue;
 
         throw Exception(
@@ -7147,9 +7160,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
         }
 
-        Names engine_columns{merging_params.sign_column, merging_params.version_column, merging_params.is_deleted_column};
-        std::erase(engine_columns, String{});
-        checkDefaultsOfSortingKeyColumns(commands, old_metadata, new_metadata, engine_columns, local_context);
+        checkDefaultsOfSortingKeyColumns(commands, old_metadata, new_metadata, local_context);
     }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());

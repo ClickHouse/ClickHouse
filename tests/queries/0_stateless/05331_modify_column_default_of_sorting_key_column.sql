@@ -12,11 +12,14 @@ DROP TABLE IF EXISTS t_i;
 DROP TABLE IF EXISTS t_p;
 DROP TABLE IF EXISTS t_v;
 DROP TABLE IF EXISTS t_r;
+DROP TABLE IF EXISTS t_r_src;
 DROP TABLE IF EXISTS t_c;
 DROP TABLE IF EXISTS t_sub;
+DROP TABLE IF EXISTS t_sub_dst;
 DROP TABLE IF EXISTS t_s;
 
 CREATE TABLE t (a UInt32, x UInt32, y UInt32) ENGINE = MergeTree ORDER BY a;
+SYSTEM STOP MERGES t;
 INSERT INTO t VALUES (1, 30, 10), (1, 10, 1);
 INSERT INTO t VALUES (2, 5, 5);
 ALTER TABLE t ADD COLUMN k UInt32, MODIFY ORDER BY (a, k);
@@ -31,6 +34,7 @@ ALTER TABLE t MODIFY COLUMN k UInt32 DEFAULT a * 10;
 ALTER TABLE t MODIFY COLUMN a UInt32 DEFAULT x + y;
 SELECT groupArray((a, k)) FROM (SELECT a, k FROM t ORDER BY a, k);
 SELECT groupArray((a, k)) FROM (SELECT a, k FROM t ORDER BY a, k SETTINGS optimize_read_in_order = 0);
+SYSTEM START MERGES t;
 OPTIMIZE TABLE t FINAL;
 SELECT groupArray((a, k)) FROM (SELECT a, k FROM t ORDER BY a, k);
 
@@ -78,6 +82,7 @@ ALTER TABLE t_dep MODIFY COLUMN a UInt32 DEFAULT x + 2;
 
 -- The sorting key columns before the column can be read too, but no column after it or outside the sorting key.
 CREATE TABLE t_b (a UInt32, x UInt32) ENGINE = MergeTree ORDER BY a;
+SYSTEM STOP MERGES t_b;
 INSERT INTO t_b VALUES (1, 30), (1, 10), (2, 5);
 ALTER TABLE t_b ADD COLUMN b UInt32, MODIFY ORDER BY (a, b);
 INSERT INTO t_b (a, x, b) VALUES (1, 7, 9), (1, 8, 3);
@@ -87,6 +92,7 @@ ALTER TABLE t_b MODIFY COLUMN k UInt32 DEFAULT b;
 ALTER TABLE t_b MODIFY COLUMN x UInt32 DEFAULT a;
 ALTER TABLE t_b MODIFY COLUMN k UInt32 DEFAULT x; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT groupArray((a, b, k)) FROM (SELECT a, b, k FROM t_b ORDER BY a, b, k);
+SYSTEM START MERGES t_b;
 OPTIMIZE TABLE t_b FINAL;
 SELECT groupArray((a, b, k)) FROM (SELECT a, b, k FROM t_b ORDER BY a, b, k);
 
@@ -95,16 +101,20 @@ INSERT INTO t_i VALUES (1, 1), (1, 2);
 ALTER TABLE t_i ADD COLUMN k Int64, MODIFY ORDER BY (a, k, c);
 ALTER TABLE t_i MODIFY COLUMN k Int64 DEFAULT -c; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
--- Partition key columns and the engine's version, is_deleted and sign columns exist since CREATE, so every part stores them.
+-- Every part stores partition key columns, but a part attached from another engine can lack the engine's columns.
 CREATE TABLE t_p (a UInt32, d Date, x UInt32) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (a, d) PRIMARY KEY a;
 ALTER TABLE t_p MODIFY COLUMN d Date DEFAULT toDate(x);
 CREATE TABLE t_v (a UInt32, x UInt32, s Int8, v UInt32) ENGINE = VersionedCollapsingMergeTree(s, v) ORDER BY a;
-ALTER TABLE t_v MODIFY COLUMN v UInt32 DEFAULT x + 1;
+ALTER TABLE t_v MODIFY COLUMN v UInt32 DEFAULT x + 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE t_r_src (a UInt32, x UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_r_src VALUES (1, 30), (1, 10);
+ALTER TABLE t_r_src ADD COLUMN v UInt32, ADD COLUMN d UInt8, MODIFY ORDER BY (a, v, d);
 CREATE TABLE t_r (a UInt32, x UInt32, v UInt32, d UInt8) ENGINE = ReplacingMergeTree(v, d) ORDER BY (a, v, d) PRIMARY KEY a;
-ALTER TABLE t_r MODIFY COLUMN v UInt32 DEFAULT x + 1;
-ALTER TABLE t_r MODIFY COLUMN d UInt8 DEFAULT x % 2;
-CREATE TABLE t_c (a UInt32, x UInt32, s Int8 DEFAULT if(x > 0, 1, -1)) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s) PRIMARY KEY a;
-ALTER TABLE t_c MODIFY COLUMN x UInt32 DEFAULT 5;
+ALTER TABLE t_r ATTACH PARTITION tuple() FROM t_r_src;
+ALTER TABLE t_r MODIFY COLUMN v UInt32 DEFAULT x + 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_r MODIFY COLUMN d UInt8 DEFAULT x % 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE t_c (a UInt32, x UInt32, p UInt32 ALIAS a, s Int8 DEFAULT if(p > 0, 1, -1)) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s) PRIMARY KEY a;
+ALTER TABLE t_c MODIFY COLUMN p UInt32 ALIAS x; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- An expression that already breaks the rule, like one from CREATE, can still change.
 CREATE TABLE t_s (a UInt32, k UInt32 DEFAULT x, x UInt32) ENGINE = MergeTree ORDER BY (a, k) PRIMARY KEY a;
@@ -114,10 +124,16 @@ ALTER TABLE t_s MODIFY COLUMN x UInt32 DEFAULT 3;
 INSERT INTO t_s (a) VALUES (1);
 SELECT groupArray((a, k)) FROM (SELECT a, k FROM t_s ORDER BY a, k);
 
--- A sorting key column used through a subcolumn.
+-- Key elements that are not the bare column, here keeping the order with `t DEFAULT tuple(a, x)` and `k DEFAULT x * 2`.
 CREATE TABLE t_sub (a UInt32, x UInt32) ENGINE = MergeTree ORDER BY a;
-ALTER TABLE t_sub ADD COLUMN t Tuple(p UInt32), MODIFY ORDER BY (a, t.p);
-ALTER TABLE t_sub MODIFY COLUMN t Tuple(p UInt32) DEFAULT tuple(x); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+INSERT INTO t_sub VALUES (1, 30), (1, 10);
+ALTER TABLE t_sub ADD COLUMN t Tuple(p UInt32, q UInt32), ADD COLUMN k UInt32, MODIFY ORDER BY (a, t.p, k % 2);
+ALTER TABLE t_sub MODIFY COLUMN t Tuple(p UInt32, q UInt32) DEFAULT tuple(x, x); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE t_sub_dst (a UInt32, x UInt32, t Tuple(p UInt32, q UInt32) DEFAULT tuple(a, x), k UInt32 DEFAULT x * 2)
+    ENGINE = MergeTree ORDER BY (a, t.p, k % 2) PRIMARY KEY a;
+ALTER TABLE t_sub_dst ATTACH PARTITION tuple() FROM t_sub;
+ALTER TABLE t_sub_dst MODIFY COLUMN t Tuple(p UInt32, q UInt32) DEFAULT tuple(x, x); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_sub_dst MODIFY COLUMN k UInt32 DEFAULT x; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 DROP TABLE t;
 DROP TABLE t_expr;
@@ -130,6 +146,8 @@ DROP TABLE t_i;
 DROP TABLE t_p;
 DROP TABLE t_v;
 DROP TABLE t_r;
+DROP TABLE t_r_src;
 DROP TABLE t_c;
 DROP TABLE t_sub;
+DROP TABLE t_sub_dst;
 DROP TABLE t_s;
