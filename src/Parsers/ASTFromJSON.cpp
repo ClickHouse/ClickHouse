@@ -12,6 +12,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -168,6 +169,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 
         /// DDL types
         {"ColumnDeclaration", [] { return make_intrusive<ASTColumnDeclaration>(); }},
+        {"CodecDeclaration", [] { return make_intrusive<ASTCodecDeclaration>(); }},
         {"IndexDeclaration", [] { return make_intrusive<ASTIndexDeclaration>(); }},
         {"ConstraintDeclaration", [] { return make_intrusive<ASTConstraintDeclaration>(); }},
         {"ProjectionDeclaration", [] { return make_intrusive<ASTProjectionDeclaration>(); }},
@@ -382,45 +384,49 @@ ASTPtr IAST::createFromJSON(const String & json)
     parser.setHandler(new StackCheckingParseHandler);
     /// Poco's own default bound is 1000 levels (JSON_DEFAULT_DEPTH).
     parser.setDepth(json_nesting_budget);
-    Poco::Dynamic::Var result;
-    try
-    {
-        result = parser.parse(json);
-    }
-    /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
-    catch (const Exception &)
-    {
-        throw;
-    }
-    catch (const Poco::Exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
-    }
-
-    Poco::JSON::Object::Ptr obj;
-    try
-    {
-        obj = result.extract<Poco::JSON::Object::Ptr>();
-    }
-    catch (const Poco::Exception &)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
-    }
-
-    if (!obj)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
-
+    /// Every exit must go through `dismantleJSON`, including the failed ones: the parse handler keeps
+    /// the document built so far, whole if only trailing characters are rejected, or as deep as the
+    /// stack allows if `StackCheckingParseHandler` throws, and `parser` would destroy it recursively.
+    /// `parser.result` returns the root held by the handler on every path.
     ASTPtr ast;
     try
     {
+        Poco::Dynamic::Var result;
+        try
+        {
+            result = parser.parse(json);
+        }
+        /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
+        }
+
+        Poco::JSON::Object::Ptr obj;
+        try
+        {
+            obj = result.extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
+        }
+
+        if (!obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
+
         ast = createFromJSON(*obj);
     }
     catch (...)
     {
-        dismantleJSON(result);
+        dismantleJSON(parser.result());
         throw;
     }
-    dismantleJSON(result);
+    dismantleJSON(parser.result());
     return ast;
 }
 
