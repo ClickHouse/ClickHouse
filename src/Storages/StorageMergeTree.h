@@ -589,7 +589,7 @@ private:
     PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
-    Int64 getMaxRemovedMutationVersion() const override { return max_removed_mutation_version.load(); }
+    std::optional<Int64> getMaxRemovedMutationVersion() const override { return max_removed_mutation_version.load(); }
 };
 
 }

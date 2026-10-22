@@ -91,4 +91,4 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM system.text_log
     WHERE event_date >= yesterday() AND logger_name LIKE '%$TABLE%'
-        AND message LIKE 'No defaultness stats for column x: part $PART is not active, and a mutation with version % that may be required for it was removed from the history'"
+        AND message LIKE 'No defaultness stats for column x: part $PART has data version %, and a mutation with version % that may be required for it was removed from the history'"

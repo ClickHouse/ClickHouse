@@ -8425,10 +8425,14 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     /// which is visible to any snapshot, so such a part is no longer visible and is declined the same way.
     /// The invariant above does not hold for a visible part that is not active: a mutation is marked as done
     /// regardless of it, so its commands can be removed from the history while the part still needs them.
-    /// Such a part is accepted only if no mutation with a higher version than its data version was removed.
+    /// It does not hold either for a part that is active again after a rollback of the transaction that removed it
+    /// (see `restoreAndActivatePart`). So when the storage tracks the removed versions, any part is accepted only if
+    /// no mutation with a higher version than its data version was removed. For a part that stayed active this is
+    /// always the case, because a mutation is marked as done only when it is not newer than every active part.
+    /// When the storage does not track them, a part that is not active is declined.
     /// The removed version is read after the snapshot, so a mutation removed before the snapshot is accounted.
     const auto txn = query_context->getCurrentTransaction();
-    const Int64 max_removed_mutation_version = getMaxRemovedMutationVersion();
+    const std::optional<Int64> max_removed_mutation_version = getMaxRemovedMutationVersion();
     for (const auto & part : parts)
     {
         bool is_active = part->getState() == DataPartState::Active;
@@ -8442,13 +8446,24 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
             return std::nullopt;
         }
 
-        if (!is_active && part->info.getDataVersion() < max_removed_mutation_version)
+        if (!max_removed_mutation_version)
+        {
+            if (!is_active)
+            {
+                LOG_DEBUG(
+                    log,
+                    "No defaultness stats for column {}: part {} is not active, and the history of mutations may be incomplete for it",
+                    column_name, part->name);
+                return std::nullopt;
+            }
+        }
+        else if (part->info.getDataVersion() < *max_removed_mutation_version)
         {
             LOG_DEBUG(
                 log,
-                "No defaultness stats for column {}: part {} is not active, and a mutation with version {} "
+                "No defaultness stats for column {}: part {} has data version {}, and a mutation with version {} "
                 "that may be required for it was removed from the history",
-                column_name, part->name, max_removed_mutation_version);
+                column_name, part->name, part->info.getDataVersion(), *max_removed_mutation_version);
             return std::nullopt;
         }
     }
