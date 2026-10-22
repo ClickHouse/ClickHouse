@@ -5181,7 +5181,7 @@ Possible values:
 
 - 0 — Shuffled aggregation-in-order is disabled.
 - 1 — Shuffled aggregation-in-order is enabled.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to parallelize aggregation-in-order by repartitioning the sorted input by the hash of the `GROUP BY` keys into independent shards, avoiding the single-threaded `FinishAggregatingInOrderTransform` funnel while keeping bounded memory. Applied only when the result order is not relied upon downstream and `max_rows_to_group_by` is not set."}) \
     DECLARE(UInt64, aggregation_in_order_shuffle_max_buffered_bytes, 536870912, R"(
 The maximum total number of bytes buffered by the repartitioning stage of [aggregation_in_order_shuffle](#aggregation_in_order_shuffle), shared across all of its scatter transforms. Repartitioning has to read ahead when a shard waits for rows that appear much later in the input (e.g. on long runs of a single set of `GROUP BY` keys); when the buffered data exceeds this limit, the query fails with a `TOO_MANY_ROWS_OR_BYTES` exception instead of buffering without limit. 0 means unlimited.
