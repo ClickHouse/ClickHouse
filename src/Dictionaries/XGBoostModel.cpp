@@ -126,6 +126,11 @@ void XGBoostModel::startTraining(const Block & header, const String & target_col
     /// layout definition is reported without paying for a scan of the whole training table.
     training_params = sanitizeTrainingParams(hps);
 
+    /// `gbtree` is the default booster of XGBoost.
+    const auto booster_param = training_params.find("booster");
+    serialize_predictions
+        = booster_param != training_params.end() && booster_param->second != "gbtree" && booster_param->second != "dart";
+
     /// Record the training schema: `target_column_` is the label, every other column of `header` a feature.
     if (!header.has(target_column_))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Target column '{}' is not present in the training data", target_column_);
@@ -295,6 +300,10 @@ ColumnPtr XGBoostModel::predict(const Block & batch, const PredictParameters & p
     float const * out_result{nullptr};
 
     String config = sanitizePredictParams(params);
+
+    std::unique_lock lock(predict_mutex, std::defer_lock);
+    if (serialize_predictions)
+        lock.lock();
 
     throwOnError(
         XGBoosterPredictFromDMatrix(booster, predict_dmatrix, config.c_str(), &out_shape, &out_dim, &out_result),
