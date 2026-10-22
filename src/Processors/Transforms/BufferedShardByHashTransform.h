@@ -131,7 +131,8 @@ public:
         size_t num_shards_,
         ColumnNumbers key_columns_,
         size_t max_buffered_bytes_ = 0,
-        std::shared_ptr<BufferedShardByHashBudget> budget_ = nullptr);
+        std::shared_ptr<BufferedShardByHashBudget> budget_ = nullptr,
+        const ColumnNumbers & sorting_columns = {});
 
     ~BufferedShardByHashTransform() override;
 
@@ -261,6 +262,9 @@ private:
 
     size_t num_shards;
     ColumnNumbers key_columns;
+    /// Per column of the header: whether the downstream sorted merges sort by it, so they expand a
+    /// `ColumnReplicated` in it (`IMergingAlgorithm::removeReplicatedFromSortingColumns`) before retaining it.
+    std::vector<bool> is_sorting_column;
     /// Total-bytes cap on what the whole stage buffers; 0 means no cap.
     size_t max_buffered_bytes;
     /// True only when there is a byte cap to enforce (a non-zero `max_buffered_bytes`). When false -

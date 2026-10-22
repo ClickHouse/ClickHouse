@@ -115,10 +115,12 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     size_t num_shards_,
     ColumnNumbers key_columns_,
     size_t max_buffered_bytes_,
-    std::shared_ptr<BufferedShardByHashBudget> budget_)
+    std::shared_ptr<BufferedShardByHashBudget> budget_,
+    const ColumnNumbers & sorting_columns)
     : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
+    , is_sorting_column(header->columns(), false)
     , max_buffered_bytes(max_buffered_bytes_)
     , budget_enabled(max_buffered_bytes_ != 0)
     , budget(budget_ ? std::move(budget_) : std::make_shared<BufferedShardByHashBudget>())
@@ -127,6 +129,9 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
+
+    for (auto column_number : sorting_columns)
+        is_sorting_column.at(column_number) = true;
 
     /// Without a cap to enforce nobody ever reads the shared counter, so this transform charges nothing and
     /// has nothing for a sibling to reclaim - it stays out of the stage's scatter list entirely.
@@ -816,8 +821,10 @@ void BufferedShardByHashTransform::generateOutputChunks()
     for (auto & cols : shard_columns)
         cols.clear();
 
-    for (const auto & column : columns)
+    for (size_t column_number = 0; column_number < columns.size(); ++column_number)
     {
+        const auto & column = columns[column_number];
+
         /// A downstream `LimitTransform` closes every input of this processor the moment it reaches its limit,
         /// and so does a cancellation - that can happen after the `allOutputsFinished()` carve-out in work()
         /// let this split start, while this loop is still materializing the per-shard copies. Re-check between
@@ -839,10 +846,15 @@ void BufferedShardByHashTransform::generateOutputChunks()
         /// `ColumnConst` but ~32 MiB once a merge materializes it, and measuring the compact form would let that
         /// expansion escape `max_buffered_bytes` entirely. The merges then find nothing left to convert, so this
         /// moves the work rather than adding to it, and it is done whether or not there is a budget to enforce.
+        /// The same holds for a `ColumnReplicated` sorting column (e.g. a key replicated lazily by `ARRAY JOIN`):
+        /// `scatter` keeps it replicated, and the merges expand it (`removeReplicatedFromSortingColumns`), so a
+        /// 4 KiB key repeated over 8000 rows would be charged for one value plus indexes but held as ~32 MiB.
         auto split = column->scatter(num_shards, selector);
         for (size_t s = 0; s < num_shards; ++s)
         {
             ColumnPtr shard_column = std::move(split[s]);
+            if (is_sorting_column[column_number])
+                shard_column = shard_column->convertToFullColumnIfReplicated();
             shard_columns[s].push_back(recursiveRemoveSparse(shard_column->convertToFullColumnIfConst()));
         }
     }

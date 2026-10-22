@@ -928,6 +928,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             for (const auto & key : transform_params->params.keys)
                 key_columns.push_back(stream_header->getPositionByName(key));
 
+            /// The columns the per-shard merges below sort by: the scatter expands a `ColumnReplicated` in them
+            /// before charging the budget, because the merges would expand it anyway before retaining it.
+            ColumnNumbers sorting_columns;
+            sorting_columns.reserve(sort_description_for_merging.size());
+            for (const auto & column_desc : sort_description_for_merging)
+                sorting_columns.push_back(stream_header->getPositionByName(column_desc.column_name));
+
             /// Stage 1: reshuffle. Scatter each sorted stream by hash(keys) into num_shards (order is
             /// preserved per output), producing num_shards groups of num_streams sorted sub-streams that
             /// are non-intersecting by key across groups. Then merge each group's sub-streams back into a
@@ -957,7 +964,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 for (size_t stream = 0; stream < num_streams; ++stream)
                 {
                     auto scatter_transform = std::make_shared<BufferedShardByHashTransform>(
-                        stream_header, num_shards, key_columns, max_buffered_bytes, budget);
+                        stream_header, num_shards, key_columns, max_buffered_bytes, budget, sorting_columns);
                     connect(*ports[stream], scatter_transform->getInputs().front());
                     for (auto & output : scatter_transform->getOutputs())
                         scatter_outputs.push_back(&output);

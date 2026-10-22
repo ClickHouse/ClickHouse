@@ -12,6 +12,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -536,11 +537,12 @@ ConnectedScatter makeConnectedScatter(
     size_t num_shards,
     const ColumnNumbers & key_columns,
     size_t max_buffered_bytes,
-    const std::shared_ptr<BufferedShardByHashBudget> & budget)
+    const std::shared_ptr<BufferedShardByHashBudget> & budget,
+    const ColumnNumbers & sorting_columns = {})
 {
     ConnectedScatter scatter;
     scatter.transform = std::make_shared<BufferedShardByHashTransform>(
-        header, num_shards, key_columns, max_buffered_bytes, budget);
+        header, num_shards, key_columns, max_buffered_bytes, budget, sorting_columns);
 
     scatter.source = std::make_unique<OutputPort>(header);
     connect(*scatter.source, scatter.transform->getInputs().front());
@@ -1014,6 +1016,69 @@ TEST(BufferedShardByHashTransform, ChargeCoversConstAndSparseColumnsMaterialized
     ASSERT_EQ(retained.size(), num_shards);
 
     /// The materialized constant alone is `num_rows` copies of the payload...
+    ASSERT_GE(retained_bytes, static_cast<Int64>(num_rows * value_len));
+    /// ...and all of it was charged while the merges retain it.
+    EXPECT_GE(budget->total_buffered_bytes.load(), retained_bytes);
+
+    retained.clear();
+    EXPECT_EQ(budget->total_buffered_bytes.load(), 0);
+}
+
+/// The shard merges also expand a `ColumnReplicated` sorting column before retaining it
+/// (`IMergingAlgorithm::removeReplicatedFromSortingColumns` in `MergingSortedAlgorithm::initialize` and `consume`).
+/// `scatter` keeps such a column replicated - each distinct nested value once plus per-row indexes - so a few 4 KiB
+/// keys repeated over 8000 rows (what a lazy `ARRAY JOIN` produces from a `String` sorting key) are compact in the
+/// shard chunks but ~32 MiB once a merge expands them. This applies the merge normalization to the retained shard
+/// chunks and checks that the charge covers the expanded footprint.
+TEST(BufferedShardByHashTransform, ChargeCoversReplicatedSortingColumnsMaterializedByMerges)
+{
+    const size_t num_rows = 8000;
+    const size_t num_shards = 8;
+    const size_t num_distinct = 16;
+    const size_t value_len = 4096;
+
+    auto nested = ColumnString::create();
+    for (size_t i = 0; i < num_distinct; ++i)
+    {
+        const std::string value = std::string(value_len, 'x') + std::to_string(i);
+        nested->insertData(value.data(), value.size());
+    }
+    auto indexes = ColumnUInt32::create();
+    for (size_t i = 0; i < num_rows; ++i)
+        indexes->insertValue(static_cast<UInt32>(i * num_distinct / num_rows));
+    ColumnPtr replicated = ColumnReplicated::create(MutableColumnPtr(std::move(nested)), MutableColumnPtr(std::move(indexes)));
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+    SortDescription description;
+    description.emplace_back("k");
+
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+    auto scatter = makeConnectedScatter(
+        header, num_shards, ColumnNumbers{0}, /*max_buffered_bytes=*/ 1ULL << 40, budget, /*sorting_columns=*/ ColumnNumbers{0});
+    scatter.source->push(Chunk(Columns{replicated, makeUInt64ValueColumn(num_rows)}, num_rows));
+    ASSERT_FALSE(drive(scatter));
+
+    /// Pull every parked shard chunk and retain it the way a sorted merge does.
+    IMergingAlgorithm::Inputs retained;
+    Int64 retained_bytes = 0;
+    for (auto & sink : scatter.sinks)
+    {
+        if (!sink->hasData())
+            continue;
+        IMergingAlgorithm::Input input;
+        input.set(sink->pull());
+        IMergingAlgorithm::removeReplicatedFromSortingColumns(header, input, description);
+        IMergingAlgorithm::removeConstAndSparse(input);
+        retained_bytes += static_cast<Int64>(input.chunk.allocatedBytes());
+        retained.push_back(std::move(input));
+    }
+    ASSERT_FALSE(retained.empty());
+
+    /// The expanded key alone is `num_rows` copies of a 4 KiB value...
     ASSERT_GE(retained_bytes, static_cast<Int64>(num_rows * value_len));
     /// ...and all of it was charged while the merges retain it.
     EXPECT_GE(budget->total_buffered_bytes.load(), retained_bytes);
