@@ -292,4 +292,8 @@ public:
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
 
+/// Storage column names affected by `DROP COLUMN` or `CLEAR COLUMN`. With `share_nested_offsets`,
+/// a flattened `Nested` group name maps to all of its member columns.
+Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets);
+
 }

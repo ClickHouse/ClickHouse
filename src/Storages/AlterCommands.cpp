@@ -789,8 +789,10 @@ void AlterCommand::apply(
     const MergeTreeSettings * settings_defaults) const
 {
     /// Helper function for column existence check with IF EXISTS
-    auto should_skip_column_operation = [&]() -> bool {
-        return if_exists && !metadata.columns.has(column_name);
+    auto should_skip_column_operation = [&]() -> bool
+    {
+        return if_exists && !metadata.columns.has(column_name)
+            && (type != DROP_COLUMN || !share_nested_offsets || !metadata.columns.hasNested(column_name));
     };
 
     /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
@@ -2359,6 +2361,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
+                const auto affected_column_names = getColumnNamesAffectedByDrop(all_columns, command.column_name, share_nested);
+                const NameSet dropped_column_names(affected_column_names.begin(), affected_column_names.end());
+
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
@@ -2381,7 +2386,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                     for (const auto & selected_column : table_expression->getSelectedColumnsNames())
                                     {
                                         auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, selected_column);
-                                        if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                        if (column_name_and_type && dropped_column_names.contains(column_name_and_type->getNameInStorage()))
                                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                     }
                                 }
@@ -2658,6 +2663,22 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     }
 
     return result;
+}
+
+Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets)
+{
+    if (const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+        return {column->getNameInStorage()};
+
+    if (share_nested_offsets && columns.hasNested(column_name))
+    {
+        Names nested_column_names;
+        for (const auto & nested_column : columns.getNested(column_name))
+            nested_column_names.push_back(nested_column.name);
+        return nested_column_names;
+    }
+
+    return {column_name};
 }
 
 }
