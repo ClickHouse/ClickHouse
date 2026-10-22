@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class MergeTreeData;
+
 /// Backing storage for `mergeTreeCodecBlockCounts(database, table)`. One row per (part, column, substream).
 /// Counts compressed blocks per codec by reading each stream's `.bin` header. Selecting `part_name`/`column`/`substream` is metadata-only.
 class StorageMergeTreeCodecBlockCounts final : public IStorage
@@ -27,7 +29,7 @@ public:
     /// `SHOW TABLES` on the name, before the catalog is consulted, so that an inaccessible table and a missing one
     /// answer alike; then `SELECT` on every column, before the engine is examined, so that a user without it cannot
     /// learn the engine from the `BAD_ARGUMENTS` that rejects a table that is not a `MergeTree`.
-    static StoragePtr resolveSourceTable(const StorageID & source_table_id, const ContextPtr & context);
+    static std::shared_ptr<MergeTreeData> resolveSourceTable(const StorageID & source_table_id, const ContextPtr & context);
 
     void read(
         QueryPlan & query_plan,
