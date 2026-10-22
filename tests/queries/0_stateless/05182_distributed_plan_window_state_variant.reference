@@ -39,6 +39,9 @@ Variant shape distributes
 -- array of window states through an external sort: spilled then not spilled
 16564983051024262348
 16564983051024262348
+-- tuple of window states through an external sort: spilled then not spilled
+4873130676055992815
+4873130676055992815
 -- arrayJoin over the window state, not lowered: distributed then local
 0.075652
 0.075652
