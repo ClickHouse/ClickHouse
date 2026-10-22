@@ -116,7 +116,12 @@ public:
 
     void prepareForDrop(ContextPtr query_context) override;
 
-    void checkTableCanBeDropped(ContextPtr query_context) const override;
+    /// Shared `prepareForDrop` implementation: returns whether `drop` has to delete the data.
+    static bool prepareForDropImpl(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const ContextPtr & query_context);
 
     bool supportsPartitionBy() const override { return true; }
 

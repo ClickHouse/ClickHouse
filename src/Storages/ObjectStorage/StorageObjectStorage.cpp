@@ -13,6 +13,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1024,22 +1025,38 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
-void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
-{
-    /// Dropping a data lake may delete its data with the client it holds.
-    if (configuration->isDataLakeConfiguration() && query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
-        checkSessionMayUseServerIdentity(*object_storage, query_context);
-}
-
 void StorageObjectStorage::prepareForDrop(ContextPtr query_context)
 {
-    const bool delete_data = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+    delete_data_on_drop = prepareForDropImpl(object_storage, configuration, catalog, query_context);
+}
+
+bool StorageObjectStorage::prepareForDropImpl(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const ContextPtr & query_context)
+{
+    if (!query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
+        return false;
+
+    /// On a secondary replica of a `Replicated` database, data shared by the replicas was already deleted by the initiator.
+    /// Local data belongs to each replica.
+    if (object_storage->getType() != ObjectStorageType::Local)
+    {
+        if (auto txn = query_context->getZooKeeperMetadataTransaction(); txn && !txn->isInitialQuery())
+            return false;
+    }
+
+    /// Dropping a data lake deletes its data with the client it holds.
+    if (configuration->isDataLakeConfiguration())
+        checkSessionMayUseServerIdentity(*object_storage, query_context);
+
     /// `drop` runs in the background, where the metadata of a table that has not been accessed since the server
     /// started is still unloaded and `configuration->drop` would find nothing to delete: load it now, with the
     /// query context at hand. Only Iceberg deletes its own data, and a catalog table is purged by the catalog instead.
-    if (delete_data && !catalog && configuration->isIcebergConfiguration())
+    if (!catalog && configuration->isIcebergConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, query_context);
-    delete_data_on_drop = delete_data;
+    return true;
 }
 
 void StorageObjectStorage::drop()

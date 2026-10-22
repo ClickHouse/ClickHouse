@@ -2047,6 +2047,34 @@ def test_on_cluster_ddl_rejected_for_datalake_catalog(started_cluster):
         create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
 
 
+def test_on_cluster_ddl_rejected_through_alias_to_datalake_catalog(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_on_cluster_alias_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+    alias_name = f"{test_ref}_alias"
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node1, namespace, table_name, "(x String)")
+    for node in [node1, node2]:
+        node.query(f"CREATE TABLE default.{alias_name} ENGINE = Alias('{CATALOG_NAME}', '{namespace}.{table_name}')")
+
+    try:
+        err = node1.query_and_get_error(
+            f"ALTER TABLE default.{alias_name} ON CLUSTER cluster_simple ADD COLUMN y Int64",
+            settings={"distributed_ddl_output_mode": "throw"},
+        )
+        assert "ON CLUSTER is not supported for DataLakeCatalog" in err, err
+        columns = node1.query(f"DESCRIBE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`")
+        assert [line.split("\t")[0] for line in columns.splitlines()] == ["x"], columns
+    finally:
+        for node in [node1, node2]:
+            node.query(f"DROP TABLE IF EXISTS default.{alias_name}")
+
+
 def test_cluster_insert(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]

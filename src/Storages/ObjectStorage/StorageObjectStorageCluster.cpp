@@ -36,7 +36,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool data_lake_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsMilliseconds cluster_function_wait_for_replica_ms;
@@ -335,11 +334,7 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::prepareForDrop(ContextPtr query_context)
 {
-    const bool delete_data = query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
-    /// See `StorageObjectStorage::prepareForDrop`.
-    if (delete_data && !catalog && configuration->isIcebergConfiguration())
-        configuration->lazyInitializeIfNeeded(object_storage, query_context);
-    delete_data_on_drop = delete_data;
+    delete_data_on_drop = StorageObjectStorage::prepareForDropImpl(object_storage, configuration, catalog, query_context);
 }
 
 void StorageObjectStorageCluster::drop()

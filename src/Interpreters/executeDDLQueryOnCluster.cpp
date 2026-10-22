@@ -16,11 +16,14 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Storages/StorageAlias.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #if CLICKHOUSE_CLOUD
@@ -52,7 +55,20 @@ extern const int LOGICAL_ERROR;
 }
 
 
-void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases)
+/// Adds the databases of the tables an `Alias` chain starting at `table` forwards to.
+static void addAliasTargetDatabases(StoragePtr table, std::vector<String> & target_databases)
+{
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    while (const auto * alias = table ? table->as<StorageAlias>() : nullptr)
+    {
+        table = alias->tryGetTargetTable();
+        if (!table || !visited.insert(table->getStorageID()).second)
+            break;
+        target_databases.push_back(table->getStorageID().database_name);
+    }
+}
+
+void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases, const ContextPtr & context)
 {
     /// `RENAME` / `EXCHANGE TABLE` is `ASTRenameQuery`, which does not derive from `ASTQueryWithTableAndOutput`;
     /// queries with no target table (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
@@ -69,6 +85,18 @@ void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Stri
         with_table && with_table->table)
     {
         add_target_database(with_table->getDatabase());
+
+        /// An `Alias` forwards `ALTER`, `TRUNCATE`, `OPTIMIZE` and mutations to its target, so every host would
+        /// apply them to the target. `CREATE`, `DROP` and `DETACH` act on the alias itself.
+        const auto * drop = query_ptr->as<ASTDropQuery>();
+        const bool acts_on_alias_itself = query_ptr->as<ASTCreateQuery>() || (drop && drop->kind != ASTDropQuery::Kind::Truncate);
+        if (!acts_on_alias_itself)
+        {
+            const Strings named_databases(target_databases);
+            for (const auto & database_name : named_databases)
+                addAliasTargetDatabases(
+                    DatabaseCatalog::instance().tryGetTable(StorageID(database_name, with_table->getTable()), context), target_databases);
+        }
     }
     else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()); rename && !rename->database)
     {
@@ -240,7 +268,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// Initiator-side guard; workers re-check in `DDLWorker::tryExecuteQuery`. A table name still bare after the
     /// rewrite above is resolved on each host against its `default_database` from the cluster definition, so it is
     /// checked against those databases rather than against the initiator's current one.
-    checkQueryDatabasesSupportOnClusterDDL(query_ptr, access_check_default_databases);
+    checkQueryDatabasesSupportOnClusterDDL(query_ptr, access_check_default_databases, context);
 
     /// Check access rights, assume that all servers have the same users config
     context->checkAccess(access_to_check);

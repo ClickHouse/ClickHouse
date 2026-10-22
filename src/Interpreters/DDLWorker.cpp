@@ -575,7 +575,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
     try
     {
-        checkQueryDatabasesSupportOnClusterDDL(task.query, {context->getCurrentDatabase()});
+        checkQueryDatabasesSupportOnClusterDDL(task.query, {context->getCurrentDatabase()}, context);
 
         auto query_context = task.makeQueryContext(context, zookeeper);
 

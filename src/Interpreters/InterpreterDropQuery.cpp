@@ -2,7 +2,6 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -396,15 +395,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
-            /// On a secondary replica of a `Replicated` database the data was already deleted by the initiator.
-            ContextPtr prepare_context = context_;
-            if (auto txn = context_->getZooKeeperMetadataTransaction(); txn && !txn->isInitialQuery())
-            {
-                auto secondary_context = Context::createCopy(context_);
-                secondary_context->setSetting("data_lake_delete_data_on_drop", false);
-                prepare_context = secondary_context;
-            }
-            table->prepareForDrop(prepare_context);
+            table->prepareForDrop(context_);
 
             context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
