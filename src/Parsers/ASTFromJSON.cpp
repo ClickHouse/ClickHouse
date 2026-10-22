@@ -382,26 +382,28 @@ ASTPtr IAST::createFromJSON(const String & json)
     parser.setHandler(new StackCheckingParseHandler);
     /// Poco's own default bound is 1000 levels (JSON_DEFAULT_DEPTH).
     parser.setDepth(json_nesting_budget);
-    Poco::Dynamic::Var result;
-    try
-    {
-        result = parser.parse(json);
-    }
-    /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
-    catch (const Exception &)
-    {
-        throw;
-    }
-    catch (const Poco::Exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
-    }
-
-    /// Every exit after a successful parse must go through `dismantleJSON`, including the checks of
-    /// the root type: a deeply nested array at the root would otherwise be destroyed recursively.
+    /// Every exit must go through `dismantleJSON`, including the failed ones: the parse handler keeps
+    /// the document built so far, whole if only trailing characters are rejected, or as deep as the
+    /// stack allows if `StackCheckingParseHandler` throws, and `parser` would destroy it recursively.
+    /// `parser.result` returns the root held by the handler on every path.
     ASTPtr ast;
     try
     {
+        Poco::Dynamic::Var result;
+        try
+        {
+            result = parser.parse(json);
+        }
+        /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
+        }
+
         Poco::JSON::Object::Ptr obj;
         try
         {
@@ -419,10 +421,10 @@ ASTPtr IAST::createFromJSON(const String & json)
     }
     catch (...)
     {
-        dismantleJSON(result);
+        dismantleJSON(parser.result());
         throw;
     }
-    dismantleJSON(result);
+    dismantleJSON(parser.result());
     return ast;
 }
 
