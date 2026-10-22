@@ -188,12 +188,6 @@ DatabaseFilesystem::DatabaseFilesystem(
     /// that exist on the configured `IDisk`. Use disk-aware existence checks that
     /// fall back to `fs::exists` when no volume is configured.
     auto user_files_volume = is_local ? VolumePtr{} : getContext()->getUserFilesVolume();
-    auto path_exists = [&](const fs::path & p)
-    {
-        if (user_files_volume)
-            return userFilesPathExists(p.string(), user_files_volume->getDisks());
-        return fs::exists(p);
-    };
 
     if (fs::path(path).is_relative())
     {
@@ -222,26 +216,41 @@ DatabaseFilesystem::DatabaseFilesystem(
     else
         path = fs::absolute(path).lexically_normal();
 
+    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop.
+    std::error_code ec;
+    const bool path_exists = user_files_volume
+        ? userFilesPathExists(path, user_files_volume->getDisks())
+        : fs::exists(path, ec);
+
+    /// Where a path stat fails on leads cannot be resolved, so it is not checked here. A user statement over it is
+    /// refused below, and each table resolution checks its own path before touching a file.
     /// On a plain `user_files_path` the database root is checked after resolving symlinks
     /// (`pathStartsWith`), as before `user_files_policy` existed: the lexical
     /// `Context::isUserFilesPath` would accept a root that is an in-root symlink to an outside
     /// directory, and every table of the database would then be read from there.
-    if (!is_local
+    if (!is_local && !ec
         && !(user_files_volume ? getContext()->isUserFilesPath(path) : pathStartsWith(fs::path(path), fs::path(user_files_path))))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path");
     }
 
-    if (!path_exists(path))
+    if (!path_exists)
     {
         /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
         /// would make a directory removed since then enough to stop the server from starting. Tables resolve
         /// their file on access, so an unreachable path costs only the tables; the database still drops.
         if (!is_internal_metadata_replay)
+        {
+            if (ec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot access path {}: {}", path, ec.message());
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+        }
 
-        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
+        if (ec)
+            LOG_WARNING(log, "Cannot access path {}: {}. The database has no tables until it becomes accessible", path, ec.message());
+        else
+            LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
     }
 }
 
