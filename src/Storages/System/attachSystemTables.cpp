@@ -54,6 +54,7 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include <Storages/System/StorageSystemConnections.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -148,7 +149,9 @@
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
 
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
+#include <Server/ConnectionRegistry.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -171,6 +174,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool collect_connection_metrics;
+}
 
 const char * const ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE = __builtin_FILE();
 
@@ -1792,6 +1800,10 @@ To show all possible error codes, including ones which were not triggered, set s
 .columns_notes
 <Note>
 Counters for some errors may increase during successful query execution. It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.
+
+`last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
+`last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
 </Note>
 
 .examples
@@ -1905,9 +1917,11 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT query_id, type, query, query_duration_ms
 FROM system.query_log
-WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+WHERE query_id GLOBAL IN (SELECT query_id FROM system.session_query_ids)
 ORDER BY event_time_microseconds;
 ```
+
+`GLOBAL IN` evaluates the subquery once, in the current session. With plain `IN`, a query executed with parallel replicas also evaluates it on the other replicas, which do not see the history of the current session, so the rows they read are filtered out.
 
 .see_also
 - [system.query_log](/reference/system-tables/query_log) - Details of executed queries.
@@ -2650,6 +2664,72 @@ moved to the TTL destination by a background move task (observable via
 `system.moves`). See the
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
 )DOCS_MD");
+    /// Attach the table also if `collect_connection_metrics` is `false`, because a reload of the configuration can change the setting.
+    ConnectionRegistry::instance().setEnabled(context->getServerSettings()[ServerSetting::collect_connection_metrics]);
+    attach<StorageSystemConnections>(context, system_database, "connections", R"DOCS_MD(
+.description
+Shows the open client connections of the native TCP and HTTP query interfaces.
+A connection is `active` when a query runs. A connection is `idle` when it waits for the next query.
+
+The table does not show these connections:
+- Connections of other protocols, for example MySQL, PostgreSQL, and gRPC.
+- Interserver connections.
+- HTTP connections that did not run a query, for example `/ping` and Prometheus connections.
+
+The server collects the connections only if the server setting `collect_connection_metrics` is `true`. If the setting is `false`, the table is empty.
+You can change the setting without a restart (`SYSTEM RELOAD CONFIG`):
+- When you change the setting to `false`, the table becomes empty and the server stops the registration of new connections.
+- When you change the setting to `true`, an open connection shows in the table on its next query.
+
+The server adds a TCP connection to the table after authentication. The server removes the connection when it closes.
+The server adds an HTTP connection to the table on its first query. The server removes the connection when the socket closes.
+Thus, the table shows an HTTP keep-alive connection as `idle` between the requests.
+
+A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+The check uses the user ID, not the name. Thus, a renamed user keeps its connections, and a new user with the old name does not get them.
+
+`connection_id` is a random UUID. Thus, it is unique across servers, and you can combine the tables of many replicas, for example with `clusterAllReplicas`.
+
+`connected_time` has the same meaning for TCP and HTTP: the time when the server started to handle the socket.
+This time is before the TCP handshake, the authentication, and the first query. Thus, it can be earlier than the time when the connection shows in the table.
+
+.examples
+```sql
+SELECT connection_id, protocol, user, status, query_id, client_name, connected_time, last_query_time
+FROM system.connections
+FORMAT Vertical;
+```
+
+```sql
+SELECT hostName(), protocol, status, count()
+FROM clusterAllReplicas(default, system.connections)
+GROUP BY ALL;
+```
+
+```response
+Row 1:
+──────
+connection_id:   0d6c1b7e-31a2-4f5c-9a43-7e2b8c5d1f90
+protocol:        TCP
+user:            default
+status:          active
+query_id:        845dcadd-7249-4ce4-8c3d-c08032594155
+client_name:     ClickHouse client
+connected_time:  2026-03-17 09:18:18
+last_query_time: 2026-03-17 09:18:27
+
+Row 2:
+──────
+connection_id:   a4f3e2d1-8b7c-4c6d-9e5f-1a2b3c4d5e6f
+protocol:        HTTP
+user:            default
+status:          idle
+query_id:
+client_name:     curl/8.5.0
+connected_time:  2026-03-17 09:18:14
+last_query_time: 2026-03-17 09:18:14
+```
+)DOCS_MD");
     attach<StorageSystemProcesses>(context, system_database, "processes", R"DOCS_MD(
 .description
 This system table is used for implementing the `SHOW PROCESSLIST` query.
@@ -3190,6 +3270,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 
 Row 2:
@@ -3210,6 +3291,7 @@ slowdowns_count:         0
 estimated_recovery_time: 0
 database_shard_name:
 database_replica_name:
+replica_group:
 is_active:               NULL
 ```
 
@@ -3299,15 +3381,17 @@ Contains information about all filesystem cache settings
 )DOCS_MD");
     attachNoDescription<StorageSystemColumnsCache>(context, system_database, "columns_cache", R"DOCS_MD(
 .description
-Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
+Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts and of `Parquet` files in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
 
 Each entry corresponds to a contiguous range of granules `[row_begin, row_end)` of a single column of a single data part, within a fixed stripe of the part of about 65536 rows. Reads are served from the cache granule by granule, and the stripes are the same for every read of the part, so the entries do not depend on how a query splits the part into mark ranges: a read that touches only some granules of a stripe caches those, and adjacent ranges written by different reads are merged.
 
 The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud). Tables in legacy `Ordinary` databases have no UUID and are silently excluded from the cache. Only wide parts participate in the cache; compact parts are silently excluded.
 
+An entry of a `Parquet` file (read by the `file`, `s3`, `azureBlobStorage` table functions and table engines, and by data lake tables) holds a whole column of one row group of the file: `part` is the path of the file, and `[row_begin, row_end)` is the range of rows of the row group in the file. An entry of a file read by a table (for example `ENGINE = File`, `S3`, or a data lake table) has the UUID of the table in `table_uuid`, shows its `database` and `table`, and is visible under the same rules as the entries of a `MergeTree` table. An entry of a file read by a table function has the nil UUID in `table_uuid` and empty `database` and `table`; it is visible only to a user holding `SHOW COLUMNS` globally and an unrestricted `READ` grant on the source of the file (`FILE`, `S3`, `AZURE`, `HDFS` or `URL`).
+
 The cache is controlled by the server settings `columns_cache_size` (by default `columns_cache_size_to_ram_ratio` of the memory available to the server) and `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`, `enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`, `columns_cache_max_estimated_bytes_to_write_to_cache`, and `columns_cache_max_bytes_to_write_to_cache`. It can be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
 
-The rows are filtered by access rights: an entry is visible only to a user who may see both its table and its column, that is holds `SHOW TABLES` on the table and `SHOW COLUMNS` on the column. A grant of `SHOW COLUMNS` on `*.*` does not bypass a revoke on an individual table or column, because this table exposes operational data (part names, row ranges and cached sizes) and not only schema. Entries of a table that no longer exists carry no name to check, so they are visible only to a user holding `SHOW COLUMNS` globally.
+The rows are filtered by access rights: an entry is visible only to a user who may see both its table and its column, that is holds `SHOW TABLES` on the table and `SHOW COLUMNS` on the column. A grant of `SHOW COLUMNS` on `*.*` does not bypass a revoke on an individual table or column, because this table exposes operational data (part names, row ranges and cached sizes) and not only schema. Entries of a table that no longer exists carry no name to check, so they are visible only to a user holding `SHOW COLUMNS` globally; for an entry of a `Parquet` file read by such a table, the unrestricted `READ` grant on the source of the file is also required.
 
 .examples
 Total memory consumed by cached columns, per table:

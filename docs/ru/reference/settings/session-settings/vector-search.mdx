@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="vector_search_filter_strategy">
-  ## vector_search_filter_strategy
-</div>
+## vector_search_filter_strategy {#vector_search_filter_strategy}
 
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
 
@@ -27,21 +25,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * &#39;postfilter&#39; - Использовать индекс векторного сходства для поиска ближайших соседей, затем применить другие фильтры
 * &#39;prefilter&#39; - Сначала применить другие фильтры, затем выполнить поиск полным перебором для определения соседей.
 
-<div id="vector_search_index_fetch_multiplier">
-  ## vector_search_index_fetch_multiplier
-</div>
+## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier}
 
 **Псевдонимы**: `vector_search_postfilter_multiplier`
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Псевдоним настройки 'vector_search_postfilter_multiplier'"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Псевдоним настройки 'vector_search_postfilter_multiplier'"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка. Изначально она называлась `vector_search_postfilter_multiplier`; теперь это имя является её псевдонимом."}]}]} />
 
 Умножает количество ближайших соседей, получаемых из индекса векторного сходства, на это число. Применяется только при постфильтрации с другими предикатами или если установлена настройка `vector_search_with_rescoring = 1`. Допустимый диапазон: [1.0, 1000.0]. Значения вне этого диапазона отклоняются.
 
-<div id="vector_search_use_quantized_codes">
-  ## vector_search_use_quantized_codes
-</div>
+## vector_search_use_quantized_codes {#vector_search_use_quantized_codes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -52,9 +46,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 1. выполнять сканирование и фильтрацию квантизованных векторов (на этом этапе получается `k * vector_search_index_fetch_multiplier` результатов), и
 2. повторно оценивать найденные векторы по исходным полноточным векторам.
 
-<div id="vector_search_with_rescoring">
-  ## vector_search_with_rescoring
-</div>
+## vector_search_with_rescoring {#vector_search_with_rescoring}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

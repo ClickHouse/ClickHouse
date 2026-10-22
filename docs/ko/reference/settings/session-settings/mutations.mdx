@@ -12,17 +12,17 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-## mutations_max_literal_size_to_replace
+## mutations_max_literal_size_to_replace {#mutations_max_literal_size_to_replace}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 `UPDATE` 및 `DELETE` 쿼리에서 대체할 직렬화된 리터럴의 최대 크기(바이트)입니다. 위의 두 설정 중 하나 이상이 활성화된 경우에만 적용됩니다. 기본값은 16384(16 KiB)입니다.
 
-## mutations_sync
+## mutations_sync {#mutations_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-`ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN|MATERIALIZE STATISTICS` 쿼리([뮤테이션](/ko/reference/statements/alter/index#mutations))를 동기적으로 실행할 수 있습니다.
+`UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `MATERIALIZE STATISTICS` 등의 [`ALTER TABLE`](/ko/reference/statements/alter/index) 작업으로 생성된 뮤테이션을 클라이언트가 어떤 방식으로 대기할지 제어합니다.
 
 가능한 값:
 

@@ -1,0 +1,11 @@
+policy, x	\N
+policy, y	
+policy, x and s	\N	hello
+policy, x IS NULL	1
+policy, no prewhere	\N
+policy on one of two children	\N	c
+policy on one of two children	5	c2
+nested, policy on k	[NULL,NULL]	[1,2]
+nested, policy on n.a, n.b	[NULL,NULL]
+nested, policy on n.a, x	\N
+alias, no policy	\N	14

@@ -492,6 +492,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_trivial_count_with_sparsity_filter", trueOrFalseSetting},
        {"optimize_trivial_group_by_limit_query", trueOrFalseSetting},
        {"optimize_truncate_order_by_after_group_by_keys", trueOrFalseSetting},
+       {"optimize_uniq_exact_radix_partitioning", trueOrFalseSetting},
        {"optimize_uniq_to_count", trueOrFalseSetting},
        {"optimize_use_implicit_projections", trueOrFalseSetting},
        {"optimize_use_projection_filtering", trueOrFalseSetting},
@@ -885,6 +886,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {"''", "'Persisted'", "'Streaming'"},
          false)},
     {"distributed_plan_force_shuffle_aggregation", trueOrFalseSetting},
+    {"distributed_plan_partial_aggregation_before_shuffle", trueOrFalseSetting},
     {"distributed_plan_optimize_exchanges", trueOrFalseSetting},
     {"distributed_plan_prefer_replicas_over_workers", trueOrFalseSettingNoOracle},
     {"distributed_plan_read_in_order", trueOrFalseSettingNoOracle},
@@ -916,6 +918,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_filesystem_read_prefetches_log", trueOrFalseSettingNoOracle},
     {"enable_function_early_short_circuit", trueOrFalseSettingNoOracle},
     {"enable_global_with_statement", trueOrFalseSettingNoOracle},
+    {"enable_group_by_top_k_dynamic_filtering", trueOrFalseSettingNoOracle},
     {"enable_group_by_top_k_optimization", trueOrFalseSettingNoOracle},
     {"enable_hdfs_pread", trueOrFalseSettingNoOracle},
     {"enable_http_compression", trueOrFalseSettingNoOracle},
@@ -1576,6 +1579,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_enum_as_byte_array", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_parquet_geometadata", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_geometry_logical_type", trueOrFalseSettingNoOracle},
+    {"output_format_parquet_write_file_logical_type", trueOrFalseSettingNoOracle},
     {"output_format_parquet_max_dictionary_size",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -2468,6 +2473,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 60000)); },
                   {},
                   false)},
+             {"iceberg_orphan_files_min_retention_seconds",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
+                  {},
+                  false)},
              {"iceberg_orphan_files_older_than_seconds",
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 600)); },
@@ -2745,6 +2755,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               false)},
          /// {"output_format_native_encode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"output_format_orc_row_index_stride", CHSetting(rowsRange, {}, false)},
+         {"output_format_parquet_use_alp_encoding", trueOrFalseSettingNoOracle},
          {"output_format_parquet_write_checksums", trueOrFalseSettingNoOracle},
          {"output_format_trim_fixed_string", trueOrFalseSettingNoOracle},
          {"output_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle},
