@@ -883,11 +883,7 @@ std::vector<StreamWithSizeHint> MergeTreeDataPartWide::getListOfStreamsForColumn
 {
     NamesAndTypesList cols;
     cols.emplace_back(column);
-    return getListOfStreamsForColumns(cols)[column.name];
-}
 
-std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeDataPartWide::getListOfStreamsForColumns(const NamesAndTypesList & cols) const
-{
     const auto metadata_ptr = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
@@ -916,7 +912,7 @@ std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeDataPartWid
         ReadBufferFromFileBase::ProfileCallback{});
 
     auto & reader_wide = assert_cast<MergeTreeReaderWide &>(*reader);
-    return reader_wide.getAllColumnsSubstreams();
+    return reader_wide.getAllColumnsSubstreams()[column.name];
 }
 
 }

@@ -76,8 +76,7 @@ private:
     /// from the serialization, whose state-less enumeration misses the data-dependent streams of dynamic subcolumns.
     void forEachExistingStreamOfColumn(const String & column_name, const std::function<void(const String & stream_name)> & callback) const;
 
-    /// The streams a read of the columns touches, listed by a reader after it has read the prefixes.
-    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
+    /// The streams a read of the column touches, listed by a reader after it has read the prefixes.
     std::vector<StreamWithSizeHint> getListOfStreamsForColumn(const NameAndTypePair & column) const;
 };
 

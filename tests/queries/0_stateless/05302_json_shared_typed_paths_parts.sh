@@ -26,6 +26,8 @@ INSERT INTO t_plain SELECT * FROM t_w;
 SELECT table, arraySort(arrayFilter(s -> s LIKE '%typed_shared_data%', substreams)), arraySort(arrayFilter(f -> f LIKE '%typed_shared_data%', filenames)), arrayExists(s -> s IN ('json.a', 'json.b', 'json.c'), substreams), arrayExists(s -> s IN ('a', 'b', 'c'), subcolumns.names)
     FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_w', 't_c', 't_plain') AND column = 'json' AND active ORDER BY table;
 SELECT table, column_data_compressed_bytes > 0, column_data_uncompressed_bytes > 0, column_marks_bytes > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_w' AND column = 'json' AND active;
+SELECT table, arraySort(arrayFilter(x -> x.1 IN ('a', 'b', 'c'), arrayZip(subcolumns.names, arrayMap(bytes -> bytes > 0, subcolumns.data_compressed_bytes), arrayMap(bytes -> bytes > 0, subcolumns.data_uncompressed_bytes))))
+    FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_w', 't_plain') AND column = 'json' AND active ORDER BY table;
 SELECT table, data_compressed_bytes > 0 FROM system.columns WHERE database = currentDatabase() AND table = 't_w' AND name = 'json';
 CHECK TABLE t_w SETTINGS check_query_single_value_result = 1;
 CHECK TABLE t_c SETTINGS check_query_single_value_result = 1;

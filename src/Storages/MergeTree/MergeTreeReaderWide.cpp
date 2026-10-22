@@ -1651,7 +1651,9 @@ std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide:
     {
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
-        auto & streams_of_column = column_to_streams[name_and_type.name];
+        /// Under the requested name: the part may read the column under another one, as the `size0` of a Nested
+        /// array, which is the offsets subcolumn of the collected Nested column.
+        auto & streams_of_column = column_to_streams[requested_column_names[i]];
         std::unordered_map<String, size_t> stream_positions;
 
         ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
