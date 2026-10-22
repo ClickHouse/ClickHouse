@@ -210,18 +210,29 @@ struct RelativePathWithMetadata
 
     explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
+        , resolved_url(metadata_ ? metadata_->resolved_url : std::nullopt)
         , metadata(std::move(metadata_))
     {}
 
     RelativePathWithMetadata(String relative_path_, std::optional<size_t> read_source_index_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
         , read_source_index(read_source_index_)
+        , resolved_url(metadata_ ? metadata_->resolved_url : std::nullopt)
         , metadata(std::move(metadata_))
     {}
 
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
     ~RelativePathWithMetadata() = default;
+
+    void setMetadata(ObjectMetadata metadata_)
+    {
+        /// Keep metadata and data reads on the same Web failover option. Metadata without a URL
+        /// must not discard a binding already received in a distributed task.
+        if (metadata_.resolved_url)
+            resolved_url = metadata_.resolved_url;
+        metadata = std::move(metadata_);
+    }
 
     std::string getFileName() const
     {

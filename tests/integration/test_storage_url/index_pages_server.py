@@ -202,7 +202,56 @@ class RequestHandler(BaseHTTPRequestHandler):
             return b"202\n"
         return None
 
-    def _send_archive_data(self, archive_data):
+    def _reject_invalid_file_query(self, parsed_url):
+        required_queries = {
+            "/data/query_override/part1.tsv": "download=1",
+            "/data/query_directory/subdir/part1.tsv": "token=abc",
+            "/data/source_query/subdir/part1.tsv": "token=abc",
+            "/data/source_query_duplicate/subdir/part1.tsv": "token=abc",
+        }
+        required_query = required_queries.get(parsed_url.path)
+        if required_query is None or parsed_url.query == required_query:
+            return False
+        self.send_response(404)
+        self.end_headers()
+        return True
+
+    def _handle_index_pin(self, parsed_url):
+        if parsed_url.path == "/data/index_pin/":
+            body = b'<a href="part.tsv">part.tsv</a><a href="archive.zip">archive.zip</a>'
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command == "GET":
+                self.wfile.write(body)
+            return True
+        if parsed_url.path not in ("/data/index_pin/part.tsv", "/data/index_pin/archive.zip"):
+            return False
+
+        # Both sources can serve data, but only mirror can supply metadata. Equal-sized contents
+        # make selecting primary again a wrong-result bug rather than a truncated-file error.
+        if parsed_url.query not in ("source=primary", "source=mirror"):
+            self.send_response(404)
+            self.end_headers()
+            return True
+        primary = parsed_url.query == "source=primary"
+        data = b"9\n" if primary else b"7\n"
+        if parsed_url.path.endswith(".zip"):
+            data = make_zip_file([("value.tsv", data)])
+        if self.command == "HEAD":
+            if primary:
+                self.send_response(404)
+            else:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("X-Source", "mirror")
+            self.end_headers()
+        else:
+            self._send_archive_data(data, source="primary" if primary else "mirror")
+        return True
+
+    def _send_archive_data(self, archive_data, source=None):
         range_header = self.headers.get("Range")
         if range_header:
             match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header)
@@ -229,6 +278,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(response_data)))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("X-Source-File", urlparse(self.path).path.rsplit("/", 1)[-1])
+        if source is not None:
+            self.send_header("X-Source", source)
         self.end_headers()
         self.wfile.write(response_data)
 
@@ -238,7 +289,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         path = parsed.path
-        self._record_request("HEAD", path)
+        self._record_request("HEAD", self.path if path.startswith("/data/index_pin/") else path)
+        if self._handle_index_pin(parsed) or self._reject_invalid_file_query(parsed):
+            return
         if self._temporarily_reject_pin_primary(parsed):
             return
         if self._reject_archive_request_without_header(parsed):
@@ -374,7 +427,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         path = parsed.path
-        self._record_request("GET", path)
+        self._record_request("GET", self.path if path.startswith("/data/index_pin/") else path)
+        if self._handle_index_pin(parsed) or self._reject_invalid_file_query(parsed):
+            return
         if self._temporarily_reject_pin_primary(parsed):
             return
         if self._reject_archive_request_without_header(parsed):
@@ -672,22 +727,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/data/headers/") and self.headers.get("X-Test-Header") != "1":
                 self.send_response(403)
-                self.end_headers()
-                return
-            if path == "/data/query_override/part1.tsv" and parsed.query != "download=1":
-                self.send_response(404)
-                self.end_headers()
-                return
-            if path == "/data/query_directory/subdir/part1.tsv" and parsed.query != "token=abc":
-                self.send_response(404)
-                self.end_headers()
-                return
-            if path == "/data/source_query/subdir/part1.tsv" and parsed.query != "token=abc":
-                self.send_response(404)
-                self.end_headers()
-                return
-            if path == "/data/source_query_duplicate/subdir/part1.tsv" and parsed.query != "token=abc":
-                self.send_response(404)
                 self.end_headers()
                 return
             data = DATA_PARTS[path].encode("utf-8")

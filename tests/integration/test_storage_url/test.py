@@ -836,6 +836,44 @@ def test_url_archive_path_failover():
         assert "index listing" in error
 
 
+@pytest.mark.parametrize("archive", [False, True])
+def test_url_index_wildcard_pins_selected_source(archive):
+    outer_path = "archive*.zip" if archive else "part*.tsv"
+    source = f"http://resolver:8087/data/index_pin/{outer_path}?source={{primary|mirror}}"
+    if archive:
+        source += " :: value.tsv"
+    settings = {
+        "allow_url_wildcard_from_index_pages": 1,
+        "use_hive_partitioning": 0,
+        "schema_inference_use_cache_for_url": 0,
+        "use_page_cache_for_object_storage": 0,
+    }
+    cases = [("url", False, 0), ("url", True, 0), ("urlCluster", False, 0)]
+    if archive:
+        cases.append(("urlCluster", False, 1))
+    for function, infer_schema, multiple_nodes in cases:
+        reset_index_page_server_stats()
+        cluster_arg = "'test_cluster_two_shards', " if function == "urlCluster" else ""
+        structure_arg = "" if infer_schema else ", 'x UInt64'"
+        column = "c1" if infer_schema else "x"
+        result = node1.query(
+            f"SELECT sum({column}), any(_headers['X-Source']) "
+            f"FROM {function}({cluster_arg}'{source}', 'TSV'{structure_arg})",
+            settings={**settings, "cluster_function_process_archive_on_multiple_nodes": multiple_nodes},
+        )
+        assert result == "7\tmirror\n"
+
+        # Verify the listing path, not the already-covered fixed-key iterator. A recovered primary
+        # can serve different bytes; neither schema inference nor workers may reselect it after HEAD.
+        stats = get_index_page_server_stats()
+        file_path = "/data/index_pin/archive.zip" if archive else "/data/index_pin/part.tsv"
+        assert any(key.startswith("GET /data/index_pin/?") for key in stats), stats
+        assert stats.get(f"HEAD {file_path}?source=primary", 0) > 0, stats
+        assert stats.get(f"HEAD {file_path}?source=mirror", 0) > 0, stats
+        assert stats.get(f"GET {file_path}?source=primary", 0) == 0, stats
+        assert stats.get(f"GET {file_path}?source=mirror", 0) > 0, stats
+
+
 def test_url_cluster_headers_virtual_column():
     result = node1.query(
         with_url_wildcard_setting(

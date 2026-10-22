@@ -2197,14 +2197,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (!object_info.metadata)
     {
-        object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        object_info.setMetadata(getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false));
     }
     else if (!object_info.metadata->is_fetched && !object_info.metadata->is_from_table_records && validate_etag_on_read)
     {
         /// Refresh the cluster function's skip_object_metadata placeholder to obtain its size + ETag for
         /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
         /// that merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
-        object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        object_info.setMetadata(getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false));
     }
 
     /// A cache serves bytes without a request with this reader's credentials, so it needs an identity scoped to them.
@@ -2212,7 +2212,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         && (((use_filesystem_cache || use_page_cache) && !object_info.metadata->getContentCacheToken())
             || (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())))
     {
-        object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        object_info.setMetadata(getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false));
     }
 
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
@@ -2749,7 +2749,6 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         auto relative_path = *key;
         if (object_metadata.resolved_path)
             relative_path.relative_path = *object_metadata.resolved_path;
-        relative_path.resolved_url = object_metadata.resolved_url;
 
         if (deferred_filter_actions && filter_after_metadata && is_filtered_out(relative_path))
             continue;
@@ -2760,7 +2759,7 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (emit_profile_events)
             ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects);
 
-        relative_path.metadata = std::move(object_metadata);
+        relative_path.setMetadata(std::move(object_metadata));
         return std::make_shared<ObjectInfo>(std::move(relative_path));
     }
 }
