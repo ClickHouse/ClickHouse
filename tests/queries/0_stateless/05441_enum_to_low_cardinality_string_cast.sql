@@ -26,6 +26,13 @@ SELECT CAST(CAST(map('a', 1, 'b', 2), 'Map(Enum16(\'a\' = -5, \'b\' = 300), Int6
 SELECT CAST(CAST(['x', 'y', 'x'], 'Array(Enum8(\'x\' = -1, \'y\' = 1))') AS Array(LowCardinality(String))) AS a, toTypeName(a);
 SELECT CAST(CAST([], 'Array(Enum8(\'x\' = 1))') AS Array(LowCardinality(String))) AS a, toTypeName(a);
 
+-- NULL rows of a `Nullable(Tuple(...))` hold placeholder values that are not in the enum.
+SELECT CAST(t AS Nullable(Tuple(LowCardinality(String)))) FROM format(RowBinary, 't Nullable(Tuple(Enum8(\'a\' = 1)))', '\x01');
+SELECT CAST(t AS Nullable(Tuple(LowCardinality(String)))) FROM format(RowBinary, 't Nullable(Tuple(Enum16(\'a\' = 1)))', '\x01');
+
+-- The result dictionary holds only the used names, so functions do not see the unused name '!'.
+SELECT hex(base58Decode(CAST(e AS LowCardinality(String)))) FROM format(RowBinary, 'e Enum8(\'2\' = 1, \'!\' = 2)', '\x01');
+
 -- `RowBinary` does not validate enum values.
 SELECT CAST(e AS String) FROM format(RowBinary, 'e Enum8(\'a\' = 1)', '\x05'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT CAST(e AS LowCardinality(String)) FROM format(RowBinary, 'e Enum8(\'a\' = 1)', '\x05'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }

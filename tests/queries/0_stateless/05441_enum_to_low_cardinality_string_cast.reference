@@ -7,3 +7,6 @@ neg	max	only	LowCardinality(String)
 {'a':1,'b':2}	Map(LowCardinality(String), Int64)
 ['x','y','x']	Array(LowCardinality(String))
 []	Array(LowCardinality(String))
+\N
+\N
+01

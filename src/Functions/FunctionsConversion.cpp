@@ -2956,22 +2956,29 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
         value_to_index[values[i].second - min_value] = static_cast<UInt32>(all_names_lc.getIndexes().getUInt(i));
     }
 
-    return [enum_type, min_value, value_to_index, dictionary = all_names_lc.getDictionaryPtr()]
-        (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t) -> ColumnPtr
+    const auto default_index = static_cast<UInt32>(all_names_lc.getDictionary().getDefaultValueIndex());
+    return [enum_type, min_value, value_to_index, default_index, dictionary = all_names_lc.getDictionaryPtr()]
+        (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
     {
         const auto & data = typeid_cast<const typename EnumType::ColumnType &>(*arguments.front().column).getData();
+        /// Set by a surrounding `Nullable(Tuple(...))`, whose NULL rows hold placeholder values.
+        const auto * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
         auto indexes = ColumnUInt32::create(data.size());
         auto & indexes_data = indexes->getData();
         for (size_t i = 0; i < data.size(); ++i)
         {
             size_t pos = data[i] - min_value;
-            if (pos >= value_to_index.size() || value_to_index[pos] == missing)
+            if (null_map && (*null_map)[i])
+                indexes_data[i] = default_index;
+            else if (pos < value_to_index.size() && value_to_index[pos] != missing)
+                indexes_data[i] = value_to_index[pos];
+            else
                 enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
-            indexes_data[i] = value_to_index[pos];
         }
 
+        /// A private source dictionary makes `insertRangeFrom` copy only the used names instead of adopting all of them.
         auto res = result_type->createColumn();
-        res->insertRangeFrom(*ColumnLowCardinality::create(dictionary, std::move(indexes), /*is_shared=*/ true), 0, data.size());
+        res->insertRangeFrom(*ColumnLowCardinality::create(dictionary, std::move(indexes), /*is_shared=*/ false), 0, data.size());
         return res;
     };
 }
