@@ -15312,6 +15312,14 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     if (!getStorageID().hasUUID())
         return {};
 
+    /// A `UNIQUE KEY` table reads the parts visible at its internal snapshot (`makeDeleteBitmapSnapshot`),
+    /// not every active one: an inserted part is active before its transaction commits, and the commit
+    /// only stamps CSNs, which changes neither the active-part set, the checksums, nor
+    /// `active_parts_set_version`. A result read before the commit would then keep the same hash after it,
+    /// although the rows it shows have changed. Fail closed until the hash tracks committed visibility.
+    if (storage_snapshot->metadata->hasUniqueKey())
+        return {};
+
     SipHash hash;
 
     /// Table identity: the UUID distinguishes different incarnations of a table with the same name.
