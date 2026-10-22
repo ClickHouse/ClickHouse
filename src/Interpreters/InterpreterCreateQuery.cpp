@@ -4008,6 +4008,18 @@ BlockIO InterpreterCreateQuery::execute()
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
 
+                /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
+                /// its inner engines while normalizing, so add the ones this query does not give itself
+                if (inherited.is_time_series_table)
+                {
+                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
+                    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
+                    if (as_create.targets)
+                        for (const auto & target : as_create.targets->targets)
+                            if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
+                                inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
+                }
+
                 /// the worker inherits the move destination of the source too, and runs with no user
                 checkQueueMoveDestinationAccess(inherited);
             }
