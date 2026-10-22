@@ -25,6 +25,10 @@ DROP TABLE IF EXISTS t_string_derived_key;
 CREATE TABLE t_string_derived_key (s String) ENGINE = MergeTree ORDER BY (toString(s), s) SETTINGS index_granularity = 1;
 INSERT INTO t_string_derived_key VALUES ('z'), ('a'), ('m');
 
+DROP TABLE IF EXISTS t_enum_number_name;
+CREATE TABLE t_enum_number_name (e Enum8('z' = 1, 'a' = 2, '1' = 3)) ENGINE = MergeTree ORDER BY e PARTITION BY e SETTINGS index_granularity = 1;
+INSERT INTO t_enum_number_name VALUES ('z'), ('a'), ('1');
+
 SET optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
 
 SELECT 'a' < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), materialize('a') < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)');
@@ -70,6 +74,13 @@ SELECT if(s = 'q', 0, s > e) FROM values('e Enum8(''z'' = 1, ''a'' = 2), s Strin
 SELECT count() FROM values('s String, k UInt8', ('z', 1)) WHERE (s, k) < (CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)'), 0) AND (s, k) > ('z', 0) SETTINGS optimize_and_compare_chain = 0;
 SELECT arraySort(groupArray(t.1)) FROM t_tuple_key WHERE t < tuple(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)')) SETTINGS optimize_use_implicit_projections = 0;
 
+-- a constant string converts to the Enum as a column does, regardless of the format settings
+SELECT '1' < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)'), materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT countIf(materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)')) FROM numbers(2) SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT count() FROM numbers(2) WHERE materialize('1') < CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT count() FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1;
+SELECT arraySort(groupArray(e)) FROM t_enum_number_name WHERE e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
+
 SELECT e < 'q' FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT e < materialize('q') FROM t_enum_cmp; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
@@ -79,3 +90,4 @@ DROP TABLE t_enum_name_key;
 DROP TABLE t_string_key;
 DROP TABLE t_string_derived_key;
 DROP TABLE t_tuple_key;
+DROP TABLE t_enum_number_name;

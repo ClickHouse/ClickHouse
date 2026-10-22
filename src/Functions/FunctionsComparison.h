@@ -2182,10 +2182,7 @@ public:
             if (res)
                 return res;
         }
-        res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
-        if (res)
-            return res;
-        /// Same as for a constant string: compare by the `Enum` value.
+        /// Compare by the `Enum` value. A constant string takes the same `CAST` as a column, without the format settings of `executeWithConstString`.
         if (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals
             && ((isEnum(left_type) && right_is_string) || (left_is_string && isEnum(right_type))))
         {
@@ -2196,6 +2193,9 @@ public:
             };
             return executeImpl(converted, result_type, input_rows_count);
         }
+        res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
+        if (res)
+            return res;
         if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6()))
         {
             res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped);
