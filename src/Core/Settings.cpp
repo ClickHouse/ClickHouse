@@ -7304,6 +7304,21 @@ For conditions involving the current time in the [query condition cache](/concep
 Smaller values keep the derived condition closer to the original one (less over-reading near the boundary) at the cost of the cache key rotating more frequently. The grid step is clamped to at least one second, so a small factor makes the derived condition converge to the original one instead of disabling it. Values less than or equal to 0 disable the derivation entirely.
 )", 0, \
         {"26.10", 1., 1., "New setting: the grid step used when deriving deterministic conditions from conditions involving the current time for the query condition cache, as a fraction of the distance between the time constant and the current time."}) \
+    DECLARE(Bool, use_query_condition_cache_for_changed_time_bounds, true, R"(
+Let the [query condition cache](/concepts/features/performance/caches/query-condition-cache) of `MergeTree` tables serve a condition whose time bounds changed since the condition was cached, e.g. a dashboard query `WHERE time >= fromUnixTimestamp64Milli(1743410504651) AND time <= fromUnixTimestamp64Milli(1743493304654) AND message LIKE '%error%'` repeated with bounds moved by a few seconds.
+
+The time bounds are comparisons (`<`, `<=`, `>`, `>=`) of an expression with a constant of type `Date`, `Date32`, `DateTime` or `DateTime64`, or with a string constant if the expression has one of these types. A query looks for cache entries of up to four recent variants of the same condition with other values of the constants. A granule recorded there as having no matching rows is skipped if the primary key shows that it has no rows that the new bounds admit but the bounds of that variant do not. The skipped granules are recorded for the new variant as well.
+
+This works best if the compared expression is (a prefix of) the primary key. If the new bounds are narrower than the cached ones, all granules recorded as not matching are skipped, whatever the primary key.
+
+This setting has no effect unless `use_query_condition_cache` is also enabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.11", false, true, "New setting to let the query condition cache reuse entries of conditions with other time bounds (e.g. a dashboard refresh moving the bounds of a time range); enabled by default."}) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.

@@ -75,6 +75,31 @@ Queries of the form `ORDER BY ... LIMIT N` which use dynamic filtering (`use_top
 When the dynamic filter is added to `PREWHERE`, or the condition stays in `WHERE`, such queries do not write entries for conditions involving the current time themselves: the rows they skip depend on the top `N` rows matching the condition, which differ between two conditions mapped onto the same grid point.
 If the dynamic filter cannot be added to `PREWHERE` (for example, for some types of the sort column), the granules skipped by a `PREWHERE` with a condition involving the current time do not depend on the top `N` rows, so they are recorded under the derived condition, in entries reused only by queries with the same TopK plan (see [below](#top-k-queries)).
 
+### Conditions with changing time bounds {#changing-time-bounds}
+
+Dashboards often repeat a query with time bounds given as literals which move a little with every refresh, e.g.
+
+```sql
+SELECT count() FROM logs
+WHERE time >= fromUnixTimestamp64Milli(1743410504651) AND time <= fromUnixTimestamp64Milli(1743493304654)
+    AND message LIKE '%error%'
+```
+
+Each variant of such a condition is deterministic and is cached under its own key, which the next refresh does not find.
+Instead, a query looks up the cache entries of up to four recent variants of the same condition which differ only in the values of the time bounds.
+A granule recorded there as having no matching rows can only have rows matching the new condition if they are admitted by the new bounds but not by the earlier ones, e.g. rows between the earlier and the new upper bound.
+If the primary key shows that the granule has no such rows, it is skipped.
+The skipped granules are recorded for the new variant as well, so the next refresh reuses the entries of this one.
+In the example above, with `time` as the primary key, a refresh reads only the granules at the new end of the time range and the granules that may match `message LIKE '%error%'`.
+
+The time bounds are comparisons (`<`, `<=`, `>`, `>=`) of an expression with a constant of type `Date`, `Date32`, `DateTime` or `DateTime64`, or with a string constant if the expression has one of these types.
+They may be combined with each other and with other conditions using `AND`, `OR` and `NOT`.
+This works best if the compared expression is (a prefix of) the primary key.
+If the new bounds are narrower than the earlier ones, all granules recorded as not matching the earlier condition are skipped, whatever the primary key.
+
+This reuse can be disabled with the setting `use_query_condition_cache_for_changed_time_bounds` (default: enabled).
+It applies to `MergeTree` tables and to conditions without `now()` and similar functions, which are handled as described [above](#time-conditions).
+
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.

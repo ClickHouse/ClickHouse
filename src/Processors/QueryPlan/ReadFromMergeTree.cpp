@@ -3899,6 +3899,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 result.sampling.use_sampling,
                 mutations_snapshot,
                 *indexes,
+                metadata_snapshot,
                 context_,
                 log);
 

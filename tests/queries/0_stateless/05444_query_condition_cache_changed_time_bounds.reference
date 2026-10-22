@@ -1,0 +1,23 @@
+where prime: result 2, same as without cache 1, granules as expected 1
+where shifted: result 2, same as without cache 1, granules as expected 1
+where narrower: result 2, same as without cache 1, granules as expected 1
+where wider: result 2, same as without cache 1, granules as expected 1
+where string: result 2, same as without cache 1, granules as expected 1
+where string shifted: result 2, same as without cache 1, granules as expected 1
+where not: result 2, same as without cache 1, granules as expected 1
+where not shifted: result 2, same as without cache 1, granules as expected 1
+where before matches: result 0, same as without cache 1, granules as expected 1
+where including matches: result 2, same as without cache 1, granules as expected 1
+where other condition: result 799999, same as without cache 1, granules as expected 1
+prewhere prime: result 2, same as without cache 1, granules as expected 1
+prewhere shifted: result 2, same as without cache 1, granules as expected 1
+prewhere narrower: result 2, same as without cache 1, granules as expected 1
+prewhere wider: result 2, same as without cache 1, granules as expected 1
+prewhere string: result 2, same as without cache 1, granules as expected 1
+prewhere string shifted: result 2, same as without cache 1, granules as expected 1
+prewhere not: result 2, same as without cache 1, granules as expected 1
+prewhere not shifted: result 2, same as without cache 1, granules as expected 1
+prewhere before matches: result 0, same as without cache 1, granules as expected 1
+prewhere including matches: result 2, same as without cache 1, granules as expected 1
+prewhere other condition: result 799999, same as without cache 1, granules as expected 1
+disabled: result 2, same as without cache 1, granules as expected 1

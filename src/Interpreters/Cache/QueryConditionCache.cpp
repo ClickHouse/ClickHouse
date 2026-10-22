@@ -373,6 +373,50 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
 }
 
+void QueryConditionCache::addTimeBoundsVariant(const UUID & table_id, UInt64 structure_hash, TimeBoundsVariant variant)
+{
+    if (table_id == UUIDHelpers::Nil)
+        return;
+
+    Key key = makeKey(table_id, "", structure_hash);
+
+    std::lock_guard lock(time_bounds_mutex);
+
+    if (auto it = time_bounds_variants_index.find(key); it != time_bounds_variants_index.end())
+    {
+        time_bounds_variants.splice(time_bounds_variants.begin(), time_bounds_variants, it->second);
+    }
+    else
+    {
+        time_bounds_variants.emplace_front(key, std::vector<TimeBoundsVariant>{});
+        time_bounds_variants_index.emplace(key, time_bounds_variants.begin());
+        if (time_bounds_variants.size() > max_time_bounds_conditions)
+        {
+            time_bounds_variants_index.erase(time_bounds_variants.back().first);
+            time_bounds_variants.pop_back();
+        }
+    }
+
+    auto & variants = time_bounds_variants.front().second;
+    std::erase_if(variants, [&](const TimeBoundsVariant & existing) { return existing.condition_hash == variant.condition_hash; });
+    variants.insert(variants.begin(), std::move(variant));
+    if (variants.size() > max_time_bounds_variants)
+        variants.resize(max_time_bounds_variants);
+}
+
+std::vector<QueryConditionCache::TimeBoundsVariant> QueryConditionCache::getTimeBoundsVariants(const UUID & table_id, UInt64 structure_hash) const
+{
+    if (table_id == UUIDHelpers::Nil)
+        return {};
+
+    Key key = makeKey(table_id, "", structure_hash);
+
+    std::lock_guard lock(time_bounds_mutex);
+    if (auto it = time_bounds_variants_index.find(key); it != time_bounds_variants_index.end())
+        return it->second->second;
+    return {};
+}
+
 std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() const
 {
     return cache.dump();
@@ -381,6 +425,10 @@ std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() c
 void QueryConditionCache::clear()
 {
     cache.clear();
+
+    std::lock_guard lock(time_bounds_mutex);
+    time_bounds_variants.clear();
+    time_bounds_variants_index.clear();
 }
 
 void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)

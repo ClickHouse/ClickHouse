@@ -290,6 +290,7 @@ public:
         bool use_sampling,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
+        const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context,
         LoggerPtr log);
 

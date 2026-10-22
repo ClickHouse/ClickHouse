@@ -3,8 +3,13 @@
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
+#include <Core/Field.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
+
+#include <list>
+#include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -113,6 +118,19 @@ public:
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
+    /// A variant of a condition with time bounds whose entries are stored under `condition_hash`, see
+    /// `TimeBoundsCondition`. The entries written for one variant can be used by a query with another
+    /// variant of the same condition (the same `structure_hash`), but it has to know the keys of the
+    /// earlier variants. These are remembered here, the most recent first.
+    struct TimeBoundsVariant
+    {
+        UInt64 condition_hash;
+        std::vector<Field> values;
+    };
+
+    void addTimeBoundsVariant(const UUID & table_id, UInt64 structure_hash, TimeBoundsVariant variant);
+    std::vector<TimeBoundsVariant> getTimeBoundsVariants(const UUID & table_id, UInt64 structure_hash) const;
+
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 
@@ -124,6 +142,16 @@ public:
 private:
     Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
+
+    /// The number of remembered variants of a condition. A query uses the first of them with an entry for a part.
+    static constexpr size_t max_time_bounds_variants = 4;
+    /// The number of conditions with remembered variants, the least recently used are forgotten.
+    static constexpr size_t max_time_bounds_conditions = 10000;
+
+    using TimeBoundsVariants = std::pair<Key, std::vector<TimeBoundsVariant>>;
+    mutable std::mutex time_bounds_mutex;
+    std::list<TimeBoundsVariants> time_bounds_variants TSA_GUARDED_BY(time_bounds_mutex);
+    std::unordered_map<Key, std::list<TimeBoundsVariants>::iterator, UInt128TrivialHash> time_bounds_variants_index TSA_GUARDED_BY(time_bounds_mutex);
 
     friend class StorageSystemQueryConditionCache;
 };

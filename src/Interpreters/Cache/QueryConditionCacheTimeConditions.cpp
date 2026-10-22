@@ -8,6 +8,8 @@
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 
@@ -236,6 +238,7 @@ enum class HashTag : UInt8
     DeterministicSubtree = 0xD1,
     MonotoneFunction = 0xD2,
     RoundedConstant = 0xD3,
+    TimeBound = 0xD4,
 };
 
 struct Rewriter
@@ -352,6 +355,121 @@ struct Rewriter
     }
 };
 
+bool isTimeType(const DataTypePtr & type)
+{
+    WhichDataType which(removeLowCardinalityAndNullable(type));
+    return which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
+}
+
+bool isDeterministicConstant(const ActionsDAG::Node * node)
+{
+    return node->column && isColumnConst(*node->column) && isDeterministicSubtree(node);
+}
+
+/// The kinds of constants a time comparison may have: a value of a date/time type, which can be
+/// ordered by its `Field`, or a string compared with an expression of a date/time type (parsed by the
+/// comparison), which cannot.
+enum class TimeBoundKind : uint8_t
+{
+    None,
+    Ordered,
+    Unordered,
+};
+
+TimeBoundKind getTimeBoundKind(const DataTypePtr & constant_type, const DataTypePtr & expression_type)
+{
+    if (constant_type->isNullable() || constant_type->lowCardinality())
+        return TimeBoundKind::None;
+    if (isTimeType(constant_type))
+        return TimeBoundKind::Ordered;
+    if (isStringOrFixedString(constant_type) && isTimeType(expression_type))
+        return TimeBoundKind::Unordered;
+    return TimeBoundKind::None;
+}
+
+String mirrorComparison(const String & name)
+{
+    if (name == "less")
+        return "greater";
+    if (name == "lessOrEquals")
+        return "greaterOrEquals";
+    if (name == "greater")
+        return "less";
+    return "lessOrEquals";
+}
+
+String negateComparison(const String & name)
+{
+    if (name == "less")
+        return "greaterOrEquals";
+    if (name == "lessOrEquals")
+        return "greater";
+    if (name == "greater")
+        return "lessOrEquals";
+    return "less";
+}
+
+struct TimeBoundsAbstractor
+{
+    TimeBoundsCondition & result;
+
+    void visit(const ActionsDAG::Node * node, bool negated, SipHash & hash) const
+    {
+        const auto * function_node = skipAliases(node);
+        if (function_node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const String & name = function_node->function_base->getName();
+
+            if (name == "and" || name == "or" || (name == "not" && function_node->children.size() == 1))
+            {
+                hash.update(HashTag::MonotoneFunction);
+                hash.update(name);
+                hash.update(function_node->children.size());
+                for (const auto * child : function_node->children)
+                    visit(child, negated != (name == "not"), hash);
+                return;
+            }
+
+            if ((name == "less" || name == "lessOrEquals" || name == "greater" || name == "greaterOrEquals")
+                && function_node->children.size() == 2)
+            {
+                const auto * lhs = skipAliases(function_node->children[0]);
+                const auto * rhs = skipAliases(function_node->children[1]);
+                bool lhs_is_constant = isDeterministicConstant(lhs);
+                bool rhs_is_constant = isDeterministicConstant(rhs);
+                if (lhs_is_constant != rhs_is_constant)
+                {
+                    const auto * constant = lhs_is_constant ? lhs : rhs;
+                    const auto * expression = lhs_is_constant ? rhs : lhs;
+                    if (getTimeBoundKind(constant->result_type, expression->result_type) != TimeBoundKind::None)
+                    {
+                        String function_name = lhs_is_constant ? mirrorComparison(name) : name;
+
+                        hash.update(HashTag::TimeBound);
+                        hash.update(function_name);
+                        hash.update(function_node->result_type->getName());
+                        hash.update(constant->result_type->getName());
+                        hash.update(HashTag::DeterministicSubtree);
+                        expression->updateHash(hash);
+
+                        result.bounds.push_back(TimeBoundsCondition::Bound{
+                            .expression = expression,
+                            .function_name = std::move(function_name),
+                            .type = constant->result_type,
+                            .value = (*constant->column)[0],
+                            .negated = negated,
+                        });
+                        return;
+                    }
+                }
+            }
+        }
+
+        hash.update(HashTag::DeterministicSubtree);
+        node->updateHash(hash);
+    }
+};
+
 }
 
 std::optional<DeterministicTimeCondition> deriveDeterministicTimeCondition(
@@ -375,6 +493,98 @@ std::optional<DeterministicTimeCondition> deriveDeterministicTimeCondition(
         return std::nullopt;
 
     return DeterministicTimeCondition{hash.get64(), description};
+}
+
+std::vector<Field> TimeBoundsCondition::values() const
+{
+    std::vector<Field> res;
+    res.reserve(bounds.size());
+    for (const auto & bound : bounds)
+        res.push_back(bound.value);
+    return res;
+}
+
+std::optional<TimeBoundsCondition> abstractTimeBounds(const ActionsDAG::Node * condition)
+{
+    if (!condition || !isDeterministicSubtree(condition))
+        return std::nullopt;
+
+    TimeBoundsCondition result;
+    SipHash hash;
+    TimeBoundsAbstractor{result}.visit(condition, /*negated=*/ false, hash);
+    if (result.bounds.empty())
+        return std::nullopt;
+
+    result.structure_hash = hash.get64();
+    return result;
+}
+
+std::optional<ActionsDAG> buildTimeBoundsBand(
+    const TimeBoundsCondition & condition, const std::vector<Field> & earlier_values, const ContextPtr & context)
+{
+    chassert(condition.bounds.size() == earlier_values.size());
+
+    /// A row is in the band if one of the comparisons admits it with the value that makes the condition
+    /// weaker and rejects it with the other value. With the comparison under NOT, the earlier value is
+    /// the one that has to admit the row.
+    struct Piece
+    {
+        const TimeBoundsCondition::Bound * bound;
+        const Field * admitting;
+        const Field * rejecting;
+    };
+    std::vector<Piece> pieces;
+    ActionsDAG::NodeRawConstPtrs expressions;
+
+    for (size_t i = 0; i < condition.bounds.size(); ++i)
+    {
+        const auto & bound = condition.bounds[i];
+        const Field & admitting = bound.negated ? earlier_values[i] : bound.value;
+        const Field & rejecting = bound.negated ? bound.value : earlier_values[i];
+
+        if (admitting == rejecting)
+            continue;
+
+        if (getTimeBoundKind(bound.type, bound.expression->result_type) == TimeBoundKind::Ordered)
+        {
+            bool is_upper_bound = bound.function_name == "less" || bound.function_name == "lessOrEquals";
+            if (is_upper_bound ? !(rejecting < admitting) : !(admitting < rejecting))
+                continue;
+        }
+
+        pieces.push_back({&bound, &admitting, &rejecting});
+        expressions.push_back(bound.expression);
+    }
+
+    if (pieces.empty())
+        return std::nullopt;
+
+    ActionsDAG band = ActionsDAG::cloneSubDAG(expressions, /*remove_aliases=*/ false);
+    const auto cloned_expressions = band.getOutputs();
+
+    auto add_comparison = [&](const String & function_name, const ActionsDAG::Node * expression, const TimeBoundsCondition::Bound & bound, const Field & value)
+    {
+        ColumnConstPtr column = bound.type->createColumnConst(1, value);
+        const auto & constant = band.addColumn(std::move(column), bound.type, applyVisitor(FieldVisitorToString(), value));
+        return &band.addFunction(FunctionFactory::instance().get(function_name, context), {expression, &constant}, {});
+    };
+
+    auto function_and = FunctionFactory::instance().get("and", context);
+    ActionsDAG::NodeRawConstPtrs band_pieces;
+    for (size_t i = 0; i < pieces.size(); ++i)
+    {
+        const auto & piece = pieces[i];
+        const auto * admits = add_comparison(piece.bound->function_name, cloned_expressions[i], *piece.bound, *piece.admitting);
+        const auto * rejects = add_comparison(negateComparison(piece.bound->function_name), cloned_expressions[i], *piece.bound, *piece.rejecting);
+        band_pieces.push_back(&band.addFunction(function_and, {admits, rejects}, {}));
+    }
+
+    const auto * output = band_pieces.size() == 1
+        ? band_pieces.front()
+        : &band.addFunction(FunctionFactory::instance().get("or", context), band_pieces, {});
+    band.getOutputs() = {output};
+    band.removeUnusedActions();
+    return band;
 }
 
 }
