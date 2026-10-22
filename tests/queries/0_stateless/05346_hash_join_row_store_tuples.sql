@@ -3,6 +3,7 @@
 
 DROP TABLE IF EXISTS left;
 DROP TABLE IF EXISTS right;
+DROP TABLE IF EXISTS right_spill;
 
 CREATE TABLE left (k Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right
@@ -23,6 +24,15 @@ INSERT INTO right SELECT
     if(number = 1, NULL, (number, number * 10))
 FROM numbers(5);
 INSERT INTO right VALUES (7, (9, 9.5), (9, (-9, '2024-02-01')), (NULL, 1), NULL);
+
+CREATE TABLE right_spill AS right;
+INSERT INTO right_spill SELECT
+    number + 7,
+    (number, number + 0.5),
+    (number, (-number, toDate('2024-01-01') + number)),
+    (if(number = 2, NULL, number), number % 2),
+    if(number = 1, NULL, (number, number * 10))
+FROM numbers(20000);
 
 SET join_algorithm = 'hash';
 SET join_use_nulls = 0;
@@ -49,7 +59,16 @@ SELECT '--- LEFT parallel_hash ---';
 SELECT l.k, r.k, r.p, r.t, r.n, r.nt FROM left l LEFT JOIN right r ON l.k = r.k ORDER BY l.k, r.p
 SETTINGS join_algorithm = 'parallel_hash';
 
+SELECT '--- INNER spilled ---';
+SELECT count(), sum(cityHash64(toString((r.p, r.t, r.n, r.nt)))), countIf(tupleElement(r.n, 1) IS NULL), countIf(r.nt IS NULL)
+FROM (SELECT number % 20000 + 7 AS k FROM numbers(40000)) l INNER JOIN right_spill r ON l.k = r.k
+SETTINGS max_bytes_before_external_join = 100000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 1, log_comment = 'rs_tuples_spill';
+
 SYSTEM FLUSH LOGS text_log, query_log;
+
+SELECT 'rs_tuples_spill', ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = 'rs_tuples_spill' AND type = 'QueryFinish';
 
 SELECT 'rs_tuples', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
@@ -57,5 +76,6 @@ WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_tuples' AND type = 'QueryFinish');
 
+DROP TABLE right_spill;
 DROP TABLE right;
 DROP TABLE left;

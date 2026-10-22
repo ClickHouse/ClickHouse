@@ -1186,7 +1186,7 @@ void resolveRowStoreGatherNode(
         }
         node.data_by_block[block_no] = *planes.null_map;
 
-        value_node = &node.children[0];
+        value_node = &node.children.front();
         value_type = removeNullable(type);
         value_default_from_type = false;
     }
