@@ -1,7 +1,10 @@
 #include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/FileSegmentEfficiency.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fcntl.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -93,6 +96,9 @@ FileSegment::FileSegment(
     /// (see `renameToIncludeSizeInNameUnlocked`), so on creation it can be set only together
     /// with the `DOWNLOADED` state (used when loading cache metadata on startup).
     chassert(!size_in_filename || download_state == State::DOWNLOADED);
+
+    if (cache && !is_unbound)
+        size_class = cache->getSegmentSizes().getClass(range().size());
 
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
@@ -983,7 +989,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
             : reserved_size - downloaded_size;
         if (aligned_delta)
             queue_iterator->decrementSize(aligned_delta);
-        reserved_size = downloaded_size.load();
+        addReservedSize(-static_cast<Int64>(reserved_size - downloaded_size));
     }
 
     if (result_size == range().size())
@@ -995,7 +1001,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
+    const size_t old_range_size = range().size();
     segment_range.right = segment_range.left + result_size - 1;
+    onRangeShrunk(old_range_size);
 
     if (downloaded_size == result_size)
     {
@@ -1424,6 +1432,18 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
+FileSegmentEfficiencyInfo FileSegment::getEfficiencyInfo(const FileSegmentGuard::Lock &) const
+{
+    const size_t downloaded = downloaded_size;
+    FileSegmentEfficiencyInfo info;
+    info.idle_bytes = downloaded;
+    if (!cache)
+        return info;
+    const auto current_window = cache->getEfficiency().windowNow();
+    std::lock_guard lock(efficiency_mutex);
+    return efficiency ? efficiency->getInfo(current_window, range().size(), downloaded) : info;
+}
+
 FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 {
     auto lock = file_segment->lock();
@@ -1444,6 +1464,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .is_unbound = file_segment->is_unbound,
         .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
         .origin = *key_metadata->origin,
+        .efficiency = file_segment->getEfficiencyInfo(lock),
     };
 }
 
@@ -1524,6 +1545,108 @@ void FileSegment::increasePriority()
             ++hits_count;
         }
     }
+}
+
+void FileSegment::markRead(size_t offset, size_t size)
+{
+    if (!size || !cache || is_unbound)
+        return;
+
+    auto & cache_efficiency = cache->getEfficiency();
+    if (!cache_efficiency.isEnabled())
+        return;
+
+    std::lock_guard lock(efficiency_mutex);
+    if (removed_from_cache)
+        return;
+
+    if (!efficiency)
+        efficiency = std::make_unique<FileSegmentEfficiency>(range().size());
+    efficiency->markRead(
+        cache_efficiency, ByteRange{range().left, range().size()}, ByteRange{offset, size}, static_cast<Int64>(reserved_size.load()),
+        size_class.large);
+}
+
+void FileSegment::addReservedSize(Int64 delta)
+{
+    /// Unsigned addition wraps, so a negative `delta` subtracts.
+    if (!cache || is_unbound)
+    {
+        reserved_size += static_cast<size_t>(delta);
+        return;
+    }
+
+    /// Under the lock, so the first window start of `markRead` sees either none or all of `delta`.
+    std::lock_guard lock(efficiency_mutex);
+    reserved_size += static_cast<size_t>(delta);
+    if (removed_from_cache)
+        return;
+    /// The sizes grow before the counters and shrink after them.
+    auto & sizes = cache->getSegmentSizes();
+    const Int64 new_segments = counted_in_segment_sizes ? 0 : 1;
+    if (delta >= 0)
+        sizes.add(size_class, new_segments, delta);
+    if (efficiency)
+        efficiency->addReservedBytes(cache->getEfficiency(), delta, size_class.large);
+    if (delta < 0)
+        sizes.add(size_class, new_segments, delta);
+    counted_in_segment_sizes = true;
+}
+
+void FileSegment::onLoadedIntoCache()
+{
+    if (!cache || is_unbound)
+        return;
+    std::lock_guard lock(efficiency_mutex);
+    chassert(!counted_in_segment_sizes);
+    cache->getSegmentSizes().add(size_class, 1, static_cast<Int64>(reserved_size.load()));
+    counted_in_segment_sizes = true;
+}
+
+void FileSegment::onRangeShrunk(size_t old_range_size)
+{
+    if (!cache || is_unbound)
+        return;
+    std::lock_guard lock(efficiency_mutex);
+    const auto new_class = cache->getSegmentSizes().getClass(range().size());
+    const auto bytes = static_cast<Int64>(reserved_size.load());
+    auto move_sizes = [&sizes = cache->getSegmentSizes(), counted = counted_in_segment_sizes, old_class = size_class, new_class, bytes]
+    {
+        if (!counted)
+            return;
+        sizes.add(old_class, -1, -bytes);
+        sizes.add(new_class, 1, bytes);
+    };
+    /// Only the large class gains or loses bytes: its size grows before the counters and shrinks after them.
+    const bool becomes_large = new_class.large && !size_class.large;
+    if (becomes_large)
+        move_sizes();
+    if (efficiency)
+        efficiency->shrink(cache->getEfficiency(), old_range_size, range().size(), bytes, size_class.large, new_class.large);
+    if (!becomes_large)
+        move_sizes();
+    size_class = new_class;
+}
+
+void FileSegment::onRemovedFromCache(const FileSegmentGuard::Lock &)
+{
+    if (!cache || is_unbound)
+        return;
+    std::lock_guard lock(efficiency_mutex);
+    removed_from_cache = true;
+    const auto bytes = static_cast<Int64>(reserved_size.load());
+    /// The counters shrink before the sizes.
+    if (efficiency)
+        efficiency->remove(cache->getEfficiency(), range().size(), bytes, size_class.large);
+    if (counted_in_segment_sizes)
+        cache->getSegmentSizes().add(size_class, -1, -bytes);
+    counted_in_segment_sizes = false;
+}
+
+bool FileSegment::wasServedFromCache() const
+{
+    std::lock_guard lock(efficiency_mutex);
+    return efficiency != nullptr;
 }
 
 FileSegment::~FileSegment()
