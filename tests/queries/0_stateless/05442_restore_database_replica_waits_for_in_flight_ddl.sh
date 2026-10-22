@@ -67,6 +67,20 @@ for _ in {1..300}; do
 done
 echo "${blocked}"
 
+# The waiting restore holds the database-wide DDL guard, so a sync must wait for the restore instead of
+# reading the replica's Keeper state, which is still missing.
+SYNC_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_sync"
+(${CLICKHOUSE_CLIENT} --query_id="${SYNC_ID}" -q "SYSTEM SYNC DATABASE REPLICA ${DB}" > "${OUT}.sync" 2>&1; echo $? > "${OUT}.sync_rc") &
+started=0
+for _ in {1..300}; do
+    if [ -s "${OUT}.sync_rc" ] || [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${SYNC_ID}'")" = "1" ]; then
+        started=1
+        break
+    fi
+    sleep 0.1
+done
+echo "${started}"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${FAIL_POINT}"
 wait
 
@@ -78,5 +92,7 @@ if [ "$(cat "${OUT}.create_rc")" != "0" ] && grep -q -F "Code: 159" "${OUT}.crea
 else
     cat "${OUT}.create"
 fi
+cat "${OUT}.sync_rc"
+[ "$(cat "${OUT}.sync_rc")" = "0" ] || cat "${OUT}.sync"
 replica_exists
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.seed"
