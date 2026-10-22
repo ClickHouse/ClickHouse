@@ -857,15 +857,16 @@ def supports(protocol, data):
     `clickhouse-test` chooses the protocol of a test among the ones that support it."""
     if is_binary(data) and protocol not in BINARY_PROTOCOLS:
         return False
+    # The same byte-preserving decoding as in `main`: `BINARY_PROTOCOLS` carry invalid UTF-8 as is.
+    text = data.decode("utf-8", errors="surrogateescape")
     # Only `ssh` passes the whole test to `ClientBase`, which splits it according to the dialect.
-    if protocol != "ssh" and uses_other_dialect(data.decode("utf-8")):
+    if protocol != "ssh" and uses_other_dialect(text):
         return False
     if protocol == "ssh":
         return len(data) <= SSH_MAX_TEST_SIZE
     if protocol == "webterminal":
         # The line editor removes the whitespace at the end of the pasted text, which can be a field
         # separator or a part of a value at the end of the inline data of `INSERT ... FORMAT`.
-        text = data.decode("utf-8")
         return all(query == query.rstrip() for query, _ in split_queries(text))
     return True
 
