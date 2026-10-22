@@ -450,7 +450,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     const auto & reader_columns = merge_tree_reader->getColumns();
     const bool has_skip_set = prewhere_info && !prewhere_info->perform_alter_conversions;
 
-    /// Positions of the columns this step leaves in their on-disk type (see the comment before the conversions).
     std::vector<bool> left_unconverted;
     if (has_skip_set)
     {
@@ -464,7 +463,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         }
     }
 
-    /// Before conversions the read columns have the types they have in the part, not the requested ones.
+    /// Before conversions the read columns have their types in the part, so a patch of another type is applied after conversions.
     Block header_before_conversions;
     if (!patch_readers.empty())
     {
@@ -476,8 +475,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             ++pos;
         }
 
-        /// A patch is applied before conversions only into a column of its own type,
-        /// otherwise it is cast straight to the requested type after conversions.
         for (size_t i = 0; i < patch_readers.size(); ++i)
         {
             auto & columns_for_patch = columns_for_patches[i];
@@ -491,7 +488,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 pos = result_header.getPositionByName(column_it->column_name);
                 const auto & type_before_conversions = header_before_conversions.getByPosition(pos).type;
 
-                /// Both orders are the same for a column that is not converted.
                 if (type_before_conversions->equals(*result_header.getByPosition(pos).type))
                     continue;
 

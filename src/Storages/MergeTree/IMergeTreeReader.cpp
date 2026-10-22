@@ -192,8 +192,7 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 
 DataTypePtr IMergeTreeReader::getColumnTypeBeforeConversions(size_t pos, const DataTypePtr & requested_type) const
 {
-    /// A column a pending mutation drops is not read from the part: it is filled from the current metadata in the
-    /// requested type (e.g. `DROP COLUMN c UInt64` then `ADD COLUMN c UInt32` before the part is rewritten).
+    /// A column a pending mutation drops is not read from the part: it is filled from the current metadata in the requested type.
     if (isColumnDroppedByPendingMutation(pos))
         return requested_type;
     return columns_to_read[pos].type;
