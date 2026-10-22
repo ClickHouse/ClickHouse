@@ -1,6 +1,6 @@
 #pragma once
 
-/// Definitions of Memory<Allocator>::alloc and Memory<Allocator>::resize.
+/// Definitions of Memory<Allocator>::alloc, Memory<Allocator>::resize and Memory<Allocator>::resizeAmortized.
 ///
 /// Kept out of BufferWithOwnMemory.h so that the heavily included declaration header does not pull
 /// in ProfileEvents.h. Include this header only from the translation unit that instantiates Memory
@@ -71,6 +71,14 @@ void Memory<Allocator>::resize(size_t new_size, bool deallocate_if_empty)
     m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
     m_capacity = new_capacity;
     m_size = new_size;
+}
+
+template <typename Allocator>
+void Memory<Allocator>::resizeAmortized(size_t new_size)
+{
+    if (m_data && new_size > m_capacity - pad_right)
+        resize(std::max(new_size, m_size + m_size / 8));
+    resize(new_size);
 }
 
 }

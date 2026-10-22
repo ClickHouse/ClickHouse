@@ -326,6 +326,16 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     }
 }
 
+NameSet StatisticsPartPruner::getRequiredColumns() const
+{
+    NameSet result;
+    for (const auto & [col_name, _] : stats_column_name_to_type_map)
+        result.insert(col_name);
+    for (const auto & [col_name, _] : null_predicates)
+        result.insert(col_name);
+    return result;
+}
+
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns, bool record_used_columns)
 {
     const auto column_names = columns.getNames();
@@ -342,6 +352,10 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     auto new_key_condition = std::make_unique<KeyCondition>(
         filter_dag, context, column_names, expression,
         /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
+
+    /// A statistic's min/max is aggregated the same way `getExtremes` is, so it skips NaN.
+    /// Must run before `alwaysUnknownOrTrue()`, whose verdict this can change.
+    new_key_condition->relaxAtomsOverNaNHidingColumns(columns.getTypes());
 
     if (new_key_condition->alwaysUnknownOrTrue())
     {

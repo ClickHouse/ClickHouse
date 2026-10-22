@@ -27,10 +27,12 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -200,6 +202,7 @@ ReadFromRemote::ReadFromRemote(
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_,
+    const String & shard_scope_identity_,
     UnavailableShardTrackerPtr unavailable_shard_tracker_)
     : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
@@ -214,6 +217,7 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
+    , shard_scope_identity(shard_scope_identity_)
     , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
 {
 }
@@ -243,7 +247,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context)
+    ContextMutablePtr & context,
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -310,6 +315,16 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
                 && typeid_cast<const FunctionCapture *>(node->function_base.get())))
+        {
+            node_to_ast[node] = nullptr;
+            stack.pop();
+            continue;
+        }
+
+        /// An `IgnoreSet` call has no set operand, so it cannot be written back as IN syntax.
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && isNameOfInFunction(node->function_base->getName())
+            && node->function_base->getName().ends_with("IgnoreSet"))
         {
             node_to_ast[node] = nullptr;
             stack.pop();
@@ -417,6 +432,11 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (!has_all_args && !is_function_and)
             continue;
 
+        if (!has_all_args && dropped_conjuncts)
+            for (const auto * child : node->children)
+                if (!node_to_ast[child])
+                    dropped_conjuncts->push_back(child);
+
         if (is_function_and && arguments.empty())
             continue;
 
@@ -460,7 +480,8 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                            source_ast, context, SelectQueryOptions().positionalArgumentsAlreadyResolved());
                         /// The subquery may produce columns with duplicate names
                         /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
                         /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
@@ -498,24 +519,29 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
-static void addFilters(
+/// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
+/// mutates (external tables for GLOBAL IN); `rewrite_context` is the one whose settings decide whether the
+/// rewrite happens at all.
+static bool addFilters(
     Tables * external_tables,
     ContextMutablePtr & context,
+    const ContextPtr & rewrite_context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
-    const ActionsDAG & pushed_down_filters)
+    const ActionsDAG & pushed_down_filters,
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
 {
     if (!query_tree || !planner_context)
-        return;
+        return false;
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = rewrite_context->getSettingsRef();
     if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
-        return;
+        return false;
 
     const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
-        return;
+        return false;
 
     /// We are building a set with projection names and a map with execution names here.
     /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
@@ -528,14 +554,15 @@ static void addFilters(
     for (const auto & node : query_node->getProjection())
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+    ASTPtr predicate = tryBuildAdditionalFilterAST(
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
     if (!predicate)
-        return;
+        return false;
 
     auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
     /// Case with JOIN is not supported so far.
     if (table_expressions.size() != 1)
-        return;
+        return false;
 
     /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
     /// Supported cases:
@@ -571,15 +598,15 @@ static void addFilters(
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
-            return;
+            return false;
 
         table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
-            return;
+            return false;
 
         if (!extract_from_expression(table_expressions.front()))
-            return;
+            return false;
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
@@ -591,13 +618,54 @@ static void addFilters(
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
 
     ASTs predicates{predicate};
-    PredicateRewriteVisitor::Data data(context, predicates, table_with_columns, optimize_final, optimize_with);
+    PredicateRewriteVisitor::Data data(rewrite_context, predicates, table_with_columns, optimize_final, optimize_with);
 
-    data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+    return data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+}
+
+ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
+    const ActionsDAG::Node & condition,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & rewrite_context)
+{
+    /// The splice itself, run on copies: of the query, and of the condition as a DAG of its own, built the
+    /// way the remote step builds one from what is pushed into it - the conversion's answer depends on the
+    /// DAG around the condition. The copy is made node for node, so its atoms come in the same order as
+    /// these. No external tables: only a `GLOBAL IN` needs them, and it cannot fix a column.
+    auto atoms = ActionsDAG::extractConjunctionAtoms(&condition);
+    auto dag = ActionsDAG::buildFilterActionsDAG({&condition});
+    ContextMutablePtr no_context;
+    std::vector<const ActionsDAG::Node *> dropped;
+    if (!query_ast || !dag
+        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, &dropped))
+        return atoms;
+
+    auto copied_atoms = ActionsDAG::extractConjunctionAtoms(dag->getOutputs().front());
+    if (copied_atoms.size() != atoms.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A copy of a filter condition has {} conjuncts, the condition {}",
+            copied_atoms.size(), atoms.size());
+
+    /// A dropped node is a child of an `and` in the chain from the root, so its atoms are atoms of the root.
+    ActionsDAG::NodeRawConstPtrs left_out;
+    for (const auto * node : dropped)
+        for (const auto * copied_atom : ActionsDAG::extractConjunctionAtoms(node))
+        {
+            auto it = std::ranges::find(copied_atoms, copied_atom);
+            if (it == copied_atoms.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A conjunct the conversion dropped is not one of the condition's");
+            left_out.push_back(atoms[it - copied_atoms.begin()]);
+        }
+    return left_out;
 }
 
 void ReadFromRemote::addLazyPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    const UnavailableShardTrackerPtr & tracker)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -611,8 +679,6 @@ void ReadFromRemote::addLazyPipe(
             add_totals = ast_select->group_by_with_totals;
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
-
-    std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
     /// Override cluster_for_parallel_replicas to match the distributed table's cluster,
     /// same as addPipe() does. Without this, the _shard_num scalar from the distributed
@@ -649,17 +715,25 @@ void ReadFromRemote::addLazyPipe(
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
+    /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
+    /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
+    ASTPtr remote_query = shard.query;
+    if (filter_actions_dag)
+    {
+        remote_query = shard.query->clone();
+        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+    }
+
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
-            my_unavailable_shard_tracker = unavailable_shard_tracker, my_cluster_name = cluster_name,
-            query = shard.query, header = shard.header,
+            my_unavailable_shard_tracker = tracker, my_cluster_name = cluster_name,
+            query = shard.query, remote_query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, my_storage = storage,
+            my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
-            query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters, parallel_marshalling_threads]() mutable
+            parallel_marshalling_threads]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -706,7 +780,7 @@ void ReadFromRemote::addLazyPipe(
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
         if (!use_delayed_remote_source && !my_table_func_ptr)
         {
-            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
             if (!replicated_storage)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
@@ -751,23 +825,16 @@ void ReadFromRemote::addLazyPipe(
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
-        /// For the lazy case we are ignoring external tables.
-        /// This is because the set could be build before the lambda call,
-        /// and the temporary table which we are about to send would be empty.
-        /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
-        if (pushed_down_filters)
-            addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        String query_string = formattedAST(query);
+        String query_string = formattedAST(remote_query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
-        my_scalars["_shard_num"] = Block{
-            {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+        my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
+        remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);
-        remote_query_executor->setShardScope({my_cluster_name, my_shard.shard_info.shard_num});
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
@@ -785,7 +852,11 @@ void ReadFromRemote::addLazyPipe(
 }
 
 void ReadFromRemote::addPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    const UnavailableShardTrackerPtr & tracker)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -799,8 +870,7 @@ void ReadFromRemote::addPipe(
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
-    scalars["_shard_num"]
-        = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+    scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(shard.shard_info.shard_num, shard_scope_identity);
 
     if (context->canUseTaskBasedParallelReplicas())
     {
@@ -860,11 +930,11 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
             remote_query_executor->setQueryPlanFallbackStage(stage);
-            remote_query_executor->setShardScope({cluster_name, shard.shard_info.shard_num});
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
-            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+            remote_query_executor->setUnavailableShardTracker(tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -877,7 +947,7 @@ void ReadFromRemote::addPipe(
     else
     {
         if (filter_actions_dag)
-            addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
         const String query_string = formattedAST(shard.query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
@@ -893,10 +963,10 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
-        remote_query_executor->setShardScope({cluster_name, shard.shard_info.shard_num});
         remote_query_executor->setDistributedFanout(shards.size());
-        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
+        remote_query_executor->setUnavailableShardTracker(tracker);
 
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
@@ -924,7 +994,10 @@ void ReadFromRemote::addPipe(
     }
 }
 
-Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header)
+Pipes ReadFromRemote::addPipes(
+    const ClusterProxy::SelectStreamFactory::Shards & used_shards,
+    const SharedHeader & out_header,
+    const UnavailableShardTrackerPtr & tracker)
 {
     Pipes pipes;
 
@@ -933,9 +1006,9 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
         const size_t parallel_marshalling_threads
             = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
         if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
         else
-            addPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
     }
 
     return pipes;
@@ -943,7 +1016,15 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipes pipes = addPipes(shards, output_header);
+    Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
+
+    /// One pipe per executor, so the built pipes are this query's complete unit count.
+    if (unavailable_shard_tracker)
+    {
+        if (pipes.size() > shards.size())
+            unavailable_shard_tracker->registerExtraUnits(pipes.size() - shards.size());
+        unavailable_shard_tracker->seal();
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -1024,7 +1105,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
         }
     }
 
-    formatExplain(settings, addPipes(used_shards, header));
+    formatExplain(settings, addPipes(used_shards, header, /*tracker=*/nullptr));
 }
 
 void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool distributed)
@@ -1049,7 +1130,7 @@ void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool
             shard.query);
     }
 
-    formatExplain(settings, addPipes(used_shards, header));
+    formatExplain(settings, addPipes(used_shards, header, /*tracker=*/nullptr));
 }
 
 bool ReadFromRemote::hasSerializedPlan() const
@@ -1072,6 +1153,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     SharedHeader header_,
     QueryProcessingStage::Enum stage_,
     ContextMutablePtr context_,
+    ContextPtr filter_rewrite_context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
     Tables external_tables_,
@@ -1090,6 +1172,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , context(context_)
+    , filter_rewrite_context(std::move(filter_rewrite_context_))
     , throttler(throttler_)
     , scalars(scalars_)
     , external_tables{external_tables_}
@@ -1129,8 +1212,11 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
-        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+    /// The initiator's copy of the fragment took what this splice carries (see `tryPushDownFilter`), on the
+    /// same context. Not when the replicas are sent a plan: this text is then only the fallback for a
+    /// replica too old to receive it, and a condition read out of it could order that replica's read.
+    if (filter_actions_dag && !query_plan && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
 
@@ -1220,6 +1306,8 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     chassert(output_header);
 
+    const size_t replica_number = replica_info.number_of_current_replica;
+
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         query_string,
@@ -1233,6 +1321,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         connection_pool_with_failover,
         query_plan);
 
+    remote_query_executor->setShardScope({.cluster = cluster->getName(), .replica_num = replica_number});
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));

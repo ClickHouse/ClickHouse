@@ -15,6 +15,7 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -131,8 +132,12 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     bool is_size_known = true;
     /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
-    /// False only for the skip_object_metadata placeholder.
+    /// False for the skip_object_metadata placeholder and for metadata made by `fromTableRecords`.
     bool is_fetched = true;
+    /// Made without a request from the records of a table whose files are never overwritten; a known size is exact.
+    bool is_from_table_records = false;
+    /// Content identity for the caches when `etag` is unusable; set only if every reader may share the cached bytes.
+    String immutable_content_id{};
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
@@ -156,6 +161,17 @@ struct ObjectMetadata
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+
+    std::optional<String> getContentCacheToken() const
+    {
+        if (isEtagUsableAsCacheKey())
+            return etag;
+        if (!immutable_content_id.empty())
+            return immutable_content_id;
+        return std::nullopt;
+    }
+
+    static ObjectMetadata fromTableRecords(std::optional<UInt64> size, String immutable_content_id = {});
 };
 
 struct DataLakeObjectMetadata;
@@ -167,6 +183,16 @@ struct RelativePathWithMetadata
     std::optional<String> path_for_glob_matching;
     std::optional<String> path_for_deduplication;
     bool derive_file_name_from_url_path = false;
+    /// For the caches of the decoded content of the object, such as the columns cache: the path that
+    /// identifies the object among all storages (with its namespace and connection, see
+    /// `StorageObjectStorageSource::getUniqueStoragePathIdentifier`), and the type of the storage,
+    /// which decides the source grant required to see the cached entries. Such caches are not used
+    /// for an object without them.
+    std::optional<String> path_for_content_cache;
+    ObjectStorageType storage_type_for_content_cache = ObjectStorageType::None;
+    /// The table the object is read by, which decides who may see the cached entries, or the nil
+    /// UUID for a table function. See `getColumnsCacheTableUUIDOfExternalFile`.
+    UUID table_uuid_for_content_cache = UUIDHelpers::Nil;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -272,6 +298,13 @@ public:
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after) const;
+
+    /// Whether `iterate` treats its argument as an arbitrary key prefix rather than as a directory path,
+    /// and honours `start_after`. A true object storage has no directories, so listing `pref` also returns
+    /// `prefix/a/b`; `LocalObjectStorage` instead walks a real directory tree and returns nothing unless
+    /// the argument names an existing directory, and `AzureObjectStorage` ignores `start_after`. Both are
+    /// silent, so a caller that splits one listing into several by key range must check this first.
+    virtual bool supportsPrefixListing() const { return false; }
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
@@ -457,6 +490,8 @@ public:
     /// installed. Used by delta-kernel's `ExpiredToken` recovery path, which bypasses the
     /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
     virtual bool tryRefreshCredentialsViaCallback() { return false; }
+
+    virtual bool hasCredentialsRefreshCallback() const { return false; }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
