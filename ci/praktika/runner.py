@@ -12,7 +12,9 @@ import tempfile
 import sys
 import textwrap
 import traceback
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Optional, Set
+from urllib.parse import unquote, urlparse
 
 from ._environment import _Environment
 from .artifact import Artifact
@@ -186,6 +188,9 @@ class _TeeStream:
         return getattr(self._terminal, name)
 
 class Runner:
+    # The reason for a failed pre-run, reported instead of the generic error when set.
+    _pre_run_error = None
+
     @staticmethod
     def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
         print("WARNING: Generate dummy env for local test")
@@ -309,6 +314,27 @@ class Runner:
 
         return 0
 
+    @staticmethod
+    def _last_upload_names(s3_dir, provided_by) -> Optional[Set[str]]:
+        """File names of the provider's last upload to s3_dir, None if its report is unreadable.
+
+        Uploads never delete, so s3_dir also holds files of the provider's earlier runs.
+        """
+        report_name = f"artifact_report_{Utils.normalize_string(provided_by)}.json"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            if not S3.copy_file_from_s3(
+                s3_path=f"{s3_dir}{report_name}", local_path=tmp_dir, no_strict=True
+            ):
+                return None
+            try:
+                with open(Path(tmp_dir) / report_name, "r", encoding="utf-8") as f:
+                    urls = json.load(f)["build_urls"]
+            except (OSError, ValueError, KeyError, TypeError):
+                return None
+        if not isinstance(urls, list) or not all(isinstance(u, str) for u in urls):
+            return None
+        return {unquote(PurePosixPath(urlparse(u).path).name) for u in urls}
+
     def _pre_run(self, workflow, job, local_job_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
@@ -370,6 +396,7 @@ class Runner:
                 )
             else:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
+            missing_artifacts = []
             for artifact, prefix in zip(required_artifacts, prefixes):
                 if artifact.compress_zst:
                     assert not isinstance(
@@ -383,24 +410,57 @@ class Runner:
                     artifact_paths = [artifact.path]
 
                 for artifact_path in artifact_paths:
-                    recursive = False
-                    include_pattern = ""
                     if "*" in artifact_path:
                         s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
-                        recursive = True
                         include_pattern = Path(artifact_path).name
                         assert "*" in include_pattern
+                        names = self._last_upload_names(
+                            s3_path, artifact._provided_by
+                        )
+                        if names is None:
+                            print(
+                                f"ERROR: no readable artifact report for [{artifact._provided_by}] at [{s3_path}]"
+                            )
+                            downloaded = False
+                        else:
+                            matched = sorted(
+                                n for n in names if Path(n).match(include_pattern)
+                            )
+                            downloaded = bool(matched) and all(
+                                S3.copy_file_from_s3(
+                                    s3_path=s3_path + n,
+                                    local_path=Settings.INPUT_DIR,
+                                )
+                                for n in matched
+                            )
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    S3.copy_file_from_s3(
-                        s3_path=s3_path,
-                        local_path=Settings.INPUT_DIR,
-                        recursive=recursive,
-                        include_pattern=include_pattern,
-                    )
+                        downloaded = S3.copy_file_from_s3(
+                            s3_path=s3_path,
+                            local_path=Settings.INPUT_DIR,
+                        )
+                    if not downloaded:
+                        # A missing artifact report is tolerated: its consumers check
+                        # whether the file exists. A missing build artifact means the
+                        # providing job did not finish (e.g. its runner was lost), and
+                        # running the job without it only fails later with a misleading
+                        # error, so fail the pre-run right away.
+                        if artifact.type == Artifact.Type.S3 and not artifact.optional:
+                            missing_artifacts.append(
+                                f"[{artifact.name}] from [{artifact._provided_by}] at [{s3_path}]"
+                            )
+                        continue
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
+
+            if missing_artifacts:
+                self._pre_run_error = (
+                    "Required artifacts are not found in S3, the job that provides them"
+                    " probably did not finish: " + ", ".join(missing_artifacts)
+                )
+                print(f"ERROR: {self._pre_run_error}")
+                return 1
 
         if not local_job_run and job.needs_submodules and Settings.ENABLE_SUBMODULE_CACHE:
             self._restore_submodule_cache()
@@ -470,10 +530,8 @@ class Runner:
             "NOTE: job truncated by a docker daemon failure - "
             "labeling as infrastructure error for auto-retry"
         )
-        # Append the bare label string, not the dict set_label() would store:
-        # retry_infra_failures.yml matches with `any(. == "infra")`, which only
-        # sees a plain string. The other readers (_label_name, json.html
-        # normalizeLabels, gh.py) already accept the string form.
+        # Append the bare label string rather than the dict `set_label` stores:
+        # every reader of `ext["labels"]` accepts the string form.
         labels = result.ext.setdefault("labels", [])
         if Result.Label.INFRA not in labels:
             labels.append(Result.Label.INFRA)
@@ -558,7 +616,7 @@ class Runner:
         if preserve_stdio:
             print("WARNING: Preserving stdio")
 
-        # work around for old clickhouse jobs
+        # workaround for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
         if env.WORKFLOW_CONFIG:
             try:
@@ -815,7 +873,7 @@ class Runner:
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-            ).add_error(ResultInfo.PRE_JOB_FAILED).dump()
+            ).add_error(self._pre_run_error or ResultInfo.PRE_JOB_FAILED).dump()
         elif not result_exist:
             if enable_exit_code_result:
                 status = Result.Status.OK if run_exit_code == 0 else Result.Status.FAIL
@@ -991,20 +1049,19 @@ class Runner:
                             env.add_workflow_error(error)
                             result.set_status(Result.Status.ERROR)
                             is_ok = False
-                if artifact_links:
-                    artifact_report = {"build_urls": artifact_links}
-                    print(
-                        f"Artifact report will be uploaded: [{artifact_report}]"
-                    )
-                    artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
-                    with open(artifact_report_file, "w", encoding="utf-8") as f:
-                        json.dump(artifact_report, f)
-                    link = S3.copy_file_to_s3(
-                        s3_path=s3_path,
-                        local_path=artifact_report_file,
-                        tags=default_tags,
-                    )
-                    result.set_link(link)
+                # Written even when empty: consumers take the report as the list of
+                # this run's files, so an older report must not survive.
+                artifact_report = {"build_urls": artifact_links}
+                print(f"Artifact report will be uploaded: [{artifact_report}]")
+                artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
+                with open(artifact_report_file, "w", encoding="utf-8") as f:
+                    json.dump(artifact_report, f)
+                link = S3.copy_file_to_s3(
+                    s3_path=s3_path,
+                    local_path=artifact_report_file,
+                    tags=default_tags,
+                )
+                result.set_link(link)
 
         # run after post hooks as they might modify workflow kv data
         base_keys = set(env.JOB_KV_DATA_BASE_KEYS or [])
@@ -1030,6 +1087,11 @@ class Runner:
                     f"data={json.dumps(output)}",
                     file=f,
                 )
+
+        # Before the CIDB insert: it serializes result.info eagerly, so a
+        # traceback lifted afterwards lands in the report but not in CIDB.
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
 
         ci_db = None
         if workflow.enable_cidb and not Settings.SECRET_CI_DB_CONNECTION:
@@ -1082,8 +1144,6 @@ class Runner:
                 print(f"ERROR: {error}")
                 env.add_workflow_error(error)
 
-        if env.TRACEBACKS:
-            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end

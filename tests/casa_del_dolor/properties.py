@@ -151,6 +151,8 @@ possible_properties = {
     #     0.2, 0.2, 0.0, 0.001
     # ),
     "cgroups_memory_usage_observer_wait_time": threshold_generator(0.2, 0.2, 0, 60, 6),
+    "columns_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "columns_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     # In bytes (default 128Mi), unlike the element count above
     "compiled_expression_cache_size": threshold_generator(
@@ -213,7 +215,7 @@ possible_properties = {
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "enable_webterminal": true_false_lambda,
-    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "encryption_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "encryption_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -232,7 +234,7 @@ possible_properties = {
     "iceberg_compaction_threadpool_pool_size": threads_lambda,
     "iceberg_compaction_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "iceberg_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "iceberg_scheduler_compaction_threadpool_pool_size": threads_lambda,
@@ -240,11 +242,11 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "ignore_empty_sql_security_in_create_view_query": true_false_lambda,
-    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "index_mark_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "index_mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "index_mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "interserver_tables_status_require_auth": true_false_lambda,
@@ -276,7 +278,7 @@ possible_properties = {
     "load_marks_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     # DiskLocal reads this at the config root, not under the disk
     "local_disk_check_period_ms": threshold_generator(0.2, 0.2, 0, 60000, 16),
-    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "mark_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "mark_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "mark_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "mark_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -419,15 +421,15 @@ possible_properties = {
     "page_cache_history_window_ms": threshold_generator(0.2, 0.2, 0, 1000),
     "page_cache_max_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "page_cache_min_size": threshold_generator(0.2, 0.2, 0, 2097152),
-    "page_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "page_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "page_cache_shards": threshold_generator(0.2, 0.2, 0, 10),
     "page_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "paimon_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "paimon_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "paimon_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parquet_metadata_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "parquet_metadata_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "parquet_metadata_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parts_kill_delay_period": threshold_generator(0.2, 0.2, 0, 60),
@@ -446,7 +448,7 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "prepare_system_log_tables_on_startup": true_false_lambda,
-    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "primary_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -462,7 +464,7 @@ possible_properties = {
     "query_cache_max_entry_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1048576),
     "query_cache_max_entry_size_in_rows": threshold_generator(0.2, 0.2, 0, 30000000),
     "query_cache_max_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1073741824),
-    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "query_condition_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
@@ -502,15 +504,15 @@ possible_properties = {
     "tables_loader_foreground_pool_size": threads_lambda,
     "temporary_data_in_distributed_cache": true_false_lambda,
     "text_index_header_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_header_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "text_index_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "text_index_postings_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_postings_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "text_index_postings_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_postings_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "text_index_tokens_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "text_index_tokens_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "text_index_tokens_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "text_index_tokens_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_tokens_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -535,13 +537,13 @@ possible_properties = {
         "fault_probability_after_commit": threshold_generator(0.2, 0.2, 0.0, 1.0),
         "fault_probability_before_commit": threshold_generator(0.2, 0.2, 0.0, 1.0),
     },
-    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 2097152),
     "uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "unique_key_bitmap_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "unique_key_bitmap_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "unique_key_bitmap_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_bitmap_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "unique_key_index_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_separate_cache_arena": true_false_lambda,
@@ -549,7 +551,7 @@ possible_properties = {
     "user_profile_events_per_cpu": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
     "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
-    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "vector_similarity_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "vector_similarity_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "wait_dictionaries_load_at_startup": true_false_lambda,
@@ -838,6 +840,28 @@ def remove_element(property_element: ET.Element, elem: str):
     remove_xml.text = ""
 
 
+def get_cache_setting(cache_element: ET.Element, name: str, default: str) -> str:
+    element = cache_element.find(name)
+    if element is None or element.get("remove") is not None or not element.text:
+        return default
+    return element.text
+
+
+def set_cache_setting(cache_element: ET.Element, name: str, value: str):
+    element = cache_element.find(name)
+    if element is None:
+        element = ET.SubElement(cache_element, name)
+    element.attrib.pop("remove", None)
+    element.text = value
+
+
+def parse_cache_size(text: str) -> int:
+    for suffix, multiplier in (("Ki", 1 << 10), ("Mi", 1 << 20), ("Gi", 1 << 30), ("Ti", 1 << 40)):
+        if text.endswith(suffix):
+            return int(text[: -len(suffix)]) * multiplier
+    return int(text)
+
+
 def normalize_cache_properties(cache_element: ET.Element):
     # `FileCacheSettings::validate` rejects split cache with overcommit policies.
     use_split_cache = cache_element.find("use_split_cache")
@@ -849,6 +873,30 @@ def normalize_cache_properties(cache_element: ET.Element):
         and cache_policy.text in ("LRU_OVERCOMMIT", "SLRU_OVERCOMMIT")
     ):
         use_split_cache.text = "0"
+
+    # `FileCacheSettings::validate` rejects an SLRU cache whose file segment does not fit
+    # each SLRU queue (of both parts with `use_split_cache`), so shrink the file segment.
+    if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
+        # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
+        get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
+        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
+        ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
+        parts = [max_size]
+        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
+            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
+            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
+        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+
+        max_file_segment_size = parse_cache_size(
+            get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
+        )
+        if 0 < smallest_queue_size < max_file_segment_size:
+            set_cache_setting(cache_element, "max_file_segment_size", str(smallest_queue_size))
+            boundary_alignment = parse_cache_size(
+                get_cache_setting(cache_element, "boundary_alignment", str(4 << 20))
+            )
+            if boundary_alignment > smallest_queue_size:
+                set_cache_setting(cache_element, "boundary_alignment", str(smallest_queue_size))
 
 
 def add_single_cluster(
@@ -1078,7 +1126,7 @@ def add_single_disk(
             # Add random settings
             if random.randint(1, 100) <= 70:
                 apply_properties_recursively(next_disk, cache_storage_properties)
-                normalize_cache_properties(next_disk)
+            normalize_cache_properties(next_disk)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -1276,7 +1324,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
     # Add random settings
     if random.randint(1, 100) <= 70:
         apply_properties_recursively(next_cache, cache_storage_properties)
-        normalize_cache_properties(next_cache)
+    normalize_cache_properties(next_cache)
 
 
 class CachePropertiesGroup(PropertiesGroup):
@@ -1512,13 +1560,15 @@ class LogTablePropertiesGroup(PropertiesGroup):
             # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         if self.log_table == "text_log":
-            log_table_properties["level"] = lambda: random.choice(
-                ["trace", "debug", "information", "warning", "error"]
-            )
-        if self.log_table == "trace_log":
+            # Pinned to the most verbose level, and written directly because
+            # `apply_properties_recursively` samples: at `error` the health check's `Warning`
+            # patterns never reach the table and it under-reports without saying so.
+            level_xml = ET.SubElement(property_element, "level")
+            level_xml.text = "test"
+        elif self.log_table == "trace_log":
             log_table_properties["symbolize"] = true_false_lambda
-        if self.log_table == "transposed_metric_log":
-            # Created only with this `schema_type`; the default ("wide") makes the section a no-op
+        elif self.log_table == "transposed_metric_log":
+            # Created only with this `schema_type`; the default ("bucketed") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
         # Can't use this without the engine parameter?
@@ -1757,6 +1807,7 @@ def modify_server_settings(
         selected_properties["distributed_query"] = DistributedQueryPropertiesGroup()
 
     # Add log tables
+    all_log_entries = []
     if args.add_log_tables:
         all_log_entries = [
             ("aggregated_zookeeper_log", 1048576, 8192),
@@ -1777,16 +1828,13 @@ def modify_server_settings(
             ("iceberg_metadata_log", 1048576, 8192),
             ("metric_log", 1048576, 8192),
             ("opentelemetry_span_log", 1048576, 8192),
-            ("part_log", 1048576, 8192),
             ("predicate_statistics_log", 1048576, 8192),
             ("processors_profile_log", 1048576, 8192),
-            ("query_log", 1048576, 8192),
             ("query_metric_log", 1048576, 8192),
             ("query_thread_log", 1048576, 8192),
             ("query_views_log", 1048576, 8192),
             ("s3queue_log", 1048576, 8192),
             ("session_log", 1048576, 8192),
-            ("text_log", 1048576, 8192),
             ("trace_log", 1048576, 8192),
             ("transactions_info_log", 1048576, 8192),
             ("transposed_metric_log", 1048576, 8192),
@@ -1797,12 +1845,22 @@ def modify_server_settings(
             all_log_entries = random.sample(
                 all_log_entries, random.randint(1, len(all_log_entries))
             )
-        random.shuffle(all_log_entries)
-        for entry in all_log_entries:
-            if root.find(entry[0]) is None:
-                selected_properties[entry[0]] = LogTablePropertiesGroup(
-                    entry[0], entry[1], entry[2]
-                )
+
+    # The oracles read these: the health check needs `part_log` and `text_log`, and its whole
+    # query throws `UNKNOWN_TABLE` if either is missing; BuzzHouse reads `query_log` to compare
+    # performance. Sampling them away silently turns those checks into no-ops.
+    if args.add_log_tables or args.with_monitoring:
+        all_log_entries += [
+            ("part_log", 1048576, 8192),
+            ("query_log", 1048576, 8192),
+            ("text_log", 1048576, 8192),
+        ]
+    random.shuffle(all_log_entries)
+    for entry in all_log_entries:
+        if root.find(entry[0]) is None:
+            selected_properties[entry[0]] = LogTablePropertiesGroup(
+                entry[0], entry[1], entry[2]
+            )
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (
