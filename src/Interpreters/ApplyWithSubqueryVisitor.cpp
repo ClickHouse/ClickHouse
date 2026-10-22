@@ -56,11 +56,10 @@ ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & co
 ContextPtr getSetOperationContext(const ASTs & operands, const ASTPtr & settings_ast, const ContextPtr & context)
 {
     ContextPtr result = getSubqueryContext(settings_ast, context);
+    /// The clause may be nested into `INTERSECT` / `EXCEPT` nodes as the last operand of each, but not into
+    /// a parenthesized operand, which keeps its clause to itself.
     if (operands.size() > 1)
-    {
-        if (const auto * last_select = operands.back()->as<ASTSelectQuery>())
-            result = getSubqueryContext(last_select->settings(), result);
-    }
+        result = getSubqueryContext(ASTSelectIntersectExceptQuery::getTrailingSettings(operands.back()), result);
     return result;
 }
 
