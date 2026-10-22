@@ -1655,25 +1655,6 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     const auto mode = metadata->getTableMetadata().getMode();
     const auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
-    /// A move destination set by this query must carry its own credentials, as at `CREATE`.
-    String move_connection_string;
-    String move_container;
-    bool move_destination_changed = false;
-    for (const auto & setting : new_settings)
-    {
-        if (setting.name == "after_processing_move_connection_string")
-            move_connection_string = setting.value.safeGet<String>();
-        else if (setting.name == "after_processing_move_container")
-            move_container = setting.value.safeGet<String>();
-        else
-            continue;
-
-        const auto * old_value = old_settings ? old_settings->tryGet(setting.name) : nullptr;
-        move_destination_changed |= !old_value || *old_value != setting.value;
-    }
-    if (type == ObjectStorageType::Azure && move_destination_changed && !move_connection_string.empty())
-        ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
-
     for (const auto & setting : new_settings)
     {
         bool setting_changed = true;
@@ -1733,11 +1714,18 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     if (move_destination_changed)
     {
+        const String move_connection_string = get_move_destination_value(&new_settings, "after_processing_move_connection_string");
+        const String move_container = get_move_destination_value(&new_settings, "after_processing_move_container");
+
+        /// A move destination set by this query must carry its own credentials, as at `CREATE`.
+        if (type == ObjectStorageType::Azure && !move_connection_string.empty())
+            ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
+
         checkMoveDestinationHost(
             type,
             get_move_destination_value(&new_settings, "after_processing_move_uri"),
-            get_move_destination_value(&new_settings, "after_processing_move_connection_string"),
-            get_move_destination_value(&new_settings, "after_processing_move_container"),
+            move_connection_string,
+            move_container,
             local_context->getRemoteHostFilter());
     }
 }
