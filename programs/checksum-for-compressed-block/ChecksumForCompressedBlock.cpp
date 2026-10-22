@@ -2,7 +2,7 @@
 #include <iostream>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 
 /** A tool to easily prove if "Checksum doesn't match: corrupted data"
