@@ -133,6 +133,10 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::IE_JOIN:
                 /// Only for an inequality `ON` condition, which no rewrite introduces.
                 break;
+            case JoinAlgorithm::GPU_HASH:
+                if (kind == JoinKind::Inner && strictness == JoinStrictness::All)
+                    return true;
+                break;
             case JoinAlgorithm::DEFAULT:
             case JoinAlgorithm::AUTO:
             case JoinAlgorithm::HASH:

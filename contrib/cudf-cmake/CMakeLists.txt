@@ -715,6 +715,7 @@ set (CUDF_SOURCES
 # Derived, not hand-picked - every archive member outside the transitive closure of the island's
 # undefined symbols. Regenerate by resolving `nm -u` of libclickhouse_gpu_cudf.a against
 # `nm -A --defined-only` of lib_cudf.a. A new cuDF call fails the link naming what is missing.
+# The sources of `cudf::hash_join` are kept for `GPUHashJoin`.
 list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/copying/contiguous_split.cu"
     "${CUDF_DIR}/src/copying/pack.cpp"
@@ -773,26 +774,6 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/join/filtered_join/filtered_join_nested.cu"
     "${CUDF_DIR}/src/join/filtered_join/filtered_join_nested_query.cu"
     "${CUDF_DIR}/src/join/filtered_join/filtered_join_primitive.cu"
-    "${CUDF_DIR}/src/join/hash_join/finalize_partitioned_full_join.cpp"
-    "${CUDF_DIR}/src/join/hash_join/full_join_match_context.cpp"
-    "${CUDF_DIR}/src/join/hash_join/full_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/full_join_size.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_csr_kernels.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/hash_join_size.cu"
-    "${CUDF_DIR}/src/join/hash_join/inner_join_match_context.cpp"
-    "${CUDF_DIR}/src/join/hash_join/inner_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/inner_join_size.cu"
-    "${CUDF_DIR}/src/join/hash_join/left_join_match_context.cpp"
-    "${CUDF_DIR}/src/join/hash_join/left_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/left_join_size.cu"
-    "${CUDF_DIR}/src/join/hash_join/match_context.cu"
-    "${CUDF_DIR}/src/join/hash_join/partitioned_full_join.cu"
-    "${CUDF_DIR}/src/join/hash_join/partitioned_inner_join.cu"
-    "${CUDF_DIR}/src/join/hash_join/partitioned_join_retrieve.cu"
-    "${CUDF_DIR}/src/join/hash_join/partitioned_left_join.cu"
-    "${CUDF_DIR}/src/join/join_utils.cu"
     "${CUDF_DIR}/src/join/key_remapping.cu"
     "${CUDF_DIR}/src/join/mark_join.cu"
     "${CUDF_DIR}/src/join/mixed_join.cu"

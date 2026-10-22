@@ -4466,6 +4466,16 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
+- gpu_hash
+
+ A hash join whose hash table is built and probed on a CUDA GPU with cuDF, requiring a build with `-DENABLE_GPU=1`. Experimental.
+
+ Supports only `ALL INNER JOIN` on a single equality of two non-nullable integer columns of the same type. The other columns of either side may be of any type.
+
+ Unlike every other value here, this one is never reached by `default` or by `auto` and is used only when it is listed by name. A join that it cannot execute is passed to the next algorithm of the list, and fails with "none of the algorithms enabled by the `join_algorithm` setting" if there is none.
+
+ Only keys are sent to the device: those of the right table once, as its hash table is built, and those of each block of the left table, as it is probed. The row indices of the matching pairs come back, and the columns of both sides are gathered in host memory. The right table is kept in host memory, as for `hash`.
+
 - parallel_full_sorting_merge
 
  Same as `full_sorting_merge`, but hash-compatible equality joins are sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. This keeps the low, streaming memory usage of a merge join while using all threads, and the result is not ordered.

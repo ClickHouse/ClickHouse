@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Planner/PlannerJoins.h>
 
 #include <Columns/ColumnConst.h>
@@ -39,6 +41,7 @@
 #include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <GPU/GPUJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -1294,6 +1297,12 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join, right_table_expression_header, /*null_direction_=*/1,
                 /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     }
+
+#if USE_GPU
+    if (algorithm == JoinAlgorithm::GPU_HASH
+        && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header))
+        return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
+#endif
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {

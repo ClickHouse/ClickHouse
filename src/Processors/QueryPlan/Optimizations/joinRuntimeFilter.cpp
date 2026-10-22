@@ -210,6 +210,7 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        join_algorithm == JoinAlgorithm::GPU_HASH ||
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 

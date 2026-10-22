@@ -5,6 +5,7 @@ add_library (clickhouse_gpu_cudf STATIC
     GPUExpression.cu
     OffsetsKernels.cu
     BitUnpack.cu
+    CudfHashJoin.cu
 )
 
 gpu_island_target (clickhouse_gpu_cudf)
