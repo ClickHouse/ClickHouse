@@ -256,6 +256,7 @@ struct ManifestFilesGroup
     Int32 partition_spec_id = 0;
     Int32 schema_id = 0;
     Row partition_values;
+    Iceberg::FileContentType content_type = Iceberg::FileContentType::DATA;
     std::vector<IcebergPathFromMetadata> file_paths;
     /// Parallel to file_paths: {record_count, file_size_in_bytes}.
     std::vector<std::pair<Int64, Int64>> file_metrics;
@@ -287,8 +288,10 @@ ManifestFilesGroup & getManifestFilesGroup(ManifestFilesGroups & groups, Int32 p
     return group;
 }
 
-/// Adds a live data file as an EXISTING entry that keeps its lineage and statistics. Returns false if its group already lists it.
-bool addExistingDataFile(ManifestFilesGroups & groups, const ManifestFileCacheKey & manifest_file, const ProcessedManifestFileEntry & data_file)
+/// Adds a live file as an EXISTING entry, or as one DELETED by the new snapshot, that keeps its lineage and statistics.
+/// Returns false if its group already lists it.
+bool addExistingDataFile(
+    ManifestFilesGroups & groups, const ManifestFileCacheKey & manifest_file, const ProcessedManifestFileEntry & data_file, bool deleted = false)
 {
     auto & group = getManifestFilesGroup(groups, manifest_file.partition_spec_id, data_file.resolved_schema_id, data_file.normalized_partition_key_value);
 
@@ -313,6 +316,7 @@ bool addExistingDataFile(ManifestFilesGroups & groups, const ManifestFileCacheKe
     lineage.file_sequence_number = data_file.parsed_entry->parsed_file_sequence_number;
     if (!lineage.file_sequence_number.has_value())
         lineage.file_sequence_number = manifest_file.added_sequence_number;
+    lineage.deleted = deleted;
     group.file_entry_lineage.push_back(lineage);
 
     /// Carry the source file's per-column stats over verbatim, keeping bounds as the raw serialized bytes so they round-trip.
@@ -379,28 +383,33 @@ WrittenManifest writeManifestFilesGroup(
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getWriteSettings());
 
+    /// EXISTING files keep their original sequence numbers, so min_sequence_number is the minimum over the live ones; ADDED files get the
+    /// new snapshot's, and so does a manifest without live entries.
+    const bool entries_are_added = group.file_entry_lineage.empty();
+    Int64 manifest_min_sequence_number = std::numeric_limits<Int64>::max();
     std::vector<UInt64> file_row_counts;
     std::vector<UInt64> file_byte_counts;
     file_row_counts.reserve(group.file_metrics.size());
     file_byte_counts.reserve(group.file_metrics.size());
-    Int64 manifest_rows = 0;
-    for (const auto & [record_count, file_size_in_bytes] : group.file_metrics)
+    for (size_t i = 0; i < group.file_metrics.size(); ++i)
     {
+        const auto [record_count, file_size_in_bytes] = group.file_metrics[i];
         file_row_counts.push_back(static_cast<UInt64>(record_count));
         file_byte_counts.push_back(static_cast<UInt64>(file_size_in_bytes));
-        manifest_rows += record_count;
+        if (!entries_are_added && group.file_entry_lineage[i].deleted)
+        {
+            result.counts.deleted_files_count += 1;
+            result.counts.deleted_rows_count += record_count;
+            continue;
+        }
+        result.counts.files_count += 1;
+        result.counts.rows_count += record_count;
+        if (!entries_are_added)
+            manifest_min_sequence_number = std::min(manifest_min_sequence_number, group.file_entry_lineage[i].sequence_number.value_or(0));
     }
-
-    /// EXISTING files keep their original sequence numbers, so min_sequence_number is their minimum; ADDED files get the new snapshot's.
-    const bool entries_are_added = group.file_entry_lineage.empty();
-    Int64 manifest_min_sequence_number = std::numeric_limits<Int64>::max();
-    if (entries_are_added)
+    if (entries_are_added || result.counts.files_count == 0)
         manifest_min_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-    for (const auto & lineage : group.file_entry_lineage)
-        manifest_min_sequence_number = std::min(manifest_min_sequence_number, lineage.sequence_number.value_or(0));
 
-    result.counts.files_count = static_cast<Int64>(group.file_paths.size());
-    result.counts.rows_count = manifest_rows;
     result.counts.min_sequence_number = manifest_min_sequence_number;
     result.counts.counts_are_added = entries_are_added;
 
@@ -438,7 +447,7 @@ WrittenManifest writeManifestFilesGroup(
         resolved_spec.spec,
         group.partition_spec_id,
         *buffer_manifest,
-        Iceberg::FileContentType::DATA,
+        group.content_type,
         /* user_defined_sequence_number */ std::nullopt,
         /* user_defined_snapshot_id */ std::nullopt,
         /* data_file_formats */ group.file_formats,
@@ -1315,6 +1324,7 @@ void compactIcebergTable(
             SnapshotSummaryTotals totals;
             std::vector<std::pair<ManifestFileCacheKey, std::vector<ProcessedManifestFileEntryPtr>>> data_manifests;
             std::vector<ProcessedManifestFileEntryPtr> position_deletes;
+            std::vector<std::pair<ManifestFileCacheKey, ProcessedManifestFileEntryPtr>> position_delete_entries;
             for (const auto & manifest_file : current_manifest_list)
             {
                 auto files_handle = getManifestFileEntriesHandle(
@@ -1328,6 +1338,7 @@ void compactIcebergTable(
                         if (delete_file->parsed_entry->isDeletionVector())
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compaction of Iceberg tables with deletion vectors is not supported");
                         position_deletes.push_back(delete_file);
+                        position_delete_entries.emplace_back(manifest_file, delete_file);
                         totals.delete_files += 1;
                         totals.position_deletes += static_cast<UInt64>(delete_file->parsed_entry->record_count);
                         totals.files_size += static_cast<UInt64>(delete_file->parsed_entry->file_size_in_bytes);
@@ -1511,10 +1522,15 @@ void compactIcebergTable(
                 summary);
 
             /// Every delete manifest is dropped: each live position delete is fully applied once all the data files it can
-            /// apply to are rewritten.
+            /// apply to are rewritten. Replaced files are kept as DELETED entries: writers validate concurrent commits against them.
             std::unordered_set<String> carry_forward_manifest_paths;
             ManifestFilesGroups existing_groups;
             ManifestFilesGroups added_groups;
+            ManifestFilesGroups deleted_delete_file_groups;
+            for (const auto & [manifest_file, delete_file] : position_delete_entries)
+                addExistingDataFile(deleted_delete_file_groups, manifest_file, *delete_file, /*deleted=*/true);
+            for (auto & [_, group] : deleted_delete_file_groups)
+                group.content_type = Iceberg::FileContentType::POSITION_DELETE;
             for (const auto & [manifest_file, data_files] : data_manifests)
             {
                 const bool affected = std::any_of(data_files.begin(), data_files.end(),
@@ -1532,6 +1548,7 @@ void compactIcebergTable(
                         addExistingDataFile(existing_groups, manifest_file, *data_file);
                         continue;
                     }
+                    addExistingDataFile(existing_groups, manifest_file, *data_file, /*deleted=*/true);
                     const auto & rewritten = rewritten_files.at(source_reuse_keys.at(source_path));
                     if (rewritten.path.empty())
                         continue;
@@ -1549,9 +1566,10 @@ void compactIcebergTable(
             std::vector<IcebergPathFromMetadata> manifest_paths;
             std::vector<Int64> manifest_sizes;
             std::vector<ManifestListEntryCounts> entry_counts;
+            std::vector<Iceberg::FileContentType> entry_content_types;
             std::vector<Int64> entry_partition_spec_ids;
             std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
-            for (const auto * groups : {&added_groups, &existing_groups})
+            for (const auto * groups : {&added_groups, &existing_groups, &deleted_delete_file_groups})
             {
                 for (const auto & [group_key, group] : *groups)
                 {
@@ -1572,6 +1590,7 @@ void compactIcebergTable(
                     manifest_paths.push_back(manifest.path);
                     manifest_sizes.push_back(manifest.size);
                     entry_counts.push_back(manifest.counts);
+                    entry_content_types.push_back(group.content_type);
                     entry_partition_spec_ids.push_back(manifest.partition_spec_id);
                     entry_partition_summaries.push_back(std::move(manifest.partition_summary));
                 }
@@ -1596,7 +1615,7 @@ void compactIcebergTable(
                     *buffer_manifest_list,
                     Iceberg::FileContentType::DATA,
                     /* use_previous_snapshots */ false,
-                    /* per_entry_content_types */ {},
+                    entry_content_types,
                     entry_counts,
                     carry_forward_manifest_paths,
                     entry_partition_spec_ids,
