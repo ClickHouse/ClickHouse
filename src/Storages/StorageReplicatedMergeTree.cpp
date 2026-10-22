@@ -8875,11 +8875,17 @@ void StorageReplicatedMergeTree::fetchPartition(
             throw Exception(ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS,
                 "Too many retries to fetch parts from {}:{}", from_zookeeper_name, best_replica_path);
 
-        Strings parts = zookeeper->getChildren(fs::path(best_replica_path) / "parts");
-        ActiveDataPartSet active_parts_set(format_version, parts);
+        /// The parts of the best replica come from the same batched read as the parts of the other replicas,
+        /// so the checks below cost one extra request to Keeper per attempt, whatever the number of replicas.
+        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from, format_version);
+        auto best_replica_parts = std::find_if(source_replicas_parts.begin(), source_replicas_parts.end(),
+            [&](const SourceReplicaParts & replica_parts) { return replica_parts.replica == best_replica; });
+        if (best_replica_parts == source_replicas_parts.end())
+            throw Coordination::Exception::fromPath(Coordination::Error::ZNONODE, fs::path(best_replica_path) / "parts");
+
+        ActiveDataPartSet active_parts_set(format_version, best_replica_parts->parts);
         Strings parts_to_fetch;
 
-        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from, format_version);
         String command = "FETCH PARTITION " + partition_id + " FROM " + from_;
         assertSourceHasNoPatchesForPartition(
             getPatchParts(source_replicas_parts),
