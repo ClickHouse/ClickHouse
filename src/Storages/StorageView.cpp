@@ -99,6 +99,14 @@ SelectQueryDescription getViewSelectQuery(const ASTCreateQuery & query)
     return description;
 }
 
+void resolveIntersectExcept(ASTPtr select, const ContextPtr & context)
+{
+    SelectIntersectExceptQueryVisitor::Data data{
+        context->getSettingsRef()[Setting::intersect_default_mode],
+        context->getSettingsRef()[Setting::except_default_mode]};
+    SelectIntersectExceptQueryVisitor{data}.visit(select);
+}
+
 bool isNullableOrLcNullable(DataTypePtr type)
 {
     if (type->isNullable())
@@ -830,6 +838,8 @@ void StorageView::updateReferencedTables(const ASTCreateQuery & create, ContextP
 {
     auto metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
     StorageInMemoryMetadata new_metadata = *metadata;
+    /// A definition read from metadata has its INTERSECT/EXCEPT modes unresolved, as on ATTACH.
+    resolveIntersectExcept(create.select->ptr(), local_context);
     new_metadata.setSelectQuery(getViewSelectQuery(create));
     if (!is_parameterized_view && create.columns_list && create.columns_list->columns)
         new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, local_context, LoadingStrictnessLevel::ATTACH));
@@ -941,14 +951,7 @@ void registerStorageView(StorageFactory & factory)
         /// this is a safe no-op since INTERSECT/EXCEPT modes have already been
         /// converted to ASTSelectIntersectExceptQuery nodes.
         if (args.query.select)
-        {
-            auto context = args.getContext();
-            SelectIntersectExceptQueryVisitor::Data data{
-                context->getSettingsRef()[Setting::intersect_default_mode],
-                context->getSettingsRef()[Setting::except_default_mode]};
-            auto select = args.query.select->ptr();
-            SelectIntersectExceptQueryVisitor{data}.visit(select);
-        }
+            resolveIntersectExcept(args.query.select->ptr(), args.getContext());
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     },

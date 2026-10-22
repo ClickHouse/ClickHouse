@@ -60,6 +60,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW ${SRC}.regexp_v AS SELECT ${SRC}.sample.COLUMNS('^a$') FROM ${SRC}.sample;
     CREATE VIEW ${SRC}.list_v AS SELECT ${SRC}.sample.COLUMNS(a) FROM ${SRC}.sample;
     CREATE VIEW ${SRC}.join_v AS SELECT ${SRC}.sample.a AS a, b FROM ${SRC}.sample JOIN ${SRC}.other ON ${SRC}.sample.a = ${SRC}.other.a;
+    CREATE VIEW ${SRC}.intersect_v AS SELECT a FROM ${SRC}.sample INTERSECT DISTINCT SELECT a FROM ${SRC}.other;
+    CREATE VIEW ${SRC}.except_v AS SELECT a FROM ${SRC}.sample EXCEPT DISTINCT SELECT a FROM ${SRC}.other;
 
     CREATE TABLE ${EXT}.s (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE ${EXT}.tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
@@ -88,13 +90,13 @@ function check()
 {
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DST}.sample SELECT number FROM numbers(5); INSERT INTO ${EXT}.s SELECT number FROM numbers(2)"
     rows ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v \
-        ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v
+        ${DST}.intersect_v ${DST}.except_v ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v
 }
 
 echo "-- after the rename"
 check
 echo "occurrences of the old name: $(occurrences "${SRC}" ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv \
-    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${EXT}.mv ${EXT}.mv2 ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv)"
+    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${DST}.intersect_v ${DST}.except_v ${EXT}.mv ${EXT}.mv2 ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv)"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM REFRESH VIEW ${DST}.rmv; SYSTEM WAIT VIEW ${DST}.rmv; SYSTEM REFRESH VIEW ${EXT}.rmv; SYSTEM WAIT VIEW ${EXT}.rmv"
 rows ${DST}.rt ${EXT}.rt

@@ -8,6 +8,8 @@ _dst.qualified_v: 5
 _dst.regexp_v: 5
 _dst.list_v: 5
 _dst.join_v: 3
+_dst.intersect_v: 3
+_dst.except_v: 2
 _ext.tgt: 5
 _dst.tgt3: 2
 _ext.v: 5
@@ -27,6 +29,8 @@ _dst.qualified_v: 10
 _dst.regexp_v: 10
 _dst.list_v: 10
 _dst.join_v: 6
+_dst.intersect_v: 3
+_dst.except_v: 2
 _ext.tgt: 10
 _dst.tgt3: 4
 _ext.v: 10
