@@ -912,7 +912,7 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 
 void serializeStringOffsets(const ColumnString::Offsets & offsets, WriteBuffer & ostr, size_t offset, size_t limit)
 {
-    const ColumnString::Offset base = offsets[offset - 1];
+    const ColumnString::Offset base = offsets[static_cast<ssize_t>(offset) - 1];
     if (base == 0)
     {
         SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, ostr, offset, limit);
