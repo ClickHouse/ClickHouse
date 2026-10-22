@@ -568,7 +568,15 @@ bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_
         const UInt32 sources = dpsub_data.edge_source_mask[i];
         if ((sources | dpsub_data.edge_outstanding_mask[i]) & ~combined)
             continue;
-        if ((sources & left_mask) && (sources & right_mask))
+        if (!(sources & left_mask) || !(sources & right_mask))
+            continue;
+        /// A conjunct joining the two sides applies part of its join step here, so the step's conflict
+        /// rules must hold for the joined relations, or the conjunct does not join them.
+        bool rule_violated = false;
+        for (const auto & rule : dpsub_data.conflict_operators[dpsub_data.edge_operator[i]].rules)
+            if ((rule.t1 & combined) && (rule.t2 & ~combined))
+                rule_violated = true;
+        if (!rule_violated)
             return true;
     }
     return false;
