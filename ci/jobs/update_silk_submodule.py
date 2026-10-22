@@ -28,15 +28,15 @@ PR_TITLE = "Bump `silk` to the latest `clickhouse-public`"
 TOKENIZED_GITHUB_URL = re.compile(r"(https://x-access-token:)[^@\s]+(@github\.com/)")
 
 
-def on_current_base_branch():
-    """Refuse to run unless HEAD is the current tip of the base branch.
+def checkout_current_base_branch():
+    """Refuse to run off the base branch, then move HEAD to its current tip.
 
     The workflow is SCHEDULE-triggered, but GitHub also generates a
     `workflow_dispatch` trigger and reruns replay their original ref/sha. The
-    branch-name check rejects feature-branch dispatches; fetching the remote base
-    branch and comparing its tip with HEAD also rejects reruns of older `master`
-    commits. The check runs again after the bump so a run cannot publish if
-    `master` advanced while it was working."""
+    branch-name check rejects feature-branch dispatches. The scheduled ref is the
+    `master` tip at cron time, which is minutes before the job runs, so the bump
+    is built on the tip fetched now instead; that also makes a rerun of an older
+    run bump the current `master`."""
     branch = Info().git_branch
     if branch != BASE_BRANCH:
         print(
@@ -48,20 +48,12 @@ def on_current_base_branch():
         return False
 
     if not Shell.check(
-        f"git fetch --no-tags origin {shlex.quote(BASE_BRANCH)}", verbose=True
+        f"git fetch --no-tags origin {shlex.quote(BASE_BRANCH)}"
+        " && git checkout --detach FETCH_HEAD",
+        verbose=True,
     ):
         print(
-            f"Refusing to run: could not fetch the current '{BASE_BRANCH}' tip.",
-            file=sys.stderr,
-        )
-        return False
-
-    head = Shell.get_output("git rev-parse HEAD").strip()
-    current_base = Shell.get_output("git rev-parse FETCH_HEAD").strip()
-    if not head or not current_base or head != current_base:
-        print(
-            f"Refusing to run: HEAD ({head or 'unknown'}) is not the current "
-            f"'{BASE_BRANCH}' tip ({current_base or 'unknown'}).",
+            f"Refusing to run: could not check out the current '{BASE_BRANCH}' tip.",
             file=sys.stderr,
         )
         return False
@@ -196,7 +188,7 @@ def open_or_refresh_pr(body):
 if __name__ == "__main__":
     results = [
         Result.from_commands_run(
-            name="Run against current master", command=on_current_base_branch
+            name="Check out current master", command=checkout_current_base_branch
         )
     ]
 
@@ -205,19 +197,13 @@ if __name__ == "__main__":
 
     if results[-1].is_ok():
         if has_changes() and not is_published():
+            body = pr_body()
             results.append(
                 Result.from_commands_run(
-                    name="Master is still current", command=on_current_base_branch
+                    name="Open or refresh PR",
+                    command=lambda: open_or_refresh_pr(body),
                 )
             )
-            if results[-1].is_ok():
-                body = pr_body()
-                results.append(
-                    Result.from_commands_run(
-                        name="Open or refresh PR",
-                        command=lambda: open_or_refresh_pr(body),
-                    )
-                )
         else:
             results.append(
                 Result.from_commands_run(
