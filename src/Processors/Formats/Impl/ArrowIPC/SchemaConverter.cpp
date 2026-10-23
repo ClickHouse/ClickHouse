@@ -307,21 +307,13 @@ ArrowType parseType(const flatbuf::Field & field)
             }
             break;
         }
-        /// View-list types the reader cannot decode, but whose physical buffer layout is known. Keep them as
-        /// `Unsupported` placeholders (so schema inference can drop them and a `SELECT` of such a column errors
-        /// clearly), but parse their children and record the layout so `advanceField` can advance the node/buffer
-        /// cursors past an *unrequested* column of this type and keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.kind = TypeKind::ListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "ListView");
             break;
         case flatbuf::Type_LargeListView:
-            type.kind = TypeKind::Unsupported;
-            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
-            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.kind = TypeKind::LargeListView;
             type.children = parseChildren(field.children());
             requireSingleChild(type, "LargeListView");
             break;
@@ -355,12 +347,34 @@ ArrowType parseType(const flatbuf::Field & field)
 
 }
 
-ArrowSchema parseSchema(const flatbuf::Schema & schema)
+namespace
+{
+
+/// `RecordBatchDecoder` decodes a union with the V5 layout, which has no validity buffer. V4 keeps that
+/// buffer, so reading a V4 union would take every following buffer from the wrong offset. Reject the field
+/// instead of decoding it wrongly. Unions nested inside other types have the same problem, so the whole
+/// field tree is checked.
+void rejectUnionFields(const ArrowFields & fields)
+{
+    for (const auto & field : fields)
+    {
+        if (field.type.kind == TypeKind::Union)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Arrow IPC field '{}' is a union written with metadata version V4, whose layout keeps the "
+                "validity buffer that V5 removed; this reader implements the V5 union layout only",
+                field.name);
+        rejectUnionFields(field.type.children);
+    }
+}
+
+}
+
+ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version)
 {
     ArrowSchema result;
+    /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
     result.little_endian = schema.endianness() == flatbuf::Endianness_Little;
-    if (!result.little_endian)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Big-endian Arrow IPC streams are not supported by the native reader");
 
     const auto * fields = schema.fields();
     if (fields)
@@ -391,6 +405,9 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
     }
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
+    if (version != flatbuf::MetadataVersion_V5)
+        rejectUnionFields(result.fields);
+
     return result;
 }
 
@@ -983,11 +1000,21 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
 
+    /// The footer carries the metadata version too, and its block list is read under that edition's
+    /// assumptions, so an edition this reader does not know is rejected here rather than at the first
+    /// message. Each message is checked again in `MessageReader::readNextMessage`.
+    const auto version = footer->version();
+    if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported Arrow IPC metadata version V{} in the Arrow file footer: this reader implements V4 and V5",
+            static_cast<Int16>(version) + 1);
+
     if (!footer->schema())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file footer has no schema");
 
     ArrowFileFooter result;
-    result.schema = parseSchema(*footer->schema());
+    result.schema = parseSchema(*footer->schema(), version);
     /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
     /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
     /// And the block's metadata+body must lie within the data region (before the footer): otherwise a
@@ -1145,6 +1172,8 @@ DataTypePtr fieldToCHType(
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
         {
             const ArrowField & element = type.children.at(0);
             result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, isNullableField(element), allow_null_type));
@@ -1196,8 +1225,7 @@ DataTypePtr fieldToCHType(
             /// `Nullable(Nothing)` (the library reader wraps its `Nothing` column the same way because the
             /// field's null count is non-zero); the all-null `Nullable` then casts to the requested target
             /// as NULLs (or column DEFAULTs with `null_as_default`). Return directly — it is already
-            /// nullable. Schema inference keeps the flag off and, matching the library reader, treats it as
-            /// an unsupported type (`UNKNOWN_TYPE`, so `*_skip_columns_*_in_schema_inference` can drop it).
+            /// nullable. Schema inference infers the same type.
             if (allow_null_type)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             throw Exception(

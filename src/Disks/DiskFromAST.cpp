@@ -87,6 +87,8 @@ static std::string getOrCreateCustomDisk(
     /// the S3 path there is no anonymous downgrade -- the check is unconditional and fail-closed.
     validateResolvedGCSDiskCredentials(*config, context, attach, s3_disk_info);
 
+    validateResolvedAzureDiskCredentials(*config, context, attach, for_system_database);
+
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
     config->keys(disk_settings_keys);
     /// Check that no settings are defined when disk from the config is referred.
@@ -212,7 +214,7 @@ public:
             if (!eq || eq->name != "equals" || !eq->arguments || eq->arguments->children.size() < 2)
                 return false;
             const auto * key = eq->arguments->children[0]->as<ASTIdentifier>();
-            return key && key->name() == "_server_credentials_allowed";
+            return key && (key->name() == "_server_credentials_allowed" || key->name() == AZURE_SERVER_CREDENTIALS_MARKER);
         };
 
         /// Strip any marker the user put in the definition. This runs only on a fresh create (not on metadata
@@ -238,6 +240,15 @@ public:
             args.push_back(makeASTFunction(
                 "equals",
                 make_intrusive<ASTIdentifier>("_server_credentials_allowed"),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+
+        /// `include`, `from_env` and `from_zk` are resolved only later and may supply the Azure backend, so such a disk
+        /// is marked regardless of what the substituted values resolve to, as S3 marks it.
+        if (!data.context->shouldRestrictUserQueryS3Credentials()
+            && (info.has_include || info.has_substituted_value || azureDiskUsesServerIdentity(*config)))
+            args.push_back(makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>(AZURE_SERVER_CREDENTIALS_MARKER),
                 make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
     }
 };
