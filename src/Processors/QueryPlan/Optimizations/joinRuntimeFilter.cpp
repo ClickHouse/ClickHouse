@@ -200,15 +200,17 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash)
+static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash, JoinStrictness join_strictness)
 {
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
     /// A `grace_hash` that the join pickers pass over for lack of a spill threshold does not count: the list is cut down to
     /// these algorithms below, and `grace_hash` left alone in it is no longer passed over but refused.
+    /// `GraceHashJoin` never executes an `ASOF` join (see `GraceHashJoin::isSupported`), so it must not be treated as a viable
+    /// runtime-filter target for one: keeping it would let this pass prune away the algorithms that could actually run the join.
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash);
+        (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -312,13 +314,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     auto & join_algorithms = join_settings.join_algorithms;
     /// Decided on the list as the user gave it, before it is cut down below.
     const bool can_run_grace_hash = join_settings.canRunGraceHash();
-    const auto supports_runtime_filter = [can_run_grace_hash](JoinAlgorithm join_algorithm)
+    const auto supports_runtime_filter = [can_run_grace_hash, join_strictness = join_operator.strictness](JoinAlgorithm join_algorithm)
     {
-        return supportsRuntimeFilter(join_algorithm, can_run_grace_hash);
+        return supportsRuntimeFilter(join_algorithm, can_run_grace_hash, join_strictness);
     };
     const bool can_use_runtime_filter =
         (
-            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
+            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any || join_operator.strictness == JoinStrictness::Asof))
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
             || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
             || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))

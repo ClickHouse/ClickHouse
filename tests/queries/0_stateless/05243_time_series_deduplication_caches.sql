@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts_ext, ts_v6, ts_v7, ext_metric_families;
+DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -100,13 +100,13 @@ INSERT INTO ts (metric_name, tags, samples) VALUES ('http_requests', {'job': 'ap
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts);
 
 SELECT '--- a failed insert does not fill the cache ---';
-CREATE TABLE ext_metric_families (metric_family String, type LowCardinality(String), unit LowCardinality(String), help String, CONSTRAINT c CHECK metric_family != 'bad') ENGINE = MergeTree ORDER BY metric_family;
-CREATE TABLE ts_ext ENGINE = TimeSeries METRIC FAMILIES ext_metric_families;
-INSERT INTO ts_ext (metric_family, type, unit, help) VALUES ('bad', 'gauge', '', ''); -- { serverError VIOLATED_CONSTRAINT }
-ALTER TABLE ext_metric_families DROP CONSTRAINT c;
-INSERT INTO ts_ext (metric_family, type, unit, help) VALUES ('bad', 'gauge', '', '');
-SELECT count() FROM ext_metric_families WHERE metric_family = 'bad';
-SYSTEM CLEAR TIME SERIES CACHES ext_metric_families; -- { serverError UNEXPECTED_TABLE_ENGINE }
+-- Every metric family goes to its own partition, so `max_partitions_per_insert_block = 1` fails an insert of two metric families.
+CREATE TABLE ts_fail ENGINE = TimeSeries METRIC FAMILIES INNER ENGINE = MergeTree PARTITION BY metric_family ORDER BY metric_family;
+INSERT INTO ts_fail (metric_family, type, unit, help) SETTINGS max_partitions_per_insert_block = 1 VALUES ('f1', 'gauge', '', ''), ('f2', 'gauge', '', ''); -- { serverError TOO_MANY_PARTS }
+INSERT INTO ts_fail (metric_family, type, unit, help) VALUES ('f1', 'gauge', '', ''), ('f2', 'gauge', '', '');
+SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_fail);
+CREATE TABLE not_ts (x UInt8) ENGINE = Memory;
+SYSTEM CLEAR TIME SERIES CACHES not_ts; -- { serverError UNEXPECTED_TABLE_ENGINE }
 
 SELECT '--- the tags table of version 7 or earlier is not deduplicated if min_time and max_time are stored ---';
 CREATE TABLE ts_v7 ENGINE = TimeSeries SETTINGS version = 7 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id);
@@ -123,4 +123,4 @@ INSERT INTO ts_v6 (metric_family, type, unit, help) VALUES ('m', 'gauge', 'secon
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_v6);
 ALTER TABLE ts_v6 MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 10; -- { serverError INVALID_SETTING_VALUE }
 
-DROP TABLE ts, ts_ext, ts_v6, ts_v7, ext_metric_families;
+DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7;

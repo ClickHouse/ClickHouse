@@ -29,11 +29,8 @@ struct RelationProfile
     std::unordered_map<String, ColumnStats> column_stats = {};
 };
 
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -67,12 +64,6 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
-
-    /// Return true if the estimator was built from a different ordered sequence of data parts.
-    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
-    /// ignored because the estimator contains whole-part statistics.
-    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {
@@ -161,30 +152,39 @@ private:
     /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
     /// set into ranges costs a `Field` per element, a sort and one probe per element.
     Selectivity estimateSelectivityFromSetSize(
-        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const;
+        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
+        const DataTypePtr & set_type, bool negative) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
+
+    /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
+    /// Only a `Bool` counts the values: the default for other types is flat.
+    static Float64 getEqualFactor(const DataTypePtr & type, size_t num_values = 1);
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
     static constexpr Float64 default_cond_range_factor = 0.33;
     static constexpr Float64 default_cond_equal_factor = 0.01;
+    static constexpr Float64 default_bool_equal_factor = 0.5;
     static constexpr Float64 default_unknown_cond_factor = 0.33;
     static constexpr Float64 default_like_factor = 0.1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
-    Strings parts_names;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
+/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
+bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
+
+/// Builds an estimator for a set of data parts by merging their statistics column by column.
+/// The statistics passed in are not modified, so they may come from the statistics cache.
 class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
-    void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

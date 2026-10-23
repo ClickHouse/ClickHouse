@@ -4,6 +4,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -63,6 +65,7 @@ extern const SettingsJoinStrictness join_default_strictness;
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 extern const int TOO_MANY_ROWS;
 extern const int TOO_MANY_BYTES;
 }
@@ -337,6 +340,34 @@ bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr 
     return false;
 }
 
+/// Calls `f` on each sub-AST of `ast` until a call returns true, and returns whether one did.
+/// Besides `children`, these are the `lambda` and `parameters` of `ASTColumnsApplyTransformer`:
+/// its `clone` copies them by hand rather than through `cloneChildren`, so neither is a child.
+template <typename F>
+bool anyChild(const ASTPtr & ast, F && f)
+{
+    for (const auto & child : ast->children)
+    {
+        if (f(child))
+            return true;
+    }
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        for (const auto & member : {apply->lambda, apply->parameters})
+        {
+            if (member && f(member))
+                return true;
+        }
+    }
+    return false;
+}
+
+template <typename F>
+void forEachChild(const ASTPtr & ast, F && f)
+{
+    anyChild(ast, [&](const ASTPtr & child) { f(child); return false; });
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -434,29 +465,17 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
             return true;
     }
 
-    /// `* APPLY(f)` and `* APPLY(x -> ...)` keep the function name, its parameters and the lambda
-    /// outside of `children`.
-    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    /// `* APPLY(f)` keeps the function name outside of `children`.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>(); apply && !apply->func_name.empty())
     {
-        if (!apply->func_name.empty())
-        {
-            if (isOracleUnsafeFunctionName(apply->func_name))
-                return true;
-            for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
-                if (namesNonDeterministicRegularFunction(name, context))
-                    return true;
-        }
-        if (hasNonDeterministicFunctionsImpl(apply->parameters, context)
-            || hasNonDeterministicFunctionsImpl(apply->lambda, context))
+        if (isOracleUnsafeFunctionName(apply->func_name))
             return true;
+        for (const auto & name : {apply->func_name, stripAggregateCombinators(apply->func_name)})
+            if (namesNonDeterministicRegularFunction(name, context))
+                return true;
     }
 
-    for (const auto & child : ast->children)
-    {
-        if (hasNonDeterministicFunctionsImpl(child, context))
-            return true;
-    }
-    return false;
+    return anyChild(ast, [&](const ASTPtr & child) { return hasNonDeterministicFunctionsImpl(child, context); });
 }
 
 /// Split a string by newline into individual rows, ignoring trailing empty line.
@@ -534,6 +553,7 @@ bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
 }
 
 /// True if the subtree contains at least one column identifier.
+/// Not `anyChild`: an `APPLY` lambda always holds its own parameter, which is not a column.
 bool containsIdentifier(const ASTPtr & ast)
 {
     if (!ast)
@@ -575,10 +595,7 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
             return true;
         }
     }
-    for (const auto & child : ast->children)
-        if (hasWindowFunctionWithoutOrderBy(child))
-            return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return hasWindowFunctionWithoutOrderBy(child); });
 }
 
 /// Collects every alias defined anywhere in the subtree (e.g. `1025 AS x`
@@ -597,22 +614,31 @@ void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
         out.insert(alias);
     if (const auto * replacement = ast->as<ASTColumnsReplaceTransformer::Replacement>())
         out.insert(replacement->name);
-    for (const auto & child : ast->children)
-        collectAliases(child, out);
+    forEachChild(ast, [&](const ASTPtr & child) { collectAliases(child, out); });
 }
 
-/// True if the subtree references any of the given names as an identifier.
+/// True if the subtree references any of the given names, as an identifier or as a function:
+/// an alias of a lambda is callable.
 bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & aliases)
 {
     if (!ast)
         return false;
     if (const auto * ident = ast->as<ASTIdentifier>())
+    {
         if (aliases.contains(ident->name()) || aliases.contains(ident->shortName()))
             return true;
-    for (const auto & child : ast->children)
-        if (referencesAnyAlias(child, aliases))
+    }
+    else if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (aliases.contains(func->name))
             return true;
-    return false;
+    }
+    else if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (aliases.contains(apply->func_name))
+            return true;
+    }
+    return anyChild(ast, [&](const ASTPtr & child) { return referencesAnyAlias(child, aliases); });
 }
 
 /// Settings that cap how much a query reads/produces, plus their overflow
@@ -677,10 +703,7 @@ bool hasTruncatingInlineSettings(const ASTPtr & ast)
         for (const auto & change : set_query->changes)
             if (truncatingSettings().contains(change.name))
                 return true;
-    for (const auto & child : ast->children)
-        if (hasTruncatingInlineSettings(child))
-            return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return hasTruncatingInlineSettings(child); });
 }
 
 /// Settings whose uniform removal from both sides of an oracle comparison
@@ -721,10 +744,7 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
         for (const auto & change : set_query->changes)
             if (!strippableResourceSettings().contains(change.name))
                 return true;
-    for (const auto & child : ast->children)
-        if (hasNonStrippableInlineSettings(child))
-            return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return hasNonStrippableInlineSettings(child); });
 }
 
 /// Nested SETTINGS clauses are preserved in oracle clones. In particular, a
@@ -743,10 +763,7 @@ bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settin
                 if (change.name == "max_threads" || change.name == "max_insert_threads" || change.name == "max_final_threads")
                     return true;
     }
-    for (const auto & child : ast->children)
-        if (hasNestedThreadSettings(child, top_level_settings))
-            return true;
-    return false;
+    return anyChild(ast, [&](const ASTPtr & child) { return hasNestedThreadSettings(child, top_level_settings); });
 }
 
 /// True if `ast` is built only from literals and function calls, so it means the same in any query.
@@ -817,10 +834,7 @@ bool containsAsterisk(const ASTPtr & ast)
         return false;
     if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
         return true;
-    for (const auto & child : ast->children)
-        if (containsAsterisk(child))
-            return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return containsAsterisk(child); });
 }
 
 /// True if any ORDER BY element anywhere in the query uses `WITH FILL`.
@@ -836,10 +850,19 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     if (const auto * order_elem = ast->as<ASTOrderByElement>())
         if (order_elem->with_fill)
             return true;
-    for (const auto & child : ast->children)
-        if (hasWithFillAnywhere(child))
+    return anyChild(ast, [](const ASTPtr & child) { return hasWithFillAnywhere(child); });
+}
+
+/// True if any SELECT has `WITH TOTALS`, which is not distributive over a WHERE: a filter pushed below the
+/// totals step recomputes the totals over the filtered rows, and `UNION ALL` keeps one branch's totals only.
+bool hasWithTotalsAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->group_by_with_totals)
             return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
 }
 
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
@@ -857,10 +880,7 @@ bool usesFinalAnywhere(const ASTPtr & ast)
     if (const auto * table_expr = ast->as<ASTTableExpression>())
         if (table_expr->final)
             return true;
-    for (const auto & child : ast->children)
-        if (usesFinalAnywhere(child))
-            return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return usesFinalAnywhere(child); });
 }
 
 /// ASOF JOIN tie-breaking among equal asof-column values is
@@ -881,10 +901,7 @@ bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_
         if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
             return true;
     }
-    for (const auto & child : ast->children)
-        if (hasNonDeterministicJoinAnywhere(child, default_strictness))
-            return true;
-    return false;
+    return anyChild(ast, [&](const ASTPtr & child) { return hasNonDeterministicJoinAnywhere(child, default_strictness); });
 }
 
 /// True if the FROM clause uses a subquery that itself contains UNION ALL /
@@ -904,10 +921,7 @@ bool subtreeContainsSetOperation(const ASTPtr & ast)
             return true;
     if (ast->as<ASTSelectIntersectExceptQuery>())
         return true;
-    for (const auto & child : ast->children)
-        if (subtreeContainsSetOperation(child))
-            return true;
-    return false;
+    return anyChild(ast, [](const ASTPtr & child) { return subtreeContainsSetOperation(child); });
 }
 
 bool fromContainsUnionSubquery(const ASTSelectQuery & select)
@@ -964,10 +978,7 @@ bool referencesSystemDatabaseAnywhere(const ASTPtr & ast, const String & current
         if (db == "system" || db == "INFORMATION_SCHEMA" || db == "information_schema")
             return true;
     }
-    for (const auto & child : ast->children)
-        if (referencesSystemDatabaseAnywhere(child, current_database))
-            return true;
-    return false;
+    return anyChild(ast, [&](const ASTPtr & child) { return referencesSystemDatabaseAnywhere(child, current_database); });
 }
 
 /// `current_database` resolves unqualified table names, same as in
@@ -1040,10 +1051,7 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
             return true;
         }
     }
-    for (const auto & child : ast->children)
-        if (referencesDistributedTableAnywhere(child, context))
-            return true;
-    return false;
+    return anyChild(ast, [&](const ASTPtr & child) { return referencesDistributedTableAnywhere(child, context); });
 }
 
 constexpr size_t MAX_DEFINITION_SCREEN_DEPTH = 8;
@@ -1125,6 +1133,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
                         || hasNonStrippableInlineSettings(definition)
                         || hasNestedThreadSettings(definition, nullptr)
+                        || hasWithTotalsAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesDistributedTableAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
@@ -1162,10 +1171,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
         }
     }
 
-    for (const auto & child : ast->children)
-        if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
-            return true;
-    return false;
+    return anyChild(ast, [&](const ASTPtr & child) { return referencesUnscreenedDefinitionAnywhere(child, context, depth); });
 }
 
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
@@ -1217,23 +1223,26 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
     /// `checkTLPAggregate` rejects it because it is not a rewritable function.
     if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
     {
-        if (apply->lambda)
-        {
-            SafeAggregateScan lambda_scan;
-            scanAggregatesSafe(apply->lambda, lambda_scan);
-            if (!lambda_scan.aggregates.empty())
-                out.aggregates.push_back(ast);
-            out.window_functions.insert(
-                out.window_functions.end(), lambda_scan.window_functions.begin(), lambda_scan.window_functions.end());
-        }
-        else if (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name))
+        SafeAggregateScan member_scan;
+        forEachChild(ast, [&](const ASTPtr & child) { scanAggregatesSafe(child, member_scan); });
+        if (!member_scan.aggregates.empty()
+            || (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name)))
         {
             out.aggregates.push_back(ast);
         }
+        out.window_functions.insert(
+            out.window_functions.end(), member_scan.window_functions.begin(), member_scan.window_functions.end());
+        return;
     }
 
-    for (const auto & child : ast->children)
-        scanAggregatesSafe(child, out);
+    forEachChild(ast, [&](const ASTPtr & child) { scanAggregatesSafe(child, out); });
+}
+
+/// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
+/// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
+ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
+{
+    return ThreadGroupSwitcher(ThreadGroup::createForQuery(oracle_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 }
 
 }
@@ -1433,6 +1442,9 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// optimizer (and the CNF conversion that feeds it) off.
     oracle_context->setSetting("optimize_using_constraints", Field(false));
     oracle_context->setSetting("convert_query_to_cnf", Field(false));
+    /// A hash join compares a `Dynamic` key with a non-`Dynamic` one by type, unlike `equals`,
+    /// so moving an equality between WHERE and the JOIN keys would change the result.
+    oracle_context->setSetting("allow_dynamic_type_in_join_keys", Field(false));
     /// Neutralize session-leaked read/result caps (a seed's `SET
     /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
     /// oracle sub-queries asymmetrically — see `truncatingSettings`).
@@ -1498,6 +1510,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
     /// ClickHouse handles all column serialization within the pipeline internally,
@@ -1533,6 +1546,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
 
@@ -1579,6 +1593,7 @@ QueryOracleChecker::executeWithSettings(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : settings)
         oracle_context->setSetting(name, value);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
     WriteBufferFromOwnString ostr;
@@ -2100,7 +2115,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             throw;
         /// The variant query might fail with a different error — that's OK.
         LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
@@ -2768,6 +2783,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         return false;
     }
 
+    if (hasWithTotalsAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: WITH TOTALS (the totals row is not distributive over WHERE partitions)");
+        return false;
+    }
+
     /// `Distributed` tables route to remote shards (here, test clusters whose
     /// replicas all point at localhost), so a row is read once per shard and
     /// the reference vs rewrite can route/dedup differently — the oracle can't
@@ -2847,7 +2868,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     /// Run one oracle under a uniform guard: its own mismatch
     /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
-    /// reproduction settings by the outer handler below; any other execution
+    /// reproduction settings by the outer handler below, and a disconnected
+    /// client (`QUERY_WAS_CANCELLED_BY_CLIENT`) stops the remaining oracles; any other execution
     /// error means the rewrite was not comparable on this query (e.g. a
     /// function the rewrite cannot analyse), so it is swallowed and the
     /// remaining oracles still run. `name` reproduces the per-oracle log wording.
@@ -2860,7 +2882,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 throw;
             LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
         }
