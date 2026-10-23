@@ -374,7 +374,6 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    /// The functions of the mappings are numbered from `first_function_number` in mapping order.
     BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point = false) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.

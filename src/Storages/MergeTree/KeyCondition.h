@@ -263,7 +263,6 @@ public:
     /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
     static bool fieldHasNullInside(const Field & field);
 
-    /// The functions are numbered from `first_function_number`, see `applyFunction`.
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
