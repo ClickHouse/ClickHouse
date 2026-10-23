@@ -136,12 +136,12 @@ void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & requ
         patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
 }
 
-void MergeTreeReadTask::Readers::measureCompressedSizeOfStringValuesSkippedByFilters(
-    const std::function<CompressionCodecPtr(const String &)> & get_codec, const std::function<bool()> & should_measure)
+void MergeTreeReadTask::Readers::setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(
+    const std::function<CompressionCodecPtr(const String &)> & get_codec)
 {
-    main->measureCompressedSizeOfStringValuesSkippedByFilters(get_codec, should_measure);
+    main->setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(get_codec);
     for (auto & reader : prewhere)
-        reader->measureCompressedSizeOfStringValuesSkippedByFilters(get_codec, should_measure);
+        reader->setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(get_codec);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -184,13 +184,13 @@ MergeTreeReadTask::MergeTreeReadTask(
         const auto part_column_sizes = info->data_part_info->getColumnSizes();
         if (!part_column_sizes || part_column_sizes->empty())
         {
-            readers.measureCompressedSizeOfStringValuesSkippedByFilters(
+            readers.setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(
                 [&](const String & name)
                 {
                     const auto it = resolved_codecs.find(name);
                     return it == resolved_codecs.end() ? default_codec : it->second.generic;
-                },
-                [updater_ptr = updater.get()] { return updater_ptr->maySampleInputBlocks(); });
+                });
+            sampling_updater = updater.get();
         }
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
@@ -553,7 +553,8 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows);
+    auto read_result = readers_chain.read(
+        rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, sampling_updater, block_size_params.max_block_size_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)

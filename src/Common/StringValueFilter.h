@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <optional>
@@ -155,17 +156,24 @@ struct StringValuesSkippedByFilter
 {
     /// The total size of the values.
     size_t bytes = 0;
-    /// If set, the values and their sizes are written to them as they are replaced, to measure their compressed size.
-    /// The sizes are written as the part has them: as varints before the values, or as `UInt64` in a stream of their own.
+    /// The values of this many rows read next are measured: they are written with their sizes, as they are replaced,
+    /// to measure their compressed size. The sizes are written as the part has them: as varints before the values, or as
+    /// `UInt64` in a stream of their own.
+    size_t rows_to_measure = 0;
     WriteBuffer * values_compressed_size_measurement = nullptr;
     WriteBuffer * sizes_compressed_size_measurement = nullptr;
+    /// The size of the measured values.
+    size_t measured_bytes = 0;
 
-    /// Must be called for every replaced value that is not empty: an empty value is read as it is.
+    /// Must be called for every replaced value that is not empty in the rows to measure: an empty value is read as it is.
     void add(const char * data, size_t size, bool size_is_inline)
     {
         if (values_compressed_size_measurement)
             writeToCompressedSizeMeasurement(data, size, size_is_inline);
     }
+
+    /// Must be called after `rows` rows are read.
+    void rowsRead(size_t rows) { rows_to_measure -= std::min(rows_to_measure, rows); }
 
 private:
     void writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline);
@@ -175,8 +183,9 @@ private:
 struct StringValuesSkippedInBlock
 {
     size_t bytes = 0;
-    /// The size of the values compressed with the codec of the column, if it was measured.
-    std::optional<size_t> compressed_bytes;
+    /// If the values were measured: the size of the measured values, and with their sizes compressed with the codec of the column.
+    std::optional<size_t> measured_bytes;
+    size_t measured_compressed_bytes = 0;
 };
 using StringValuesSkippedInBlockByColumn = std::unordered_map<String, StringValuesSkippedInBlock>;
 

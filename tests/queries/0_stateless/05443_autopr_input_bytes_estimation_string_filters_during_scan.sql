@@ -37,6 +37,7 @@ DROP TABLE IF EXISTS t_compact_long_records_zstd;
 DROP TABLE IF EXISTS t_compact_large_values;
 DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
+DROP TABLE IF EXISTS t_compact_many_filters;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate takes the compression ratio differently for the two.
@@ -186,6 +187,14 @@ SELECT count() FROM t_compact_large_matching_values WHERE s LIKE '%needle%' SETT
 SELECT count() FROM t_compact_large_matching_values WHERE s LIKE '%needle%'
 SETTINGS max_threads=1, enable_parallel_replicas=0, automatic_parallel_replicas_mode=0, log_comment='memory_large_matching_values_0';
 
+-- The compressors are created only for the columns that are read: here each condition is a step of PREWHERE of its own,
+-- and the first one rejects all rows, so the columns of the other steps are not read.
+CREATE TABLE t_compact_many_filters(s1 String, s2 String, s3 String, s4 String, s5 String, s6 String, s7 String, s8 String, s9 String, s10 String, s11 String, s12 String, s13 String, s14 String, s15 String, s16 String, s17 String, s18 String, s19 String, s20 String, s21 String, s22 String, s23 String, s24 String, s25 String, s26 String, s27 String, s28 String, s29 String, s30 String, s31 String, s32 String) ENGINE=MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types='', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_many_filters SELECT 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'x11', 'x12', 'x13', 'x14', 'x15', 'x16', 'x17', 'x18', 'x19', 'x20', 'x21', 'x22', 'x23', 'x24', 'x25', 'x26', 'x27', 'x28', 'x29', 'x30', 'x31', 'x32' FROM numbers(2);
+SELECT count() FROM t_compact_many_filters WHERE s1 LIKE '%needle%' AND s2 LIKE '%needle%' AND s3 LIKE '%needle%' AND s4 LIKE '%needle%' AND s5 LIKE '%needle%' AND s6 LIKE '%needle%' AND s7 LIKE '%needle%' AND s8 LIKE '%needle%' AND s9 LIKE '%needle%' AND s10 LIKE '%needle%' AND s11 LIKE '%needle%' AND s12 LIKE '%needle%' AND s13 LIKE '%needle%' AND s14 LIKE '%needle%' AND s15 LIKE '%needle%' AND s16 LIKE '%needle%' AND s17 LIKE '%needle%' AND s18 LIKE '%needle%' AND s19 LIKE '%needle%' AND s20 LIKE '%needle%' AND s21 LIKE '%needle%' AND s22 LIKE '%needle%' AND s23 LIKE '%needle%' AND s24 LIKE '%needle%' AND s25 LIKE '%needle%' AND s26 LIKE '%needle%' AND s27 LIKE '%needle%' AND s28 LIKE '%needle%' AND s29 LIKE '%needle%' AND s30 LIKE '%needle%' AND s31 LIKE '%needle%' AND s32 LIKE '%needle%'
+SETTINGS max_threads=1, enable_multiple_prewhere_read_steps=1, max_memory_usage='16Mi', log_comment='many_filters';
+
 -- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
 -- use up the blocks to sample, or the part with matches, which comes last, is not measured to estimate the input.
 -- `max_rows_to_read` is checked before reading, and the skip indexes are then applied before reading as well.
@@ -276,3 +285,4 @@ DROP TABLE t_compact_long_records_zstd;
 DROP TABLE t_compact_large_values;
 DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;
+DROP TABLE t_compact_many_filters;

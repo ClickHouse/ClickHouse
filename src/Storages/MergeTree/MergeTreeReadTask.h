@@ -185,8 +185,7 @@ public:
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
         void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
 
-        void measureCompressedSizeOfStringValuesSkippedByFilters(
-            const std::function<CompressionCodecPtr(const String &)> & get_codec, const std::function<bool()> & should_measure);
+        void setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(const std::function<CompressionCodecPtr(const String &)> & get_codec);
     };
 
     struct BlockSizeParams
@@ -315,6 +314,8 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     DataflowCacheUpdateCallback dataflow_cache_update_cb;
+    /// Decides whether to sample a block before it is read, see `MergeTreeReadersChain::read`.
+    RuntimeDataflowStatisticsCacheUpdater * sampling_updater = nullptr;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

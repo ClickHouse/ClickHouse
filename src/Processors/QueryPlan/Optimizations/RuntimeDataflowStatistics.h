@@ -244,8 +244,14 @@ public:
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 
-    /// Whether an input block recorded from now on may be sampled by `recordInputColumns`.
-    bool maySampleInputBlocks() const;
+    /// To avoid spending too much time on serialization, the number of rows of a sampled block to serialize is limited.
+    static size_t numRowsToSample(size_t rows);
+
+    /// For a read that decides whether to sample a block before reading it, and passes the decision to
+    /// `recordInputColumns` as `should_continue_sampling`: counts the next block read from disk and returns whether
+    /// it is sampled. The block is given back if it has no rows, so that it does not use up the blocks to sample.
+    bool takeInputBlockReadFromDisk();
+    void giveBackInputBlockReadFromDisk();
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.

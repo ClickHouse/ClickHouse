@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
@@ -300,6 +301,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
     const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
+    RuntimeDataflowStatisticsCacheUpdater * sampling_updater,
     size_t max_block_size_rows)
 {
     if (max_rows == 0)
@@ -318,6 +320,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
                 num_attributed_readers = i + 1;
 
+    /// The compressed size of the string values that are skipped while reading is measured in the rows that are
+    /// sampled, so whether the block is sampled is decided before it is read then.
+    std::optional<bool> should_continue_sampling;
+    if (sampling_updater)
+        should_continue_sampling = sampling_updater->takeInputBlockReadFromDisk();
+    const size_t rows_to_measure
+        = should_continue_sampling.value_or(false) ? RuntimeDataflowStatisticsCacheUpdater::numRowsToSample(max_rows) : 0;
+    first_reader.getReader()->measureCompressedSizeOfStringValuesSkippedByFilters(rows_to_measure);
+
     try
     {
         read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
@@ -329,7 +340,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         throw;
     }
 
-    std::optional<bool> should_continue_sampling;
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
@@ -352,11 +362,16 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         if (num_attributed_readers != 0)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
+    else if (sampling_updater)
+    {
+        sampling_updater->giveBackInputBlockReadFromDisk();
+    }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
         const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
+        range_readers[i].getReader()->measureCompressedSizeOfStringValuesSkippedByFilters(rows_to_measure);
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.

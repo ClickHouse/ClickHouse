@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class RuntimeDataflowStatisticsCacheUpdater;
+
 using RangeReaders = std::vector<MergeTreeRangeReader>;
 
 struct ColumnForPatch
@@ -50,9 +52,11 @@ public:
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
+    /// If `sampling_updater` is set, it decides whether `update_cb` samples the block before the block is read,
+    /// see `RuntimeDataflowStatisticsCacheUpdater::takeInputBlockReadFromDisk`.
     ReadResult
     read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
-         size_t max_block_size_rows = 0);
+         RuntimeDataflowStatisticsCacheUpdater * sampling_updater = nullptr, size_t max_block_size_rows = 0);
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;

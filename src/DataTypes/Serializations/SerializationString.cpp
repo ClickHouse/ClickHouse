@@ -320,6 +320,11 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
     /// Values in the current buffer that contain the bulk-scanned needle.
     std::vector<size_t> matched_values;
 
+    /// The values of the first rows are measured, see `StringValuesSkippedByFilter::rows_to_measure`.
+    const size_t measure_end = skipped ? first_row + std::min(skipped->rows_to_measure, num_rows - first_row) : first_row;
+    if (skipped)
+        skipped->rowsRead(num_rows - first_row);
+
     size_t i = first_row;
     try
     {
@@ -345,7 +350,9 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
                 ++values_checked;
 
                 /// An empty string never matches the filter.
-                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter, skipped, /* size_is_inline = */ false))
+                if (value_size == 0
+                    || !readFilteredStringValue(
+                        data, offset, istr, value_size, filter, i < measure_end ? skipped : nullptr, /* size_is_inline = */ false))
                 {
                     ++values_replaced;
                     bytes_skipped += value_size;
@@ -394,7 +401,7 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
                 {
                     ++bulk_values_replaced;
                     bulk_bytes_skipped += value_size;
-                    if (skipped)
+                    if (i < measure_end)
                         skipped->add(value_data, value_size, /* size_is_inline = */ false);
                 }
 
@@ -436,6 +443,11 @@ try
     size_t values_replaced = 0;
     size_t bytes_skipped = 0;
 
+    /// The values of the first rows are measured, see `StringValuesSkippedByFilter::rows_to_measure`.
+    const size_t measure_end = skipped ? std::min(skipped->rows_to_measure, limit) : 0;
+    if (skipped)
+        skipped->rowsRead(limit);
+
     for (size_t i = 0; i < limit; ++i)
     {
         if (istr.eof())
@@ -454,7 +466,7 @@ try
         ++values_checked;
 
         /// An empty string never matches the filter.
-        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter, skipped, /* size_is_inline = */ true))
+        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter, i < measure_end ? skipped : nullptr, /* size_is_inline = */ true))
         {
             ++values_replaced;
             bytes_skipped += size;

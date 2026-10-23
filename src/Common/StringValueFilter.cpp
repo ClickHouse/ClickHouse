@@ -209,6 +209,7 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
 
 void StringValuesSkippedByFilter::writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline)
 {
+    measured_bytes += size;
     if (size_is_inline)
         writeVarUInt(size, *values_compressed_size_measurement);
     else
