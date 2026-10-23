@@ -207,34 +207,27 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
         disabled.store(true, std::memory_order_relaxed);
 }
 
-/// Appends a sample of a string value of at most `max_size` bytes to `to`: the whole value if it fits, otherwise
-/// pieces spread along it, so that a value whose beginning compresses differently from the rest is still represented.
-/// Returns the size of the sample.
-static size_t appendSampleOfStringValue(String & to, const char * data, size_t size, size_t max_size)
+void StringValuesSkippedByFilter::addShortValueToSample(const char * data, size_t size)
 {
-    if (size <= max_size)
-    {
-        to.append(data, size);
-        return size;
-    }
-
-    /// The pieces are not too short to be compressed as the value is, and the last one ends with the value.
-    constexpr size_t max_pieces = 16;
-    constexpr size_t min_piece_size = 4096;
-    const size_t pieces = std::clamp<size_t>(max_size / min_piece_size, 1, max_pieces);
-    const size_t piece_size = max_size / pieces;
-    for (size_t i = 0; i < pieces; ++i)
-    {
-        const size_t piece_offset = pieces == 1 ? 0 : i * (size - piece_size) / (pieces - 1);
-        to.append(data + piece_offset, piece_size);
-    }
-    return pieces * piece_size;
+    short_values_sample.append(data, size);
+    short_values_sample_sizes.push_back(size);
 }
 
-void StringValuesSkippedByFilter::addToSampleImpl(const char * data, size_t size)
+void StringValuesSkippedByFilter::addLongValueToSample(const char * data, size_t size)
 {
-    const size_t used = sample.size() + (sample_sizes.size() + 1) * sizeof(size_t);
-    sample_sizes.push_back(appendSampleOfStringValue(sample, data, size, max_sample_bytes - std::min(max_sample_bytes, used)));
+    long_values_bytes += size;
+    if (long_values_samples.size() >= MAX_LONG_VALUES_IN_SAMPLE)
+        return;
+
+    /// Pieces spread along the value, so that a value whose beginning compresses differently from the rest is still
+    /// represented. The last one ends with the value.
+    constexpr size_t pieces = 4;
+    const size_t piece_size = maxSampleBytesOfLongValue() / pieces;
+    String sample;
+    sample.reserve(pieces * piece_size);
+    for (size_t i = 0; i < pieces; ++i)
+        sample.append(data + i * (size - piece_size) / (pieces - 1), piece_size);
+    long_values_samples.emplace_back(std::move(sample), size);
 }
 
 }

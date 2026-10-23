@@ -147,36 +147,48 @@ using StringValueFilterPtr = std::shared_ptr<const StringValueFilter>;
 using StringValueFilters = std::unordered_map<String, StringValueFilterPtr>;
 using StringValueFiltersPtr = std::shared_ptr<const StringValueFilters>;
 
-/// The values of a column that a `StringValueFilter` replaced with empty strings. The in-memory size of the
-/// read column misses them, although they were read from disk.
-struct StringValuesSkippedByFilter
+/// The values of a column that a `StringValueFilter` replaced with empty strings in one read block. The in-memory
+/// size of the read column misses them, although they were read from disk. Samples of them show how they compress.
+/// A long value is sampled on its own, so that it neither crowds the other values out of the sample nor lends them
+/// its compression ratio: each sample is weighted by the size of the values it represents.
+struct StringValuesSkippedInBlock
 {
     /// The total size of the values.
     size_t bytes = 0;
-    /// Samples of the first values in the order they were read, concatenated, and their sizes, to estimate how the
-    /// values compress. Together they take at most `max_sample_bytes`, because a value can be arbitrarily long.
-    String sample;
-    std::vector<size_t> sample_sizes;
+    /// The first short values in the order they were read, concatenated, and their sizes. They represent all short values.
+    String short_values_sample;
+    std::vector<size_t> short_values_sample_sizes;
+    /// The total size of the long values, and samples of the first of them with their sizes. Each sample represents
+    /// its value, and all of them together represent the long values beyond them in proportion to their sizes.
+    size_t long_values_bytes = 0;
+    std::vector<std::pair<String, size_t>> long_values_samples;
+};
+using StringValuesSkippedInBlockByColumn = std::unordered_map<String, StringValuesSkippedInBlock>;
+
+/// Accumulates `StringValuesSkippedInBlock` while a block is read.
+struct StringValuesSkippedByFilter : StringValuesSkippedInBlock
+{
+    /// The samples take at most this many bytes, because a value can be arbitrarily long. Zero disables sampling.
     size_t max_sample_bytes = 0;
 
     /// Must be called for every replaced value, including an empty one.
     void addToSample(const char * data, size_t size)
     {
-        if (sample.size() + sample_sizes.size() * sizeof(size_t) < max_sample_bytes)
-            addToSampleImpl(data, size);
+        if (!max_sample_bytes)
+            return;
+        if (size > maxSampleBytesOfLongValue())
+            addLongValueToSample(data, size);
+        else if (short_values_sample.size() + short_values_sample_sizes.size() * sizeof(size_t) < max_sample_bytes / 2)
+            addShortValueToSample(data, size);
     }
 
 private:
-    void addToSampleImpl(const char * data, size_t size);
-};
+    /// Half of the samples is for the short values, the other half for this many long values.
+    static constexpr size_t MAX_LONG_VALUES_IN_SAMPLE = 8;
+    size_t maxSampleBytesOfLongValue() const { return max_sample_bytes / 2 / MAX_LONG_VALUES_IN_SAMPLE; }
 
-/// The values skipped in one read block, see `StringValuesSkippedByFilter`.
-struct StringValuesSkippedInBlock
-{
-    size_t bytes = 0;
-    String sample;
-    std::vector<size_t> sample_sizes;
+    void addShortValueToSample(const char * data, size_t size);
+    void addLongValueToSample(const char * data, size_t size);
 };
-using StringValuesSkippedInBlockByColumn = std::unordered_map<String, StringValuesSkippedInBlock>;
 
 }

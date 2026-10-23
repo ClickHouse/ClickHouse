@@ -28,6 +28,7 @@ DROP TABLE IF EXISTS t_compact_varying_lengths;
 DROP TABLE IF EXISTS t_compact_empty_granules;
 DROP TABLE IF EXISTS t_compact_long_values;
 DROP TABLE IF EXISTS t_compact_large_matching_value;
+DROP TABLE IF EXISTS t_compact_large_replaced_value;
 DROP TABLE IF EXISTS t_compact_large_values;
 DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
@@ -115,6 +116,20 @@ OPTIMIZE TABLE t_compact_large_matching_value FINAL;
 SELECT count() FROM t_compact_large_matching_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_large_matching_value_1';
 SELECT count() FROM t_compact_large_matching_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_large_matching_value_0';
 
+-- A long replaced value is sampled by itself as well: here it is the first value, it compresses well, and the many
+-- short values replaced after it do not compress at all.
+CREATE TABLE t_compact_large_replaced_value(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_large_replaced_value
+SELECT 0, repeat('abcd', 262144)
+UNION ALL
+SELECT 1, 'needle'
+UNION ALL
+SELECT number, arrayStringConcat(arrayMap(i -> reinterpretAsString(cityHash64(number, i)), range(10))) FROM numbers(2, 8190);
+OPTIMIZE TABLE t_compact_large_replaced_value FINAL;
+SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_large_replaced_value_1';
+SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_large_replaced_value_0';
+
 -- Only a bounded sample of the replaced values is kept to estimate how they compress: they can be long, and holding
 -- them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has all of them.
 CREATE TABLE t_compact_large_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
@@ -198,6 +213,7 @@ DROP TABLE t_compact_varying_lengths;
 DROP TABLE t_compact_empty_granules;
 DROP TABLE t_compact_long_values;
 DROP TABLE t_compact_large_matching_value;
+DROP TABLE t_compact_large_replaced_value;
 DROP TABLE t_compact_large_values;
 DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;

@@ -106,7 +106,7 @@ public:
     /// columns misses these values, although they were read from disk.
     StringValuesSkippedInBlockByColumn takeStringValuesSkippedByFilters();
 
-    /// Keeps the beginning of the skipped values, see `StringValuesSkippedByFilter::sample`.
+    /// Keeps samples of the skipped values, see `StringValuesSkippedInBlock`.
     void setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes);
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }

@@ -172,14 +172,14 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-/// A column of the sample of the values that a `StringValueFilter` replaced with empty strings.
-static ColumnWithTypeAndName columnOfStringValuesSkippedByFilter(const StringValuesSkippedInBlock & skipped)
+/// A column of sampled string values, concatenated in `data` with their `sizes`.
+static ColumnWithTypeAndName columnOfStringValues(const String & data, const std::vector<size_t> & sizes)
 {
     auto column = ColumnString::create();
     size_t offset = 0;
-    for (const size_t size : skipped.sample_sizes)
+    for (const size_t size : sizes)
     {
-        column->insertData(skipped.sample.data() + offset, size);
+        column->insertData(data.data() + offset, size);
         offset += size;
     }
     return {std::move(column), std::make_shared<DataTypeString>(), ""};
@@ -521,8 +521,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         else
                         {
                             /// The values replaced with empty strings are missing from the column. They compress
-                            /// differently from the values that are there, so the two are estimated separately, each
-                            /// weighted by its size, in the proportion of the rows sampled from the other columns.
+                            /// differently from the values that are there, so the two are estimated separately, and so
+                            /// are the samples of the replaced values (see `StringValuesSkippedInBlock`), each weighted by
+                            /// the size it represents, in the proportion of the rows sampled from the other columns.
                             /// Every empty string is a replaced value, because a matching value is never empty,
                             /// and the size of its offset belongs to the replaced values.
                             const auto & skipped = skipped_it->second;
@@ -541,7 +542,19 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                                     weight * static_cast<double>(part_compressed) / static_cast<double>(part_sample));
                             };
                             add(column, column.column->byteSize() - std::min(column.column->byteSize(), replaced_offsets_bytes));
-                            add(columnOfStringValuesSkippedByFilter(skipped), skipped.bytes + replaced_offsets_bytes);
+
+                            const size_t long_values_bytes = std::min(skipped.long_values_bytes, skipped.bytes);
+                            const size_t short_values_bytes = skipped.bytes - long_values_bytes;
+                            add(columnOfStringValues(skipped.short_values_sample, skipped.short_values_sample_sizes),
+                                short_values_bytes + replaced_offsets_bytes);
+
+                            size_t long_values_sampled_bytes = 0;
+                            for (const auto & [_, size] : skipped.long_values_samples)
+                                long_values_sampled_bytes += size;
+                            for (const auto & [sample, size] : skipped.long_values_samples)
+                                add(columnOfStringValues(sample, {sample.size()}),
+                                    static_cast<size_t>(static_cast<double>(long_values_bytes) * static_cast<double>(size)
+                                                        / static_cast<double>(long_values_sampled_bytes)));
                         }
                     }
                 }

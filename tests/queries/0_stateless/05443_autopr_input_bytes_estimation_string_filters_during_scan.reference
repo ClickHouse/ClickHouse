@@ -14,6 +14,8 @@
 1
 1
 1
+1
+1
 16
 16
 10
@@ -26,6 +28,7 @@ skip_index	1
 same_compressibility_changes	1	1
 same_empty_granules	1	1
 same_large_matching_value	1	1
+same_large_replaced_value	1	1
 same_long_values	1	1
 same_varying_lengths	1	1
 1	1
