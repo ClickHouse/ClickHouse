@@ -90,11 +90,18 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
         checkTransformPermissions(index.arguments, context);
 }
 
-void checkTextIndexPreAndPostProcessorPermissions(const ASTIndexDeclaration & declaration, const ContextPtr & context)
+void checkTextIndexPreAndPostProcessorPermissions(
+    const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context)
 {
     const auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;
-    if (type && Poco::toLower(type->name) == TEXT_INDEX_NAME && type->arguments)
-        checkTransformPermissions(type->arguments, context);
+    if (!type || Poco::toLower(type->name) != TEXT_INDEX_NAME || !type->arguments)
+        return;
+
+    /// On a clone: the expansion rewrites in place, and `getIndexFromAST` stores what it produces, so
+    /// an alias is what the index ends up running. Without `columns` an alias stays an identifier here.
+    auto arguments = type->arguments->clone();
+    expandTextIndexTransformAliases(arguments, columns);
+    checkTransformPermissions(arguments, context);
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)

@@ -91,7 +91,8 @@ struct IndexDescription
 /// are allowed to run within the permissions of the given context. Call only where a user declares an
 /// index, on the node they submitted it to; elsewhere these resolve under the global context.
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context);
-void checkTextIndexPreAndPostProcessorPermissions(const ASTIndexDeclaration & declaration, const ContextPtr & context);
+void checkTextIndexPreAndPostProcessorPermissions(
+    const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
 
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>

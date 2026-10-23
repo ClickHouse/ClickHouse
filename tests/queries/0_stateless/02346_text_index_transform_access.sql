@@ -101,7 +101,16 @@ DETACH TABLE tab;
 ATTACH TABLE tab;
 SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
 
-SELECT '11. Redeclaring with a privileged function is denied.';
+SELECT '11. An ALIAS column hiding a privileged function is denied.';
+
+-- The stored transform is the expanded alias, so that is what has to be authorized.
+SET allow_introspection_functions = 1;
+ALTER TABLE tab ADD COLUMN mangled String ALIAS demangle(val2);
+SET allow_introspection_functions = 0;
+
+ALTER TABLE tab ADD INDEX idx_alias(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '12. Redeclaring with a privileged function is denied.';
 
 ALTER TABLE tab DROP INDEX idx,
                 ADD INDEX idx(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val2)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }

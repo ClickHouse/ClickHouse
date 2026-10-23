@@ -13,4 +13,5 @@
 1
 10. Neither does DETACH/ATTACH.
 1
-11. Redeclaring with a privileged function is denied.
+11. An ALIAS column hiding a privileged function is denied.
+12. Redeclaring with a privileged function is denied.

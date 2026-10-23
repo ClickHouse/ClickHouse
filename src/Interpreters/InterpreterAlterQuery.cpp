@@ -103,8 +103,13 @@ namespace
 
 /// `ON CLUSTER` and a `Replicated` database both hand the query to workers that run it without the
 /// submitting user, so an added index is authorised here, on the node the query was submitted to.
-void checkAddedIndexPermissions(const ASTAlterQuery & alter, const ContextPtr & context)
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
+    /// `ON CLUSTER` may run from a host that does not have the table, leaving aliases unexpandable.
+    StorageMetadataPtr metadata = table ? table->getInMemoryMetadataPtr() : nullptr;
+    static const ColumnsDescription no_columns;
+    const ColumnsDescription & columns = metadata ? metadata->getColumns() : no_columns;
+
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
@@ -112,7 +117,7 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const ContextPtr & 
             continue;
 
         if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
-            checkTextIndexPreAndPostProcessorPermissions(*declaration, context);
+            checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, context);
     }
 }
 
@@ -585,7 +590,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext(), table](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -595,7 +600,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
-            checkAddedIndexPermissions(captured_alter, context);
+            checkAddedIndexPermissions(captured_alter, table, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -618,7 +623,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
     }
 
-    checkAddedIndexPermissions(alter, getContext());
+    checkAddedIndexPermissions(alter, table, getContext());
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {

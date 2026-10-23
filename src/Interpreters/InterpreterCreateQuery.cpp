@@ -3976,14 +3976,15 @@ BlockIO InterpreterCreateQuery::execute()
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
             /// The normalized path authorizes these in `getTablePropertiesAndNormalizeCreateQuery`,
-            /// which this branch returns before reaching. Indices inherited from `AS src` are
-            /// materialized on the worker and are not in this query, so they are not covered.
+            /// which this branch returns before reaching. Without a `ColumnsDescription` an alias in a
+            /// transform stays unexpanded, and indices inherited from `AS src` are materialized on the
+            /// worker and are not in this query at all, so neither is covered here.
             if (create.columns_list && create.columns_list->indices)
             {
                 for (const auto & index : create.columns_list->indices->children)
                 {
                     if (const auto * declaration = index->as<ASTIndexDeclaration>())
-                        checkTextIndexPreAndPostProcessorPermissions(*declaration, getContext());
+                        checkTextIndexPreAndPostProcessorPermissions(*declaration, ColumnsDescription{}, getContext());
                 }
             }
 
