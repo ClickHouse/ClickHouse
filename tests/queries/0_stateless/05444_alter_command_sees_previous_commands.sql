@@ -30,30 +30,49 @@ SELECT name, type FROM system.columns WHERE database = currentDatabase() AND tab
 SHOW CREATE TABLE t_alter_previous_commands;
 DROP TABLE t_alter_previous_commands;
 
--- The placement of a column (FIRST / AFTER) decides which columns DROP COLUMN of a Nested group removes,
--- so a later IF NOT EXISTS sees the same columns as `apply` does.
+-- The placement of a column (FIRST / AFTER) decides which columns DROP COLUMN of a Nested group removes: `n.b` placed
+-- after `n.a` is dropped together with `n`, so the following DROP COLUMN `n.b` finds no such column.
 CREATE TABLE t_alter_previous_commands_nested (`n.a` Array(UInt32), id UInt64) ENGINE = MergeTree ORDER BY id;
-ALTER TABLE t_alter_previous_commands_nested ADD COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.b` Array(UInt64);
-SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' ORDER BY position;
+ALTER TABLE t_alter_previous_commands_nested ADD COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, DROP COLUMN `n.b`; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 DROP TABLE t_alter_previous_commands_nested;
 
 CREATE TABLE t_alter_previous_commands_nested (`n.a` Array(UInt32), id UInt64, `n.b` Array(UInt32)) ENGINE = MergeTree ORDER BY id;
-ALTER TABLE t_alter_previous_commands_nested MODIFY COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.b` Array(UInt64);
-SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' ORDER BY position;
+ALTER TABLE t_alter_previous_commands_nested MODIFY COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, DROP COLUMN `n.b`; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 DROP TABLE t_alter_previous_commands_nested;
 
 -- DROP COLUMN IF EXISTS of a Nested group drops the group like DROP COLUMN does, so the metadata agrees with the mutation
 -- and the data of the group is not lost while its columns stay.
 CREATE TABLE t_alter_previous_commands_nested (id UInt64, `n.a` Array(UInt32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_alter_previous_commands_nested VALUES (1, [42]);
-ALTER TABLE t_alter_previous_commands_nested DROP COLUMN IF EXISTS n SETTINGS mutations_sync = 1;
+ALTER TABLE t_alter_previous_commands_nested DROP COLUMN IF EXISTS n;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' ORDER BY position;
 SELECT * FROM t_alter_previous_commands_nested;
 DROP TABLE t_alter_previous_commands_nested;
 
 CREATE TABLE t_alter_previous_commands_nested (id UInt64, `n.a` Array(UInt32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_alter_previous_commands_nested VALUES (1, [42]);
-ALTER TABLE t_alter_previous_commands_nested DROP COLUMN IF EXISTS n, DROP COLUMN IF EXISTS `n.a` SETTINGS mutations_sync = 1;
+ALTER TABLE t_alter_previous_commands_nested DROP COLUMN IF EXISTS n, DROP COLUMN IF EXISTS `n.a`;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' ORDER BY position;
 SELECT * FROM t_alter_previous_commands_nested;
+DROP TABLE t_alter_previous_commands_nested;
+
+-- The mutation of DROP COLUMN of a Nested group drops each column of the group, so a column of the group created again
+-- by the same ALTER starts empty in a wide part instead of keeping the data of the dropped column.
+CREATE TABLE t_alter_previous_commands_nested (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_nested DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.b` Array(UInt64);
+SELECT id, `n.b` FROM t_alter_previous_commands_nested;
+SELECT column, type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' AND active ORDER BY column;
+DROP TABLE t_alter_previous_commands_nested;
+
+CREATE TABLE t_alter_previous_commands_nested (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_nested DROP COLUMN n, ADD COLUMN n Nested(b UInt64);
+SELECT id, `n.b` FROM t_alter_previous_commands_nested;
+DROP TABLE t_alter_previous_commands_nested;
+
+CREATE TABLE t_alter_previous_commands_nested (n Nested(a UInt32), id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES ([42], 1);
+ALTER TABLE t_alter_previous_commands_nested ADD COLUMN `n.b` Array(UInt32), DROP COLUMN n, RENAME COLUMN IF EXISTS `n.b` TO `n.a`;
+SELECT id, `n.a` FROM t_alter_previous_commands_nested;
 DROP TABLE t_alter_previous_commands_nested;

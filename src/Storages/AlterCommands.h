@@ -229,12 +229,12 @@ struct AlterCommand
     /// Checks that command will drop something or rename column.
     bool isDropOrRename() const;
 
-    /// If possible, convert alter command to mutation command. In other case
-    /// return empty optional. Some storages may execute mutations after
-    /// metadata changes.
+    /// If possible, convert alter command to mutation commands. In other case
+    /// return an empty list. Some storages may execute mutations after
+    /// metadata changes. `DROP COLUMN n` of the Nested group `n.a`, `n.b` converts to a drop of each member.
     /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
     /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    MutationCommands tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 };
 
 class Context;
