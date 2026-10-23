@@ -2848,6 +2848,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 continue;
             }
 
+            /// Count the part in the denominators now, as no status read may have seen it pending.
+            for (auto it = mutations_begin_it; it != std::next(last_mutation_to_apply); ++it)
+                if (getPartMutationScope(*part, static_cast<Int64>(it->first), it->second.tid) == PartMutationScope::Inside)
+                    it->second.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
+
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
             future_part->name = part->getNewName(new_part_info);
