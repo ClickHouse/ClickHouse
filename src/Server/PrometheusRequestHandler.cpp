@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsBool enable_http_compression;
     extern const SettingsUInt64 http_response_buffer_size;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
 }
 
 namespace ErrorCodes
@@ -683,11 +684,16 @@ private:
         if (method == CompressionMethod::None || !settings[Setting::enable_http_compression])
             return;
 
+        /// Like the HTTP interface: the zlib level is for gzip and deflate only.
+        int level = (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            ? static_cast<int>(settings[Setting::http_zlib_compression_level])
+            : static_cast<int>(settings[Setting::output_format_compression_level]);
+
         auto & out = parent().getOutputStream(response);
         parent().compressed_write_buffer = wrapWriteBufferWithCompressionMethod(
             &out,
             method,
-            static_cast<int>(settings[Setting::http_zlib_compression_level]),
+            level,
             /* zstd_window_log = */ 0,
             SnappyMode::Framed,
             DBMS_DEFAULT_BUFFER_SIZE,

@@ -1,5 +1,6 @@
 import gzip
 import json
+import lzma
 import urllib
 import uuid
 import zlib
@@ -355,6 +356,22 @@ def test_response_compression(encoding, decompress):
     )
     assert "Content-Encoding" not in response.headers
     assert response.content == plain.content
+
+
+def test_compression_level_per_codec():
+    # `http_zlib_compression_level` is for gzip and deflate only: xz takes `output_format_compression_level`.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        "?query=vector(1)&time=150"
+        "&http_zlib_compression_level=12&output_format_compression_level=3"
+    )
+    plain = requests.get(url, headers={"Accept-Encoding": "identity"})
+    assert plain.status_code == 200, plain.text
+
+    with requests.get(url, headers={"Accept-Encoding": "xz"}, stream=True) as response:
+        assert response.status_code == 200, response.status_code
+        assert response.headers["Content-Encoding"] == "xz"
+        assert lzma.decompress(response.raw.read(decode_content=False)) == plain.content
 
 
 def test_large_compressed_response():
