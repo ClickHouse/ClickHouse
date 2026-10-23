@@ -90,7 +90,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
         if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
             throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
-        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
     }
     else
     {

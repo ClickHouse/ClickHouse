@@ -112,6 +112,8 @@ public:
 
     void drop() override;
 
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -194,6 +196,7 @@ public:
     CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     bool optimize(
@@ -253,6 +256,9 @@ public:
     }
 
 protected:
+    /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
+    void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
+
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
@@ -296,6 +302,7 @@ protected:
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;
     std::mutex hive_partitioning_resolution_mutex;
+    std::mutex settings_changes_mutex;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
