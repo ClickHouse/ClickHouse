@@ -308,5 +308,67 @@ submit
 expect "2905"
 expect ":) "
 
+# `db` and `cb` from the start of a line keep the preceding line break.
+send -- "SELECT 3100 -- note\r+ 23"
+escape
+send -- "0db"
+submit
+expect "3123"
+expect ":) "
+
+send -- "SELECT 3200 -- note\r+ 45"
+escape
+send -- "0cb1"
+submit
+expect "3245"
+expect ":) "
+
+# From the start of a line to the start of a previous one, `db` is linewise.
+send -- "SELECT 3300\rgarbage\r+ 6"
+escape
+send -- "0db"
+submit
+expect "3306"
+expect ":) "
+
+# `G` moves to the first non-blank of the last line.
+send -- "SELECT 3400\r  + 23"
+escape
+send -- "ggGi+ 1 -- "
+submit
+expect "3401"
+expect ":) "
+
+# `%` uses the first bracket after the cursor on the line.
+send -- "SELECT 3500 + plus(20, 30)"
+escape
+send -- "0fpc%7"
+submit
+expect "3507"
+expect ":) "
+
+# `~` takes a count and moves the cursor forward.
+send -- "SELECT 'abcd'"
+escape
+send -- "0fa3~"
+submit
+expect "ABCd"
+expect ":) "
+
+send -- "SELECT 'wxyz'"
+escape
+send -- "0fw~~"
+submit
+expect "WXyz"
+expect ":) "
+
+# `2S` changes two lines, like `2cc`.
+send -- "garbage\r+ 23\r+ 45"
+escape
+send -- "gg2SSELECT 3600"
+submit
+expect "3645"
+expect ":) "
+
 send -- "\4"
 expect eof

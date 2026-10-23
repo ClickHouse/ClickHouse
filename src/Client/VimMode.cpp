@@ -1,6 +1,7 @@
 #include <Client/ReplxxLineReader.h>
 
 #include <algorithm>
+#include <string_view>
 
 namespace DB
 {
@@ -303,6 +304,9 @@ static int wordBackward(const std::u32string & text, int pos, int reps, bool big
         int break_on_char = 0;
         for (; pos > 0; pos--)
         {
+            /* An empty line is a word of its own. */
+            if (text[pos] == '\n' && text[pos - 1] == '\n')
+                break;
             if (bigword)
             {
                 if (!iswhitespace(text[pos]))
@@ -327,6 +331,16 @@ static int wordBackward(const std::u32string & text, int pos, int reps, bool big
         if (pos == prev)
             break;
     }
+    return pos;
+}
+
+/* The first non-blank character of the line that starts at `line_start`, or the end of the line. */
+static int firstNonBlank(const std::u32string & text, int line_start)
+{
+    int length = static_cast<int>(text.length());
+    int pos = line_start;
+    for (; pos < length && (text[pos] == ' ' || text[pos] == '\t'); pos++)
+        ;
     return pos;
 }
 
@@ -534,7 +548,24 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
         }
         else if (pos < oldpos)
         {
-            text.erase(pos, oldpos - pos + inclusivity_flip);
+            /* Like vim, an exclusive motion that ends in the first column of a line ends at the end
+             * of the previous line instead, so the line break stays. When the motion also starts at
+             * or before the first non-blank of its line, it becomes linewise. */
+            if (!inclusivity_flip && text[oldpos - 1] == '\n')
+            {
+                int line_start = pos;
+                for (; line_start > 0 && text[line_start - 1] != '\n'; line_start--)
+                    ;
+                if (std::all_of(text.begin() + line_start, text.begin() + pos, [](char32_t c) { return c == ' ' || c == '\t'; }))
+                {
+                    pos = line_start;
+                    text.erase(pos, oldpos - pos - (op == OPERATOR_C));
+                }
+                else
+                    text.erase(pos, oldpos - 1 - pos);
+            }
+            else
+                text.erase(pos, oldpos - pos + inclusivity_flip);
         }
     }
     if (op == OPERATOR_C && selected)
@@ -702,6 +733,26 @@ void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
         rx.set_editing_mode(MODE_NORMAL);
         resetVim(&pos, &text);
     }
+}
+
+void ReplxxLineReader::vimChangeLines(int & pos, std::u32string & text)
+{
+    /* Replace count lines, starting from the current one, with an empty line. */
+    int length = static_cast<int>(text.length());
+    for (; pos > 0 && text[pos - 1] != '\n'; pos--)
+        ;
+    int end = pos;
+    for (int reps = vimReps(); reps > 0 && end < length; reps--)
+    {
+        for (; end < length && text[end] != '\n'; end++)
+            ;
+        if (reps > 1 && end < length)
+            end++;
+    }
+    text.erase(pos, end - pos);
+
+    rx.set_editing_mode(MODE_INSERT);
+    resetVim();
 }
 
 void ReplxxLineReader::vimDollar(int & pos, std::u32string & text)
@@ -915,19 +966,22 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         '~',
         [this](int & pos, std::u32string & text, char32_t)
         {
-            if (pos >= static_cast<int>(text.length()))
-                return;
-            char32_t c = text[pos];
-            if ('a' <= c && c <= 'z')
+            /* Toggle the case of up to count characters until the end of the line, and move past
+             * them, but not past the last character of the line. */
+            int length = static_cast<int>(text.length());
+            int reps = vimReps();
+            int end = pos;
+            for (; end - pos < reps && end < length && text[end] != '\n'; end++)
             {
-                text[pos] = c + 'A' - 'a';
-                resetVim(&pos, &text);
+                char32_t c = text[end];
+                if ('a' <= c && c <= 'z')
+                    text[end] = c + 'A' - 'a';
+                else if ('A' <= c && c <= 'Z')
+                    text[end] = c + 'a' - 'A';
             }
-            else if ('A' <= c && c <= 'Z')
-            {
-                text[pos] = c + 'a' - 'A';
-                resetVim(&pos, &text);
-            }
+            if (end > pos)
+                pos = end < length && text[end] != '\n' ? end : end - 1;
+            resetVim(&pos, &text);
         },
         MODE_NORMAL);
 
@@ -1198,9 +1252,15 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         [this](int & pos, std::u32string & text, char32_t)
         {
             int oldpos = pos;
-            if (pos >= static_cast<int>(text.length()))
+            int length = static_cast<int>(text.length());
+            /* Like vim, use the first bracket from the cursor to the end of the line. The operator
+             * range still starts at the original cursor position. */
+            for (; pos < length && text[pos] != '\n' && !std::u32string_view(U"(){}[]<>").contains(text[pos]); pos++)
+                ;
+            if (pos >= length || text[pos] == '\n')
             {
-                resetVim();
+                pos = oldpos;
+                resetVim(&pos, &text);
                 return;
             }
             char32_t paren = text[pos];
@@ -1235,7 +1295,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             }
 
             int paren_count = 1;
-            for (int i = opening ? pos + 1 : pos - 1; opening ? i < static_cast<int>(text.length()) : i >= 0; i += opening ? 1 : -1)
+            int found = -1;
+            for (int i = opening ? pos + 1 : pos - 1; opening ? i < length : i >= 0; i += opening ? 1 : -1)
             {
                 char32_t c = text[i];
                 if (c == paren)
@@ -1245,10 +1306,12 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
 
                 if (paren_count == 0)
                 {
-                    pos = i;
+                    found = i;
                     break;
                 }
             }
+            /* Without a matching bracket the command fails and the cursor stays. */
+            pos = found >= 0 ? found : oldpos;
             bool moved = pos != oldpos;
             if (op)
             {
@@ -1396,7 +1459,9 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                         line--;
             }
             else
-                pos = length;
+                for (pos = length; pos > 0 && text[pos - 1] != '\n'; pos--)
+                    ;
+            pos = firstNonBlank(text, pos);
             vimLinewise(pos, text, oldpos);
         },
         MODE_NORMAL);
@@ -1419,6 +1484,7 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                     if (text[pos] == '\n')
                         line--;
             }
+            pos = firstNonBlank(text, pos);
             vimLinewise(pos, text, oldpos);
         },
         MODE_G);
@@ -1475,23 +1541,7 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                 op = OPERATOR_C;
             }
             else if (op == OPERATOR_C)
-            {
-                int length = static_cast<int>(text.length());
-                for (; pos > 0 && text[pos - 1] != '\n'; pos--)
-                    ;
-                int end = pos;
-                for (int reps = vimReps(); reps > 0 && end < length; reps--)
-                {
-                    for (; end < length && text[end] != '\n'; end++)
-                        ;
-                    if (reps > 1 && end < length)
-                        end++;
-                }
-                text.erase(pos, end - pos);
-
-                rx.set_editing_mode(MODE_INSERT);
-                resetVim();
-            }
+                vimChangeLines(pos, text);
             else
                 resetVim();
         },
@@ -1579,16 +1629,13 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'S',
         [this](int & pos, std::u32string & text, char32_t)
         {
-            int end = pos;
-            int length = static_cast<int>(text.length());
-            for (; pos > 0 && text[pos - 1] != '\n'; pos--)
-                ;
-            for (end = pos; end < length && text[end] != '\n'; end++)
-                ;
-            if (end > pos)
-                text.erase(pos, end - pos);
-            rx.set_editing_mode(MODE_INSERT);
-            resetVim();
+            /* `S` is `cc`, with its count. */
+            if (op)
+            {
+                resetVim();
+                return;
+            }
+            vimChangeLines(pos, text);
         },
         MODE_NORMAL);
 
