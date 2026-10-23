@@ -99,6 +99,13 @@ void declareNullable(ArrowField & copy, const ArrowField & original, const Unord
         return;
     for (size_t i = 0; i < original.type.children.size(); ++i)
         declareNullable(copy.type.children[i], original.type.children[i], fields);
+    /// The map entries and keys stay non-nullable, as `parseSchema` requires, so their nulls are rejected.
+    if (original.type.kind == TypeKind::Map)
+    {
+        ArrowField & entries = copy.type.children.at(0);
+        entries.nullable = false;
+        entries.type.children.at(0).nullable = false;
+    }
 }
 
 /// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
@@ -1260,9 +1267,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             ColumnPtr entries = decodeField(
                 entries_field, /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path, list_depth + 1,
                 maskPtr(entries_invisible));
-            const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
-            if (entries_tuple.tupleSize() != 2)
+            const auto * entries_tuple_ptr = typeid_cast<const ColumnTuple *>(entries.get());
+            if (!entries_tuple_ptr || entries_tuple_ptr->tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
+            const auto & entries_tuple = *entries_tuple_ptr;
             /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
             /// referenced. Slice the key/value columns to that range so their size matches the base-relative
             /// offsets (matching the Apache Arrow library reader).

@@ -15,6 +15,7 @@ mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 python3 - "$TMP_DIR" <<'PYEOF'
+import struct
 import sys
 import pyarrow as pa
 import pyarrow.ipc as ipc
@@ -51,6 +52,28 @@ for name, arr in (("union", union), ("dictionary", dict_of_lists)):
     table = pa.Table.from_arrays([arr], names=["c"])
     with ipc.new_stream(f"{out}/{name}.arrows", table.schema) as w:
         w.write_table(table)
+
+# pyarrow refuses nulls in map entries and keys, so write a list of structs and retag the field as a map.
+def table_pos(b, table, slot):
+    vtable = table - struct.unpack_from("<i", b, table)[0]
+    return table + struct.unpack_from("<H", b, vtable + 4 + 2 * slot)[0]
+def deref(b, pos):
+    return pos + struct.unpack_from("<I", b, pos)[0]
+entries_type = pa.struct([pa.field("key", pa.string(), nullable=False), pa.field("value", pa.int64())])
+list_of_entries = pa.list_(pa.field("entries", entries_type, nullable=False))
+for name, keys, mask in (("map_entries", ["a", "b"], [False, True]), ("map_keys", ["a", None], None)):
+    entries = pa.StructArray.from_arrays([pa.array(keys), pa.array([1, 2])], fields=list(entries_type), mask=mask and pa.array(mask))
+    schema = pa.schema([pa.field("c", list_of_entries)])
+    sink = pa.BufferOutputStream()
+    with ipc.new_stream(sink, schema) as w:
+        w.write_batch(pa.record_batch([pa.ListArray.from_arrays(pa.array([0, 2], pa.int32()), entries, type=list_of_entries)], schema=schema))
+    data = bytearray(sink.getvalue().to_pybytes())
+    message = deref(data, 8)
+    fields = deref(data, table_pos(data, deref(data, table_pos(data, message, 2)), 1))
+    type_type = table_pos(data, deref(data, fields + 4), 2)
+    assert data[type_type] == 12  # List
+    data[type_type] = 17  # Map
+    open(f"{out}/{name}.arrows", "wb").write(data)
 PYEOF
 
 $CLICKHOUSE_CLIENT -q "
@@ -86,10 +109,10 @@ $CLICKHOUSE_LOCAL -q "SELECT l FROM file('$TMP_DIR/batches.arrows', ArrowStream,
 $CLICKHOUSE_LOCAL -q "SELECT l FROM file('$TMP_DIR/batches.arrows', ArrowStream, 'l Array(Int64)') SETTINGS input_format_null_as_default = 0" 2>&1 \
     | grep -o -m1 "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN"
 
-# Nulls in non-nullable children of unions and of dictionary values are rejected.
-echo "Union and dictionary values"
-for name in union dictionary; do
-    $CLICKHOUSE_LOCAL -q "SELECT c FROM file('$TMP_DIR/$name.arrows', ArrowStream)" 2>&1 | grep -o -m1 "INCORRECT_DATA"
+# Nulls in non-nullable children of unions and of dictionary values, and in map entries and keys, are rejected.
+echo "Rejected"
+for name in union dictionary map_entries map_keys; do
+    $CLICKHOUSE_LOCAL -q "SELECT c FROM file('$TMP_DIR/$name.arrows', ArrowStream)" 2>&1 | grep -o -m1 "declared non-nullable but its FieldNode reports [0-9]* nulls"
 done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_arrow_null_as_default"

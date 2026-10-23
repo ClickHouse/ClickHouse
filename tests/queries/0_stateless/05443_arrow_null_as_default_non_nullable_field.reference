@@ -26,6 +26,8 @@ Batches
 [7]
 [NULL]
 CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
-Union and dictionary values
-INCORRECT_DATA
-INCORRECT_DATA
+Rejected
+declared non-nullable but its FieldNode reports 1 nulls
+declared non-nullable but its FieldNode reports 1 nulls
+declared non-nullable but its FieldNode reports 1 nulls
+declared non-nullable but its FieldNode reports 1 nulls
