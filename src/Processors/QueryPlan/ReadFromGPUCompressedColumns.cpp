@@ -21,6 +21,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/ColumnSize.h>
+#include <Processors/DeviceChunk.h>
+#include <GPU/GPUDeviceColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -537,9 +539,11 @@ public:
               typesOf(filterColumnsOf(*state)),
               state->filter ? std::optional(state->filter->program) : std::nullopt,
               derivedValuesOf(state->derived),
-              state->collect ? std::function<void(MutableColumns)>([this](MutableColumns columns) { pushCollected(std::move(columns)); })
-                             : std::function<void(MutableColumns)>{},
-              state->filter_aliases)
+              /*on_collected_=*/ {},
+              state->filter_aliases,
+              state->collect ? std::function<void(std::shared_ptr<const GPU::GPUDeviceColumns>)>(
+                  [this](std::shared_ptr<const GPU::GPUDeviceColumns> columns) { pushCollected(std::move(columns)); })
+                             : std::function<void(std::shared_ptr<const GPU::GPUDeviceColumns>)>{})
     {
     }
 
@@ -628,15 +632,7 @@ private:
                 {
                     readParts();
                     if (accumulator.finalize() != 0)
-                    {
-                        MutableColumns no_keys;
-                        MutableColumns columns;
-                        columns.reserve(state->columns.size());
-                        for (const auto & column : state->columns)
-                            columns.push_back(column.column.type->createColumn());
-                        accumulator.copyGroupsTo(no_keys, columns);
-                        pushCollected(std::move(columns));
-                    }
+                        pushCollected(accumulator.takeCollectedOnDevice());
                 }
                 catch (...)
                 {
@@ -657,24 +653,24 @@ private:
         return {};
     }
 
-    /// A column of each of `state->columns`, into the read's header, to the steps above. Waits for room.
-    void pushCollected(MutableColumns columns)
+    /// A column of each of `state->columns` on the device, in the order of the read's header, to the steps above, which
+    /// take it there or have it in host memory as they pull it, see `DeviceChunkInfo`. Waits for room.
+    void pushCollected(std::shared_ptr<const GPU::GPUDeviceColumns> columns)
     {
         const Block & header = getPort().getHeader();
-        if (header.columns() != state->columns.size() || columns.size() != state->columns.size())
+        if (header.columns() != state->columns.size() || columns->views().size() != state->columns.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "A GPU read of {} columns emits {} columns, {} of them collected",
                 state->columns.size(),
                 header.columns(),
-                columns.size());
+                columns->views().size());
 
-        const size_t num_rows = columns.front()->size();
-        Columns result_columns(header.columns());
+        std::vector<size_t> positions(header.columns());
         for (size_t i = 0; i < state->columns.size(); ++i)
-            result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
+            positions[header.getPositionByName(state->columns[i].column.name)] = i;
 
-        if (!output_queue->push(Chunk(std::move(result_columns), num_rows)))
+        if (!output_queue->push(makeDeviceChunk(columns->select(positions), header)))
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The GPU read's rows are no longer taken");
     }
 

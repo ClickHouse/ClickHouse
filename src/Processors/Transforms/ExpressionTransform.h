@@ -38,6 +38,10 @@ public:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
+
+    /// A chunk of columns on a device runs the actions there where the device does them all, and has its columns in
+    /// host memory otherwise, see `DeviceChunkInfo`.
+    bool acceptsDeviceChunks() const override;
     std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
@@ -56,6 +60,11 @@ private:
     std::vector<ssize_t> input_positions;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// The actions over columns on a device, made at the first chunk of such columns: nothing where the device cannot
+    /// do them all. A `GPU::DeviceExpression`.
+    bool device_expression_made = false;
+    std::shared_ptr<void> device_expression;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform

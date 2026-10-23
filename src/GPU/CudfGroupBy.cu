@@ -717,6 +717,29 @@ __host__ size_t CudfGroupBy::takeCollected()
     return state->groups ? static_cast<size_t>(state->groups->num_rows()) : 0;
 }
 
+struct CudfGroupBy::Collected
+{
+    std::unique_ptr<cudf::table> rows;
+    std::vector<std::unique_ptr<cudf::column>> offsets;
+};
+
+__host__ CudfGroupBy::Collected * CudfGroupBy::releaseCollected()
+{
+    if (!state->collect)
+        throwGPUError("the rows of a `GROUP BY` released as collected");
+
+    auto * const collected = new Collected;
+    collected->rows = std::move(state->groups);
+    collected->offsets = std::move(state->value_offsets);
+    state->value_offsets.clear();
+    return collected;
+}
+
+__host__ void CudfGroupBy::destroyCollected(Collected * collected)
+{
+    delete collected;
+}
+
 __host__ size_t CudfGroupBy::filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns)
 {
     if (!state->finalized)

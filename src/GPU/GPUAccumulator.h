@@ -9,6 +9,7 @@
 #include <GPU/GPUUploadPipe.h>
 #include <GPU/CudfGroupBy.cuh>
 #include <GPU/CudfReduction.cuh>
+#include <GPU/GPUDeviceColumns.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
@@ -43,6 +44,12 @@ public:
         std::optional<GPUCodec> codec = {});
 
     void add(const IColumn & column);
+
+    /// Whether `addOnDevice` takes the column, of the type the accumulator reduces.
+    bool takesOnDevice(const DeviceColumnView & column) const;
+
+    /// The rows of column `position` of `columns`, reduced where they are, see `DeviceChunkInfo`.
+    void addOnDevice(const GPUDeviceColumns & columns, size_t position);
 
     std::span<char> reserveRaw(size_t max_bytes);
     void commitRaw(size_t bytes);
@@ -155,7 +162,8 @@ public:
         std::optional<GPUFilterProgram> filter_ = {},
         std::vector<GPUDerivedValue> derived_ = {},
         std::function<void(MutableColumns)> on_collected_ = {},
-        std::vector<std::optional<uint32_t>> filter_aliases_ = {});
+        std::vector<std::optional<uint32_t>> filter_aliases_ = {},
+        std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device_ = {});
 
     ~GroupByGPUAccumulator();
 
@@ -195,6 +203,10 @@ public:
 
     /// Into a column of the keys each, and a column of the result of each aggregate.
     void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
+
+    /// After `finalize`, of rows collected: the rows left, as they are on the device, which they are no longer the
+    /// accumulator's.
+    std::shared_ptr<const GPUDeviceColumns> takeCollectedOnDevice();
 
 private:
     static constexpr size_t max_batch_rows = (1UL << 31) - 1;
@@ -369,6 +381,8 @@ private:
     /// Of rows collected rather than grouped, the types of the columns they are handed over in.
     const DataTypes value_data_types;
     const std::function<void(MutableColumns)> on_collected;
+    /// Instead of `on_collected`: the rows collected handed over as they are on the device, see `DeviceChunkInfo`.
+    const std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device;
     /// Computed on the device from `values` before each batch is grouped, and aggregated after them: an aggregate of
     /// column `values.size() + i` is of `derived[i]`.
     const std::vector<GPUDerivedValue> derived;

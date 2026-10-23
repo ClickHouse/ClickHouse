@@ -496,6 +496,7 @@
     M(GPUAggregationMicroseconds, "Total time spent transferring batches of values to a GPU and reducing them there.", ValueType::Microseconds) \
     M(GPUDecompressionMicroseconds, "Total time spent sending compressed blocks to a GPU and expanding them there.", ValueType::Microseconds) \
     M(GPUDecompressionBytes, "Compressed bytes expanded on a GPU.", ValueType::Bytes) \
+    M(DeviceChunksMaterialized, "Chunks whose columns were on a device that a step had copied to host memory, see `DeviceChunkInfo`.", ValueType::Number) \
     M(GPUReadersWaitMicroseconds, "Total time the reading threads of the experimental GPU aggregation waited for the device to take what they staged.", ValueType::Microseconds) \
     M(GPUDeviceWaitMicroseconds, "Total time the device thread of the experimental GPU aggregation waited for the reading threads to stage something.", ValueType::Microseconds) \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.", ValueType::Number) \

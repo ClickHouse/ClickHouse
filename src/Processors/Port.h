@@ -19,6 +19,9 @@ class InputPort;
 class OutputPort;
 class IProcessor;
 
+/// See `DeviceChunk.h`.
+void materializeDeviceChunkFor(Chunk & chunk, const Block & header, const IProcessor * processor);
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -319,6 +322,10 @@ public:
                 header->dumpStructure(),
                 chunk.dumpStructure());
         }
+
+        /// A chunk of columns on a device, in host memory for a processor that does not take it as it is.
+        if (unlikely(!data->exception && !data->chunk.getChunkInfos().empty()))
+            materializeDeviceChunkFor(data->chunk, *header, processor);
 
         rows += data->chunk.getNumRows();
         bytes += data->chunk.bytes();

@@ -107,6 +107,30 @@ void GPUAccumulator::add(const IColumn & column)
         reduceBatchOnDevice();
 }
 
+bool GPUAccumulator::takesOnDevice(const DeviceColumnView & column) const
+{
+    return column.kind == GPUColumnKind::Fixed && column.fixed.element_type == element_type;
+}
+
+void GPUAccumulator::addOnDevice(const GPUDeviceColumns & columns, size_t position)
+{
+    const DeviceColumnView & values = columns.views().at(position);
+    if (!takesOnDevice(values))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A device column of another type than a GPU aggregation reduces");
+    if (values.rows() == 0)
+        return;
+
+    Stopwatch watch;
+
+    /// The reduction runs on the compute stream and waits for its result, so the columns are no longer read once it returns.
+    columns.waitIn(GPUResources::get().compute);
+    reduction->addBatch(values);
+
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, values.rows());
+    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches, 1);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
+
 std::span<char> GPUAccumulator::reserveRaw(size_t max_bytes)
 {
     return plainPipeOrThrow().reserveRaw(max_bytes);
@@ -363,13 +387,15 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     std::optional<GPUFilterProgram> filter_,
     std::vector<GPUDerivedValue> derived_,
     std::function<void(MutableColumns)> on_collected_,
-    std::vector<std::optional<uint32_t>> filter_aliases_)
+    std::vector<std::optional<uint32_t>> filter_aliases_,
+    std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device_)
     : group_keys(groupByKeysOrThrow(key_types))
     , float_keys(floatKeysOf(key_types))
     , key_element_types(keyElementTypesOf(group_keys))
     , values(valueTypesOrThrow(value_types, key_types.empty()))
     , value_data_types(value_types)
     , on_collected(std::move(on_collected_))
+    , on_collected_on_device(std::move(on_collected_on_device_))
     , derived(std::move(derived_))
     , aggregates(aggregatesOrThrow(values.size() + derived.size(), std::move(aggregates_), key_types.empty()))
     , variable_column_indices(variableColumnIndicesOf(group_keys, values))
@@ -399,7 +425,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     if (filter.has_value() != !filter_element_types.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with a `WHERE` and the columns of one do not go together");
 
-    if (on_collected && !group_keys.empty())
+    if ((on_collected || on_collected_on_device) && !group_keys.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with keys that hands rows over as collected");
 
     if (filter && filter->num_columns != filter_element_types.size())
@@ -1463,8 +1489,26 @@ void GroupByGPUAccumulator::groupOnDevice(GroupingBatch & batch)
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 
-    if (on_collected && group_by->collectedRows() >= collect_flush_rows)
+    if ((on_collected || on_collected_on_device) && group_by->collectedRows() >= collect_flush_rows)
         flushCollected();
+}
+
+std::shared_ptr<const GPUDeviceColumns> GroupByGPUAccumulator::takeCollectedOnDevice()
+{
+    const size_t rows = num_groups.value_or(0);
+    std::vector<DeviceColumnView> views;
+    views.reserve(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        const DeviceColumnView value = group_by->value(i);
+        if (value.rows() != rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of column {} of {} collected", value.rows(), i, rows);
+        views.push_back(value);
+    }
+    std::vector<std::shared_ptr<const void>> owners{std::shared_ptr<const void>(
+        group_by->releaseCollected(), [](const void * collected)
+        { CudfGroupBy::destroyCollected(static_cast<CudfGroupBy::Collected *>(const_cast<void *>(collected))); })};
+    return std::make_shared<GPUDeviceColumns>(std::move(views), rows, std::move(owners), cuda::stream_ref{group_stream.get()});
 }
 
 void GroupByGPUAccumulator::flushCollected()
@@ -1472,6 +1516,14 @@ void GroupByGPUAccumulator::flushCollected()
     const size_t rows = group_by->takeCollected();
     if (rows == 0)
         return;
+
+    if (on_collected_on_device)
+    {
+        num_groups = rows;
+        on_collected_on_device(takeCollectedOnDevice());
+        num_groups.reset();
+        return;
+    }
 
     Stopwatch watch;
 

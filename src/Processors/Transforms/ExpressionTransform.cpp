@@ -5,6 +5,13 @@
 #include <memory>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/DeviceChunk.h>
+
+#include "config.h"
+
+#if USE_GPU
+#include <GPU/GPUDeviceExpression.h>
+#endif
 
 
 namespace DB
@@ -45,8 +52,27 @@ void ExpressionTransform::transform(Chunk & chunk)
     if (isCancelled())
     {
         chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+        chunk.getChunkInfos().clear();
         return;
     }
+
+#if USE_GPU
+    if (const auto device_columns = GPU::gpuColumnsOf(chunk))
+    {
+        if (!device_expression_made)
+        {
+            device_expression_made = true;
+            device_expression = GPU::DeviceExpression::tryCompile(*expression, getInputPort().getHeader(), getOutputPort().getHeader());
+        }
+        if (device_expression && !updater)
+        {
+            const auto & on_device = *static_cast<const GPU::DeviceExpression *>(device_expression.get());
+            setDeviceColumns(chunk, on_device.execute(*device_columns), getOutputPort().getHeader());
+            return;
+        }
+    }
+#endif
+    materializeDeviceChunk(chunk, getInputPort().getHeader());
 
     /// The statistics updater needs the full output Block, so fall back to the block-based path when it is set.
     if (updater)
@@ -73,6 +99,15 @@ void ExpressionTransform::transform(Chunk & chunk)
         num_rows = 0;
     }
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+bool ExpressionTransform::acceptsDeviceChunks() const
+{
+#if USE_GPU
+    return true;
+#else
+    return false;
+#endif
 }
 
 void ExpressionTransform::onCancel() noexcept

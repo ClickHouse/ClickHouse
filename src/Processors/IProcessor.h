@@ -405,6 +405,10 @@ public:
     /// accepted a share of the current one, so it cannot progress while an output is undemanded.
     virtual bool requiresAllOutputsPushable() const { return false; }
 
+    /// Whether the processor takes the chunks whose columns are on a device as they are, see `DeviceChunkInfo`. The
+    /// input ports of any other processor put the columns of such a chunk in host memory as it is pulled.
+    virtual bool acceptsDeviceChunks() const { return false; }
+
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}

@@ -48,6 +48,13 @@ public:
     __host__ size_t collectedRows() const;
     __host__ size_t takeCollected();
 
+    /// Of rows collected: gives away what the views of `value` taken since `takeCollected` are of - the rows and the
+    /// offsets of their strings - to the caller, who frees it by `destroyCollected`, and keeps none of it. A raw pointer,
+    /// since the device code is built with another standard library.
+    struct Collected;
+    __host__ Collected * releaseCollected();
+    __host__ static void destroyCollected(Collected * collected);
+
     /// After `finalize`: keeps the groups for which `program` holds over the keys and the aggregates' results, each of a
     /// fixed width, that `columns` names, the keys first and then the aggregates. Returns the number of groups kept.
     __host__ size_t filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns);

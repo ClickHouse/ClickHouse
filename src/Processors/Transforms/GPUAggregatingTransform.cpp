@@ -6,7 +6,9 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
+#include <GPU/GPUDeviceColumns.h>
 #include <GPU/GPUTypeMapping.h>
+#include <Processors/DeviceChunk.h>
 #include <Processors/QueryPlan/GPUAggregatingStep.h>
 
 #include <algorithm>
@@ -103,6 +105,21 @@ void GPUAggregatingTransform::consume(Chunk chunk)
         return;
 
     total_rows += num_rows;
+
+    if (const auto device_columns = GPU::gpuColumnsOf(chunk))
+    {
+        const auto & views = device_columns->views();
+        bool on_device = !group_by_accumulator;
+        for (size_t i = 0; on_device && i < accumulators.size(); ++i)
+            on_device = accumulators[i].takesOnDevice(views.at(argument_positions[i]));
+        if (on_device)
+        {
+            for (size_t i = 0; i < accumulators.size(); ++i)
+                accumulators[i].addOnDevice(*device_columns, argument_positions[i]);
+            return;
+        }
+        materializeDeviceChunk(chunk, getInputPort().getHeader());
+    }
 
     const Columns & columns = chunk.getColumns();
 
