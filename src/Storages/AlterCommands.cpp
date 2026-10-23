@@ -46,6 +46,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -83,6 +85,7 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
@@ -869,21 +872,21 @@ void AlterCommand::apply(
     const MergeTreeSettings * default_merge_tree_settings) const
 {
     /// Helper function for column existence check with IF EXISTS
-    auto should_skip_column_operation = [&]() -> bool {
-        return if_exists && !metadata.columns.has(column_name);
+    auto should_skip_column_operation = [&](const String & name) -> bool {
+        return if_exists && !metadata.columns.has(name);
     };
 
     /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
     /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
-    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
+    auto skip_absent_column_or_fail = [&](std::string_view action, const String & name) -> bool
     {
-        if (should_skip_column_operation())
+        if (should_skip_column_operation(name))
             return true;
-        if (metadata.columns.has(column_name))
+        if (metadata.columns.has(name))
             return false;
 
-        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
-        metadata.columns.appendHintsMessage(message.text, column_name);
+        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(name), action);
+        metadata.columns.appendHintsMessage(message.text, name);
         throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
     };
 
@@ -941,22 +944,48 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation())
+            if (should_skip_column_operation(column_name))
                 return;
             metadata.columns.remove(column_name);
         }
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (skip_absent_column_or_fail("modify"))
+        /// `prepare` resolves a subcolumn against the columns before the ALTER. A subcolumn of a column that a previous
+        /// command of the same ALTER adds or changes the type of is resolved here, against the columns so far.
+        String target_column = column_name;
+        String target_subcolumn = subcolumn_name;
+        if (target_subcolumn.empty() && !metadata.columns.has(column_name))
+        {
+            if (auto subcolumn = metadata.columns.tryGetSubcolumn(column_name))
+            {
+                target_column = subcolumn->getNameInStorage();
+                target_subcolumn = subcolumn->getSubcolumnName();
+            }
+        }
+
+        if (skip_absent_column_or_fail("modify", target_column))
             return;
 
         /// Whether this command redefines what an `ALIAS` column reads (the column is an alias before
         /// or after it). Nothing rewrites the existing parts then, so the implicit indices of other
         /// expression aliases built over this column go stale too, see below.
         bool alias_redefined = false;
-        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
+        metadata.columns.modify(target_column, after_column, first, [&](ColumnDescription & column)
         {
+            /// The result is validated by `validateColumnCodecs` after all commands are applied.
+            if (!target_subcolumn.empty())
+            {
+                if (to_remove == RemoveProperty::CODEC)
+                    column.subcolumn_codecs.erase(target_subcolumn);
+                else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
+                    column.subcolumn_codecs.set(target_subcolumn, codec);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+                        backQuote(target_subcolumn), backQuote(target_column));
+                return;
+            }
+
             if (to_remove == RemoveProperty::DEFAULT
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
@@ -1136,7 +1165,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (skip_absent_column_or_fail("comment"))
+        if (skip_absent_column_or_fail("comment", column_name))
             return;
 
         metadata.columns.modify(column_name,
@@ -1473,7 +1502,7 @@ void AlterCommand::apply(
     }
     else if (type == RENAME_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (should_skip_column_operation(column_name))
             return;
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
@@ -2085,6 +2114,19 @@ void AlterCommands::apply(
         }
     }
 
+    /// Changes in columns may make their codecs invalid.
+    if (columns_changed)
+    {
+        try
+        {
+            validateColumnCodecs(metadata_copy.columns, CodecValidationSettings::trusted());
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because the codecs of a column would become invalid: {}", exception.message());
+        }
+    }
+
     if (metadata_copy.table_ttl.definition_ast != nullptr)
     {
         try
@@ -2127,6 +2169,16 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
+            if (!has_column)
+            {
+                if (auto subcolumn = columns.tryGetSubcolumn(command.column_name))
+                {
+                    command.column_name = subcolumn->getNameInStorage();
+                    command.subcolumn_name = subcolumn->getSubcolumnName();
+                    has_column = true;
+                }
+            }
+
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
@@ -2286,6 +2338,40 @@ static String removePropertyHint(ColumnDefaultKind kind, const String & column_n
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }
 
+namespace
+{
+
+/// `MODIFY COLUMN <subcolumn> CODEC(...)` and `MODIFY COLUMN <subcolumn> REMOVE CODEC` are the only commands for a subcolumn.
+void validateSubcolumnCodecCommand(
+    const AlterCommand & command, const NameAndTypePair & subcolumn, const ColumnsDescription & columns, const StoragePtr & table, const ContextPtr & context)
+{
+    const bool only_codec = !command.data_type && !command.default_expression && !command.comment && !command.ttl
+        && command.settings_changes.empty() && command.settings_resets.empty() && !command.column_statistics_decl
+        && !command.add_enum_values && command.after_column.empty() && !command.first
+        && (command.to_remove == AlterCommand::RemoveProperty::NO_PROPERTY || command.to_remove == AlterCommand::RemoveProperty::CODEC)
+        && (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC);
+    if (!only_codec)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+            backQuote(subcolumn.getSubcolumnName()), backQuote(subcolumn.getNameInStorage()));
+
+    if (!table->supportsSubcolumnCodecs())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support codecs for subcolumns", table->getName());
+
+    if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
+    {
+        if (!columns.get(subcolumn.getNameInStorage()).subcolumn_codecs.contains(subcolumn.getSubcolumnName()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subcolumn {} doesn't have CODEC, cannot remove it", backQuote(command.column_name));
+        return;
+    }
+
+    if (!context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
+
+    CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+        command.codec, subcolumn.type, CodecValidationSettings(context->getSettingsRef()));
+}
+
+}
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
@@ -2388,6 +2474,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (!all_columns.has(column_name))
             {
+                if (auto subcolumn = all_columns.tryGetSubcolumn(column_name))
+                {
+                    if (renamed_columns.contains(subcolumn->getNameInStorage()))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
+                                                                     "in a single ALTER query", backQuote(subcolumn->getNameInStorage()));
+                    validateSubcolumnCodecCommand(command, *subcolumn, all_columns, table, context);
+                    modified_columns.emplace(subcolumn->getNameInStorage());
+                    continue;
+                }
+
                 if (!command.if_exists)
                 {
                     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
@@ -2458,8 +2554,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
                 checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
-                const GetColumnsOptions options(GetColumnsOptions::All);
-                const auto old_data_type = all_columns.getColumn(options, column_name).type;
+                /// Later commands of the same ALTER, such as a codec for a subcolumn of the new type, see the new type.
+                all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
             }
 
             if (command.isRemovingProperty())
