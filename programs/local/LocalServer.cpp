@@ -1390,9 +1390,16 @@ void LocalServer::connectAndInitializeInputTable()
         {
             /// Keep schema inference ready without exposing its table to query files.
             auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
-            deferred_implicit_stdin_table = session_context->removeExternalTable(table_name);
-            if (!deferred_implicit_stdin_table)
+            auto inferred_table = session_context->removeExternalTable(table_name);
+            if (!inferred_table)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to defer the inferred stdin table {}", backQuote(table_name));
+
+            /// Keep the holder in the session so early errors clean it up before
+            /// the temporary database is destroyed.
+            String private_name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
+            std::replace(private_name.begin(), private_name.end(), '-', '_');
+            session_context->addExternalTable(private_name, std::move(inferred_table));
+            private_stdin_table_name = std::move(private_name);
         }
     }
 }
@@ -1413,7 +1420,8 @@ void LocalServer::beforeExecutingCommandLineQueries()
     {
         /// Check every local database, not just getCurrentDatabase(): SET database
         /// and per-query SETTINGS database can change how unqualified names resolve.
-        for (const auto & database_entry : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        for (const auto & database_entry : databases)
         {
             if (database_entry.second->isTableExist(public_name, session_context))
             {
@@ -1423,13 +1431,16 @@ void LocalServer::beforeExecutingCommandLineQueries()
         }
     }
 
-    String name = public_name;
-    if (has_name_collision)
+    String name = *private_stdin_table_name;
+    if (!has_name_collision)
     {
-        name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
-        std::replace(name.begin(), name.end(), '-', '_');
+        /// Make the public name available only for the command-line query phase.
+        auto inferred_table = session_context->removeExternalTable(name);
+        if (!inferred_table)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(name));
+        session_context->addExternalTable(public_name, std::move(inferred_table));
+        name = public_name;
     }
-    session_context->addExternalTable(name, std::move(deferred_implicit_stdin_table));
 
     /// A setting explicitly assigned by query files (even to an empty string) wins.
     if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level"))

@@ -216,3 +216,13 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'SELECT sum(c1) FROM `table`' < "$STDIN_DATA_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --table data_01523 \
     -q 'SELECT sum(c1) FROM data_01523' < "$STDIN_DATA_FILE_NAME"
+
+# An error before the -q phase must not leave a dangling temporary table holder.
+echo "SELECT throwIf(1, 'prelude failed');" > "$TEMP_SQL_FILE_NAME"
+if output=$($CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' < "$STDIN_DATA_FILE_NAME" 2>&1); then
+    echo 'unexpected success with failed prelude'
+elif [[ "$output" == *'prelude failed'* && "$output" != *'TemporaryTableHolder'* && "$output" != *'Aborted'* ]]; then
+    echo 'failed prelude cleaned up'
+else
+    echo 'failed prelude did not clean up'
+fi
