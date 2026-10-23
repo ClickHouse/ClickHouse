@@ -11,7 +11,10 @@
 
 #include <Poco/Net/Socket.h>
 
+#include <sys/socket.h>
+#include <chrono>
 #include <cstdlib>
+#include <thread>
 
 namespace DB
 {
@@ -132,10 +135,34 @@ void receiveAll(Poco::Net::StreamSocket & socket, char * data, size_t size)
     }
 }
 
+/// A blocking `connect` waits while the agent's listen queue is full, so a thread with a limit connects without
+/// blocking and retries in short steps. A Unix socket connects at once or reports `EAGAIN`, which `connectNB` accepts.
+Poco::Net::StreamSocket connectToAgent(const String & socket_path)
+{
+    const Poco::Net::SocketAddress address(Poco::Net::SocketAddress::UNIX_LOCAL, socket_path);
+    if (!SSHAgentWaitLimit::isSet())
+        return Poco::Net::StreamSocket(address);
+
+    while (true)
+    {
+        Poco::Net::StreamSocket socket;
+        socket.connectNB(address);
+        sockaddr_storage peer{};
+        socklen_t peer_length = sizeof(peer);
+        if (::getpeername(socket.impl()->sockfd(), reinterpret_cast<sockaddr *>(&peer), &peer_length) == 0)
+        {
+            socket.setBlocking(true);
+            return socket;
+        }
+        SSHAgentWaitLimit::checkNotExpired();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
 /// Sends one message to the agent and returns its response.
 String talkToAgentImpl(std::string_view request, const String & socket_path)
 {
-    Poco::Net::StreamSocket socket(Poco::Net::SocketAddress(Poco::Net::SocketAddress::UNIX_LOCAL, socket_path));
+    Poco::Net::StreamSocket socket = connectToAgent(socket_path);
 
     /// Every message is prefixed with its length.
     String framed_request;
