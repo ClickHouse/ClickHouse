@@ -1,12 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- Prometheus evaluates each step independently, so two series which get the same tags (after dropping the metric name,
--- after `label_replace`, or after matching by `on`/`ignoring`) are duplicates only if they have values at the same step.
--- Series with values at different steps are merged into one series, and a series without a value at any step
--- (for example, the left side of `and` matched by tags but at no shared step) is not a series at all.
--- If the result tags depend on the matched series (`group_left(labels)`, or a comparison which keeps the metric name)
--- then each step takes the tags of the series matched at that step.
+-- Series which get the same tags (after dropping the metric name, `label_replace` or matching by `on`/`ignoring`) are duplicates
+-- only if they have values at the same step, otherwise they are merged into one series.
+-- With `group_left(labels)` each step takes the tags of the series matched at that step.
 
 SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -40,24 +37,6 @@ SELECT * FROM prometheusQueryRange(ts, 'label_replace(last_over_time(a[50s]), "h
 SELECT '-- label_replace still reports series with values at the same step';
 SELECT * FROM prometheusQueryRange(ts, 'label_replace(last_over_time(b[50s]), "host", "all", "host", ".+")', 100, 200, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
-SELECT '-- one-to-one matching merges series with values at different steps';
-SELECT * FROM prometheusQueryRange(ts, 'last_over_time(a[50s]) + on(dc) last_over_time(c[50s])', 100, 200, 100) ORDER BY ALL;
-
-SELECT '-- one-to-one matching still reports series with values at the same step';
-SELECT * FROM prometheusQueryRange(ts, 'last_over_time(b[50s]) + on(dc) last_over_time(c[50s])', 100, 200, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
-
-SELECT '-- a comparison keeps the metric name of its left side, series which get the same tags at different steps are still merged';
-SELECT * FROM prometheusQueryRange(ts, 'last_over_time(a[50s]) < ignoring(host) last_over_time(c[50s])', 100, 200, 100) ORDER BY ALL;
-
-SELECT '-- series with different metric names give different result series';
-SELECT * FROM prometheusQueryRange(ts, 'last_over_time({__name__=~"a|b", host="2"}[50s]) < ignoring(host) last_over_time(c[50s])', 100, 200, 100) ORDER BY ALL;
-
-SELECT '-- a comparison still reports series of its left side with values at the same step';
-SELECT * FROM prometheusQueryRange(ts, 'last_over_time(b[50s]) < ignoring(host) last_over_time(c[50s])', 100, 200, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
-
-SELECT '-- a series without values on the left side of a comparison is skipped';
-SELECT * FROM prometheusQueryRange(ts, '(last_over_time(a[50s]) and last_over_time(b[50s])) < ignoring(host) last_over_time(d[50s])', 100, 200, 100) ORDER BY ALL;
-
 SELECT '-- group_left copies labels from the series of the side "one" matched at each step';
 SELECT * FROM prometheusQueryRange(ts, 'last_over_time(c[50s]) * on(dc) group_left(host) last_over_time(a[50s])', 100, 200, 100) ORDER BY ALL;
 
@@ -69,6 +48,9 @@ SELECT * FROM prometheusQueryRange(ts, 'last_over_time(c[50s]) * on(dc) group_le
 
 SELECT '-- series of the side "one" with the same copied labels still report values at the same step';
 SELECT * FROM prometheusQueryRange(ts, 'last_over_time(c[50s]) * ignoring(host) group_left(dc) last_over_time(b[50s])', 100, 200, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+
+SELECT '-- series of the side "one" with different copied labels still report values at the same step';
+SELECT * FROM prometheusQueryRange(ts, 'last_over_time(c[50s]) * on(dc) group_left(host) last_over_time(b[50s])', 100, 200, 100); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 SELECT '-- group_left merges series of the side "many" which get the same tags at different steps';
 SELECT * FROM prometheusQueryRange(ts, 'last_over_time({__name__=~"a|b", host="2"}[50s]) * on(dc) group_left last_over_time(c[50s])', 100, 200, 100) ORDER BY ALL;

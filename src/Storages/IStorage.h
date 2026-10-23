@@ -207,6 +207,8 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if the storage compresses each stream of a column with its own codec, so codecs can be declared for subcolumns.
+    virtual bool supportsSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
@@ -235,6 +237,15 @@ public:
 
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
+
+    /** Returns true for a synthetic storage which stands in for a data source inside the server
+      * instead of a table of the catalog - the source of a projection calculation, for example.
+      * Such a storage is not a table the user can query, and it may borrow the name of an existing
+      * table, so reading from it must not be affected by the row policies and the
+      * `additional_table_filters` of that name, nor split between the replicas by
+      * `parallel_replicas_custom_key`.
+      */
+    virtual bool isSyntheticDataSource() const { return false; }
 
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
@@ -794,6 +805,11 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if the table can store its own unreplicated data on disk.
+    /// Such a table cannot be created in a `Replicated` database while
+    /// `database_replicated_allow_only_replicated_engine` is enabled.
+    virtual bool hasUnreplicatedTableDataOnDisk() const { return storesDataOnDisk() && !supportsReplication(); }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -818,6 +834,11 @@ public:
     /// Does takes underlying Storage (if any) into account.
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
+
+    virtual std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
+    {
+        return totalRows(query_context);
+    }
 
     /// Same as above but also take partition predicate into account.
     /// Passed context pointer must not be `nullptr`.
