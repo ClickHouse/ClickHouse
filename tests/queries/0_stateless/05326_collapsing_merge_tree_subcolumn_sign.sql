@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS c_vertical;
 DROP TABLE IF EXISTS c_horizontal;
 DROP TABLE IF EXISTS c_json;
 DROP TABLE IF EXISTS c_constraint;
+DROP TABLE IF EXISTS c_materialized;
 
 SELECT '-- Wrong subcolumns';
 CREATE TABLE c_error (key UInt64, meta Tuple(sign Int8)) ENGINE = CollapsingMergeTree(meta.missing) ORDER BY key; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
@@ -78,6 +79,17 @@ INSERT INTO c_constraint VALUES (1, (1, 0)), (2, (-1, 0));
 INSERT INTO c_constraint VALUES (3, (2, 0)); -- { serverError VIOLATED_CONSTRAINT }
 SELECT * FROM c_constraint ORDER BY key;
 
+SELECT '-- MATERIALIZED column';
+CREATE TABLE c_materialized (key UInt64, s Int8, meta Tuple(sign Int8) MATERIALIZED tuple(s))
+ENGINE = CollapsingMergeTree(meta.sign) ORDER BY key
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO c_materialized (key, s) SETTINGS optimize_on_insert = 0 VALUES (1, 1), (1, -1);
+-- Updating an input of the column would recompute the sign.
+ALTER TABLE c_materialized UPDATE s = 1 WHERE s = -1; -- { serverError CANNOT_UPDATE_COLUMN }
+UPDATE c_materialized SET s = 1 WHERE s = -1; -- { serverError CANNOT_UPDATE_COLUMN }
+SELECT count() FROM c_materialized FINAL;
+
 SELECT '-- Merge algorithms';
 SYSTEM FLUSH LOGS part_log;
 SELECT table, groupUniqArray(merge_algorithm) FROM system.part_log
@@ -88,3 +100,4 @@ DROP TABLE c_vertical;
 DROP TABLE c_horizontal;
 DROP TABLE c_json;
 DROP TABLE c_constraint;
+DROP TABLE c_materialized;

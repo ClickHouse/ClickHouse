@@ -46,6 +46,8 @@
 -- Nested
 three, first
 three, first
+-- MATERIALIZED column
+2
 -- Replicated
 1	a	(2,0)
 1	a	(2,0)
