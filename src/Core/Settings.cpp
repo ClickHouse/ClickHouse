@@ -3474,7 +3474,7 @@ worker that may consume the definition can parse projection column codec lists. 
 rejects these shared definitions before they are written to Keeper. Local `MergeTree` tables
 do not require this setting.
 )", IMPORTANT, \
-        {"26.10", false, false, "New default-off compatibility gate for publishing projection column codecs in replicated or distributed metadata; older compatibility modes must leave it disabled."}) \
+        {"26.11", false, false, "New default-off compatibility gate for publishing projection column codecs in replicated or distributed metadata; older compatibility modes must leave it disabled."}) \
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0, \
