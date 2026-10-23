@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: distributed, no-fasttest
+# Tag no-fasttest: the interserver `<secret>` requires SSL, which the fast test build does not have.
 
 # Queued `Distributed` inserts of different users must not be sent in one batch: the batch is sent with
 # the `ClientInfo` of its first file, and over a cluster with an interserver `<secret>` the shard
