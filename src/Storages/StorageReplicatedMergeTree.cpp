@@ -8983,6 +8983,14 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     if (statuses.empty())
         return statuses;
 
+    /// Finished mutations need no part sizes, so a table with only those does not scan its parts.
+    if (std::ranges::all_of(statuses, [](const auto & status) { return status.is_done; }))
+    {
+        for (auto & status : statuses)
+            status.progress = 1.0;
+        return statuses;
+    }
+
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
     std::unordered_map<String, UInt64> part_bytes_on_disk;
