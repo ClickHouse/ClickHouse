@@ -27,7 +27,6 @@ public:
 
     String getName() const override { return "MergingAggregated"; }
     const Aggregator::Params & getParams() const { return params; }
-    bool isFinal() const { return final; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
