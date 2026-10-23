@@ -10,7 +10,7 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 CLUSTER_FN="icebergLocalCluster('test_cluster_two_shards_localhost', '${TABLE_PATH}', 'Parquet')"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (id Int64, mode String, d Date) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --max_insert_threads=1 --query "
     INSERT INTO ${TABLE} SELECT number, ['AIR', 'MAIL', 'SHIP'][number % 3 + 1], toDate('2024-01-01') + number % 100 FROM numbers(30000)"
 
 QUERY="
