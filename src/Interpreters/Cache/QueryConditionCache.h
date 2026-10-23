@@ -124,7 +124,7 @@ public:
     /// earlier variants. These are remembered here, the most recent first.
     struct BoundsVariant
     {
-        UInt64 condition_hash;
+        UInt64 condition_hash = 0;
         std::vector<Field> values;
     };
 

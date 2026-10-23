@@ -234,9 +234,9 @@ std::optional<ActionsDAG> buildConditionBoundsBand(
     /// the one that has to admit the row.
     struct Piece
     {
-        const ConditionBounds::Bound * bound;
-        const Field * admitting;
-        const Field * rejecting;
+        const ConditionBounds::Bound * bound = nullptr;
+        const Field * admitting = nullptr;
+        const Field * rejecting = nullptr;
     };
     std::vector<Piece> pieces;
     ActionsDAG::NodeRawConstPtrs expressions;

@@ -1851,8 +1851,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// TopK plan as well.
         struct EarlierBoundsVariant
         {
-            UInt64 condition_hash;
-            UInt64 profiled_condition_hash;
+            UInt64 condition_hash = 0;
+            UInt64 profiled_condition_hash = 0;
             std::vector<Field> values;
             /// The condition on the primary key for the band, built on first use. Without it there is no band.
             bool prepared = false;
