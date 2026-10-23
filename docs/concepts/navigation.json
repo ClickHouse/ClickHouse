@@ -99,7 +99,15 @@
             {
               "group": "Select",
               "pages": [
-                "concepts/features/operations/select/joining-tables"
+                {
+                  "group": "JOINs",
+                  "pages": [
+                    "concepts/features/operations/select/joining-tables",
+                    "concepts/features/operations/select/join-execution",
+                    "concepts/features/operations/select/join-algorithms",
+                    "concepts/features/operations/select/join-memory-management"
+                  ]
+                }
               ]
             },
             {
