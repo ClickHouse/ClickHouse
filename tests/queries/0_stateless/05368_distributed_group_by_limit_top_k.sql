@@ -70,6 +70,18 @@ FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_05368_distributed GROUP BY k 
     SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1, max_rows_to_group_by = 1000000)
 WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
 
+-- Aggregation in order takes no heap, and the sort would stop the in-order merge from ending early.
+DROP TABLE IF EXISTS t_05368_in_order;
+DROP TABLE IF EXISTS t_05368_in_order_distributed;
+CREATE TABLE t_05368_in_order (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_05368_in_order SELECT number FROM numbers(1000);
+CREATE TABLE t_05368_in_order_distributed AS t_05368_in_order
+ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_05368_in_order);
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_05368_in_order_distributed GROUP BY k LIMIT 3
+    SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1, optimize_aggregation_in_order = 1)
+WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
+
 -- The limit is not passed on beyond the shards: here they run the subquery over the `Distributed` table themselves,
 -- and a heap there would leave keys out of the set.
 SELECT k, count() FROM t_05368_distributed
@@ -96,3 +108,5 @@ SETTINGS enable_parallel_replicas = 1, allow_suspicious_types_in_group_by = 1, a
 DROP TABLE t_05368_distributed;
 DROP TABLE t_05368;
 DROP TABLE t_05368_dynamic;
+DROP TABLE t_05368_in_order_distributed;
+DROP TABLE t_05368_in_order;

@@ -389,6 +389,11 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
         || params.keys.empty() || merging_node->children.size() != 1)
         return;
 
+    /// The merge streams in the order of the keys and lets `LIMIT` stop it early, and the shards aggregate in order,
+    /// which takes no heap.
+    if (merging_step.memoryBoundMergingWillBeUsed())
+        return;
+
     QueryPlan::Node * input_node = merging_node->children.front();
     std::vector<QueryPlan::Node *> sources;
     if (typeid_cast<const UnionStep *>(input_node->step.get()))
@@ -411,6 +416,9 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
             plan_fragment_reads.push_back(plan_fragment_read);
         else if (validateAggregatingStep(source, /*final=*/ false))
             local_aggregating_nodes.push_back(source);
+        else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(source->step.get()); aggregating_step && aggregating_step->inOrder())
+            /// The remote shards read the same table, so they aggregate in order as well, without the heap.
+            return;
     }
 
     /// All shards may be local (`prefer_localhost_replica`), with no remote read.

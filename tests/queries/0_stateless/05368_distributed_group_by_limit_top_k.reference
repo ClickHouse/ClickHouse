@@ -34,6 +34,7 @@ Sorting (Sorting for GROUP BY top-K)
 Top-K: limit=3, columns=1, directions=[1]
 0
 0
+0
 2591	60
 4183	52
 7992	60
