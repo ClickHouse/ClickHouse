@@ -117,6 +117,9 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 }
 };
 
+/// The `x-amz-storage-class` value for a storage class name; throws if the name contains CR or LF.
+Model::StorageClass getStorageClassForName(const std::string & name);
+
 /// Replace the significant `x-amz-` headers with their `x-goog-` analogue; GCS ignores the
 /// `x-amz-` spelling silently.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);

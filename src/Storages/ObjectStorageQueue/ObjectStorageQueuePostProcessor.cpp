@@ -69,6 +69,7 @@ namespace S3AuthSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int AZURE_OBJECT_CHANGED_DURING_READ;
     extern const int BAD_ARGUMENTS;
@@ -492,6 +493,23 @@ tryGetIngestedVersionMetadata([[maybe_unused]] const IObjectStorage & object_sto
         return s3_storage->tryGetObjectVersionMetadata(source.remote_path, source.version_id, /*with_tags=*/false);
 #endif
     return {};
+}
+
+void ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
+    [[maybe_unused]] const String & move_connection_string, [[maybe_unused]] const String & move_container)
+{
+#if USE_AZURE_BLOB_STORAGE
+    AzureBlobStorage::ConnectionParams params;
+    AzureBlobStorage::processURL(move_connection_string, move_container, params.endpoint, params.auth_method);
+    params.forbid_implicit_credentials = true;
+    params.anonymous_fallback_for_server_credentials = true;
+    if (params.checkOrDropServerManagedCredentials())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Moving processed blobs to another Azure container requires explicit credentials in "
+            "`after_processing_move_connection_string`: a connection string or a SAS token. "
+            "It may not use the server's own identity.");
+#endif
 }
 
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
@@ -941,10 +959,13 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
             auto contextPtr = getContext();
             std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client = azure_storage->getAzureBlobStorageClient();
             const String src_container = azure_storage->getAzureBlobStorageConnectionParams()->getContainer();
+            checkAzureMoveDestination(move_connection_string, move_container);
             auto connection_params = getAzureConnectionParams(
                 move_connection_string,
                 move_container,
                 contextPtr);
+            connection_params.forbid_implicit_credentials = true;
+            connection_params.anonymous_fallback_for_server_credentials = false;
             const bool is_readonly = true;
             std::shared_ptr<AzureBlobStorage::ContainerClient> dst_client = AzureBlobStorage::getContainerClient(
                 connection_params,

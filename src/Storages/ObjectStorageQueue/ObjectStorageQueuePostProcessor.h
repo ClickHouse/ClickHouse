@@ -41,6 +41,9 @@ public:
         AfterProcessingSettings settings_,
         String keeper_identity_);
 
+    /// Like a move to another S3 bucket, a move to another Azure container must carry its own credentials.
+    static void checkAzureMoveDestination(const String & move_connection_string, const String & move_container);
+
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// Storage errors are only logged, except `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ`: those are rethrown
     /// after the whole batch is handled, leaving the changed object in place, so the file is not committed as processed.

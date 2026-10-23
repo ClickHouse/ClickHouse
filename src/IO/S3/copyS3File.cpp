@@ -70,6 +70,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -152,7 +153,9 @@ namespace
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
         /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
-        const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
+        /// Empty if disabled by the `use_idempotency_id` request setting.
+        const String idempotency_id
+            = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
         const S3CopyFileSettings copy_settings;
 
         /// Represents a task uploading a single part.
@@ -216,12 +219,13 @@ namespace
             applySourceTags(request);
 
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            if (!idempotency_id.empty())
+                metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
@@ -610,7 +614,7 @@ namespace
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
@@ -889,7 +893,7 @@ namespace
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
