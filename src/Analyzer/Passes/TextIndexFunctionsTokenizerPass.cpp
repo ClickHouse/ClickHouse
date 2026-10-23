@@ -338,28 +338,6 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
 {
     Carriers carriers{.names = {resolved_name}, .json_subcolumn = {}};
 
-    /// Building the shadowing set walks every column, so only ask once the name has the shape.
-    if (looksLikeMapSubcolumnName(resolved_name))
-    {
-        if (auto parsed = tryParseMapSubcolumnName(resolved_name, getColumnsShadowingMapSubcolumns(metadata)))
-            carriers.names.push_back("mapValues(" + parsed->first + ")");
-    }
-
-    const size_t names_before_conversions = carriers.names.size();
-
-    const auto * function_node = resolved.as<FunctionNode>();
-    if (!function_node || function_node->getArguments().getNodes().empty())
-        return carriers;
-
-    const auto & function_name = function_node->getFunctionName();
-    const auto & arguments = function_node->getArguments().getNodes();
-
-    if (function_name == "arrayElement" && arguments.size() == 2)
-    {
-        carriers.names.push_back("mapValues(" + indexExpressionName(*arguments.front()) + ")");
-        return carriers;
-    }
-
     /// Peeled to the bottom, not one layer: the scan matches an index column under any number of them.
     const IQueryTreeNode * node = &resolved;
     while (const auto * under = losslessConversionArgument(*node))
@@ -368,9 +346,31 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
         node = under;
     }
 
-    /// A lossy `CAST` reads an expression no index describes, unless it is how a JSON path is read.
-    if (carriers.names.size() == names_before_conversions && (function_name == "CAST" || function_name == "_CAST")
-        && arguments.size() == 2)
+    /// Building the shadowing set walks every column, so only ask once a name has the shape.
+    for (size_t i = 0, exposed = carriers.names.size(); i < exposed; ++i)
+    {
+        if (!looksLikeMapSubcolumnName(carriers.names[i]))
+            continue;
+
+        if (auto parsed = tryParseMapSubcolumnName(carriers.names[i], getColumnsShadowingMapSubcolumns(metadata)))
+            carriers.names.push_back("mapValues(" + parsed->first + ")");
+    }
+
+    /// Recognized under the conversions too, not only bare.
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return carriers;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (arguments.size() != 2)
+        return carriers;
+
+    const auto & function_name = function_node->getFunctionName();
+
+    if (function_name == "arrayElement")
+        carriers.names.push_back("mapValues(" + indexExpressionName(*arguments.front()) + ")");
+    /// Peeling stopped here, so the `CAST` is lossy: only a JSON path is read that way.
+    else if (function_name == "CAST" || function_name == "_CAST")
         carriers.json_subcolumn = indexExpressionName(*arguments.front());
 
     return carriers;

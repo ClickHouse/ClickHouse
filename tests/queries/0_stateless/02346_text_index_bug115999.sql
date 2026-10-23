@@ -261,6 +261,11 @@ SELECT id FROM t_115999_carrier WHERE hasAnyTokens(lower(s), ['ell']) ORDER BY i
 SELECT 'a Map element above the JOIN';
 SELECT c.id FROM t_115999_carrier AS c INNER JOIN t_115999_side AS b ON c.group_id = b.group_id
 WHERE hasAnyTokens(c.m['k'], ['alpha beta']) OR b.category = 'nonexistent' ORDER BY c.id;
+-- Recognized under conversions too, however many.
+SELECT c.id FROM t_115999_carrier AS c INNER JOIN t_115999_side AS b ON c.group_id = b.group_id
+WHERE hasAnyTokens(toNullable(c.m['k']), ['alpha beta']) OR b.category = 'nonexistent' ORDER BY c.id;
+SELECT c.id FROM t_115999_carrier AS c INNER JOIN t_115999_side AS b ON c.group_id = b.group_id
+WHERE hasAnyTokens(toNullable(toLowCardinality(c.m['k'])), ['alpha beta']) OR b.category = 'nonexistent' ORDER BY c.id;
 SELECT id FROM t_115999_carrier WHERE hasAnyTokens(m['k'], ['alpha beta']) ORDER BY id;
 
 DROP TABLE t_115999_carrier;
@@ -281,6 +286,9 @@ INSERT INTO t_115999_json VALUES (1, 1, '{"k": "alpha beta"}'), (2, 2, '{"k": "g
 
 SELECT t.id FROM t_115999_json AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.j.k::String, ['alpha beta']) OR b.category = 'nonexistent' ORDER BY t.id;
+-- A conversion above the cast must not hide the JSON path.
+SELECT t.id FROM t_115999_json AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(toNullable(t.j.k::String), ['alpha beta']) OR b.category = 'nonexistent' ORDER BY t.id;
 SELECT id FROM t_115999_json WHERE hasAnyTokens(j.k::String, ['alpha beta']) ORDER BY id;
 
 DROP TABLE t_115999_json;

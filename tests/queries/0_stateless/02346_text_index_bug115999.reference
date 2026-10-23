@@ -59,7 +59,10 @@ an expression index projected by a subquery
 a Map element above the JOIN
 1
 1
+1
+1
 a JSON subcolumn above the JOIN
+1
 1
 1
 an ALIAS column carrying the indexed expression
