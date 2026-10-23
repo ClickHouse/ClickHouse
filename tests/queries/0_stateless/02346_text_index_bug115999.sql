@@ -476,6 +476,30 @@ SELECT count() FROM t_115999_self WHERE hasAnyTokens(concat(first_name, last_nam
 
 DROP TABLE t_115999_self;
 
+-- A conversion carries the indexed expression only when it cannot change a value, the same rule the scan
+-- matches an index column under.
+SELECT 'a conversion around the indexed column';
+CREATE TABLE t_115999_converted
+(
+    id UInt64,
+    group_id UInt64,
+    s String,
+    INDEX idx_s s TYPE text(tokenizer = ngrams(2))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_converted VALUES (1, 1, 'abc');
+
+SELECT count() FROM t_115999_converted AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(toNullable(t.s), ['ab']) OR b.category = 'nonexistent';
+-- Prints 0: no index is defined on the truncated value.
+SELECT count() FROM t_115999_converted AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(CAST(t.s, 'FixedString(3)'), ['ab']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_converted WHERE hasAnyTokens(s, ['ab']);
+
+DROP TABLE t_115999_converted;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';

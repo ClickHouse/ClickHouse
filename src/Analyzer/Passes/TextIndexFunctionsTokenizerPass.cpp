@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -268,36 +269,49 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const Cont
     return {substituted ? substituted : expression, storage};
 }
 
-/// The names one indexed expression can be read through, as `MergeTreeIndexConditionText` accepts them:
-/// `m['k']` and `m.key_*` for a `mapValues(m)` index, and a CAST around a JSON subcolumn.
-Names carrierNames(const IQueryTreeNode & resolved, const String & resolved_name, const StorageInMemoryMetadata & metadata)
+/// The names one indexed expression can be read through, as `MergeTreeIndexConditionText` accepts them.
+struct Carriers
 {
-    Names names{resolved_name};
+    /// Names an index can be defined on.
+    Names names;
+    /// Tried as a JSON path only: reading one casts it, and that conversion is not lossless.
+    String json_subcolumn;
+};
+
+Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_name, const StorageInMemoryMetadata & metadata)
+{
+    Carriers carriers{.names = {resolved_name}, .json_subcolumn = {}};
 
     /// Building the shadowing set walks every column, so only ask once the name has the shape.
     if (looksLikeMapSubcolumnName(resolved_name))
     {
         if (auto parsed = tryParseMapSubcolumnName(resolved_name, getColumnsShadowingMapSubcolumns(metadata)))
-            names.push_back("mapValues(" + parsed->first + ")");
+            carriers.names.push_back("mapValues(" + parsed->first + ")");
     }
 
     const auto * function_node = resolved.as<FunctionNode>();
     if (!function_node)
-        return names;
+        return carriers;
 
     const auto & arguments = function_node->getArguments().getNodes();
-    if (arguments.size() != 2)
-        return names;
+    if (arguments.empty())
+        return carriers;
 
     const auto & function_name = function_node->getFunctionName();
-    const String argument_name = indexExpressionName(*arguments.front());
+    const auto & argument = arguments.front();
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments.size() == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments.size() == 1;
 
-    if (function_name == "arrayElement")
-        names.push_back("mapValues(" + argument_name + ")");
-    else if (function_name == "CAST" || function_name == "_CAST")
-        names.push_back(argument_name);
+    /// The same rule the scan matches an index column under, so `toNullable(s)` reads `s` while a
+    /// narrowing `CAST` reads an expression no index describes.
+    if (function_name == "arrayElement" && arguments.size() == 2)
+        carriers.names.push_back("mapValues(" + indexExpressionName(*argument) + ")");
+    else if ((is_cast || is_wrapper) && isLosslessConversion(argument->getResultType(), function_node->getResultType()))
+        carriers.names.push_back(indexExpressionName(*argument));
+    else if (is_cast)
+        carriers.json_subcolumn = indexExpressionName(*argument);
 
-    return names;
+    return carriers;
 }
 
 class TextIndexFunctionsTokenizerVisitor : public InDepthQueryTreeVisitorWithContext<TextIndexFunctionsTokenizerVisitor>
@@ -349,7 +363,7 @@ private:
         if (!inserted)
             return it->second;
 
-        const Names carriers = carrierNames(*resolved, std::get<1>(key), *metadata);
+        const Carriers carriers = carrierNames(*resolved, std::get<1>(key), *metadata);
 
         for (const auto & index : indices)
         {
@@ -361,12 +375,17 @@ private:
             /// typed path is rejected here too instead of being given a tokenizer the index cannot answer.
             const auto json_argument_types = collectJSONIndexArgumentTypes(*index.expression);
 
-            const bool describes = std::ranges::any_of(carriers, [&](const String & carrier)
+            auto matches_json = [&](const String & carrier)
+            {
+                return tryMatchJSONSubcolumnToIndex(carrier, index.column_names, "JSONAllValues", json_argument_types).has_value();
+            };
+
+            const bool describes = std::ranges::any_of(carriers.names, [&](const String & carrier)
             {
                 return carrier == index.column_names.front()
                     || normalized_name == std::optional<String>(carrier)
-                    || tryMatchJSONSubcolumnToIndex(carrier, index.column_names, "JSONAllValues", json_argument_types).has_value();
-            });
+                    || matches_json(carrier);
+            }) || (!carriers.json_subcolumn.empty() && matches_json(carriers.json_subcolumn));
 
             if (!describes)
                 continue;

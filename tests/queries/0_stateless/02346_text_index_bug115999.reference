@@ -90,6 +90,10 @@ a self-join mixing two occurrences of the indexed table
 0
 1
 1
+a conversion around the indexed column
+1
+0
+1
 a Distributed haystack, predicate on the initiator
 1
 1

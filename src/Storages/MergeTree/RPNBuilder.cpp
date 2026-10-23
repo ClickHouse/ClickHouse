@@ -368,12 +368,6 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     return RPNBuilderTreeNode(dag_node->children[index], getContext());
 }
 
-namespace
-{
-
-/// Whether converting a value of type `from` to type `to` never changes a non-NULL value.
-/// Dropping `Nullable` throws on NULL. Such a query may not throw if the index skips the granules
-/// with NULL, which is accepted.
 bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool allow_drop_nullable)
 {
     auto from_type = removeLowCardinality(from);
@@ -393,8 +387,6 @@ bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool
     const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
     const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
     return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType(), allow_drop_nullable);
-}
-
 }
 
 bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable)
