@@ -130,8 +130,10 @@ struct ArrowSchema
     bool little_endian = true;
 };
 
-/// Parses the IPC Schema FlatBuffer into the Arrow-free description above.
-ArrowSchema parseSchema(const flatbuf::Schema & schema);
+/// Parses the IPC Schema FlatBuffer into the Arrow-free description above. `version` is the metadata
+/// version of the message (or file footer) the schema came from: the union buffer layout differs between
+/// V4 and V5, and only the V5 one is implemented, so a union field under V4 is rejected here.
+ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version);
 
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);

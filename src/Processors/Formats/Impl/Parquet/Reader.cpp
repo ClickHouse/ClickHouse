@@ -787,6 +787,11 @@ bool Reader::spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_ke
     return true;
 }
 
+static size_t heapBytesOfField(const Field & field)
+{
+    return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
+}
+
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
@@ -1179,6 +1184,16 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     std::vector<RowGroupCandidate> candidates;
     bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
+    key_condition_column_ranges.clear();
+    key_condition_column_ranges_complete = false;
+    const bool record_key_condition_ranges = !collect_key_condition_column_ranges.empty()
+        && options.format.parquet.filter_push_down && format_filter_info->key_condition && spatial_key_conditions.empty()
+        && !rows_to_read;
+    if (record_key_condition_ranges)
+        for (size_t idx : collect_key_condition_column_ranges)
+            if (idx < extended_sample_block.columns())
+                key_condition_column_ranges.push_back({.idx = idx, .ranges = {}, .bytes = 0});
+    size_t key_condition_column_ranges_bytes = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata().row_groups[row_group_idx];
@@ -1212,6 +1227,25 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// hyperrectangle from the four bbox primitives only.
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
             getHyperrectangleForRowGroup(row_group_idx, hyperrectangle, only_spatial_bbox);
+        }
+        /// `canSkipFile` matches ranges kept by different queries by position, which must be the same row group for every
+        /// query: no `continue` that depends on the query may come before this push (hence no recording with `rows_to_read`).
+        if (record_key_condition_ranges)
+        {
+            for (auto & column : key_condition_column_ranges)
+            {
+                const Range & range = hyperrectangle[column.idx];
+                const size_t range_bytes = sizeof(Range) + heapBytesOfField(range.left) + heapBytesOfField(range.right);
+                column.ranges.push_back(range);
+                column.bytes += range_bytes;
+                key_condition_column_ranges_bytes += range_bytes;
+            }
+            while (key_condition_column_ranges_bytes > max_key_condition_column_ranges_bytes)
+            {
+                auto largest = std::ranges::max_element(key_condition_column_ranges, {}, &KeyConditionColumnRanges::bytes);
+                key_condition_column_ranges_bytes -= largest->bytes;
+                key_condition_column_ranges.erase(largest);
+            }
         }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -1260,6 +1294,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
             some_top_k_range_to_read = true;
     }
+
+    key_condition_column_ranges_complete = record_key_condition_ranges;
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.
@@ -4226,7 +4262,13 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
                 auto indexes = ColumnUInt64::create();
                 auto & indexes_data = indexes->getData();
                 indexes_data.reserve(row_subgroup.filter.rows_pass);
-                for (size_t i = 0; i < mask.size(); ++i)
+                size_t i = 0;
+                for (; i + 64 <= mask.size(); i += 64)
+                {
+                    for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
+                        indexes_data.push_back(row_subgroup.start_row_idx + i + std::countr_zero(bits));
+                }
+                for (; i < mask.size(); ++i)
                     if (mask[i])
                         indexes_data.push_back(row_subgroup.start_row_idx + i);
                 state.column = (*cached_column)->index(*indexes, 0);
