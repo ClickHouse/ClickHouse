@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されたものです。
 
-<div id="primary_key_compress_block_size">
-  ## primary_key_compress_block_size
-</div>
+## primary_key_compress_block_size {#primary_key_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-プライマリ圧縮ブロックサイズ。圧縮対象のブロックの実際のサイズです。
+新規作成または再書き込みされたデータパーツについて、圧縮された主キー索引を書き込む際に使用するブロックのサイズ (非圧縮バイト数) です。`compress_primary_key` が有効な場合にのみ適用されます。この設定は圧縮時のフレーミングとバッファリングを制御するもので、主キーや索引の粒度には影響しません。
 
-<div id="primary_key_compression_codec">
-  ## primary_key_compression_codec
-</div>
+## primary_key_compression_codec {#primary_key_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 
 プライマリキーで使用される圧縮エンコーディングです。プライマリキーは十分に小さく、cache されるため、デフォルトの圧縮は ZSTD(3) です。
 
-<div id="primary_key_lazy_load">
-  ## primary_key_lazy_load
-</div>
+## primary_key_lazy_load {#primary_key_lazy_load}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,9 +32,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 最初の使用時に主キーをメモリへ読み込みます。これにより、テーブル数が
 非常に多い場合のメモリ使用量を削減できます。
 
-<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
-  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
-</div>
+## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns {#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns}
 
 <SettingsInfoBlock type="Float" default_value="0.9" />
 
