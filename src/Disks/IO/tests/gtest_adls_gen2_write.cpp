@@ -78,7 +78,7 @@ Op classifyRequest(const RecordedRequest & request)
     if (request.method == "PUT")
         return request.hasHeader("x-ms-rename-source") ? Op::Rename : Op::Create;
     if (request.method == "PATCH")
-        return request.query.find("action=flush") != String::npos ? Op::Flush : Op::Append;
+        return request.query.contains("action=flush") ? Op::Flush : Op::Append;
     if (request.method == "DELETE")
         return Op::Delete;
     return Op::Other;
@@ -107,6 +107,10 @@ public:
         repeat_last.insert(op);
     }
 
+    /// Throw for every operation of this kind, as ClickHouse's transport does on a timeout or a broken
+    /// connection, i.e. possibly after the request reached the service.
+    void failTransportForever(Op op) { transport_failures.insert(op); }
+
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(
         Azure::Core::Http::Request & request, Azure::Core::Context const &) override
     {
@@ -122,6 +126,9 @@ public:
         /// Drain the request body so a repeated attempt sees the stream from the start.
         if (auto * body = request.GetBodyStream())
             body->ReadToEnd(Azure::Core::Context{});
+
+        if (transport_failures.contains(op))
+            throw Azure::Core::Http::TransportException("scripted transport failure");
 
         ScriptedResponse response{successStatus(op), {}, {}};
         auto it = scripted.find(op);
@@ -189,6 +196,7 @@ private:
 
     std::map<Op, std::vector<ScriptedResponse>> scripted;
     std::set<Op> repeat_last;
+    std::set<Op> transport_failures;
 };
 
 constexpr const char * FINAL_BLOB_PATH = "data/data-0.parquet";
@@ -665,9 +673,8 @@ TEST(AdlsGen2Write, PlainCancellationStillReportsTheTargetUnchanged)
     EXPECT_EQ(log_text.find("Outcome of publishing"), String::npos) << log_text;
 }
 
-/// 408 is exactly what ClickHouse's Azure transport synthesizes for a timeout, and
-/// isRetryableAzureException excludes it while treating 403 as retryable. So the publish classifier
-/// cannot be that helper; this table pins its shape.
+/// isRetryableAzureException treats 403 as retryable, so the publish classifier cannot be that helper;
+/// this table pins its shape.
 TEST(AdlsGen2Write, PublishOutcomeClassification)
 {
     using Azure::Core::Http::HttpStatusCode;
@@ -700,6 +707,27 @@ TEST(AdlsGen2Write, PublishOutcomeClassification)
             EXPECT_NE(String(e.message()).find("commit status unknown"), String::npos)
                 << "HTTP " << static_cast<int>(status) << ": " << e.message();
         }
+    }
+
+    {
+        WriteFixture fixture;
+        fixture.transport->failTransportForever(Op::Rename);
+        auto buffer = fixture.makeBuffer();
+        writeSomeData(*buffer);
+        try
+        {
+            buffer->finalize();
+            FAIL() << "expected a failure for a transport error";
+        }
+        catch (const DB::Exception & e)
+        {
+            const String & message = e.message();
+            EXPECT_NE(message.find("commit status unknown"), String::npos) << message;
+            /// The explanation of a transport failure is not in `Message`, and it has no status code.
+            EXPECT_NE(message.find("scripted transport failure"), String::npos) << message;
+            EXPECT_EQ(message.find("HTTP 0"), String::npos) << message;
+        }
+        EXPECT_EQ(fixture.requestsOf(Op::Rename).size(), 1u);
     }
 
     for (const auto status : definite)
@@ -873,8 +901,12 @@ TEST(AdlsGen2Write, StagingCreateFailureOtherThanCollisionPropagates)
     auto buffer = fixture.makeBuffer();
     EXPECT_THROW({ writeSomeData(*buffer); buffer->finalize(); }, DB::Exception);
 
-    /// One name, not eight: a non-collision error is not a reason to try another name.
-    EXPECT_EQ(fixture.requestsOf(Op::Create).size(), 1u);
+    /// One name, not eight: a non-collision error is not a reason to try another name. The 403 itself
+    /// may be retried, but on the same name.
+    std::set<String> staging_names;
+    for (const auto & request : fixture.requestsOf(Op::Create))
+        staging_names.insert(request.path);
+    EXPECT_EQ(staging_names.size(), 1u);
     EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
 }
 

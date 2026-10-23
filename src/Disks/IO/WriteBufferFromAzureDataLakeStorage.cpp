@@ -57,15 +57,22 @@ constexpr size_t MAX_BLOB_KEY_SIZE = 1024;
 constexpr size_t MAX_STAGING_NAME_ATTEMPTS = 8;
 constexpr size_t STAGING_SUFFIX_LENGTH = 16;
 
-/// Errors after which the service state is unknown, so a mutating request must not be repeated.
-/// ClickHouse's Azure transport never throws: it synthesizes 408 for a timeout and 500 for any
-/// other transport failure (see PocoAzureHTTPClient::makeRequestInternalImpl), which is why 408
-/// belongs here even though isRetryableAzureException excludes it. This is deliberately not that
-/// helper: it also treats 403 as retryable during access checks, but a 403 is a definite answer.
-bool isAmbiguousAzureStatus(Azure::Core::Http::HttpStatusCode status)
+/// Errors after which the service state is unknown, so a mutating request must not be repeated. A
+/// transport failure may come after the request reached the service. Not isRetryableAzureException:
+/// it retries a 403, but a 403 is a definite answer.
+bool isAmbiguousAzureFailure(const Azure::Core::RequestFailedException & e)
 {
-    return status == Azure::Core::Http::HttpStatusCode::RequestTimeout
-        || status >= Azure::Core::Http::HttpStatusCode::InternalServerError;
+    return dynamic_cast<const Azure::Core::Http::TransportException *>(&e)
+        || e.StatusCode == Azure::Core::Http::HttpStatusCode::RequestTimeout
+        || e.StatusCode >= Azure::Core::Http::HttpStatusCode::InternalServerError;
+}
+
+/// A transport failure has no HTTP status, and its explanation is in `what`, not in `Message`.
+String describeAzureFailure(const Azure::Core::RequestFailedException & e)
+{
+    if (dynamic_cast<const Azure::Core::Http::TransportException *>(&e))
+        return fmt::format("transport error: {}", e.what());
+    return fmt::format("HTTP {}: {}", static_cast<int>(e.StatusCode), e.Message);
 }
 
 /// Appended to an authorization failure. The service's own error is preserved as-is: which permission
@@ -348,21 +355,20 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
             const bool retryable = isRetryableAzureException(e);
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
-                log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());
+                log_event(getAzureErrorCodeForLog(e), e.Message, watch.elapsedMicroseconds());
                 /// A final-path-scoped credential fails here, on the staging create, rather than at
                 /// publication, so the same guidance is useful.
                 throw Exception(
                     ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                    "ADLS Gen2 {} failed for `{}`: HTTP {}: {}{}",
+                    "ADLS Gen2 {} failed for `{}`: {}{}",
                     what,
                     blob_path,
-                    static_cast<int>(e.StatusCode),
-                    e.Message,
+                    describeAzureFailure(e),
                     e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden ? authorizationHint() : "");
             }
 
-            LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: HTTP {}: {}. Retrying after {} ms.",
-                what, attempt, blob_path, static_cast<int>(e.StatusCode), e.Message, backoff_ms);
+            LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: {}. Retrying after {} ms.",
+                what, attempt, blob_path, describeAzureFailure(e), backoff_ms);
 
             sleepForMilliseconds(backoff_ms);
             backoff_ms *= 2;
@@ -414,7 +420,7 @@ void WriteBufferFromAzureDataLakeStorage::runOnceRetryingForbidden(
                 && e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden;
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
-                log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());
+                log_event(getAzureErrorCodeForLog(e), e.Message, watch.elapsedMicroseconds());
                 throw;
             }
 
@@ -510,14 +516,14 @@ void WriteBufferFromAzureDataLakeStorage::flushStaging()
     {
         /// This runs before any rename, so the target provably still holds its previous complete
         /// object. Reporting the commit status as unknown here would be wrong, and alarming.
-        if (isAmbiguousAzureStatus(e.StatusCode))
+        if (isAmbiguousAzureFailure(e))
             LOG_WARNING(log, "Outcome of the flush of ADLS Gen2 staging file `{}` is unknown, so it may be "
                         "left behind with contents this write cannot identify.", staging_path);
 
         throw Exception(
             ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-            "ADLS Gen2 Flush failed for `{}`: HTTP {}: {}{}",
-            staging_path, static_cast<int>(e.StatusCode), e.Message,
+            "ADLS Gen2 Flush failed for `{}`: {}{}",
+            staging_path, describeAzureFailure(e),
             e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden ? authorizationHint() : "");
     }
 }
@@ -544,7 +550,7 @@ void WriteBufferFromAzureDataLakeStorage::publish()
     }
     catch (const Azure::Core::RequestFailedException & e)
     {
-        if (isAmbiguousAzureStatus(e.StatusCode))
+        if (isAmbiguousAzureFailure(e))
         {
             /// A rename is a move, so it cannot be retried: the source is gone once it succeeds. The
             /// destination is written by this single request, so whatever happened it holds one
@@ -552,18 +558,18 @@ void WriteBufferFromAzureDataLakeStorage::publish()
             publish_outcome_unknown = true;
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                "ADLS Gen2 commit status unknown for `{}`: publishing failed with HTTP {}: {}. The write "
+                "ADLS Gen2 commit status unknown for `{}`: publishing failed with {}. The write "
                 "may or may not have been published; the file holds either its previous contents or the "
                 "new ones, never a partial object. Read it back to see which, then retry if needed.",
-                blob_path, static_cast<int>(e.StatusCode), e.Message);
+                blob_path, describeAzureFailure(e));
         }
 
         /// Definite failures, notably a precondition failure (which conditional writers must keep
         /// seeing) and authorization, are reported as themselves.
         throw Exception(
             ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-            "ADLS Gen2 Rename failed for `{}`: HTTP {}: {}{}",
-            blob_path, static_cast<int>(e.StatusCode), e.Message,
+            "ADLS Gen2 Rename failed for `{}`: {}{}",
+            blob_path, describeAzureFailure(e),
             e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden ? authorizationHint() : "");
     }
 
