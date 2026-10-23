@@ -1245,6 +1245,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 file_iterator,
                 configuration,
                 object_storage,
+                /* storage_snapshot */ nullptr,
                 read_from_format_info,
                 format_settings,
                 context,
