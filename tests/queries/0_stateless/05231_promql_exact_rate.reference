@@ -33,6 +33,10 @@
 [2,2,2,2,2]
 [0.05,0.05,0.05,0.05,0.05]
 [nan,1,2]
+--- Big finite resets leaving the window do not erase the small resets still in it ---
+[4]
+[0.1]
+[4,3,2,2,2]
 --- The sample before the window of the first grid point: used only in the exact mode ---
 [NULL]
 [0.25]

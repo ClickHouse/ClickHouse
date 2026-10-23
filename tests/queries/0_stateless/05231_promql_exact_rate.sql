@@ -47,6 +47,11 @@ SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([45, 50, 55, 60, 100, 120, 
 SELECT timeSeriesRateToGrid(120, 200, 20, 40, 1)([45, 50, 55, 60, 100, 120, 140, 160, 180, 200]::Array(UInt32), [1e308, 1, 1e308, 2, 3, 4, 5, 6, 7, 8]::Array(Float64));
 SELECT timeSeriesIncreaseToGrid(50, 130, 40, 40, 1)([45, 50, 60, 100, 120]::Array(UInt32), [inf, 1, 2, 3, 4]::Array(Float64));
 
+SELECT '--- Big finite resets leaving the window do not erase the small resets still in it ---';
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Array(UInt32), [1e36, 1e18, 2, 1, 2]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Array(UInt32), [1e36, 1e18, 2, 1, 2]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([70, 75, 100, 110, 120, 140, 160, 180, 200]::Array(UInt32), [1e36, 1e18, 2, 1, 2, 3, 4, 5, 6]::Array(Float64));
+
 SELECT '--- The sample before the window of the first grid point: used only in the exact mode ---';
 SELECT timeSeriesRateToGrid(120, 120, 1, 40)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));

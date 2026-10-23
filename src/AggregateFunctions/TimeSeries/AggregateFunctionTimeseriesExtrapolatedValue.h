@@ -181,9 +181,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            sliding_sum.removeBefore(cut_off);
-            /// Subtracting an infinite or overflowed reset sum gives NaN or Inf, so the exact mode sums the window again.
-            if (exact_rate && !std::isfinite(sliding_sum.getCurrentSum().resets))
+            /// Subtracting big resets that left can lose the small ones still in the window, so the exact mode sums the window again.
+            if (sliding_sum.removeBefore(cut_off) && exact_rate)
                 sliding_sum.recomputeCurrentSum();
         }
 
