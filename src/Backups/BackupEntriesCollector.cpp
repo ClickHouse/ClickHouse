@@ -587,7 +587,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
     /// partition-related constraints.
     for (auto & [qualified_name, res_table_info] : table_infos)
     {
-        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, res_table_info.create_table_query, rmv_replace_target_ids);
 
         if (!res_table_info.should_backup_data)
             continue;
@@ -606,6 +606,19 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 res_table_info.storage->getName(),
                 tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
         }
+
+        /// The data of a table on a storage policy marked `backup_metadata_only` is never backed up, the storage provides
+        /// it. A backup of some of its partitions would be restored as the whole table, so refuse it.
+        if (partitions
+            && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, res_table_info.create_table_query, context))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot backup specific partitions of {}: it is on a storage policy marked backup_metadata_only, so only its "
+                "definition is backed up, and it is restored with all the data of its storage",
+                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+        }
+
         res_table_info.partitions = partitions;
     }
 }
@@ -887,8 +900,8 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
-    /// Used in the Cloud build.
-    [[maybe_unused]] const StoragePtr & storage,
+    const StoragePtr & storage,
+    const ASTPtr & create_table_query,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
@@ -900,6 +913,13 @@ bool BackupEntriesCollector::shouldBackupTableData(
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;
     }
+
+    if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, create_table_query, context))
+    {
+        LOG_INFO(log, "Skipping table data for {} (on a storage policy marked backup_metadata_only)", table_name.getFullName());
+        return false;
+    }
+
     return true;
 }
 
