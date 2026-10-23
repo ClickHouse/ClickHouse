@@ -147,20 +147,14 @@ using StringValueFilterPtr = std::shared_ptr<const StringValueFilter>;
 using StringValueFilters = std::unordered_map<String, StringValueFilterPtr>;
 using StringValueFiltersPtr = std::shared_ptr<const StringValueFilters>;
 
-/// Appends a sample of a string value of at most `max_size` bytes to `to`: the whole value if it fits, otherwise
-/// pieces spread along it, so that a value whose beginning compresses differently from the rest is still represented.
-/// Returns the size of the sample.
-size_t appendSampleOfStringValue(String & to, const char * data, size_t size, size_t max_size);
-
 /// The values of a column that a `StringValueFilter` replaced with empty strings. The in-memory size of the
 /// read column misses them, although they were read from disk.
 struct StringValuesSkippedByFilter
 {
     /// The total size of the values.
     size_t bytes = 0;
-    /// Samples of the first values (see `appendSampleOfStringValue`) in the order they were read, concatenated,
-    /// and their sizes, to estimate how the values compress. Together they take at most `max_sample_bytes`,
-    /// because a value can be arbitrarily long.
+    /// Samples of the first values in the order they were read, concatenated, and their sizes, to estimate how the
+    /// values compress. Together they take at most `max_sample_bytes`, because a value can be arbitrarily long.
     String sample;
     std::vector<size_t> sample_sizes;
     size_t max_sample_bytes = 0;

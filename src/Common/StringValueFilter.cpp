@@ -207,13 +207,10 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
         disabled.store(true, std::memory_order_relaxed);
 }
 
-void StringValuesSkippedByFilter::addToSampleImpl(const char * data, size_t size)
-{
-    const size_t used = sample.size() + (sample_sizes.size() + 1) * sizeof(size_t);
-    sample_sizes.push_back(appendSampleOfStringValue(sample, data, size, max_sample_bytes - std::min(max_sample_bytes, used)));
-}
-
-size_t appendSampleOfStringValue(String & to, const char * data, size_t size, size_t max_size)
+/// Appends a sample of a string value of at most `max_size` bytes to `to`: the whole value if it fits, otherwise
+/// pieces spread along it, so that a value whose beginning compresses differently from the rest is still represented.
+/// Returns the size of the sample.
+static size_t appendSampleOfStringValue(String & to, const char * data, size_t size, size_t max_size)
 {
     if (size <= max_size)
     {
@@ -232,6 +229,12 @@ size_t appendSampleOfStringValue(String & to, const char * data, size_t size, si
         to.append(data + piece_offset, piece_size);
     }
     return pieces * piece_size;
+}
+
+void StringValuesSkippedByFilter::addToSampleImpl(const char * data, size_t size)
+{
+    const size_t used = sample.size() + (sample_sizes.size() + 1) * sizeof(size_t);
+    sample_sizes.push_back(appendSampleOfStringValue(sample, data, size, max_sample_bytes - std::min(max_sample_bytes, used)));
 }
 
 }
