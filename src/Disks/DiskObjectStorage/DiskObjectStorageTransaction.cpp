@@ -103,7 +103,7 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
 
 DiskObjectStorageTransaction::~DiskObjectStorageTransaction()
 {
-    undo();
+    DiskObjectStorageTransaction::undo();
 }
 
 void DiskObjectStorageTransaction::addOperation(std::function<void(MetadataTransactionPtr tx)> op)
