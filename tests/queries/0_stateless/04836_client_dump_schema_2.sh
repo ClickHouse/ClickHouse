@@ -905,7 +905,7 @@ $CLICKHOUSE_LOCAL --path "$TS_PATH" --multiquery "
     SET allow_experimental_time_series_table = 1;
     CREATE TABLE ${DB}.zzz_ts_metrics (metric_family String, type String, unit String, help String)
         ENGINE = ReplacingMergeTree ORDER BY metric_family;
-    CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS ${DB}.zzz_ts_metrics;
+    CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries SETTINGS version = 9 METRICS ${DB}.zzz_ts_metrics;
 "
 TS_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ts_dump.sql"
 $CLICKHOUSE_LOCAL --path "$TS_PATH" --dump-schema="${DB}" > "$TS_DUMP_FILE" 2>"$ERR_FILE"

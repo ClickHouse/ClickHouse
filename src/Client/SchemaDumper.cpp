@@ -1192,6 +1192,19 @@ bool readsLocalTableByName(std::string_view name)
     return std::ranges::find(names, name) != std::end(names);
 }
 
+/// Argument count of the PromQL table functions that name their TimeSeries table as `[db.]table` or 'table',
+/// or as 'db', 'table' with one argument more.
+std::optional<size_t> promQLTableFunctionShortArgumentCount(std::string_view name)
+{
+    if (name == "prometheusQuery")
+        return 3;
+    if (name == "timeSeriesSelector")
+        return 4;
+    if (name == "prometheusQueryRange")
+        return 5;
+    return std::nullopt;
+}
+
 /// Collects table references from dictionary, join, `IN`, and local `cluster`/`remote` function arguments.
 void collectFunctionArgumentReferences(
     const IAST & node, const ClusterLocality & clusters,
@@ -1353,6 +1366,32 @@ void collectFunctionArgumentReferences(
                         "the session nor the server are supported",
                         function->formatForErrorMessage());
             }
+        }
+        else if (auto short_count = promQLTableFunctionShortArgumentCount(function->name))
+        {
+            const ASTs no_args;
+            const ASTs & args = function->arguments ? function->arguments->children : no_args;
+            if (args.size() == *short_count)
+            {
+                if (const auto * identifier = args[0]->as<ASTIdentifier>())
+                {
+                    if (auto table_id = identifier->createTable())
+                        candidate = std::pair(table_id->getDatabaseName(), table_id->shortName());
+                }
+                else if (auto table = tryFoldNameArgument(args[0], clusters.context))
+                    candidate = std::pair(String{}, *table);
+            }
+            else if (args.size() == *short_count + 1)
+            {
+                if (auto database = tryFoldNameArgument(args[0], clusters.context))
+                    if (auto table = tryFoldNameArgument(args[1], clusters.context))
+                        candidate = std::pair(*database, *table);
+            }
+            if (!candidate && (args.size() == *short_count || args.size() == *short_count + 1))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot statically resolve the table arguments of {} for --dump-schema: only table identifiers, "
+                    "string literals and constant expressions that read neither the session nor the server are supported",
+                    function->formatForErrorMessage());
         }
         else if (readsLocalTableByName(function->name))
         {
@@ -2083,6 +2122,15 @@ std::vector<TableInfo> resolveTables(
             add_dependency(candidate);
     }
 
+    /// A row that is not emitted, such as an `Overlay` alias, may stand for a UUID-named helper: an emitted reader of it
+    /// names that UUID too.
+    std::map<std::pair<String, String>, std::pair<String, String>> uuid_aliases;
+    for (const auto & row : rows)
+        if (database_info.at(row.database).is_external)
+            for (const auto & dependency : row.loading_dependencies)
+                if (auto it = inner_owner.find(dependency); it != inner_owner.end() && it->second.uuid_named)
+                    uuid_aliases[{row.database, row.name}] = it->second.owner;
+
     std::vector<TableInfo> tables;
     for (auto & row : rows)
     {
@@ -2108,21 +2156,30 @@ std::vector<TableInfo> resolveTables(
         table.unchecked_references = std::move(row.unchecked_references);
         table.unproven_remote_reads = std::move(row.unproven_remote_reads);
         table.named_collections = std::move(row.named_collections);
+        auto refuse_uuid_reference = [&](const std::pair<String, String> & dependency, const std::pair<String, String> & owner)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot dump {}.{} for --dump-schema: it references {}.{}, the generated inner storage of {}.{}, "
+                "and that name embeds a UUID which will not match the object recreated on replay. "
+                "Reference the owning object instead",
+                backQuoteIfNeed(row.database), backQuoteIfNeed(row.name),
+                backQuoteIfNeed(dependency.first), backQuoteIfNeed(dependency.second),
+                backQuoteIfNeed(owner.first), backQuoteIfNeed(owner.second));
+        };
         /// A dependency on an omitted helper table is remapped onto the owning object - which is what
         /// creates the helper on replay - so the edge survives instead of dangling on a skipped row.
         for (auto & dependency : table.dependencies)
         {
             auto it = inner_owner.find(dependency);
             if (it == inner_owner.end())
+            {
+                if (auto alias = uuid_aliases.find(dependency); emit && alias != uuid_aliases.end())
+                    refuse_uuid_reference(dependency, alias->second);
                 continue;
-            if (it->second.uuid_named && it->second.owner != std::pair(row.database, row.name))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Cannot dump {}.{} for --dump-schema: it references {}.{}, the generated inner storage of {}.{}, "
-                    "and that name embeds a UUID which will not match the object recreated on replay. "
-                    "Reference the owning object instead",
-                    backQuoteIfNeed(row.database), backQuoteIfNeed(row.name),
-                    backQuoteIfNeed(dependency.first), backQuoteIfNeed(dependency.second),
-                    backQuoteIfNeed(it->second.owner.first), backQuoteIfNeed(it->second.owner.second));
+            }
+            /// A row that is not emitted is only a graph node, and nothing on replay names the UUID through it.
+            if (emit && it->second.uuid_named && it->second.owner != std::pair(row.database, row.name))
+                refuse_uuid_reference(dependency, it->second.owner);
             dependency = it->second.owner;
         }
         tables.push_back(std::move(table));
@@ -4075,8 +4132,6 @@ void markMaterializedViewsNeedingBadSelectGate(
     {
         if (!table.emit)
             continue;
-        table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context, analyzes_on_source);
-
         /// The dump does not create user-defined functions; a stored CREATE still calls one only if it predates the function.
         const ASTPtr ast = user_defined_functions.empty() ? nullptr : tryParseCreate(table.create_query);
         std::set<String> called;
@@ -4089,9 +4144,12 @@ void markMaterializedViewsNeedingBadSelectGate(
         for (const auto & name : called)
             err << "Warning: " << backQuoteIfNeed(table.database) << "." << backQuoteIfNeed(table.name)
                 << " calls user-defined function " << backQuoteIfNeed(name) << ", which this dump does not create.\n";
-        /// Such a materialized view's SELECT does not analyze at replay, so it needs the gate.
+        /// Such a materialized view's SELECT does not analyze at replay, so it needs the gate. It is not probed:
+        /// the analyzer expands the function body, which may run a scalar subquery.
         if (!called.empty() && ast->as<ASTCreateQuery>() && ast->as<ASTCreateQuery>()->is_materialized_view)
             table.needs_bad_select_gate = true;
+        else
+            table.needs_bad_select_gate = materializedViewMayNeedBadSelectGate(table, emitted_tables, context, analyzes_on_source);
     }
 }
 
@@ -4129,13 +4187,20 @@ void dumpDatabaseSchema(
     std::ostream & out,
     std::ostream & err)
 {
-    /// The dump's own queries are ClickHouse SQL and must fail rather than stop early on a result limit.
+    /// The dump's own queries are ClickHouse SQL and must fail rather than return part of a result.
     /// A value derived from `compatibility` is not sent as the user's change, like an ordinary query.
     Settings internal_settings = context->getSettingsRef();
     if (internal_settings.hasSettingsChangedByCompatibility())
         internal_settings.markSettingsChangedByCompatibilityAsUnchanged();
     internal_settings.set("dialect", String("clickhouse"));
-    internal_settings.set("result_overflow_mode", String("throw"));
+    for (const auto * mode : {"result_overflow_mode", "timeout_overflow_mode", "timeout_overflow_mode_leaf", "read_overflow_mode",
+             "read_overflow_mode_leaf", "group_by_overflow_mode", "sort_overflow_mode", "set_overflow_mode", "join_overflow_mode",
+             "transfer_overflow_mode", "distinct_overflow_mode"})
+        if (internal_settings.get(mode) != Field(String("throw")))
+            internal_settings.set(mode, String("throw"));
+    for (const auto * row_limit : {"limit", "offset"})
+        if (internal_settings.get(row_limit) != Field(0.0))
+            internal_settings.set(row_limit, Field(0.0));
     auto dump_context = Context::createCopy(context);
     dump_context->setSettings(internal_settings);
     context = dump_context;

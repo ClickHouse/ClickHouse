@@ -21,3 +21,10 @@ SET database_replicated_allow_only_replicated_engine = 0;
 SET data_type_default_nullable = 0;
 default_engine: replay rc=0
 0
+limit_setting: rc=0 tables=2
+udf_probe: rc=0 did not run the function body
+prometheus_query: dump rc=0
+prometheus_query: replay rc=0
+overlay_mv: dump rc=0
+SET data_type_default_nullable = 0;
+overlay_mv: replay rc=0

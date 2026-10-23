@@ -24,7 +24,7 @@ $CLICKHOUSE_LOCAL --path "$TS_UNQUAL_PATH" --multiquery "
     SET allow_experimental_time_series_table = 1;
     CREATE TABLE zzz_ts_metrics (metric_family String, type String, unit String, help String)
         ENGINE = ReplacingMergeTree ORDER BY metric_family;
-    CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS zzz_ts_metrics;
+    CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries SETTINGS version = 9 METRICS zzz_ts_metrics;
 "
 TS_UNQUAL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ts_unqual_dump.sql"
 $CLICKHOUSE_LOCAL --path "$TS_UNQUAL_PATH" --dump-schema="${DB}" > "$TS_UNQUAL_DUMP_FILE" 2>"$ERR_FILE"
@@ -162,7 +162,7 @@ CREATE DATABASE ${DB} ENGINE = Ordinary;
 SET allow_experimental_time_series_table = 1;
 CREATE TABLE ${DB}.real_metrics (metric_family String, type String, unit String, help String)
     ENGINE = ReplacingMergeTree ORDER BY metric_family;
-CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS ${DB}.real_metrics;
+CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries SETTINGS version = 9 METRICS ${DB}.real_metrics;
 CREATE TABLE ${DB}.\`.inner.metrics.aaa_ts\` (x UInt8) ENGINE = Memory;
 "
 EXPLICIT_KIND_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_explicit_kind_dump.sql"

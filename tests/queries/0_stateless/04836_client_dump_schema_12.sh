@@ -2,7 +2,8 @@
 # Tags: long, no-fasttest
 
 # --dump-schema cases from review: result limits, dialect, stored query settings, table functions that read a
-# local table, accurateCastOrDefault types, codec settings and a `default` database with another engine.
+# local table, accurateCastOrDefault types, codec settings, a `default` database with another engine, the `limit`
+# setting, SQL UDFs in a probed view, PromQL table functions and an `Overlay` over a materialized view.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -69,3 +70,43 @@ round_trip codec_setting "
 round_trip default_engine "
     CREATE TABLE default.t (x UInt8) ENGINE = MergeTree ORDER BY x;" default
 grep -c 'database `default` has engine' "$work/default_engine.err" || true
+
+# The session's `limit` must not cut the dump's own catalog reads short.
+rm -rf "$work/src"
+$CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+    CREATE DATABASE d;
+    CREATE TABLE d.t1 (x UInt8) ENGINE = Memory;
+    CREATE TABLE d.t2 (x UInt8) ENGINE = Memory;"
+$CLICKHOUSE_LOCAL --path "$work/src" --limit 1 --dump-schema d > "$work/limit_setting.sql" 2>/dev/null
+echo "limit_setting: rc=$? tables=$(grep -c '^CREATE TABLE' "$work/limit_setting.sql")"
+
+# The probe must not expand a SQL UDF, whose scalar subquery would run on the source (here for 10 seconds).
+rm -rf "$work/src"
+$CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+    CREATE DATABASE d;
+    CREATE TABLE d.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+    SET allow_materialized_view_with_bad_select = 1;
+    CREATE MATERIALIZED VIEW d.mv (y UInt64) ENGINE = MergeTree ORDER BY y AS SELECT later_udf_${CLICKHOUSE_TEST_UNIQUE_NAME}(x) AS y FROM d.src;
+    CREATE FUNCTION later_udf_${CLICKHOUSE_TEST_UNIQUE_NAME} AS x -> (SELECT sum(sleepEachRow(1)) FROM numbers(10) SETTINGS max_block_size = 1) + x;"
+start=$(date +%s)
+$CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/udf.sql" 2>/dev/null
+echo "udf_probe: rc=$? $([ $(( $(date +%s) - start )) -ge 10 ] && echo 'ran the function body' || echo 'did not run the function body')"
+
+# The table sorts before the TimeSeries table its PromQL table function reads at CREATE.
+rm -rf "$work/src" "$work/dst"
+$CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+    SET allow_experimental_time_series_table = 1;
+    CREATE DATABASE d;
+    CREATE TABLE d.zzz_src ENGINE = TimeSeries;
+    CREATE TABLE d.a_r ENGINE = Remote('127.0.0.1', prometheusQuery('d', 'zzz_src', 'up', 0));"
+$CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/prometheus_query.sql" 2>/dev/null
+echo "prometheus_query: dump rc=$?"
+$CLICKHOUSE_LOCAL --path "$work/dst" -n --queries-file "$work/prometheus_query.sql" 2>&1 | grep -o 'Code: [0-9]*' | head -1
+echo "prometheus_query: replay rc=${PIPESTATUS[0]}"
+
+# An `Overlay` exposes the materialized view's UUID-named inner table, which no emitted statement names.
+round_trip overlay_mv "
+    CREATE DATABASE s;
+    CREATE TABLE s.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE MATERIALIZED VIEW s.mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM s.src;
+    CREATE DATABASE o ENGINE = Overlay('s');" s,o
