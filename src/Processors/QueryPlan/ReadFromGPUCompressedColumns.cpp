@@ -121,9 +121,9 @@ size_t streamBytesOf(const IMergeTreeDataPart & part, const NameAndTypePair & co
     return part.checksums.files.at(*stream_name + ".bin").uncompressed_size;
 }
 
-GPU::GPUCodec codecOrThrow(UInt8 method, const String & column_name, const IMergeTreeDataPart & part)
+GPU::GPUCodec codecOrThrow(UInt8 method, std::string_view payload, const String & column_name, const IMergeTreeDataPart & part)
 {
-    const auto codec = GPU::codecOf(method);
+    const auto codec = GPU::deviceCodecOf(method, payload);
     if (!codec)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -383,10 +383,11 @@ private:
 
             while (const auto block = reader.next())
             {
+                const std::string_view payload(block->payload, block->compressed_bytes);
                 if (!accumulator)
-                    accumulator = &accumulatorFor(column_idx, codecOrThrow(*reader.methodByte(), column.column.name, part));
+                    accumulator = &accumulatorFor(column_idx, codecOrThrow(*reader.methodByte(), payload, column.column.name, part));
 
-                accumulator->addBlock(std::string_view(block->payload, block->compressed_bytes), block->decompressed_bytes);
+                accumulator->addBlock(*reader.methodByte(), payload, block->decompressed_bytes);
                 bytes_read += block->decompressed_bytes;
 
                 checkNotCancelled();
@@ -469,21 +470,22 @@ private:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR, "A stream of column {} of part {} ended before its {} bytes", column.column.name, part.name, bytes_total);
 
-                const GPU::GPUCodec codec = codecOrThrow(*reader.methodByte(), column.column.name, part);
+                const std::string_view payload(block->payload, block->compressed_bytes);
+                const UInt8 method = *reader.methodByte();
+                const GPU::GPUCodec codec = codecOrThrow(method, payload, column.column.name, part);
                 if (!accumulator)
                     accumulator = &accumulatorFor(column_idx, codec);
                 else if (accumulators[column_idx]->codec != codec)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "The streams of column {} of part {} are compressed by different codecs", column.column.name, part.name);
 
-                const std::string_view payload(block->payload, block->compressed_bytes);
                 if (reads_sizes)
                 {
-                    accumulator->addSizesBlock(payload, block->decompressed_bytes);
+                    accumulator->addSizesBlock(method, payload, block->decompressed_bytes);
                     sizes_read += block->decompressed_bytes;
                 }
                 else
                 {
-                    accumulator->addBlock(payload, block->decompressed_bytes);
+                    accumulator->addBlock(method, payload, block->decompressed_bytes);
                     bytes_read += block->decompressed_bytes;
                 }
 
@@ -1120,12 +1122,13 @@ private:
 
                 if (kept != 0)
                 {
-                    const GPU::GPUCodec codec = codecOrThrow(*column.blocks->methodByte(), std::to_string(behind), part);
+                    const std::string_view payload(block->payload, block->compressed_bytes);
+                    codecOrThrow(*column.blocks->methodByte(), payload, std::to_string(behind), part);
                     accumulator.addCompressedBlock(
                         reader_index,
                         behind,
-                        codec,
-                        std::string_view(block->payload, block->compressed_bytes),
+                        *column.blocks->methodByte(),
+                        payload,
                         block->decompressed_bytes,
                         column.remainingBytes(),
                         skipped,

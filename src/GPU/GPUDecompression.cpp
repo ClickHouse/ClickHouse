@@ -5,7 +5,13 @@
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUMemory.h>
 
+#include <GPU/GPUTypeMapping.h>
+
+#include <Compression/BitPackingFormat.h>
+#include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
 #include <Common/Exception.h>
+#include <base/unaligned.h>
 
 #include <GPU/BitUnpack.cuh>
 #include <GPU/GPUGDeflate.h>
@@ -20,6 +26,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int CANNOT_DECOMPRESS;
     extern const int GPU_ERROR;
     extern const int LOGICAL_ERROR;
 }
@@ -120,25 +127,9 @@ T * arrayAt(char * base, size_t & offset, size_t count)
     return values;
 }
 
-}
-
-size_t decompressedBytesOf(std::span<const CompressedBlock> blocks)
+/// Adds what nvcomp expands of a block of `codec` to `blocks`: the block, or each chunk of a `GDeflate` one.
+void addBlocksOf(std::vector<CompressedBlock> & blocks, GPUCodec codec, size_t start, std::string_view payload, size_t decompressed_bytes)
 {
-    size_t total = 0;
-    for (const CompressedBlock & block : blocks)
-        total += block.decompressed_bytes;
-    return total;
-}
-
-void stageCompressedBlock(
-    PinnedBuffer & staged, std::vector<CompressedBlock> & blocks, GPUCodec codec, std::string_view payload, size_t decompressed_bytes)
-{
-    /// The device buffer the staged bytes go to starts at a multiple of 256 bytes.
-    constexpr size_t alignment = 4;
-    if (const size_t misaligned = staged.size() % alignment)
-        staged.resize_fill(staged.size() + alignment - misaligned, 0);
-
-    const size_t start = staged.size();
     if (codec == GPUCodec::GDEFLATE)
     {
         forEachGDeflateChunk(payload, decompressed_bytes, [&](const GDeflateChunk & chunk)
@@ -147,10 +138,6 @@ void stageCompressedBlock(
                 .offset = start + chunk.offset,
                 .compressed_bytes = chunk.compressed_bytes,
                 .decompressed_bytes = chunk.decompressed_bytes,
-                .packed_bytes = chunk.expanded_bytes,
-                .packed_bits = chunk.packed_bits,
-                .element_size = chunk.element_size,
-                .reference = chunk.reference,
             });
         });
     }
@@ -158,11 +145,108 @@ void stageCompressedBlock(
     {
         blocks.push_back({.offset = start, .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
     }
-    appendHostBytes(staged, payload);
+}
+
+/// Whether `method` with the list of methods `payload` starts with is a chain of `BitPacking` and one other codec,
+/// see `CompressionCodecMultiple`.
+bool isBitPackingChain(UInt8 method, std::string_view payload)
+{
+    return method == static_cast<UInt8>(CompressionMethodByte::Multiple) && payload.size() >= 3 && payload[0] == 2
+        && static_cast<UInt8>(payload[1]) == static_cast<UInt8>(CompressionMethodByte::BitPacking);
+}
+
+/// The 8-byte reads of `unpackStreams` stay in a stream, but each stream starts at a multiple of 8 bytes anyway.
+constexpr size_t scratch_alignment = 8;
+
+}
+
+size_t expandedBytesOf(std::span<const CompressedBlock> blocks)
+{
+    size_t total = 0;
+    for (const CompressedBlock & block : blocks)
+        total += block.decompressed_bytes;
+    return total;
+}
+
+size_t valueBytesOf(std::span<const CompressedBlock> blocks, std::span<const BitPackingBlock> packed)
+{
+    size_t total = expandedBytesOf(blocks);
+    for (const BitPackingBlock & pack : packed)
+    {
+        if (pack.first_block + pack.num_blocks > blocks.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "A BitPacking block of blocks {}..{} among {}", pack.first_block, pack.first_block + pack.num_blocks, blocks.size());
+        total -= expandedBytesOf(blocks.subspan(pack.first_block, pack.num_blocks));
+        total += pack.unpacked_bytes;
+    }
+    return total;
+}
+
+std::optional<GPUCodec> deviceCodecOf(UInt8 method, std::string_view payload)
+{
+    if (const auto codec = codecOf(method))
+        return codec;
+    if (isBitPackingChain(method, payload))
+        return codecOf(static_cast<UInt8>(payload[2]));
+    return {};
+}
+
+GPUCodec stageCompressedBlock(
+    PinnedBuffer & staged,
+    std::vector<CompressedBlock> & blocks,
+    std::vector<BitPackingBlock> & packed,
+    UInt8 method,
+    std::string_view payload,
+    size_t decompressed_bytes)
+{
+    const auto codec = deviceCodecOf(method, payload);
+    if (!codec)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of compression method {:#x} staged for the device", static_cast<UInt16>(method));
+
+    /// The device buffer the staged bytes go to starts at a multiple of 256 bytes.
+    constexpr size_t alignment = 4;
+    if (const size_t misaligned = staged.size() % alignment)
+        staged.resize_fill(staged.size() + alignment - misaligned, 0);
+
+    const size_t start = staged.size();
+    if (!isBitPackingChain(method, payload))
+    {
+        addBlocksOf(blocks, *codec, start, payload, decompressed_bytes);
+        appendHostBytes(staged, payload);
+        return *codec;
+    }
+
+    /// After the list of methods, the block of the second codec with its header, which holds the block of `BitPacking`.
+    constexpr size_t header_bytes = ICompressionCodec::getHeaderSize();
+    const std::string_view inner = payload.substr(3);
+    if (inner.size() < header_bytes)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "A block of a chain of codecs of {} bytes", payload.size());
+
+    const size_t inner_compressed = unalignedLoadLittleEndian<UInt32>(inner.data() + 1);
+    const size_t inner_decompressed = unalignedLoadLittleEndian<UInt32>(inner.data() + 5);
+    if (inner[0] != payload[2] || inner_compressed != inner.size() || inner_decompressed <= header_bytes)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "A block of a chain of codecs holds a block of method {:#x} of {} bytes to {}, where the chain says {:#x} and the block has {} bytes",
+            static_cast<UInt16>(static_cast<UInt8>(inner[0])),
+            inner_compressed,
+            inner_decompressed,
+            static_cast<UInt16>(static_cast<UInt8>(payload[2])),
+            inner.size());
+
+    const size_t first_block = blocks.size();
+    addBlocksOf(blocks, *codec, start, inner.substr(header_bytes), inner_decompressed);
+    packed.push_back({.first_block = first_block, .num_blocks = blocks.size() - first_block, .unpacked_bytes = decompressed_bytes});
+    appendHostBytes(staged, inner.substr(header_bytes));
+    return *codec;
 }
 
 void SyncDecompressor::decompress(
-    GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks, char * device_destination)
+    GPUCodec codec,
+    std::string_view host_compressed,
+    std::span<const CompressedBlock> blocks,
+    std::span<const BitPackingBlock> packed,
+    char * device_destination)
 {
     size_t compressed_total = 0;
     for (const CompressedBlock & block : blocks)
@@ -187,6 +271,7 @@ void SyncDecompressor::decompress(
             .device_compressed = device_compressed.data(),
             .compressed_bytes = compressed_total,
             .blocks = blocks,
+            .packed = packed,
         };
         batch.launch(codec, std::span<const CompressedPiece>(&piece, 1), device_destination);
     });
@@ -250,6 +335,9 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
     size_t num_blocks = 0;
     size_t decompressed_total = 0;
     size_t max_decompressed = 0;
+    num_streams = 0;
+    size_t scratch_total = 0;
+    size_t max_chunks = 0;
 
     for (const CompressedPiece & piece : pieces)
     {
@@ -257,8 +345,8 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         for (const CompressedBlock & block : piece.blocks)
         {
             piece_compressed = std::max(piece_compressed, block.offset + block.compressed_bytes);
-            decompressed_total += block.expandedBytes();
-            max_decompressed = std::max(max_decompressed, block.expandedBytes());
+            decompressed_total += block.decompressed_bytes;
+            max_decompressed = std::max(max_decompressed, block.decompressed_bytes);
         }
 
         if (piece_compressed > piece.compressed_bytes)
@@ -269,6 +357,20 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
                 piece.compressed_bytes);
 
         num_blocks += piece.blocks.size();
+
+        for (const BitPackingBlock & pack : piece.packed)
+        {
+            if (pack.first_block + pack.num_blocks > piece.blocks.size() || pack.num_blocks == 0)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "A BitPacking block of blocks {}..{} of a piece of {}",
+                    pack.first_block,
+                    pack.first_block + pack.num_blocks,
+                    piece.blocks.size());
+            scratch_total += (expandedBytesOf(piece.blocks.subspan(pack.first_block, pack.num_blocks)) + scratch_alignment - 1) / scratch_alignment * scratch_alignment;
+            max_chunks = std::max(max_chunks, BitPackingFormat::numChunks(pack.unpacked_bytes));
+        }
+        num_streams += piece.packed.size();
 
         if (piece.uploaded)
             checkCuda(cudaStreamWaitEvent(stream.get(), piece.uploaded, 0), "Cannot make the decompression stream wait for an upload");
@@ -293,52 +395,62 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
     size_t * compressed_bytes = arrayAt<size_t>(arguments, offset, num_blocks);
     size_t * decompressed_bytes = arrayAt<size_t>(arguments, offset, num_blocks);
 
-    /// Packed chunks expand into `device_packed`, each with 8 bytes to spare that `unpackChunks` reads past them, and their
-    /// integers are unpacked into the destination after.
-    size_t packed_total = 0;
-    for (const CompressedPiece & piece : pieces)
-        for (const CompressedBlock & block : piece.blocks)
-            if (block.packed_bits)
-                packed_total += (block.packed_bytes + 15) / 8 * 8;
-    device_packed.clear();
-    char * const packed_base = packed_total ? device_packed.grow(packed_total) : nullptr;
-
-    std::vector<PackedChunk> packed_chunks;
-    size_t max_packed_count = 0;
-    size_t packed_at = 0;
+    /// The blocks of `BitPacking` expand into `device_scratch`, each block of it after the header of the compressed block
+    /// it was in, and `unpackStreams` puts their integers where the destination has them.
+    device_scratch.clear();
+    char * const scratch_base = scratch_total ? device_scratch.grow(scratch_total) : nullptr;
+    host_streams.clear();
+    BitPackingStream * const streams
+        = num_streams ? reinterpret_cast<BitPackingStream *>(growBy(host_streams, num_streams * sizeof(BitPackingStream))) : nullptr;
+    constexpr size_t header_bytes = ICompressionCodec::getHeaderSize();
 
     size_t block_index = 0;
+    size_t stream_index = 0;
+    size_t scratch_at = 0;
     size_t at = 0;
     for (const CompressedPiece & piece : pieces)
     {
-        for (const CompressedBlock & block : piece.blocks)
+        size_t next_pack = 0;
+        for (size_t i = 0; i < piece.blocks.size(); ++i)
         {
+            const CompressedBlock & block = piece.blocks[i];
             compressed_ptrs[block_index] = piece.device_compressed + block.offset;
             compressed_bytes[block_index] = block.compressed_bytes;
-            decompressed_bytes[block_index] = block.expandedBytes();
-            expected_bytes.push_back(block.expandedBytes());
-            if (block.packed_bits)
+            decompressed_bytes[block_index] = block.decompressed_bytes;
+            expected_bytes.push_back(block.decompressed_bytes);
+
+            if (next_pack < piece.packed.size() && i == piece.packed[next_pack].first_block)
             {
-                value_ptrs[block_index] = packed_base + packed_at;
-                const auto count = static_cast<uint32_t>(block.decompressed_bytes / block.element_size);
-                packed_chunks.push_back({
-                    .source = reinterpret_cast<const unsigned char *>(packed_base + packed_at),
+                const BitPackingBlock & pack = piece.packed[next_pack++];
+                const size_t pack_bytes = expandedBytesOf(piece.blocks.subspan(pack.first_block, pack.num_blocks));
+                streams[stream_index++] = {
+                    .stream = reinterpret_cast<const unsigned char *>(scratch_base + scratch_at + header_bytes),
+                    .stream_bytes = pack_bytes - header_bytes,
                     .destination = reinterpret_cast<unsigned char *>(destination + at),
-                    .count = count,
-                    .bits = block.packed_bits,
-                    .element_size = block.element_size,
-                    .reference = block.reference,
-                });
-                max_packed_count = std::max<size_t>(max_packed_count, count);
-                packed_at += (block.packed_bytes + 15) / 8 * 8;
+                    .unpacked_bytes = pack.unpacked_bytes,
+                };
+                size_t within = 0;
+                for (size_t j = 0; j < pack.num_blocks; ++j)
+                {
+                    value_ptrs[block_index + j] = scratch_base + scratch_at + within;
+                    within += piece.blocks[i + j].decompressed_bytes;
+                }
+                scratch_at += (pack_bytes + scratch_alignment - 1) / scratch_alignment * scratch_alignment;
+                at += pack.unpacked_bytes;
+            }
+            else if (next_pack > 0 && i < piece.packed[next_pack - 1].first_block + piece.packed[next_pack - 1].num_blocks)
+            {
+                /// Another block of the pack before, placed with its first.
             }
             else
             {
                 value_ptrs[block_index] = destination + at;
+                at += block.decompressed_bytes;
             }
-            at += block.decompressed_bytes;
             ++block_index;
         }
+        if (next_pack != piece.packed.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The BitPacking blocks of a piece are not in the order of its blocks");
     }
 
     waitOnFailure(stream, [&]
@@ -352,13 +464,14 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         const size_t * d_compressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
         const size_t * d_decompressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
 
-        const size_t results_bytes = num_blocks * (sizeof(size_t) + sizeof(nvcompStatus_t));
+        const size_t results_bytes = num_blocks * (sizeof(size_t) + sizeof(nvcompStatus_t)) + num_streams * sizeof(uint32_t);
         device_results.clear();
         device_results.grow(results_bytes);
 
         offset = 0;
         size_t * d_actual_bytes = arrayAt<size_t>(device_results.data(), offset, num_blocks);
         nvcompStatus_t * d_statuses = arrayAt<nvcompStatus_t>(device_results.data(), offset, num_blocks);
+        uint32_t * d_stream_statuses = arrayAt<uint32_t>(device_results.data(), offset, num_streams);
 
         size_t temp_bytes = 0;
         checkNvcomp(
@@ -371,17 +484,10 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         host_results.clear();
         char * const results = growBy(host_results, results_bytes);
 
-        if (!packed_chunks.empty())
+        if (num_streams)
         {
-            /// Zeroes in the 8 spare bytes of every chunk past what nvcomp writes, so that what `unpackChunks` reads
-            /// there is defined, then the integers.
-            checkCuda(cudaMemsetAsync(packed_base, 0, packed_total, stream.get()), "Cannot clear the packed chunks");
-            host_packed_chunks.clear();
-            appendHostBytes(
-                host_packed_chunks,
-                std::string_view(reinterpret_cast<const char *>(packed_chunks.data()), packed_chunks.size() * sizeof(PackedChunk)));
-            device_packed_chunks.clear();
-            device_packed_chunks.append(bytesOf(host_packed_chunks));
+            device_streams.clear();
+            device_streams.append(bytesOf(host_streams));
         }
 
         checkNvcomp(
@@ -399,9 +505,9 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
                 stream),
             "Cannot decompress on the device");
 
-        if (!packed_chunks.empty())
-            unpackChunks(
-                reinterpret_cast<const PackedChunk *>(device_packed_chunks.data()), packed_chunks.size(), max_packed_count, stream);
+        if (num_streams)
+            unpackStreams(
+                reinterpret_cast<const BitPackingStream *>(device_streams.data()), num_streams, max_chunks, d_stream_statuses, stream);
 
         checkCuda(
             cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream.get()),
@@ -427,6 +533,7 @@ void DecompressionBatch::waitAndCheck()
     size_t offset = 0;
     const size_t * actual_bytes = arrayAt<size_t>(host_results.data(), offset, num_blocks);
     const nvcompStatus_t * statuses = arrayAt<nvcompStatus_t>(host_results.data(), offset, num_blocks);
+    const uint32_t * stream_statuses = arrayAt<uint32_t>(host_results.data(), offset, num_streams);
 
     for (size_t block_index = 0; block_index < num_blocks; ++block_index)
     {
@@ -441,6 +548,14 @@ void DecompressionBatch::waitAndCheck()
                 actual_bytes[block_index],
                 expected_bytes[block_index]);
     }
+
+    for (size_t stream_index = 0; stream_index < num_streams; ++stream_index)
+        if (stream_statuses[stream_index] != 0)
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS,
+                "BitPacking block {} did not unpack on the device: its header does not match what was read of it, status {}",
+                stream_index,
+                stream_statuses[stream_index]);
 }
 
 }

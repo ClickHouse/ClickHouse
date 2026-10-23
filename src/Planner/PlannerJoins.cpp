@@ -1321,7 +1321,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     }
 
 #if USE_GPU
-    if (algorithm == JoinAlgorithm::GPU_HASH && gpuHashJoinPays(params)
+    /// Listed with other algorithms, `gpu_hash` takes only the joins it is estimated to pay off for; listed alone, every
+    /// join it supports, as the setting asks.
+    if (algorithm == JoinAlgorithm::GPU_HASH && (table_join->getEnabledJoinAlgorithms().size() == 1 || gpuHashJoinPays(params))
         && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header))
         return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
 #endif

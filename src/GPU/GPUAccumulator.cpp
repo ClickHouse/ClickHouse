@@ -118,17 +118,17 @@ void GPUAccumulator::commitRaw(size_t bytes)
         reduceBatchOnDevice();
 }
 
-void GPUAccumulator::addBlock(std::string_view payload, size_t decompressed_bytes)
+void GPUAccumulator::addBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes)
 {
-    compressedPipeOrThrow().stageCompressedBlock(payload, decompressed_bytes);
+    compressedPipeOrThrow().stageCompressedBlock(method, payload, decompressed_bytes);
 
     if (pipe->stagedBytes() >= batch_bytes)
         reduceBatchOnDevice();
 }
 
-void GPUAccumulator::addSizesBlock(std::string_view payload, size_t decompressed_bytes)
+void GPUAccumulator::addSizesBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes)
 {
-    compressedPipeOrThrow().stageCompressedSizesBlock(payload, decompressed_bytes);
+    compressedPipeOrThrow().stageCompressedSizesBlock(method, payload, decompressed_bytes);
 
     if (pipe->stagedBytes() >= batch_bytes)
         reduceBatchOnDevice();
@@ -611,7 +611,7 @@ GroupByGPUAccumulator::Reader & GroupByGPUAccumulator::readerOrThrow(size_t read
 void GroupByGPUAccumulator::addCompressedBlock(
     size_t reader_index,
     size_t column_index,
-    GPUCodec codec,
+    UInt8 method,
     std::string_view payload,
     size_t decompressed_bytes,
     size_t expected_bytes,
@@ -619,6 +619,11 @@ void GroupByGPUAccumulator::addCompressedBlock(
     std::optional<size_t> kept_bytes)
 {
     Reader & reader = readerOrThrow(reader_index);
+
+    const auto codec = deviceCodecOf(method, payload);
+    if (!codec)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "A block of compression method {:#x} for a GPU aggregation, which the device does not expand", static_cast<UInt16>(method));
 
     if (column_index >= reader.staging.size())
         throw Exception(
@@ -647,7 +652,7 @@ void GroupByGPUAccumulator::addCompressedBlock(
         column.staged.reserve(std::min(compressed_stage_bytes, std::max(expected_bytes, payload.size())));
 
     column.codec = codec;
-    stageCompressedBlock(column.staged, column.blocks, codec, payload, decompressed_bytes);
+    stageCompressedBlock(column.staged, column.blocks, column.packed, method, payload, decompressed_bytes);
     column.decompressed_bytes += decompressed_bytes;
 }
 
@@ -697,6 +702,7 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
         work.codec = *column.codec;
     work.staged = std::move(column.staged);
     work.blocks = std::move(column.blocks);
+    work.packed = std::move(column.packed);
     work.skipped_bytes = column.skipped_bytes;
     work.kept_bytes = column.kept_bytes;
 
@@ -721,6 +727,7 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
 
     column.staged = PinnedBuffer{};
     column.blocks = {};
+    column.packed = {};
     column.codec.reset();
     column.raw = false;
     column.decompressed_bytes = 0;
@@ -850,7 +857,7 @@ void GroupByGPUAccumulator::runDeviceThread()
             size_t blocks_bytes = 0;
             while (taken)
             {
-                const size_t work_bytes = work.kind == DeviceWork::Kind::Blocks ? decompressedBytesOf(work.blocks) : 0;
+                const size_t work_bytes = work.kind == DeviceWork::Kind::Blocks ? valueBytesOf(work.blocks, work.packed) : 0;
                 if (work.kind != DeviceWork::Kind::Blocks || (!blocks.empty() && work.codec != blocks.front().codec)
                     || (!blocks.empty() && blocks_bytes + work_bytes > max_expansion_bytes))
                 {
@@ -1018,13 +1025,14 @@ void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
             .device_compressed = work.on_device.data(),
             .compressed_bytes = work.on_device.size(),
             .blocks = work.blocks,
+            .packed = work.packed,
             .uploaded = work.uploaded.get(),
         });
     }
 
     size_t expanded_bytes = 0;
     for (const DeviceWork & work : works)
-        expanded_bytes += decompressedBytesOf(work.blocks);
+        expanded_bytes += valueBytesOf(work.blocks, work.packed);
 
     /// The expansion waits for the copies out of the slot's buffer since it was used last, or for its allocation.
     const size_t allocated = slot->expanded.allocated();
@@ -1053,7 +1061,7 @@ void GroupByGPUAccumulator::finishExpansion()
     size_t at = 0;
     for (DeviceWork & work : slot.works)
     {
-        const size_t bytes = decompressedBytesOf(work.blocks);
+        const size_t bytes = valueBytesOf(work.blocks, work.packed);
         DeviceFixedColumnBuffer & column = readers[work.reader].device_columns[work.column_index];
         if (work.kept_bytes != 0)
             checkCuda(

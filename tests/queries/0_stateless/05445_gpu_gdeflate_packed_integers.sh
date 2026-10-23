@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
-# Checks the chunks of integers that the `GDeflate` codec packs before it compresses them: each integer as its difference
-# from the least of its chunk, in as many bits as the largest difference takes, which the device unpacks after it expands
-# the chunk. The columns are of each size of integer, signed and not, with chunks whose integers lie close together,
-# chunks whose integers take all their bits, which are not packed, and a block that ends in the middle of a chunk. Their
-# values read back as they were written, both through the CPU and through a `GROUP BY` on the device.
+# Checks columns of `CODEC(BitPacking, GDeflate)`, whose blocks the device expands with nvcomp and then unpacks itself,
+# see `BitPackingFormat`. The columns are of each size of integer, signed and not, with chunks whose integers lie close
+# together, chunks whose integers take all their bits, which are not packed, and a block that ends in the middle of a
+# chunk. Their values read back as they were written, both through the CPU and through a `GROUP BY` on the device.
 #
 # The codec exists only in a build with GPU support and works only on a server with a usable device;
 # elsewhere the expected lines are printed as they are.
@@ -42,8 +41,8 @@ VALUES="
     toDecimal64((number % 100000) / 100, 2),
     -toInt64(number)"
 
-$CLICKHOUSE_CLIENT --enable_gdeflate_codec 1 --query "
-    CREATE TABLE gpu_packed ($(echo "$COLUMNS" | sed -E 's/([A-Za-z0-9()]+)(,|$)/\1 CODEC(GDeflate(2))\2/g'), dz Int64 CODEC(Delta, GDeflate(2)))
+$CLICKHOUSE_CLIENT --enable_gdeflate_codec 1 --enable_bitpacking_codec 1 --query "
+    CREATE TABLE gpu_packed ($(echo "$COLUMNS" | sed -E 's/([A-Za-z0-9()]+)(,|$)/\1 CODEC(BitPacking, GDeflate(2))\2/g'), dz Int64 CODEC(Delta, GDeflate(2)))
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
     CREATE TABLE gpu_plain ($COLUMNS, dz Int64) ENGINE = MergeTree ORDER BY tuple();

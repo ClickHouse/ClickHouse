@@ -47,10 +47,11 @@ public:
     std::span<char> reserveRaw(size_t max_bytes);
     void commitRaw(size_t bytes);
 
-    void addBlock(std::string_view payload, size_t decompressed_bytes);
+    /// A compressed block of method `method`, which the device expands with the accumulator's codec, see `deviceCodecOf`.
+    void addBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes);
 
     /// Of a column of values of varying width: a compressed block of the sizes of its rows, whose bytes come through `addBlock`.
-    void addSizesBlock(std::string_view payload, size_t decompressed_bytes);
+    void addSizesBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes);
 
     Field finalize();
 
@@ -168,7 +169,7 @@ public:
     void addCompressedBlock(
         size_t reader,
         size_t column_index,
-        GPUCodec codec,
+        UInt8 method,
         std::string_view payload,
         size_t decompressed_bytes,
         size_t expected_bytes,
@@ -213,6 +214,7 @@ private:
     {
         PinnedBuffer staged;
         std::vector<CompressedBlock> blocks;
+        std::vector<BitPackingBlock> packed;
         std::optional<GPUCodec> codec;
         bool raw = false;
         size_t decompressed_bytes = 0;
@@ -243,6 +245,7 @@ private:
         DeviceBuffer on_device{GPUResources::get().upload};
         EventPtr uploaded;
         std::vector<CompressedBlock> blocks;
+        std::vector<BitPackingBlock> packed;
         /// Of `Blocks`: the bytes of the expanded blocks before what the column takes, and what it takes.
         size_t skipped_bytes = 0;
         size_t kept_bytes = 0;

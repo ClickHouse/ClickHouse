@@ -13,6 +13,11 @@
 #include <string_view>
 #include <vector>
 
+namespace DB
+{
+class ICompressionCodec;
+}
+
 namespace DB::GPU
 {
 
@@ -65,7 +70,9 @@ bool canGroupByReduceOnDevice(
     const DataTypes & result_types,
     const std::vector<GPUAggregationKind> & aggregations);
 
-std::optional<GPUCodec> codecOf(UInt8 method_byte);
+/// The codec the device expands the blocks of `codec` with: one of the codecs of `GPUCodec`, or the second of a chain
+/// of `BitPacking` and one of them. Nothing for any other.
+std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec);
 
 std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size);
 

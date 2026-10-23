@@ -32,7 +32,9 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_filtered_read 1 \
         --query "SELECT count() FROM gpu_filtered_read WHERE d < '1993-01-01' AND q < 0" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
-        GPU_SETTINGS=(--allow_experimental_gpu_filtered_read 1)
+        # The plans checked below take a read in the order of the sorting key as the planner makes it by default, and
+        # a sort with a LIMIT as a sort, not a top-k, whatever the test harness may set.
+        GPU_SETTINGS=(--allow_experimental_gpu_filtered_read 1 --optimize_read_in_order 1 --query_plan_max_limit_for_top_k_optimization 0)
     elif [[ "$PROBE_ERROR" != *"There is no GPU"* ]]; then
         echo "$PROBE_ERROR"
     fi

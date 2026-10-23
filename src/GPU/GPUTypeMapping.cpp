@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -56,6 +57,21 @@ std::optional<GPUCodec> codecOf(UInt8 method_byte)
         case static_cast<UInt8>(CompressionMethodByte::GDeflate): return GPUCodec::GDEFLATE;
     }
     return {};
+}
+
+std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec)
+{
+    if (const auto own = codecOf(codec.getMethodByte()))
+        return own;
+
+    const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(&codec);
+    if (!multiple)
+        return {};
+
+    const auto chain = multiple->getCodecs();
+    if (chain.size() != 2 || chain[0]->getMethodByte() != static_cast<UInt8>(CompressionMethodByte::BitPacking))
+        return {};
+    return codecOf(chain[1]->getMethodByte());
 }
 
 std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size)

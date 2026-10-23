@@ -13,22 +13,19 @@
 namespace DB::GPU
 {
 
-/// `count` integers of `element_size` bytes, each `reference` plus a value of `bits` bits, packed from the lowest bit of
-/// the first byte of `source`, which is readable for 8 bytes past the packed bits.
-struct PackedChunk
+/// A block of the `BitPacking` codec on the device, see `BitPackingFormat`, and where its integers go.
+struct BitPackingStream
 {
-    const unsigned char * source;
+    const unsigned char * stream;
+    size_t stream_bytes;
     unsigned char * destination;
-    uint32_t count;
-    uint32_t bits;
-    uint32_t element_size;
-    uint64_t reference;
+    size_t unpacked_bytes;
 };
 
-/// The largest number of bits `unpackChunks` takes, which a read of 8 bytes holds at any bit offset.
-constexpr uint32_t max_packed_bits = 56;
-
-/// Writes the integers of the `num_chunks` chunks at `chunks`, in device memory, of which none has more than `max_count`.
-__host__ void unpackChunks(const PackedChunk * chunks, size_t num_chunks, size_t max_count, cuda::stream_ref stream);
+/// Unpacks the `num_streams` streams at `streams`, in device memory, of which none has more than `max_chunks` chunks,
+/// reading each stream's header on the device. `statuses[i]`, in device memory, is set to 0 where stream `i` is as its
+/// header and `unpacked_bytes` say, and to another value where it is not, in which case nothing is said about what was
+/// written for it.
+__host__ void unpackStreams(const BitPackingStream * streams, size_t num_streams, size_t max_chunks, uint32_t * statuses, cuda::stream_ref stream);
 
 }

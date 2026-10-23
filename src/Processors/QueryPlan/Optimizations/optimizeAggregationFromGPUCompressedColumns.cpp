@@ -5,6 +5,7 @@
 #if USE_GPU
 
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GPUAggregatingStep.h>
@@ -232,7 +233,8 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
 }
 
 /// Whether the device can read a column as the compressed blocks of a codec it expands: those of the part's default codec,
-/// or a codec of the column's own that is one such codec alone, which a pipeline such as `CODEC(Delta, ZSTD)` is not.
+/// or a codec of the column's own that is one such codec alone, or `BitPacking` and then one, which a pipeline such as
+/// `CODEC(Delta, ZSTD)` is not.
 bool deviceExpandsColumnCodec(const ColumnsDescription & columns, const String & name)
 {
     if (!columns.hasCompressionCodec(name))
@@ -241,7 +243,7 @@ bool deviceExpandsColumnCodec(const ColumnsDescription & columns, const String &
         return false;
     const ColumnDescription & column = columns.get(name);
     const CompressionCodecPtr codec = CompressionCodecFactory::instance().get(column.codec, column.type);
-    return GPU::codecOf(codec->getMethodByte()).has_value();
+    return GPU::deviceCodecOf(*codec).has_value();
 }
 
 
@@ -814,13 +816,48 @@ void pushGroupFilterToDevice(const FilterStep & filter, ReadFromGPUCompressedCol
 
 }
 
+namespace
+{
+
+/// An aggregation that a rewrite made after the planner, such as the decorrelation of a subquery, is an `AggregatingStep`
+/// where the planner would have made a `GPUAggregatingStep`: it is made one here, where the device can run it, so that
+/// the device runs it as it would have, over the compressed columns where it can.
+void replaceWithGPUAggregating(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
+{
+    const auto * aggregating = typeid_cast<const AggregatingStep *>(node.step.get());
+    if (!aggregating || node.children.size() != 1 || !settings.gpu_aggregation)
+        return;
+
+    /// What the planner refuses the device as well: the step must produce final values of one aggregation.
+    if (!aggregating->isFinal() || aggregating->isGroupingSets() || aggregating->isGroupByUseNulls() || aggregating->isMergingSkipped()
+        || !aggregating->getGroupBySortDescription().empty() || aggregating->explicitSortingRequired())
+        return;
+
+    const SharedHeader input_header = aggregating->getInputHeaders().front();
+    if (!GPUAggregatingStep::canRunOnDevice(*input_header, aggregating->getParams()))
+        return;
+
+    auto on_device = std::make_unique<GPUAggregatingStep>(input_header, aggregating->getParams(), settings.gpu_aggregation_batch_bytes);
+    if (!blocksHaveEqualStructure(*on_device->getOutputHeader(), *aggregating->getOutputHeader()))
+        return;
+
+    LOG_DEBUG(getLogger("GPUCompressedColumns"), "Aggregating on the device an aggregation made after the planner: {}", aggregating->getStepDescription());
+    on_device->setStepDescription(*aggregating);
+    node.step = std::move(on_device);
+}
+
+}
+
 bool optimizeAggregationFromGPUCompressedColumns(
     QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
+    replaceWithGPUAggregating(node, settings);
+
     /// The plan is optimized from the top down, so the aggregation below a `HAVING` is made into a read of its own here.
     if (const auto * filter = typeid_cast<const FilterStep *>(node.step.get()); filter && node.children.size() == 1)
     {
         QueryPlan::Node & child = *node.children.front();
+        replaceWithGPUAggregating(child, settings);
         if (!typeid_cast<const GPUAggregatingStep *>(child.step.get()) || !optimizeAggregationFromGPUCompressedColumns(child, nodes, settings))
             return false;
         if (auto * source = typeid_cast<ReadFromGPUCompressedColumns *>(child.step.get()); source && source->isGrouped())

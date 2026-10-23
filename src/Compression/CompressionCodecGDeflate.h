@@ -15,15 +15,8 @@ namespace DB
   * GPU aggregation expands the chunks of the blocks it reads with nvcomp, with those of `LZ4` and `ZSTD`.
   *
   * A block is compressed in chunks of `chunk_bytes`, the last one shorter, each a GDeflate page of its own, which is
-  * what a GPU expands in parallel with the others. Of a column of integers, a chunk whose integers lie close together
-  * is packed before it is compressed, where that makes it smaller: each integer as its difference from the least of
-  * the chunk, in as many bits as the largest difference takes.
-  *
-  * The block holds the number of chunks, a little-endian 32-bit integer, then a descriptor of each chunk, then the
-  * chunks, each from a multiple of 4 bytes, as nvcomp reads them. The descriptor is the size of the compressed chunk, a
-  * 32-bit integer; where the highest bit of the number of chunks is set, it is followed by the bits each integer is
-  * packed in, 0 for a chunk that is not packed, the size of an integer, 2 bytes to spare and the least integer, as 64
-  * bits.
+  * what a GPU expands in parallel with the others. The block holds the number of chunks, a little-endian 32-bit integer,
+  * then the compressed size of each as one, then the chunks, each from a multiple of 4 bytes, as nvcomp reads them.
   */
 class CompressionCodecGDeflate : public ICompressionCodec
 {
@@ -35,8 +28,7 @@ public:
     static constexpr int MAX_LEVEL = 12;
     static constexpr int DEFAULT_LEVEL = 6;
 
-    /// `element_size` 0 packs nothing.
-    CompressionCodecGDeflate(int level_, UInt8 element_size_, bool is_signed_);
+    explicit CompressionCodecGDeflate(int level_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
@@ -55,15 +47,11 @@ protected:
 
     String getDescription() const override
     {
-        return "GDeflate, a Deflate that a GPU can expand in parallel, in chunks of 64 KiB, with the integers of a chunk packed "
-               "where that makes it smaller. Levels 1..12.";
+        return "GDeflate, a Deflate that a GPU can expand in parallel, in chunks of 64 KiB. Levels 1..12.";
     }
 
 private:
     const int level;
-    /// Of the integers whose chunks are packed; not a part of the description, as a block holds how it is packed.
-    const UInt8 element_size;
-    const bool is_signed;
 };
 
 }

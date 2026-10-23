@@ -102,21 +102,9 @@ CompressionCodecPtr CompressionCodecFactory::get(
 
             CompressionCodecPtr codec;
             if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
-            {
                 codec = current_default;
-            }
-            else if (only_generic)
-            {
-                /// The codecs dropped are not made for the type, which they need not take, and those kept are, such as
-                /// `GDeflate`, which packs the integers of a stream of sizes.
-                codec = getImpl(codec_family_name, codec_arguments, nullptr);
-                if (column_type && codec->isGenericCompression() && !typeid_cast<const CompressionCodecMultiple *>(codec.get()))
-                    codec = getImpl(codec_family_name, codec_arguments, column_type);
-            }
             else
-            {
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
-            }
 
             std::span<const CompressionCodecPtr> expanded_codecs(&codec, 1);
 
@@ -377,6 +365,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+    registerCodecBitPacking(*this);
 #if USE_GPU
     registerCodecGDeflate(*this);
 #endif

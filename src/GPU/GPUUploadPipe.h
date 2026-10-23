@@ -219,10 +219,11 @@ public:
     CompressedUploadPipe & operator=(const CompressedUploadPipe &) = delete;
     CompressedUploadPipe & operator=(CompressedUploadPipe &&) = delete;
 
-    void stageCompressedBlock(std::string_view payload, size_t decompressed_bytes);
+    /// A block of compression method `method`, which the device expands with the pipe's codec, see `deviceCodecOf`.
+    void stageCompressedBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes);
 
     /// Of a column of values of varying width: a block of the sizes of its rows.
-    void stageCompressedSizesBlock(std::string_view payload, size_t decompressed_bytes);
+    void stageCompressedSizesBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes);
 
     /// Rows whose values, or whose sizes, are staged or on the device since the last `reset`.
     size_t stagedRows() const override;
@@ -238,10 +239,12 @@ private:
     {
         PinnedBuffer bytes;
         std::vector<CompressedBlock> blocks;
+        std::vector<BitPackingBlock> packed;
+        /// What the column takes of the blocks.
         size_t expanded_bytes = 0;
     };
 
-    void stageBlock(StagedBlocks & staged, std::string_view payload, size_t decompressed_bytes);
+    void stageBlock(StagedBlocks & staged, UInt8 method, std::string_view payload, size_t decompressed_bytes);
     void sendStagedToDevice();
 
     const GPUElementType column_type;

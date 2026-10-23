@@ -30,6 +30,7 @@ void registerCodecGDeflate(CompressionCodecFactory & factory);
 #endif
 void registerCodecSZ3(CompressionCodecFactory & factory);
 void registerCodecPco(CompressionCodecFactory & factory);
+void registerCodecBitPacking(CompressionCodecFactory & factory);
 
 CompressionCodecPtr getCompressionCodecLZ4(int level);
 CompressionCodecPtr getCompressionCodecZSTD(int level);

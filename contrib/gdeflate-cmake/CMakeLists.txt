@@ -25,5 +25,9 @@ add_library(_gdeflate ${SRCS})
 add_library(ch_contrib::gdeflate ALIAS _gdeflate)
 
 target_compile_options(_gdeflate PRIVATE -include "${CMAKE_CURRENT_SOURCE_DIR}/include/gdeflate_symbols.h")
+# The whole library in GDeflate mode, `deflate_compress.c` included: `libdeflate_gdeflate_compress_bound` takes the bound
+# of a page from its `libdeflate_deflate_compress_bound`, which only in this mode counts the packets the 32 streams end
+# with. Without it the bound is 256 bytes short, and a page of incompressible bytes may not fit, or write past it.
+target_compile_definitions(_gdeflate PRIVATE WITH_GDEFLATE=)
 target_include_directories(_gdeflate PRIVATE "${LIBRARY_DIR}")
 target_include_directories(_gdeflate SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
