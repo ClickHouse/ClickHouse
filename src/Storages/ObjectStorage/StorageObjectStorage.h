@@ -103,6 +103,8 @@ public:
 
     void drop() override;
 
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -173,12 +175,19 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
+    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
+    static void dropTable(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id);
+
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
     bool isTransactionalRefreshTarget();
     CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     bool optimize(
@@ -238,6 +247,9 @@ public:
     }
 
 protected:
+    /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
+    void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
+
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
@@ -279,6 +291,7 @@ protected:
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;
     std::mutex hive_partitioning_resolution_mutex;
+    std::mutex settings_changes_mutex;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 

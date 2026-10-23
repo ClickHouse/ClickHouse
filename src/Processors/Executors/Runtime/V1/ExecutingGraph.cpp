@@ -34,6 +34,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char executing_graph_add_node_fail[];
+    extern const char executing_graph_build_fail[];
 }
 
 namespace Runtime::V1
@@ -45,6 +46,12 @@ ExecutingGraph::ExecutingGraph(
     , profile_processors(profile_processors_)
     , spill_state(nodes, memory_reservation_)
 {
+    /// Stands in for an allocation failure while the graph is built.
+    fiu_do_on(FailPoints::executing_graph_build_fail,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_build_fail);
+    });
+
     /// Create nodes for every processor and register their spillable components.
     for (auto it = processors->begin(); it != processors->end(); ++it)
         addNode(it);

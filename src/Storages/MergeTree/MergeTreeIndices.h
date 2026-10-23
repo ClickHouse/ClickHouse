@@ -357,6 +357,11 @@ struct IMergeTreeIndex
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
 
+    /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
+    /// slows down reading it. The blocks of such an index that the part's codec does not compress well
+    /// are written with codec `NONE`.
+    virtual bool isCompressible() const { return true; }
+
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
@@ -426,6 +431,11 @@ void setIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+/// Every granule of a text bloom filter index eagerly allocates one filter per indexed column, so the total size of the filters
+/// (not only the size of a single filter) is limited. The check is done only for indexes being declared or changed, not on `ATTACH`
+/// and not for indexes inherited unchanged from `old_index`, so that tables created before the check still load and can be altered.
+/// Does nothing for other index types.
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
