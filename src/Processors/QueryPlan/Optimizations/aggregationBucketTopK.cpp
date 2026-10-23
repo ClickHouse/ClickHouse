@@ -27,6 +27,25 @@ const String * traceThroughExpression(const ExpressionStep & expression, const S
     return &node->result_name;
 }
 
+/// Whether the threshold merge may rank groups by values of this type. The `Subadditive` bound
+/// does arithmetic on the values, so they must be `UInt64` (which is what both `count` and
+/// `uniqExact` return). The extremum bounds only compare values, but the comparison of the
+/// peeked values (`IColumn::compareAt`) must order them exactly like the merge of the states
+/// does, which excludes floating point (the merge ignores NaNs, and which NaN order matches it
+/// depends on the direction) and types whose single-value state falls back to `Field` ordering
+/// with quirks (nothing nullable can appear: the plan only sees non-nullable results here).
+/// `String` and `FixedString` are also excluded: the merge peeks every cell's partial value
+/// into a column up front, and for them that is an extra full copy of the ordering payload
+/// before anything is pruned - a memory regression the fixed-width scalars do not have.
+bool isThresholdTopKValueType(MergedValueBound bound, const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    if (bound == MergedValueBound::Subadditive)
+        return which.isUInt64();
+    return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isDecimal() || which.isEnum();
+}
+
 }
 
 size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
@@ -37,8 +56,10 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
-    /// or more pass-through expressions over a final aggregation, and the sort column is the
-    /// output of the aggregation's lone `count()`, `uniqExact` or `uniqExactIf`. `HAVING`,
+    /// or more pass-through expressions over a final aggregation, and the sort column is one of
+    /// the aggregation's outputs. Serves two optimizations: the top-K threshold merge, for any
+    /// aggregate with a declared merged-value bound, and the bucket-local Top-K conversion, for
+    /// the output of the aggregation's lone `count`, `uniqExact` or `uniqExactIf`. `HAVING`,
     /// `WITH TOTALS`, `LIMIT BY` and windows sit between the aggregation and the sorting as their
     /// own steps and break the adjacency.
     const auto * limit = typeid_cast<LimitStep *>(parent_node->step.get());
@@ -111,20 +132,64 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         const auto & aggregate = params.aggregates[i];
         if (aggregate.column_name != column)
             continue;
-        /// The selection ranks by a count it reads without converting the group: a lone `count()`'s
-        /// state, or the exact distinct count `uniqExact` finalizes from its set, also as `uniqExactIf`
-        /// over the rows its condition admits (the analyzer makes it of `uniqExact(if(...))`). The
-        /// adaptive aggregation also bounds these counts by the rows of a group to skip groups (see
-        /// `AdaptiveTopKPruning`), which an approximate `uniq` estimate could exceed, and so could a
-        /// combinator that takes several values from a row, like `-Array`.
+
+        /// The top-K threshold merge (see `Aggregator::Params::threshold_top_k`) serves any
+        /// aggregate with a declared merged-value bound; at run time it yields to the lone
+        /// count's conversion-stage selection below (a plain scan there beats the value-peeking
+        /// walk) and stands down in a few other cases (single-level tables, dataflow statistics
+        /// collection).
+        /// The in-order aggregation never runs the threshold merge (see `AggregatingStep::applyOrder`,
+        /// which also drops it when the order is applied after this pass).
+        if (!description.front().collator && !aggregating->inOrder())
+        {
+            const auto bound = aggregate.function->getMergedValueBound();
+            /// The `Subadditive` bound serves only the descending order. It is one-sided (see
+            /// `MergedValueBound`): it bounds the merged value from above, which is what the
+            /// descending threshold needs. The ascending order would instead need the lower
+            /// half, which the wrapping `UInt64` accumulators of `count` and `sum` cannot
+            /// promise - and it would not pay off anyway: its threshold (the smallest head)
+            /// stays at the level of the typical partial value, which for near-uniform data
+            /// never rises above the candidates, so the merge would degenerate into visiting
+            /// every group. The extremum bounds are exact, but they converge only in the direction
+            /// of the extremum itself: `max` descending and `min` ascending, where the merged value
+            /// of a group equals its best partial value, so the walk stops right after the
+            /// candidate heap fills. In the opposite direction (`max` ascending, `min` descending)
+            /// the merged value of a group is its worst partial value, which can sit far behind
+            /// the partial values the walk pops, so the threshold stays open across several tables
+            /// and the walk degenerates into visiting most of the groups.
+            const bool bound_serves_direction = (bound == MergedValueBound::Maximum && !ascending)
+                || (bound == MergedValueBound::Minimum && ascending) || (bound == MergedValueBound::Subadditive && !ascending);
+            if (bound_serves_direction && isThresholdTopKValueType(bound, aggregate.function->getResultType()))
+            {
+                aggregating->enableThresholdTopK(
+                    Aggregator::Params::ThresholdTopKParams{
+                        .k = n, .ascending = ascending, .aggregate_index = i, .bound = bound});
+            }
+        }
+
+        /// The conversion-stage selection ranks by a count it reads without converting the group: any
+        /// lone `count` - `count()`, and `count(x)` in both of its forms (the plain one for a non-nullable
+        /// argument, `AggregateFunctionCountNotNullUnary` for a nullable one) - or the exact distinct
+        /// count `uniqExact` finalizes from its set, also as `uniqExactIf` over the rows its condition
+        /// admits (the analyzer makes it of `uniqExact(if(...))`). No parameters: a parametric `count` is
+        /// another function. The adaptive aggregation also bounds these counts by the rows of a group to
+        /// skip groups (see `AdaptiveTopKPruning`), which an approximate `uniq` estimate could exceed,
+        /// and so could a combinator that takes several values from a row, like `-Array`.
         const auto & function = *aggregate.function;
         const String name = function.getName();
-        const bool lone_count = name == "count" && aggregate.argument_names.empty() && aggregate.parameters.empty();
+        const bool lone_count = name == "count" && aggregate.parameters.empty();
         const bool distinct_count = (name == "uniqExact" || name == "uniqExactIf") && aggregate.parameters.empty()
             && WhichDataType(function.getResultType()).isUInt64();
         if (!lone_count && !distinct_count)
             return 0;
 
+        /// The conversion-stage selection by the count (`bucket_top_k`) is enabled alongside the
+        /// threshold merge; at run time they are mutually exclusive per bucket. For the lone count
+        /// the selection wins outright: a plain scan of the merged bucket beats the value-peeking
+        /// walk. When other aggregates ride along, the threshold merge is tried first - it also
+        /// skips merging the losers' other states - and when it declines (e.g. the groups are
+        /// split across the per-thread tables), the bucket is merged as usual and the selection
+        /// still trims its conversion.
         aggregating->enableBucketTopK(n, ascending, i);
         return 0;
     }

@@ -443,6 +443,16 @@ size_t AggregateFunctionTuple::getStateBytesPerDistinctInput() const
     return bytes;
 }
 
+bool AggregateFunctionTuple::isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+{
+    /// The whole tuple state is deferred as one unit (the deferred pointers are later passed to
+    /// `parallelizeMergeMulti` of this function), so it is large as soon as one nested pair is.
+    for (size_t i = 0; i < nested_functions.size(); ++i)
+        if (nested_functions[i]->isLargeMergePair(place + state_offsets[i], rhs + state_offsets[i]))
+            return true;
+    return false;
+}
+
 bool AggregateFunctionTuple::canOptimizeEqualKeysRanges() const
 {
     for (const auto & func : nested_functions)

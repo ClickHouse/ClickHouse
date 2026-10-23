@@ -280,10 +280,17 @@ public:
         place[size_of_data] |= rhs[size_of_data];
     }
 
+    /// The state is the nested state followed by one presence byte, so the parallel merge is forwarded to the
+    /// nested function (with the same places) and the presence byte is folded separately.
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
     size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_function->getEstimatedMergeWork(place); }
     size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_function->isLargeMergePair(place, rhs);
+    }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override

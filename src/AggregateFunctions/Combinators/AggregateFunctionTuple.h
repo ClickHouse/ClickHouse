@@ -119,6 +119,7 @@ public:
     bool isAbleToParallelizeMerge() const override;
     size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override;
     size_t getStateBytesPerDistinctInput() const override;
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override;
     bool canOptimizeEqualKeysRanges() const override;
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override;
     void mergeImpl(
