@@ -5,10 +5,8 @@
 namespace LZ4
 {
 
-/** The read streams of one column usually share the data distribution and therefore the fastest decompression variant.
-  * A compressed read buffer that knows which column it reads sets this thread-local key around decompression,
-  * and the LZ4 codec then shares its decoder statistics with the other streams of that column on this thread. 0 means unknown.
-  */
+/// Thread-local key of the column being decompressed, 0 if unknown. The read streams of one column usually share the
+/// fastest decompression variant, so the LZ4 codec shares its decoder statistics between them on this thread.
 UInt64 & currentStatisticsHint();
 
 class StatisticsHintScope

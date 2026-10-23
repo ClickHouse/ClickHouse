@@ -58,7 +58,6 @@ private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
-    /// The key `lz4_stat` was seeded for.
     mutable UInt64 lz4_stat_hint = 0;
 };
 
@@ -119,12 +118,10 @@ namespace
 {
 
 constexpr size_t max_columns_with_statistics = 256;
-/// A new read stream inherits this many measurements per variant: enough to skip variants known to be slow, few enough to adapt.
+/// Measurements per variant a new read stream inherits, and a column keeps, so that both adapt to a change of the data.
 constexpr double inherited_measurements = 8;
-/// The statistics shared by a column keep at most this many measurements per variant, so they follow a change of its data.
 constexpr double max_shared_measurements = 64;
 
-/// Rescales an element to at most `limit` measurements, keeping its mean.
 void limitMeasurements(LZ4::PerformanceStatistics::Element & element, double limit)
 {
     if (element.adjustedCount() > limit)
@@ -174,7 +171,6 @@ UInt32 CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_
         shared = &sharedStatistics(hint);
         if (hint != lz4_stat_hint)
         {
-            /// A new read stream of this column: start from what its earlier streams measured.
             lz4_stat_hint = hint;
             for (size_t i = 0; i < Stats::NUM_ELEMENTS; ++i)
             {
