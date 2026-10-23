@@ -342,10 +342,14 @@ static CoreAnalysisResult buildExpressionCoreDAG(
             /// unmaterialized CTE.
             subquery_options.forceMaterializeCTE();
             subquery_options.ignore_limits = false;
+            /// Collect the filters of the subquery like `Planner::addBuildSubqueriesForSetsStepIfNeeded`
+            /// does, otherwise e.g. `optimize_skip_unused_shards` cannot prune the shards of a
+            /// `Distributed` table read by the subquery.
             Planner subquery_planner(
                 subquery_tree,
                 subquery_options,
-                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+                std::make_shared<GlobalPlannerContext>(
+                    nullptr, nullptr, nullptr, collectFiltersForAnalysis(subquery_tree, subquery_options, nullptr)));
             subquery_planner.buildQueryPlanIfNeeded();
             auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
             subquery_set->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));

@@ -5,6 +5,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Planner/PlannerContext.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -95,5 +96,10 @@ private:
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
     bool allow_query_cache_for_subqueries_propagation = true;
 };
+
+/// Collects the filters applied to each table expression of the query, so that storages can use them
+/// during planning, e.g. `StorageDistributed` for `optimize_skip_unused_shards`.
+FiltersForTableExpressionMap collectFiltersForAnalysis(
+    const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter);
 
 }
