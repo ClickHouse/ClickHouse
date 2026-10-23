@@ -53,11 +53,13 @@ public:
     /// `file_column_names` translates the filter's column names into the names the file and the
     /// header use, when the two differ (data lake schema evolution, e.g. after an Iceberg
     /// `RENAME COLUMN`). A filter column that is not in it is not in the file either. Null means the
-    /// filter uses the file's names.
+    /// filter uses the file's names. `comparison_format_settings` are the settings a comparison of
+    /// the query parses a string constant with (see `ComparisonParams`).
     VortexExpressionConverter(
         const Block & header_,
         const arrow::Schema & file_schema_,
         const FormatSettings & format_settings_,
+        const FormatSettings & comparison_format_settings_,
         const std::unordered_map<String, String> * file_column_names_ = nullptr);
 
     /// Translates the subtree rooted at `node`, exactly or - in the positions where
@@ -137,6 +139,7 @@ private:
     const Block & header;
     const arrow::Schema & file_schema;
     const FormatSettings & format_settings;
+    const FormatSettings & comparison_format_settings;
     const std::unordered_map<String, String> * file_column_names;
 };
 

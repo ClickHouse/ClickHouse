@@ -2,8 +2,11 @@
 
 #if USE_VORTEX
 
+#include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/Vortex/VortexExpressionConverter.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -29,6 +32,10 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+namespace Setting
+{
+extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 }
 
@@ -87,7 +94,12 @@ VortexExpressionPtr buildFilter(
                 file_column_names->emplace(name, it->second);
     }
 
-    VortexExpressionConverter converter(header, file_schema, format_settings, file_column_names ? &*file_column_names : nullptr);
+    /// The same as `ComparisonParams` of the comparisons in the filter.
+    FormatSettings comparison_format_settings = getFormatSettings(context);
+    comparison_format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+
+    VortexExpressionConverter converter(
+        header, file_schema, format_settings, comparison_format_settings, file_column_names ? &*file_column_names : nullptr);
     VortexExpressionPtr filter;
     for (const auto * conjunct : conjuncts)
     {

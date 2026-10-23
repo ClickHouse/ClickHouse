@@ -94,10 +94,12 @@ VortexExpressionConverter::VortexExpressionConverter(
     const Block & header_,
     const arrow::Schema & file_schema_,
     const FormatSettings & format_settings_,
+    const FormatSettings & comparison_format_settings_,
     const std::unordered_map<String, String> * file_column_names_)
     : header(header_)
     , file_schema(file_schema_)
     , format_settings(format_settings_)
+    , comparison_format_settings(comparison_format_settings_)
     , file_column_names(file_column_names_)
 {
 }
@@ -550,6 +552,17 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
     const DataTypePtr constant_type = value_type ? removeLowCardinalityAndNullable(value_type) : nullptr;
     if (constant_type && (isFixedString(constant_type) || (isString(column->cmp_type) && !isString(constant_type))))
         return nullptr;
+
+    /// A string constant compared with a column of another type is parsed the way the comparison
+    /// parses it, with `cast_string_to_date_time_mode` rather than the default parsing: the two read
+    /// `'20200101'` as different timestamps. A string the comparison cannot parse is not pushed.
+    if (constant_type && isString(constant_type) && !isString(column->cmp_type))
+    {
+        value = tryConvertFieldToType(value, *column->cmp_type, constant_type.get(), comparison_format_settings);
+        if (value.isNull())
+            return nullptr;
+        value_type = column->cmp_type;
+    }
 
     auto literal = makeLiteral(*column->field->type(), column->cmp_type, value, value_type);
     if (!literal)
