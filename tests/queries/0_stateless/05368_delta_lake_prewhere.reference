@@ -1,0 +1,23 @@
+where	1500
+prewhere	1500
+prewhere and where	1500	pppppppppp
+prewhere output	1000	7
+prewhere output	1001	7
+prewhere output	1002	7
+prewhere count	1111
+prewhere virtual	1	7
+moved to prewhere	Prewhere filter column:  email = \'u1500@x\'
+part where	150	0
+part prewhere	150	0
+part prewhere only partition column	1
+part both	151	1
+part both	154	1
+part both	157	1
+part prewhere output	0	4
+part prewhere output	1	4
+part prewhere output	2	4
+part star	152	u152@x	2
+part moved to prewhere	Prewhere filter column:  email = \'u150@x\'
+mapping	10
+mapping	20
+mapping moved to prewhere	0

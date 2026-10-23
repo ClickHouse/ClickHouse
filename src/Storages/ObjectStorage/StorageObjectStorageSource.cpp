@@ -1860,7 +1860,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            Names needed_names = read_from_format_info.requested_columns.getNames();
+            Names needed_names;
+            for (const auto & column : read_from_format_info.requested_columns)
+            {
+                if (schema_transform->tryFindInOutputs(column.name))
+                    needed_names.push_back(column.name);
+                else if (column.isSubcolumn() && schema_transform->tryFindInOutputs(column.getNameInStorage()))
+                    needed_names.push_back(column.getNameInStorage());
+            }
             auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())

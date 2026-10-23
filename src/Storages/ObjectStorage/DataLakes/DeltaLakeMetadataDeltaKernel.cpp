@@ -616,6 +616,44 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     return {result_column, /* readable */read_schema_column.has_value()};
 }
 
+DeltaLake::TableSnapshotPtr DeltaLakeMetadataDeltaKernel::getTableSnapshotForRead(
+    const StorageMetadataPtr & storage_metadata_snapshot, const ContextPtr & context) const
+{
+    /// Use the snapshot version from the storage metadata snapshot if available.
+    /// This ensures we use the same version that was captured when the storage snapshot was created,
+    /// preventing logical races where the table is updated between snapshot creation and reading.
+    std::optional<SnapshotVersion> snapshot_version;
+    if (auto version_from_metadata = extractDeltaLakeSnapshotVersionFromMetadata(storage_metadata_snapshot))
+    {
+        snapshot_version = static_cast<SnapshotVersion>(*version_from_metadata);
+        LOG_TEST(log, "Using snapshot version {} from storage metadata snapshot for reading", snapshot_version.value());
+    }
+    else
+    {
+        /// Fall back to reading from settings if no version is stored in metadata.
+        snapshot_version = getSnapshotVersion(context->getSettingsRef());
+        LOG_TEST(
+            log, "Using snapshot version {} from settings (no version in metadata)",
+            snapshot_version.has_value() ? toString(snapshot_version.value()) : "Latest");
+    }
+
+    return getTableSnapshot(snapshot_version);
+}
+
+std::optional<NameSet> DeltaLakeMetadataDeltaKernel::supportedPrewhereColumns(
+    StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
+    auto snapshot = getTableSnapshotForRead(storage_metadata_snapshot, context);
+
+    if (!snapshot->getPhysicalNamesMap().empty())
+        return NameSet{};
+
+    auto columns = storage_metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ {});
+    for (const auto & partition_column : snapshot->getPartitionColumns())
+        columns.erase(partition_column);
+    return columns;
+}
+
 ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
@@ -627,25 +665,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
 
-    /// Use the snapshot version from the storage metadata snapshot if available.
-    /// This ensures we use the same version that was captured when the storage snapshot was created,
-    /// preventing logical races where the table is updated between snapshot creation and reading.
-    std::optional<SnapshotVersion> snapshot_version;
-    if (auto version_from_metadata = extractDeltaLakeSnapshotVersionFromMetadata(storage_snapshot->metadata))
-    {
-        snapshot_version = static_cast<SnapshotVersion>(*version_from_metadata);
-        LOG_TEST(log, "Using snapshot version {} from storage metadata snapshot for prepareReadingFromFormat", snapshot_version.value());
-    }
-    else
-    {
-        /// Fall back to reading from settings if no version is stored in metadata.
-        snapshot_version = getSnapshotVersion(context->getSettingsRef());
-        LOG_TEST(
-            log, "Using snapshot version {} from settings (no version in metadata)",
-            snapshot_version.has_value() ? toString(snapshot_version.value()) : "Latest");
-    }
-
-    auto snapshot = getTableSnapshot(snapshot_version);
+    auto snapshot = getTableSnapshotForRead(storage_snapshot->metadata, context);
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)

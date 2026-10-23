@@ -131,6 +131,8 @@ public:
     /// deferred columns pruned from the main read.
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
+    virtual std::optional<NameSet> supportedPrewhereColumns(StorageMetadataPtr, ContextPtr) const { return std::nullopt; }
+
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }

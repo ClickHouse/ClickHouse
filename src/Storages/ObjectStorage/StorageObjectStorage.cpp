@@ -467,17 +467,33 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
 
 bool StorageObjectStorage::supportsPrewhere() const
 {
-    return supports_prewhere;
+    if (!supports_prewhere)
+        return false;
+
+    if (configuration->isDataLakeConfiguration())
+    {
+        auto context = CurrentThread::tryGetQueryContext();
+        if (context && context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1)
+            return false;
+    }
+    return true;
 }
 
 bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 {
-    return supports_prewhere;
+    return supportsPrewhere();
 }
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto context = CurrentThread::tryGetQueryContext();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    if (configuration->isDataLakeConfiguration())
+    {
+        configuration->lazyInitializeIfNeeded(object_storage, context);
+        if (auto columns = configuration->supportedPrewhereColumns(metadata_snapshot, context))
+            return columns;
+    }
     return metadata_snapshot->getColumnsWithoutDefaultExpressions(
         /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
 }
