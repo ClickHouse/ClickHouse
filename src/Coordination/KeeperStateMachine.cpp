@@ -27,7 +27,6 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <base/scope_guard.h>
-#include <base/unit.h>
 #include <fmt/ranges.h>
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -92,7 +91,6 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-static constexpr uint64_t max_snapshot_transfer_object_size = 1_GiB;
 static constexpr uint64_t nuraft_snapshot_sync_req_framing_size = 89;
 
 /// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).
@@ -2328,14 +2326,8 @@ int KeeperStateMachine::read_logical_snp_obj(
 
         const uint64_t file_size = loader->fileSize();
         /// `chunk_size == 0` sends the whole file in one object.
-        uint64_t effective_chunk_size = configured_chunk_size == 0 ? file_size : configured_chunk_size;
-        if (configured_chunk_size != 0 && effective_chunk_size > max_snapshot_transfer_object_size)
-        {
-            LOG_DEBUG(log, "Snapshot {} of size {} is sent in chunks of {} bytes instead of {}",
-                s.get_last_log_idx(), file_size, max_snapshot_transfer_object_size, effective_chunk_size);
-            effective_chunk_size = max_snapshot_transfer_object_size;
-        }
-        else if (configured_chunk_size == 0
+        const uint64_t effective_chunk_size = configured_chunk_size == 0 ? file_size : configured_chunk_size;
+        if (configured_chunk_size == 0
             && file_size + s.serialize()->size() + nuraft_snapshot_sync_req_framing_size > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
         {
             LOG_ERROR(log, "Snapshot {} of size {} does not fit into a single NuRaft message and cannot be sent with "
