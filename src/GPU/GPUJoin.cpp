@@ -17,7 +17,20 @@
 #include <cstring>
 #include <limits>
 #include <mutex>
+
+#include <Common/Stopwatch.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 #include <utility>
+
+namespace CurrentMetrics
+{
+    extern const Metric ConcurrentHashJoinPoolThreads;
+    extern const Metric ConcurrentHashJoinPoolThreadsActive;
+    extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
+}
 
 namespace DB
 {
@@ -152,25 +165,24 @@ bool GPUHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuild
 
     const ColumnPtr key_column = block.getByName(key_name_right).column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
 
+    size_t bytes = num_rows * GPU::sizeOf(key_type);
+    Columns chunk;
+    chunk.reserve(build_payload_header.columns());
+    for (const auto & column : build_payload_header)
+    {
+        ColumnPtr source = block.getByName(column.name).column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
+        if (source->size() != num_rows)
+            source = source->cut(0, num_rows);
+        bytes += source->byteSize();
+        chunk.push_back(std::move(source));
+    }
+
     {
         std::lock_guard lock(device_mutex);
         if (built)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of the right table after the build of a GPU hash join ended");
 
-        if (build_payload.empty())
-        {
-            for (const auto & column : build_payload_header)
-                build_payload.push_back(column.type->createColumn());
-        }
-
-        size_t bytes = num_rows * GPU::sizeOf(key_type);
-        for (size_t i = 0; i < build_payload_header.columns(); ++i)
-        {
-            const ColumnPtr source
-                = block.getByName(build_payload_header.getByPosition(i).name).column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
-            build_payload[i]->insertRangeFrom(*source, 0, num_rows);
-            bytes += source->byteSize();
-        }
+        build_chunks.push_back(std::move(chunk));
 
         /// From the block's own memory, which a copy from pageable memory does not return before it has read.
         build_keys.append(GPU::rawValuesOf(*key_column, num_rows, GPU::sizeOf(key_type)));
@@ -191,18 +203,61 @@ void GPUHashJoin::finishBuildUnlocked()
         return;
     built = true;
 
+    Stopwatch watch;
     build_block = build_payload_header.cloneEmpty();
-    for (size_t i = 0; i < build_payload.size(); ++i)
-        build_block.getByPosition(i).column = std::move(build_payload[i]);
-    build_payload.clear();
+    const size_t num_columns = build_payload_header.columns();
+    const auto put_together = [&](size_t i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> parts;
+        parts.reserve(build_chunks.size());
+        for (const auto & chunk : build_chunks)
+            parts.push_back(chunk[i]);
+        MutableColumnPtr column = build_payload_header.getByPosition(i).type->createColumn();
+        column->prepareForSquashing(parts, 1);
+        for (const auto & part : parts)
+            column->insertRangeFrom(*part, 0, part->size());
+        build_block.getByPosition(i).column = std::move(column);
+    };
+
+    if (num_columns <= 1)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+            put_together(i);
+    }
+    else
+    {
+        ThreadPool pool(
+            CurrentMetrics::ConcurrentHashJoinPoolThreads,
+            CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
+            CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
+            /*max_threads_=*/ num_columns,
+            /*max_free_threads_=*/ 0,
+            /*queue_size_=*/ num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+            pool.scheduleOrThrow([&, i, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+                put_together(i);
+            });
+        pool.wait();
+    }
+    build_chunks.clear();
 
     const size_t rows = build_rows.load(std::memory_order_relaxed);
     if (rows > static_cast<size_t>(std::numeric_limits<Int32>::max()))
         throw Exception(
             ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, "The right table of a GPU hash join has {} rows, more than cuDF indexes", rows);
 
+    const UInt64 moved_us = watch.elapsedMicroseconds();
     hash_join = std::make_unique<GPU::CudfHashJoin>(
         key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
+    LOG_DEBUG(
+        getLogger("GPUHashJoin"),
+        "Built the hash table of {} rows of the right table, {} bytes, on the GPU: {} us to take the columns, {} us to build",
+        rows,
+        build_bytes.load(std::memory_order_relaxed),
+        moved_us,
+        watch.elapsedMicroseconds() - moved_us);
 }
 
 void GPUHashJoin::onBuildPhaseFinish()

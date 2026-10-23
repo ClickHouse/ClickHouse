@@ -114,8 +114,10 @@ private:
 
     std::mutex device_mutex;
 
-    /// The right table's payload columns, gathered as its blocks arrive, and the block of them once the build ends.
-    MutableColumns build_payload;
+    /// The right table's payload columns of each block as it arrives, kept as they are, and the block of them, put
+    /// together once the build ends, a column at a time in parallel: the threads of the right side add their blocks under
+    /// one lock, which a copy of their columns would hold for as long as the copy takes.
+    std::vector<Columns> build_chunks;
     Block build_block;
     bool built = false;
 
