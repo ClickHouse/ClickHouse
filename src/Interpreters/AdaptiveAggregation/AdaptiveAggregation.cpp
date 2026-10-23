@@ -440,11 +440,11 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
-    /// A stream created by this spill goes to a disk of the temporary volume with room for the whole spill and the
-    /// minimum free space, as the file of an ordinary spill does. The final size of a stream is unknown, since every
-    /// later spill appends to it, so its later growth is not checked, as with the other temporary files that are
-    /// appended to.
-    const size_t new_stream_reserve_size = partitions.allocatedChunkBytes() + params.min_free_disk_space;
+    /// A stream created by this spill goes to a disk of the temporary volume with room for the rest of the spill and
+    /// the minimum free space, as the file of an ordinary spill does. The partitions written before it already took
+    /// their space on disk, so they are not counted again. The final size of a stream is unknown, since every later
+    /// spill appends to it, so its later growth is not checked, as with the other temporary files that are appended to.
+    size_t unwritten_bytes = partitions.allocatedChunkBytes();
 
     partitions.finishAppending();
 
@@ -461,7 +461,10 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
         if (!records)
             continue;
 
-        spilled_bytes += shared.spilled_partitions[partition].append(shared.spill_scope, partitions, partition, new_stream_reserve_size);
+        const UInt64 partition_bytes = shared.spilled_partitions[partition].append(
+            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space);
+        unwritten_bytes -= std::min<size_t>(unwritten_bytes, partition_bytes);
+        spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);
         spilled_records += records;
     }
