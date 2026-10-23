@@ -40,7 +40,7 @@ ALTER TABLE uk_ttl MODIFY COLUMN v String TTL d + INTERVAL 1 DAY; -- { serverErr
 
 -- A column ALTER with no TTL clause is unaffected (command.ttl is null).
 ALTER TABLE uk_ttl ADD COLUMN w String;
-ALTER TABLE uk_ttl MODIFY COLUMN w LowCardinality(String);
+ALTER TABLE uk_ttl MODIFY COLUMN w String DEFAULT 'w';
 
 DROP TABLE uk_ttl;
 

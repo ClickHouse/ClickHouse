@@ -1,6 +1,7 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -289,11 +290,26 @@ void ASTDictionary::readJSON(const Poco::JSON::Object & json)
     /// user-facing `BAD_ARGUMENTS`. Restore each with `readChildOfType`.
     auto child = r.readChildOfType<ASTExpressionList>("primary_key");
     if (child)
+    {
+        /// `ParserDictionary` reads the primary key as a non-empty list of identifiers.
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'primary_key' of `Dictionary` must be a non-empty list of identifiers during AST JSON deserialization");
+        for (const auto & key : child->children)
+            if (!key || !key->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'primary_key' of `Dictionary` must be a non-empty list of identifiers during AST JSON deserialization");
         set(primary_key, child);
+    }
 
     child = r.readChildOfType<ASTFunctionWithKeyValueArguments>("source");
     if (child)
+    {
+        /// `ParserDictionary` requires the brackets: `SOURCE(HTTP(...))`.
+        if (!child->as<ASTFunctionWithKeyValueArguments &>().has_brackets)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`Dictionary` 'source' requires brackets during AST JSON deserialization");
         set(source, child);
+    }
 
     child = r.readChildOfType<ASTDictionaryLifetime>("lifetime");
     if (child)

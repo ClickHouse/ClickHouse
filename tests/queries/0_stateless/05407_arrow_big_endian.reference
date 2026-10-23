@@ -1,0 +1,272 @@
+--- generated_custom_metadata.stream
+sort_of_pandas	Nullable(Int8)					
+lots_of_meta	Nullable(Int8)					
+unregistered_extension	Nullable(Int8)					
+list_with_odd_values	Array(Nullable(Int32))					
+\N	\N	\N	[]
+1	1071657639847479536
+--- generated_datetime.stream
+f0	Nullable(Date32)					
+f1	Nullable(DateTime)					
+f2	Nullable(Time64(0))					
+f3	Nullable(Time64(3))					
+f4	Nullable(Time64(6))					
+f5	Nullable(Time64(9))					
+f6	Nullable(DateTime64(0))					
+f7	Nullable(DateTime64(3))					
+f8	Nullable(DateTime64(6))					
+f9	Nullable(DateTime64(9))					
+f10	Nullable(DateTime64(3))					
+f11	Nullable(DateTime64(0, \'UTC\'))					
+f12	Nullable(DateTime64(3, \'US/Eastern\'))					
+f13	Nullable(DateTime64(6, \'Europe/Paris\'))					
+f14	Nullable(DateTime64(9, \'US/Pacific\'))					
+0001-01-01	\N	\N	00:00:00.000	00:00:00.000000	00:00:00.000000000	\N	\N	\N	\N	0001-01-01 00:00:00.000	0001-01-01 00:00:00	0000-12-31 19:03:58.000	0001-01-01 00:09:21.000000	\N
+9999-12-31	2106-01-28 08:40:32	\N	\N	\N	\N	9999-12-31 00:00:00	\N	9999-12-31 00:00:00.000000	2262-04-11 23:47:16.854775807	9999-12-31 00:00:00.000	\N	\N	\N	2262-04-11 16:47:16.854775807
+17	16424365882681484843
+--- generated_decimal256_first_batch.stream
+f0	Nullable(Decimal(37, 5))					
+f1	Nullable(Decimal(38, 5))					
+f2	Nullable(Decimal(39, 5))					
+f3	Nullable(Decimal(40, 5))					
+f4	Nullable(Decimal(41, 5))					
+f5	Nullable(Decimal(42, 5))					
+f6	Nullable(Decimal(43, 5))					
+f7	Nullable(Decimal(44, 5))					
+f8	Nullable(Decimal(45, 5))					
+f9	Nullable(Decimal(46, 5))					
+f10	Nullable(Decimal(47, 5))					
+f11	Nullable(Decimal(48, 5))					
+f12	Nullable(Decimal(49, 5))					
+f13	Nullable(Decimal(50, 5))					
+f14	Nullable(Decimal(51, 5))					
+f15	Nullable(Decimal(52, 5))					
+f16	Nullable(Decimal(53, 5))					
+f17	Nullable(Decimal(54, 5))					
+f18	Nullable(Decimal(55, 5))					
+f19	Nullable(Decimal(56, 5))					
+f20	Nullable(Decimal(57, 5))					
+f21	Nullable(Decimal(58, 5))					
+f22	Nullable(Decimal(59, 5))					
+f23	Nullable(Decimal(60, 5))					
+f24	Nullable(Decimal(61, 5))					
+f25	Nullable(Decimal(62, 5))					
+f26	Nullable(Decimal(63, 5))					
+f27	Nullable(Decimal(64, 5))					
+f28	Nullable(Decimal(65, 5))					
+f29	Nullable(Decimal(66, 5))					
+f30	Nullable(Decimal(67, 5))					
+f31	Nullable(Decimal(68, 5))					
+f32	Nullable(Decimal(69, 5))					
+\N	\N	1433526454319030432049452238496839.09581	\N	-25369898914084303922461324884669630.77725	-3244927231144478004381207744726189111.02449	\N	\N	\N	-8665530878756763130530792191308458684486.90361	-24475786224522368088860082803221352631564.07984	26215834155087758517420796897053207117309.87024	3898003464374060069630073596283661549958.9181	3408068899156405962936283799420057473803.31445	593237518001569943115985113331768038803315.12794	1167342872942357053458000475561804052673679.79829	\N	\N	7227546754204274099630104793845593572941147.78916	\N	-5071904126922067188836970159826680383697625.10641	-6841457753966580491100457731784066441970576.62731	\N	-1546803841300347441493073733539324597803616109.9134	\N	\N	-950398046372879876685741018377827580177804176.5908	-1801184618504200479841112058346001218484736973.57324	\N	1615659766565607251724106316213436918711298707.54012	-416947361281480434466143202830324485649488846.82816	-1076894810332555586386634885368981132135090302.6894	\N
+-419423694229258864289317942400789.36402	\N	\N	-36656625859016126397007456583882957.3017	64163845737184069538046775394226394.80964	-107821174207407404343018415362159896378.40828	\N	\N	\N	-5097838217116376421381329695045342300615.73511	-10819203197512172184977281981318593830605.51165	\N	28139394122441211601305357887800524235308.15517	\N	\N	\N	\N	7000855563134682922253190372341592966872422.99731	1162902546388899442840650769463964019993790.77898	\N	\N	1979431934496197373817282539806030006103119.59604	-2483452561182622754588538260953217025634623.13062	1333388361661106438384318958129321139379609916.90095	-1689593743255289517077013322985130014747863240.82208	\N	\N	1458962227742363980262538224732515461417089933.97867	1141361544261303617547066220162343547431396438.18944	758961699112425711276040117281890394912162870.29776	-1757869355237987060476627578638491474162552977.02084	-813076504978785713852818001312328600235828259.8098	1206868762363351430866325879846407733405132051.80365
+7	2432458160206108713
+--- generated_decimal_first_batch.stream
+f0	Nullable(Decimal(3, 2))					
+f1	Nullable(Decimal(4, 2))					
+f2	Nullable(Decimal(5, 2))					
+f3	Nullable(Decimal(6, 2))					
+f4	Nullable(Decimal(7, 2))					
+f5	Nullable(Decimal(8, 2))					
+f6	Nullable(Decimal(9, 2))					
+f7	Nullable(Decimal(10, 2))					
+f8	Nullable(Decimal(11, 2))					
+f9	Nullable(Decimal(12, 2))					
+f10	Nullable(Decimal(13, 2))					
+f11	Nullable(Decimal(14, 2))					
+f12	Nullable(Decimal(15, 2))					
+f13	Nullable(Decimal(16, 2))					
+f14	Nullable(Decimal(17, 2))					
+f15	Nullable(Decimal(18, 2))					
+f16	Nullable(Decimal(19, 2))					
+f17	Nullable(Decimal(20, 2))					
+f18	Nullable(Decimal(21, 2))					
+f19	Nullable(Decimal(22, 2))					
+f20	Nullable(Decimal(23, 2))					
+f21	Nullable(Decimal(24, 2))					
+f22	Nullable(Decimal(25, 2))					
+f23	Nullable(Decimal(26, 2))					
+f24	Nullable(Decimal(27, 2))					
+f25	Nullable(Decimal(28, 2))					
+f26	Nullable(Decimal(29, 2))					
+f27	Nullable(Decimal(30, 2))					
+f28	Nullable(Decimal(31, 2))					
+f29	Nullable(Decimal(32, 2))					
+f30	Nullable(Decimal(33, 2))					
+f31	Nullable(Decimal(34, 2))					
+f32	Nullable(Decimal(35, 2))					
+f33	Nullable(Decimal(36, 2))					
+f34	Nullable(Decimal(37, 2))					
+f35	Nullable(Decimal(38, 2))					
+128.1	326.97	\N	\N	\N	-7243811.06	11147147.54	\N	\N	-707297245297.97	1395887214889.08	637707726891.88	\N	-237794268276909.81	\N	\N	2502830144672914452.05	\N	17932930195843590029	1760027202154766466761.03	4505193251393508421291.44	551372407552219672311990.84	-1125311625456250660340815.58	-223267685137263574483731.79	\N	-198287444025605573280310101.12	\N	\N	\N	8692450360675940342671271455133.43	\N	-1555225464970713439597687445429515.81	\N	945770970795482492271313614958326691.7	-1066384301816735998258979114936494593.99	1544317897813952806030081925068398131.6
+\N	151.78	8193.16	-59650.3	-17249144.16	\N	\N	-3319018396.78	\N	1204549970919.98	\N	\N	\N	205195170405298.85	\N	17335486652165949.57	-16637296187607657504.35	-4890474321020879288.47	\N	-2081674012298690472568.2	4606400149141804538614.26	-1452925181221408192908449.19	-1297197169675290761698433.67	-1411369469150201722323161.91	383413918246600831057395056.06	-84917737494251942924768849.83	\N	-24715829587755911976851814514.54	\N	25644067239235859062952079847105.5	-5491290971257093588530242547491.64	\N	-4461330729799077017063212845858117.35	1353746267079534634728452588297755017.36	\N	\N
+7	6060211945519988859
+--- generated_dictionary.arrow_file
+dict0	LowCardinality(Nullable(String))					
+dict1	LowCardinality(Nullable(String))					
+dict2	LowCardinality(Nullable(Int64))					
+nwgâ‚¬6dâ‚¬	\N	\N
+\N	\N	\N
+17	3216346324647084046
+--- generated_dictionary.stream
+dict0	LowCardinality(Nullable(String))					
+dict1	LowCardinality(Nullable(String))					
+dict2	LowCardinality(Nullable(Int64))					
+nwgâ‚¬6dâ‚¬	\N	\N
+\N	\N	\N
+17	3216346324647084046
+--- generated_dictionary_unsigned.stream
+f0	LowCardinality(Nullable(String))					
+f1	LowCardinality(Nullable(String))					
+f2	LowCardinality(Nullable(String))					
+\N	\N	\N
+\N	\N	\N
+17	14600725119293595355
+--- generated_extension.stream
+uuids	Nullable(FixedString(16))					
+dict_exts	LowCardinality(Nullable(String))					
+2PX\rÅ··Y¡I¦}}	5Ã´cÃ‚aÃ‚n
+\N	\N
+13	8951238848932303794
+--- generated_map_non_canonical.stream
+map_other_names	Map(String, Nullable(Int32))					
+{'14Ã´on6m':-2147483648}
+{}
+7	7519106422328978476
+--- generated_map.stream
+map_nullable	Map(String, Nullable(Int32))					
+{'add5Ã‚Â°d':-2147483648,'jkÃ´occ3':2147483647}
+{}
+17	9600799147304060905
+--- generated_nested_dictionary.stream
+list_dict	Array(Nullable(String))					
+struct_dict	Nullable(Tuple(str_dict_a Nullable(String), str_dict_b Nullable(String)))					
+[]	\N
+[]	(NULL,'el3gw6b')
+23	16958039885438347666
+--- generated_nested_large_offsets.stream
+large_list_nullable	Array(Nullable(Int32))					
+large_list_nonnullable	Array(Nullable(Int32))					
+large_list_nested	Array(Array(Nullable(Int16)))					
+[]	[NULL,2147483647,-1587000524,NULL]	[]
+[]	[NULL,454086139,260423562]	[[]]
+13	3336952668133274295
+--- generated_nested.stream
+list_nullable	Array(Nullable(Int32))					
+fixedsizelist_nullable	Array(Nullable(Int32))					
+struct_nullable	Nullable(Tuple(f1 Nullable(Int32), f2 Nullable(String)))					
+[NULL,2147483647]	[-2147483648,2147483647,1575414304,NULL]	(NULL,'Ã‚kÂµnrde')
+[-1528438461,439820504,1129500876,NULL]	[]	(NULL,'iÂ°oÃ‚rme')
+17	4685673063667066056
+--- generated_primitive_large_offsets.stream
+largebinary_nullable	Nullable(String)					
+largebinary_nonnullable	String					
+largeutf8_nullable	Nullable(String)					
+largeutf8_nonnullable	String					
+\N	â9è³þz	\N	Â°pmÂµcpÂµ
+Á.	ã	\N	ne2Â°hçŸ¢i
+37	15775433294462957660
+--- generated_primitive_no_batches.stream
+bool_nullable	Nullable(Bool)					
+bool_nonnullable	Bool					
+int8_nullable	Nullable(Int8)					
+int8_nonnullable	Int8					
+int16_nullable	Nullable(Int16)					
+int16_nonnullable	Int16					
+int32_nullable	Nullable(Int32)					
+int32_nonnullable	Int32					
+int64_nullable	Nullable(Int64)					
+int64_nonnullable	Int64					
+uint8_nullable	Nullable(UInt8)					
+uint8_nonnullable	UInt8					
+uint16_nullable	Nullable(UInt16)					
+uint16_nonnullable	UInt16					
+uint32_nullable	Nullable(UInt32)					
+uint32_nonnullable	UInt32					
+uint64_nullable	Nullable(UInt64)					
+uint64_nonnullable	UInt64					
+float32_nullable	Nullable(Float32)					
+float32_nonnullable	Float32					
+float64_nullable	Nullable(Float64)					
+float64_nonnullable	Float64					
+binary_nullable	Nullable(String)					
+binary_nonnullable	String					
+utf8_nullable	Nullable(String)					
+utf8_nonnullable	String					
+fixedsizebinary_19_nullable	Nullable(FixedString(19))					
+fixedsizebinary_19_nonnullable	FixedString(19)					
+fixedsizebinary_120_nullable	Nullable(FixedString(120))					
+fixedsizebinary_120_nonnullable	FixedString(120)					
+0	0
+--- generated_primitive.stream
+bool_nullable	Nullable(Bool)					
+bool_nonnullable	Bool					
+int8_nullable	Nullable(Int8)					
+int8_nonnullable	Int8					
+int16_nullable	Nullable(Int16)					
+int16_nonnullable	Int16					
+int32_nullable	Nullable(Int32)					
+int32_nonnullable	Int32					
+int64_nullable	Nullable(Int64)					
+int64_nonnullable	Int64					
+uint8_nullable	Nullable(UInt8)					
+uint8_nonnullable	UInt8					
+uint16_nullable	Nullable(UInt16)					
+uint16_nonnullable	UInt16					
+uint32_nullable	Nullable(UInt32)					
+uint32_nonnullable	UInt32					
+uint64_nullable	Nullable(UInt64)					
+uint64_nonnullable	UInt64					
+float32_nullable	Nullable(Float32)					
+float32_nonnullable	Float32					
+float64_nullable	Nullable(Float64)					
+float64_nonnullable	Float64					
+binary_nullable	Nullable(String)					
+binary_nonnullable	String					
+utf8_nullable	Nullable(String)					
+utf8_nonnullable	String					
+fixedsizebinary_19_nullable	Nullable(FixedString(19))					
+fixedsizebinary_19_nonnullable	FixedString(19)					
+fixedsizebinary_120_nullable	Nullable(FixedString(120))					
+fixedsizebinary_120_nonnullable	FixedString(120)					
+\N	false	-128	-128	-32768	-32768	-2147483648	-2147483648	\N	-2147483648	0	0	0	0	\N	0	\N	0	641.818	-977.936	-955.504	471.617	\N	Èo	\N	coçŸ¢2pçŸ¢m	\N	T¿|úõOX x£ˆn>Ï\f¦l	2™õÿ„õ[›¨h)3~Lœaù"DÙG¶Rc¹Õw«æe¶F1óÚVŒ\0m"ê?w7¹þ¼2¨Ûöô²äV]qSXá–ÈrV<ÿv0ÍŸ#ÙôŠ›<_±<@É1ù-_%.{e¢ìÙæýu5møŒ6	•ÿŒ-6°µ›kþÌËlƒÁ”&7eWß!«3C˜Î¸×ýs0Y)Üš\0 ü¶äjØà‰ÇH]\t®—µáK}dæö4¸ÔúÊnªâq=³büë\'h£•ýYªMÛ’J”ªd»f$ª"É©ß‹Ô"žã0®G(Ü(Ù\bõOÐ½
+\N	true	127	127	32767	32767	\N	2147483647	2147483647	2147483647	255	255	\N	65535	\N	2147483647	2147483647	2147483647	\N	-699.338	-1746.99	-1174.894	h		râ‚¬j5mÂµc	wÃ‚â‚¬acrd	¡cñ~šïŽªaîëR!°B³	øW\\Ã…ic¿Þ·$Ppý­\nhC	›!bx†UB‰†Ùƒ¾ùw²`—âÃ"—Ç¡÷ù”XMµö9¤ÄBñûå{ÝÓ‹ÿª^‰ªon%¤”<ª\'ý8k{˜uM*Ùr‚Ãåt­F;þbgŠ÷,™*w&hÜ¦ ÉPŒ½&±:/)æ¶´]Uô¬¹á?	ÂÆb®\\SÄøíÏ³\r\'+ÌÜ‚÷•ÎÇß¾?šsâ,="ÎÓŽOŒ´›T!dKìÝôw_¼,8ëHææðÎÕ:5¨WïWü‹´N[pDËÿ±q£ìîŠHªFÀ\'ç]sxB\tDžø.ý~Û\t¨;d\r&¸
+37	15615127807538559269
+--- generated_primitive_zerolength.stream
+bool_nullable	Nullable(Bool)					
+bool_nonnullable	Bool					
+int8_nullable	Nullable(Int8)					
+int8_nonnullable	Int8					
+int16_nullable	Nullable(Int16)					
+int16_nonnullable	Int16					
+int32_nullable	Nullable(Int32)					
+int32_nonnullable	Int32					
+int64_nullable	Nullable(Int64)					
+int64_nonnullable	Int64					
+uint8_nullable	Nullable(UInt8)					
+uint8_nonnullable	UInt8					
+uint16_nullable	Nullable(UInt16)					
+uint16_nonnullable	UInt16					
+uint32_nullable	Nullable(UInt32)					
+uint32_nonnullable	UInt32					
+uint64_nullable	Nullable(UInt64)					
+uint64_nonnullable	UInt64					
+float32_nullable	Nullable(Float32)					
+float32_nonnullable	Float32					
+float64_nullable	Nullable(Float64)					
+float64_nonnullable	Float64					
+binary_nullable	Nullable(String)					
+binary_nonnullable	String					
+utf8_nullable	Nullable(String)					
+utf8_nonnullable	String					
+fixedsizebinary_19_nullable	Nullable(FixedString(19))					
+fixedsizebinary_19_nonnullable	FixedString(19)					
+fixedsizebinary_120_nullable	Nullable(FixedString(120))					
+fixedsizebinary_120_nonnullable	FixedString(120)					
+0	0
+--- generated_recursive_nested.stream
+lists_list	Array(Array(Nullable(Int16)))					
+structs_list	Array(Nullable(Tuple(f1 Nullable(Int32), f2 Nullable(String))))					
+[[]]	[(-2147483648,'3bâ‚¬fpi4'),(NULL,'iaakg5p'),NULL,NULL]
+[[-32768],[32767,-3968],[],[-16914,27700,NULL]]	[]
+17	4813067723225782281

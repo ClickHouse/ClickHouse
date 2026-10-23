@@ -115,7 +115,7 @@ public:
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
@@ -149,7 +149,10 @@ public:
     }
 
     virtual bool optimize(
-        const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
         throwNotImplemented("optimize");
     }
@@ -196,6 +199,11 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
+
+    virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
+    {
+        throwNotImplemented("cloneWithNewSettings");
+    }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

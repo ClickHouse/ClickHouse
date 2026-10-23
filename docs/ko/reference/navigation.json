@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "연산자",
           "pages": [
-            "ko/reference/operators/index",
-            "ko/reference/operators/exists",
-            "ko/reference/operators/distributed-ddl"
+            "ko/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "ko/reference/engines/database-engines/index",
             "ko/reference/engines/database-engines/atomic",
             "ko/reference/engines/database-engines/backup",
+            "ko/reference/engines/database-engines/cluster",
             "ko/reference/engines/database-engines/datalake",
             "ko/reference/engines/database-engines/dictionary",
             "ko/reference/engines/database-engines/filesystem",
@@ -428,6 +427,7 @@
             "ko/reference/engines/database-engines/memory",
             "ko/reference/engines/database-engines/mysql",
             "ko/reference/engines/database-engines/ordinary",
+            "ko/reference/engines/database-engines/overlay",
             "ko/reference/engines/database-engines/postgresql",
             "ko/reference/engines/database-engines/remote",
             "ko/reference/engines/database-engines/replicated",
@@ -598,6 +598,7 @@
                 "ko/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "ko/reference/functions/aggregate-functions/maxMap",
                 "ko/reference/functions/aggregate-functions/meanZTest",
+                "ko/reference/functions/aggregate-functions/mergedJSONPatch",
                 "ko/reference/functions/aggregate-functions/median",
                 "ko/reference/functions/aggregate-functions/min",
                 "ko/reference/functions/aggregate-functions/minMap",
@@ -639,6 +640,15 @@
                 "ko/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "ko/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "ko/reference/functions/aggregate-functions/rankCorr",
+                "ko/reference/functions/aggregate-functions/regr_avgx",
+                "ko/reference/functions/aggregate-functions/regr_avgy",
+                "ko/reference/functions/aggregate-functions/regr_count",
+                "ko/reference/functions/aggregate-functions/regr_intercept",
+                "ko/reference/functions/aggregate-functions/regr_r2",
+                "ko/reference/functions/aggregate-functions/regr_slope",
+                "ko/reference/functions/aggregate-functions/regr_sxx",
+                "ko/reference/functions/aggregate-functions/regr_sxy",
+                "ko/reference/functions/aggregate-functions/regr_syy",
                 "ko/reference/functions/aggregate-functions/simpleLinearRegression",
                 "ko/reference/functions/aggregate-functions/singleValueOrNull",
                 "ko/reference/functions/aggregate-functions/skewPop",
@@ -659,17 +669,38 @@
                 "ko/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "ko/reference/functions/aggregate-functions/sumWithOverflow",
                 "ko/reference/functions/aggregate-functions/theilsU",
+                "ko/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "ko/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "ko/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "ko/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "ko/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "ko/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "ko/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "ko/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "ko/reference/functions/aggregate-functions/topK",
                 "ko/reference/functions/aggregate-functions/topKWeighted",
                 "ko/reference/functions/aggregate-functions/uniq",
@@ -945,6 +976,7 @@
           ]
         },
         "ko/reference/formats/SQLInsert",
+        "ko/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -969,15 +1001,6 @@
         "ko/reference/formats/Values",
         "ko/reference/formats/Vertical",
         "ko/reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "인터페이스",
-      "pages": [
-        "ko/reference/interfaces/specs/NativeProtocol",
-        "ko/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1029,6 +1052,7 @@
         "ko/reference/system-tables/codecs",
         "ko/reference/system-tables/collations",
         "ko/reference/system-tables/columns",
+        "ko/reference/system-tables/columns_cache",
         "ko/reference/system-tables/completions",
         "ko/reference/system-tables/constraints",
         "ko/reference/system-tables/contributors",

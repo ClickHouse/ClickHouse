@@ -9,8 +9,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -316,14 +314,12 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateRowPolicyQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementRowPolicy(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROW POLICY",
+    documentation["CREATE ROW POLICY"] =
     {
         .description = R"DOCS_MD(
 Creates a [row policy](/concepts/features/security/access-rights#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
@@ -483,7 +479,7 @@ any other table in mydb would have only `b=1` policy applied for the user.
 
 ## Tables that read from other tables {#tables-that-read-from-other-tables}
 
-A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of the tables it reads from. One exception: when a matched table reads remotely, such as a `Distributed` table, the remote server processes the query before the policy is applied, because the policy runs above that table's read rather than at the read. Such a query can fail, when it aggregates without selecting the policy's columns, or return fewer rows than the policy allows, when the remote server applies an `ORDER BY ... LIMIT` to rows the policy would have hidden. Define the policy on the underlying local tables of each remote server instead.
+A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of the tables it reads from. A matched table that reads remotely, such as a `Distributed` table, processes the query before the `Merge` table sees its rows, so the `Merge` table cannot apply that table's policy: queries to the `Merge` table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error, as queries to that table itself are. Define the policy on the underlying local tables of each remote server instead.
 
 This does not extend to every table that reads from another table. A `Buffer` table and a materialized view read through their destination or target table do **not** inherit that table's row policies: the policy is written against the target's schema and, for a view with `SQL SECURITY DEFINER`, is evaluated for a different user than the one running the read. Define the policy on the table users actually query in those cases.
 
@@ -501,6 +497,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 <Warning>
 This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
+
+## Join tables {#join-tables}
+
+A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered there. A policy on such a table, including a database-wide `ON db.*` policy, filters a plain `SELECT` from the table, but while it applies, `JOIN` and `joinGet` queries against the table fail with `ACCESS_DENIED`.
 
 ## ON CLUSTER Clause {#on-cluster-clause}
 
@@ -527,9 +527,9 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
 )",
         .parent = "CREATE",
         .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER ROW POLICY",
+    documentation["ALTER ROW POLICY"] =
     {
         .description = R"DOCS_MD(
 Changes row policy.
@@ -611,7 +611,9 @@ ALTER [ROW] POLICY [IF EXISTS] name [, ...]
 )",
         .parent = "ALTER",
         .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

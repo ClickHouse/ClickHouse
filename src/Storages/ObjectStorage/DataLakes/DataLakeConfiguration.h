@@ -106,7 +106,42 @@ public:
 #endif
     }
 
-    const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
+    DataLakeStorageSettingsPtr getDataLakeSettings() const override
+    {
+        std::lock_guard lock(settings_mutex);
+        return settings;
+    }
+
+    void setDataLakeSettings(ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
+    {
+        DataLakeStorageSettingsPtr previous_settings;
+        {
+            std::lock_guard lock(settings_mutex);
+            previous_settings = std::exchange(settings, std::move(new_settings));
+        }
+
+        auto metadata = tryGetMetadata();
+        if (!metadata)
+            return;
+
+        std::shared_ptr<IDataLakeMetadata> fresh;
+        try
+        {
+            fresh = metadata->cloneWithNewSettings(this->shared_from_this(), local_context);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(settings_mutex);
+            settings = std::move(previous_settings);
+            throw;
+        }
+
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            displaced = std::exchange(current_metadata, std::move(fresh));
+        }
+    }
 
     void setExplicitMetadataFilePath(const String & path) override
     {
@@ -268,9 +303,9 @@ public:
         return DataLakeMetadata::supportsTotalRows(context, storage_type);
     }
 
-    std::optional<size_t> totalRows(ContextPtr local_context) override
+    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) override
     {
-        return getMetadata()->totalRows(local_context);
+        return getMetadata()->totalRows(local_context, state);
     }
 
     bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
@@ -340,6 +375,8 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+            HudiMetadata::pauseBeforeIterate();
         return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
@@ -405,17 +442,13 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
-            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
-            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+        const auto current_settings = getDataLakeSettings();
+        if ((*current_settings)[DataLakeStorageSetting::storage_catalog_type].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_catalog_url].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
-        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
-        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
-        /// "no catalog integration", the same as the base-class default.
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
@@ -424,10 +457,30 @@ public:
 #endif
     }
 
-    bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    ASTs completeEngineArgsFromCatalog(
+        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) override
+    {
+#if USE_AVRO && USE_PARQUET
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
+        if (!datalake_database)
+            return {};
+        auto args = datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+        datalake_database->applyCatalogSpecificConfiguration(*this);
+        return args;
+#else
+        return {};
+#endif
+    }
+
+    bool optimize(
+        ObjectStoragePtr object_storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        return getMetadata()->optimize(metadata_snapshot, context, format_settings);
+        return getMetadata()->optimize(metadata_snapshot, context, format_settings, catalog);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
@@ -472,13 +525,26 @@ public:
     }
 
 private:
-    const DataLakeStorageSettingsPtr settings;
+    mutable std::mutex settings_mutex;
+    DataLakeStorageSettingsPtr settings TSA_GUARDED_BY(settings_mutex);
     ObjectStoragePtr ready_object_storage;
     mutable std::mutex metadata_mutex;
     /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent
     /// republish in update() cannot destroy the object they are still calling into.
     std::shared_ptr<IDataLakeMetadata> current_metadata TSA_GUARDED_BY(metadata_mutex);
     LoggerPtr log = getLogger("DataLakeConfiguration");
+
+#if USE_AVRO && USE_PARQUET
+    static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
+    {
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
+        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
+        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
+        /// "no catalog integration", the same as the base-class default.
+        return std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+    }
+#endif
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {
