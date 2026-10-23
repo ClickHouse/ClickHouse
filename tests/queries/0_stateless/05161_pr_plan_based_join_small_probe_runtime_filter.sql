@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Under plan-based parallel replicas the runtime filter decision has to be the same on the initiator
 -- and on every replica, because it decides the join algorithm and therefore the read type of the
 -- coordinated side, whose stream identity the initiator registers with the coordinator up front

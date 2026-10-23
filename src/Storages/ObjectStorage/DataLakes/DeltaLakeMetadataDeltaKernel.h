@@ -82,7 +82,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
-    std::optional<size_t> totalRows(ContextPtr) const override;
+    std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const override;
 
     std::optional<size_t> totalBytes(ContextPtr) const override;
 
