@@ -1,4 +1,5 @@
 single_thread	1
 parallel	1
 scalar	1
+scalar_second_run	1
 projection	1	1

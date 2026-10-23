@@ -1,0 +1,34 @@
+-- a constant argument of a function of the right side
+99	l99		
+98	l98	2025	r49
+97	l97		
+96	l96	2025	r48
+99	l99		
+98	l98	2025	r49
+97	l97		
+96	l96	2025	r48
+1
+-- the constant is in the result as well
+99	l99			
+98	l98	%Y	2025	r49
+97	l97			
+96	l96	%Y	2025	r48
+99	l99			
+98	l98	%Y	2025	r49
+97	l97			
+96	l96	%Y	2025	r48
+1
+-- under two outer joins
+99	l99		
+98	l98		
+97	l97		
+96	l96	2025	m24
+95	l95		
+94	l94		
+99	l99		
+98	l98		
+97	l97		
+96	l96	2025	m24
+95	l95		
+94	l94		
+1
