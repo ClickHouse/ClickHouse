@@ -15,11 +15,6 @@ using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 class QueryPlanProfiler
 {
 public:
-    explicit QueryPlanProfiler(size_t max_description_length_)
-        : max_description_length(max_description_length_)
-    {
-    }
-
     /// Whether this query should have its plan captured.
     static bool canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal);
 
@@ -32,7 +27,7 @@ public:
     ///
     /// May throw: the caller starting the profiling is what keeps a diagnostic from failing a
     /// query that would otherwise have run.
-    void capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names);
+    void capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length);
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.
@@ -47,8 +42,6 @@ public:
     const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
 
 private:
-    const size_t max_description_length;
-
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;

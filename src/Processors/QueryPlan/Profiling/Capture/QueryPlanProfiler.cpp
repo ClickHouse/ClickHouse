@@ -106,7 +106,7 @@ void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * 
         reason);
 }
 
-void QueryPlanProfiler::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names)
+void QueryPlanProfiler::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
 {
     /// One plan per query, and nothing is asked of the profiler before this.
     chassert(!captured);

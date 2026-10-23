@@ -329,7 +329,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             /// disagree about which steps there are or what is below what.
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
-            profiler->capturePlanStructure(walk, pretty_names);
+            profiler->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
             last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
         }
         catch (...)

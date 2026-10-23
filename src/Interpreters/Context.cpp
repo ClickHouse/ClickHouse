@@ -10319,8 +10319,7 @@ const ServerSettings & Context::getServerSettings() const
 
 void Context::enablePlanProfiler()
 {
-    query_plan_profiler = std::make_shared<QueryPlanProfiler>(
-        getSettingsRef()[Setting::query_plan_max_step_description_length]);
+    query_plan_profiler = std::make_shared<QueryPlanProfiler>();
     setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
 }
 
