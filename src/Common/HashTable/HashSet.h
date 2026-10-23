@@ -59,9 +59,9 @@ public:
             Base::resize(rhs.size() + Base::size());
         else if constexpr (GrowerWithRobinHood<Grower>)
         {
-            /// The cells of `rhs` are inserted in the order of their positions, which are their positions here too, so keys that
-            /// outnumber the cells pile up behind the insertion point until the table grows. Grow first for the expected number
-            /// of keys, estimated on the first cells of `rhs`.
+            /// The cells of `rhs` are inserted in the order of their positions, which sweeps this table from left to right, so
+            /// keys that outnumber its cells pile up right after the insertion point until the table grows. Grow first for the
+            /// expected number of keys, estimated on the first cells of `rhs`.
             if (Base::size() + rhs.size() > Base::grower.bufSize())
             {
                 constexpr size_t max_cells_to_estimate_new_keys = 256;
