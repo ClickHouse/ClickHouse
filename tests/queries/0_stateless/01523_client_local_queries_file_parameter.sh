@@ -149,7 +149,7 @@ $CLICKHOUSE_LOCAL --queries-file=/dev/stdin -q 'SELECT f_stdin_01523(41)' < "$TE
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
 
 # Nested includes must also recognize stdin as SQL, not input data.
-printf '%s\n' '\\i /dev/stdin' > "$SECOND_SQL_FILE_NAME"
+printf '%s\n' '\i /dev/stdin' > "$SECOND_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$SECOND_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
 
 # A prelude that does not read stdin must not make read() replay the same rows.
