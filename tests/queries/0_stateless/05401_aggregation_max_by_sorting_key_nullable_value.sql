@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+-- On remote disks without a filesystem cache, gaps of one granule are read through, which changes the granule counts.
 -- `optimize_aggregation_max_by_sorting_key` with `argMin` and `argMax` of a `Nullable` value: they ignore the rows where
 -- the value is NULL, so the rows at the granule boundaries do not prove anything, and the optimization is not applied.
 -- The only non-NULL value is in the middle granule of the run, which the optimization would skip.

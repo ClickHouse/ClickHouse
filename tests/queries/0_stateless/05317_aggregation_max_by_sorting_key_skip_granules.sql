@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+-- On remote disks without a filesystem cache, gaps of one granule are read through, which changes the granule counts.
 -- `optimize_aggregation_max_by_sorting_key`: for `GROUP BY <sorting key prefix>` with only `max`, `argMax`, `min`
 -- and `argMin` of the next sorting key column, granules that cannot contain any group's answer are skipped.
 -- Every table has 4 rows per granule, and every query is run with the optimization off and on: the results must

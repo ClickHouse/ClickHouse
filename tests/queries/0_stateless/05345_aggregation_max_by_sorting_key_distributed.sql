@@ -1,3 +1,5 @@
+-- Tags: no-object-storage
+-- On remote disks without a filesystem cache, gaps of one granule are read through, which changes the granule counts.
 -- `optimize_aggregation_max_by_sorting_key` over `remote`: every shard skips granules in its own read, and the
 -- initiator merges the partial results. Both shards read the same table, which has 2 runs of 3 granules each.
 -- Every query is run with the optimization off and on: the results must be equal, and with it on both shards
