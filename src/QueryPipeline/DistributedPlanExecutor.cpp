@@ -2044,9 +2044,6 @@ protected:
 
         const String unique_temp_file_path = toString(unique_query_id);
 
-        std::mutex first_failure_mutex;
-        std::exception_ptr first_failure;
-
         /// The tasks of a stage are independent, so send them concurrently. Declared after everything the
         /// jobs use, so that on an exception its destructor waits for them first.
         const size_t num_threads = std::min(stage.tasks.size(), max_concurrent_task_starts);
@@ -2079,11 +2076,7 @@ protected:
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
                 try
                 {
-                    {
-                        std::lock_guard lock(first_failure_mutex);
-                        if (first_failure)
-                            return;
-                    }
+                    /// Skip the start once a start failed or the query was cancelled.
                     checkCancelled();
 
                     DistributedQueryTaskDescription description = task_description;
@@ -2115,6 +2108,8 @@ protected:
                     }
                     catch (...)
                     {
+                        /// Record the failure before the cleanup waits, so the failures it causes rank below it.
+                        cancellation->recordCurrentException();
                         running_tasks.cancelAndForgetUntracked(task_info);
                         throw;
                     }
@@ -2123,16 +2118,13 @@ protected:
                 }
                 catch (...)
                 {
-                    std::lock_guard lock(first_failure_mutex);
-                    if (!first_failure)
-                        first_failure = std::current_exception();
+                    /// The query's failure record keeps the root cause over the failures it causes.
+                    cancellation->recordCurrentException();
                 }
             });
         }
         pool.wait();
 
-        if (first_failure)
-            std::rethrow_exception(first_failure);
         checkCancelled();
         ProfileEvents::increment(ProfileEvents::DistributedPlanStageStartMicroseconds, watch.elapsedMicroseconds());
     }
