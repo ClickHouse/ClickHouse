@@ -243,7 +243,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
 
-    const UInt32 logs_to_keep = getLogsToKeepAndRepairKeeper(log, zookeeper, database->zookeeper_path);
+    logs_to_keep = getLogsToKeepAndRepairKeeper(log, zookeeper, database->zookeeper_path);
 
     UInt64 digest = 0;
     String digest_str;
@@ -842,17 +842,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
-    const std::vector<std::string> paths{
-        database->zookeeper_path + "/max_log_ptr",
-        database->zookeeper_path + "/logs_to_keep"
-    };
-    auto zookeeper = getZooKeeper();
-    auto get_result = zookeeper->get(paths);
-    chassert(get_result.size() == paths.size());
-
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    const UInt32 max_log_ptr = parse<UInt32>(get_result[0].data);
-    const UInt32 logs_to_keep = DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(get_result[1].data);
+    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return isBeyondRetention(entry_number, max_log_ptr, logs_to_keep);
 }
 

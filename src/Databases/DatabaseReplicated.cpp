@@ -139,7 +139,6 @@ namespace FailPoints
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_pause_after_database_name_fetch[];
     extern const char database_replicated_throw_on_stop_replication[];
-    extern const char database_replicated_alter_settings_fail_after_keeper_write[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -886,8 +885,7 @@ Coordination::Requests DatabaseReplicated::buildDatabaseNodesInZooKeeper()
     const auto db_settings_version = db_settings.get();
     auto logs_to_keep = (*db_settings_version)[DatabaseReplicatedSetting::logs_to_keep];
     /// The `logs_to_keep` values may be different in different replicas' metadata files: new replicas `CREATE ... SETTINGS` values are
-    /// ignored and `ALTER DATABASE ... MODIFY SETTING` changes are not propagated to other replicas.
-    /// So the value in Keeper is set by the first created replica.
+    /// ignored. So the value in Keeper is set by the first created replica.
     /// The nodes are created only if there're no existing ones, so we can't overwrite the existing value.
     ops.emplace_back(
         zkutil::makeCreateRequest(zookeeper_path + "/logs_to_keep", std::to_string(logs_to_keep), zkutil::CreateMode::Persistent));
@@ -2846,7 +2844,10 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
         /// their setting and part - have not yet. It may result either in duplicate rows(switched to `false` but some replica still uses
         /// ReplicatedMergeTree and deduplication window has rolled over) or in different result set depending on what
         /// replica the query lands on(switched to `true`, but some replica still uses MergeTree, so insert ends up only on this replica).
-        {"internal_replication", "Cannot be changed safely while the database is in use."}
+        {"internal_replication", "Cannot be changed safely while the database is in use."},
+        /// The value in Keeper is shared by all replicas. Raising it can make a lagging replica, whose next log entries were already
+        /// cleaned up, look recent enough to skip recovery and miss these entries.
+        {"logs_to_keep", "Shared by all replicas of the database through ClickHouse Keeper, changing it is not supported."}
     };
 
     waitDatabaseStarted();
@@ -2862,7 +2863,6 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
     std::lock_guard metadata_lock(metadata_mutex);
 
     DatabaseReplicatedSettings new_settings = *db_settings.get();
-    bool logs_to_keep_changed = false;
     std::optional<ClusterAuthInfo> new_cluster_auth_info;
     /// Validate settings changes
     for (const auto & change : changes)
@@ -2875,8 +2875,6 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
         {
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Can't change setting `{}`: {}", change.name, immutable_setting_it->second);
         }
-
-        logs_to_keep_changed |= change.name == "logs_to_keep";
 
         new_settings.applyChange(change);
         /// `getClusterAuthInfo` may throw e.g. if the new collection does not exist. Verify it before we publish any changes.
@@ -2896,52 +2894,7 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
         }
     }
 
-    UInt32 new_logs_to_keep = 0;
-    if (logs_to_keep_changed)
-    {
-        if (is_readonly)
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
-
-        new_logs_to_keep = new_settings[DatabaseReplicatedSetting::logs_to_keep];
-        if (new_logs_to_keep > DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting `logs_to_keep` of a Replicated database must not exceed {}, got {}",
-                DatabaseReplicatedSettings::MAX_LOGS_TO_KEEP,
-                new_logs_to_keep);
-
-        auto zookeeper = getZooKeeper();
-        zookeeper->set(zookeeper_path + "/logs_to_keep", std::to_string(new_logs_to_keep));
-    }
-
-    try
-    {
-        /// Reproduces the only partial state this function can leave behind: the Keeper node is
-        /// already updated, so the change is in effect cluster-wide, but the local metadata file
-        /// is not.
-        if (logs_to_keep_changed)
-        {
-            fiu_do_on(FailPoints::database_replicated_alter_settings_fail_after_keeper_write,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after writing `logs_to_keep` to Keeper");
-            });
-        }
-
-        DatabaseOnDisk::modifySettingsMetadata(changes, query_context);
-    }
-    catch (Exception & e)
-    {
-        if (logs_to_keep_changed)
-        {
-            e.addMessage(
-                "`logs_to_keep` was already set to {} and is in effect on all replicas of the database, no other settings were applied; "
-                "this replica's metadata file still records the previous value, so `SHOW CREATE DATABASE` will disagree "
-                "with `system.database_replicas` until the query is re-run",
-                new_logs_to_keep);
-        }
-
-        throw;
-    }
+    DatabaseOnDisk::modifySettingsMetadata(changes, query_context);
 
     /// Nothing throws after this point.
     db_settings.set(std::make_unique<const DatabaseReplicatedSettings>(std::move(new_settings)));
@@ -3488,7 +3441,7 @@ The `default_replica_path`, `default_replica_shard_name` and `default_replica_na
 | `check_consistency`                                                          | true                           | Replica-local | Yes     | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
 | `max_retries_before_automatic_recovery`                                      | 10                             | Replica-local | Yes     | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
 | `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | Replica-local | Yes     | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
-| `logs_to_keep`                                                               | 1000                           | Cluster-wide  | Yes     | Default number of logs to keep in ZooKeeper for Replicated database. The value must not exceed `2147483647`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed                                         |
+| `logs_to_keep`                                                               | 1000                           | Cluster-wide  | No      | Default number of logs to keep in ZooKeeper for Replicated database. The value must not exceed `2147483647`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed                                         |
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | Replica-local | No      | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | Replica-local | No      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | Replica-local | No      | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
@@ -3522,24 +3475,17 @@ ALTER DATABASE testdb MODIFY SETTING max_replication_lag_to_enqueue = 100;
 
 The query is not replicated through the DDL log: it is executed on the replica it was sent to. An unknown setting is rejected with `BAD_ARGUMENTS` and an immutable one with `QUERY_NOT_ALLOWED`; in both cases nothing is changed.
 
-Immutable settings cannot be changed because the value would no longer describe anything: the `default_replica_*` settings are used only when the corresponding engine arguments are omitted at `CREATE DATABASE`, and `internal_replication` determines how a `Distributed` table over this database's cluster routes inserts, so it must match the engines of the tables in the database and be identical on every replica. Recreate the database to change them.
+Immutable settings cannot be changed because the value would no longer describe anything or could not be changed safely: the `default_replica_*` settings are used only when the corresponding engine arguments are omitted at `CREATE DATABASE`, `internal_replication` determines how a `Distributed` table over this database's cluster routes inserts, so it must match the engines of the tables in the database and be identical on every replica, and `logs_to_keep` is shared by all replicas, see below. Recreate the database to change them.
 
 A replica-local setting affects only the replica it was changed on, so run the query on every replica if the whole database should behave uniformly.
 
-A cluster-wide setting is stored in ZooKeeper and shared by all replicas, so changing it on one replica changes the behaviour of the whole database. `logs_to_keep` is the only such setting; the other replicas use the new value from their next DDL log cleanup onwards. The value in the `CREATE DATABASE` query seeds the ZooKeeper node only when the first replica creates the database and is ignored for replicas created afterwards, so `SHOW CREATE DATABASE` on a given replica may not show the value that is actually in effect. Query [`system.database_replicas`](/reference/system-tables/database_replicas) for the effective value:
+A cluster-wide setting is stored in ZooKeeper and shared by all replicas. `logs_to_keep` is the only such setting. The value in the `CREATE DATABASE` query seeds the ZooKeeper node only when the first replica creates the database and is ignored for replicas created afterwards, so `SHOW CREATE DATABASE` on a given replica may not show the value that is actually in effect. Query [`system.database_replicas`](/reference/system-tables/database_replicas) for the effective value:
 
 ```sql
 SELECT database, logs_to_keep FROM system.database_replicas;
 ```
 
-Because a cluster-wide setting lives in ZooKeeper, it can also be inspected and repaired with `clickhouse-keeper-client` while the server is stopped, which is useful if the database cannot start or is in read-only mode:
-
-```bash
-clickhouse-keeper-client --host <keeper-host> --port 9181 \
-  -q "set /clickhouse/databases/<uuid>/logs_to_keep 1000"
-```
-
-Note that `SYSTEM RESTORE DATABASE REPLICA` recreates the ZooKeeper nodes from the local metadata of the replica it runs on, which resets `logs_to_keep` to the value in that replica's `CREATE DATABASE` query.
+If the ZooKeeper nodes of the database are lost, `SYSTEM RESTORE DATABASE REPLICA` recreates them from the local metadata of the replica it runs on, so `logs_to_keep` takes the value from that replica's `CREATE DATABASE` query.
 )DOCS_MD",
         .syntax = "ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name')",
         .related = {"Atomic"}});
