@@ -64,7 +64,6 @@ namespace Setting
     extern const SettingsFloat gpu_filtered_read_max_selectivity;
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
     extern const SettingsUInt64 gpu_aggregation_readers;
-    extern const SettingsFloat gpu_aggregation_device_decompression_max_ratio;
     extern const SettingsGPUDecompressionMode gpu_aggregation_decompression;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
@@ -961,8 +960,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
         reading->getNumStreams(),
         context->getSettingsRef()[Setting::gpu_aggregation_readers],
-        context->getSettingsRef()[Setting::gpu_aggregation_decompression],
-        context->getSettingsRef()[Setting::gpu_aggregation_device_decompression_max_ratio]);
+        context->getSettingsRef()[Setting::gpu_aggregation_decompression]);
 
     source_node.step->setStepDescription(
         keyed ? "Compressed columns decompressed and grouped on the device, one row per group"
@@ -1255,7 +1253,6 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
         reading->getNumStreams(),
         context->getSettingsRef()[Setting::gpu_aggregation_readers],
         context->getSettingsRef()[Setting::gpu_aggregation_decompression],
-        context->getSettingsRef()[Setting::gpu_aggregation_device_decompression_max_ratio],
         /*collect_=*/true);
     source_node.step->setStepDescription("Compressed columns decompressed and filtered on the device", settings.max_step_description_length);
 

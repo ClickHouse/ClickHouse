@@ -187,20 +187,6 @@ public:
     /// `commitRawBytes` in whole sizes, and which the device turns into the offsets its rows end at.
     size_t offsetsColumnOf(size_t column_index) const { return variableOffsetsColumnOf(column_index); }
 
-    struct Waits
-    {
-        UInt64 readers_microseconds = 0;
-        UInt64 device_microseconds = 0;
-    };
-
-    Waits waits() const
-    {
-        return {
-            .readers_microseconds = readers_wait_microseconds.load(std::memory_order_relaxed),
-            .device_microseconds = device_wait_microseconds.load(std::memory_order_relaxed),
-        };
-    }
-
     size_t finalize();
 
     /// After `finalize`: keeps the groups for which `program` holds over `columns`, the keys first and then the

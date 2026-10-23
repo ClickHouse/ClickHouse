@@ -73,8 +73,7 @@ struct SharedState
     ReadSettings read_settings;
     size_t batch_bytes;
     size_t num_readers = 1;
-    GPUDecompressionMode decompression = GPUDecompressionMode::RATIO;
-    double device_decompression_max_ratio = 1;
+    GPUDecompressionMode decompression = GPUDecompressionMode::DEVICE;
     bool collect = false;
     /// Of each column of the filter: the key or the value column of the same name and type, among the keys and then
     /// the values, which is read once for both.
@@ -88,50 +87,9 @@ using SharedStatePtr = std::shared_ptr<SharedState>;
 /// Whether a column of a part is compressed well enough for the device to expand it. Expanding
 /// costs the device about as long per byte as the link takes to carry one, and keeps it from
 /// grouping meanwhile, so a column that compression barely shrinks is cheaper sent whole.
-/// Whether the column's codec is one the host expands much more slowly than the device: `GDeflate`, alone or after
-/// `BitPacking`.
-bool hostExpandsSlowly(const IMergeTreeDataPart & part, const String & column_name)
+bool expandsOnDevice(GPUDecompressionMode mode)
 {
-    const auto metadata = part.storage.getInMemoryMetadataPtr(part.storage.getContext(), false);
-    const ColumnsDescription & columns = metadata->getColumns();
-    CompressionCodecPtr codec;
-    if (columns.hasCompressionCodec(column_name))
-    {
-        const ColumnDescription & column = columns.get(column_name);
-        codec = CompressionCodecFactory::instance().get(column.codec, column.type);
-    }
-    else
-    {
-        codec = part.default_codec;
-    }
-    return codec && GPU::deviceCodecOf(*codec) == GPU::GPUCodec::GDEFLATE;
-}
-
-bool expandsOnDevice(const IMergeTreeDataPart & part, const String & column_name, GPUDecompressionMode mode, double max_ratio)
-{
-    switch (mode)
-    {
-        case GPUDecompressionMode::DEVICE:
-            return true;
-        case GPUDecompressionMode::HOST:
-            return false;
-        case GPUDecompressionMode::RATIO:
-        case GPUDecompressionMode::AUTO:
-            break;
-    }
-
-    if (max_ratio >= 1)
-        return true;
-
-    /// The host expands `GDeflate` at a small fraction of the speed it expands the other codecs at, so a column of it
-    /// stays on the device however little it is compressed.
-    if (hostExpandsSlowly(part, column_name))
-        return true;
-
-    const ColumnSize size = part.getColumnSize(column_name);
-    if (size.data_uncompressed == 0)
-        return true;
-    return static_cast<double>(size.data_compressed) <= max_ratio * static_cast<double>(size.data_uncompressed);
+    return mode == GPUDecompressionMode::DEVICE;
 }
 
 ISerialization::SubstreamPath stringSizesPath()
@@ -257,92 +215,14 @@ void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
 }
 
 /// Two readers fill the link when they only copy compressed blocks into pinned memory; a reader
-/// that also expands a column is bound by the CPU, and a quarter of the cores keep up with the
+/// that also expands the columns is bound by the CPU, and a quarter of the cores keep up with the
 /// link, where more of them hold more buffers on both sides of it than they gain.
 size_t automaticReaders(const SharedState & state)
 {
-    const size_t expanding_readers = std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
-    for (const auto & part_to_read : state.parts)
-    {
-        const DataPartPtr & part = part_to_read.part;
-        for (const auto & key : state.keys)
-        {
-            if (!expandsOnDevice(*part, key.name, state.decompression, state.device_decompression_max_ratio))
-                return expanding_readers;
-        }
-        for (const auto & column : state.columns)
-        {
-            if (!expandsOnDevice(*part, column.column.name, state.decompression, state.device_decompression_max_ratio))
-                return expanding_readers;
-        }
-        for (const auto & column : filterColumnsOf(state))
-        {
-            if (!expandsOnDevice(*part, column.name, state.decompression, state.device_decompression_max_ratio))
-                return expanding_readers;
-        }
-    }
-    return 2;
+    if (expandsOnDevice(state.decompression))
+        return 2;
+    return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
 }
-
-/** The threshold on a column's compression ratio that `gpu_aggregation_decompression = 'auto'`
-  * reads the parts of a `GROUP BY` by. It starts where `gpu_aggregation_device_decompression_max_ratio`
-  * is and moves after every part toward whichever side waited on the other since the last move:
-  * when the device thread waited for work, the reading threads are behind and more columns are
-  * left to the device to expand; when the reading threads waited for room in the device thread's
-  * queue, the device is behind and more columns are expanded by the reading threads.
-  */
-class AdaptiveDecompressionRatio
-{
-public:
-    AdaptiveDecompressionRatio(double initial, size_t num_readers_)
-        : num_readers(num_readers_)
-        , ratio(std::clamp(initial, 0.0, 1.0))
-    {
-    }
-
-    double current() const
-    {
-        std::lock_guard lock(mutex);
-        return ratio;
-    }
-
-    void update(const GPU::GroupByGPUAccumulator::Waits & waits)
-    {
-        std::lock_guard lock(mutex);
-
-        /// Every reader waits when the device is behind, so their waits are compared per reader.
-        const UInt64 readers_waited = (waits.readers_microseconds - last.readers_microseconds) / num_readers;
-        const UInt64 device_waited = waits.device_microseconds - last.device_microseconds;
-        last = waits;
-
-        const double previous = ratio;
-        if (device_waited >= std::max(min_wait_microseconds, 2 * readers_waited))
-            ratio = std::min(1.0, ratio + step);
-        else if (readers_waited >= std::max(min_wait_microseconds, 2 * device_waited))
-            ratio = std::max(0.0, ratio - step);
-
-        if (ratio != previous)
-            LOG_TRACE(
-                log,
-                "The device waited {} us and each reader {} us since the last part, so columns compressed to at most {} of their size are "
-                "expanded on the device from now on",
-                device_waited,
-                readers_waited,
-                ratio);
-    }
-
-private:
-    static constexpr double step = 0.125;
-    /// Less than this is noise, whoever waited it.
-    static constexpr UInt64 min_wait_microseconds = 1000;
-
-    const size_t num_readers;
-    const LoggerPtr log = getLogger("GPUCompressedColumns");
-
-    mutable std::mutex mutex;
-    double ratio TSA_GUARDED_BY(mutex);
-    GPU::GroupByGPUAccumulator::Waits last TSA_GUARDED_BY(mutex);
-};
 
 class GPUCompressedColumnsSource : public ISource
 {
@@ -406,7 +286,7 @@ private:
         GPU::GPUAccumulator * accumulator = nullptr;
         size_t bytes_read = 0;
 
-        if (expandsOnDevice(part, column.column.name, state->decompression, state->device_decompression_max_ratio))
+        if (expandsOnDevice(state->decompression))
         {
             MergeTreeCompressedBlockReader reader(part, column.column, state->read_settings);
 
@@ -479,7 +359,7 @@ private:
         size_t rows_read = 0;
         size_t bytes_read = 0;
 
-        if (expandsOnDevice(part, column.column.name, state->decompression, state->device_decompression_max_ratio))
+        if (expandsOnDevice(state->decompression))
         {
             MergeTreeCompressedBlockReader bytes_reader(part, column.column, state->read_settings);
             MergeTreeCompressedBlockReader sizes_reader(part, column.column, state->read_settings, stringSizesPath());
@@ -617,8 +497,6 @@ public:
                              : std::function<void(MutableColumns)>{},
               state->filter_aliases)
     {
-        if (state->decompression == GPUDecompressionMode::AUTO)
-            adaptive_ratio.emplace(state->device_decompression_max_ratio, num_readers);
     }
 
     ~GPUCompressedGroupBySource() override
@@ -1049,16 +927,12 @@ private:
         std::vector<std::unique_ptr<ColumnReader>> readers;
         readers.reserve(state->keys.size() + state->columns.size() + filter_columns.size());
 
-        const double max_ratio = adaptive_ratio ? adaptive_ratio->current() : state->device_decompression_max_ratio;
-        const auto on_device = [&](const String & column_name)
-        {
-            return expandsOnDevice(part, column_name, state->decompression, max_ratio);
-        };
+        const bool on_device = expandsOnDevice(state->decompression);
 
         size_t column_index = 0;
         const auto add_reader = [&](const NameAndTypePair & column)
         {
-            readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name), in_ranges));
+            readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device, in_ranges));
             readers.back()->column_index = column_index;
             if (readers.back()->is_variable)
                 readers.back()->offsets_column_index = accumulator.offsetsColumnOf(column_index);
@@ -1100,8 +974,6 @@ private:
         }
         accumulator.finishPart(reader_index, num_rows_read);
 
-        if (adaptive_ratio)
-            adaptive_ratio->update(accumulator.waits());
     }
 
     /// The `num_rows` rows of every column from where its reader is: every row of the part, or a range of it. The part is
@@ -1241,7 +1113,6 @@ private:
     std::unique_ptr<ConcurrentBoundedQueue<Chunk>> output_queue;
     GPU::GroupByGPUAccumulator accumulator;
     /// Only under `gpu_aggregation_decompression = 'auto'`.
-    std::optional<AdaptiveDecompressionRatio> adaptive_ratio;
     bool generated = false;
 
     std::mutex reader_error_mutex;
@@ -1270,7 +1141,6 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     size_t num_streams_,
     size_t num_readers_,
     GPUDecompressionMode decompression_,
-    double device_decompression_max_ratio_,
     bool collect_)
     : ISourceStep(std::move(output_header_))
     , keys(std::move(keys_))
@@ -1285,7 +1155,6 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     , num_streams(num_streams_)
     , num_readers(num_readers_)
     , decompression(decompression_)
-    , device_decompression_max_ratio(device_decompression_max_ratio_)
     , collect(collect_)
 {
     if (collect && (!keys.empty() || !aggregates.empty() || !derived.empty() || columns.empty()))
@@ -1313,7 +1182,6 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->context = context;
     state->read_settings = context->getReadSettings();
     state->decompression = decompression;
-    state->device_decompression_max_ratio = device_decompression_max_ratio;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
     state->collect = collect;

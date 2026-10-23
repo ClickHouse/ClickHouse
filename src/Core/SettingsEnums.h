@@ -693,8 +693,6 @@ DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
 /// `gpu_aggregation_decompression`.
 enum class GPUDecompressionMode : uint8_t
 {
-    RATIO,
-    AUTO,
     DEVICE,
     HOST,
 };

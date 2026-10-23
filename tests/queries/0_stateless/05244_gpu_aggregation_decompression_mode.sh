@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Checks the aggregations over compressed blocks against the CPU with every value of
+# Checks the aggregations over compressed blocks against the CPU with both values of
 # `gpu_aggregation_decompression`, and that `device` and `host` expand the columns where they say:
-# the device counts what it expanded in `GPUDecompressionBytes`.
+# the device counts what it expanded in `GPUDecompressionBytes`. With `host` the columns go to the
+# device as plain values, in pieces of a batch at most.
 #
 # Where the build has no GPU support, or the machine no usable device, the setting is not applied
 # and both sides of every comparison run on the CPU - the checks hold trivially.
@@ -11,8 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Several parts, so that `auto` has parts to move its threshold between. `v_random` is hashes,
-# which LZ4 leaves as long as they are; `v_dense` and the key shrink well.
+# Several parts, read by several readers. `v_random` is hashes, which LZ4 leaves as long as they
+# are; `v_dense` and the key shrink well.
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE gpu_decompression_mode (k UInt32, v_random UInt64, v_dense UInt64, v_i32 Int32)
     ENGINE = MergeTree ORDER BY tuple()
@@ -57,26 +58,23 @@ function compare_with_cpu()
     fi
 }
 
-for mode in ratio auto device host; do
+for mode in device host; do
     # Reduced a part at a time.
     compare_with_cpu "SELECT sum(v_random), sum(v_dense), min(v_i32), max(v_random) FROM gpu_decompression_mode SETTINGS gpu_aggregation_decompression = '$mode'"
+    compare_with_cpu "SELECT max(v_dense), min(v_random) FROM gpu_decompression_mode SETTINGS gpu_aggregation_decompression = '$mode', gpu_aggregation_batch_bytes = 65536"
 
     # Grouped from every column at once, over several readers.
     compare_with_cpu "SELECT k, sum(v_random), sum(v_dense), min(v_i32) FROM gpu_decompression_mode GROUP BY k ORDER BY k SETTINGS gpu_aggregation_decompression = '$mode'"
     compare_with_cpu "SELECT k, max(v_random), min(v_dense) FROM gpu_decompression_mode GROUP BY k ORDER BY k SETTINGS gpu_aggregation_decompression = '$mode', gpu_aggregation_readers = 4"
+    compare_with_cpu "SELECT k, max(v_random), min(v_dense) FROM gpu_decompression_mode GROUP BY k ORDER BY k SETTINGS gpu_aggregation_decompression = '$mode', gpu_aggregation_batch_bytes = 65536"
 done
 
-# `auto` starts from the threshold and moves from wherever it starts.
-for ratio in 0 1; do
-    compare_with_cpu "SELECT k, sum(v_random), max(v_dense) FROM gpu_decompression_mode GROUP BY k ORDER BY k SETTINGS gpu_aggregation_decompression = 'auto', gpu_aggregation_device_decompression_max_ratio = $ratio"
-done
-
-# `device` expands every column on the device and `host` none, whatever the threshold says.
+# `device` expands every column on the device and `host` none.
 for mode in device host; do
     query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${mode}"
     $CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query_id "$query_id" --query "
         SELECT k, sum(v_random), sum(v_dense) FROM gpu_decompression_mode GROUP BY k FORMAT Null
-        SETTINGS gpu_aggregation_decompression = '$mode', gpu_aggregation_device_decompression_max_ratio = 0.5"
+        SETTINGS gpu_aggregation_decompression = '$mode'"
 
     if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
         echo "$mode ok"

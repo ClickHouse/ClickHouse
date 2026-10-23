@@ -605,8 +605,6 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
 
 IMPLEMENT_SETTING_ENUM(GPUDecompressionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"ratio",  GPUDecompressionMode::RATIO},
-     {"auto",   GPUDecompressionMode::AUTO},
-     {"device", GPUDecompressionMode::DEVICE},
+    {{"device", GPUDecompressionMode::DEVICE},
      {"host",   GPUDecompressionMode::HOST}})
 }

@@ -11466,75 +11466,29 @@ fetch, and one thread copies slower than the link carries - about 4 GB/s against
 on a Tesla T4 - so one reader leaves the link idle, and two fill it: over 300 million rows grouped
 by a `UInt8` key, one reader took 0.95 s, two 0.53 s, and four or eight were slower than two.
 
-A column that `gpu_aggregation_device_decompression_max_ratio` leaves to the host is expanded by
-the reading thread as well, which is work per byte rather than per block, and two threads no
-longer keep up with the link: grouping 300 million rows of such a `UInt64` by a `UInt32` key took
-1.34 s with two readers, 0.84 s with four and 0.77 s with eight, against 1.08 s expanded on the
-device. Yet each reader holds a part's buffers in pinned memory and on the device, and with four
-columns of a part in flight eight readers lost what they gained: grouping by two keys took 1.37 s
-with four readers and 1.78 s with eight. So with 0 the query gets two readers when every column is
-expanded on the device, and a quarter of the CPU cores, at least two, when some column is
+With `gpu_aggregation_decompression = 'host'` the reading threads expand the columns as well, which
+is work per byte rather than per block, and two threads no longer keep up with the link: grouping
+300 million rows of a `UInt64` by a `UInt32` key took 1.34 s with two readers, 0.84 s with four and
+0.77 s with eight. Yet each reader holds a part's buffers in pinned memory and on the device, and
+with four columns of a part in flight eight readers lost what they gained: grouping by two keys took
+1.37 s with four readers and 1.78 s with eight. So with 0 the query gets two readers when the
+columns are expanded on the device, and a quarter of the CPU cores, at least two, when they are
 expanded on the host.
 
 Each reader holds a part's compressed blocks in pinned memory and its expanded columns on the
 device while they are grouped, so more readers take more of both.
 )", EXPERIMENTAL, \
         {"26.11", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the columns are expanded on the device or on the host."}) \
-    DECLARE(Float, gpu_aggregation_device_decompression_max_ratio, 0.5, R"(
-How well a column of a part has to be compressed - its compressed bytes as a fraction of its
-uncompressed bytes, at most this - for an aggregation that `allow_experimental_gpu_aggregation`
-runs over compressed blocks (`ReadFromGPUCompressedColumns`) to expand it on the device. A column
-compressed worse is expanded on the CPU by the reading thread and sent as it is. With the default
-of 0.5 a column that compression does not halve is sent whole.
-
-Expanding on the device costs it about as long per uncompressed byte as the link takes to carry
-one - on a Tesla T4 behind PCIe 3 x8, both come to some 6 GB/s - and the device cannot group
-while it expands, whereas a copy over the link runs beside the grouping. So a column that
-compression does not shrink can be cheaper sent whole, given reading threads to expand it (see
-`gpu_aggregation_readers`), when the device has little else to do: over 300 million rows of a
-`UInt64` that LZ4 compresses to 96% of its size, a `sum` of it by a `UInt32` key of a hundred
-thousand values took 1.08 s expanded on the device and 0.86 s sent whole with a threshold of 0.5,
-and by a key of ten million values 1.34 s against 1.00 s. Where the device is busy grouping
-anyway, the reading threads' work and the buffers they hold on both sides of the link can cost
-more than they save: a `sum`, `min` and `max` of three such columns by the key of ten million
-values took 4% longer sent whole, and by a key of 251 values 3% longer. Measure before changing
-this for a workload.
-
-Possible values:
-
-- 1 - Every column is expanded on the device.
-- 0 - Every column is expanded on the CPU and sent whole.
-- A fraction in between - the threshold on a column's compression ratio.
-
-Applies when `gpu_aggregation_decompression` is `ratio`, and is where `auto` starts.
-)", EXPERIMENTAL, \
-        {"26.11", 0.5, 0.5, "New experimental setting, the compression ratio up to which a column is expanded on the device rather than sent whole."}) \
-    DECLARE(GPUDecompressionMode, gpu_aggregation_decompression, GPUDecompressionMode::RATIO, R"(
+    DECLARE(GPUDecompressionMode, gpu_aggregation_decompression, GPUDecompressionMode::DEVICE, R"(
 Who expands a column of a part - the device or the CPU - in an aggregation that
 `allow_experimental_gpu_aggregation` runs over compressed blocks (`ReadFromGPUCompressedColumns`).
 
-Which one is faster depends on which of them has time to spare: expanding on the device keeps it
-from grouping, and expanding on the CPU takes reading threads and sends the column over the link
-at full width (see `gpu_aggregation_device_decompression_max_ratio`). A fixed threshold is right
-for one workload and one machine only, and `auto` finds it while the query runs.
-
 Possible values:
 
-- `ratio` - A column is expanded on the device when it is compressed to at most
-  `gpu_aggregation_device_decompression_max_ratio` of its size, and on the CPU otherwise.
-- `auto` - Like `ratio`, but for a `GROUP BY` the threshold starts at
-  `gpu_aggregation_device_decompression_max_ratio` and moves after every part read: toward the
-  device when the device waited for the reading threads to hand it work, toward the CPU when the
-  reading threads waited for the device to take it. A part is read by the threshold as it was
-  when the part was begun. An aggregation without `GROUP BY` reduces every part on its own, with
-  nothing to wait on, and keeps to the starting threshold.
-- `device` - Every column is expanded on the device.
-- `host` - Every column is expanded on the CPU and sent whole.
-
-The number of reading threads is chosen by the starting threshold when `gpu_aggregation_readers`
-is 0, so `auto` that moves work to the CPU may want more of them set explicitly.
+- `device` - Every column is expanded on the device: the compressed blocks go over the link as they are stored.
+- `host` - Every column is expanded on the CPU by the reading threads and sent whole.
 )", EXPERIMENTAL, \
-        {"26.11", "ratio", "ratio", "New experimental setting, whether a GPU aggregation over compressed blocks expands a column on the device or on the host by a fixed threshold, always on one of them, or by which of them waits for the other while the query runs."}) \
+        {"26.11", "device", "device", "New experimental setting, whether a GPU aggregation over compressed blocks expands the columns on the device or on the host."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
