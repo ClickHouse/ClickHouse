@@ -41,6 +41,9 @@ public:
 
     void add(TimestampType timestamp, ValueType value)
     {
+        /// An unsorted buffer is compacted before any append can grow it, not only before an out-of-order one.
+        if constexpr (compacting)
+            compactIfFull(1);
         /// Out-of-order and duplicate timestamps are rare (measured ~1 per 1.5 billion adds on production-shaped multithreaded reads), hence `[[unlikely]]`.
         if (!buffer.empty() && timestamp <= buffer.back().first) [[unlikely]]
         {
@@ -50,8 +53,6 @@ public:
                 last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
                 return;
             }
-            if constexpr (compacting)
-                compactIfFull(1);
             if (!compacting || isSorted())
                 unsorted_begin = buffer.size();
         }

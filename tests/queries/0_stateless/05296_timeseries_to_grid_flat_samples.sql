@@ -108,6 +108,15 @@ SELECT
         = (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number), toFloat64(number)) FROM numbers(4097))
 SETTINGS max_threads = 1;
 
+-- The same repeated series through the per-row paths (-If and a Nullable value) keeps only the distinct timestamps in memory.
+SELECT 'repeated series, per-row adds (1 1):';
+SELECT
+    (SELECT timeSeriesRateToGridIf(1000, 5100, 1, 60)(toDateTime(1000 + number % 4095), toFloat64(number % 4095), 1) FROM numbers(4095 * 1000))
+        = (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number), toFloat64(number)) FROM numbers(4095)),
+    (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number % 4095), toNullable(toFloat64(number % 4095))) FROM numbers(4095 * 1000))
+        = (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number), toFloat64(number)) FROM numbers(4095))
+SETTINGS max_threads = 1, max_memory_usage = 20000000;
+
 -- Format version 6: the version, the bucket count, the number of samples and the samples in timestamp order.
 SELECT 'state layout:';
 SELECT hex(CAST(timeSeriesRateToGridState(100, 200, 20, 100)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [140, 110]), [2., 1]) AS String));
