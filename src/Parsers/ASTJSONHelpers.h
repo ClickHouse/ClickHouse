@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/IAST.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -30,6 +31,8 @@ public:
     JSONObjectWriter(WriteBuffer & out_, const char * type_name)
         : out(out_)
     {
+        /// One of these is constructed per node by the AST-to-JSON walk, which recurses as deep as the query nests.
+        checkStackSize();
         out << "{\"type\":";
         writeJSONString(std::string_view(type_name), out, fs);
     }

@@ -3,12 +3,16 @@
 #include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -162,6 +166,35 @@ public:
     }
 
     const DataTypePtr & slotType(size_t slot) const { return slots[slot].type; }
+
+    /// Whether a value of the given type is a datetime that `widenToDateTime64` accepts: a KQL
+    /// datetime is a `DateTime64`, but a table queried with KQL may store its timestamps in the
+    /// narrower `DateTime`, `Date` or `Date32` columns.
+    static bool isNarrowDateTime(const DataTypePtr & type)
+    {
+        const DataTypePtr nested = removeNullable(type);
+        return isDateOrDate32(nested) || isDateTime(nested);
+    }
+
+    /// Appends a step converting a `DateTime`, `Date` or `Date32` slot into `DateTime64(0)`,
+    /// the type KQL datetimes are computed in. The conversion keeps the instant: a `DateTime`
+    /// keeps its time zone, and a date becomes its midnight in the default time zone, as a
+    /// `CAST` does. Widening the input, rather than the result, lets the computation produce
+    /// datetimes the narrower types cannot hold, such as those before the Unix epoch.
+    size_t widenToDateTime64(size_t slot)
+    {
+        const DataTypePtr & type = slots[slot].type;
+        const DataTypePtr nested = removeNullable(type);
+        DataTypePtr widened;
+        if (isDateTime(nested))
+            widened = std::make_shared<DataTypeDateTime64>(0, assert_cast<const DataTypeDateTime &>(*nested));
+        else
+            widened = std::make_shared<DataTypeDateTime64>(0);
+        if (type->isNullable())
+            widened = makeNullable(widened);
+        const size_t target = constant(std::make_shared<DataTypeString>(), Field(widened->getName()));
+        return step("CAST", {slot, target});
+    }
 
     FunctionBasePtr finish(String name, const ColumnsWithTypeAndName & arguments) &&
     {

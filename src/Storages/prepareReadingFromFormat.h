@@ -44,8 +44,19 @@ namespace DB
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+        /// True if `format_header` has a hive partition column. Its values in the file are not the values
+        /// of the column, so filters and the top-K threshold must not be pushed into the format.
+        bool formatReadsHivePartitionColumns() const;
+        /// The filter without the conjuncts on hive partition and virtual columns (except row lineage ones if `keep_row_lineage_columns`):
+        /// they are added after the format, and a column of the data file with the same name holds other values.
+        std::shared_ptr<const ActionsDAG> getFormatFilter(
+            const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns = false) const;
+        /// A row-level filter (row policy) is not stored here and does not change the headers. The source
+        /// applies it via `FormatFilterInfo` and keeps its input columns, because:
+        /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
+        /// - the output header of the reading step must not change when `optimizePrewhere` adds PREWHERE,
+        ///   because the steps above were built for the initial header.
         PrewhereInfoPtr prewhere_info;
-        FilterDAGInfoPtr row_level_filter;
     };
 
     /// Inputs reachable by storage-level pushdown consumers. Pass to splitFilterDagForAllowedInputs to drop IN-subqueries which can't be used.
@@ -95,12 +106,12 @@ namespace DB
     /// Returns columns_to_read from file.
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
 
-    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
+    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 
     /// Lazy materialization (see optimizeLazyMaterialization2): split `info` into the info for the
     /// main reading pass and the info for the lazy reading pass. The physical columns that the
     /// format reads and nothing needs before the LIMIT (i.e. that are not in `required_names`, not
-    /// inputs of the PREWHERE / row-level filter, not virtual or hive partition columns, and not
+    /// inputs of the PREWHERE, not virtual or hive partition columns, and not
     /// pinned by a `DEFAULT` expression dependency) are deferred to the lazy pass. On success,
     /// `info` is reduced to the remaining columns with a `__global_row_index` UInt64 column
     /// appended to its source header, and the returned info describes the deferred columns alone
