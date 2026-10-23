@@ -329,8 +329,11 @@ private:
         StoragePtr replacement;
         StoragePtr storage;
         StorageSnapshotPtr storage_snapshot;
+        QueryTreeNodePtr query_node;
     };
     std::vector<ReplacedTableStorage> replaced_table_storages;
+
+    const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
       * An inlined view keeps behaving as a table expression with that name, exactly as it does without

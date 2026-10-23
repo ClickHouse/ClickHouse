@@ -191,80 +191,6 @@ bool isClusterVariantDisabledForQuery(const IdentifierResolveScope & scope)
     return false;
 }
 
-/// A subquery, a CTE or an alias inherits the distributed state that a cluster read gives the query, so a source read through one
-/// of them, or a table that `IN` names, would lose its own cluster read. A query with such a source reads its table itself in any case.
-bool readsOtherSource(const IdentifierResolveScope & scope, const StorageSnapshotPtr & storage_snapshot)
-{
-    /// `resolveQuery` has already moved the CTEs and the `WITH` aliases out of the query tree.
-    auto find_named_nodes = [&](const std::string & name)
-    {
-        QueryTreeNodes nodes;
-        for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-        {
-            if (auto it = current_scope->cte_name_to_query_node.find(name); it != current_scope->cte_name_to_query_node.end())
-                nodes.insert(nodes.end(), it->second.begin(), it->second.end());
-            for (const auto * aliases : {&current_scope->aliases, &current_scope->global_with_aliases})
-                if (auto it = aliases->alias_name_to_expression_node.find(name); it != aliases->alias_name_to_expression_node.end())
-                    nodes.push_back(it->second);
-        }
-        return nodes;
-    };
-
-    /// An `IN` operand, also behind aliases, that is not an alias, a CTE or a column is resolved as a table.
-    std::unordered_set<std::string> followed_names;
-    std::function<bool(const Identifier &)> names_table = [&](const Identifier & name)
-    {
-        if (!followed_names.insert(name.getFullName()).second)
-            return false;
-        auto named_nodes = find_named_nodes(name.front());
-        if (named_nodes.empty())
-            return !storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name.getFullName());
-        return std::ranges::any_of(named_nodes, [&](const QueryTreeNodePtr & named_node)
-        {
-            const auto * identifier = named_node->as<IdentifierNode>();
-            return identifier && names_table(identifier->getIdentifier());
-        });
-    };
-
-    std::unordered_set<std::string> visited_names;
-    std::function<bool(const QueryTreeNodePtr &)> reads_source = [&](const QueryTreeNodePtr & root)
-    {
-        bool found = false;
-        traverseQueryTree(
-            root,
-            [&](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return !found; },
-            [&](const QueryTreeNodePtr & node)
-            {
-                if (found)
-                    return;
-
-                if (const auto * subquery = node->as<QueryNode>(); subquery && node != scope.scope_node && subquery->getJoinTreeNode())
-                {
-                    const auto & join_tree = subquery->getJoinTreeNode();
-                    const auto * identifier = join_tree->as<IdentifierNode>();
-                    const auto * table = join_tree->as<TableNode>();
-                    found = !(identifier && identifier->getIdentifier().getFullName() == "system.one")
-                        && !(table && table->getStorageID().getFullTableName() == "system.one");
-                }
-                else if (const auto * identifier = node->as<IdentifierNode>())
-                {
-                    if (visited_names.insert(identifier->getIdentifier().front()).second)
-                        for (const auto & named_node : find_named_nodes(identifier->getIdentifier().front()))
-                            found = found || reads_source(named_node);
-                }
-                else if (const auto * function = node->as<FunctionNode>(); function && isNameOfInFunction(function->getFunctionName()))
-                {
-                    const auto & arguments = function->getArguments().getNodes();
-                    const auto * set = arguments.size() == 2 ? arguments[1]->as<IdentifierNode>() : nullptr;
-                    found = set && names_table(set->getIdentifier());
-                }
-            });
-        return found;
-    };
-
-    return reads_source(scope.scope_node);
-}
-
 /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
 /// calls (see `untuple` handling in resolveFunction). Recognize that shape so the matcher can
 /// expand it into one prefixed projection column per element, matching the legacy analyzer.
@@ -5084,6 +5010,11 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
     if (!query_node || query_node->hasPrewhere() || isClusterVariantDisabledForQuery(scope))
         return;
 
+    /// As in a distributed query, a subquery of a query with a replaced table reads its tables itself.
+    for (const auto * current_scope = scope.parent_scope; current_scope; current_scope = current_scope->parent_scope)
+        if (std::ranges::any_of(replaced_table_storages, [&](const auto & replaced) { return replaced.query_node == current_scope->scope_node; }))
+            return;
+
     StoragePtr storage = table_node->getStorage();
     StorageSnapshotPtr storage_snapshot = table_node->getStorageSnapshot();
     if (auto nested = resolveStorageProxy(storage); nested != storage)
@@ -5097,15 +5028,21 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
         storage_snapshot = storage->getStorageSnapshot(metadata, scope.context);
     }
 
-    if (!storage->isObjectStorage() || readsOtherSource(scope, storage_snapshot))
+    if (!storage->isObjectStorage())
         return;
 
     auto cluster_storage = storage->getStorageForParallelReplicasRead(storage_snapshot, scope.context);
     if (!cluster_storage)
         return;
 
-    replaced_table_storages.push_back({cluster_storage, storage, storage_snapshot});
+    replaced_table_storages.push_back({cluster_storage, storage, storage_snapshot, scope.scope_node});
     table_node->replaceStorage(cluster_storage, cluster_storage->getStorageSnapshot(storage_snapshot->metadata, scope.context));
+}
+
+const QueryAnalyzer::ReplacedTableStorage * QueryAnalyzer::findReplacedTableStorage(const StoragePtr & replacement) const
+{
+    auto it = std::ranges::find_if(replaced_table_storages, [&](const auto & replaced) { return replaced.replacement == replacement; });
+    return it == replaced_table_storages.end() ? nullptr : &*it;
 }
 
 void QueryAnalyzer::restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node)
@@ -5130,8 +5067,7 @@ void QueryAnalyzer::restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr 
             else if (auto * table_node = current_node->as<TableNode>())
             {
                 table_nodes.push_back(table_node);
-                const auto & storage = table_node->getStorage();
-                if (!std::ranges::any_of(replaced_table_storages, [&](const auto & replaced) { return replaced.replacement == storage; }))
+                if (!findReplacedTableStorage(table_node->getStorage()))
                     reads_other_source = true;
             }
             else if (current_node->as<TableFunctionNode>())
@@ -5142,16 +5078,8 @@ void QueryAnalyzer::restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr 
         return;
 
     for (auto * table_node : table_nodes)
-    {
-        for (const auto & replaced : replaced_table_storages)
-        {
-            if (table_node->getStorage() == replaced.replacement)
-            {
-                table_node->replaceStorage(replaced.storage, replaced.storage_snapshot);
-                break;
-            }
-        }
-    }
+        if (const auto * replaced = findReplacedTableStorage(table_node->getStorage()))
+            table_node->replaceStorage(replaced->storage, replaced->storage_snapshot);
 }
 
 /** Initialize query join tree node.
@@ -7253,8 +7181,9 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             bool is_distributed = false;
 
+            /// A replaced table is read like the table itself, so the other sources of the query keep their own cluster read.
             if (auto * table_node = join_tree_node->as<TableNode>())
-                is_distributed = table_node->getStorage()->isRemote();
+                is_distributed = table_node->getStorage()->isRemote() && !findReplacedTableStorage(table_node->getStorage());
             else if (auto * table_function_node = join_tree_node->as<TableFunctionNode>())
                 is_distributed = table_function_node->getStorage()->isRemote();
 

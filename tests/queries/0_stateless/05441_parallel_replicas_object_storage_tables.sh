@@ -109,15 +109,22 @@ function check_shards()
         WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
 }
 
-# A plain `s3` with its own SETTINGS in a subquery, a CTE or an alias is still read with parallel replicas.
+# A plain `s3` with its own SETTINGS in a subquery, a CTE, an alias, a lambda or a SQL function is still read with parallel replicas.
 S3_SOURCE="s3(s3_conn, filename = '${CLICKHOUSE_DATABASE}/*.parquet', format = 'Parquet') WHERE a < 50 SETTINGS max_threads = 2"
 check_shards s3_in_subquery "SELECT count() FROM t WHERE a IN (SELECT a FROM $S3_SOURCE)"
 check_shards s3_in_cte "WITH c AS (SELECT a FROM $S3_SOURCE) SELECT count() FROM t WHERE a IN c"
 check "WITH (SELECT max(a) FROM $S3_SOURCE) AS m SELECT count() FROM t WHERE a <= m"
+check_shards s3_in_lambda "WITH x -> x IN (SELECT a FROM $S3_SOURCE) AS f SELECT count() FROM t WHERE f(a)"
+$CLICKHOUSE_CLIENT -q "CREATE FUNCTION ${CLICKHOUSE_DATABASE}_f AS x -> x IN (SELECT a FROM $S3_SOURCE)"
+check_shards s3_in_function "SELECT count() FROM t WHERE ${CLICKHOUSE_DATABASE}_f(a)"
 
 echo "-- a subquery or a set that reads no table"
 check "SELECT sum(a) FROM t WHERE a > (SELECT 1)"
 check "WITH (1, 2) AS s SELECT count() FROM t WHERE a IN s"
+
+echo "-- a server constant"
+# Computed on the initiator, as when the table is read without parallel replicas.
+check "SELECT hostName() = (SELECT hostName()) AS h, count() FROM t GROUP BY h"
 
 echo "-- hive partitioning"
 $CLICKHOUSE_CLIENT -q "
@@ -147,4 +154,5 @@ $CLICKHOUSE_CLIENT -q "
     DROP VIEW vc;
     DROP TABLE mt;
     DROP USER u_${CLICKHOUSE_DATABASE};
+    DROP FUNCTION ${CLICKHOUSE_DATABASE}_f;
 "
