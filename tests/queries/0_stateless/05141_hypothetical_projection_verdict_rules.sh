@@ -11,7 +11,8 @@ PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, op
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real;
     CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            auto_statistics_types = '';
     CREATE TABLE t_real AS t_est;
     ALTER TABLE t_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
     INSERT INTO t_est SELECT number, number % 100, number FROM numbers(1000);
@@ -160,7 +161,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT count() FROM t_real WHERE b = 42 SETTINGS ${PIN}, use_primary_key = 0" \
     | grep -oE 'ReadFromMergeTree \(p_b\)' || echo "real: read from the base table"
 
-echo "--- empirical = 0 scans nothing, and reports no marks it does not have ---"
+echo "--- empirical = 0 scans nothing, and with no statistics reports no marks it does not have ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF empirical = 0 SELECT count() FROM t_est WHERE b = 42 SETTINGS ${PIN};

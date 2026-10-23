@@ -10,6 +10,8 @@
 namespace DB
 {
 
+struct ProjectionDescription;
+
 /// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
 bool tryEstimateWithStatistics(
     WhatIfCandidateResult & result,
@@ -18,6 +20,14 @@ bool tryEstimateWithStatistics(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & parts,
     const ActionsDAG::Node * filter_node,
+    ContextPtr context);
+
+/// estimate the marks and rows of a normal projection from the column statistics of the first column of its key, with no verdict
+bool tryEstimateProjectionWithStatistics(
+    WhatIfCandidateResult & result,
+    const ProjectionDescription & projection,
+    ReadFromMergeTree * read_step,
+    const RangesInDataParts & parts,
     ContextPtr context);
 
 }

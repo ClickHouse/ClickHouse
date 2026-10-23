@@ -41,7 +41,7 @@ reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
 reason: the same 10 marks would be read, and the projection order serves no ORDER BY
 real: read from the base table
---- empirical = 0 scans nothing, and reports no marks it does not have ---
+--- empirical = 0 scans nothing, and with no statistics reports no marks it does not have ---
 status: applicable
 source: applicability_only
 empirical_status: disabled

@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
+#include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 
@@ -1119,6 +1120,9 @@ WhatIfCandidateResult evaluateProjection(
     {
         result.empirical_status = WhatIfCandidateResult::Disabled;
     }
+
+    if (tryEstimateProjectionWithStatistics(result, *projection, read_step, baseline_parts, context))
+        return result;
 
     result.estimate_source = WhatIfCandidateResult::ApplicabilityOnly;
     return result;

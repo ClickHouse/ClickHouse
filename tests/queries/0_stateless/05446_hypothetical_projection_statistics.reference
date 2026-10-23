@@ -1,0 +1,27 @@
+-- a point
+Baseline (after PK + partition + existing indexes):
+marks: 100
+rows: 10000
+With p (normal projection, hypothetical):
+marks: 2
+rows: 200
+source: statistical
+empirical_status: disabled
+real: 2 marks, 200 rows
+-- a range
+Baseline (after PK + partition + existing indexes):
+marks: 100
+rows: 10000
+With p (normal projection, hypothetical):
+marks: 10
+rows: 1000
+source: statistical
+real: 10 marks, 1000 rows
+-- the filter also reads a column out of the key
+marks: 50
+With p (normal projection, hypothetical):
+source: applicability_only
+-- a part with no statistics
+marks: 20
+With p (normal projection, hypothetical):
+source: applicability_only
