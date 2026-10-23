@@ -7,13 +7,10 @@ Queries executed: 20
 Arrivals: 20, target rate: 100.000/s
 Queries executed: 20
 Arrivals: 20, target rate: 200.000/s
---- the arrivals that find all slots busy wait in the queue
+--- at most --max-in-flight queries execute at the same time, the queued arrivals are executed too
 Queries executed: 20
 Arrivals: 20
-queued: 19
 max 1 of 1
---- the achieved rate does not change while the queries in flight finish
-1
 --- an early fatal error stops the run
 Connection refused
 --- per-query statistics
