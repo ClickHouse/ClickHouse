@@ -214,7 +214,7 @@ std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::st
         {
             case 'i': [[fallthrough]];
             case 'm':
-                if (flags.find(option) == std::string::npos)
+                if (!flags.contains(option))
                     flags.push_back(option);
                 break;
             case 's':
