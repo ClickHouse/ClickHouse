@@ -192,7 +192,7 @@ ReadManager::~ReadManager()
 
 void ReadManager::cancel() noexcept
 {
-    bool stop_reads;
+    bool stop_reads = false;
     {
         std::lock_guard lock(delivery_mutex);
         cancelled = true;
