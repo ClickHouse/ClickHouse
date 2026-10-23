@@ -3164,7 +3164,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
     /// Decides whether a division-or-null operation must return NULL for the given operands.
-    /// The null condition has to match exactly when the underlying operation would raise an FPE:
+    /// For division, the null condition matches exactly the cases where the operation raises an FPE. Integer modulo
+    /// raises only for a zero divisor, but its `*OrNull` variants keep `NULL` for `INT_MIN % -1`, as documented:
     ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
     ///    overflow is a valid floating-point result, not an FPE);
     ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed

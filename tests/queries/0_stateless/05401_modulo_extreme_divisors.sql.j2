@@ -19,14 +19,26 @@ SELECT '-- the same for wide and mixed types, in all four constness shapes';
 SELECT modulo(materialize({{ a }}), materialize({{ b }})), modulo({{ a }}, materialize({{ b }})), modulo(materialize({{ a }}), {{ b }}), modulo(identity({{ a }}), identity({{ b }}));
 {% endfor -%}
 
-SELECT '-- division by zero still throws';
-SELECT modulo(materialize(toInt64(-9223372036854775808)), toInt64(0)); -- { serverError ILLEGAL_DIVISION }
-SELECT modulo(materialize(toInt64(-9223372036854775808)), materialize(toInt64(0))); -- { serverError ILLEGAL_DIVISION }
+{# The type pairs with a kernel for a constant divisor in `modulo.cpp`, and the limits of their types. -#}
+{% set pairs = [('UInt64', 'UInt8'), ('UInt64', 'UInt16'), ('UInt64', 'UInt32'), ('UInt64', 'UInt64'), ('UInt32', 'UInt8'), ('UInt32', 'UInt16'), ('UInt32', 'UInt32'), ('UInt32', 'UInt64'), ('Int64', 'Int8'), ('Int64', 'Int16'), ('Int64', 'Int32'), ('Int64', 'Int64'), ('Int32', 'Int8'), ('Int32', 'Int16'), ('Int32', 'Int32'), ('Int32', 'Int64')] -%}
+{% set limits = {'UInt8': (0, 255), 'UInt16': (0, 65535), 'UInt32': (0, 4294967295), 'UInt64': (0, 18446744073709551615), 'Int8': (-128, 127), 'Int16': (-32768, 32767), 'Int32': (-2147483648, 2147483647), 'Int64': (-9223372036854775808, 9223372036854775807)} -%}
 
-SELECT '-- constant and column divisors agree';
-{% for a, a_min, b, b_min in [('Int64', '-9223372036854775808', 'Int8', '-128'), ('Int64', '-9223372036854775808', 'Int16', '-32768'), ('Int64', '-9223372036854775808', 'Int32', '-2147483648'), ('Int64', '-9223372036854775808', 'Int64', '-9223372036854775808'), ('Int32', '-2147483648', 'Int8', '-128'), ('Int32', '-2147483648', 'Int16', '-32768'), ('Int32', '-2147483648', 'Int32', '-2147483648'), ('Int32', '-2147483648', 'Int64', '-9223372036854775808')] -%}
-{% for d in [b_min, '-1'] + (['2147483648', '-2147483648'] if (a, b) == ('Int32', 'Int64') else []) -%}
-SELECT '{{ a }} % {{ b }}({{ d }})', countIf(modulo(x, to{{ b }}({{ d }})) != modulo(x, materialize(to{{ b }}({{ d }}))))
-FROM (SELECT x FROM generateRandom('x {{ a }}', 42) LIMIT 10000 UNION ALL SELECT arrayJoin([to{{ a }}({{ a_min }}), to{{ a }}(-1), to{{ a }}(0), to{{ a }}(1)]) AS x);
+SELECT '-- division by zero throws for a constant and a column divisor';
+{% for a, b in pairs -%}
+SELECT modulo(materialize(to{{ a }}('{{ limits[a][0] }}')), to{{ b }}(0)); -- { serverError ILLEGAL_DIVISION }
+SELECT modulo(materialize(to{{ a }}('{{ limits[a][0] }}')), materialize(to{{ b }}(0))); -- { serverError ILLEGAL_DIVISION }
+SELECT modulo(to{{ a }}('{{ limits[a][0] }}'), to{{ b }}(0)); -- { serverError ILLEGAL_DIVISION }
+{% endfor %}
+SELECT '-- col % const, col % col and const % const agree: mismatches of col % const, and whether const % const matches';
+{% for a, b in pairs -%}
+{% set a_min, a_max = limits[a] -%}
+{% set b_min, b_max = limits[b] -%}
+{% set dividends = ([a_min, a_min + 1, -1] if a_min < 0 else []) + [0, 1, a_max - 1, a_max] -%}
+{% set divisors = [1] + ([-1, b_min] if b_min < 0 else []) + ([a_max] if a_max <= b_max else []) + ([a_max + 1] if a_max + 1 <= b_max else []) + [b_max] -%}
+{% for d in divisors | unique -%}
+SELECT '{{ a }} % {{ b }}({{ d }})',
+    countIf(modulo(x, to{{ b }}('{{ d }}')) != modulo(x, materialize(to{{ b }}('{{ d }}')))),
+    {% for v in dividends %}modulo(to{{ a }}('{{ v }}'), to{{ b }}('{{ d }}')) = modulo(materialize(to{{ a }}('{{ v }}')), materialize(to{{ b }}('{{ d }}'))){{ ' AND ' if not loop.last }}{% endfor %}
+FROM (SELECT x FROM generateRandom('x {{ a }}', 42) LIMIT 10000 UNION ALL SELECT arrayJoin([{% for v in dividends %}to{{ a }}('{{ v }}'){{ ', ' if not loop.last }}{% endfor %}]) AS x);
 {% endfor -%}
 {% endfor -%}

@@ -13,23 +13,57 @@
 0	0	0	0
 0	0	0	0
 0	0	0	0
--- division by zero still throws
--- constant and column divisors agree
-Int64 % Int8(-128)	0
-Int64 % Int8(-1)	0
-Int64 % Int16(-32768)	0
-Int64 % Int16(-1)	0
-Int64 % Int32(-2147483648)	0
-Int64 % Int32(-1)	0
-Int64 % Int64(-9223372036854775808)	0
-Int64 % Int64(-1)	0
-Int32 % Int8(-128)	0
-Int32 % Int8(-1)	0
-Int32 % Int16(-32768)	0
-Int32 % Int16(-1)	0
-Int32 % Int32(-2147483648)	0
-Int32 % Int32(-1)	0
-Int32 % Int64(-9223372036854775808)	0
-Int32 % Int64(-1)	0
-Int32 % Int64(2147483648)	0
-Int32 % Int64(-2147483648)	0
+-- division by zero throws for a constant and a column divisor
+-- col % const, col % col and const % const agree: mismatches of col % const, and whether const % const matches
+UInt64 % UInt8(1)	0	1
+UInt64 % UInt8(255)	0	1
+UInt64 % UInt16(1)	0	1
+UInt64 % UInt16(65535)	0	1
+UInt64 % UInt32(1)	0	1
+UInt64 % UInt32(4294967295)	0	1
+UInt64 % UInt64(1)	0	1
+UInt64 % UInt64(18446744073709551615)	0	1
+UInt32 % UInt8(1)	0	1
+UInt32 % UInt8(255)	0	1
+UInt32 % UInt16(1)	0	1
+UInt32 % UInt16(65535)	0	1
+UInt32 % UInt32(1)	0	1
+UInt32 % UInt32(4294967295)	0	1
+UInt32 % UInt64(1)	0	1
+UInt32 % UInt64(4294967295)	0	1
+UInt32 % UInt64(4294967296)	0	1
+UInt32 % UInt64(18446744073709551615)	0	1
+Int64 % Int8(1)	0	1
+Int64 % Int8(-1)	0	1
+Int64 % Int8(-128)	0	1
+Int64 % Int8(127)	0	1
+Int64 % Int16(1)	0	1
+Int64 % Int16(-1)	0	1
+Int64 % Int16(-32768)	0	1
+Int64 % Int16(32767)	0	1
+Int64 % Int32(1)	0	1
+Int64 % Int32(-1)	0	1
+Int64 % Int32(-2147483648)	0	1
+Int64 % Int32(2147483647)	0	1
+Int64 % Int64(1)	0	1
+Int64 % Int64(-1)	0	1
+Int64 % Int64(-9223372036854775808)	0	1
+Int64 % Int64(9223372036854775807)	0	1
+Int32 % Int8(1)	0	1
+Int32 % Int8(-1)	0	1
+Int32 % Int8(-128)	0	1
+Int32 % Int8(127)	0	1
+Int32 % Int16(1)	0	1
+Int32 % Int16(-1)	0	1
+Int32 % Int16(-32768)	0	1
+Int32 % Int16(32767)	0	1
+Int32 % Int32(1)	0	1
+Int32 % Int32(-1)	0	1
+Int32 % Int32(-2147483648)	0	1
+Int32 % Int32(2147483647)	0	1
+Int32 % Int64(1)	0	1
+Int32 % Int64(-1)	0	1
+Int32 % Int64(-9223372036854775808)	0	1
+Int32 % Int64(2147483647)	0	1
+Int32 % Int64(2147483648)	0	1
+Int32 % Int64(9223372036854775807)	0	1

@@ -55,101 +55,64 @@ struct ModuloByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
-        /// Modulo with too small divisor.
-        if (b == 1) [[unlikely]]
-        {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = 0;
-            return;
-        }
-        else
-        {
-            if constexpr (std::is_signed_v<B>)
-            {
-                if (b == -1) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        dst[i] = 0;
-                    return;
-                }
-            }
-        }
+        /// The same formula as `ModuloImpl::apply`: the remainder has the sign of the dividend and the magnitude `|a| mod |b|`.
+        using UnsignedA = make_unsigned_t<A>;
+        using UnsignedB = make_unsigned_t<B>;
 
-        /// Modulo with too large divisor.
-        if (b > std::numeric_limits<A>::max()) [[unlikely]]
-        {
-            /// The divisor `max(A) + 1` equals `|lowest(A)|`, so `lowest(A)` is divisible by it:
-            /// take the power-of-two path, which gives `0` for it and the dividend for the rest.
-            if constexpr (std::is_signed_v<A> && sizeof(B) > sizeof(A))
-            {
-                if (b == static_cast<B>(std::numeric_limits<A>::max()) + 1)
-                {
-                    vectorPowerOfTwo(src, std::numeric_limits<A>::max(), dst, size);
-                    return;
-                }
-            }
-
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i]);
-            return;
-        }
-        else
-        {
-            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
-            {
-                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        dst[i] = static_cast<ResultType>(src[i]);
-                    return;
-                }
-            }
-        }
-
-        if (static_cast<A>(b) == 0) [[unlikely]]
+        const UnsignedB magnitude_b = moduloMagnitude<UnsignedB>(b);
+        if (magnitude_b == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
-        /// The most negative divisor: `-b` does not fit `B`, but `|b|` is a power of two
-        /// whose mask is the maximum of `B`, so take the power-of-two path directly.
-        /// If `A` is narrower than `B`, this divisor is below the range of `A` and was handled above.
-        if constexpr (std::is_signed_v<B> && sizeof(A) >= sizeof(B))
+        /// The largest magnitude of a dividend. A divisor of a larger magnitude leaves every dividend as is. A divisor equal
+        /// to `|lowest(A)|` is not larger: it takes the power-of-two path below, which gives `0` for `lowest(A)`.
+        constexpr UnsignedA max_magnitude_a = is_signed_v<A>
+            ? moduloMagnitude<UnsignedA>(std::numeric_limits<A>::lowest())
+            : std::numeric_limits<UnsignedA>::max();
+        constexpr UnsignedB max_magnitude_b = is_signed_v<B>
+            ? moduloMagnitude<UnsignedB>(std::numeric_limits<B>::lowest())
+            : std::numeric_limits<UnsignedB>::max();
+        if constexpr (max_magnitude_b > max_magnitude_a)
         {
-            if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
+            if (magnitude_b > max_magnitude_a) [[unlikely]]
             {
-                vectorPowerOfTwo(src, std::numeric_limits<B>::max(), dst, size);
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = static_cast<ResultType>(src[i]);
                 return;
             }
         }
 
-        /// Modulo of division by negative number is the same as the positive number.
-        if (b < 0)
-            b = static_cast<B>(-b);
+        const UnsignedA d = static_cast<UnsignedA>(magnitude_b);
 
-        if (b & (b - 1))
+        /// A power of two, including `1`, `|lowest(B)|` and `max(A) + 1`.
+        if ((d & (d - 1)) == 0)
         {
-            /// BRANCHFULL: the per-iteration algorithm-type branch is
-            /// perfectly predicted (loop-invariant) and lets most divisors
-            /// take the fast `mullhi >> shift` path (2 ops vs BRANCHFREE's
-            /// unconditional 5 ops).  The compiler auto-vectorizes each
-            /// path independently (via vpmuludq on x86, NEON on ARM).
-            /// For 64-bit types, suppress auto-vectorization: there is no
-            /// vpmuludq for 64-bit, so the compiler emits scalar
-            /// extract/insert sequences that are slower than the scalar loop.
-            libdivide::divider<A, libdivide::BRANCHFULL> divider(static_cast<A>(b));
-            if constexpr (sizeof(A) >= 8)
-            {
+            vectorPowerOfTwo(src, static_cast<A>(d - 1), dst, size);
+            return;
+        }
+
+        /// Not a power of two, so `d` fits `A` as a positive value: for a signed `A`, it is less than `|lowest(A)|`.
+        const A divisor = static_cast<A>(d);
+
+        /// BRANCHFULL: the per-iteration algorithm-type branch is
+        /// perfectly predicted (loop-invariant) and lets most divisors
+        /// take the fast `mullhi >> shift` path (2 ops vs BRANCHFREE's
+        /// unconditional 5 ops).  The compiler auto-vectorizes each
+        /// path independently (via vpmuludq on x86, NEON on ARM).
+        /// For 64-bit types, suppress auto-vectorization: there is no
+        /// vpmuludq for 64-bit, so the compiler emits scalar
+        /// extract/insert sequences that are slower than the scalar loop.
+        libdivide::divider<A, libdivide::BRANCHFULL> divider(divisor);
+        if constexpr (sizeof(A) >= 8)
+        {
 #pragma clang loop vectorize(disable)
-                for (size_t i = 0; i < size; ++i)
-                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
-            }
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * divisor);
         }
         else
-            vectorPowerOfTwo(src, static_cast<A>(b - 1), dst, size);
+        {
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * divisor);
+        }
     }
 
 private:
