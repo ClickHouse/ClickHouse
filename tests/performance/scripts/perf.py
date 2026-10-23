@@ -689,6 +689,37 @@ if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_que
         "performance test must run on every server to be comparable"
     )
 
+# Failpoints are test-wide: enable before setup and disable after teardown.
+# Unlike do_not_check_in_pr, a build without failpoint support makes the
+# comparison inapplicable; an unknown name on the reference side does too,
+# but only if the new server accepted it. Other enable errors are fatal.
+failpoint_enables = []
+failpoint_disables = []
+declared_failpoints = set()
+disabled_failpoints = set()
+for e in root.findall("failpoint"):
+    name = (e.text or "").strip()
+    action = e.get("action")
+    if (
+        len(e.attrib) != 1
+        or action not in ("enable", "disable")
+        or len(e) != 0
+        or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name)
+    ):
+        raise ValueError(
+            '<failpoint> requires action="enable" or "disable" and a failpoint name'
+        )
+    if action == "enable":
+        if name in declared_failpoints:
+            raise ValueError(f"Failpoint {name} is enabled more than once")
+        declared_failpoints.add(name)
+        failpoint_enables.append(name)
+    else:
+        if name not in declared_failpoints or name in disabled_failpoints:
+            raise ValueError(f"Failpoint {name} is disabled without a matching enable")
+        disabled_failpoints.add(name)
+        failpoint_disables.append(name)
+
 # Setup queries paired with a flag. Tolerate query's failure on the reference server
 # only when do_not_check_in_pr matches --pr-number.
 create_query_templates = []
@@ -803,6 +834,47 @@ def teardown():
 # Runs after an uncaught exception, `KeyboardInterrupt` and `sys.exit` too.
 if not args.keep_created_tables and not args.use_existing_tables:
     atexit.register(teardown)
+
+# Record an enable attempt BEFORE issuing it: a connection may lose its response
+# after the server applied the command. The exit hook handles failed setup,
+# failed queries, and tests without an explicit disable. Normal teardown also
+# calls this directly so cleanup errors are visible as test failures.
+enabled_failpoints = {}
+skipping_unsupported_failpoint = False
+
+
+def disable_enabled_failpoints(names=None):
+    first_error = None
+    for name in (names if names is not None else list(enabled_failpoints)):
+        indexes = enabled_failpoints.get(name)
+        if indexes is None:
+            continue
+        for index in list(indexes):
+            try:
+                all_connections[index].execute(f"SYSTEM DISABLE FAILPOINT {name}")
+                indexes.remove(index)
+            except Exception as e:
+                if first_error is None:
+                    first_error = e
+        if not indexes:
+            del enabled_failpoints[name]
+    if first_error is not None:
+        raise first_error
+
+
+def disable_failpoints_on_exit():
+    if enabled_failpoints:
+        try:
+            disable_enabled_failpoints()
+        except Exception:
+            # A cleanup failure must not hide the original exception. An
+            # unsupported failpoint also rejects `DISABLE`, but that skip is not
+            # a run error; avoid writing it to the test's stderr log.
+            if not skipping_unsupported_failpoint:
+                logging.exception("Could not disable all performance-test failpoints")
+
+
+atexit.register(disable_failpoints_on_exit)
 
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
 # etc.) in parallel so both servers see the same operation at the same wall
@@ -952,6 +1024,50 @@ for conn_index, c in enumerate(all_connections):
 reportStageEnd("settings")
 
 setup_connections = [i for i, e in enumerate(setup_error_on_connection) if not e]
+for name in failpoint_enables:
+    enable_errors = {}
+    for conn_index in setup_connections:
+        c = all_connections[conn_index]
+        enabled_failpoints.setdefault(name, set()).add(conn_index)
+        try:
+            c.execute(f"SYSTEM ENABLE FAILPOINT {name}")
+        except Exception as error:
+            enable_errors[conn_index] = error
+    if enable_errors:
+        def can_skip(index, error):
+            if not isinstance(error, clickhouse_driver.errors.ServerException):
+                return False
+            if error.code == 344:  # `SUPPORT_IS_DISABLED`
+                return any(
+                    message in error.message
+                    for message in (
+                        "The server was compiled without FIU support",
+                        "Fail points are disabled because ClickHouse was built without libfiu",
+                    )
+                )
+            return (
+                index == 0
+                and len(all_connections) == 2
+                and 1 not in enable_errors
+                and error.code == 36  # `BAD_ARGUMENTS`
+                and f"Cannot find fail point {name}" in error.message
+            )
+
+        fatal_errors = [
+            error for index, error in enable_errors.items()
+            if not can_skip(index, error)
+        ]
+        if fatal_errors:
+            raise fatal_errors[0]
+        # Even a failed side may have enabled it before losing the reply.
+        # Cleanup is best-effort here; the exit hook retries any failures.
+        skipping_unsupported_failpoint = True
+        try:
+            disable_enabled_failpoints()
+        except Exception:
+            pass
+        print(f"skipped\tfailpoint {name} not supported - skip")
+        sys.exit(0)
 
 # Diagnostics of setup queries tolerated on the reference server, reported
 # from the main thread below. They must not reach this test's stderr: a
@@ -1479,6 +1595,12 @@ teardown_clean = True
 if not args.long and not args.keep_created_tables and not args.use_existing_tables:
     teardown_clean = teardown()
     reportStageEnd("drop-2")
+
+for name in failpoint_disables:
+    disable_enabled_failpoints([name])
+
+# Also disable any failpoints the XML did not explicitly disable.
+disable_enabled_failpoints()
 
 if failed_queries:
     print(f"{len(failed_queries)} queries failed, see the 'run-error' lines", file=sys.stderr)
