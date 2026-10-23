@@ -451,6 +451,31 @@ WHERE hasAnyTokens(t.s, ['hello']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_unsupported;
 
+-- An expression pairing two occurrences of the table is the indexed expression of neither, though it
+-- serializes to the same name once the aliases are dropped.
+SELECT 'a self-join mixing two occurrences of the indexed table';
+CREATE TABLE t_115999_self
+(
+    id UInt64,
+    first_name String,
+    last_name String,
+    INDEX idx_name concat(first_name, last_name) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_self VALUES (1, 'hel', 'lo'), (2, 'wor', 'ld');
+
+-- Prints 0: 'hel' and 'ld' never share a row.
+SELECT count() FROM t_115999_self AS a, t_115999_self AS b
+WHERE a.id = 1 AND b.id = 2 AND hasAnyTokens(concat(a.first_name, b.last_name), ['ell']);
+-- One occurrence is still the indexed expression, so the tokenizer is forwarded.
+SELECT count() FROM t_115999_self AS a, t_115999_self AS b
+WHERE b.id = 2 AND (hasAnyTokens(concat(a.first_name, a.last_name), ['ell']) OR b.id = 999);
+SELECT count() FROM t_115999_self WHERE hasAnyTokens(concat(first_name, last_name), ['ell']);
+
+DROP TABLE t_115999_self;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';

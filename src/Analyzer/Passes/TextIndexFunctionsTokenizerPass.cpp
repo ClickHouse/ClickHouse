@@ -179,10 +179,13 @@ QueryTreeNodePtr findProjection(const IQueryTreeNode & source, const String & na
     return nullptr;
 }
 
-/// Null unless the expression reads from exactly one table, because otherwise no index describes it.
+/// Null unless the expression reads one table occurrence, because otherwise no index describes it.
 Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions)
 {
     StoragePtr storage;
+    /// Not the storage: a self-join shares it, and `concat(a.first_name, b.last_name)` serializes like an
+    /// index on `concat(first_name, last_name)` while pairing values from two rows.
+    const IQueryTreeNode * occurrence = nullptr;
 
     /// Returns `{substituted, failed}`. `substituted` is null when nothing below `current` changed, so
     /// an expression over plain table columns is resolved without copying anything; a substitution is
@@ -225,15 +228,17 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const Cont
 
         QueryTreeNodePtr what_it_reads;
 
-        if (auto column_storage = getSourceStorage(*source))
+        if (const auto column_storage = getSourceStorage(*source))
         {
-            column_storage = getIndexStorage(column_storage, context);
-
-            /// Not nodes: the two sides of a self-join, and two `remote()` calls naming one table, are
-            /// distinct nodes over the same indexes.
-            if (storage && storage.get() != column_storage.get())
+            if (!occurrence)
+            {
+                occurrence = source.get();
+                storage = getIndexStorage(column_storage, context);
+            }
+            else if (occurrence != source.get())
+            {
                 return {nullptr, true};
-            storage = column_storage;
+            }
 
             /// An ALIAS column stands for an expression, and that is what the index is defined on.
             if (!column_node->hasExpression())

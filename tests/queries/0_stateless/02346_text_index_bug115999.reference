@@ -86,6 +86,10 @@ a tokenizer the function does not accept
 1
 1
 1
+a self-join mixing two occurrences of the indexed table
+0
+1
+1
 a Distributed haystack, predicate on the initiator
 1
 1
