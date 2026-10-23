@@ -15,7 +15,6 @@ GatherExchange
    └──ShuffleExchange (by hash([bk]))
       └──ReadFromMergeTree (build_t)
   start order, execute_locally = 1: build_t probe_t
-  start order, execute_locally = 0: build_t probe_t
 build_t ⋈ probe_t, swapped by the planner
 └──GatherExchange
       └──JoinLogical
@@ -24,7 +23,6 @@ build_t ⋈ probe_t, swapped by the planner
          └──ShuffleExchange (by hash([bk]))
             └──ReadFromMergeTree (build_t)
   start order, execute_locally = 1: build_t probe_t
-  start order, execute_locally = 0: build_t probe_t
 five tables, left-deep
 └──GatherExchange
       └──JoinLogical
@@ -45,7 +43,6 @@ five tables, left-deep
          └──ShuffleExchange (by hash([ek]))
             └──ReadFromMergeTree (fifth_t)
   start order, execute_locally = 1: fifth_t fourth_t third_t build_t probe_t
-  start order, execute_locally = 0: fifth_t fourth_t third_t build_t probe_t
 five tables, bushy
 └──GatherExchange
       └──JoinLogical
@@ -66,7 +63,6 @@ five tables, bushy
                └──ShuffleExchange (by hash([ek]))
                   └──ReadFromMergeTree (fifth_t)
   start order, execute_locally = 1: fifth_t fourth_t third_t build_t probe_t
-  start order, execute_locally = 0: fifth_t fourth_t third_t build_t probe_t
 five tables, star of broadcast joins
 └──GatherExchange
       └──JoinLogical
@@ -83,4 +79,3 @@ five tables, star of broadcast joins
          └──BroadcastExchange
             └──ReadFromMergeTree (fifth_t)
   start order, execute_locally = 1: probe_t fifth_t fourth_t third_t build_t
-  start order, execute_locally = 0: probe_t fifth_t fourth_t third_t build_t

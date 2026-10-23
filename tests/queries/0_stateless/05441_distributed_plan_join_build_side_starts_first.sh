@@ -41,11 +41,12 @@ function show()
     local label="$1"
     local query="$2"
     local case_settings="$3"
+    local executors="${4:-1}"
     echo "$label"
     # The joins, exchanges and reads of the plan: under a join, `├──` leads to its probe input and `└──` to its build input.
     $CLICKHOUSE_CLIENT --query "EXPLAIN pretty = 1, compact = 1 $query SETTINGS $SETTINGS, $case_settings" \
         | grep -E "JoinLogical|Exchange|ReadFromMergeTree" | sed "s/${CLICKHOUSE_DATABASE}\.//"
-    for execute_locally in 1 0; do
+    for execute_locally in $executors; do
         local logs
         logs=$($CLICKHOUSE_CLIENT --send_logs_level=debug --send_logs_source_regexp='^DistributedQueryPlanExecutor$' --query "
             $query SETTINGS $SETTINGS, $case_settings, distributed_plan_execute_locally = $execute_locally" 2>&1 >/dev/null) \
@@ -58,8 +59,10 @@ function show()
 # probe_t (100000 rows) ⋈ build_t (1000 rows): build_t is smaller, so it is the build side, and probe_t the probe side.
 # The two queries differ by one plan node above the join (`count()`); without a deliberate order the start order
 # followed the parity of those nodes, so one of them started the probe side first.
+# Only the first query also runs on the remote executor: it orders the stages with the same code as the local one, and
+# sending every task over the network is slow in CI.
 show "probe_t ⋈ build_t, count()" "SELECT count() FROM probe_t AS p INNER JOIN build_t AS b ON p.k = b.bk" \
-    "$AS_WRITTEN, distributed_plan_max_rows_to_broadcast = 0"
+    "$AS_WRITTEN, distributed_plan_max_rows_to_broadcast = 0" "1 0"
 show "probe_t ⋈ build_t, p.k" "SELECT p.k FROM probe_t AS p INNER JOIN build_t AS b ON p.k = b.bk" \
     "$AS_WRITTEN, distributed_plan_max_rows_to_broadcast = 0"
 
