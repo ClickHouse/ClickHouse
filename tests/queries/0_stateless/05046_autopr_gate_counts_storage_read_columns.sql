@@ -44,7 +44,7 @@ INSERT INTO t_ordered SELECT number % 1000, number * 7, number % 251 FROM number
 -- replica and reject it; with the sorting key included it is 8 MB per replica.
 SELECT small FROM t_ordered ORDER BY k1 LIMIT 10 FORMAT Null SETTINGS log_comment='05046_gate_ordered', optimize_read_in_order=1;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

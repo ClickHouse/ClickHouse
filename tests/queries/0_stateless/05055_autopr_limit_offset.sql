@@ -38,7 +38,7 @@ SELECT value FROM t ORDER BY value LIMIT -3 FORMAT Null SETTINGS automatic_paral
 SELECT value FROM t ORDER BY value OFFSET -5 FORMAT Null SETTINGS automatic_parallel_replicas_mode=2, log_comment='05055_autopr_negative_offset';
 SELECT value FROM t ORDER BY value LIMIT 0.3 OFFSET 0.2 FORMAT Null SETTINGS automatic_parallel_replicas_mode=2, log_comment='05055_autopr_fractional';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 
