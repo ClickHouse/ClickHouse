@@ -4235,7 +4235,13 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
                 auto indexes = ColumnUInt64::create();
                 auto & indexes_data = indexes->getData();
                 indexes_data.reserve(row_subgroup.filter.rows_pass);
-                for (size_t i = 0; i < mask.size(); ++i)
+                size_t i = 0;
+                for (; i + 64 <= mask.size(); i += 64)
+                {
+                    for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
+                        indexes_data.push_back(row_subgroup.start_row_idx + i + std::countr_zero(bits));
+                }
+                for (; i < mask.size(); ++i)
                     if (mask[i])
                         indexes_data.push_back(row_subgroup.start_row_idx + i);
                 state.column = (*cached_column)->index(*indexes, 0);
