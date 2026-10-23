@@ -3,14 +3,14 @@ metrics	Map(LowCardinality(String), Int64)
 metric_log	{'ProfileEvent_Query':10,'CurrentMetric_Query':20}	0
 metric_log_0	{'CurrentMetric_Query':5,'ProfileEvent_Query':7}	0
 metric_log_1	{'CurrentMetric_Merge':3}	3
--- types that do not change
-extended	Int8					
-disjoint	Int8					
+-- consistent numbering
+extended	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)					
+disjoint	Enum8(\'a\' = 1, \'b\' = 2)					
 identical	Enum8(\'a\' = 1)					
 with_string	String					
-same_1	2
-same_2	2
-same_2	3
+consistent_1	b
+consistent_2	b
+consistent_2	c
 2
 -- conflicting numbering
 renumbered	LowCardinality(String)					
@@ -39,10 +39,15 @@ i	Int32
 other_1	a
 other_2	b
 other_3	c
--- a Merge table without columns, and the setting disabled
+-- a Merge table without columns
 renumbered	LowCardinality(String)					
 renamed	LowCardinality(String)					
 widened	LowCardinality(String)					
+-- merge_table_keep_enum_names
+extended	Int8					
+disjoint	Int8					
+identical	Enum8(\'a\' = 1)					
+with_string	String					
 renumbered	Int8					
 renamed	Int8					
 widened	Int16					

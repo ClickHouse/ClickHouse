@@ -10234,11 +10234,20 @@ When creating a `Merge` table without an explicit schema or when using the `merg
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
 )", 0, \
         {"25.1", 1, 1000, "A new setting"}) \
-    DECLARE(Bool, merge_table_infer_conflicting_enums_as_string, true, R"(
-When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer `LowCardinality(String)` for an enum column whose values are numbered differently in different tables, so that each table is read by name.
-If disabled, such a column gets the underlying integer type, and the same number can mean different values in rows from different tables.
+    DECLARE(MergeTableKeepEnumNames, merge_table_keep_enum_names, MergeTableKeepEnumNames::ALWAYS, R"(
+When creating a `Merge` table without an explicit schema or when using the `merge` table function, controls the inferred type of a column that is an enum with different definitions in different tables.
+
+Possible values:
+
+- `never` — The column gets the underlying integer type: `Int8`, or `Int16` if some table has `Enum16`. If a name has different numbers in different tables, or a number has different names, the same number means different values in rows from different tables.
+- `when_ambiguous` — Like `never`, but if a name has different numbers in different tables, or a number has different names, the column gets `LowCardinality(String)` and each table is read by name.
+- `always` — Like `when_ambiguous`, but if the numbering is consistent, the column gets an enum with the names of all tables, so the values keep their names.
+
+For example, for `Enum8('a' = 1, 'b' = 2)` in one table and `Enum8('a' = 1, 'b' = 2, 'c' = 3)` in another, `never` and `when_ambiguous` infer `Int8`, and `always` infers `Enum8('a' = 1, 'b' = 2, 'c' = 3)`. For `Enum8('a' = 1)` and `Enum8('b' = 1)`, `when_ambiguous` and `always` infer `LowCardinality(String)`.
+
+The setting also applies to enums inside `Array`, `Map`, `Tuple` and `Nullable`. Identical enums keep their type with any value.
 )", 0, \
-        {"26.11", true, true, "New setting. The previous value is deliberately equal to the new one, so `compatibility` does not restore the integer type that mixes the numbers of different enums."}) \
+        {"26.11", "never", "always", "New setting. `compatibility` with an earlier version restores the integer type."}) \
     DECLARE(Bool, validate_enum_literals_in_operators, false, R"(
 If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
 )", 0, \

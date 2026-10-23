@@ -1,4 +1,5 @@
--- `merge` infers `LowCardinality(String)` for enums numbered differently in different tables, so each table is read by name.
+-- `merge` keeps the names of enums that differ between tables: it infers an enum with all names if the numbering is consistent,
+-- and `LowCardinality(String)` if it conflicts, so each table is read by name.
 
 SELECT '-- Map keys';
 CREATE TABLE metric_log (metrics Map(Enum16('ProfileEvent_Query' = 0, 'CurrentMetric_Query' = 5), Int64)) ENGINE = MergeTree ORDER BY tuple();
@@ -10,14 +11,14 @@ INSERT INTO metric_log_1 VALUES ({'CurrentMetric_Merge': 3});
 DESCRIBE merge(currentDatabase(), '^metric_log');
 SELECT _table, metrics, metrics['CurrentMetric_Merge'] FROM merge(currentDatabase(), '^metric_log') ORDER BY _table;
 
-SELECT '-- types that do not change';
-CREATE TABLE same_1 (extended Enum8('a' = 1, 'b' = 2), disjoint Enum8('a' = 1), identical Enum8('a' = 1), with_string Enum8('a' = 1)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE same_2 (extended Enum8('a' = 1, 'b' = 2, 'c' = 3), disjoint Enum8('b' = 2), identical Enum8('a' = 1), with_string String) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO same_1 (extended) VALUES ('b');
-INSERT INTO same_2 (extended) VALUES ('b'), ('c');
-DESCRIBE merge(currentDatabase(), '^same_');
-SELECT _table, extended FROM merge(currentDatabase(), '^same_') ORDER BY ALL;
-SELECT count() FROM merge(currentDatabase(), '^same_') WHERE extended = 2;
+SELECT '-- consistent numbering';
+CREATE TABLE consistent_1 (extended Enum8('a' = 1, 'b' = 2), disjoint Enum8('a' = 1), identical Enum8('a' = 1), with_string Enum8('a' = 1)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE consistent_2 (extended Enum8('a' = 1, 'b' = 2, 'c' = 3), disjoint Enum8('b' = 2), identical Enum8('a' = 1), with_string String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO consistent_1 (extended) VALUES ('b');
+INSERT INTO consistent_2 (extended) VALUES ('b'), ('c');
+DESCRIBE merge(currentDatabase(), '^consistent_');
+SELECT _table, extended FROM merge(currentDatabase(), '^consistent_') ORDER BY ALL;
+SELECT count() FROM merge(currentDatabase(), '^consistent_') WHERE extended = 2;
 
 SELECT '-- conflicting numbering';
 CREATE TABLE conflict_1 (renumbered Enum8('a' = 1, 'b' = 2), renamed Enum8('a' = 1), widened Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY tuple();
@@ -57,7 +58,10 @@ INSERT INTO other_3 VALUES ('c', 1000);
 DESCRIBE merge(currentDatabase(), '^other_');
 SELECT _table, s FROM merge(currentDatabase(), '^other_') WHERE NOT ignore(i) ORDER BY _table;
 
-SELECT '-- a Merge table without columns, and the setting disabled';
+SELECT '-- a Merge table without columns';
 CREATE TABLE merge_conflict ENGINE = Merge(currentDatabase(), '^conflict_');
 DESCRIBE merge_conflict;
-DESCRIBE merge(currentDatabase(), '^conflict_') SETTINGS merge_table_infer_conflicting_enums_as_string = 0;
+
+SELECT '-- merge_table_keep_enum_names';
+DESCRIBE merge(currentDatabase(), '^consistent_') SETTINGS merge_table_keep_enum_names = 'when_ambiguous';
+DESCRIBE merge(currentDatabase(), '^conflict_') SETTINGS merge_table_keep_enum_names = 'never';

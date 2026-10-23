@@ -110,7 +110,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
-    extern const SettingsBool merge_table_infer_conflicting_enums_as_string;
+    extern const SettingsMergeTableKeepEnumNames merge_table_keep_enum_names;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -212,8 +212,18 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
     return false;
 }
 
-/// Whether some name has different numbers in the enums among `types`, or some number has different names.
-bool enumNumberingConflicts(const DataTypes & types)
+template <typename EnumType>
+DataTypePtr makeEnum(const std::unordered_map<std::string_view, Int16> & value_by_name)
+{
+    typename EnumType::Values values;
+    for (const auto & [name, value] : value_by_name)
+        values.emplace_back(String(name), static_cast<typename EnumType::FieldType>(value));
+    return std::make_shared<EnumType>(values);
+}
+
+/// The type that reads the enums among `types` by name: `LowCardinality(String)` if some name has different numbers in them
+/// or some number has different names, otherwise an enum with all their names. Returns nullptr if there are no enums.
+DataTypePtr unifyEnums(const DataTypes & types)
 {
     std::unordered_map<std::string_view, Int16> value_by_name;
     std::unordered_map<Int16, std::string_view> name_by_value;
@@ -225,19 +235,24 @@ bool enumNumberingConflicts(const DataTypes & types)
         return false;
     };
 
+    bool has_enum16 = false;
     for (const auto & type : types)
     {
-        if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type.get()); enum8 && conflicts(enum8->getValues()))
-            return true;
-        if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type.get()); enum16 && conflicts(enum16->getValues()))
-            return true;
+        const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type.get());
+        const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type.get());
+        has_enum16 |= enum16 != nullptr;
+        if ((enum8 && conflicts(enum8->getValues())) || (enum16 && conflicts(enum16->getValues())))
+            return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     }
-    return false;
+
+    if (value_by_name.empty())
+        return nullptr;
+    return has_enum16 ? makeEnum<DataTypeEnum16>(value_by_name) : makeEnum<DataTypeEnum8>(value_by_name);
 }
 
-/// Replaces the enums at the same position of `types` with `LowCardinality(String)` where their numbering conflicts,
-/// looking through `Nullable`, `Array`, `Map` and `Tuple`. Returns whether any enum was replaced.
-bool replaceConflictingEnums(DataTypes & types)
+/// Replaces the enums at the same position of `types` with `unifyEnums`, but consistent ones only if `combine_consistent_enums`.
+/// Looks through `Nullable`, `Array`, `Map` and `Tuple`, and returns whether any type changed.
+bool keepEnumNames(DataTypes & types, bool combine_consistent_enums)
 {
     /// As in `getLeastSupertype`, a `NULL` fits any type, so it is not compared.
     std::vector<size_t> compared;
@@ -251,11 +266,19 @@ bool replaceConflictingEnums(DataTypes & types)
         }
     }
 
-    if (enumNumberingConflicts(nested))
+    if (auto unified = unifyEnums(nested); unified && (combine_consistent_enums || !isEnum(unified)))
     {
+        bool replaced = false;
         for (auto & type : nested)
-            if (isEnum(type))
-                type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        {
+            if (isEnum(type) && !type->equals(*unified))
+            {
+                type = unified;
+                replaced = true;
+            }
+        }
+        if (!replaced)
+            return false;
     }
     else
     {
@@ -274,7 +297,7 @@ bool replaceConflictingEnums(DataTypes & types)
 
         bool replaced = false;
         for (auto & children : children_by_position)
-            replaced |= replaceConflictingEnums(children);
+            replaced |= keepEnumNames(children, combine_consistent_enums);
         if (!replaced)
             return false;
 
@@ -456,14 +479,15 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         return table_num >= max_tables_to_look;
     });
 
-    if (!query_context->getSettingsRef()[Setting::merge_table_infer_conflicting_enums_as_string])
+    const auto keep_enum_names = query_context->getSettingsRef()[Setting::merge_table_keep_enum_names];
+    if (keep_enum_names == MergeTableKeepEnumNames::NEVER)
         return res;
 
-    /// Enums numbered differently in different tables are read by name. Without a common type the column keeps
-    /// the type inferred above, because an enum cannot be cast to a `Variant` that does not contain it.
+    /// Enums that differ between tables are read by name. Without a common type the column keeps the type
+    /// inferred above, because an enum cannot be cast to a `Variant` that does not contain it.
     for (auto & [name, types] : column_types)
     {
-        if (types.size() < 2 || !replaceConflictingEnums(types))
+        if (types.size() < 2 || !keepEnumNames(types, keep_enum_names == MergeTableKeepEnumNames::ALWAYS))
             continue;
 
         if (auto type = tryGetLeastSupertype(types))

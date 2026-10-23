@@ -602,4 +602,11 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"wildcard", FileLikeEngineDefaultPartitionStrategy::WILDCARD},
      {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTableKeepEnumNames,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"never", MergeTableKeepEnumNames::NEVER},
+     {"when_ambiguous", MergeTableKeepEnumNames::WHEN_AMBIGUOUS},
+     {"always", MergeTableKeepEnumNames::ALWAYS}})
 }
