@@ -541,6 +541,22 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
+### TLS and client certificates {#kafka-mtls-named-collection}
+
+TLS paths and `ssl.key.password` are [extended librdkafka settings](/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections), not Kafka table-engine `kafka_*` settings. In a named collection, set them with the `kafka.` prefix in DDL (for example `kafka.ssl_ca_location`) or under `<kafka>` in XML (for example `<ssl_ca_location>`). When `ENGINE = Kafka(collection)` uses the collection, the global server `<kafka>` configuration is not merged.
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+```
+
+Use table `SETTINGS` for `kafka_broker_list`, `kafka_sasl_username`, and `kafka_sasl_password` when those values should differ per table.
+
 ### OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
 
 `OAUTHBEARER` options are extended `librdkafka` settings, so they must be nested under `<kafka>` inside each named collection. Top-level `kafka_*` keys configure the Kafka table engine. ClickHouse converts underscores in the nested XML element names to periods before passing them to `librdkafka`.
