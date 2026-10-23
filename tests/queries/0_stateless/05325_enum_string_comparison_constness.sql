@@ -21,6 +21,10 @@ DROP TABLE IF EXISTS t_tuple_key;
 CREATE TABLE t_tuple_key (t Tuple(String)) ENGINE = MergeTree ORDER BY tuple(t) SETTINGS index_granularity = 1, index_granularity_bytes = 0;
 INSERT INTO t_tuple_key VALUES (('z')), (('a')), (('3'));
 
+DROP TABLE IF EXISTS t_tuple_partition;
+CREATE TABLE t_tuple_partition (v Tuple(String)) ENGINE = MergeTree ORDER BY tuple(v) PARTITION BY v SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+INSERT INTO t_tuple_partition VALUES (('z')), (('a')), (('3'));
+
 DROP TABLE IF EXISTS t_string_derived_key;
 CREATE TABLE t_string_derived_key (s String) ENGINE = MergeTree ORDER BY (toString(s), s) SETTINGS index_granularity = 1;
 INSERT INTO t_string_derived_key VALUES ('z'), ('a'), ('m');
@@ -104,6 +108,12 @@ SELECT materialize(tuple('1', 0)) < tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)
 SELECT tuple(tuple('1'), 0) < tuple(tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)')), 1), materialize(tuple(tuple('1'), 0)) < tuple(tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)')), 1);
 SELECT tuple('1', 0) < tuple(CAST(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)') AS Dynamic), 1), materialize(tuple('1', 0)) < tuple(CAST(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)') AS Dynamic), 1);
 
+-- the key analysis keeps the Enum order of a Dynamic or Variant tuple element
+SELECT arraySort(groupArray(v.1)) FROM t_tuple_partition WHERE v < tuple(CAST(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)') AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0;
+SELECT arraySort(groupArray(v.1)) FROM t_tuple_partition WHERE v < tuple(CAST(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)') AS Variant(Enum8('z' = 1, 'a' = 2, '3' = 3), Array(UInt8)))) SETTINGS optimize_use_implicit_projections = 0;
+SELECT arraySort(groupArray(v.1)) FROM t_tuple_partition WHERE v < CAST(tuple(CAST(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)') AS Dynamic)) AS Dynamic) SETTINGS optimize_use_implicit_projections = 0;
+SELECT arraySort(groupArray(t.1)) FROM t_tuple_key WHERE t < tuple(CAST(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)') AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0;
+
 -- equality keeps the primary key of a string column
 SELECT s FROM t_string_key WHERE isNotDistinctFrom(s, CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)')) SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 0;
 
@@ -116,5 +126,6 @@ DROP TABLE t_enum_name_key;
 DROP TABLE t_string_key;
 DROP TABLE t_string_derived_key;
 DROP TABLE t_tuple_key;
+DROP TABLE t_tuple_partition;
 DROP TABLE t_enum_number_name;
 DROP TABLE t_enum_number_chain;

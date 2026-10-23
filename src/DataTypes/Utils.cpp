@@ -406,7 +406,8 @@ bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr &
         return false;
     }
 
-    return isStringOrFixedString(string_type) && isEnum(enum_type);
+    /// A `Dynamic` or a `Variant` may hold an `Enum`.
+    return isStringOrFixedString(string_type) && (isEnum(enum_type) || isDynamic(enum_type) || isVariant(enum_type));
 }
 
 }
