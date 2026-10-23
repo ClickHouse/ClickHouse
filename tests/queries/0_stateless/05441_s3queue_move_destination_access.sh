@@ -24,6 +24,7 @@ keeper_path="/s3queue_move_destination_access_${db}"
 src="http://localhost:11111/test/${db}_move_src/"
 dst="http://localhost:11111/test/${db}_move_dst/"
 backup="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}')"
+backup_tmp="Disk('backups', '05441_${CLICKHOUSE_TEST_UNIQUE_NAME}_tmp')"
 keys="after_processing_move_access_key_id = 'clickhouse', after_processing_move_secret_access_key = 'clickhouse'"
 azure_connection_string="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
 
@@ -242,6 +243,22 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
 "
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${db}' AND name = 't_backup'"
 
+# A temporary table keeps its engine, even with `restore_replace_external_engines_to_null`, so the same check applies.
+# Temporary tables live in a session, so the table is created and backed up in one client.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE TEMPORARY TABLE t_tmp_backup (x UInt8) ENGINE = S3Queue('${src}', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${keeper_path}_tmp_backup', after_processing = 'move',
+        after_processing_move_uri = '${dst}', ${keys};
+    BACKUP TEMPORARY TABLE t_tmp_backup TO ${backup_tmp} FORMAT Null;
+"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${user_create}"
+$CLICKHOUSE_CLIENT --user "${user_create}" -m -q "
+    RESTORE TEMPORARY TABLE t_tmp_backup FROM ${backup_tmp} SETTINGS structure_only = 1 FORMAT Null; -- { serverError ACCESS_DENIED }
+    RESTORE TEMPORARY TABLE t_tmp_backup FROM ${backup_tmp}
+    SETTINGS structure_only = 1, restore_replace_external_engines_to_null = 1 FORMAT Null; -- { serverError ACCESS_DENIED }
+    SELECT count() FROM system.tables WHERE is_temporary AND name = 't_tmp_backup';
+"
+
 echo "-- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3"
 
 # The same queries succeed with the grant, so `WRITE` on `S3` was the only missing one.
@@ -259,6 +276,10 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
 $CLICKHOUSE_CLIENT --user "${user_create}" -q "
     RESTORE TABLE ${db}.t_backup FROM ${backup} SETTINGS structure_only = 1 FORMAT Null
 " && echo "RESTORE with WRITE on S3: restored"
+$CLICKHOUSE_CLIENT --user "${user_create}" -m -q "
+    RESTORE TEMPORARY TABLE t_tmp_backup FROM ${backup_tmp} SETTINGS structure_only = 1 FORMAT Null;
+    SELECT 'RESTORE TEMPORARY with WRITE on S3: restored', count() FROM system.tables WHERE is_temporary AND name = 't_tmp_backup';
+"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS ${db}.t_alias SYNC;

@@ -18,7 +18,9 @@ table without a destination: created
 -- CREATE AS ON CLUSTER with the legacy entry format, without WRITE on S3
 -- RESTORE of a queue with a destination, without WRITE on S3
 0
+0
 -- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3
 CREATE AS with WRITE on S3: created
 materialized view with WRITE on S3: created
 RESTORE with WRITE on S3: restored
+RESTORE TEMPORARY with WRITE on S3: restored	1
