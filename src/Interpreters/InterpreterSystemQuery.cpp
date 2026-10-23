@@ -1745,6 +1745,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropReplica");
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
+    if (query.replica.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", query.replica);
 
     if (!table_id.empty())
     {
@@ -2157,6 +2159,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
+    if (full_replica_name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
     /// query.replica_zk_path keeps the legacy one-slash normalization so DatabaseReplicated::dropReplica
     /// below targets the same live znode a Replicated database stores. Collapse it here only for the
     /// self-protection comparison, so a self-drop spelled with extra trailing slashes still matches.

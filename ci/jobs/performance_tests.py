@@ -20,7 +20,12 @@ from threading import Thread
 
 import yaml
 
-from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT, BuildTypes, JobNames
+from ci.defs.defs import (
+    NIGHTLY_PERF_PLACEMENT,
+    S3_REPORT_BUCKET_HTTP_ENDPOINT,
+    BuildTypes,
+    JobNames,
+)
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
@@ -1314,7 +1319,7 @@ class CHServer:
     # JemallocSample flamegraphs. Must match compare.sh.
     JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
-    def __init__(self, is_left=False):
+    def __init__(self, is_left=False, nightly=False):
         if is_left:
             server_port = self.LEFT_SERVER_PORT
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
@@ -1362,6 +1367,12 @@ class CHServer:
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
             --interserver_http_port {inter_server_port} \
             --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
+        # Nightly Arrow Flight tests: a ticket is freed after its `DoGet`, tickets expire after 60 s (default 600 s).
+        if nightly:
+            self.start_cmd += (
+                f" --arrowflight_port {server_port + 4}"
+                " --arrowflight.cancel_ticket_after_do_get 1 --arrowflight.tickets_lifetime_seconds 60"
+            )
 
     def start(self):
         print(f"Starting [{self.name}] ClickHouse server")
@@ -1593,6 +1604,7 @@ PERFORMANCE_REFERENCE_BUILD_JOBS = {
     "build_amd_release": f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE})",
     "build_arm_release": f"{JobNames.BUILD} ({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})",
 }
+PERFORMANCE_REFERENCE_BUILD_IMAGE = "clickhouse/binary-builder"
 
 
 def find_performance_reference_build(commits, build_type):
@@ -1600,23 +1612,35 @@ def find_performance_reference_build(commits, build_type):
     of the commit whose sources it was built from, or `(None, None)`.
 
     Commits before the first one with an official build are passed over, as in
-    `find_master_build`. From that commit on, the walk goes further back only over
-    commits where `MasterCI` skipped the reference build job: such a commit changed
-    none of the job's inputs, so an older build has the same sources."""
+    `find_master_build`. Past that commit, only the newest older reference build is
+    taken, and only when `MasterCI` recorded the same sources and builder image
+    digests for the job at both commits."""
     job_name = PERFORMANCE_REFERENCE_BUILD_JOBS[build_type]
     official_index = None
+    sources = None
     for index, sha in enumerate(commits):
         link, _ = find_master_build([sha], Utils.normalize_string(job_name))
-        if link:
-            return link, index if official_index is None else official_index
         if official_index is None:
+            if link:
+                return link, index
             if find_master_build([sha], build_type)[0] is None:
                 continue
             official_index = index
-        state, status = master_job_status(job_name, sha)
-        if state != FETCH_OK or status != Result.Status.SKIPPED:
+            state, sources = master_job_build_inputs_digest(job_name, sha)
+            if state != FETCH_OK or not sources:
+                return None, None
+            continue
+        if not link:
+            continue
+        state, digest = master_job_build_inputs_digest(job_name, sha)
+        if state != FETCH_OK or digest != sources:
+            print(
+                f"INFO: [{job_name}] build inputs digest at master {sha} is {digest}, "
+                f"not {sources} as at master {commits[official_index]}"
+            )
             return None, None
-        print(f"INFO: [{job_name}] was skipped at master {sha}, its sources are the ones of its parent")
+        print(f"INFO: [{job_name}] of master {sha} has the sources and builder image of master {commits[official_index]}")
+        return link, official_index
     return None, None
 
 
@@ -2233,6 +2257,46 @@ def master_job_status(job_name, sha):
     return FETCH_OK, None
 
 
+def master_job_build_inputs_digest(job_name, sha):
+    """The builder image digest and the sources part of the praktika digest that the `MasterCI`
+    run of master commit `sha` recorded for `job_name`, with the states of `master_job_status`.
+    The job digest does not include the image; its dropped last part hashes the job config,
+    which depends on the runner."""
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
+    state, out = fetch_prev_master_result(link)
+    if state != FETCH_OK:
+        return state, None
+    try:
+        config_link = next(
+            (
+                job_link
+                for job in json.loads(out).get("results") or []
+                if job.get("name") == Settings.CI_CONFIG_JOB_NAME
+                for job_link in job.get("links") or []
+                if job_link.endswith("/workflow_config_masterci.json")
+            ),
+            None,
+        )
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return FETCH_ERROR, None
+    if not config_link:
+        return FETCH_OK, None
+    state, out = fetch_prev_master_result(config_link)
+    if state != FETCH_OK:
+        return state, None
+    try:
+        config = json.loads(out)
+        digest = (config.get("digest_jobs") or {}).get(job_name)
+        image = (config.get("digest_dockers") or {}).get(PERFORMANCE_REFERENCE_BUILD_IMAGE)
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow config [{config_link}]")
+        return FETCH_ERROR, None
+    if not isinstance(digest, str) or not digest or not isinstance(image, str) or not image:
+        return FETCH_OK, None
+    return FETCH_OK, f"{image}-{digest.rsplit('-', 1)[0]}"
+
+
 def classify_missing_prev_master_run(job_name, sha):
     """Tell whether this job was ever scheduled at master commit `sha`, given
     that its `result_*.json` is missing there.
@@ -2629,6 +2693,17 @@ def main():
     # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
+    elif nightly:
+        # This job, the last test option: `N/M`, or the name of an extra job (`NIGHTLY_PERF_PLACEMENT`).
+        job = test_options[-1]
+        print(f"Placed tests absent at this commit: {[file for file in NIGHTLY_PERF_PLACEMENT if file not in test_files]}")
+        pinned = [file for file in test_files if NIGHTLY_PERF_PLACEMENT.get(file) == job]
+        if "/" in job:
+            # Slice before removing the pinned tests, so that pinning one test does not move the others.
+            test_files = [file for file in test_files[batch_num::total_batches] if file not in NIGHTLY_PERF_PLACEMENT] + pinned
+        else:
+            assert pinned, f"No test placed in the job `{job}` exists"
+            test_files = pinned
     else:
         test_files = test_files[batch_num::total_batches]
     if nightly:
@@ -2639,22 +2714,28 @@ def main():
     assert test_files
 
     # Test metadata keeps S3 off for old release_base vintages and shards without S3 tests.
-    needs_s3 = any(
-        test_discovery.test_requires_s3(f"./tests/performance/{file}")
-        for file in test_files
-    )
-    needs_s3_read_dataset = any(
-        test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
-        for file in test_files
-    )
+    # PR and master shards list the `long` tests too but skip them.
+    run_paths = [f"./tests/performance/{file}" for file in test_files]
+    if not nightly:
+        run_paths = [path for path in run_paths if not test_discovery.test_is_long(path)]
+    s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
+    needs_s3 = bool(s3_paths)
+    needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
+    needs_s3_public_data = nightly and any(map(test_discovery.test_requires_public_data, run_paths))
+    needs_s3_catalog = nightly and any(map(test_discovery.test_requires_s3_catalog, run_paths))
 
     def prepare_s3():
-        # Configure and stage re-entry must produce the same S3 fixture.
+        # Configure and stage re-entry must produce the same S3 endpoint; the fixtures are seeded only if tests follow.
+        seed = JobStages.TEST in stages
         if not s3_service.ensure(f"{perf_wd}/s3_server.log"):
             return False
-        if needs_s3_read_dataset and not s3_service.seed_read_dataset(
+        if seed and needs_s3_read_dataset and not s3_service.seed_read_dataset(
             f"{db_path}/user_files/{s3_service.READ_DATASET_DIRECTORY}"
         ):
+            return False
+        if seed and needs_s3_public_data and not s3_service.seed_public_data(f"{perf_wd}/s3_public_data"):
+            return False
+        if seed and needs_s3_catalog and not s3_service.seed_catalog(f"{perf_right}/clickhouse"):
             return False
         if not s3_service.write_side_override(perf_left_config, "left"):
             return False
@@ -2944,8 +3025,8 @@ def main():
         )
         res = results[-1].is_ok()
 
-    leftCH = CHServer(is_left=True)
-    rightCH = CHServer(is_left=False)
+    leftCH = CHServer(is_left=True, nightly=nightly)
+    rightCH = CHServer(is_left=False, nightly=nightly)
     log_export_servers = (("left", leftCH), ("right", rightCH))
 
     if res and JobStages.RESTART in stages:
@@ -3056,6 +3137,12 @@ def main():
                     long=nightly,
                 )
                 cleanup_user_files()
+                # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
+                if clean and nightly and f"./tests/performance/{test}" in s3_paths and not s3_service.clear_write_namespaces():
+                    name = test.removesuffix(".xml")
+                    with open(f"{perf_wd}/{name}-err.log", "a") as f:
+                        f.write(f"{name}: S3 cleanup failed, stopping the batch\n")
+                    clean = False
                 if nightly and time.monotonic() - last_flush >= NIGHTLY_FLUSH_INTERVAL_SEC:
                     flush_log_export(log_export_servers)
                     last_flush = time.monotonic()
